@@ -41,10 +41,14 @@ tools/benchmark/flight.py long                               # uploads, the mesh
   `parse.py` also gives each view's anti-aliasing (SMAA) and upscale passes per frame, and `compare.py` prints them
   when either group ran them. The label must be letters, digits, `.`, `_`, or `-`. Stopping the script stops the game,
   and a view with no samples makes it exit non-zero. Results go to `BENCH_OUT` (default the data folder's
-  `Benchmarks/<label>`): `game.log`, a screenshot per view, and `summary.json`.
+  `Benchmarks/<label>`): `game.log`, a screenshot per view, and `summary.json`. `BENCH_AGENT=1` runs in the data
+  folder of the runs Claude starts (`<DataFolder>-agent`), so they leave the player's logs and benchmarks alone.
 - Take the runs of two builds in turn (before, after, before, after, ...): runs of one build agree within about 1 %
   per view, so differences of about 1 % are at the edge of the noise.
-- A run takes about 3 minutes and takes over the monitor.
+- `--offscreen` runs with no window, its frames capped at 1000 a second (`Engine:Window:OffscreenFps`; at the offscreen
+  240 the GPU idled between frames, lowered its clocks, and the views took up to 83 % longer). Its times are 1 to 3 %
+  below a window's on every view (the starter's views, 2026-10-09), so compare offscreen runs only with offscreen runs.
+- A run takes about 2.5 minutes and takes over the monitor (with `--offscreen`, not).
 
 ## Pitfalls
 

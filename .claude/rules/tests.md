@@ -49,7 +49,7 @@ paths:
   draw on a surface and check pixels, redraws, and allocation.
 - Some checks run only in Debug. The test projects run with tiered compilation off (`TieredCompilation` in their
   csproj files): every method is optimised at its first call, so an allocation test never measures what unoptimised
-  library code allocates (Assert.InRange's comparer once failed one); the suite takes about 5 % longer.
+  library code allocates (Assert.InRange's comparer once failed one); the suite takes about 4 % longer.
 - Checklists as tests: `tests/Itera.Engine.Tests/ChecklistTests` (every numeric engine option has a range in the
   validator; every engine system has a `NameTests` class with an allocation test) and `tests/Game.Tests/ChecklistTests`
   (every console command is in the `run-game` skill's list; every numeric game option has a range; every game system has

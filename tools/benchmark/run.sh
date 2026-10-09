@@ -6,10 +6,15 @@
 # Usage: run.sh <label> [--offscreen] [game arguments...]     for example: run.sh base --Engine:Renderer:Shadows=false
 #   --offscreen   no window (Engine:Window:Mode=Offscreen) at BENCH_SIZE (default 2560x1440): the monitor stays free and a
 #                 locked screen changes nothing, but no screenshots are taken (tools/control/game.py shots takes them).
+#                 Frames are capped at 1000 a second, not the offscreen 240, so the GPU never idles and lowers its clocks
+#                 (at 240 the views took up to 83 % longer). Its times are 1 to 3 % below a window's: compare offscreen
+#                 runs only with offscreen runs.
 #   BENCH_BIN     folder of the build to run (default: the repo's Release output). Copy the output folder elsewhere to
 #                 keep building while a run goes on, and to compare two builds.
 #   BENCH_OUT     results folder (default the game's data folder's Benchmarks/, data_folder.py).
 #   BENCH_OUTPUT  sway output to go full screen on (default DP-1, the 2560x1440 monitor).
+#   BENCH_AGENT   1: the data folder of the runs Claude starts (<DataFolder>-agent, data_folder.py --agent), so its runs
+#                 leave the player's logs and benchmarks alone.
 # Linux with sway only (swaymsg, jq, grim); python3 for parse.py. Development tool, not game code.
 set -uo pipefail
 
@@ -30,7 +35,8 @@ fi
 size="${BENCH_SIZE:-2560x1440}"
 window_args=()
 if ((offscreen)); then
-    window_args=(--Engine:Window:Mode=Offscreen "--Engine:Window:Width=${size%x*}" "--Engine:Window:Height=${size#*x}")
+    window_args=(--Engine:Window:Mode=Offscreen "--Engine:Window:Width=${size%x*}" "--Engine:Window:Height=${size#*x}"
+        --Engine:Window:OffscreenFps=1000)
 fi
 # The label names a folder that is deleted first: an empty, "/", ".", or ".." label once reached the whole Benchmarks
 # folder.
@@ -38,7 +44,12 @@ if [[ ! "$label" =~ ^[A-Za-z0-9._-]+$ || "$label" == "." || "$label" == ".." ]];
     echo "run.sh: the label must be letters, digits, '.', '_', or '-' (not '.' or '..'); it is '$label'" >&2
     exit 2
 fi
-data="$(python3 "$here/data_folder.py")"
+agent=()
+if [[ "${BENCH_AGENT:-}" == 1 ]]; then
+    agent=(--agent)
+fi
+data="$(python3 "$here/data_folder.py" "${agent[@]}")"
+folder="$(python3 "$here/data_folder.py" --name "${agent[@]}")"
 out="${BENCH_OUT:-$data/Benchmarks}/$label"
 bin="${BENCH_BIN:-$repo/src/Game/bin/Release/net10.0}/Game"
 output="${BENCH_OUTPUT:-DP-1}"
@@ -64,7 +75,7 @@ mkdir -p "$out"
     --Engine:Renderer:DynamicRenderScaling=false --Engine:Renderer:RenderScale=1 \
     --Engine:Camera:FieldOfViewDegrees=90 --Engine:Window:Fullscreen=false \
     --Engine:Renderer:Shadows=true --Engine:Renderer:AntiAliasing=true \
-    --Engine:Logging:StatsIntervalSeconds=1 "${window_args[@]}" "$@" \
+    --Engine:Logging:StatsIntervalSeconds=1 "--Engine:Application:DataFolder=$folder" "${window_args[@]}" "$@" \
     > "$out/console.txt" 2>&1 &
 pid=$!
 # A script stopped early (Ctrl+C, an error) stops the game too, rather than leaving it full screen.

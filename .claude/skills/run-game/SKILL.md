@@ -9,8 +9,9 @@ The build, test, and run commands are in CLAUDE.md's Commands block. The game is
 (`src/Game/bin/<Config>/net10.0/Game`); its data folder, logs included, is `~/.local/share/<DataFolder>/`, where
 `DataFolder` is `Engine:Application:DataFolder` in `src/Game/appsettings.json` (the starter's `IteraGame`;
 `python3 tools/benchmark/data_folder.py` prints it). Runs Claude starts use `<DataFolder>-agent` instead
-(`IteraGame-agent`; `data_folder.py --agent`): `tools/control/game.py` and `validate.sh` pass it, and a run by hand
-gives `--Engine:Application:DataFolder=IteraGame-agent`, so the player's `settings.json` and logs are never touched.
+(`IteraGame-agent`; `data_folder.py --agent`): `tools/control/game.py` and `validate.sh` pass it,
+`tools/benchmark/run.sh` with `BENCH_AGENT=1`, and a run by hand gives `--Engine:Application:DataFolder=IteraGame-agent`,
+so the player's `settings.json` and logs are never touched.
 
 ## Options
 
@@ -41,11 +42,12 @@ lists the game's). Commonly used:
   `Engine:Window:OffscreenFps` (240) frames a second; nothing shows on the desktop, a locked screen changes nothing, and
   input comes only from the control port. Screenshots, `validate.sh --offscreen`, and `run.sh <label> --offscreen` work
   as with a window. `tools/control/game.py start --offscreen` adds it. `--Engine:Window:Mode=None`: no graphics at all
-  (no window, Vulkan, or render thread; `Engine ready on no graphics` in about 50 ms): the fixed steps run and the
-  frame group after them, nothing is drawn, the loading screen waits only for the world's columns (about 2 s in Debug),
+  (no window, Vulkan, or render thread; `Engine ready on no graphics` in about 60 ms): the fixed steps run and the
+  frame group after them, nothing is drawn, the loading screen waits only for the world's columns (about 1.5 s),
   screenshots refuse, and `wait frames` counts those frames; `--Engine:FreeRun=true` (only with it) runs the steps back
-  to back: 10 minutes of play took a few seconds in Debug. A host and a client both without graphics play a session on
-  127.0.0.1 (`--Engine:Session:Port` to keep off a running game's). `game.py start --headless` adds it.
+  to back: 10 minutes of play (`wait ticks 36000`; `wait seconds` counts real time) take about 4 s in Debug and under
+  1 s in Release. A host and a client both without graphics play a session on 127.0.0.1 (`--Engine:Session:Port` to
+  keep off a running game's). `game.py start --headless` adds it.
   `--Engine:Physics:Threads=1` (1 to 16; 0, the default, a quarter of the processors) makes physics repeat run to run.
 - Other systems: `--Engine:Physics:SettleSeconds` (0.5 to 60), `MaxLooseBodies` (1 to 1024);
   `--Engine:Particles:Enabled=false` (`Capacity` 16,384 to 1,048,576); `--Engine:Audio:Enabled=false` (`Volume` 0 to
@@ -93,13 +95,14 @@ timeout --preserve-status -s INT 120 src/Game/bin/Debug/net10.0/Game --Engine:Se
   --Engine:Console:ExitOnFailure=true "--Engine:Console:Run=wait loaded; balls 4; wait seconds 2; pos; screenshot 0.5 /tmp/shot.png; quit"
 ```
 
-That run takes about 9 s in Debug and writes its log to `~/.local/share/IteraGame-agent/Logs/`. Without the mode it
-stays at the menu; VSync off, so a locked screen does not stop the frames; the data folder keeps the player's
-`settings.json` and logs apart (`tools/control/game.py` and `validate.sh` use the same `<DataFolder>-agent`;
+That run takes about 7 s in Debug (6 s offscreen; Release 5.5 and 4.6 s) and writes its log to
+`~/.local/share/IteraGame-agent/Logs/`. Without the mode it stays at the menu; VSync off, so a locked screen does not
+stop the frames; the data folder keeps the player's `settings.json` and logs apart (`tools/control/game.py`,
+`validate.sh`, and `run.sh` with `BENCH_AGENT=1` use the same `<DataFolder>-agent`;
 `tools/benchmark/data_folder.py --agent` prints it). `timeout` is the safety net: a background run started from a
 script ignores SIGINT; send it SIGTERM. (`timeout` signals the process and its process group, so the game receives
 SIGINT twice at once; `ExitSignalPolicy` treats that as one request.) A Debug run shows the loading screen for about
-5 s (the world; Release about 2.5 s); add `--Engine:Loading:Enabled=false` for a short check of play.
+3.5 s (the world; Release about 2 s); add `--Engine:Loading:Enabled=false` for a short check of play.
 
 ## The control port
 
@@ -114,8 +117,8 @@ look, the wheel, a capture of the pointer that needs no focus, and `point X Y` a
 lines of at most 1 MiB and takes 16 tools at once; a wait-for-log pattern has 50 ms a line. Use it instead of
 restarts. `game.py shots VIEW... --out DIR [--compare DIR] [--size WxH] [--release]` starts the game offscreen, takes a
 screenshot of each view once its world has loaded and its light settled (`fly on`, `tp VIEW`, `wait view`), stops it,
-and compares with an earlier set (`tools/benchmark/imgdiff.py`): four views take about 20 s in Debug, and sets of the
-same build agree to a few pixels. A view is a game's `tp` place (the starter's benchmark views: `start`, `start-low`,
+and compares with an earlier set (`tools/benchmark/imgdiff.py`): four views take about 15 s in Debug, and sets of the
+same build agree to a few pixels (on a quiet machine, exactly). A view is a game's `tp` place (the starter's benchmark views: `start`, `start-low`,
 `down`, `up`, `high`, `far`) or `x,y,z,yaw,pitch`. `game.py start` adds `--Engine:Window:VSync=false` only with
 `--fullscreen`; add it after `--` otherwise when
 the screen may lock. Under `dotnet watch` (Debug), a changed method body or a new method applies to the running game in
