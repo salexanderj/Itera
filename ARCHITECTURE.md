@@ -695,7 +695,9 @@ of any column it reaches, so each column takes edits in the log's order. Navigat
 `StartEditWarmUp` (from the voxels' start-up step, once a run) applies shapes to throwaway chunks on a thread of its own,
 round after round, so that .NET compiles the edit code again, optimised; .NET counts calls only once no new code has been
 compiled for a moment, which the game's start-up puts off, so the warm-up goes on until two rounds in a row take under half
-the first-pass time or 10 s have passed.
+the first-pass time, nothing in the process has been compiled for 0.75 s (`JitInfo.GetCompiledMethodCount`: the code was
+optimised by the second round, or it is composite ReadyToRun code, whose first pass is only 1.6 times slower than the
+best), or 10 s have passed (`EditWarmUpStop`).
 
 ### World generation toolkit
 

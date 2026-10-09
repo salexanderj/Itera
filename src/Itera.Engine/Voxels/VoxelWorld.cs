@@ -83,14 +83,8 @@ public sealed partial class VoxelWorld : IDisposable
     /// <summary>Rounds of the edit warm-up run back to back (<see cref="StartEditWarmUp"/>); later ones are spaced out.</summary>
     private const int WarmUpRounds = 40;
 
-    /// <summary>The warm-up's rounds that measure the first-pass code (after the first, which compiles).</summary>
-    private const int WarmUpFirstPassRounds = 5;
-
     /// <summary>The pause between the warm-up's later rounds.</summary>
     private const int WarmUpPauseMilliseconds = 25;
-
-    /// <summary>The longest the warm-up runs.</summary>
-    private static readonly TimeSpan WarmUpLimit = TimeSpan.FromSeconds(10);
 
     private readonly int[] _changedBricks = new int[VoxelConstants.BricksPerChunk];
     private byte[]? _pieceScratch;

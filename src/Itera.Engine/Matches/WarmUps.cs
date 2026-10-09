@@ -3,7 +3,8 @@ namespace Itera.Engine.Matches;
 /// <summary>
 /// What this run has warmed up already, so a later match does not do it again: the voxel edit code, compiled by the
 /// edit warm-up (<see cref="Voxels.VoxelWorld.StartEditWarmUp"/>; a second warm-up of code already optimised would
-/// never see its rounds speed up and would run its whole 10 s), and the game's cutting code. Run-wide.
+/// gain nothing and hold the loading screen until the process stopped compiling), and the game's cutting code.
+/// Run-wide.
 /// </summary>
 public sealed class WarmUps
 {

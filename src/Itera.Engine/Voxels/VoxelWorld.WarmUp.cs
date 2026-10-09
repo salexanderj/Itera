@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime;
 using Itera.Engine.Matches;
 using Microsoft.Extensions.Logging;
 
@@ -11,10 +12,10 @@ public sealed partial class VoxelWorld
     /// <summary>
     /// Starts the edit warm-up on a thread of its own: a 4 m sphere set into and cleared out of throwaway chunks in the
     /// voxel memory, then freed, round after round until .NET runs optimised edit code (and the memory pools have grown)
-    /// or 10 s have passed, so the first large edit in play does not run slowly (170 ms for a 4 m sphere against 35,
-    /// Release, 2026-09-28). Once, after <see cref="Initialize(ulong)"/>; not at all once an earlier world of this run
-    /// warmed the code up (<see cref="WarmUps.Edits"/>). In a build whose code .NET never optimises (Debug), one round:
-    /// it compiles the code, and more would only run out the time limit.
+    /// or 10 s have passed (<see cref="EditWarmUpStop"/>), so the first large edit in play does not run slowly (170 ms
+    /// for a 4 m sphere against 35, Release, 2026-09-28). Once, after <see cref="Initialize(ulong)"/>; not at all once an
+    /// earlier world of this run warmed the code up (<see cref="WarmUps.Edits"/>). In a build whose code .NET never
+    /// optimises (Debug), one round: it compiles the code, and more would only run out the time limit.
     /// </summary>
     public void StartEditWarmUp()
     {
@@ -39,43 +40,35 @@ public sealed partial class VoxelWorld
         {
             var start = Stopwatch.GetTimestamp();
             var changed = new int[VoxelConstants.BricksPerChunk];
-            var firstPass = double.PositiveInfinity;
-            var fastRounds = 0;
-            var round = 0;
+            var stop = new EditWarmUpStop(s_codeOptimisable);
             // .NET compiles a method again, optimised, only after 30 calls counted once no new code has been compiled for
             // a moment, which the game's start-up puts off for seconds: 40 rounds at start left the first 4 m sphere in
-            // play at 170 ms against 35 (Release, 2026-09-28). So the rounds go on, spaced out, until two in a row take
-            // under half the first-pass time.
-            while (fastRounds < 2 && !_disposed && Stopwatch.GetElapsedTime(start) < WarmUpLimit)
+            // play at 170 ms against 35 (Release, 2026-09-28). So the rounds go on, spaced out, until the code is fast.
+            while (!_disposed)
             {
                 var roundStart = Stopwatch.GetTimestamp();
                 WarmUpRound(memory, grid, changed);
                 var milliseconds = Stopwatch.GetElapsedTime(roundStart).TotalMilliseconds;
-                round++;
-                if (!s_codeOptimisable)
+                var compiled = JitInfo.GetCompiledMethodCount();
+                if (stop.Stop(milliseconds, compiled, Stopwatch.GetElapsedTime(start).TotalSeconds))
                 {
-                    firstPass = milliseconds;
                     break;
                 }
 
-                // The first round compiles; the least of the next few is the first-pass code's own time.
-                if (round is > 1 and <= WarmUpFirstPassRounds)
-                {
-                    firstPass = Math.Min(firstPass, milliseconds);
-                }
-                else if (round > WarmUpFirstPassRounds)
-                {
-                    fastRounds = milliseconds < 0.5 * firstPass ? fastRounds + 1 : 0;
-                }
-
-                if (round >= WarmUpRounds)
+                if (stop.Rounds >= WarmUpRounds)
                 {
                     Thread.Sleep(WarmUpPauseMilliseconds);
                 }
             }
 
             var seconds = Stopwatch.GetElapsedTime(start).TotalSeconds;
-            LogWarmedUp(round, seconds, firstPass, fastRounds >= 2);
+            LogWarmedUp(
+                stop.Rounds,
+                seconds,
+                stop.FirstPassMilliseconds,
+                stop.LastMilliseconds,
+                stop.Reason ?? "the world ended"
+            );
             // Done for the run, also at the time limit: a later world's warm-up of the same code would gain nothing.
             if (!_disposed && _warmUps is not null)
             {
@@ -182,9 +175,15 @@ public sealed partial class VoxelWorld
 
     [LoggerMessage(
         Level = LogLevel.Debug,
-        Message = "Voxels: edit warm-up ran {Rounds} round(s) over {Seconds:F1} s (first-pass round {FirstPassMilliseconds:F1} ms); optimised code: {Optimised}"
+        Message = "Voxels: edit warm-up ran {Rounds} round(s) over {Seconds:F1} s (first-pass round {FirstPassMilliseconds:F1} ms, last {LastMilliseconds:F1} ms); stopped: {Reason}"
     )]
-    private partial void LogWarmedUp(int rounds, double seconds, double firstPassMilliseconds, bool optimised);
+    private partial void LogWarmedUp(
+        int rounds,
+        double seconds,
+        double firstPassMilliseconds,
+        double lastMilliseconds,
+        string reason
+    );
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Voxels: the edit warm-up stopped: {Reason}")]
     private partial void LogWarmUpFailed(string reason);
