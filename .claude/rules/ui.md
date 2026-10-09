@@ -29,8 +29,8 @@ every loading task (`ILoadingTask`, a DI service) is done: the engine's Sounds, 
 game's own after them (`ModelsLoadingTask` waits for a list of models to reach the GPU); at most
 `Engine:Loading:MaxSeconds` (15), then a Warning. The loop runs as usual meanwhile, but the game's input is blocked
 (Escape and the console still work). The render thread draws `loading.frag` (`LoadingPass`) instead of the world,
-`LoadingLayer` lists the tasks, and it fades out over 0.3 s. The starter's takes about 5 s in Debug (the world; the
-edit warm-up runs one round there, since Debug code is never optimised) and 2.5 s in Release. After `reset` it covers
+`LoadingLayer` lists the tasks, and it fades out over 0.3 s. The starter's takes about 3.5 s in Debug (the world; the
+edit warm-up runs one round there, since Debug code is never optimised) and 2 s in Release. After `reset` it covers
 the picture again
 (`LoadingScreen.BeginAgain`, from the loop when `VoxelWorld.LastReset` moves) and frees the pointer.
 

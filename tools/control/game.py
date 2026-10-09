@@ -335,6 +335,16 @@ def place_window(pid, fullscreen):
     return "full screen on DP-1" if fullscreen else "on HDMI-A-1"
 
 
+def window_mode(args):
+    """How the game shows: "window" (--window, or --fullscreen), "none" (--headless: no graphics), or "offscreen", the
+    default, so a game started here never opens a window on the desktop unless asked."""
+    if getattr(args, "headless", False):
+        return "none"
+    if getattr(args, "window", False) or getattr(args, "fullscreen", False):
+        return "window"
+    return "offscreen"
+
+
 def cmd_start(args):
     state = load_state()
     if alive(state.get("pid"), state):
@@ -354,12 +364,13 @@ def cmd_start(args):
     if not args.menu:
         # Straight into an offline match; --menu starts at the menu (game arguments after -- can still name a mode).
         command.append("--Engine:Session:Mode=Offline")
+    mode = window_mode(args)
     if args.fullscreen:
         command.append("--Engine:Window:VSync=false")
-    if getattr(args, "offscreen", False):
+    if mode == "offscreen":
         # No window: drawn into a headless surface, input only from this port.
         command.append("--Engine:Window:Mode=Offscreen")
-    if getattr(args, "headless", False):
+    elif mode == "none":
         # No graphics at all: the steps and the frame group run, nothing is drawn.
         command.append("--Engine:Window:Mode=None")
     command += args.game
@@ -370,8 +381,8 @@ def cmd_start(args):
     save_state({"pid": process.pid, "port": port, "configuration": configuration, "folder": str(folder),
                 "built": built, "started": time.time(), "log_next": 0})
     print(f"started {configuration} build of {built}, pid {process.pid}, port {port}")
-    if getattr(args, "offscreen", False) or getattr(args, "headless", False):
-        print("window: none (" + ("offscreen" if getattr(args, "offscreen", False) else "no graphics") + ")")
+    if mode != "window":
+        print("window: none (" + ("offscreen" if mode == "offscreen" else "no graphics") + ")")
     else:
         placement = place_window(process.pid, args.fullscreen)
         print("window: " + placement)
@@ -445,8 +456,8 @@ def cmd_shots(args):
     # The same size every set: no dynamic render scaling, no stats line.
     game = [f"--Engine:Window:Width={width}", f"--Engine:Window:Height={height}",
             "--Engine:Renderer:DynamicRenderScaling=false", "--Engine:Ui:Stats=false"] + args.game
-    start = argparse.Namespace(port=args.port, release=args.release, fullscreen=False, no_wait=False, menu=False,
-                               offscreen=True, headless=False, game=game)
+    start = argparse.Namespace(port=args.port, release=args.release, window=False, fullscreen=False, no_wait=False,
+                               menu=False, offscreen=True, headless=False, game=game)
     code = cmd_start(start)
     if code != 0:
         return code
@@ -496,13 +507,16 @@ def main():
     for name, function in (("start", cmd_start), ("restart", cmd_restart)):
         sub = add(name, function, "copy the build and start the game" if name == "start" else "stop, then start")
         sub.add_argument("--release", action="store_true", help="the Release build (default Debug)")
-        sub.add_argument("--fullscreen", action="store_true", help="full screen on DP-1 with VSync off (for timings)")
         sub.add_argument("--no-wait", action="store_true", help="do not wait for the loading screen to finish")
         sub.add_argument("--menu", action="store_true", help="start at the menu instead of an offline match (no wait)")
-        sub.add_argument("--offscreen", action="store_true",
-                         help="no window: drawn into a headless surface; input only from this port")
-        sub.add_argument("--headless", action="store_true",
-                         help="no graphics at all (Engine:Window:Mode=None): steps and frame systems run, nothing is drawn")
+        shown = sub.add_mutually_exclusive_group()
+        shown.add_argument("--offscreen", action="store_true",
+                           help="the default: no window, drawn into a headless surface; input only from this port")
+        shown.add_argument("--window", action="store_true", help="a window, on HDMI-A-1")
+        shown.add_argument("--fullscreen", action="store_true",
+                           help="a window full screen on DP-1 with VSync off (for timings)")
+        shown.add_argument("--headless", action="store_true",
+                           help="no graphics at all (Engine:Window:Mode=None): steps and frame systems run, nothing is drawn")
         sub.add_argument("game", nargs=argparse.REMAINDER, help="game arguments, after --")
     add("stop", cmd_stop, "quit the game (then SIGTERM, then SIGKILL)")
     sub = add("shots", cmd_shots, "start offscreen, take a screenshot of each view (a tp place or x,y,z,yaw,pitch), stop")

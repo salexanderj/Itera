@@ -1,6 +1,6 @@
 ---
 name: run-game
-description: "How to run, drive, and check the game (src/Game) on the Itera engine: options on the command line, unattended runs and signals, the start-up log lines, the console and its commands, and the control port (tools/control/game.py). Use before starting the game, driving it with game.py or console commands, reading a run's log, or checking a change in the game."
+description: "How to check a change in the game (src/Game) on the Itera engine, the cheapest way first (tests, HeadlessMatch scenarios, runs with no graphics, offscreen screenshot sets, a window last), and how to run and drive it: options on the command line, unattended scripted runs, exit codes, the start-up log lines, the console and its commands, and the control port (tools/control/game.py). Use before checking a change, starting the game, driving it with game.py or console commands, or reading a run's log."
 ---
 
 # Running and driving the game
@@ -12,6 +12,40 @@ The build, test, and run commands are in CLAUDE.md's Commands block. The game is
 (`IteraGame-agent`; `data_folder.py --agent`): `tools/control/game.py` and `validate.sh` pass it,
 `tools/benchmark/run.sh` with `BENCH_AGENT=1`, and a run by hand gives `--Engine:Application:DataFolder=IteraGame-agent`,
 so the player's `settings.json` and logs are never touched.
+
+## Checking a change
+
+Check a change the cheapest way that can see it, and open a window only when the window itself is what changed (its
+swapchain, presenting, focus, or full screen): a window takes the user's desktop, and offscreen and no-graphics runs
+load faster. `game.py start` runs offscreen unless given `--window` or `--fullscreen`.
+
+| What changed | Check it with |
+|---|---|
+| Logic, maths, a service, a system's rules | A test in memory (`.claude/rules/tests.md`): `dotnet test --filter`. |
+| Behaviour in the real world and systems (moving, physics, streaming, a game feature) | A scenario test over `HeadlessMatch` with `Engine:Physics:Threads=1` (`tests/Game.Tests/ScenarioTests`, the `scaffold` skill); or a run with no graphics (`--Engine:Window:Mode=None`) whose startup script reads the state (`pos`, `ecs list COMPONENT`, `ecs show player`, log lines) and quits: about 5 s in Debug. |
+| Minutes of play (resting, streaming over time, drift) | No graphics with `--Engine:FreeRun=true` and `wait ticks N` (60 a second): 10 minutes in about 4 s in Debug. |
+| The picture | `game.py shots VIEW... --out DIR --compare OLD` (offscreen; four views in about 15 s in Debug), then read the PNGs; `tools/benchmark/imgdiff.py` exits 1 when two sets differ. |
+| Something to try by hand | `game.py start`, then `run -s`, `query`, `status`, `shot`, and `input`; `pause`, `step N`, and `timescale` offline; `shaders reload` or `dotnet watch` for edits without a restart. |
+| Vulkan code | `validate.sh --offscreen` while iterating; both standard profiles with a window before it is done (the `vulkan` skill). |
+| Sessions | The in-process session tests; or a host and a client with no graphics on 127.0.0.1 (`Mode=None`, `--Engine:Session:Port` apart from a running game's). |
+| GPU time | `tools/benchmark/run.sh` with `BENCH_AGENT=1` on a quiet machine (ask the user; another game moves timings by 20 % or more): `--offscreen` runs against `--offscreen` runs, windowed against windowed (offscreen measures 1 to 3 % lower). |
+
+Pitfalls:
+
+- `wait seconds N` counts real time, not the game's: with `timescale` or `FreeRun`, wait for `ticks` instead.
+- `FreeRun` needs `Mode=None`. With no graphics `screenshot` and the port's `shot` refuse, and `wait frames` counts the
+  frames built after the steps.
+- The port's `run` runs commands outside any script, so a `wait` there fails: use `run -s` (or the port's own `wait`).
+- `pause`, `resume`, `step`, and `timescale` work only offline; `pause` and `step` refuse while the world loads.
+- Physics repeats run to run only with `Engine:Physics:Threads=1` (a test or comparison that needs equal results sets
+  it); the default spreads it over threads.
+- `HeadlessMatch.WaitUntilLoaded` waits on the clock: the column workers need real time, so stepping alone never loads
+  the world.
+- Debug never optimises the engine's code (voxel work runs about 5 times slower): time game logic in Release.
+- The console's `settings`, `shadows`, and `sound volume` write the data folder's `settings.json`: run in the agent
+  data folder (`game.py` and the tools do).
+- Two screenshot sets of one build agree exactly only with dynamic render scaling off (`shots` turns it off) and on a
+  quiet machine.
 
 ## Options
 
@@ -41,14 +75,14 @@ lists the game's). Commonly used:
   surface (`VK_EXT_headless_surface`; its UNORM images are viewed as sRGB, so the picture is the window's), capped at
   `Engine:Window:OffscreenFps` (240) frames a second; nothing shows on the desktop, a locked screen changes nothing, and
   input comes only from the control port. Screenshots, `validate.sh --offscreen`, and `run.sh <label> --offscreen` work
-  as with a window. `tools/control/game.py start --offscreen` adds it. `--Engine:Window:Mode=None`: no graphics at all
-  (no window, Vulkan, or render thread; `Engine ready on no graphics` in about 60 ms): the fixed steps run and the
-  frame group after them, nothing is drawn, the loading screen waits only for the world's columns (about 1.5 s),
-  screenshots refuse, and `wait frames` counts those frames; `--Engine:FreeRun=true` (only with it) runs the steps back
-  to back: 10 minutes of play (`wait ticks 36000`; `wait seconds` counts real time) take about 4 s in Debug and under
-  1 s in Release. A host and a client both without graphics play a session on 127.0.0.1 (`--Engine:Session:Port` to
-  keep off a running game's). `game.py start --headless` adds it.
-  `--Engine:Physics:Threads=1` (1 to 16; 0, the default, a quarter of the processors) makes physics repeat run to run.
+  as with a window. `tools/control/game.py start` uses it unless given `--window`. `--Engine:Window:Mode=None`: no
+  graphics at all (no window, Vulkan, or render thread; `Engine ready on no graphics` in about 60 ms): the fixed steps
+  run and the frame group after them, nothing is drawn, the loading screen waits only for the world's columns (about 1.5
+  s), screenshots refuse, and `wait frames` counts those frames; `--Engine:FreeRun=true` (only with it) runs the steps
+  back to back: 10 minutes of play (`wait ticks 36000`; `wait seconds` counts real time) take about 4 s in Debug and
+  under 1 s in Release. A host and a client both without graphics play a session on 127.0.0.1 (`--Engine:Session:Port`
+  to keep off a running game's). `game.py start --headless` adds it. `--Engine:Physics:Threads=1` (1 to 16; 0, the
+  default, a quarter of the processors) makes physics repeat run to run.
 - Other systems: `--Engine:Physics:SettleSeconds` (0.5 to 60), `MaxLooseBodies` (1 to 1024);
   `--Engine:Particles:Enabled=false` (`Capacity` 16,384 to 1,048,576); `--Engine:Audio:Enabled=false` (`Volume` 0 to
   1, default 0.1; `MaxVoices` 8 to 255), `--Engine:Audio:Cache=false`; `--Engine:Loading:Enabled=false`;
@@ -84,25 +118,26 @@ naming the key.
 
 ## Unattended runs
 
-Prefer no window (`--Engine:Window:Mode=Offscreen`) for checks that need no one to watch. A startup script runs a
-check on its own and ends the run: `Engine:Console:Run` (and `Engine:Console:RunFile`, a file
-of command lines) with `wait` between the commands, `screenshot PATH`, and `quit`, and
+Run with no window: `--Engine:Window:Mode=None` when the check needs no picture (the fastest), `Offscreen` when it does.
+A startup script runs a check on its own and ends the run: `Engine:Console:Run` (and `Engine:Console:RunFile`, a file of
+command lines) with `wait` between the commands, `screenshot PATH`, and `quit`, and
 `--Engine:Console:ExitOnFailure=true` so a failed command or a wait past its time ends the run with exit code 1:
 
 ```bash
 timeout --preserve-status -s INT 120 src/Game/bin/Debug/net10.0/Game --Engine:Session:Mode=Offline \
-  --Engine:Window:VSync=false --Engine:Steam:Enabled=false --Engine:Application:DataFolder=IteraGame-agent \
+  --Engine:Window:Mode=Offscreen --Engine:Steam:Enabled=false --Engine:Application:DataFolder=IteraGame-agent \
   --Engine:Console:ExitOnFailure=true "--Engine:Console:Run=wait loaded; balls 4; wait seconds 2; pos; screenshot 0.5 /tmp/shot.png; quit"
 ```
 
-That run takes about 7 s in Debug (6 s offscreen; Release 5.5 and 4.6 s) and writes its log to
-`~/.local/share/IteraGame-agent/Logs/`. Without the mode it stays at the menu; VSync off, so a locked screen does not
-stop the frames; the data folder keeps the player's `settings.json` and logs apart (`tools/control/game.py`,
-`validate.sh`, and `run.sh` with `BENCH_AGENT=1` use the same `<DataFolder>-agent`;
-`tools/benchmark/data_folder.py --agent` prints it). `timeout` is the safety net: a background run started from a
-script ignores SIGINT; send it SIGTERM. (`timeout` signals the process and its process group, so the game receives
-SIGINT twice at once; `ExitSignalPolicy` treats that as one request.) A Debug run shows the loading screen for about
-3.5 s (the world; Release about 2 s); add `--Engine:Loading:Enabled=false` for a short check of play.
+That run takes about 6 s in Debug (in a window 7 s; with no graphics and no screenshot 4.7 s; Release offscreen 4.6 s)
+and writes its log to `~/.local/share/IteraGame-agent/Logs/`. Without the session mode it stays at the menu; in a
+window, add `--Engine:Window:VSync=false` so a locked screen does not stop the frames; the data folder keeps the
+player's `settings.json` and logs apart (`tools/control/game.py`, `validate.sh`, and `run.sh` with `BENCH_AGENT=1` use
+the same `<DataFolder>-agent`; `tools/benchmark/data_folder.py --agent` prints it). `timeout` is the safety net: a
+background run started from a script ignores SIGINT; send it SIGTERM. (`timeout` signals the process and its process
+group, so the game receives SIGINT twice at once; `ExitSignalPolicy` treats that as one request.) A Debug run shows the
+loading screen for about 3.5 s (the world; Release about 2 s); add `--Engine:Loading:Enabled=false` for a short check of
+play.
 
 ## The control port
 
@@ -110,20 +145,21 @@ The control port (`Engine:Control`, off unless `Enabled`; `ControlService`) lets
 drive a running game: start it from a copy of the build, run console commands and get their answers and log lines
 (`run -s`: as a script, so `wait` and `screenshot` hold the commands after them and the reply comes when all have run),
 read the match's entities as JSON (`query`) and its steps (`status`: tick, paused, time scale, the player's position),
-wait for loading, frames, fixed steps (`ticks`), seconds, or a log line, measure the GPU passes, take screenshots from the game itself
-(`ScreenshotPass`), reload the shaders from the repository (`Engine:Renderer:ShaderSourceDirectory`; `shaders reload`:
-every pass compiles, then the pipelines are made again; an error keeps the old ones), and send input (keys, buttons,
-look, the wheel, a capture of the pointer that needs no focus, and `point X Y` and `type TEXT` for the menu). It reads
-lines of at most 1 MiB and takes 16 tools at once; a wait-for-log pattern has 50 ms a line. Use it instead of
-restarts. `game.py shots VIEW... --out DIR [--compare DIR] [--size WxH] [--release]` starts the game offscreen, takes a
-screenshot of each view once its world has loaded and its light settled (`fly on`, `tp VIEW`, `wait view`), stops it,
-and compares with an earlier set (`tools/benchmark/imgdiff.py`): four views take about 15 s in Debug, and sets of the
-same build agree to a few pixels (on a quiet machine, exactly). A view is a game's `tp` place (the starter's benchmark views: `start`, `start-low`,
-`down`, `up`, `high`, `far`) or `x,y,z,yaw,pitch`. `game.py start` adds `--Engine:Window:VSync=false` only with
-`--fullscreen`; add it after `--` otherwise when
-the screen may lock. Under `dotnet watch` (Debug), a changed method body or a new method applies to the running game in
-about 1 to 3 s, from the method's next call (constructors and static initialisers do not run again); an edit it cannot
-apply restarts the game. Watch builds into `bin/Debug` in place, so no other build or test run may share it.
+wait for loading, frames, fixed steps (`ticks`), seconds, or a log line, measure the GPU passes, take screenshots from
+the game itself (`ScreenshotPass`), reload the shaders from the repository (`Engine:Renderer:ShaderSourceDirectory`;
+`shaders reload`: every pass compiles, then the pipelines are made again; an error keeps the old ones), and send input
+(keys, buttons, look, the wheel, a capture of the pointer that needs no focus, and `point X Y` and `type TEXT` for the
+menu). It reads lines of at most 1 MiB and takes 16 tools at once; a wait-for-log pattern has 50 ms a line. Use it
+instead of restarts. `game.py shots VIEW... --out DIR [--compare DIR] [--size WxH] [--release]` starts the game
+offscreen, takes a screenshot of each view once its world has loaded and its light settled (`fly on`, `tp VIEW`,
+`wait view`), stops it, and compares with an earlier set (`tools/benchmark/imgdiff.py`): four views take about 15 s in
+Debug, and sets of the same build agree to a few pixels (on a quiet machine, exactly). A view is a game's `tp` place
+(the starter's benchmark views: `start`, `start-low`, `down`, `up`, `high`, `far`) or `x,y,z,yaw,pitch`. `game.py start`
+runs offscreen (no window) unless given `--window` (a window on HDMI-A-1) or `--fullscreen` (full screen on DP-1, VSync
+off); with `--window`, add `-- --Engine:Window:VSync=false` when the screen may lock. Under `dotnet watch` (Debug), a
+changed method body or a new method applies to the running game in about 1 to 3 s, from the method's next call
+(constructors and static initialisers do not run again); an edit it cannot apply restarts the game. Watch builds into
+`bin/Debug` in place, so no other build or test run may share it.
 
 ## The console
 
@@ -140,31 +176,33 @@ lists the commands (`ConsoleCommands`):
 
 - Engine: `help`, `clear`, `play` [SEED], `host` [SEED] [steam|direct], `join` ADDRESS, `leave`, `settings` (volume,
   sensitivity, fov, scaling, threshold, shadows, aa off|smaa|2x|4x|8x, vsync, fullscreen; a test run that changes them
-  writes the data folder's `settings.json`: give render options on the command line instead, or run with the agent
-  data folder, `--Engine:Application:DataFolder=<DataFolder>-agent`), `lines`, `shadows`, `scale` (the run's only), `aa` (on, off, edges,
-  weights, auto; the run's only), `lights` (test N: N warm lights round the camera for ten minutes; clear), `view` (off,
-  wire, levels, all, plain: the meshes' edges over the world, surfaces tinted by their voxels' size, both, or every
-  block from its plain mesh with the seams open; the run's only), `materials` (textures or flat, and `all` for every
-  world material: how the world's materials are drawn; `sets` lists the texture sets loaded; `set ID SET|none [MATCH]`
-  draws material ID from a set, colour matched 0 to 1, or plain; `tune ID DETAIL RELIEF BLUR` keeps part of its set's
-  colour variation and relief (0 to 1) and softens it by mip levels (0 to 4); `bake ID top|side [NAME]` writes material
-  ID's recipe as images for `tools/Textures` into the data folder's `Bakes/`; the run's only), `stats`, `screenshot`
-  [SCALE] [noui] [PATH.png] (a PNG at PATH.png or in the data folder's `Screenshots/`), `wait` (loaded, view (the view's
-  world loaded and on the GPU, as the loading screen waits for), ticks N, frames N, or seconds N of real time, then an
-  optional timeout in seconds), `shaders` [reload] (the folder shaders compile from; reload compiles them again), `quit` [CODE] (the exit code, 0
-  to 255), `ecs` (counts, list COMPONENT [N], show ID[:VERSION]|player: the match's entities and their components'
-  fields, `EcsInspector`), `pause`, `resume`, `step` [N] (pauses, then N fixed steps), `timescale` [X] (0.05 to 16
-  for the match; offline only, as are pause, resume, and step; pause and step wait for loading to end), `particles` (on, off, recipes, test NAME [COUNT],
-  pull NAME [COUNT], stress NAME BURSTS, stress off), `sound` (on, off, volume V, recipes, test NAME [LEVEL], wav NAME,
-  wav all into `Sounds/`).
-- The engine's systems, where a game registers them (the starter does): `fly` (the debug fly camera, or walk again
-  where it is), `flyspeed`, `camera` (first or third), `pos` (the player's eye and look, the fly camera's while it flies,
-  as `Game:World:CameraPose` takes it), `tp` (x y z [yaw pitch], a pasted pose, or a named place where a game gives places; the starter gives none), `settle` (how
-  long a ball rests before it goes back into the grid), `cleanup` (removes every loose body and clears the particles),
-  `reset` (the world as the seed made it, every edit undone, then `cleanup`; the loading screen covers the picture while
-  the view is generated again, on clients too), `balls` [COUNT] [RADIUS] [MATERIAL] (balls dropped 3 m in front of the
-  camera, of the game's default material unless given, the starter's stone: loose bodies that draw models; `settle 60`
-  first keeps them bodies).
+  writes the data folder's `settings.json`: give render options on the command line instead, or run with the agent data
+  folder, `--Engine:Application:DataFolder=<DataFolder>-agent`), `lines`, `shadows`, `scale` (the run's only), `aa` (on,
+  off, edges, weights, auto; the run's only), `lights` (test N: N warm lights round the camera for ten minutes; clear),
+  `view` (off, wire, levels, all, plain: the meshes' edges over the world, surfaces tinted by their voxels' size, both,
+  or every block from its plain mesh with the seams open; the run's only), `materials` (textures or flat, and `all` for
+  every world material: how the world's materials are drawn; `sets` lists the texture sets loaded;
+  `set ID SET|none [MATCH]` draws material ID from a set, colour matched 0 to 1, or plain; `tune ID DETAIL RELIEF BLUR`
+  keeps part of its set's colour variation and relief (0 to 1) and softens it by mip levels (0 to 4);
+  `bake ID top|side [NAME]` writes material ID's recipe as images for `tools/Textures` into the data folder's `Bakes/`;
+  the run's only), `stats`, `screenshot` [SCALE] [noui] [PATH.png] (a PNG at PATH.png or in the data folder's
+  `Screenshots/`), `wait` (loaded, view (the view's world loaded and on the GPU, as the loading screen waits for), ticks
+  N, frames N, or seconds N of real time, then an optional timeout in seconds), `shaders` [reload] (the folder shaders
+  compile from; reload compiles them again), `quit` [CODE] (the exit code, 0 to 255), `ecs` (counts, list COMPONENT [N],
+  show ID[:VERSION]|player: the match's entities and their components' fields, `EcsInspector`), `pause`, `resume`,
+  `step` [N] (pauses, then N fixed steps), `timescale` [X] (0.05 to 16 for the match; offline only, as are pause,
+  resume, and step; pause and step refuse while the match loads), `particles` (on, off, recipes, test NAME [COUNT], pull
+  NAME [COUNT], stress NAME BURSTS, stress off), `sound` (on, off, volume V, recipes, test NAME [LEVEL], wav NAME, wav
+  all into `Sounds/`).
+- The engine's systems, where a game registers them (the starter does): `fly` (the debug fly camera, or walk again where
+  it is), `flyspeed`, `camera` (first or third), `pos` (the player's eye and look, the fly camera's while it flies, as
+  `Game:World:CameraPose` takes it), `tp` (x y z [yaw pitch], a pasted pose, or a place the game names: the starter's
+  benchmark views, `start`, `start-low`, `down`, `up`, `high`, and `far`), `settle` (how long a ball rests before it
+  goes back into the grid), `cleanup` (removes every loose body and clears the particles), `reset` (the world as the
+  seed made it, every edit undone, then `cleanup`; the loading screen covers the picture while the view is generated
+  again, on clients too), `balls` [COUNT] [RADIUS] [MATERIAL] (balls dropped 3 m in front of the camera, of the game's
+  default material unless given, the starter's stone: loose bodies that draw models; `settle 60` first keeps them
+  bodies).
 - The game's own commands go here (the starter has none).
 
 In a session, `tp`, `settle`, `cleanup`, `reset`, and `balls` work only on the host; `pause`, `resume`, `step`, and

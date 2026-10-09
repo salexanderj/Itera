@@ -54,7 +54,9 @@ holds notes on outside projects used as references.
   - A console command added or removed: the list in the `run-game` skill.
   - Code that reads the edit log: handle `VoxelEditOperation.Reset`, an empty box after which no earlier edit counts.
 - Builds, tests, and game runs:
-  - Load the `run-game` skill before you start, drive, or check the game.
+  - Load the `run-game` skill before you start, drive, or check the game, and check a change the cheapest way that can
+    see it (its "Checking a change": tests, `HeadlessMatch` scenarios, runs with no graphics, offscreen screenshot sets,
+    and a window last).
   - Before you run or add tests, read `.claude/rules/tests.md`.
   - While `dotnet watch` runs, it builds into `bin/Debug` in place; no other build or test run may share it.
   - Runs you start use the data folder `<DataFolder>-agent` (`IteraGame-agent`): `tools/control/game.py` and
@@ -114,7 +116,7 @@ dotnet test                        # tests/Itera.Modding.Tests, Itera.Engine.Tes
 dotnet run --project src/Game [-- OPTIONS]                       # opens at the menu without --Engine:Session:Mode
 DOTNET_ENVIRONMENT=Development dotnet run --project src/Game     # Debug lines on the console too
 dotnet build -c Release && src/Game/bin/Release/net10.0/Game     # voxel numbers: Debug generates about 5 times slower
-tools/control/game.py start [--release] [--fullscreen] [--offscreen|--headless] [--no-wait] [--menu] [-- game args]   # the game from a copy of the build, control port on; --offscreen: no window; --headless: no graphics; restart takes the same options
+tools/control/game.py start [--release] [--window|--fullscreen|--headless] [--no-wait] [--menu] [-- game args]   # the game from a copy of the build, control port on, offscreen (no window) unless --window or --fullscreen; --headless: no graphics; restart takes the same options
 tools/control/game.py shots start far high --out DIR [--compare DIR]   # screenshots of views with no window (four in about 15 s in Debug), compared with an earlier set
 tools/control/game.py run "balls 8; pos"   # console commands in the running game (-s: as a script, waits hold the rest); also query, shot, reload, gpu, input, wait, log, status, restart, stop
 DOTNET_WATCH_SUPPRESS_EMOJIS=1 dotnet watch --non-interactive --project src/Game run -- --Engine:Control:Enabled=true   # C# edits applied live
