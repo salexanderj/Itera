@@ -80,6 +80,16 @@ public sealed class EcsInspectorTests : IDisposable
     }
 
     [Fact]
+    public void A_player_gone_leaves_no_player_and_no_component_of_its_kind()
+    {
+        var player = _world.Create(new LocalPlayer(), new CharacterPosition());
+        _world.Destroy(player);
+
+        Assert.False(EcsInspector.TryFindEntityOrPlayer(_world, "player", out _));
+        Assert.False(EcsInspector.TryFindComponent(_world, nameof(LocalPlayer), out _));
+    }
+
+    [Fact]
     public void Values_are_written_as_text_with_their_fields()
     {
         var entity = _world.Create(

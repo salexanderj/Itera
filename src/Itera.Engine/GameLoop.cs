@@ -661,7 +661,8 @@ public sealed partial class GameLoop
     {
         // Sleep until the next fixed step is due, after handling the window events that wait. The render thread's
         // request for a frame wakes this wait at once. While presentation blocks, no request comes and the loop still
-        // runs every step. Without a match no time is added, so the wait is at most a step.
+        // runs every step. Without a match no time is added, so the wait is at most a step (at a time scale below 1 it is
+        // longer: a step of game time).
         if (_exchange.HasRequest)
         {
             _window.PollEvents();

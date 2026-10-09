@@ -46,6 +46,12 @@ public static class EcsInspector
         ArgumentNullException.ThrowIfNull(name);
         foreach (var archetype in world.Archetypes.AsSpan())
         {
+            // Arch keeps an archetype after its last entity goes.
+            if (archetype.EntityCount == 0)
+            {
+                continue;
+            }
+
             foreach (var component in archetype.Signature.Components)
             {
                 if (string.Equals(component.Type.Name, name, StringComparison.OrdinalIgnoreCase))
@@ -144,6 +150,11 @@ public static class EcsInspector
         }
 
         var players = EntitiesWith(world, local, 1);
+        if (players.Count == 0)
+        {
+            return false;
+        }
+
         entity = players[0];
         return true;
     }
@@ -367,7 +378,20 @@ public static class EcsInspector
     {
         if (double.IsFinite(value))
         {
-            writer.WriteNumberValue(Math.Round(value, 6));
+            writer.WriteNumberValue(value);
+        }
+        else
+        {
+            writer.WriteStringValue(value.ToString(CultureInfo.InvariantCulture));
+        }
+    }
+
+    /// <summary>A float as its shortest text (6.037886, not 6.0378861427307129); NaN and infinity as strings.</summary>
+    private static void WriteNumber(Utf8JsonWriter writer, float value)
+    {
+        if (float.IsFinite(value))
+        {
+            writer.WriteNumberValue(value);
         }
         else
         {

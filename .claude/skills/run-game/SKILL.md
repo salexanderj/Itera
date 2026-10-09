@@ -66,7 +66,8 @@ thread(s), budget ..., generator game.world v1` (on a client `Session: loaded N 
 save `Save: loaded N edit(s) of NAME`), the ECS world, the game's lines (the starter's `Player: 1.70 m tall, feet at
 ...` and `Debug camera at ...`), `Loading: waiting for N task(s)`, and `Loading: done after N s (...)`. Quit in the
 menu, the close button, Ctrl+C (SIGINT), SIGTERM, or SIGHUP ends the run with exit code 0 and shutdown lines in
-reverse order, the match's first, ending with `Shutdown complete after N s; exit code 0`. A second signal more than 0.5
+reverse order, the match's first, ending with `Shutdown complete after N s; exit code 0` (the console's `quit CODE`
+gives CODE, and a startup script that failed with `Engine:Console:ExitOnFailure` gives 1). A second signal more than 0.5
 s after the first ends the process at once (exit code 130 for SIGINT). An exception in initialisation or the loop is
 logged at Critical, shutdown still runs, and the exit code is 1 (in a menu match it ends only the match). An invalid
 option (for example `--Engine:FixedStepHz=0`) or an unknown key under `Engine` or `Game` (for example
@@ -144,7 +145,7 @@ lists the commands (`ConsoleCommands`):
   optional timeout in seconds), `shaders reload`, `quit` [CODE] (the exit code, 0
   to 255), `ecs` (counts, list COMPONENT [N], show ID[:VERSION]|player: the match's entities and their components'
   fields, `EcsInspector`), `pause`, `resume`, `step` [N] (pauses, then N fixed steps), `timescale` [X] (0.05 to 16
-  for the run; offline only, as are pause, resume, and step), `particles` (on, off, recipes, test NAME [COUNT],
+  for the match; offline only, as are pause, resume, and step; pause and step wait for loading to end), `particles` (on, off, recipes, test NAME [COUNT],
   pull NAME [COUNT], stress NAME BURSTS, stress off), `sound` (on, off, volume V, recipes, test NAME [LEVEL], wav NAME,
   wav all into `Sounds/`).
 - The engine's systems, where a game registers them (the starter does): `fly` (the debug fly camera, or walk again

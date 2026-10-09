@@ -193,6 +193,23 @@ internal sealed class ControlRequest : IConsoleOutput
 
         var lines = new List<ControlLogLine>();
         log.Read(LogFrom, LogLevel.Information, lines);
+        string reply;
+        try
+        {
+            reply = Build(error, lines, fields);
+        }
+        catch (Exception exception)
+        {
+            // The op's fields could not be written (a value JSON cannot hold, a world that changed): the reply still
+            // comes, with the reason, so the tool waiting for it is not left hanging.
+            reply = Build("failed writing the reply: " + exception.Message, lines, null);
+        }
+
+        _reply.SetResult(reply);
+    }
+
+    private string Build(string? error, List<ControlLogLine> lines, Action<Utf8JsonWriter>? fields)
+    {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer, WriterOptions))
         {
@@ -215,7 +232,7 @@ internal sealed class ControlRequest : IConsoleOutput
             writer.WriteEndObject();
         }
 
-        _reply.SetResult(Encoding.UTF8.GetString(buffer.WrittenSpan));
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
     /// <summary>Waits until the reply is built and returns it. The connection's thread.</summary>

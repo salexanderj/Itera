@@ -250,7 +250,7 @@ public sealed partial class ControlService : IDisposable
             }
             else if (now - request.StartSeconds > request.TimeoutSeconds)
             {
-                request.Abandon?.Invoke();
+                Abandon(request);
                 request.Complete(
                     _log,
                     string.Create(
@@ -277,9 +277,25 @@ public sealed partial class ControlService : IDisposable
         }
         catch (Exception exception)
         {
-            request.Abandon?.Invoke();
+            Abandon(request);
             request.Complete(_log, "failed: " + exception.Message);
             return true;
+        }
+    }
+
+    /// <summary>
+    /// Takes back what a waiting request asked for (a screenshot, a script's hold) as it fails or the game shuts down; a
+    /// throw is logged, never left to end the loop.
+    /// </summary>
+    private void Abandon(ControlRequest request)
+    {
+        try
+        {
+            request.Abandon?.Invoke();
+        }
+        catch (Exception exception)
+        {
+            LogAbandonFailed(exception, request.Op);
         }
     }
 
@@ -300,7 +316,7 @@ public sealed partial class ControlService : IDisposable
 
         foreach (var request in _waiting)
         {
-            request.Abandon?.Invoke();
+            Abandon(request);
             request.Complete(_log, "the game is shutting down");
         }
 
@@ -981,6 +997,9 @@ public sealed partial class ControlService : IDisposable
         Message = "Control: port {Port} is not available ({Reason}); the game goes on without the control port"
     )]
     private partial void LogPortUnavailable(int port, string reason);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Control: taking back a {Op} request failed")]
+    private partial void LogAbandonFailed(Exception exception, string op);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Control: a connection ended ({Reason})")]
     private partial void LogConnectionEnded(string reason);

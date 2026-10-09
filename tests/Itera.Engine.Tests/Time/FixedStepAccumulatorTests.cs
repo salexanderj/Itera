@@ -161,7 +161,7 @@ public sealed class FixedStepAccumulatorTests
     }
 
     [Fact]
-    public void A_new_match_starts_unpaused_and_keeps_the_runs_time_scale()
+    public void A_new_match_starts_unpaused_at_real_time()
     {
         var accumulator = new FixedStepAccumulator(Step, 8);
         accumulator.SetTimeScale(2);
@@ -171,7 +171,7 @@ public sealed class FixedStepAccumulatorTests
 
         Assert.False(accumulator.Paused);
         Assert.Equal(0, accumulator.StepsOwed);
-        Assert.Equal(2, accumulator.TimeScale);
+        Assert.Equal(1, accumulator.TimeScale);
     }
 
     /// <summary>One loop iteration: adds the time and returns how many steps it ran.</summary>

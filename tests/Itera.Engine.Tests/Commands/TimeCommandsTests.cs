@@ -1,5 +1,6 @@
 using Itera.Engine.Commands;
 using Itera.Engine.Diagnostics;
+using Itera.Engine.Matches;
 using Itera.Engine.Networking;
 using Itera.Engine.Time;
 using Itera.Engine.UI;
@@ -13,6 +14,7 @@ public sealed class TimeCommandsTests
 {
     private const float Step = 1f / 60f;
     private readonly FixedStepAccumulator _time = new(Step, 8);
+    private readonly MatchControl _matches = new() { Phase = MatchPhase.Playing };
     private readonly DevConsole _console;
     private SessionRole _role = SessionRole.Offline;
 
@@ -25,7 +27,7 @@ public sealed class TimeCommandsTests
             new ConsoleLogBuffer(),
             NullLogger<DevConsole>.Instance
         );
-        new TimeCommands(commands, _time).Register();
+        new TimeCommands(commands, _time, _matches).Register();
     }
 
     [Fact]
@@ -67,15 +69,34 @@ public sealed class TimeCommandsTests
         Assert.Equal("timescale 4", Last());
     }
 
-    [Fact]
-    public void In_a_session_they_are_refused()
+    [Theory]
+    [InlineData("pause")]
+    [InlineData("resume")]
+    [InlineData("step 2")]
+    [InlineData("timescale 2")]
+    public void In_a_session_they_are_refused(string line)
     {
         _role = SessionRole.Host;
 
-        Run("pause");
+        Run(line);
 
         Assert.False(_time.Paused);
-        Assert.StartsWith("pause: works only in an offline game", Last(), StringComparison.Ordinal);
+        Assert.Equal(0, _time.StepsOwed);
+        Assert.Equal(1, _time.TimeScale);
+        Assert.Contains(": works only in an offline game", Last(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("pause")]
+    [InlineData("step 2")]
+    public void While_a_match_loads_pause_and_step_wait_for_it(string line)
+    {
+        _matches.Phase = MatchPhase.Loading;
+
+        Run(line);
+
+        Assert.False(_time.Paused);
+        Assert.Contains("the match is loading", Last(), StringComparison.Ordinal);
     }
 
     private void Run(string line)

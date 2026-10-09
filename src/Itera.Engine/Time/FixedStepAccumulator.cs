@@ -53,7 +53,10 @@ public sealed class FixedStepAccumulator
     /// <summary>Steps still to run while paused.</summary>
     public int StepsOwed { get; private set; }
 
-    /// <summary>Game time per second of loop time: 1, or what <see cref="SetTimeScale"/> set for the run.</summary>
+    /// <summary>
+    /// Game time per second of loop time: 1, or what <see cref="SetTimeScale"/> set for the match (a new match starts at
+    /// 1, so a scale set offline never reaches a session).
+    /// </summary>
     public float TimeScale { get; private set; } = 1;
 
     /// <summary>
@@ -71,7 +74,7 @@ public sealed class FixedStepAccumulator
 
     /// <summary>
     /// A match starts: its first step is tick 0, and no time is waiting, so the time its start took is not caught up in a
-    /// burst of steps.
+    /// burst of steps. It runs unpaused at real time.
     /// </summary>
     public void Restart()
     {
@@ -81,6 +84,7 @@ public sealed class FixedStepAccumulator
         Tick = 0;
         Paused = false;
         StepsOwed = 0;
+        TimeScale = 1;
     }
 
     /// <summary>Stops the steps until <see cref="Resume"/>; steps owed are dropped.</summary>
@@ -111,7 +115,7 @@ public sealed class FixedStepAccumulator
         StepsOwed += steps;
     }
 
-    /// <summary>Sets the time scale for the run, <see cref="LeastTimeScale"/> to <see cref="MostTimeScale"/>.</summary>
+    /// <summary>Sets the time scale for the match, <see cref="LeastTimeScale"/> to <see cref="MostTimeScale"/>.</summary>
     public void SetTimeScale(float scale)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(scale, LeastTimeScale);

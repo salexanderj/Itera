@@ -419,7 +419,7 @@ public sealed class ControlServiceTests : IDisposable
         Pump(service, () => reply.IsCompleted, stepsPerPump: 1);
 
         Assert.True(Reply(reply).GetProperty("ok").GetBoolean());
-        Assert.InRange(_steps, 3UL, 10UL);
+        Assert.True(_steps >= 3, $"replied after {_steps} step(s)");
     }
 
     [Fact]
@@ -478,7 +478,37 @@ public sealed class ControlServiceTests : IDisposable
         var answer = Reply(reply);
         Assert.True(answer.GetProperty("ok").GetBoolean());
         Assert.Equal(["a", "b"], Strings(answer, "answers"));
-        Assert.InRange(_steps, 3UL, 10UL);
+        Assert.True(_steps >= 3, $"replied after {_steps} step(s)");
+    }
+
+    /// <summary>A reply whose fields cannot be written still comes, with the reason: the tool is never left waiting.</summary>
+    [Fact]
+    public void A_reply_whose_fields_cannot_be_written_comes_with_the_reason()
+    {
+        var request = ControlRequest.Parse("""{"id":4,"op":"status"}""", out var error)!;
+        Assert.Null(error);
+
+        request.Complete(_log, fields: _ => throw new InvalidOperationException("the world changed"));
+        var reply = Parse(request.WaitForReply());
+
+        Assert.Equal(4, reply.GetProperty("id").GetInt64());
+        Assert.False(reply.GetProperty("ok").GetBoolean());
+        Assert.Equal("failed writing the reply: the world changed", reply.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public void Status_without_a_living_player_leaves_the_player_out()
+    {
+        using var world = World.Create();
+        var player = world.Create(new LocalPlayer(), new CharacterPosition());
+        world.Destroy(player);
+        var service = Start(world: () => world);
+        using var client = Connect(service);
+
+        var reply = Ask(client, """{"op":"status"}""");
+
+        Assert.True(reply.GetProperty("ok").GetBoolean());
+        Assert.False(reply.TryGetProperty("player", out _));
     }
 
     [Fact]

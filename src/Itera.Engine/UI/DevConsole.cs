@@ -535,6 +535,13 @@ public sealed partial class DevConsole : IKeyboardFocus, IConsoleOutput
     /// <summary>Stops <paramref name="script"/> after a hold failed, and counts it as a failure of the startup script.</summary>
     private void Stop(ConsoleScript script, string what)
     {
+        StopQuietly(script, what);
+        Failed(script, what);
+    }
+
+    /// <summary>Stops <paramref name="script"/>; a hold's take-back that throws is reported, never left to end the loop.</summary>
+    private void StopQuietly(ConsoleScript script, string what)
+    {
         try
         {
             script.Stop();
@@ -543,8 +550,6 @@ public sealed partial class DevConsole : IKeyboardFocus, IConsoleOutput
         {
             PrintError($"{what}: taking it back failed: {ex.Message}");
         }
-
-        Failed(script, what);
     }
 
     /// <summary>
@@ -565,7 +570,7 @@ public sealed partial class DevConsole : IKeyboardFocus, IConsoleOutput
             return false;
         }
 
-        script.Stop();
+        StopQuietly(script, what);
         return true;
     }
 
