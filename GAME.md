@@ -42,4 +42,5 @@ order where its comments say why, with a behaviour test and a zero-allocation te
 - `src/Game`: `Program.cs` (the host, then `GameLoop.Run()`), `GameServiceCollectionExtensions` (`AddGame`: options,
   world, systems), `GameOptions.cs`, `StartPose.cs`, `BenchmarkViews.cs`, `GameRunStartup.cs` (the movement keys first,
   then the game's), `Systems/PlayerSpawnSystem.cs`, `WorldGeneration/`, `Textures/`, `appsettings.json`.
-- `tests/Game.Tests`: `SystemOrderTests`, `ShippedSettingsTests`, `GameOptionsTests`, `WorldTests`, `PlayerSpawnSystemTests`.
+- `tests/Game.Tests`: `SystemOrderTests`, `ShippedSettingsTests`, `GameOptionsTests`, `WorldTests`, `PlayerSpawnSystemTests`,
+  `BenchmarkViewsTests`, and `ScenarioTests` (the starter played without a window through `HeadlessMatch`).

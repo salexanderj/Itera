@@ -80,7 +80,13 @@ public static class EngineServiceCollectionExtensions
         services.TryAddScoped<IVoxelTintMap, NoVoxelTintMap>();
         services.TryAddSingleton<WorldMeshes>();
         services.TryAddSingleton<MeshPass>();
-        services.TryAddSingleton<IWorldOnGpu>(sp => sp.GetRequiredService<WorldMeshes>());
+        services.TryAddSingleton<NoGpuWorld>();
+        // Without graphics nothing is uploaded: the loading screen waits on the stand-in.
+        services.TryAddSingleton<IWorldOnGpu>(sp =>
+            sp.GetRequiredService<IOptions<EngineOptions>>().Value.Window.Mode == WindowMode.None
+                ? sp.GetRequiredService<NoGpuWorld>()
+                : sp.GetRequiredService<WorldMeshes>()
+        );
         services.TryAddSingleton<DebugLinePass>();
         services.TryAddSingleton<UiPass>();
         services.TryAddSingleton<UpscalePass>();

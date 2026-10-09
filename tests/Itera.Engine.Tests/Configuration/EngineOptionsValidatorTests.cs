@@ -362,6 +362,32 @@ public sealed class EngineOptionsValidatorTests
     }
 
     [Fact]
+    public void Free_running_steps_need_a_run_without_graphics_and_physics_threads_are_checked()
+    {
+        var windowed = new EngineOptions
+        {
+            FreeRun = true,
+            Physics = new PhysicsSettings { Threads = 17 },
+        };
+        var headless = new EngineOptions
+        {
+            FreeRun = true,
+            Window = new WindowSettings { Mode = WindowMode.None },
+            Physics = new PhysicsSettings { Threads = 1 },
+        };
+
+        var failures = _validator.Validate(null, windowed).Failures!.ToArray();
+
+        Assert.Equal(2, failures.Length);
+        Assert.Contains(
+            failures,
+            f => f.StartsWith("Engine:FreeRun needs Engine:Window:Mode=None", StringComparison.Ordinal)
+        );
+        Assert.Contains(failures, f => f.StartsWith("Engine:Physics:Threads", StringComparison.Ordinal));
+        Assert.True(_validator.Validate(null, headless).Succeeded);
+    }
+
+    [Fact]
     public void A_console_run_file_must_exist_and_an_empty_one_means_none()
     {
         var missing = new EngineOptions { Console = new ConsoleSettings { RunFile = "/no/such/itera-script.txt" } };

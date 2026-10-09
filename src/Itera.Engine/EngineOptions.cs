@@ -70,6 +70,13 @@ public sealed class EngineOptions
     /// stall. The name dates from when one iteration was one frame; it is kept so existing settings still work.
     /// </summary>
     public int MaxFixedStepsPerFrame { get; set; } = 8;
+
+    /// <summary>
+    /// True: the fixed steps run back to back without waiting for real time, <see cref="MaxFixedStepsPerFrame"/> a loop
+    /// iteration, so minutes of play pass in seconds (as fast as the machine runs them). Only without graphics
+    /// (<c>Engine:Window:Mode=None</c>).
+    /// </summary>
+    public bool FreeRun { get; set; }
 }
 
 /// <summary>The game the engine runs. The game's <c>appsettings.json</c> sets both values.</summary>
@@ -139,6 +146,12 @@ public enum WindowMode
 
     /// <summary>No window: frames are drawn into a headless surface that nothing shows (screenshots, checks).</summary>
     Offscreen = 1,
+
+    /// <summary>
+    /// No graphics at all: no window, no Vulkan, no render thread. The fixed steps run, and the frame group after them,
+    /// with nothing drawn (simulation checks, fast-forward runs with <c>Engine:FreeRun</c>, sessions with no windows).
+    /// </summary>
+    None = 2,
 }
 
 /// <summary>Renderer settings.</summary>
@@ -472,6 +485,13 @@ public sealed class PhysicsSettings
     /// oldest to make room for new ones; the engine refuses bodies past it.
     /// </summary>
     public int MaxLooseBodies { get; set; } = 384;
+
+    /// <summary>
+    /// Bepu's worker threads, 1 to 16; 0 (the default) for a quarter of the logical processors, 1 to 6
+    /// (<c>PhysicsWorld.ThreadCount</c>). Physics spread over threads does not repeat exactly from run to run; 1 makes the
+    /// steps repeat on one machine (tests, fast-forward runs).
+    /// </summary>
+    public int Threads { get; set; }
 }
 
 /// <summary>What this game does in a session.</summary>

@@ -6,6 +6,7 @@ using BepuUtilities;
 using BepuUtilities.Memory;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Itera.Engine.Physics;
 
@@ -25,10 +26,16 @@ public sealed partial class PhysicsWorld : IDisposable
     private readonly BodyKinds _kinds = new();
     private bool _disposed;
 
-    public PhysicsWorld(ILogger<PhysicsWorld> logger)
+    /// <param name="logger">Logger.</param>
+    /// <param name="options">The engine's options, for <c>Engine:Physics:Threads</c>; none for the processors' count.</param>
+    public PhysicsWorld(ILogger<PhysicsWorld> logger, IOptions<EngineOptions>? options = null)
     {
         _logger = logger;
+        _threads = options?.Value.Physics.Threads ?? 0;
     }
+
+    /// <summary>Bepu's worker threads asked for; 0 for <see cref="ThreadCount"/> of the processors.</summary>
+    private readonly int _threads;
 
     /// <summary>Gravity applied to every dynamic body, in metres per second squared.</summary>
     public static Vector3 Gravity => new(0f, -9.81f, 0f);
@@ -99,7 +106,7 @@ public sealed partial class PhysicsWorld : IDisposable
     public void Initialize()
     {
         _pool = new BufferPool();
-        var threadCount = ThreadCount(Environment.ProcessorCount);
+        var threadCount = _threads > 0 ? _threads : ThreadCount(Environment.ProcessorCount);
         _dispatcher = new ThreadDispatcher(threadCount);
         _simulation = Simulation.Create(
             _pool,

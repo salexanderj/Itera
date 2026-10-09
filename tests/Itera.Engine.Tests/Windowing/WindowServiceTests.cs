@@ -32,6 +32,32 @@ public sealed class WindowServiceTests
     }
 
     [Fact]
+    public void Without_graphics_there_is_no_window_and_no_surface()
+    {
+        using var window = Create(WindowMode.None);
+
+        window.Initialize();
+        window.PollEvents();
+
+        Assert.False(window.Graphics);
+        Assert.False(window.Offscreen);
+        Assert.False(window.HasWindow);
+        Assert.Equal(new Silk.NET.Maths.Vector2D<int>(800, 600), window.FramebufferSize);
+    }
+
+    [Fact]
+    public void Without_graphics_screenshots_are_refused()
+    {
+        var options = new EngineOptions { Window = new WindowSettings { Mode = WindowMode.None } };
+        var screenshots = new Screenshots(Options.Create(options));
+
+        var refusal = screenshots.Request(new ScreenshotRequest(Path.Combine(Path.GetTempPath(), "none.png")));
+
+        Assert.Equal("nothing is drawn without graphics (Engine:Window:Mode=None)", refusal);
+        Assert.Null(screenshots.TakeForFrame());
+    }
+
+    [Fact]
     public void With_a_window_the_frames_are_not_capped()
     {
         using var window = Create(WindowMode.Window);

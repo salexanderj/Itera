@@ -84,12 +84,19 @@ public sealed class Screenshots
     private ScreenshotRequest? _pending;
     private ScreenshotRequest? _last;
 
-    public Screenshots(IOptions<EngineOptions> options)
-        : this(System.IO.Path.Combine(options.Value.Application.DataDirectory(), "Screenshots")) { }
+    /// <summary>False without graphics (<c>Engine:Window:Mode=None</c>): no frame would take a request.</summary>
+    private readonly bool _drawn;
 
-    internal Screenshots(string folder)
+    public Screenshots(IOptions<EngineOptions> options)
+        : this(
+            System.IO.Path.Combine(options.Value.Application.DataDirectory(), "Screenshots"),
+            options.Value.Window.Mode != WindowMode.None
+        ) { }
+
+    internal Screenshots(string folder, bool drawn = true)
     {
         _folder = folder;
+        _drawn = drawn;
     }
 
     /// <summary>The folder screenshots go to when no path is given.</summary>
@@ -107,6 +114,11 @@ public sealed class Screenshots
     /// </summary>
     public string? Request(ScreenshotRequest request)
     {
+        if (!_drawn)
+        {
+            return "nothing is drawn without graphics (Engine:Window:Mode=None)";
+        }
+
         ArgumentNullException.ThrowIfNull(request);
         if (_last is { IsDone: false })
         {

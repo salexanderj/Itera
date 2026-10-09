@@ -40,7 +40,13 @@ lists the game's). Commonly used:
   surface (`VK_EXT_headless_surface`; its UNORM images are viewed as sRGB, so the picture is the window's), capped at
   `Engine:Window:OffscreenFps` (240) frames a second; nothing shows on the desktop, a locked screen changes nothing, and
   input comes only from the control port. Screenshots, `validate.sh --offscreen`, and `run.sh <label> --offscreen` work
-  as with a window. `tools/control/game.py start --offscreen` adds it.
+  as with a window. `tools/control/game.py start --offscreen` adds it. `--Engine:Window:Mode=None`: no graphics at all
+  (no window, Vulkan, or render thread; `Engine ready on no graphics` in about 50 ms): the fixed steps run and the
+  frame group after them, nothing is drawn, the loading screen waits only for the world's columns (about 2 s in Debug),
+  screenshots refuse, and `wait frames` counts those frames; `--Engine:FreeRun=true` (only with it) runs the steps back
+  to back: 10 minutes of play took a few seconds in Debug. A host and a client both without graphics play a session on
+  127.0.0.1 (`--Engine:Session:Port` to keep off a running game's). `game.py start --headless` adds it.
+  `--Engine:Physics:Threads=1` (1 to 16; 0, the default, a quarter of the processors) makes physics repeat run to run.
 - Other systems: `--Engine:Physics:SettleSeconds` (0.5 to 60), `MaxLooseBodies` (1 to 1024);
   `--Engine:Particles:Enabled=false` (`Capacity` 16,384 to 1,048,576); `--Engine:Audio:Enabled=false` (`Volume` 0 to
   1, default 0.1; `MaxVoices` 8 to 255), `--Engine:Audio:Cache=false`; `--Engine:Loading:Enabled=false`;

@@ -32,6 +32,12 @@ paths:
   `SteamTransport` on `FakeSteam.cs` (players, P2P connections, and lobbies in memory), and over a real LiteNetLib host
   on 127.0.0.1 (`LoopbackTests`). A game's message handlers take damaged bodies and hostile values in every field, each
   row under the `Watchdog` (`HostileValues`).
+- A game's real match without a window or GPU: `HeadlessRun` (the game's run-wide registries, once) and
+  `HeadlessMatch` (`Play(seed)`, `WaitUntilLoaded()`, `Step(ticks)` with a frame after each, `Input` for injected keys,
+  `World`, `Services`; disposing ends the match) over the game's composition, with `Engine:Physics:Threads=1` so the
+  steps repeat: the starter's `tests/Game.Tests/ScenarioTests` (standing, walking a second, balls that rest and go
+  back into the world; about 6 s) and the engine's `Matches/HeadlessMatchTests`. Write a game feature's test this way
+  when it needs the real world and systems.
 - Composition: `tests/Itera.Engine.Tests/Matches/EngineComposition.cs` builds the engine's real services with the least
   a game adds; over it `CompositionTests` (the run and a match resolve, systems keep their registration order),
   `MatchFlowTests` (starting, joining, leaving, a host that quits, an exception in a match), and `MatchLifetimeTests`

@@ -51,9 +51,16 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         }
 
         Range(failures, "Window:Width", options.Window.Width, 1, 32768);
-        if (options.Window.Mode is not (WindowMode.Window or WindowMode.Offscreen))
+        if (options.Window.Mode is not (WindowMode.Window or WindowMode.Offscreen or WindowMode.None))
         {
-            failures.Add($"{Prefix}Window:Mode must be Window or Offscreen.");
+            failures.Add($"{Prefix}Window:Mode must be Window, Offscreen, or None.");
+        }
+
+        if (options.FreeRun && options.Window.Mode != WindowMode.None)
+        {
+            failures.Add(
+                $"{Prefix}FreeRun needs Engine:Window:Mode=None: steps run back to back only without frames to draw."
+            );
         }
 
         Range(failures, "Window:OffscreenFps", options.Window.OffscreenFps, 1, 1000);
@@ -117,6 +124,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         var physics = options.Physics;
         Range(failures, "Physics:SettleSeconds", physics.SettleSeconds, 0.5, 60);
         Range(failures, "Physics:MaxLooseBodies", physics.MaxLooseBodies, 1, 1024);
+        Range(failures, "Physics:Threads", physics.Threads, 0, 16);
 
         var particles = options.Particles;
         Range(failures, "Particles:Capacity", particles.Capacity, 16_384, 1_048_576);

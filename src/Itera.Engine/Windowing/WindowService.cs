@@ -56,8 +56,11 @@ public sealed partial class WindowService : IDisposable
     /// <summary>True while an OS window exists: not before <see cref="Initialize"/>, and never offscreen.</summary>
     public bool HasWindow => _window is not null;
 
-    /// <summary>True when the run has no window (<c>Engine:Window:Mode=Offscreen</c>).</summary>
+    /// <summary>True when the run draws without a window (<c>Engine:Window:Mode=Offscreen</c>).</summary>
     public bool Offscreen => _settings.Mode == WindowMode.Offscreen;
+
+    /// <summary>False when the run has no graphics at all (<c>Engine:Window:Mode=None</c>): no Vulkan, nothing drawn.</summary>
+    public bool Graphics => _settings.Mode != WindowMode.None;
 
     /// <summary>
     /// The least time between two frames the render thread starts, in seconds: offscreen a frame cap
@@ -98,7 +101,7 @@ public sealed partial class WindowService : IDisposable
     /// Framebuffer size in pixels. Differs from the logical size under display scaling. Offscreen, the options' size.
     /// </summary>
     public Vector2D<int> FramebufferSize =>
-        Offscreen ? new Vector2D<int>(_settings.Width, _settings.Height) : Window.FramebufferSize;
+        _window is null ? new Vector2D<int>(_settings.Width, _settings.Height) : Window.FramebufferSize;
 
     /// <summary>
     /// Framebuffer pixels per unit of the window's size across, 1 to 4: 2 on a Retina Mac, 1 where they agree. Null before
@@ -115,6 +118,12 @@ public sealed partial class WindowService : IDisposable
         if (Offscreen)
         {
             LogOffscreen(_settings.Width, _settings.Height);
+            return;
+        }
+
+        if (!Graphics)
+        {
+            LogNoGraphics();
             return;
         }
 
@@ -323,6 +332,12 @@ public sealed partial class WindowService : IDisposable
         Message = "Window: none (offscreen): drawn at {Width}x{Height} into a headless surface; input only from the control port"
     )]
     private partial void LogOffscreen(int width, int height);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Window: none, and no graphics (Engine:Window:Mode=None): the steps and the frame group run, nothing is drawn"
+    )]
+    private partial void LogNoGraphics();
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Window: refresh rate {Hz} Hz, of screen {Screen} ({How})")]
     private partial void LogRefreshRate(string screen, int hz, string how);

@@ -19,7 +19,9 @@ of 32 voxels). A piece of more than 4,096 box corners is hulled from its farthes
 radius and material, `VoxelWorld.MakeBall`, shared; the console's `balls` drops a row, `DebugBallSystem`) and goes back
 into the grid as a sphere of its material filled into the air after 3 s at rest (`Engine:Physics:SettleSeconds`;
 `LooseBodySystem`, the console's `settle`); a lifted piece goes back as a piece edit. At most 384 loose bodies exist
-(`Engine:Physics:MaxLooseBodies`); more removes the oldest, a ragdoll whole (`LooseBodyRoom`). The mover reads balls as
+(`Engine:Physics:MaxLooseBodies`); more removes the oldest, a ragdoll whole (`LooseBodyRoom`). Bepu runs on
+`Engine:Physics:Threads` worker threads (0: a quarter of the processors, 1 to 6; 1 makes the steps repeat run to run,
+for tests and fast-forward runs). The mover reads balls as
 voxels (`LooseBodyVoxels`: characters are blocked by them and stand on them, but push rather than climb them), and a
 character near one has a stand-in, a Bepu cylinder of its mass (`StandInSystem`, `CharacterStandIn`; not while
 `Bodiless`). Cut bodies (`BodyKind.Cut`, a `CutPiece` entity) touch only the voxels, not other bodies or characters;

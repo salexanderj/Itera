@@ -100,6 +100,7 @@ public sealed partial class GameLoop
     private readonly Screenshots _screenshots;
     private readonly ScreenshotPass _screenshotPass;
     private readonly ShaderReloads _shaderReloads;
+    private readonly NoGpuWorld _noGpuWorld;
     private bool _renderThreadFaulted;
     private bool _renderThreadFaultReported;
     private bool _modelsDroppedReported;
@@ -219,6 +220,7 @@ public sealed partial class GameLoop
         _screenshots = screenshots;
         _screenshotPass = screenshotPass;
         _shaderReloads = shaderReloads;
+        _noGpuWorld = services.GetRequiredService<NoGpuWorld>();
         _scopes = scopes;
         _matches = matches;
         _particles = particles;
@@ -231,7 +233,10 @@ public sealed partial class GameLoop
             matches,
             systemTimes,
             new MatchFlowHooks(
-                new MatchGpu(m => _worldMeshes.BeginMatch(m.Voxels, m.Models, m.TintMap), EndMatchGpu),
+                // Without graphics no world goes to the GPU.
+                window.Graphics
+                    ? new MatchGpu(m => _worldMeshes.BeginMatch(m.Voxels, m.Models, m.TintMap), EndMatchGpu)
+                    : new MatchGpu(_ => { }, _pointLights.Clear),
                 OnWorldStarted,
                 OnMatchEnded
             ),
@@ -346,7 +351,7 @@ public sealed partial class GameLoop
     /// </summary>
     private EngineStep[] CreateSteps()
     {
-        return
+        EngineStep[] steps =
         [
             new("network", _network.Initialize, () => { }),
             new("steam", _steam.Initialize, _steam.Dispose),
@@ -368,6 +373,15 @@ public sealed partial class GameLoop
             new("render thread", () => _renderThread.Start(_window.FramebufferSize), StopRenderThread),
             new("control", _control.Initialize, _control.Dispose),
         ];
+        // Without graphics (Engine:Window:Mode=None) nothing of Vulkan starts: the window step stands in for a window.
+        return _window.Graphics
+            ? steps
+            :
+            [
+                .. steps.Where(step =>
+                    !(step.Graphics && step.Name != "window") && step.Name is not ("shader compiler" or "render thread")
+                ),
+            ];
     }
 
     /// <summary>The swapchain, presenting as the player's VSync setting asks (settings.json, or the options).</summary>
@@ -382,7 +396,7 @@ public sealed partial class GameLoop
         var total = Stopwatch.StartNew();
         _steps.Initialize(name => _phase = name);
         _phase = "main loop";
-        LogReady(_vulkan.DeviceName, total.Elapsed.TotalMilliseconds);
+        LogReady(_window.Graphics ? _vulkan.DeviceName : "no graphics", total.Elapsed.TotalMilliseconds);
     }
 
     /// <summary>The game's run-wide registries (<see cref="IRunStartup"/>), made once, before the mods and the audio thread.</summary>
@@ -471,8 +485,12 @@ public sealed partial class GameLoop
     private void InitializeUi()
     {
         // The swapchain's size, which the frame requests carry; each frame's request resizes the surface after that.
-        var extent = _swapchain.Extent;
-        _ui.Initialize((int)extent.Width, (int)extent.Height);
+        // Without graphics, the options' size.
+        var size = _window.FramebufferSize;
+        var (width, height) = _window.Graphics
+            ? ((int)_swapchain.Extent.Width, (int)_swapchain.Extent.Height)
+            : (size.X, size.Y);
+        _ui.Initialize(width, height);
         // The match's layers and systems add their commands when a match starts, owned by it (MatchServices).
         _engineCommands.Register();
         _services.GetRequiredService<TimeCommands>().Register();
@@ -551,8 +569,17 @@ public sealed partial class GameLoop
         while (!_window.ExitRequested && !_cancelRequested && !_window.IsClosing && !_flow.SessionEndsRun)
         {
             CheckRenderThread();
-            WaitForWork();
+            if (!_options.FreeRun)
+            {
+                WaitForWork();
+            }
+
             var deltaSeconds = _clock.Tick();
+            if (_options.FreeRun)
+            {
+                // Back to back: each iteration as many steps as the cap allows, at once, whatever time passed.
+                deltaSeconds = _accumulator.StepSeconds * _options.MaxFixedStepsPerFrame / _accumulator.TimeScale;
+            }
             _steam.RunCallbacks();
             var request = default(RenderFrameRequest);
             try
@@ -610,6 +637,17 @@ public sealed partial class GameLoop
         _flow.StartWorldWhenShown(_frameIndex);
         var fixedSteps = playing is not null ? RunFixedSteps(deltaSeconds, playing) : 0;
         AfterFixedSteps(fixedSteps);
+        if (!_window.Graphics)
+        {
+            // No render thread asks for frames: the frame group runs once after the steps.
+            if (fixedSteps > 0 && _flow.Playing is { } headless)
+            {
+                BuildFrameWithoutGraphics(headless);
+            }
+
+            return;
+        }
+
         // A frame is built only when the render thread asks for one, right after its fence wait and acquire.
         if (_exchange.TryTakeRequest(out request))
         {
@@ -785,6 +823,29 @@ public sealed partial class GameLoop
                 _worldMeshes.Frame
             )
         );
+        _frameIndex++;
+        _stats.RecordFrame(frameSeconds);
+    }
+
+    /// <summary>
+    /// A frame without graphics (<c>Engine:Window:Mode=None</c>): the frame group and the mods run, writing only the
+    /// renderer's CPU-side objects, and nothing is drawn or uploaded; the loading screen counts it as an upload
+    /// (<see cref="NoGpuWorld"/>).
+    /// </summary>
+    private void BuildFrameWithoutGraphics(MatchServices match)
+    {
+        var now = _clock.TotalSeconds;
+        var frameSeconds = now - _lastFrameSeconds;
+        _lastFrameSeconds = now;
+        var frameDelta = (float)Math.Min(frameSeconds, GameClock.MaxDeltaSeconds);
+        var frame = new FrameTime(frameDelta, now, _frameIndex, _accumulator.Alpha);
+        _input.BeginFrame();
+        _debugLines.Clear();
+        _modelInstances.Clear();
+        _pointLights.BeginFrame(now);
+        match.Ecs.Update(in frame);
+        _mods.Update(in frame);
+        _noGpuWorld.FrameBuilt();
         _frameIndex++;
         _stats.RecordFrame(frameSeconds);
     }
