@@ -1288,7 +1288,11 @@ public sealed class WorldMeshesTests : IDisposable
 
         public byte* Region(int slot) => _staging + RegionOffset(slot);
 
-        public void Flush(int slot, ulong bytes) => Assert.InRange(bytes, 0UL, RegionSize);
+        /// <summary>
+        /// Checks the size with a plain comparison: <c>Assert.InRange</c> makes a comparer and boxes its values in
+        /// unoptimised code, which the allocation tests measure as the engine's while the JIT has not optimised it yet.
+        /// </summary>
+        public void Flush(int slot, ulong bytes) => Assert.True(bytes <= RegionSize);
 
         /// <summary>Byte <paramref name="index"/> of what was staged at <paramref name="offset"/> of the staging buffer.</summary>
         public byte Staged(ulong offset, int index) => _staging[offset + (ulong)index];
