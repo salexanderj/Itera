@@ -1,4 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Every method compiled optimised at its first call: a zero-allocation test cannot measure what unoptimised
+         (tier-0) library code allocates and optimised code does not (Assert.InRange's comparer was one). The suite
+         took 123 s against 118 s with tiering on (2026-10-09). -->
+    <TieredCompilation>false</TieredCompilation>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

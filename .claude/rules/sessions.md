@@ -19,7 +19,7 @@ from its polls as the transport has room (`ISessionTransport.ReliableRoom`), and
 host's seed whatever its own options say; a game may send match data of its own in the welcome and refuse a client
 whose rules differ (`ISessionMatchData`: its hash). A client drops a game message that arrives before the download ends. After each fixed step the host sends
 each client its new edits, and a client's world follows the host (`VoxelWorld.FollowHost`). The protocol version is
-`SessionProtocol.Version` (38); raise it with any change to the wire, and pin the new fingerprint in the engine's
+`SessionProtocol.Version`; raise it with any change to the wire, and pin the new fingerprint in the engine's
 `WireFingerprintTests`. The roster gives each slot's player a join number (`SessionPlayer.Join`); per-slot systems keep a
 `SlotJoins` and forget a slot whose join changed.
 

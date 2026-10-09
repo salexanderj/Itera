@@ -3,7 +3,9 @@
 
 Each guard names a skill, the folders it covers, and sets of patterns for code in its area. Guarded work is
 a file write under one of the folders, a write to a .cs file whose existing and new text together match
-every pattern of one set, or a Bash command that names one of the folders. A skill counts as loaded when
+every pattern of one set, or a Bash command that names one of the folders, unless that command only reads (every
+part of it a reading program such as ls, cat, grep, or git diff, with no redirection into a file and no command
+substitution: is_read_only). A skill counts as loaded when
 the session transcript holds a Skill tool call for it or a typed /<skill> command after the last
 /clear. A call from a subagent (the event carries its agent_id) is checked against the subagent's own
 transcript, so a subagent must load the skill itself: the main session's loads do not count for it, and
@@ -83,12 +85,51 @@ def names_folder(guard, command):
     return any(folder.removeprefix("src/").rstrip("/") in command for folder in guard.folders)
 
 
+# Programs that only read files and print (and git's reading subcommands); a command made only of these may name a
+# guarded folder without the skill. Not awk or sed (both can write), nor xargs (it runs any program).
+READ_PROGRAMS = {
+    "ls", "cat", "head", "tail", "wc", "grep", "egrep", "fgrep", "rg", "stat", "file", "tree", "du", "diff", "cut",
+    "sort", "uniq", "tr", "nl", "basename", "dirname", "realpath", "echo", "true", "test", "[",
+}
+GIT_READS = {"diff", "log", "show", "status", "blame", "grep", "ls-files", "rev-parse"}
+FIND_WRITES = {"-exec", "-execdir", "-delete", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"}
+HARMLESS_REDIRECTS = re.compile(r"\d?>&\d|&?\d?>\s*/dev/null")
+
+
+def is_read_only(command):
+    """True when every part of the command (split at pipes, ';', '&&', and '||') runs a program that only reads, with
+    no redirection into a file and no command substitution, which could hide anything."""
+    if "$(" in command or "`" in command or "<(" in command or ">(" in command:
+        return False
+    if ">" in HARMLESS_REDIRECTS.sub("", command):
+        return False
+    for part in re.split(r"\|\||&&|[|;\n]", command):
+        words = part.split()
+        if not words:
+            continue
+        program = os.path.basename(words[0])
+        if program == "git":
+            if len(words) < 2 or words[1] not in GIT_READS:
+                return False
+        elif program == "find":
+            if any(word in FIND_WRITES for word in words):
+                return False
+        elif program == "dotnet":
+            if words[1:3] != ["csharpier", "check"]:
+                return False
+        elif program not in READ_PROGRAMS:
+            return False
+    return True
+
+
 def matching_guards(tool_name, tool_input):
     if tool_name in WRITE_TOOLS:
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
         return [g for g in GUARDS if in_folder(g, path) or uses_library(g, tool_input, path)]
     if tool_name == "Bash":
         command = tool_input.get("command") or ""
+        if is_read_only(command):
+            return []
         return [g for g in GUARDS if names_folder(g, command)]
     return []
 

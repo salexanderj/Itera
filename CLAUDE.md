@@ -39,7 +39,9 @@ holds notes on outside projects used as references.
 - Area details are in `.claude/rules/`, one file per area (listed below). Claude Code loads a rules file when a file it
   covers is opened with the Read, Write, or Edit tool. `cat`, `grep`, `sed`, and the Grep tool do not load it. Open the
   files you will change with the Read tool. Before you plan, discuss, or review work in an area, read its rules file.
-- When you change these, also do this (details in the area's file):
+- When you change these, also do this (details in the area's file; the `scaffold` skill has the steps and templates,
+  and the checklist tests, `ChecklistTests`, `ShippedSettingsTests`, `SystemOrderTests`, and `WorldTests`, fail when one
+  is missed):
   - Anything sent between games: raise `SessionProtocol.Version` and pin the new fingerprint in the engine's
     `WireFingerprintTests`. A game's own messages are the game's; test them with damaged bodies (`HostileValues` and
     `Watchdog` in `tests/Shared`).
@@ -251,7 +253,8 @@ Package notes are with their areas: Steamworks.NET in `.claude/rules/sessions.md
   behaviour after a version change). Code that moves ECS data to the GPU, or defines a struct that a
   shader reads, uses `.claude/skills/ecs-vulkan/` (rules, layout and device notes, design, and
   `probe.sh`). A PreToolUse hook (`.claude/settings.json`, `.claude/hooks/skill_guard.py`) blocks file
-  writes, and Bash commands that name the guarded folders, until the matching skill is loaded in the
+  writes, and Bash commands that name the guarded folders (but those that only read: `ls`, `cat`, `grep`, `git diff`,
+  and the like, with no redirection into a file), until the matching skill is loaded in the
   session (a subagent must load it itself): `vulkan` for `src/Itera.Engine/Rendering/` and `.cs` files that use `Silk.NET.Vulkan`; `ecs`
   for `src/Itera.Engine/Ecs/`, the `Systems/` and `Components/` folders of the engine and the game, and
   `.cs` files that use Arch; `ecs-vulkan`

@@ -47,7 +47,14 @@ paths:
   `appsettings.json` is the code's default.
 - `ControlServiceTests` runs the control port over a real loopback connection. `MenuLayerTests` and the other UI tests
   draw on a surface and check pixels, redraws, and allocation.
-- Some checks run only in Debug.
+- Some checks run only in Debug. The test projects run with tiered compilation off (`TieredCompilation` in their
+  csproj files): every method is optimised at its first call, so an allocation test never measures what unoptimised
+  library code allocates (Assert.InRange's comparer once failed one); the suite takes about 5 % longer.
+- Checklists as tests: `tests/Itera.Engine.Tests/ChecklistTests` (every numeric engine option has a range in the
+  validator; every engine system has a `NameTests` class with an allocation test) and `tests/Game.Tests/ChecklistTests`
+  (every console command is in the `run-game` skill's list; every numeric game option has a range; every game system has
+  its tests); `ShippedSettingsTests` (every option in `appsettings.json`, each at the code's default) and `WorldTests`
+  (the generator's version pinned with its hash).
 
 Where tests live:
 

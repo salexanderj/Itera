@@ -37,8 +37,8 @@ public sealed class WorldTests
             }
         }
 
-        // Pinned on the first run. A change means the world changed: raise GameGenerator.Version.
-        Assert.Equal(5789805400214179090UL, hash);
+        // Pinned with the generator's version: a change of the world must come with a new version, and both change here.
+        Assert.Equal((1, 5789805400214179090UL), (generator.Version, hash));
     }
 
     [Fact]

@@ -148,7 +148,7 @@ lists the commands (`ConsoleCommands`):
   ID's recipe as images for `tools/Textures` into the data folder's `Bakes/`; the run's only), `stats`, `screenshot`
   [SCALE] [noui] [PATH.png] (a PNG at PATH.png or in the data folder's `Screenshots/`), `wait` (loaded, view (the view's
   world loaded and on the GPU, as the loading screen waits for), ticks N, frames N, or seconds N of real time, then an
-  optional timeout in seconds), `shaders reload`, `quit` [CODE] (the exit code, 0
+  optional timeout in seconds), `shaders` [reload] (the folder shaders compile from; reload compiles them again), `quit` [CODE] (the exit code, 0
   to 255), `ecs` (counts, list COMPONENT [N], show ID[:VERSION]|player: the match's entities and their components'
   fields, `EcsInspector`), `pause`, `resume`, `step` [N] (pauses, then N fixed steps), `timescale` [X] (0.05 to 16
   for the match; offline only, as are pause, resume, and step; pause and step wait for loading to end), `particles` (on, off, recipes, test NAME [COUNT],
