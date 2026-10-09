@@ -46,7 +46,8 @@ tools/benchmark/flight.py long                               # uploads, the mesh
 - Take the runs of two builds in turn (before, after, before, after, ...): runs of one build agree within about 1 %
   per view, so differences of about 1 % are at the edge of the noise.
 - `--offscreen` runs with no window, its frames capped at 1000 a second (`Engine:Window:OffscreenFps`; at the offscreen
-  240 the GPU idled between frames, lowered its clocks, and the views took up to 83 % longer). Its times are 1 to 3 %
+  240 the GPU was busy 54 to 70 % of the time and lowered its clocks, to 851 MHz against 1963 at the `up` view, which
+  took 83 % longer; uncapped it is 99 % busy at every view). Its times are 1 to 3 %
   below a window's on every view (the starter's views, 2026-10-09), so compare offscreen runs only with offscreen runs.
 - A run takes about 2.5 minutes and takes over the monitor (with `--offscreen`, not).
 
