@@ -58,6 +58,9 @@ internal sealed class ControlRequest : IConsoleOutput
     /// <summary>The frames built when it started.</summary>
     public ulong StartFrame { get; set; }
 
+    /// <summary>The fixed steps run (over the whole run) when it started.</summary>
+    public ulong StartSteps { get; set; }
+
     /// <summary>Seconds it may wait before it fails.</summary>
     public double TimeoutSeconds { get; set; }
 

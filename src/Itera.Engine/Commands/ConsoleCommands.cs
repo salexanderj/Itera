@@ -129,7 +129,7 @@ public sealed partial class ConsoleCommands
             CommandScope.Match when role == SessionRole.Client =>
                 $"{command.Name}: only a host or an offline game can use it.",
             CommandScope.Offline when role != SessionRole.Offline =>
-                $"{command.Name}: changes the rules the host checks every player against, so it works only offline.",
+                $"{command.Name}: works only in an offline game (in a session it would change what every peer agrees on).",
             _ => null,
         };
     }

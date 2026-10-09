@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using Itera.Engine.Matches;
 using Microsoft.Extensions.Logging;
 
@@ -12,7 +13,8 @@ public sealed partial class VoxelWorld
     /// voxel memory, then freed, round after round until .NET runs optimised edit code (and the memory pools have grown)
     /// or 10 s have passed, so the first large edit in play does not run slowly (170 ms for a 4 m sphere against 35,
     /// Release, 2026-09-28). Once, after <see cref="Initialize(ulong)"/>; not at all once an earlier world of this run
-    /// warmed the code up (<see cref="WarmUps.Edits"/>).
+    /// warmed the code up (<see cref="WarmUps.Edits"/>). In a build whose code .NET never optimises (Debug), one round:
+    /// it compiles the code, and more would only run out the time limit.
     /// </summary>
     public void StartEditWarmUp()
     {
@@ -50,6 +52,12 @@ public sealed partial class VoxelWorld
                 WarmUpRound(memory, grid, changed);
                 var milliseconds = Stopwatch.GetElapsedTime(roundStart).TotalMilliseconds;
                 round++;
+                if (!s_codeOptimisable)
+                {
+                    firstPass = milliseconds;
+                    break;
+                }
+
                 // The first round compiles; the least of the next few is the first-pass code's own time.
                 if (round is > 1 and <= WarmUpFirstPassRounds)
                 {
@@ -68,8 +76,7 @@ public sealed partial class VoxelWorld
 
             var seconds = Stopwatch.GetElapsedTime(start).TotalSeconds;
             LogWarmedUp(round, seconds, firstPass, fastRounds >= 2);
-            // Done for the run, also at the time limit: a later world's warm-up of the same code would gain nothing (and a
-            // Debug build, whose code is never optimised, would run the whole limit again).
+            // Done for the run, also at the time limit: a later world's warm-up of the same code would gain nothing.
             if (!_disposed && _warmUps is not null)
             {
                 _warmUps.Edits = true;
@@ -161,6 +168,14 @@ public sealed partial class VoxelWorld
         chunk = VoxelEditing.ApplyToWorldChunk(memory, grid, chunk, key, in bore, in piece, changed, out _);
         ChunkTree.Free(memory, chunk, ChunkTree.RootDepth);
     }
+
+    /// <summary>
+    /// False in a build whose engine code .NET never optimises (Debug: the assembly's <see cref="DebuggableAttribute"/>
+    /// turns the JIT's optimiser off), where the warm-up's later rounds gain nothing.
+    /// </summary>
+    private static readonly bool s_codeOptimisable = !(
+        typeof(VoxelWorld).Assembly.GetCustomAttribute<DebuggableAttribute>()?.IsJITOptimizerDisabled ?? false
+    );
 
     /// <summary>The materials the warm-up's clear of some materials takes.</summary>
     private static readonly byte[] s_warmSet = [1, 3];

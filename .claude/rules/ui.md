@@ -29,8 +29,9 @@ every loading task (`ILoadingTask`, a DI service) is done: the engine's Sounds, 
 game's own after them (`ModelsLoadingTask` waits for a list of models to reach the GPU); at most
 `Engine:Loading:MaxSeconds` (15), then a Warning. The loop runs as usual meanwhile, but the game's input is blocked
 (Escape and the console still work). The render thread draws `loading.frag` (`LoadingPass`) instead of the world,
-`LoadingLayer` lists the tasks, and it fades out over 0.3 s. The starter's takes about 10 s in Debug, most of it the
-edit warm-up. After `reset` it covers the picture again
+`LoadingLayer` lists the tasks, and it fades out over 0.3 s. The starter's takes about 5 s in Debug (the world; the
+edit warm-up runs one round there, since Debug code is never optimised) and 2.5 s in Release. After `reset` it covers
+the picture again
 (`LoadingScreen.BeginAgain`, from the loop when `VoxelWorld.LastReset` moves) and frees the pointer.
 
 The main menu (`UI/Menu/MenuLayer`, run-wide, drawn over the HUD and under the console): a run starts at it unless
@@ -62,7 +63,8 @@ write `settings.json` in the data folder through a file beside it (`"Keys"` hold
 build does not know are kept); the next start reads it (a step before the window) over the options, except keys the
 command line gave (`CommandLineKeys`, prefixed or bare `key=value`), which win for that run. The console's `settings`,
 `shadows`, and `sound volume` change the player's settings as the menu does, so a test run
-that uses them writes the real file; give render options on the command line instead. Bindings read from the file or
+that uses them writes its data folder's file (the player's, unless it runs with the agent data folder,
+`<DataFolder>-agent`); give render options on the command line instead. Bindings read from the file or
 registered later that clash with another action keep the file's (`KeyBindings` unbinds the default).
 
 ### Files in `src/Itera.Engine`
@@ -74,7 +76,9 @@ registered later that clash with another action keep the file's (`KeyBindings` u
     `CapturingBinding`), `IFrameInput` and `InputService` (`SetDrawnPointer`, `SetPanel`), `IPanelInput`, `KeyBindings`,
     `InputBinding`.
   - `Commands/` (not `Console/`: that namespace would hide `System.Console`): `ConsoleCommands`, `CommandLine`,
-    `EngineCommands`, `MatchCommands`, `SettingsCommands`, `ParticleCommands`, `SoundCommands`. `Settings/`:
+    `EngineCommands`, `MatchCommands`, `SettingsCommands`, `ParticleCommands`, `SoundCommands`, `TimeCommands` (pause,
+    step, timescale), `EcsCommands` (`ecs`, registered at a match's ECS step). The console's scripts:
+    `UI/ConsoleScript`, run by `DevConsole` (`Hold`, `RunScript`). `Settings/`:
     `PlayerSettings`, `CommandLineKeys`.
 
 ### Package notes

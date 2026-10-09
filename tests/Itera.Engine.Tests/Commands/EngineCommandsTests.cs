@@ -359,12 +359,164 @@ public sealed class EngineCommandsTests : IDisposable
         Run("quit");
 
         Assert.True(_window.ExitRequested);
+        Assert.Equal(0, _window.ExitCode);
+    }
+
+    [Fact]
+    public void Quit_takes_an_exit_code_from_0_to_255()
+    {
+        Run("quit 256");
+        Assert.False(_window.ExitRequested);
+
+        Run("quit 3");
+
+        Assert.True(_window.ExitRequested);
+        Assert.Equal(3, _window.ExitCode);
+    }
+
+    [Fact]
+    public void Wait_ticks_holds_the_rest_of_the_line_until_the_steps_have_run()
+    {
+        Run("wait ticks 2; lines on", new ConsoleMoment(10, 0, 0, false));
+        Assert.False(_lines.Enabled);
+
+        Step(new ConsoleMoment(11, 5, 1, false));
+        Assert.False(_lines.Enabled);
+        Step(new ConsoleMoment(12, 5, 1, false));
+
+        Assert.True(_lines.Enabled);
+    }
+
+    [Fact]
+    public void Wait_frames_seconds_and_loaded_hold_until_theirs_has_come()
+    {
+        Run("wait frames 3; lines on; wait seconds 1.5; stats on; wait loaded; shadows off", default);
+        Step(new ConsoleMoment(0, 2, 0, false));
+        Assert.False(_lines.Enabled);
+        Step(new ConsoleMoment(0, 3, 0, false));
+        Assert.True(_lines.Enabled);
+        Assert.False(_stats.Visible);
+
+        Step(new ConsoleMoment(0, 3, 1.5, false));
+        Assert.True(_stats.Visible);
+        Assert.True(_view.Shadows);
+
+        Step(new ConsoleMoment(0, 3, 1.6, true));
+        Assert.False(_view.Shadows);
+    }
+
+    [Fact]
+    public void A_wait_past_its_timeout_fails_and_drops_the_rest_of_the_line()
+    {
+        Run("wait loaded 5; lines on", new ConsoleMoment(0, 0, 10, false));
+        Step(new ConsoleMoment(0, 0, 14, false));
+        Assert.True(_console.ScriptsBusy);
+
+        Step(new ConsoleMoment(0, 0, 15, false));
+        Step(new ConsoleMoment(0, 0, 16, true));
+
+        Assert.False(_lines.Enabled);
+        Assert.False(_console.ScriptsBusy);
+        Assert.StartsWith("wait loaded: not done after 5 s", Last(), StringComparison.Ordinal);
+        // A typed line's failure is not the startup script's.
+        Assert.False(_console.StartupScriptFailed);
+    }
+
+    [Theory]
+    [InlineData("wait")]
+    [InlineData("wait ticks")]
+    [InlineData("wait loaded abc")]
+    [InlineData("wait loaded 0")]
+    [InlineData("wait loaded 4000")]
+    [InlineData("wait ticks -1")]
+    [InlineData("wait ticks 2000000")]
+    [InlineData("wait hours 2")]
+    [InlineData("wait seconds 1 2 3")]
+    public void Wait_with_wrong_words_prints_its_usage_and_holds_nothing(string line)
+    {
+        Run(line + "; lines on", default);
+
+        Assert.True(_lines.Enabled);
+        Assert.Contains(
+            Enumerable.Range(0, _console.ScrollbackCount),
+            i => _console.ScrollbackLine(i).Text.StartsWith("usage: wait", StringComparison.Ordinal)
+        );
+    }
+
+    [Fact]
+    public void Screenshot_takes_a_path_only_when_it_ends_in_png()
+    {
+        Run("screenshot noiu");
+
+        Assert.Null(_screenshots.TakeForFrame());
+        Assert.StartsWith("usage: screenshot", Last(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Wait_through_the_control_port_holds_nothing_and_says_so()
+    {
+        var output = new RecordingOutput();
+
+        _console.RunNow("wait ticks 5; lines on", output);
+
+        Assert.True(_lines.Enabled);
+        Assert.Single(output.Failures);
+        Assert.StartsWith("wait: holds the commands after it", output.Failures[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_screenshot_to_a_path_holds_the_rest_of_the_line_until_its_png_is_written()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "itera-test-screenshots", "shot.png");
+
+        Run("screenshot 0.5 noui " + path + "; lines on", default);
+        var request = _screenshots.TakeForFrame();
+        Step(new ConsoleMoment(0, 1, 0.1, true));
+
+        Assert.NotNull(request);
+        Assert.Equal(Path.GetFullPath(path), request.Path);
+        Assert.Equal(0.5f, request.Scale);
+        Assert.False(request.WithUi);
+        Assert.False(_lines.Enabled);
+        request.Succeed(64, 36, 128, 72);
+        Step(new ConsoleMoment(0, 2, 0.2, true));
+        Assert.True(_lines.Enabled);
+    }
+
+    [Fact]
+    public void A_screenshot_that_no_frame_takes_is_withdrawn_when_its_hold_runs_out()
+    {
+        Run("screenshot; lines on", default);
+        Step(new ConsoleMoment(0, 0, EngineCommands.ScreenshotHoldSeconds + 1, true));
+
+        Assert.False(_lines.Enabled);
+        Assert.Null(_screenshots.TakeForFrame());
     }
 
     private void Run(string line)
     {
         _console.Submit(line);
         _console.RunPending();
+    }
+
+    private void Run(string line, ConsoleMoment now)
+    {
+        _console.Submit(line);
+        _console.RunPending(in now);
+    }
+
+    private void Step(ConsoleMoment now) => _console.RunPending(in now);
+
+    /// <summary>The control port's side of a reply: answers and failures.</summary>
+    private sealed class RecordingOutput : IConsoleOutput
+    {
+        public List<string> Failures { get; } = [];
+
+        public void Print(string text) { }
+
+        public void PrintColumns(string left, string right, int column, int indent) { }
+
+        public void PrintError(string text) => Failures.Add(text);
     }
 
     private string Last() => _console.ScrollbackLine(_console.ScrollbackCount - 1).Text;

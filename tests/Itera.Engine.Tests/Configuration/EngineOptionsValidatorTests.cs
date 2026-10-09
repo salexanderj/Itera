@@ -347,6 +347,23 @@ public sealed class EngineOptionsValidatorTests
     }
 
     [Fact]
+    public void A_console_run_file_must_exist_and_an_empty_one_means_none()
+    {
+        var missing = new EngineOptions { Console = new ConsoleSettings { RunFile = "/no/such/itera-script.txt" } };
+        var empty = new EngineOptions { Console = new ConsoleSettings { RunFile = " " } };
+
+        var failures = _validator.Validate(null, missing).Failures!.ToArray();
+
+        Assert.Single(failures);
+        Assert.StartsWith(
+            "Engine:Console:RunFile names /no/such/itera-script.txt",
+            failures[0],
+            StringComparison.Ordinal
+        );
+        Assert.True(_validator.Validate(null, empty).Succeeded);
+    }
+
+    [Fact]
     public void An_app_id_of_0_is_allowed_without_steam_sessions()
     {
         var options = new EngineOptions { Steam = new SteamSettings { AppId = 0 } };

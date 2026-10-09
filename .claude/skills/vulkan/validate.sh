@@ -3,10 +3,12 @@
 # the new log. Debug builds turn on core, synchronization, and best-practices validation in code
 # (VulkanContext, through VK_EXT_layer_settings); this script checks the log says so.
 # Exit code 0 means a clean run. Usage: validate.sh [seconds] [game arguments...]   (default 25: the Debug loading
-# screen takes about 10 s, and only after it are the world, the models, the fade, and the upscale drawn). The starter
+# screen takes about 5 s, and only after it are the world, the models, the fade, and the upscale drawn). The starter
 # game draws no models until something makes a loose body or the game adds models; pass
 # --Engine:Renderer:DynamicRenderScaling=false --Engine:Renderer:RenderScale=0.75 for the upscale at a fixed scale.
 # SMAA records only with one sample a pixel: add --Engine:Renderer:MsaaSamples=1 (the default is 4).
+# The run keeps its own data folder (the game's DataFolder with "-agent" after it, as tools/control/game.py's runs), so
+# it never writes the player's settings.json and its log is found there.
 # Linux only (log path under ~/.local/share, GNU timeout, vulkaninfo). Development tool, not game code.
 #
 # The setting names ("validate_sync", "validate_best_practices") were checked against validation layer
@@ -22,7 +24,8 @@ VERIFIED_LAYER_VERSION="1.4.341"
 seconds="${1:-25}"
 shift || true
 repo="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
-logs="$(python3 "$repo/tools/benchmark/data_folder.py")/Logs"
+data_folder_name="$(python3 "$repo/tools/benchmark/data_folder.py" --agent --name)"
+logs="$(python3 "$repo/tools/benchmark/data_folder.py" --agent)/Logs"
 binary="$repo/src/Game/bin/Debug/net10.0/Game"
 
 layer_version="$(vulkaninfo --summary 2>/dev/null | awk '$1 == "VK_LAYER_KHRONOS_validation" { print $(NF-2) }')"
@@ -62,7 +65,8 @@ place_window &
 run_exit=0
 # Steam off: starting the Steam API loads Steam's overlay and fossilize Vulkan layers into the game, and the overlay's
 # own small image draws a best-practices warning (seen 2026-09-26) that is not Itera's.
-timeout --preserve-status -s INT "$seconds" "$binary" --Engine:Steam:Enabled=false --Engine:Session:Mode=Offline "$@" > /dev/null 2>&1 || run_exit=$?
+timeout --preserve-status -s INT "$seconds" "$binary" --Engine:Steam:Enabled=false --Engine:Session:Mode=Offline \
+    "--Engine:Application:DataFolder=$data_folder_name" "$@" > /dev/null 2>&1 || run_exit=$?
 wait
 
 log="$(ls -t "$logs"/*.log 2>/dev/null | head -1 || true)"

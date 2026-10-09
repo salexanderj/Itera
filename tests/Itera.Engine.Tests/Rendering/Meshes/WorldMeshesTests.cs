@@ -19,6 +19,7 @@ namespace Itera.Engine.Tests.Rendering.Meshes;
 /// edit again, follows columns that load and unload, does the uploader's other jobs for the models, and allocates
 /// nothing per frame once up to date.
 /// </summary>
+[RunsLong]
 public sealed class WorldMeshesTests : IDisposable
 {
     private const double RadiusMetres = 4;

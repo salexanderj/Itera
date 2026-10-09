@@ -13,7 +13,7 @@ namespace Itera.Engine.Commands;
 /// <summary>
 /// The engine's console commands, all <see cref="CommandScope.Local"/>: <c>help</c>, <c>clear</c>, <c>lines</c>,
 /// <c>shadows</c>, <c>scale</c> (the render scale), <c>aa</c>, <c>lights</c> (test lights), <c>view</c> (the debug views), <c>stats</c> (its key, F1 by default),
-/// <c>screenshot</c>, <c>shaders</c>, and <c>quit</c>. A setting given no value prints what it is. <c>shadows</c>
+/// <c>screenshot</c>, <c>wait</c> (holds a script: <see cref="DevConsole.Hold"/>), <c>shaders</c>, and <c>quit</c>. A setting given no value prints what it is. <c>shadows</c>
 /// changes the player's settings (<see cref="PlayerSettings"/>), as the menu does, so the next change of another
 /// setting keeps it (otherwise it would put the file's back).
 /// </summary>
@@ -21,6 +21,12 @@ public sealed class EngineCommands
 {
     /// <summary>Widest help's first column (a command's name and usage) gets; a longer usage wraps within it.</summary>
     public const int MostUsageWidth = 36;
+
+    /// <summary>Most ticks, frames, or seconds one <c>wait</c> may ask for.</summary>
+    public const float MostWaited = 1_000_000;
+
+    /// <summary>Seconds a script waits for a screenshot's PNG before it fails (no frames are drawn, for example).</summary>
+    public const double ScreenshotHoldSeconds = 60;
 
     private readonly ConsoleCommands _commands;
     private readonly DevConsole _console;
@@ -128,10 +134,17 @@ public sealed class EngineCommands
         );
         _commands.Register(
             "screenshot",
-            "[scale] [noui]",
-            "Writes the picture to a PNG in the data folder's Screenshots/, at a share of its size (0.1 to 1), with or without the UI.",
+            "[scale] [noui] [PATH.png]",
+            "Writes the picture to a PNG, at PATH.png (from the game's working folder) or in the data folder's Screenshots/, at a share of its size (0.1 to 1), with or without the UI. In a script, the commands after it wait until the PNG is written.",
             CommandScope.Local,
             Screenshot
+        );
+        _commands.Register(
+            "wait",
+            "loaded|ticks N|frames N|seconds N [TIMEOUT]",
+            "Holds the commands after it in the line (or the startup script) until a match is played with its loading screen gone, N fixed steps have run, N frames are built, or N seconds of the game clock pass; past TIMEOUT seconds (300) it fails and they are dropped.",
+            CommandScope.Local,
+            Wait
         );
         _commands.Register(
             "shaders",
@@ -142,11 +155,94 @@ public sealed class EngineCommands
         );
         _commands.Register(
             "quit",
-            "",
-            "Ends the game, as the menu's Quit does.",
+            "[CODE]",
+            "Ends the game, as the menu's Quit does; CODE (0 to 255) is the process's exit code.",
             CommandScope.Local,
-            _ => _window.RequestExit("console")
+            Quit
         );
+    }
+
+    private void Quit(CommandContext context)
+    {
+        var code = 0;
+        if (context.Count > 1 || (context.Count == 1 && !(context.TryGetInt(0, out code) && code is >= 0 and <= 255)))
+        {
+            context.PrintUsage();
+            return;
+        }
+
+        _window.RequestExit("console", code);
+    }
+
+    private void Wait(CommandContext context)
+    {
+        if (context.Count == 0)
+        {
+            context.PrintUsage();
+            return;
+        }
+
+        var now = _console.Now;
+        Func<bool> done;
+        var next = 1;
+        if (context.Is(0, "loaded"))
+        {
+            done = () => _console.Now.Loaded;
+        }
+        else if (context.Count >= 2 && context.TryGetFloat(1, out var n) && n >= 0 && n <= MostWaited)
+        {
+            next = 2;
+            if (context.Is(0, "ticks"))
+            {
+                var steps = (ulong)Math.Ceiling(n);
+                done = () => _console.Now.Steps - now.Steps >= steps;
+            }
+            else if (context.Is(0, "frames"))
+            {
+                var frames = (ulong)Math.Ceiling(n);
+                done = () => _console.Now.Frames - now.Frames >= frames;
+            }
+            else if (context.Is(0, "seconds"))
+            {
+                done = () => _console.Now.Seconds - now.Seconds >= n;
+            }
+            else
+            {
+                context.PrintUsage();
+                return;
+            }
+        }
+        else
+        {
+            context.PrintUsage();
+            return;
+        }
+
+        var timeout = DevConsole.DefaultHoldSeconds;
+        if (context.Count > next + 1)
+        {
+            context.PrintUsage();
+            return;
+        }
+
+        if (context.Count == next + 1)
+        {
+            if (!context.TryGetFloat(next, out var given) || !(given > 0 && given <= DevConsole.MostHoldSeconds))
+            {
+                context.PrintUsage();
+                return;
+            }
+
+            timeout = given;
+        }
+
+        var what = "wait " + string.Join(' ', Enumerable.Range(0, next).Select(i => context[i]));
+        if (!_console.Hold(what, done, timeout))
+        {
+            context.PrintError(
+                "wait: holds the commands after it in a console line or the startup script; the control port has a wait of its own (game.py wait)."
+            );
+        }
     }
 
     private void Help(CommandContext context)
@@ -546,20 +642,35 @@ public sealed class EngineCommands
     {
         var scale = 1f;
         var withUi = true;
+        string? path = null;
         for (var i = 0; i < context.Count; i++)
         {
             if (context.Is(i, "noui"))
             {
                 withUi = false;
             }
-            else if (!context.TryGetFloat(i, out scale) || !(scale >= 0.1f && scale <= 1f))
+            else if (context.TryGetFloat(i, out var share))
+            {
+                if (!(share >= 0.1f && share <= 1f))
+                {
+                    context.PrintUsage();
+                    return;
+                }
+
+                scale = share;
+            }
+            else if (path is null && context[i].EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+            {
+                path = Path.GetFullPath(context[i]);
+            }
+            else
             {
                 context.PrintUsage();
                 return;
             }
         }
 
-        var request = new ScreenshotRequest(_screenshots.NewPath(), scale, withUi: withUi);
+        var request = new ScreenshotRequest(path ?? _screenshots.NewPath(), scale, withUi: withUi);
         if (_screenshots.Request(request) is { } refusal)
         {
             context.PrintError("screenshot: " + refusal);
@@ -567,6 +678,14 @@ public sealed class EngineCommands
         }
 
         context.Print("screenshot: writing " + request.Path);
+        // In a script, the commands after it (a quit, a move elsewhere) wait for the PNG.
+        _console.Hold(
+            "screenshot " + request.Path,
+            () => request.IsDone,
+            ScreenshotHoldSeconds,
+            () => request.Error is { } error ? "screenshot: " + error : null,
+            () => _screenshots.Withdraw(request)
+        );
     }
 
     private void Shaders(CommandContext context)

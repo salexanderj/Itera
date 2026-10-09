@@ -590,8 +590,23 @@ public sealed class ConsoleSettings
     /// <summary>Lines the console keeps to scroll back through, 100 to 10,000.</summary>
     public int ScrollbackLines { get; set; } = 1000;
 
-    /// <summary>Commands to run once the game has started, separated by ';', as if typed; null for none.</summary>
+    /// <summary>
+    /// Commands to run once the game's first match has started, separated by ';', as if typed; null for none. With
+    /// <c>wait</c> among them, the commands after it wait (the startup script).
+    /// </summary>
     public string? Run { get; set; }
+
+    /// <summary>
+    /// A file of commands run after <see cref="Run"/>'s, a line at a time (lines starting with '#' and empty lines
+    /// skipped); null for none. The file must exist.
+    /// </summary>
+    public string? RunFile { get; set; }
+
+    /// <summary>
+    /// True: a command of the startup script (<see cref="Run"/> and <see cref="RunFile"/>) that fails, or a wait of it
+    /// that runs out of time, ends the script and the run, with exit code 1. For unattended runs.
+    /// </summary>
+    public bool ExitOnFailure { get; set; }
 }
 
 /// <summary>

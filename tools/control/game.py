@@ -7,6 +7,9 @@ and stops it. See README.md next to this file. Standard library only; a developm
 
 Every command prints the reply's answers, failures, and log lines, then any fields of its own; the exit code is 0 when
 the reply is ok, 1 when not, and 2 when the game cannot be reached.
+
+The games it starts keep their own data folder, the game's DataFolder with "-agent" after it (AGENT_SUFFIX), so they
+never write the player's settings.json, and their logs, caches, and screenshots stay apart from the player's.
 """
 
 import argparse
@@ -24,19 +27,22 @@ REPO = Path(__file__).resolve().parents[2]
 DEFAULT_PORT = 47650
 
 GAME = REPO / "src" / "Game"
+AGENT_SUFFIX = "-agent"
 
 
 def data_folder_name():
-    """The game's Engine:Application:DataFolder from its appsettings.json (the engine's default, Itera, without it)."""
+    """The started games' data folder: the game's Engine:Application:DataFolder from its appsettings.json (the engine's
+    default, Itera, without it), then AGENT_SUFFIX."""
     try:
         settings = json.loads((GAME / "appsettings.json").read_text())
-        return settings["Engine"]["Application"]["DataFolder"] or "Itera"
+        name = settings["Engine"]["Application"]["DataFolder"] or "Itera"
     except (OSError, ValueError, KeyError, TypeError):
-        return "Itera"
+        name = "Itera"
+    return name + AGENT_SUFFIX
 
 
 def data_folder():
-    """The game's data folder: .NET's LocalApplicationData, then the game's DataFolder."""
+    """The started games' data folder: .NET's LocalApplicationData, then data_folder_name()."""
     name = data_folder_name()
     if os.name == "nt":
         return Path(os.environ["LOCALAPPDATA"]) / name
@@ -201,12 +207,27 @@ def show(reply, quiet_log=False, extra_skip=()):
 
 
 def cmd_run(args):
-    reply = ask(args, {"op": "run", "line": " ".join(args.line)})
-    return show(reply, quiet_log=args.quiet)
+    request = {"op": "run", "line": " ".join(args.line)}
+    if args.script:
+        # Waits and screenshots hold the commands after them; the reply comes when the line has run.
+        request["script"] = True
+        request["timeout"] = args.timeout
+    return show(ask(args, request, timeout=args.timeout + 10 if args.script else None), quiet_log=args.quiet)
 
 
 def cmd_status(args):
     return show(ask(args, {"op": "status"}), quiet_log=True)
+
+
+def cmd_query(args):
+    """The match's entities as JSON: an entity's components (ID[:VERSION] or player), the entities with a component,
+    or (with no argument) the archetypes and their counts."""
+    request = {"op": "query"}
+    if args.what:
+        is_entity = args.what == "player" or args.what.replace(":", "").isdigit()
+        request["entity" if is_entity else "component"] = args.what
+        request["most"] = args.most
+    return show(ask(args, request), quiet_log=True)
 
 
 def cmd_log(args):
@@ -226,7 +247,7 @@ def cmd_log(args):
 
 def cmd_wait(args):
     request = {"op": "wait", "for": args.what, "timeout": args.timeout}
-    if args.what in ("frames", "seconds"):
+    if args.what in ("frames", "ticks", "seconds"):
         request["n"] = float(args.value or 1)
     elif args.what == "log":
         request["pattern"] = args.value or ""
@@ -328,6 +349,7 @@ def cmd_start(args):
         f"--Engine:Control:Port={port}",
         "--Engine:Steam:Enabled=false",
         f"--Engine:Renderer:ShaderSourceDirectory={SHADERS}",
+        f"--Engine:Application:DataFolder={data_folder_name()}",
     ]
     if not args.menu:
         # Straight into an offline match; --menu starts at the menu (game arguments after -- can still name a mode).
@@ -425,14 +447,21 @@ def main():
     add("stop", cmd_stop, "quit the game (then SIGTERM, then SIGKILL)")
     sub = add("run", cmd_run, "run console commands (';' separates them)")
     sub.add_argument("-q", "--quiet", action="store_true", help="leave out the log lines")
+    sub.add_argument("-s", "--script", action="store_true",
+                     help="run the line as a script: wait and screenshot hold the commands after them; reply when done")
+    sub.add_argument("--timeout", type=float, default=120, help="seconds a script may take (default 120)")
     sub.add_argument("line", nargs="+")
-    add("status", cmd_status, "frames, clock, loading, role, camera")
+    add("status", cmd_status, "frames, clock, steps (tick, paused, time scale), loading, role, camera, entities, player")
+    sub = add("query", cmd_query, "the match's entities as JSON: ID[:VERSION] or player (its components), a component's "
+                                  "name (the entities with it), or nothing (the archetypes)")
+    sub.add_argument("what", nargs="?")
+    sub.add_argument("--most", type=int, default=100, help="most entities a component's listing returns (100)")
     sub = add("log", cmd_log, "log lines: the last few, or --new since the last 'log --new'")
     sub.add_argument("--level", default="information", help="least level (default information)")
     sub.add_argument("--tail", type=int, default=40)
     sub.add_argument("--new", action="store_true")
-    sub = add("wait", cmd_wait, "wait for: loaded, frames N, seconds N, log PATTERN")
-    sub.add_argument("what", choices=["loaded", "frames", "seconds", "log"])
+    sub = add("wait", cmd_wait, "wait for: loaded, frames N, ticks N, seconds N, log PATTERN")
+    sub.add_argument("what", choices=["loaded", "frames", "ticks", "seconds", "log"])
     sub.add_argument("value", nargs="?")
     sub.add_argument("--timeout", type=float, default=60)
     sub = add("gpu", cmd_gpu, "each GPU pass's time over the next frames")

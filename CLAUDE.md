@@ -55,8 +55,10 @@ holds notes on outside projects used as references.
   - Load the `run-game` skill before you start, drive, or check the game.
   - Before you run or add tests, read `.claude/rules/tests.md`.
   - While `dotnet watch` runs, it builds into `bin/Debug` in place; no other build or test run may share it.
-  - The console's `settings`, `shadows`, and `sound volume` write the real `settings.json`; give render options on the
-    command line in test runs.
+  - Runs you start use the data folder `<DataFolder>-agent` (`IteraGame-agent`): `tools/control/game.py` and
+    `validate.sh` pass it, and a run by hand gives `--Engine:Application:DataFolder=IteraGame-agent`. The console's
+    `settings`, `shadows`, and `sound volume` write the data folder's `settings.json`, so in any other folder they
+    change the player's.
 - Where the details are (read the area's file before changing it):
   - Rendering, shaders, shadows, render scale, the window: `.claude/rules/rendering.md`.
   - The voxel world, edits, streaming, and world generation: `.claude/rules/voxels.md`.
@@ -111,7 +113,7 @@ dotnet run --project src/Game [-- OPTIONS]                       # opens at the 
 DOTNET_ENVIRONMENT=Development dotnet run --project src/Game     # Debug lines on the console too
 dotnet build -c Release && src/Game/bin/Release/net10.0/Game     # voxel numbers: Debug generates about 5 times slower
 tools/control/game.py start [--release] [--fullscreen] [--no-wait] [--menu] [-- game args]   # the game from a copy of the build, control port on; restart takes the same options
-tools/control/game.py run "balls 8; pos"   # console commands in the running game; also shot, reload, gpu, input, wait, log, status, restart, stop
+tools/control/game.py run "balls 8; pos"   # console commands in the running game (-s: as a script, waits hold the rest); also query, shot, reload, gpu, input, wait, log, status, restart, stop
 DOTNET_WATCH_SUPPRESS_EMOJIS=1 dotnet watch --non-interactive --project src/Game run -- --Engine:Control:Enabled=true   # C# edits applied live
 tools/benchmark/run.sh <label> [game arguments]   # GPU benchmark (Engine:Benchmark) over the game's views and the circle; README there
 tools/steam/upload.sh [--preview] [--no-live] [--branch NAME] [--no-test]   # test, publish win-x64 and linux-x64, upload to Steam's "testing" branch (or NAME); README there
@@ -122,8 +124,8 @@ Game options, the start-up log lines, exit codes, unattended runs, the console a
 are in the `run-game` skill.
 
 Every run writes `~/.local/share/<DataFolder>/Logs/<datafolder>-<date>-<time>-<pid>.log` (`LocalApplicationData`
-elsewhere) with Debug detail; read the newest file there first when a run misbehaves. It holds a session header, init
-timings, and every 10 s a frame stats line (frames, frame times with median, 95th, and 99th percentiles, fixed steps,
+elsewhere) with Debug detail; read the newest file there first when a run misbehaves (the runs you start write theirs
+in `~/.local/share/IteraGame-agent/Logs/`). A log holds a session header, init timings, and every 10 s a frame stats line (frames, frame times with median, 95th, and 99th percentiles, fixed steps,
 bytes allocated per frame on the main and render threads, GCs, GPU time), Debug lines with each GPU pass, the fixed
 steps' CPU time by part, and the eight slowest fixed systems (`SystemTimes`), a voxel stats line (columns, chunks,
 bricks, memory against the budget, loads, unloads, job times), a meshes line (blocks meshed and pending, uploads, the

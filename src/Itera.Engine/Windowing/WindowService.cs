@@ -166,11 +166,23 @@ public sealed partial class WindowService : IDisposable
 
     /// <summary>Asks the loop to stop after the current frame.</summary>
     /// <param name="reason">Short description for the log, for example "Escape key".</param>
-    public void RequestExit(string reason)
+    /// <param name="exitCode">The process's exit code, when the run ends cleanly; the first request's counts.</param>
+    public void RequestExit(string reason, int exitCode = 0)
     {
+        if (!ExitRequested)
+        {
+            ExitCode = exitCode;
+        }
+
         ExitReason ??= reason;
         ExitRequested = true;
     }
+
+    /// <summary>
+    /// The exit code the first <see cref="RequestExit"/> asked for (the console's <c>quit CODE</c>, or 1 for a startup
+    /// script that failed); 0 otherwise.
+    /// </summary>
+    public int ExitCode { get; private set; }
 
     /// <summary>Pumps OS events. Input and resize callbacks fire from here.</summary>
     public void PollEvents()

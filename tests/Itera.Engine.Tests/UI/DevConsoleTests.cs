@@ -246,6 +246,268 @@ public sealed class DevConsoleTests
     }
 
     [Fact]
+    public void The_startup_script_waits_until_it_is_not_held()
+    {
+        var console = Create(run: "say a");
+        console.HoldStartup = true;
+
+        console.RunPending();
+        Assert.Empty(_ran);
+        console.HoldStartup = false;
+        console.RunPending();
+
+        Assert.Equal(["a"], _ran);
+    }
+
+    [Fact]
+    public void The_run_file_runs_after_the_run_option_without_its_comments_and_empty_lines()
+    {
+        var file = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllLines(file, ["# a comment", "say c", "", "  say d; say e  "]);
+            var console = Create(run: "say a; say b", runFile: file);
+
+            console.RunPending();
+
+            Assert.Equal(["a", "b", "c", "d", "e"], _ran);
+            Assert.False(console.StartupScriptFailed);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
+    public void A_failed_startup_command_is_marked_and_the_script_goes_on()
+    {
+        var console = Create(run: "say a; nosuch; say b");
+
+        console.RunPending();
+
+        Assert.Equal(["a", "b"], _ran);
+        Assert.True(console.StartupScriptFailed);
+    }
+
+    [Fact]
+    public void With_exit_on_failure_a_failed_startup_command_ends_the_script()
+    {
+        var console = Create(run: "say a; fail; say b", exitOnFailure: true);
+        _commands.Register("fail", "", "", CommandScope.Local, context => context.PrintError("no"));
+
+        console.RunPending();
+
+        Assert.Equal(["a"], _ran);
+        Assert.True(console.StartupScriptFailed);
+        Assert.False(console.ScriptsBusy);
+    }
+
+    [Fact]
+    public void A_typed_line_that_fails_is_not_the_startup_scripts_failure()
+    {
+        var console = Create(exitOnFailure: true);
+        console.Submit("nosuch; say a");
+
+        console.RunPending();
+
+        Assert.Equal(["a"], _ran);
+        Assert.False(console.StartupScriptFailed);
+    }
+
+    [Fact]
+    public void A_hold_keeps_its_script_but_not_the_other()
+    {
+        var console = Create(run: "hold; say late");
+        var release = false;
+        _commands.Register("hold", "", "", CommandScope.Local, _ => Assert.True(console.Hold("hold", () => release)));
+
+        console.RunPending();
+        console.Submit("say typed");
+        console.RunPending();
+        Assert.Equal(["typed"], _ran);
+
+        release = true;
+        console.RunPending();
+
+        Assert.Equal(["typed", "late"], _ran);
+    }
+
+    [Fact]
+    public void A_hold_that_names_a_failure_fails_its_command()
+    {
+        var console = Create(run: "hold; say late", exitOnFailure: true);
+        _commands.Register(
+            "hold",
+            "",
+            "",
+            CommandScope.Local,
+            _ => console.Hold("hold", () => true, failure: () => "it broke")
+        );
+
+        console.RunPending();
+        console.RunPending();
+
+        Assert.Empty(_ran);
+        Assert.True(console.StartupScriptFailed);
+        Assert.Equal("it broke", console.ScrollbackLine(console.ScrollbackCount - 1).Text);
+    }
+
+    /// <summary>What a command starts (a reset's loading screen) shows in the run only from the next iteration.</summary>
+    [Fact]
+    public void A_hold_already_true_is_first_checked_at_the_next_run()
+    {
+        var console = Create(run: "hold; say late");
+        _commands.Register("hold", "", "", CommandScope.Local, _ => console.Hold("hold", () => true));
+
+        console.RunPending();
+        Assert.Empty(_ran);
+        console.RunPending();
+
+        Assert.Equal(["late"], _ran);
+    }
+
+    [Fact]
+    public void Each_typed_line_is_a_script_of_its_own()
+    {
+        var console = Create();
+        _commands.Register("hold", "", "", CommandScope.Local, _ => console.Hold("hold", () => false));
+        console.Submit("hold; say held");
+        console.Submit("say free");
+
+        console.RunPending();
+        console.RunPending();
+
+        Assert.Equal(["free"], _ran);
+        Assert.True(console.ScriptsBusy);
+    }
+
+    [Fact]
+    public void A_startup_hold_past_its_time_fails_the_script_and_with_exit_on_failure_stops_it()
+    {
+        var console = Create(run: "hold; say late", exitOnFailure: true);
+        var gaveUp = false;
+        _commands.Register(
+            "hold",
+            "",
+            "",
+            CommandScope.Local,
+            _ => console.Hold("hold", () => false, seconds: 5, giveUp: () => gaveUp = true)
+        );
+
+        console.RunPending(new ConsoleMoment(0, 0, 10, true));
+        console.RunPending(new ConsoleMoment(0, 0, 14, true));
+        Assert.False(console.StartupScriptFailed);
+        console.RunPending(new ConsoleMoment(0, 0, 15, true));
+
+        Assert.True(console.StartupScriptFailed);
+        Assert.True(gaveUp);
+        Assert.False(console.ScriptsBusy);
+        Assert.Empty(_ran);
+    }
+
+    [Fact]
+    public void A_hold_that_throws_fails_its_script_without_breaking_the_console()
+    {
+        var console = Create(run: "hold; say late");
+        _commands.Register(
+            "hold",
+            "",
+            "",
+            CommandScope.Local,
+            _ => console.Hold("hold", () => throw new InvalidOperationException("broken"))
+        );
+
+        console.RunPending();
+        console.RunPending();
+
+        Assert.True(console.StartupScriptFailed);
+        Assert.Empty(_ran);
+        Assert.StartsWith(
+            "hold failed: broken",
+            console.ScrollbackLine(console.ScrollbackCount - 1).Text,
+            StringComparison.Ordinal
+        );
+        Assert.False(console.ScriptsBusy);
+    }
+
+    [Fact]
+    public void A_hold_given_no_finite_time_lasts_the_default()
+    {
+        var console = Create(run: "forever; say never");
+        _commands.Register(
+            "forever",
+            "",
+            "",
+            CommandScope.Local,
+            _ => console.Hold("forever", () => false, double.NaN)
+        );
+
+        console.RunPending(new ConsoleMoment(0, 0, 0, true));
+        console.RunPending(new ConsoleMoment(0, 0, DevConsole.DefaultHoldSeconds - 1, true));
+        Assert.True(console.ScriptsBusy);
+        console.RunPending(new ConsoleMoment(0, 0, DevConsole.DefaultHoldSeconds, true));
+
+        Assert.False(console.ScriptsBusy);
+        Assert.True(console.StartupScriptFailed);
+        Assert.Empty(_ran);
+    }
+
+    [Fact]
+    public void A_script_run_for_the_control_port_holds_and_copies_its_answers()
+    {
+        var console = Create();
+        var release = false;
+        _commands.Register("hold", "", "", CommandScope.Local, _ => console.Hold("hold", () => release));
+        var copy = new Copy();
+
+        var script = console.RunScript("say a; hold; say b", copy);
+        console.RunPending();
+        Assert.False(script.Done);
+        release = true;
+        console.RunPending();
+
+        Assert.True(script.Done);
+        Assert.Equal(0, script.Failures);
+        Assert.Equal(["a", "b"], copy.Answers);
+        Assert.False(console.ScriptsBusy);
+    }
+
+    [Fact]
+    public void A_stopped_script_takes_back_its_hold_and_drops_the_rest()
+    {
+        var console = Create();
+        var gaveUp = false;
+        _commands.Register(
+            "hold",
+            "",
+            "",
+            CommandScope.Local,
+            _ => console.Hold("hold", () => false, giveUp: () => gaveUp = true)
+        );
+
+        var script = console.RunScript("hold; say b", new Copy());
+        script.Stop();
+        console.RunPending();
+
+        Assert.True(script.Done);
+        Assert.True(gaveUp);
+        Assert.Empty(_ran);
+    }
+
+    /// <summary>A second output, as the control port's reply is.</summary>
+    private sealed class Copy : IConsoleOutput
+    {
+        public List<string> Answers { get; } = [];
+
+        public void Print(string text) => Answers.Add(text);
+
+        public void PrintColumns(string left, string right, int column, int indent) => Answers.Add(left);
+
+        public void PrintError(string text) => Answers.Add("error: " + text);
+    }
+
+    [Fact]
     public void A_disabled_console_runs_nothing()
     {
         var console = Create(run: "say a", enabled: false);
@@ -257,10 +519,18 @@ public sealed class DevConsoleTests
         Assert.Empty(_ran);
     }
 
-    private DevConsole Create(string? run = null, bool enabled = true, int scrollback = 1000)
+    private DevConsole Create(
+        string? run = null,
+        bool enabled = true,
+        int scrollback = 1000,
+        string? runFile = null,
+        bool exitOnFailure = false
+    )
     {
         var options = new EngineOptions();
         options.Console.Run = run;
+        options.Console.RunFile = runFile;
+        options.Console.ExitOnFailure = exitOnFailure;
         options.Console.Enabled = enabled;
         options.Console.ScrollbackLines = scrollback;
         return new DevConsole(Options.Create(options), _commands, _log, NullLogger<DevConsole>.Instance);

@@ -125,6 +125,11 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
 
         Range(failures, "Ui:FontPixels", options.Ui.FontPixels, 8, 64);
         Range(failures, "Console:ScrollbackLines", options.Console.ScrollbackLines, 100, 10_000);
+        if (options.Console.RunFile is { } runFile && !string.IsNullOrWhiteSpace(runFile) && !File.Exists(runFile))
+        {
+            failures.Add($"{Prefix}Console:RunFile names {runFile}, which does not exist.");
+        }
+
         Range(failures, "Loading:MaxSeconds", options.Loading.MaxSeconds, 1, 300);
         Range(failures, "Control:Port", options.Control.Port, 1024, 65_535);
         Range(failures, "Camera:CircleHeightMetres", options.Camera.CircleHeightMetres, -1000, 1000);

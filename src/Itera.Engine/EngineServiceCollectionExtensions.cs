@@ -155,6 +155,7 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<ConsoleCommands>();
         services.TryAddSingleton<DevConsole>();
         services.TryAddSingleton<EngineCommands>();
+        services.TryAddSingleton<TimeCommands>();
         services.TryAddSingleton<MatchCommands>();
         services.TryAddSingleton<SettingsCommands>();
         services.TryAddSingleton<ParticleCommands>();

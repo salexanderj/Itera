@@ -8,7 +8,9 @@ description: "How to run, drive, and check the game (src/Game) on the Itera engi
 The build, test, and run commands are in CLAUDE.md's Commands block. The game is `src/Game`
 (`src/Game/bin/<Config>/net10.0/Game`); its data folder, logs included, is `~/.local/share/<DataFolder>/`, where
 `DataFolder` is `Engine:Application:DataFolder` in `src/Game/appsettings.json` (the starter's `IteraGame`;
-`python3 tools/benchmark/data_folder.py` prints it).
+`python3 tools/benchmark/data_folder.py` prints it). Runs Claude starts use `<DataFolder>-agent` instead
+(`IteraGame-agent`; `data_folder.py --agent`): `tools/control/game.py` and `validate.sh` pass it, and a run by hand
+gives `--Engine:Application:DataFolder=IteraGame-agent`, so the player's `settings.json` and logs are never touched.
 
 ## Options
 
@@ -38,7 +40,9 @@ lists the game's). Commonly used:
   `--Engine:Particles:Enabled=false` (`Capacity` 16,384 to 1,048,576); `--Engine:Audio:Enabled=false` (`Volume` 0 to
   1, default 0.1; `MaxVoices` 8 to 255), `--Engine:Audio:Cache=false`; `--Engine:Loading:Enabled=false`;
   `--Engine:Control:Enabled=true` (127.0.0.1:47650, `Port`); `--Engine:Benchmark:Enabled=true` (`tools/benchmark`);
-  `"--Engine:Console:Run=balls 8; pos"` (commands run once the first match's world and systems exist).
+  `"--Engine:Console:Run=balls 8; pos"` (commands run once the first match's world and systems exist; with `wait`, a
+  script), `--Engine:Console:RunFile=PATH` (a file of command lines, `#` comments, after `Run`'s),
+  `--Engine:Console:ExitOnFailure=true` (a failed startup command ends the run with exit code 1).
 - Logging: `--Serilog:MinimumLevel:Default=Verbose`; `--Serilog:MinimumLevel:Override:Itera.Engine.Modding=Verbose
   --Engine:Logging:ConsoleLevel=Trace`; `--Engine:Logging:FileEnabled=false`.
 
@@ -65,19 +69,31 @@ naming the key.
 
 ## Unattended runs
 
-For unattended runs, send SIGINT after a few seconds:
-`timeout --preserve-status -s INT 25 src/Game/bin/Debug/net10.0/Game --Engine:Session:Mode=Offline
---Engine:Window:VSync=false` (without the mode it stays at the menu; VSync off, so a locked screen does not stop the
-frames). A background run started from a script ignores SIGINT; send it SIGTERM. (`timeout` signals the process and
-its process group, so the game receives SIGINT twice at once; `ExitSignalPolicy` treats that as one request.) A Debug
-run shows the loading screen for about 10 s (the edit warm-up; Release less), so a shorter run never draws the world;
-add `--Engine:Loading:Enabled=false` for a short check of play.
+A startup script runs a check on its own and ends the run: `Engine:Console:Run` (and `Engine:Console:RunFile`, a file
+of command lines) with `wait` between the commands, `screenshot PATH`, and `quit`, and
+`--Engine:Console:ExitOnFailure=true` so a failed command or a wait past its time ends the run with exit code 1:
+
+```bash
+timeout --preserve-status -s INT 120 src/Game/bin/Debug/net10.0/Game --Engine:Session:Mode=Offline \
+  --Engine:Window:VSync=false --Engine:Steam:Enabled=false --Engine:Application:DataFolder=IteraGame-agent \
+  --Engine:Console:ExitOnFailure=true "--Engine:Console:Run=wait loaded; balls 4; wait seconds 2; pos; screenshot 0.5 /tmp/shot.png; quit"
+```
+
+That run takes about 9 s in Debug and writes its log to `~/.local/share/IteraGame-agent/Logs/`. Without the mode it
+stays at the menu; VSync off, so a locked screen does not stop the frames; the data folder keeps the player's
+`settings.json` and logs apart (`tools/control/game.py` and `validate.sh` use the same `<DataFolder>-agent`;
+`tools/benchmark/data_folder.py --agent` prints it). `timeout` is the safety net: a background run started from a
+script ignores SIGINT; send it SIGTERM. (`timeout` signals the process and its process group, so the game receives
+SIGINT twice at once; `ExitSignalPolicy` treats that as one request.) A Debug run shows the loading screen for about
+5 s (the world; Release about 2.5 s); add `--Engine:Loading:Enabled=false` for a short check of play.
 
 ## The control port
 
 The control port (`Engine:Control`, off unless `Enabled`; `ControlService`) lets `tools/control/game.py` (README there)
-drive a running game: start it from a copy of the build, run console commands and get their answers and log lines,
-wait for loading, frames, seconds, or a log line, measure the GPU passes, take screenshots from the game itself
+drive a running game: start it from a copy of the build, run console commands and get their answers and log lines
+(`run -s`: as a script, so `wait` and `screenshot` hold the commands after them and the reply comes when all have run),
+read the match's entities as JSON (`query`) and its steps (`status`: tick, paused, time scale, the player's position),
+wait for loading, frames, fixed steps (`ticks`), seconds, or a log line, measure the GPU passes, take screenshots from the game itself
 (`ScreenshotPass`), reload the shaders from the repository (`Engine:Renderer:ShaderSourceDirectory`; `shaders reload`:
 every pass compiles, then the pipelines are made again; an error keeps the old ones), and send input (keys, buttons,
 look, the wheel, a capture of the pointer that needs no focus, and `point X Y` and `type TEXT` for the menu). It reads
@@ -94,20 +110,28 @@ and the wheel go to it. Enter runs the line (commands separated by `;`), Up and 
 completes a command's name, Page Up and Page Down scroll, and Ctrl+V pastes. It shows log lines of Information and
 above and the commands' answers. Commands run between fixed steps, each logged at Information (`Console: ...`), and
 `Engine:Console:Run` runs commands once the first match's world and systems exist. A setting given no value prints
-it. `help` lists the commands (`ConsoleCommands`):
+it. Commands run as scripts (`DevConsole.Hold`): the lines typed are one, the startup commands (`Run`, then `RunFile`'s
+lines) another. `wait` holds the commands after it in its script, and `screenshot` holds them until its PNG is
+written; a hold past its time (300 s for `wait` unless given, 60 s for a screenshot) fails and drops the rest. The
+control port's `run` runs commands outside any script, so `wait` there fails (the port has its own `wait`). `help`
+lists the commands (`ConsoleCommands`):
 
 - Engine: `help`, `clear`, `play` [SEED], `host` [SEED] [steam|direct], `join` ADDRESS, `leave`, `settings` (volume,
   sensitivity, fov, scaling, threshold, shadows, aa off|smaa|2x|4x|8x, vsync, fullscreen; a test run that changes them
-  writes the real `settings.json`: give render options on the command line instead, or keep a test data folder with
-  `--Engine:Application:DataFolder=<name>-test`), `lines`, `shadows`, `scale` (the run's only), `aa` (on, off, edges,
+  writes the data folder's `settings.json`: give render options on the command line instead, or run with the agent
+  data folder, `--Engine:Application:DataFolder=<DataFolder>-agent`), `lines`, `shadows`, `scale` (the run's only), `aa` (on, off, edges,
   weights, auto; the run's only), `lights` (test N: N warm lights round the camera for ten minutes; clear), `view` (off,
   wire, levels, all, plain: the meshes' edges over the world, surfaces tinted by their voxels' size, both, or every
   block from its plain mesh with the seams open; the run's only), `materials` (textures or flat, and `all` for every
   world material: how the world's materials are drawn; `sets` lists the texture sets loaded; `set ID SET|none [MATCH]`
   draws material ID from a set, colour matched 0 to 1, or plain; `tune ID DETAIL RELIEF BLUR` keeps part of its set's
   colour variation and relief (0 to 1) and softens it by mip levels (0 to 4); `bake ID top|side [NAME]` writes material
-  ID's recipe as images for `tools/Textures` into the data folder's `Bakes/`; the run's only), `stats`, `screenshot` (a
-  PNG in the data folder's `Screenshots/`), `shaders reload`, `quit`, `particles` (on, off, recipes, test NAME [COUNT],
+  ID's recipe as images for `tools/Textures` into the data folder's `Bakes/`; the run's only), `stats`, `screenshot`
+  [SCALE] [noui] [PATH] (a PNG at PATH or in the data folder's `Screenshots/`), `wait` (loaded, ticks N, frames N, or
+  seconds N of the game clock, then an optional timeout in seconds), `shaders reload`, `quit` [CODE] (the exit code, 0
+  to 255), `ecs` (counts, list COMPONENT [N], show ID[:VERSION]|player: the match's entities and their components'
+  fields, `EcsInspector`), `pause`, `resume`, `step` [N] (pauses, then N fixed steps), `timescale` [X] (0.05 to 16
+  for the run; offline only, as are pause, resume, and step), `particles` (on, off, recipes, test NAME [COUNT],
   pull NAME [COUNT], stress NAME BURSTS, stress off), `sound` (on, off, volume V, recipes, test NAME [LEVEL], wav NAME,
   wav all into `Sounds/`).
 - The engine's systems, where a game registers them (the starter does): `fly` (the debug fly camera, or walk again
@@ -120,4 +144,5 @@ it. `help` lists the commands (`ConsoleCommands`):
   first keeps them bodies).
 - The game's own commands go here (the starter has none).
 
-In a session, `tp`, `settle`, `cleanup`, `reset`, and `balls` work only on the host.
+In a session, `tp`, `settle`, `cleanup`, `reset`, and `balls` work only on the host; `pause`, `resume`, `step`, and
+`timescale` only offline.

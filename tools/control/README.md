@@ -7,13 +7,16 @@ restart. It uses only Python's standard library. It is a development tool, not g
 ```bash
 tools/control/game.py start [--release] [--fullscreen] [--no-wait] [--menu] [-- game arguments]
 tools/control/game.py run [-q] "tp 0 20 0"  # console commands; quote a line with ';' in it; -q leaves out log lines
+tools/control/game.py run -s "step 60; wait ticks 60; pos"   # as a script: waits hold the rest; replies when done
+tools/control/game.py query [player | ID[:VERSION] | COMPONENT] [--most N]   # the match's entities as JSON
 tools/control/game.py shot [path] [--scale 0.5] [--crop x,y,w,h] [--no-ui]
 tools/control/game.py reload [--timeout 60]               # compile the shaders again from the repository
 tools/control/game.py gpu [--frames 240] [--timeout 30]   # each GPU pass's time over the next frames
 tools/control/game.py input "capture on" "hold W 1" "look 200 0" "click left 0.5" [--timeout 60]
-tools/control/game.py wait loaded | frames N | seconds N | log PATTERN [--timeout S]
+tools/control/game.py wait loaded | frames N | ticks N | seconds N | log PATTERN [--timeout S]
 tools/control/game.py log [--new] [--level debug] [--tail 40]
-tools/control/game.py status                # frames, clock, loading, session role, camera
+tools/control/game.py status                # frames, clock, steps (tick, paused, time scale), loading, role, camera,
+                                            # entities, and the player's position, velocity, contact, and mode
 tools/control/game.py stop                  # quit, then SIGTERM after 10 s, then SIGKILL
 tools/control/game.py restart [same options as start]
 ```
@@ -22,13 +25,16 @@ Every command takes `--port N` before its name to reach a game on another contro
 
 ## start
 
-`start` copies the build into `Run/debug/` (or `Run/release/`) in the game's data folder, links the large `runtimes/`
-folder, and starts the copy. A `dotnet build` then cannot overwrite a file the running game has loaded. It adds these
+`start` copies the build into `Run/debug/` (or `Run/release/`) in the agent data folder (the game's `DataFolder` with
+`-agent` after it, `~/.local/share/IteraGame-agent/` for the starter), links the large `runtimes/` folder, and starts
+the copy with that data folder, so it never writes the player's `settings.json` and its logs and screenshots stay
+apart. A `dotnet build` then cannot overwrite a file the running game has loaded. It adds these
 arguments before yours:
 
 - `--Engine:Control:Enabled=true`
 - `--Engine:Steam:Enabled=false`
 - `--Engine:Renderer:ShaderSourceDirectory=<repo>/src/Itera.Engine/Rendering/Shaders`
+- `--Engine:Application:DataFolder=<DataFolder>-agent`
 - `--Engine:Session:Mode=Offline` (straight into an offline match), unless `--menu`
 
 `--menu` starts at the main menu and does not wait for loading:
@@ -67,7 +73,7 @@ works wherever the window is.
 - `--crop` is in screen pixels, taken before the scale.
 - `--no-ui` copies the picture before the UI is drawn over it.
 
-The console's `screenshot [scale] [noui]` writes to `Screenshots/` in the data folder.
+The console's `screenshot [scale] [noui] [PATH]` writes to PATH, or to `Screenshots/` in the data folder.
 
 ## Shaders
 
@@ -123,8 +129,18 @@ grim; the in-game `shot` could replace that later.
 ## Protocol
 
 The port is TCP on 127.0.0.1 (default 47650). Each request and each reply is one JSON object on one line, for example
-`{"id":1,"op":"run","line":"shadows off"}`. The ops are `run`, `log`, `wait`, `gpu`, `status`, `shot`, `reload`, and
-`input`. `ControlService` documents their fields.
+`{"id":1,"op":"run","line":"shadows off"}`. The ops are `run` (with `"script": true`, a script: waits and screenshots
+hold the commands after them, and the reply comes when all have run), `log`, `wait`, `gpu`, `status`, `query`, `shot`,
+`reload`, and `input`. `ControlService` documents their fields.
+
+## Reading and stepping the game
+
+`query` reads the match's entities (`EcsInspector`): `query player` (or an id as `ecs list` prints it, `12:1`) gives
+every component of that entity, with vectors as arrays; `query CharacterPosition` the entities with that component and
+its value; `query` alone the archetypes and their counts. The console's `ecs counts|list|show` prints the same as
+text. Offline, `pause`, `resume`, `step N`, and `timescale X` control the fixed steps; send a step and its wait in one
+script (`run -s "step 60; wait ticks 60; ecs show player"`): separately, the steps may have run before the wait
+starts.
 
 Any program on this machine can connect, so the port is off unless `Engine:Control:Enabled` is true, and Steam builds
 never turn it on.

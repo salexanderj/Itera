@@ -214,6 +214,8 @@ public sealed partial class MatchServices
     private void InitializeEcs()
     {
         Ecs.Initialize(_scope.GetServices<IFixedUpdateSystem>(), _scope.GetServices<IFrameUpdateSystem>());
+        // The match's, as the systems' commands are: it goes when the match ends.
+        EcsCommands.Register(_commands, Ecs.World);
     }
 
     private void BeginLoading(double now)

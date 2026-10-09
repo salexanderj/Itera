@@ -7,6 +7,7 @@ using Xunit.Abstractions;
 
 namespace Itera.Engine.Tests.Meshing;
 
+[RunsLong]
 public sealed class SurfaceNetsTests(ITestOutputHelper output)
 {
     private const int Side = SurfaceNets.SampleSide;

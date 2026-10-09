@@ -109,6 +109,9 @@ public sealed partial class GameLoop
     private string _phase = "startup";
     private double _lastFrameSeconds;
     private ulong _frameIndex;
+
+    /// <summary>Fixed steps run since the run began, over every match (the console's <c>wait ticks</c>).</summary>
+    private ulong _stepsRun;
     private long _resetSeen;
 
     public GameLoop(
@@ -248,7 +251,9 @@ public sealed partial class GameLoop
     /// <summary>
     /// Runs until the window closes, the menu's Quit or the console's <c>quit</c>, a match the options started ends, or
     /// SIGINT (Ctrl+C), SIGTERM, or SIGHUP arrives (Escape opens the menu). Returns the process exit
-    /// code: 0 for a normal exit, 1 when initialisation or the loop threw. The exception is logged at Critical either way.
+    /// code: 0 for a normal exit, the code <c>quit CODE</c> gave, 1 when the startup script failed with
+    /// <c>Engine:Console:ExitOnFailure</c>, and 1 when initialisation or the loop threw. The exception is logged at
+    /// Critical either way.
     /// </summary>
     public int Run()
     {
@@ -267,7 +272,9 @@ public sealed partial class GameLoop
             Loop();
             // The loop ended without an exception, so the world may be saved.
             _loopEnded = true;
-            exitCode = _flow.SessionExitCode();
+            // The session's code is read first: it logs why a session ended badly.
+            var sessionCode = _flow.SessionExitCode();
+            exitCode = _window.ExitCode != 0 ? _window.ExitCode : sessionCode;
         }
         catch (SessionStartException ex)
         {
@@ -468,6 +475,7 @@ public sealed partial class GameLoop
         _ui.Initialize((int)extent.Width, (int)extent.Height);
         // The match's layers and systems add their commands when a match starts, owned by it (MatchServices).
         _engineCommands.Register();
+        _services.GetRequiredService<TimeCommands>().Register();
         _matchCommands.Register();
         _settingsCommands.Register();
         _particleCommands.Register();
@@ -590,7 +598,13 @@ public sealed partial class GameLoop
         // Console commands run here, between fixed steps and outside any query, also while no frames are drawn. Those
         // given at start wait for the match's world and systems, which most of them need.
         _console.HoldStartup = playing is null;
-        _console.RunPending();
+        var loaded = playing is not null && _matches.Phase == MatchPhase.Playing && _loading.Phase == LoadingPhase.Done;
+        _console.RunPending(new ConsoleMoment(_stepsRun, _frameIndex, _clock.TotalSeconds, loaded));
+        if (_console.StartupScriptFailed && _options.Console.ExitOnFailure)
+        {
+            _window.RequestExit("console startup script failed", 1);
+        }
+
         // The control port's requests too: its commands, its waits, and what they wait for.
         _control.RunPending(_clock.TotalSeconds, _frameIndex);
         _flow.StartWorldWhenShown(_frameIndex);
@@ -671,6 +685,7 @@ public sealed partial class GameLoop
             _input.BeginTick();
             match.RunFixedStep(in step, _options.Voxels.EditColumnsPerStep, _stats, _mods);
             fixedSteps++;
+            _stepsRun++;
         }
         return fixedSteps;
     }

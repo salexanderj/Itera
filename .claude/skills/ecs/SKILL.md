@@ -36,8 +36,9 @@ says "probe" was confirmed by `probe/Program.cs` against the pinned packages.
 5. `dotnet build` (zero warnings), `dotnet test` (Debug, so `EcsChecks` run), `dotnet csharpier check .`.
 6. Run the game for a few seconds (`timeout --preserve-status -s INT 25 src/Game/bin/Debug/net10.0/Game --Engine:Session:Mode=Offline`)
    and read the newest log: no Critical line, `Shutdown complete ... exit code 0`. A failed `EcsChecks`
-   check throws, which the loop logs at Critical. A Debug run stays on the loading screen for about 10 s, with the
-   game's input blocked; for a short check of play add `--Engine:Loading:Enabled=false`, or run 20 s or more.
+   check throws, which the loop logs at Critical. A Debug run stays on the loading screen for about 5 s, with the
+   game's input blocked; for a short check of play add `--Engine:Loading:Enabled=false`, or run 15 s or more (or a
+   startup script with `wait loaded`, the `run-game` skill's "Unattended runs").
 7. After changing the Arch or Arch.System version in `Directory.Packages.props`, run
    `.claude/skills/ecs/probe.sh` (without bash:
    `dotnet run -c Release --project .claude/skills/ecs/probe`). Any `CHANGED` line means a rule below

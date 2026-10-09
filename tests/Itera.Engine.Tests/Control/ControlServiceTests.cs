@@ -1,8 +1,11 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Numerics;
 using System.Text;
 using System.Text.Json;
+using Arch.Core;
 using Itera.Engine.Commands;
+using Itera.Engine.Components;
 using Itera.Engine.Control;
 using Itera.Engine.Diagnostics;
 using Itera.Engine.Input;
@@ -10,6 +13,7 @@ using Itera.Engine.Loading;
 using Itera.Engine.Networking;
 using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.Shaders;
+using Itera.Engine.Time;
 using Itera.Engine.UI;
 using Itera.Engine.Windowing;
 using Microsoft.Extensions.Logging;
@@ -37,6 +41,7 @@ public sealed class ControlServiceTests : IDisposable
     private ControlService? _service;
     private double _now;
     private ulong _frames;
+    private ulong _steps;
 
     public ControlServiceTests()
     {
@@ -404,7 +409,93 @@ public sealed class ControlServiceTests : IDisposable
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
 
-    private ControlService Create(bool enabled, int port)
+    [Fact]
+    public void Wait_for_ticks_replies_once_the_fixed_steps_have_run()
+    {
+        var service = Start();
+        using var client = Connect(service);
+        var reply = AskAsync(client, """{"op":"wait","for":"ticks","n":3}""");
+
+        Pump(service, () => reply.IsCompleted, stepsPerPump: 1);
+
+        Assert.True(Reply(reply).GetProperty("ok").GetBoolean());
+        Assert.InRange(_steps, 3UL, 10UL);
+    }
+
+    [Fact]
+    public void Query_reads_an_entitys_components_the_entities_with_a_component_and_the_archetypes()
+    {
+        using var world = World.Create();
+        var player = world.Create(
+            new LocalPlayer(),
+            new CharacterPosition { Feet = new Vector3(1, 2, 3) },
+            new PlayerMode { Flying = true }
+        );
+        world.Create(new CharacterPosition { Feet = new Vector3(4, 5, 6) });
+        var service = Start(world: () => world, time: new FixedStepAccumulator(1f / 60, 8));
+        using var client = Connect(service);
+
+        var shown = Ask(client, """{"op":"query","entity":"player"}""");
+        var listed = Ask(client, """{"op":"query","component":"characterposition","most":1}""");
+        var counts = Ask(client, """{"op":"query"}""");
+        var status = Ask(client, """{"op":"status"}""");
+        var missing = Ask(client, """{"op":"query","entity":"999"}""");
+
+        var components = shown.GetProperty("components");
+        Assert.Equal($"{player.Id}:{player.Version}", shown.GetProperty("entity").GetString());
+        Assert.Equal([1f, 2f, 3f], Floats(components.GetProperty("CharacterPosition").GetProperty("Feet")));
+        Assert.True(components.GetProperty("PlayerMode").GetProperty("Flying").GetBoolean());
+        Assert.Equal(2, listed.GetProperty("count").GetInt32());
+        Assert.Single(listed.GetProperty("entities").EnumerateArray());
+        Assert.Equal(2, counts.GetProperty("entities").GetInt32());
+        Assert.Equal(2, counts.GetProperty("archetypes").GetArrayLength());
+        Assert.Equal(2, status.GetProperty("entities").GetInt32());
+        Assert.False(status.GetProperty("paused").GetBoolean());
+        Assert.Equal(1, status.GetProperty("time_scale").GetDouble());
+        Assert.Equal(
+            [1f, 2f, 3f],
+            Floats(status.GetProperty("player").GetProperty("CharacterPosition").GetProperty("Feet"))
+        );
+        Assert.False(missing.GetProperty("ok").GetBoolean());
+    }
+
+    [Fact]
+    public void Run_as_a_script_replies_once_its_waits_have_held_the_commands_after_them()
+    {
+        _commands.Register(
+            "wait",
+            "",
+            "",
+            CommandScope.Local,
+            context => _console.Hold("wait", () => _console.Now.Steps >= 3)
+        );
+        var service = Start();
+        using var client = Connect(service);
+        var reply = AskAsync(client, """{"op":"run","line":"say a; wait; say b","script":true}""");
+
+        Pump(service, () => reply.IsCompleted, stepsPerPump: 1);
+
+        var answer = Reply(reply);
+        Assert.True(answer.GetProperty("ok").GetBoolean());
+        Assert.Equal(["a", "b"], Strings(answer, "answers"));
+        Assert.InRange(_steps, 3UL, 10UL);
+    }
+
+    [Fact]
+    public void Query_without_a_match_fails()
+    {
+        var service = Start();
+        using var client = Connect(service);
+
+        var reply = Ask(client, """{"op":"query"}""");
+
+        Assert.False(reply.GetProperty("ok").GetBoolean());
+        Assert.Equal("query: no match is played", reply.GetProperty("error").GetString());
+    }
+
+    private static float[] Floats(JsonElement array) => [.. array.EnumerateArray().Select(e => e.GetSingle())];
+
+    private ControlService Create(bool enabled, int port, Func<World?>? world = null, FixedStepAccumulator? time = null)
     {
         _service = new ControlService(
             enabled,
@@ -419,14 +510,16 @@ public sealed class ControlServiceTests : IDisposable
             _input,
             () => _role,
             () => { },
-            _serviceLogger
+            _serviceLogger,
+            world: world,
+            time: time
         );
         return _service;
     }
 
-    private ControlService Start()
+    private ControlService Start(Func<World?>? world = null, FixedStepAccumulator? time = null)
     {
-        var service = Create(enabled: true, port: 0);
+        var service = Create(enabled: true, port: 0, world, time);
         service.Initialize();
         Assert.True(service.Listening);
         return service;
@@ -448,17 +541,25 @@ public sealed class ControlServiceTests : IDisposable
 
     private static Task<string> AskAsync(Client client, string line) => Task.Run(() => client.Ask(line));
 
-    private void Pump(ControlService service, Func<bool> done, int framesPerPump = 0, double secondsPerPump = 0)
+    private void Pump(
+        ControlService service,
+        Func<bool> done,
+        int framesPerPump = 0,
+        double secondsPerPump = 0,
+        int stepsPerPump = 0
+    )
     {
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (!done())
         {
             Assert.True(DateTime.UtcNow < deadline, "no reply within 10 s");
-            // As the main loop does: input first, then the control port's requests.
+            // As the main loop does: input first, then the console, then the control port's requests.
             _input.Update();
+            _console.RunPending(new ConsoleMoment(_steps, _frames, _now, true));
             service.RunPending(_now, _frames);
             _frames += (ulong)framesPerPump;
             _now += secondsPerPump;
+            _steps += (ulong)stepsPerPump;
             Thread.Sleep(1);
         }
     }

@@ -5,13 +5,16 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Arch.Core;
 using Itera.Engine.Diagnostics;
+using Itera.Engine.Ecs;
 using Itera.Engine.Input;
 using Itera.Engine.Loading;
 using Itera.Engine.Matches;
 using Itera.Engine.Networking;
 using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.Shaders;
+using Itera.Engine.Time;
 using Itera.Engine.UI;
 using Itera.Engine.Windowing;
 using Microsoft.Extensions.Logging;
@@ -30,14 +33,22 @@ namespace Itera.Engine.Control;
 /// where console commands run. The ops:
 /// </para>
 /// <list type="bullet">
-/// <item><c>run</c> (<c>line</c>): runs console commands, as typed; the reply holds their answers and the log lines they
-/// wrote. Their answers also show in the in-game console.</item>
+/// <item><c>run</c> (<c>line</c>, <c>script</c>): runs console commands, as typed; the reply holds their answers and the
+/// log lines they wrote. Their answers also show in the in-game console. With <c>script</c> true the line runs as a
+/// script (<see cref="DevConsole.RunScript"/>): <c>wait</c> and <c>screenshot</c> hold the commands after them, and the
+/// reply comes once every command has run (or at the request's timeout, which stops the script).</item>
 /// <item><c>log</c> (<c>from</c>, <c>level</c>, <c>tail</c>): log lines of Debug and above from line number <c>from</c>
 /// on, or the last <c>tail</c> lines, and the number to read from next. Handled on the connection's thread.</item>
-/// <item><c>wait</c> (<c>for</c>: <c>loaded</c>, <c>frames</c> with <c>n</c>, <c>seconds</c> with <c>n</c>, or
-/// <c>log</c> with <c>pattern</c>, a regular expression; <c>timeout</c>): replies once that holds.</item>
+/// <item><c>wait</c> (<c>for</c>: <c>loaded</c>, <c>frames</c> with <c>n</c>, <c>ticks</c> (fixed steps) with
+/// <c>n</c>, <c>seconds</c> with <c>n</c>, or <c>log</c> with <c>pattern</c>, a regular expression; <c>timeout</c>):
+/// replies once that holds.</item>
 /// <item><c>gpu</c> (<c>frames</c>, <c>timeout</c>): each GPU pass's average and longest time over the next frames.</item>
-/// <item><c>status</c>: the frames built, the clock, the loading screen, the session role, and the camera.</item>
+/// <item><c>status</c>: the frames built, the clock, the fixed steps and their pause and time scale, the loading
+/// screen, the session role, the camera, the match's entity count, and the local player's position, velocity, and
+/// contact.</item>
+/// <item><c>query</c> (<c>entity</c>: <c>ID[:VERSION]</c> or <c>player</c>; or <c>component</c> with <c>most</c>;
+/// or neither): one entity's components, the entities with a component and its value, or the archetypes with their
+/// counts, as JSON (<see cref="EcsInspector"/>).</item>
 /// <item><c>shot</c> (<c>path</c>, <c>scale</c>, <c>crop</c>, <c>ui</c>): a screenshot, replied to once its PNG is
 /// written (<see cref="Screenshots"/>).</item>
 /// <item><c>reload</c>: compiles the shaders again and remakes the pipelines (<see cref="ShaderReloads"/>), replied to
@@ -79,6 +90,8 @@ public sealed partial class ControlService : IDisposable
     private readonly InputService _input;
     private readonly Func<SessionRole> _role;
     private readonly Func<bool> _playing;
+    private readonly Func<World?> _world;
+    private readonly FixedStepAccumulator? _time;
     private readonly Action _wake;
     private readonly ILogger<ControlService> _logger;
     private readonly ConcurrentQueue<ControlRequest> _inbox = new();
@@ -101,6 +114,7 @@ public sealed partial class ControlService : IDisposable
         InputService input,
         MatchControl matches,
         WindowService window,
+        FixedStepAccumulator time,
         ILogger<ControlService> logger
     )
         : this(
@@ -117,7 +131,9 @@ public sealed partial class ControlService : IDisposable
             () => matches.Role,
             window.Wake,
             logger,
-            () => matches.Phase == MatchPhase.Playing
+            () => matches.Phase == MatchPhase.Playing,
+            () => matches.Current?.Ecs.World,
+            time
         ) { }
 
     /// <summary>For tests: a <paramref name="port"/> of 0 lets the system pick one, which <see cref="Port"/> then names.</summary>
@@ -135,10 +151,14 @@ public sealed partial class ControlService : IDisposable
         Func<SessionRole> role,
         Action wake,
         ILogger<ControlService> logger,
-        Func<bool>? playing = null
+        Func<bool>? playing = null,
+        Func<World?>? world = null,
+        FixedStepAccumulator? time = null
     )
     {
         _playing = playing ?? (() => true);
+        _world = world ?? (() => null);
+        _time = time;
         _screenshots = screenshots;
         _shaderReloads = shaderReloads;
         _input = input;
@@ -326,6 +346,8 @@ public sealed partial class ControlService : IDisposable
         request.LogFrom = _log.Next;
         request.StartSeconds = now;
         request.StartFrame = frames;
+        // The console ran just before, with the iteration's steps.
+        request.StartSteps = _console.Now.Steps;
         request.TimeoutSeconds = Math.Clamp(request.Number("timeout", DefaultTimeoutSeconds), 0, MostTimeoutSeconds);
         switch (request.Op)
         {
@@ -341,6 +363,9 @@ public sealed partial class ControlService : IDisposable
             case "status":
                 Status(request, now, frames);
                 break;
+            case "query":
+                Query(request);
+                break;
             case "shot":
                 StartShot(request);
                 break;
@@ -351,7 +376,10 @@ public sealed partial class ControlService : IDisposable
                 StartInput(request, now);
                 break;
             default:
-                request.Complete(_log, $"no op '{request.Op}'; ops: run, log, wait, gpu, status, shot, reload, input");
+                request.Complete(
+                    _log,
+                    $"no op '{request.Op}'; ops: run, log, wait, gpu, status, query, shot, reload, input"
+                );
                 break;
         }
     }
@@ -364,8 +392,32 @@ public sealed partial class ControlService : IDisposable
             return;
         }
 
-        _console.RunNow(line, request);
-        request.Complete(_log);
+        if (!request.Flag("script", false))
+        {
+            _console.RunNow(line, request);
+            request.Complete(_log);
+            return;
+        }
+
+        // As a script: its holds (wait, screenshot) hold the commands after them, and the reply comes once all have run.
+        var script = _console.RunScript(line, request);
+        if (script.Done)
+        {
+            request.Complete(_log);
+            return;
+        }
+
+        request.Check = (r, _, _) =>
+        {
+            if (!script.Done)
+            {
+                return false;
+            }
+
+            r.Complete(_log);
+            return true;
+        };
+        request.Abandon = script.Stop;
     }
 
     private void StartWait(ControlRequest request)
@@ -385,11 +437,15 @@ public sealed partial class ControlService : IDisposable
             case "seconds":
                 request.Check = (r, now, _) => CompleteWhen(r, now - r.StartSeconds >= n);
                 break;
+            case "ticks":
+                var ticks = (ulong)Math.Max(0, Math.Ceiling(n));
+                request.Check = (r, _, _) => CompleteWhen(r, _console.Now.Steps - r.StartSteps >= ticks);
+                break;
             case "log":
                 StartLogWait(request);
                 return;
             default:
-                request.Complete(_log, "wait needs \"for\": loaded, frames, seconds, or log");
+                request.Complete(_log, "wait needs \"for\": loaded, frames, ticks, seconds, or log");
                 return;
         }
 
@@ -631,6 +687,15 @@ public sealed partial class ControlService : IDisposable
                 writer.WriteNumber("seconds", Math.Round(now, 3));
                 writer.WriteString("loading", loading.ToString());
                 writer.WriteString("role", role.ToString());
+                writer.WriteBoolean("playing", _playing());
+                writer.WriteNumber("steps", _console.Now.Steps);
+                if (_time is { } time)
+                {
+                    writer.WriteNumber("tick", time.Tick);
+                    writer.WriteBoolean("paused", time.Paused);
+                    writer.WriteNumber("time_scale", time.TimeScale);
+                }
+
                 writer.WriteNumber("render_scale", _view.RenderScale);
                 writer.WriteStartArray("camera_position");
                 writer.WriteNumberValue(Math.Round(camera.Position.X, 3));
@@ -642,6 +707,124 @@ public sealed partial class ControlService : IDisposable
                 writer.WriteNumberValue(Math.Round(forward.X, 4));
                 writer.WriteNumberValue(Math.Round(forward.Y, 4));
                 writer.WriteNumberValue(Math.Round(forward.Z, 4));
+                writer.WriteEndArray();
+                if (_world() is { } world)
+                {
+                    writer.WriteNumber("entities", world.Size);
+                    WritePlayer(writer, world);
+                }
+            }
+        );
+    }
+
+    /// <summary>The local player's position, velocity, and contact, when the match has one.</summary>
+    private static void WritePlayer(Utf8JsonWriter writer, World world)
+    {
+        if (!EcsInspector.TryFindEntityOrPlayer(world, "player", out var player))
+        {
+            return;
+        }
+
+        writer.WriteStartObject("player");
+        writer.WriteString("entity", EcsInspector.Name(player));
+        foreach (var (name, value) in EcsInspector.Components(world, player))
+        {
+            if (name is "CharacterPosition" or "CharacterVelocity" or "CharacterContact" or "PlayerMode")
+            {
+                writer.WritePropertyName(name);
+                EcsInspector.WriteJson(writer, value);
+            }
+        }
+
+        writer.WriteEndObject();
+    }
+
+    /// <summary>
+    /// The <c>query</c> op: an entity's components (<c>entity</c>), the entities with a component and its value
+    /// (<c>component</c>, at most <c>most</c>), or the archetypes and their counts.
+    /// </summary>
+    private void Query(ControlRequest request)
+    {
+        if (_world() is not { } world)
+        {
+            request.Complete(_log, "query: no match is played");
+            return;
+        }
+
+        if (request.String("entity") is { } text)
+        {
+            if (!EcsInspector.TryFindEntityOrPlayer(world, text, out var entity))
+            {
+                request.Complete(_log, $"query: no living entity {text}");
+                return;
+            }
+
+            var components = EcsInspector.Components(world, entity);
+            request.Complete(
+                _log,
+                fields: writer =>
+                {
+                    writer.WriteString("entity", EcsInspector.Name(entity));
+                    writer.WriteStartObject("components");
+                    foreach (var (name, value) in components)
+                    {
+                        writer.WritePropertyName(name);
+                        EcsInspector.WriteJson(writer, value);
+                    }
+
+                    writer.WriteEndObject();
+                }
+            );
+            return;
+        }
+
+        if (request.String("component") is { } component)
+        {
+            if (!EcsInspector.TryFindComponent(world, component, out var type))
+            {
+                request.Complete(_log, $"query: no entity has a component named {component}");
+                return;
+            }
+
+            var most = (int)Math.Clamp(request.Number("most", 100), 1, EcsInspector.MostListed);
+            var entities = EcsInspector.EntitiesWith(world, type, int.MaxValue);
+            request.Complete(
+                _log,
+                fields: writer =>
+                {
+                    writer.WriteString("component", type.Type.Name);
+                    writer.WriteNumber("count", entities.Count);
+                    writer.WriteStartArray("entities");
+                    for (var i = 0; i < entities.Count && i < most; i++)
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString("entity", EcsInspector.Name(entities[i]));
+                        writer.WritePropertyName("value");
+                        EcsInspector.WriteJson(writer, EcsInspector.Component(world, entities[i], type));
+                        writer.WriteEndObject();
+                    }
+
+                    writer.WriteEndArray();
+                }
+            );
+            return;
+        }
+
+        var archetypes = EcsInspector.Archetypes(world);
+        request.Complete(
+            _log,
+            fields: writer =>
+            {
+                writer.WriteNumber("entities", world.Size);
+                writer.WriteStartArray("archetypes");
+                foreach (var (count, components) in archetypes)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteNumber("count", count);
+                    writer.WriteString("components", components);
+                    writer.WriteEndObject();
+                }
+
                 writer.WriteEndArray();
             }
         );

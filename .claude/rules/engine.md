@@ -18,7 +18,8 @@ paths:
     `FixedStepAccumulator`), `Loading/` (`LoadingScreen`, `ILoadingTask`, `LoadingProgress`,
     `EngineLoadingTasks.cs`), `Control/` (`ControlService`, `ControlRequest`, `InputScript`).
   - `Ecs/`: `EcsWorld` (times each system), `IFixedUpdateSystem` and `IFrameUpdateSystem` (`SystemInterfaces.cs`),
-    `EcsChecks`, `CheckedWorldExtensions`.
+    `EcsChecks`, `CheckedWorldExtensions`, and `EcsInspector` (archetypes, entities, and components read by reflection
+    for the console's `ecs` and the control port's `query`; it allocates, so commands only).
   - `Components/` and `Systems/`: the components and systems a game registers (`.claude/rules/systems.md`).
   - `Maths/` (`DeterministicMath`, `Rotation`, `RigidTransform`) and `Animation/` (skeletons, poses, clips, foot IK):
     `.claude/rules/animation.md`.

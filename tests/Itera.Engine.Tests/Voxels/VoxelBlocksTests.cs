@@ -9,6 +9,7 @@ namespace Itera.Engine.Tests.Voxels;
 /// Reading 32^3 blocks out of the chunk trees: with a 2-voxel apron for the mesher, and their own voxels alone for the
 /// sky field.
 /// </summary>
+[RunsLong]
 public sealed class VoxelBlocksTests : IDisposable
 {
     private const int Edge = VoxelWorld.BlockSampleEdge;

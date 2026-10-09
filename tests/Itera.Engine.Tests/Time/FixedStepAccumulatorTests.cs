@@ -92,5 +92,98 @@ public sealed class FixedStepAccumulatorTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new FixedStepAccumulator(0f, 1));
         Assert.Throws<ArgumentOutOfRangeException>(() => new FixedStepAccumulator(Step, 0));
+        var accumulator = new FixedStepAccumulator(Step, 8);
+        Assert.Throws<ArgumentOutOfRangeException>(() => accumulator.SetTimeScale(0.01f));
+        Assert.Throws<ArgumentOutOfRangeException>(() => accumulator.SetTimeScale(17));
+        Assert.Throws<ArgumentOutOfRangeException>(() => accumulator.StepWhilePaused(-1));
+    }
+
+    [Fact]
+    public void Paused_no_time_makes_a_step_and_frames_show_the_last_step()
+    {
+        var accumulator = new FixedStepAccumulator(Step, 8);
+        accumulator.Add(Step * 0.5f);
+
+        accumulator.Pause();
+        accumulator.Add(Step * 10);
+
+        Assert.False(accumulator.TryConsumeStep(out _));
+        Assert.Equal(0UL, accumulator.Tick);
+        Assert.True(accumulator.Paused);
+        Assert.Equal(Step, accumulator.SecondsUntilNextStep);
+        Assert.True(accumulator.Alpha > 0.99f);
+    }
+
+    [Fact]
+    public void Stepping_while_paused_runs_exactly_the_steps_asked_for_at_most_the_cap_an_iteration()
+    {
+        var accumulator = new FixedStepAccumulator(Step, 3);
+
+        accumulator.StepWhilePaused(5);
+        var first = Consume(accumulator, 0);
+        var second = Consume(accumulator, 0);
+        var third = Consume(accumulator, 0);
+
+        Assert.Equal((3, 2, 0), (first, second, third));
+        Assert.Equal(5UL, accumulator.Tick);
+        Assert.True(accumulator.Paused);
+        Assert.Equal(0, accumulator.StepsOwed);
+    }
+
+    [Fact]
+    public void Resuming_runs_the_steps_again_from_no_time_waiting()
+    {
+        var accumulator = new FixedStepAccumulator(Step, 8);
+        accumulator.StepWhilePaused(2);
+
+        accumulator.Resume();
+
+        Assert.False(accumulator.Paused);
+        Assert.Equal(0, Consume(accumulator, Step * 0.5f));
+        Assert.Equal(1, Consume(accumulator, Step * 0.5f));
+    }
+
+    [Fact]
+    public void A_time_scale_runs_that_many_steps_a_second_with_a_cap_that_grows_with_it()
+    {
+        var accumulator = new FixedStepAccumulator(Step, 2);
+
+        accumulator.SetTimeScale(4);
+
+        // Two steps of real time are eight of game time; the cap of two an iteration grows to eight.
+        Assert.Equal(8, Consume(accumulator, Step * 2.001f));
+        Assert.Equal(0, accumulator.LastDropped);
+        Assert.Equal(Step * 0.25f, accumulator.SecondsUntilNextStep, 3);
+
+        accumulator.SetTimeScale(0.5f);
+        Assert.Equal(0, Consume(accumulator, Step));
+        Assert.Equal(1, Consume(accumulator, Step));
+    }
+
+    [Fact]
+    public void A_new_match_starts_unpaused_and_keeps_the_runs_time_scale()
+    {
+        var accumulator = new FixedStepAccumulator(Step, 8);
+        accumulator.SetTimeScale(2);
+        accumulator.StepWhilePaused(3);
+
+        accumulator.Restart();
+
+        Assert.False(accumulator.Paused);
+        Assert.Equal(0, accumulator.StepsOwed);
+        Assert.Equal(2, accumulator.TimeScale);
+    }
+
+    /// <summary>One loop iteration: adds the time and returns how many steps it ran.</summary>
+    private static int Consume(FixedStepAccumulator accumulator, float seconds)
+    {
+        accumulator.Add(seconds);
+        var steps = 0;
+        while (accumulator.TryConsumeStep(out _))
+        {
+            steps++;
+        }
+
+        return steps;
     }
 }
