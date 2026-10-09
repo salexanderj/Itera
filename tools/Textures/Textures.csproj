@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Makes the world materials' texture sets from CC0 photographs: downloads, mip levels, block compression (README.md). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Itera.Tools.Textures</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BCnEncoder.Net" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Itera.Engine\Itera.Engine.csproj" />
+  </ItemGroup>
+</Project>

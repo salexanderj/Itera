@@ -1,0 +1,97 @@
+#version 460
+
+// The view's clusters of point lights (MeshPass's cluster pass, before the world; docs/rendering-redesign.md, phase 3):
+// one invocation a cluster finds the box of view space it covers (its tile of the drawn image between its slice's
+// depths) and lists the slot's lights whose reach meets it, up to MESH_CLUSTER_LIGHTS of those that matter most to it;
+// mesh.frag loops over its pixel's cluster's.
+#include "view.glsl"
+#define MESH_CLUSTERS_WRITE
+#include "mesh-data.glsl"
+
+layout(local_size_x = 64) in;
+
+void main()
+{
+    uint cluster = gl_GlobalInvocationID.x;
+    if (cluster >= MESH_CLUSTER_COUNT)
+    {
+        return;
+    }
+
+    uint x = cluster % MESH_CLUSTERS_X;
+    uint y = (cluster / MESH_CLUSTERS_X) % MESH_CLUSTERS_Y;
+    uint z = cluster / (MESH_CLUSTERS_X * MESH_CLUSTERS_Y);
+
+    // The view's axes (right and up reach the image's edges at unit depth, so their lengths are the half-angles'
+    // tangents) and the tile's edges across the image, -1 to 1; the image's top is up.
+    float tanX = length(view.right);
+    float tanY = length(view.up);
+    vec3 right = view.right / tanX;
+    vec3 up = view.up / tanY;
+    vec2 low = vec2(-1.0 + 2.0 * float(x) / float(MESH_CLUSTERS_X), 1.0 - 2.0 * float(y + 1u) / float(MESH_CLUSTERS_Y));
+    vec2 high = vec2(low.x + 2.0 / float(MESH_CLUSTERS_X), low.y + 2.0 / float(MESH_CLUSTERS_Y));
+    float near = meshClusterSliceStart(z);
+    float far = z + 1u < MESH_CLUSTERS_Z ? meshClusterSliceStart(z + 1u) : max(view.maxDistance, near);
+
+    // The box round the tile's frustum between the two depths, in view space (right, up, depth).
+    vec2 scale = vec2(tanX, tanY);
+    vec2 a = low * scale * near;
+    vec2 b = low * scale * far;
+    vec2 c = high * scale * near;
+    vec2 d = high * scale * far;
+    vec3 boxLow = vec3(min(min(a, b), min(c, d)), near);
+    vec3 boxHigh = vec3(max(max(a, b), max(c, d)), far);
+
+    // The lights that reach the box, keeping the MESH_CLUSTER_LIGHTS that matter most to it: power over the squared
+    // distance to the box (at least a quarter metre, as mesh.frag's falloff), so a dim light beside the cluster beats a
+    // strong one across the hall.
+    uint chosen[MESH_CLUSTER_LIGHTS];
+    float weights[MESH_CLUSTER_LIGHTS];
+    uint count = 0u;
+    uint weakest = 0u;
+    uint first = view.slot * MESH_MOST_LIGHTS;
+    uint lightCount = min(lighting[view.slot].lightCount, MESH_MOST_LIGHTS);
+    for (uint i = 0u; i < lightCount; i++)
+    {
+        MeshLight light = lights[first + i];
+        vec3 offset = light.position - view.position;
+        vec3 at = vec3(dot(offset, right), dot(offset, up), dot(offset, view.forward));
+        vec3 apart = at - clamp(at, boxLow, boxHigh);
+        float d2 = dot(apart, apart);
+        if (d2 >= light.reach * light.reach)
+        {
+            continue;
+        }
+
+        float weight = light.power / max(d2, 0.25);
+        if (count < MESH_CLUSTER_LIGHTS)
+        {
+            chosen[count] = i;
+            weights[count] = weight;
+            weakest = weight < weights[weakest] ? count : weakest;
+            count++;
+            continue;
+        }
+
+        if (weight <= weights[weakest])
+        {
+            continue;
+        }
+
+        chosen[weakest] = i;
+        weights[weakest] = weight;
+        for (uint k = 0u; k < MESH_CLUSTER_LIGHTS; k++)
+        {
+            weakest = weights[k] < weights[weakest] ? k : weakest;
+        }
+    }
+
+    uint base = view.slot * MESH_CLUSTER_SLOT_WORDS;
+    uint indices = base + MESH_CLUSTER_COUNT + cluster * MESH_CLUSTER_LIGHTS;
+    for (uint k = 0u; k < count; k++)
+    {
+        clusterWords[indices + k] = chosen[k];
+    }
+
+    clusterWords[base + cluster] = count;
+}

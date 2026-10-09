@@ -1,0 +1,32 @@
+<Project>
+  <!-- Shared settings for every project in the solution. Per-project files only add what differs. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <Deterministic>true</Deterministic>
+    <IsPackable>false</IsPackable>
+    <!-- XML docs are needed for IDE0005 (unused usings) to run in the build. CS1591 (missing doc comment) is not enforced. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Workstation concurrent GC: short pauses on the main thread matter more than throughput. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+
+    <!-- Mods are loaded dynamically through AssemblyLoadContext, which needs the JIT and reflection. -->
+    <PublishAot>false</PublishAot>
+    <PublishTrimmed>false</PublishTrimmed>
+
+    <!-- Runtime identifiers the game is published for. Framework-dependent builds ignore this. -->
+    <IteraSupportedRids>linux-x64;linux-arm64;win-x64;win-arm64;osx-x64;osx-arm64</IteraSupportedRids>
+  </PropertyGroup>
+</Project>

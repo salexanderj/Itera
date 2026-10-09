@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Reference mod. Shows the minimum a mod needs: a class implementing IGameMod and a mod.json manifest.
+    The build copies the output into the starter game's (src/Game) Mods/ folder so `dotnet run` loads it.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Itera.SampleMod</RootNamespace>
+    <IteraModsOutputDir>$(MSBuildThisFileDirectory)../../src/Game/bin/$(Configuration)/$(TargetFramework)/Mods/SampleMod/</IteraModsOutputDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Private=false: the host owns Itera.Modding.dll; a copy in the mod folder would break type identity. -->
+    <ProjectReference Include="..\..\src\Itera.Modding\Itera.Modding.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="mod.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="CopyToGameModsFolder" AfterTargets="Build">
+    <ItemGroup>
+      <_ModFiles Include="$(TargetPath)" />
+      <_ModFiles Include="$(TargetDir)$(TargetName).pdb" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+      <_ModFiles
+        Include="$(TargetDir)$(TargetName).deps.json"
+        Condition="Exists('$(TargetDir)$(TargetName).deps.json')"
+      />
+      <_ModFiles Include="$(TargetDir)mod.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ModFiles)" DestinationFolder="$(IteraModsOutputDir)" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="SampleMod copied to $(IteraModsOutputDir)" />
+  </Target>
+</Project>

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Re-checks the Arch behaviours that .claude/skills/ecs relies on, against the package versions pinned in
+    Directory.Packages.props. Not part of Itera.sln. Run it with .claude/skills/ecs/probe.sh.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Arch" />
+    <PackageReference Include="Arch.System" />
+  </ItemGroup>
+</Project>

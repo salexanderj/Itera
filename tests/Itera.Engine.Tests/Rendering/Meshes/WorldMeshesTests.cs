@@ -1,0 +1,1359 @@
+using System.Numerics;
+using System.Runtime.InteropServices;
+using Itera.Engine.Rendering;
+using Itera.Engine.Rendering.GpuData;
+using Itera.Engine.Rendering.Meshes;
+using Itera.Engine.Rendering.Voxels;
+using Itera.Engine.Tests.Voxels;
+using Itera.Engine.Voxels;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Silk.NET.Vulkan;
+using Xunit.Abstractions;
+
+namespace Itera.Engine.Tests.Rendering.Meshes;
+
+/// <summary>
+/// The raster pipeline's world on the GPU, over a draw target and staging in memory: it meshes the slope world's
+/// columns, uploads the meshes and the materials where the mesh pass reads them, draws the blocks in view, meshes an
+/// edit again, follows columns that load and unload, does the uploader's other jobs for the models, and allocates
+/// nothing per frame once up to date.
+/// </summary>
+public sealed class WorldMeshesTests : IDisposable
+{
+    private const double RadiusMetres = 4;
+    private const int Levels = 2;
+    private static readonly Vector3 Centre = new(0, 2.5f, 0);
+
+    private readonly VoxelWorld _world;
+    private readonly VoxelModels _models;
+    private readonly CountingPalette _palette = new();
+    private readonly FakeTargets _targets = new();
+    private readonly WorldMeshes _meshes;
+    private readonly ITestOutputHelper _output;
+    private int _frame;
+
+    public WorldMeshesTests(ITestOutputHelper output)
+    {
+        _output = output;
+        _world = TestWorlds.Load(new SlopeGenerator(), Centre, radiusMetres: RadiusMetres, levels: Levels);
+        _models = new VoxelModels(_world);
+        _meshes = NewMeshes(_targets);
+    }
+
+    private WorldMeshes NewMeshes(FakeTargets targets, int levels = Levels)
+    {
+        var options = new EngineOptions
+        {
+            Voxels = new VoxelSettings { StreamingRadiusMetres = RadiusMetres, Levels = levels },
+            Renderer = new RendererSettings { MeshFinestLevel = 0 },
+        };
+        var meshes = new WorldMeshes(
+            _palette,
+            targets,
+            targets,
+            Options.Create(options),
+            NullLogger<WorldMeshes>.Instance
+        );
+        meshes.Initialize();
+        return meshes;
+    }
+
+    public void Dispose()
+    {
+        _meshes.Dispose();
+        _targets.Dispose();
+        _world.Dispose();
+    }
+
+    [Fact]
+    public void Initialize_prepares_the_palette_once()
+    {
+        Assert.Equal(1, _palette.Prepared);
+    }
+
+    [Fact]
+    public void Without_a_match_an_upload_throws_and_the_world_is_not_up_to_date()
+    {
+        Assert.Throws<InvalidOperationException>(() => _meshes.Upload(0, 0, default));
+
+        Begin();
+        RunUntilUpToDate();
+        _meshes.EndMatch();
+
+        Assert.False(_meshes.IsUpToDate);
+        Assert.Throws<InvalidOperationException>(() => _meshes.Upload(0, 0, default));
+    }
+
+    /// <summary>
+    /// <see cref="WorldMeshes.SetTexture"/> refuses air and a set that was not loaded, and a change goes to the GPU's
+    /// materials in the next frame.
+    /// </summary>
+    [Fact]
+    public void A_materials_texture_set_changed_for_the_run_reaches_the_gpu_next_frame()
+    {
+        Begin();
+        RunUntilUpToDate();
+        Frame();
+        Assert.False(_meshes.SetTexture(0, null, 0));
+        Assert.False(_meshes.SetTexture(1, "no-such-set", 0));
+        Assert.Empty(_meshes.TextureSetNames);
+        var heapMaterials = MemoryMarshal.Cast<byte, MeshMaterial>(
+            _targets.Heap.AsSpan((int)MeshPass.MaterialsOffset, (int)MeshPass.MaterialsBytes)
+        );
+        heapMaterials[1].Glow = 0.75f;
+
+        Assert.True(_meshes.SetTexture(1, null, 0.5f));
+        Frame();
+
+        Assert.Equal(_palette.Look(1).Glow, heapMaterials[1].Glow);
+        Assert.Equal(0u, heapMaterials[1].Texture);
+    }
+
+    [Fact]
+    public void The_ground_is_meshed_uploaded_and_drawn_with_the_materials_in_place()
+    {
+        Begin();
+        RunUntilUpToDate();
+        var slot = Frame();
+
+        Assert.True(_meshes.DrawCount > 0);
+        var materials = MemoryMarshal.Cast<byte, MeshMaterial>(
+            _targets.Heap.AsSpan((int)MeshPass.MaterialsOffset, (int)MeshPass.MaterialsBytes)
+        );
+        Assert.Equal(_palette.Look(1).Colour, materials[1].Colour);
+        Assert.Equal(_palette.Look(1).PackLook(), materials[1].Look);
+        Assert.Equal(_palette.Look(1).PackAmounts(), materials[1].Amounts);
+        var words = MemoryMarshal.Cast<byte, uint>(_targets.Heap.AsSpan());
+        var indices = MemoryMarshal.Cast<byte, ushort>(_targets.Heap.AsSpan());
+        for (var i = 0; i < _meshes.DrawCount; i++)
+        {
+            var command = _targets.CommandsOf(slot, 0)[i];
+            var draw = _targets.DrawsOf(slot)[RecordOf(command, slot)];
+            Assert.True(command.IndexCount > 0 && command.IndexCount % 3 == 0);
+            Assert.Equal(1u, command.InstanceCount);
+            // Level 0 near the view, level 1 farther (a 4 m radius draws level 0 to 1.44 m).
+            Assert.Contains(draw.VoxelMetres, (float[])[0.01f, 0.02f]);
+            for (var k = 0; k < command.IndexCount; k++)
+            {
+                var index = indices[(int)command.FirstIndex + k];
+                var at = (int)draw.VertexBase + MeshVertex.Words * index;
+                var vertex = new MeshVertex
+                {
+                    PositionXY = words[at],
+                    PositionZMaterial = words[at + 1],
+                    Normal = words[at + 2],
+                };
+                var position = MeshVertex.DecodePosition(in vertex);
+                Assert.InRange(position.X, -0.5f, 32.5f);
+                Assert.InRange(position.Y, -0.5f, 32.5f);
+                Assert.InRange(position.Z, -0.5f, 32.5f);
+                Assert.NotEqual(0, MeshVertex.DecodeMaterial(in vertex));
+                // The slope rises gently: its normals point up.
+                Assert.True(MeshVertex.DecodeNormal(in vertex).Y > 0.5f);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The camera's blocks are drawn nearest first, whatever order their columns loaded and their meshes arrived in, so
+    /// the depth test rejects what they hide before it is shaded.
+    /// </summary>
+    [Fact]
+    public void The_camera_draws_its_blocks_nearest_first()
+    {
+        Begin();
+        RunUntilUpToDate();
+        var at = Centre + new Vector3(1.3f, 0, -0.7f);
+        var slot = Frame(at);
+
+        Assert.True(_meshes.DrawCount > 4);
+        var last = 0f;
+        for (var i = 0; i < _meshes.DrawCount; i++)
+        {
+            var draw = _targets.DrawsOf(slot)[RecordOf(_targets.CommandsOf(slot, 0)[i], slot)];
+            var centre = draw.Origin + new Vector3(16 * draw.VoxelMetres);
+            var distance = Vector3.DistanceSquared(centre, at);
+            Assert.True(distance >= last, $"Draw {i} is nearer than the one before it.");
+            last = distance;
+        }
+    }
+
+    [Fact]
+    public void An_edit_is_meshed_again()
+    {
+        Begin();
+        RunUntilUpToDate();
+        var before = DrawnIndices();
+
+        var ground = SlopeGenerator.Height(0, 0, 17);
+        _world.Apply(VoxelEdit.Sphere(new VoxelCoord(0, ground, 0), 60, VoxelEditOperation.Clear));
+        _world.Update(0);
+        Frame();
+        Assert.False(_meshes.IsUpToDate);
+        Assert.True(_meshes.EditedBlocks > 0);
+        RunUntilUpToDate();
+
+        Assert.NotEqual(before, DrawnIndices());
+        // The edits' latency counts the blocks the edit marked, every one of them meshed and staged.
+        Assert.Equal(0, _meshes.EditedBlocks);
+        Assert.True(_meshes.LastEdit.Blocks > 0 && _meshes.LastEdit.Frames > 0);
+    }
+
+    /// <summary>
+    /// Blocks meshed as their columns stream in are not edits: the edits' latency does not wait for them, and an edit
+    /// made while they load is reported once its own blocks are in.
+    /// </summary>
+    [Fact]
+    public void Streaming_blocks_do_not_count_as_edits()
+    {
+        Begin();
+        Frame();
+        Assert.True(_meshes.PendingBlocks > 0);
+        Assert.Equal(0, _meshes.EditedBlocks);
+        RunUntilUpToDate();
+        Assert.Equal(0, _meshes.EditedBlocks);
+        Assert.Equal(default, _meshes.LastEdit);
+
+        // Made again from empty, the world loads; an edit made meanwhile is reported.
+        Begin();
+        Frame();
+        Assert.True(_meshes.PendingBlocks > 0);
+        _world.Apply(
+            VoxelEdit.Sphere(new VoxelCoord(0, SlopeGenerator.Height(0, 0, 17), 0), 30, VoxelEditOperation.Clear)
+        );
+        _world.Update(0);
+        RunUntil(() => _meshes.LastEdit.Blocks > 0);
+        Assert.Equal(0, _meshes.EditedBlocks);
+        RunUntilUpToDate();
+
+        // An edit is reported once its blocks are in, with every block its changes marked (some come a frame later).
+        var ground = SlopeGenerator.Height(0, 0, 17);
+        _world.Apply(VoxelEdit.Sphere(new VoxelCoord(0, ground, 0), 30, VoxelEditOperation.Clear));
+        _world.Update(0);
+        Frame();
+        var marked = _meshes.EditedBlocks;
+        Assert.True(marked > 0);
+        RunUntil(() => _meshes.EditedBlocks == 0);
+        Assert.True(_meshes.LastEdit.Blocks >= marked);
+    }
+
+    [Fact]
+    public void Columns_that_unload_and_load_are_followed()
+    {
+        Begin();
+        RunUntilUpToDate();
+
+        // 1.5 m above the slope there, which rises 1 cm for every 16 cm.
+        var away = new Vector3(40, SlopeGenerator.Height(4000, 0, 17) / 100f + 1.5f, 0);
+        _world.SetCenters([away]);
+        TestWorlds.WaitUntilLoaded(_world);
+        RunUntilUpToDate(away);
+
+        var resident = new List<ColumnKey>();
+        _world.CollectResidentColumns(resident);
+        Assert.Equal(resident.Count, _meshes.ColumnCount);
+        Assert.True(_meshes.DrawCount > 0);
+    }
+
+    /// <summary>
+    /// A job of an ended match that comes back in the next names a column of the same key, which is another column now:
+    /// it is dropped, so the counts settle at 0 and the world catches up.
+    /// </summary>
+    [Fact]
+    public void A_new_match_drops_the_jobs_the_last_one_left_with_the_workers()
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            Begin();
+            Frame();
+            Frame();
+            _meshes.EndMatch();
+        }
+
+        Begin();
+        RunUntilUpToDate();
+
+        Assert.Equal(0, _meshes.PendingBlocks);
+        Assert.True(_meshes.DrawCount > 0);
+    }
+
+    [Fact]
+    public void Without_shadows_the_cascades_list_nothing_and_their_record_says_so()
+    {
+        Begin();
+        RunUntilUpToDate();
+        var slot = Frame();
+
+        var frame = _meshes.Frame;
+        Assert.False(frame.Shadows);
+        Assert.Equal(0, frame.NearShadows);
+        Assert.Equal(0, frame.FarShadows);
+        Assert.Equal(frame.Draws, frame.Records);
+        Assert.Equal(0u, _targets.LightingOf(slot).Shadows);
+    }
+
+    /// <summary>
+    /// Looking straight down with a low sun to the east (+x): blocks beside the view on the sun's side can shade it, so
+    /// the near cascade lists them although the camera does not see them; blocks beside the view on the other side
+    /// cannot, so it leaves them out. A block in both lists has one draw.
+    /// </summary>
+    [Fact]
+    public void With_shadows_the_near_cascade_lists_the_blocks_beside_the_view_that_can_shade_it()
+    {
+        Begin();
+        RunUntilUpToDate();
+        var slot = _frame % FrameSync.FramesInFlight;
+        var view = LookingDown(Centre);
+        view.SunDirection = Vector3.Normalize(new Vector3(2, 1, 0));
+        view.Switches = ViewSwitches.Shadows;
+        _frame++;
+        _targets.Apply(_meshes.Regions(slot, _meshes.Upload(slot, _frame / 60.0, in view)));
+
+        var frame = _meshes.Frame;
+        Assert.True(frame.Shadows);
+        Assert.True(frame.Draws > 0);
+        Assert.True(frame.NearShadows > 0);
+        Assert.InRange(frame.Records, frame.Draws, frame.Draws + frame.NearShadows + frame.FarShadows);
+        var seen = new HashSet<int>();
+        for (var i = 0; i < frame.Draws; i++)
+        {
+            Assert.True(seen.Add(RecordOf(_targets.CommandsOf(slot, 0)[i], slot)));
+        }
+
+        var nearOnly = 0;
+        var listed = new HashSet<int>();
+        for (var i = 0; i < frame.NearShadows; i++)
+        {
+            var command = _targets.CommandsOf(slot, 1)[i];
+            var record = RecordOf(command, slot);
+            Assert.True(command.IndexCount > 0);
+            Assert.InRange(record, 0, frame.Records - 1);
+            Assert.True(listed.Add(record));
+            if (seen.Contains(record))
+            {
+                continue;
+            }
+
+            // The view meets the ground about 1.5 m either side of the camera.
+            var draw = _targets.DrawsOf(slot)[record];
+            var centreX = draw.Origin.X + 16 * draw.VoxelMetres;
+            Assert.True(centreX > -2.75f, $"A block at x = {centreX} m, away from the sun, cannot shade the view.");
+            if (centreX > 1.75f)
+            {
+                nearOnly++;
+            }
+        }
+
+        Assert.True(nearOnly > 0);
+        ref readonly var shadows = ref _targets.LightingOf(slot);
+        Assert.Equal(1u, shadows.Shadows);
+        Assert.Equal(WorldMeshes.NearShadowMetres, shadows.NearEnd);
+        // The view reaches 100 m, short of the far cascade's 200 m.
+        Assert.Equal(100, shadows.FarEnd);
+        Assert.True(shadows.NearTexelMetres > 0 && shadows.NearTexelMetres < shadows.FarTexelMetres);
+    }
+
+    [Fact]
+    public void Models_count_as_uploaded_once_meshed_and_retired_ones_go_once_the_world_is_meshed()
+    {
+        var first = AddCube(10);
+        var second = AddCube(20);
+        Begin();
+        Assert.False(_models.IsUploaded(first));
+
+        RunUntil(() => _models.IsUploaded(first) && _models.IsUploaded(second));
+        RunUntilUpToDate();
+        _models.Retire(second, 0, Vector3.Zero, Quaternion.Identity, 0);
+        Frame();
+
+        Assert.Equal(1, _models.Count);
+        Assert.True(_models.Retired.IsEmpty);
+    }
+
+    /// <summary>
+    /// Two draws of one model level: one command for its one block, whose two instances are the two draws in order, each
+    /// placing and turning the model; the block's vertices lie in the model's box.
+    /// </summary>
+    /// <summary>
+    /// A model that casts no shadow (the first-person arms) goes into the camera's list alone, and one that only casts it
+    /// (the player's own body in first person) into the cascades' alone, and into none with the shadows off.
+    /// </summary>
+    [Fact]
+    public void A_models_shadow_mark_picks_its_lists()
+    {
+        var cube = AddCube(10);
+        Begin();
+        RunUntil(() => _models.IsUploaded(cube));
+        var at = new Vector3(0.3f, 1.8f, 0);
+
+        Frame(shadows: true, draws: [new(cube, 0, at, Quaternion.Identity, 0)]);
+        Assert.Equal(1, _meshes.Frame.ModelCamera.Records);
+        Assert.True(_meshes.Frame.ModelNear.Records > 0);
+
+        Frame(shadows: true, draws: [new(cube, 0, at, Quaternion.Identity, 0, ModelShadow.None)]);
+        Assert.Equal(1, _meshes.Frame.ModelCamera.Records);
+        Assert.Equal(0, _meshes.Frame.ModelNear.Records + _meshes.Frame.ModelFar.Records);
+
+        Frame(shadows: true, draws: [new(cube, 0, at, Quaternion.Identity, 0, ModelShadow.Only)]);
+        Assert.Equal(0, _meshes.Frame.ModelCamera.Records);
+        Assert.True(_meshes.Frame.ModelNear.Records > 0);
+
+        Frame(draws: [new(cube, 0, at, Quaternion.Identity, 0, ModelShadow.Only)]);
+        Assert.Equal(
+            0,
+            _meshes.Frame.ModelCamera.Records + _meshes.Frame.ModelNear.Records + _meshes.Frame.ModelFar.Records
+        );
+    }
+
+    [Fact]
+    public void A_model_level_drawn_twice_is_one_command_with_two_instances()
+    {
+        var cube = AddCube(10);
+        Begin();
+        RunUntil(() => _models.IsUploaded(cube));
+        var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 1);
+        ModelDraw[] draws =
+        [
+            new(cube, 0, new Vector3(-0.3f, 1.8f, 0), Quaternion.Identity, 0.5f),
+            new(cube, 0, new Vector3(0.2f, 1.8f, 0), turn, 0.25f),
+        ];
+
+        var slot = Frame(draws: draws);
+
+        var models = _meshes.Frame.ModelCamera;
+        Assert.Equal(new MeshModelList(2, 1), models);
+        var command = _targets.ModelCommandsOf(slot, 0)[0];
+        Assert.Equal(2u, command.InstanceCount);
+        Assert.Equal((uint)MeshPass.ModelRecordBase(slot, 0), command.FirstInstance);
+        Assert.True(command.IndexCount > 0 && command.IndexCount % 3 == 0);
+        var records = _targets.ModelDrawsOf(slot, 0);
+        Assert.Equal(draws[0].Corner, records[0].Corner);
+        Assert.Equal(0.5f, records[0].Tint);
+        Assert.Equal(draws[1].Corner, records[1].Corner);
+        Assert.Equal(turn, records[1].Turn);
+        Assert.Equal(0.01f, records[1].VoxelMetres);
+        Assert.Equal(0u, records[1].Block);
+        Assert.Equal(records[0].VertexBase, records[1].VertexBase);
+        var words = MemoryMarshal.Cast<byte, uint>(_targets.Heap.AsSpan());
+        var indices = MemoryMarshal.Cast<byte, ushort>(_targets.Heap.AsSpan());
+        for (var k = 0; k < command.IndexCount; k++)
+        {
+            var at = (int)records[0].VertexBase + MeshVertex.Words * indices[(int)command.FirstIndex + k];
+            var vertex = new MeshVertex
+            {
+                PositionXY = words[at],
+                PositionZMaterial = words[at + 1],
+                Normal = words[at + 2],
+            };
+            // In the block's voxels, which start one before the box.
+            var position = MeshVertex.DecodePosition(in vertex) - Vector3.One;
+            Assert.InRange(position.X, -0.5f, 10.5f);
+            Assert.InRange(position.Y, -0.5f, 10.5f);
+            Assert.InRange(position.Z, -0.5f, 10.5f);
+            Assert.Equal(1, MeshVertex.DecodeMaterial(in vertex));
+        }
+
+        // Without shadows the cascades take none.
+        Assert.Equal(default, _meshes.Frame.ModelNear);
+        Assert.Equal(default, _meshes.Frame.ModelFar);
+    }
+
+    /// <summary>
+    /// A 40-voxel cube is 2 blocks along each axis (voxels -1 to 39), each with faces: 8 commands, each over the model's
+    /// one draw.
+    /// </summary>
+    [Fact]
+    public void Each_block_of_a_model_level_is_a_command_of_its_own()
+    {
+        var small = AddCube(10);
+        var large = AddCube(40);
+        Begin();
+        RunUntil(() => _models.IsUploaded(small) && _models.IsUploaded(large));
+        ModelDraw[] draws =
+        [
+            new(large, 0, new Vector3(-0.2f, 1.6f, -0.2f), Quaternion.Identity, 0),
+            new(small, 0, new Vector3(0.3f, 1.8f, 0), Quaternion.Identity, 0),
+        ];
+
+        var slot = Frame(draws: draws);
+
+        Assert.Equal(new MeshModelList(9, 9), _meshes.Frame.ModelCamera);
+        var blocks = new HashSet<uint>();
+        for (var i = 0; i < 9; i++)
+        {
+            var command = _targets.ModelCommandsOf(slot, 0)[i];
+            Assert.Equal(1u, command.InstanceCount);
+            var record = _targets.ModelDrawsOf(slot, 0)[(int)command.FirstInstance - MeshPass.ModelRecordBase(slot, 0)];
+            if (record.Corner == draws[0].Corner)
+            {
+                Assert.True(blocks.Add(record.Block));
+            }
+        }
+
+        Assert.Equal(8, blocks.Count);
+        Assert.Contains(MeshModelDraw.PackBlock(1, 1, 1), blocks);
+    }
+
+    /// <summary>
+    /// The blocks of a 40-voxel cube together are one closed surface, its low sides too: every edge, placed in the model,
+    /// is shared by exactly two triangles, once each way.
+    /// </summary>
+    [Fact]
+    public void A_model_level_meshes_into_a_closed_surface()
+    {
+        var cube = AddCube(40);
+        Begin();
+        RunUntil(() => _models.IsUploaded(cube));
+        var slot = Frame(draws: [new(cube, 0, new Vector3(-0.2f, 1.6f, -0.2f), Quaternion.Identity, 0)]);
+
+        var words = MemoryMarshal.Cast<byte, uint>(_targets.Heap.AsSpan());
+        var indices = MemoryMarshal.Cast<byte, ushort>(_targets.Heap.AsSpan());
+        var edges = new Dictionary<(Vector3, Vector3), int>();
+        var low = new Vector3(float.MaxValue);
+        var corners = new Vector3[3];
+        for (var i = 0; i < _meshes.Frame.ModelCamera.Commands; i++)
+        {
+            var command = _targets.ModelCommandsOf(slot, 0)[i];
+            var record = _targets.ModelDrawsOf(slot, 0)[(int)command.FirstInstance - MeshPass.ModelRecordBase(slot, 0)];
+            var block = new Vector3(record.Block & 0xFF, (record.Block >> 8) & 0xFF, (record.Block >> 16) & 0xFF);
+            for (var t = 0; t < command.IndexCount; t += 3)
+            {
+                for (var c = 0; c < 3; c++)
+                {
+                    var at = (int)record.VertexBase + MeshVertex.Words * indices[(int)command.FirstIndex + t + c];
+                    var vertex = new MeshVertex { PositionXY = words[at], PositionZMaterial = words[at + 1] };
+                    corners[c] = MeshVertex.DecodePosition(in vertex) + 32 * block - Vector3.One;
+                    low = Vector3.Min(low, corners[c]);
+                }
+
+                for (var c = 0; c < 3; c++)
+                {
+                    var key = (corners[c], corners[(c + 1) % 3]);
+                    edges[key] = edges.GetValueOrDefault(key) + 1;
+                }
+            }
+        }
+
+        Assert.NotEmpty(edges);
+        Assert.All(edges, edge => Assert.Equal(1, edge.Value));
+        Assert.All(edges, edge => Assert.True(edges.ContainsKey((edge.Key.Item2, edge.Key.Item1))));
+        // The low sides are there: the surface reaches below voxel 0's middle.
+        Assert.True(low.X < 0.5f && low.Y < 0.5f && low.Z < 0.5f);
+    }
+
+    /// <summary>A replaced model draws its old mesh until the new one is in, and stays counted as uploaded.</summary>
+    [Fact]
+    public void A_replaced_model_keeps_its_old_mesh_until_the_new_one_is_in()
+    {
+        // A 10-voxel cube in a 20-voxel box, then a 20-voxel one: a model keeps its box.
+        var cube = _models.Add([_models.Encode(CubeVoxels(10))], new VoxelCoord(20, 20, 20));
+        Begin();
+        RunUntil(() => _models.IsUploaded(cube));
+        ModelDraw[] draws = [new(cube, 0, new Vector3(0, 1.8f, 0), Quaternion.Identity, 0)];
+        var slot = Frame(draws: draws);
+        var before = _targets.ModelCommandsOf(slot, 0)[0].IndexCount;
+
+        _models.Replace(cube, [_models.Encode(CubeVoxels(20))]);
+        slot = Frame(draws: draws);
+
+        Assert.True(_models.IsUploaded(cube));
+        Assert.Equal(before, _targets.ModelCommandsOf(slot, 0)[0].IndexCount);
+        RunUntil(() => !_models.Pending.Contains(cube), draws);
+        slot = Frame(draws: draws);
+        Assert.True(_targets.ModelCommandsOf(slot, 0)[0].IndexCount > before);
+    }
+
+    /// <summary>
+    /// Matches that end with model jobs still with the workers or waiting: the next match's world and models catch up,
+    /// so no job comes back to it still naming an old match's model.
+    /// </summary>
+    [Fact]
+    public void A_new_match_takes_up_the_jobs_the_last_left_with_models()
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            AddCube(40);
+            Begin();
+            Frame();
+            _meshes.EndMatch();
+        }
+
+        var cube = AddCube(40);
+        Begin();
+        RunUntilUpToDate();
+        RunUntil(() => _models.IsUploaded(cube));
+
+        Assert.Equal(0, _meshes.PendingBlocks);
+    }
+
+    /// <summary>
+    /// With level 5 among the world's levels the sky field is built round the view on a worker and drawn from: the
+    /// lighting record names it, and the air over the slope sees all the sky in the heap's copy.
+    /// </summary>
+    [Fact]
+    public void A_world_with_coarse_levels_gets_a_sky_field()
+    {
+        const int levels = 6;
+        using var world = TestWorlds.Load(new SlopeGenerator(), Centre, radiusMetres: 2, levels: levels);
+        var options = new EngineOptions
+        {
+            Voxels = new VoxelSettings { StreamingRadiusMetres = 2, Levels = levels },
+            Renderer = new RendererSettings { MeshFinestLevel = 3 },
+        };
+        using var targets = new FakeTargets();
+        using var meshes = new WorldMeshes(
+            _palette,
+            targets,
+            targets,
+            Options.Create(options),
+            NullLogger<WorldMeshes>.Instance
+        );
+        meshes.Initialize();
+        meshes.BeginMatch(world, new VoxelModels(world), new NoVoxelTintMap());
+        var view = LookingDown(Centre);
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        var frame = 0;
+        while (!meshes.HasSkyField)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "No sky field was built.");
+            var at = frame++ % FrameSync.FramesInFlight;
+            targets.Apply(meshes.Regions(at, meshes.Upload(at, frame / 60.0, in view)));
+            Thread.Sleep(1);
+        }
+
+        Assert.True(meshes.Frame.SkyUploaded);
+        var firstUpload = meshes.Frame.SkyUploadOffset;
+
+        var slot = frame++ % FrameSync.FramesInFlight;
+        targets.Apply(meshes.Regions(slot, meshes.Upload(slot, frame / 60.0, in view)));
+        var lighting = targets.LightingOf(slot);
+        Assert.Equal(SkyField.CellMetresFor(VoxelGrid.Unit), lighting.SkyCellMetres);
+        Assert.False(meshes.Frame.SkyUploaded);
+        // The frame that drew it first staged it for the image: the cell 2 m above the camera, straight up from the
+        // slope, sees all the sky.
+        var cell = (Centre + new Vector3(0, 2, 0) - lighting.SkyCorner) / lighting.SkyCellMetres;
+        var index = (int)cell.X + SkyField.SizeXZ * ((int)cell.Y + SkyField.SizeY * (int)cell.Z);
+        Assert.Equal(255, targets.Staged(firstUpload, index));
+    }
+
+    /// <summary>
+    /// The field is built again after a climb of 20 m, under the 32 m that builds it again in any direction (the box is
+    /// 64 m tall, so a roof 20 m up would leave its top), and not after 20 m across.
+    /// </summary>
+    [Fact]
+    public void Climbing_builds_the_sky_field_again_sooner_than_moving_across()
+    {
+        const int levels = 6;
+        using var world = TestWorlds.Load(new SlopeGenerator(), Centre, radiusMetres: 2, levels: levels);
+        var options = new EngineOptions
+        {
+            Voxels = new VoxelSettings { StreamingRadiusMetres = 2, Levels = levels },
+            Renderer = new RendererSettings { MeshFinestLevel = 3 },
+        };
+        using var targets = new FakeTargets();
+        using var meshes = new WorldMeshes(
+            _palette,
+            targets,
+            targets,
+            Options.Create(options),
+            NullLogger<WorldMeshes>.Instance
+        );
+        meshes.Initialize();
+        meshes.BeginMatch(world, new VoxelModels(world), new NoVoxelTintMap());
+        var frame = 0;
+        Assert.True(SkyBuiltWithin(meshes, targets, LookingDown(Centre), ref frame, 3000), "No first field.");
+        var raised = Centre + new Vector3(0, 20, 0);
+
+        Assert.True(SkyBuiltWithin(meshes, targets, LookingDown(raised), ref frame, 3000), "No field after the climb.");
+        Assert.False(
+            SkyBuiltWithin(meshes, targets, LookingDown(raised + new Vector3(20, 0, 0)), ref frame, 400),
+            "A field after 20 m across."
+        );
+    }
+
+    /// <summary>Uploads frames from <paramref name="view"/> until one stages a new sky field, at most <paramref name="frames"/>.</summary>
+    private static bool SkyBuiltWithin(
+        WorldMeshes meshes,
+        FakeTargets targets,
+        ViewConstants view,
+        ref int frame,
+        int frames
+    )
+    {
+        for (var i = 0; i < frames; i++)
+        {
+            var slot = frame++ % FrameSync.FramesInFlight;
+            targets.Apply(meshes.Regions(slot, meshes.Upload(slot, frame / 60.0, in view)));
+            if (meshes.Frame.SkyUploaded)
+            {
+                return true;
+            }
+
+            // The flood runs on a worker.
+            Thread.Sleep(2);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// With the slope's dirt glowing, the blocks round the view each offer a light at their glowing surface: the slot's
+    /// list holds the brightest, near the ground, in the dirt's colour.
+    /// </summary>
+    [Fact]
+    public void Glowing_ground_lights_the_view_with_its_blocks_lights()
+    {
+        using var targets = new FakeTargets();
+        var options = new EngineOptions
+        {
+            Voxels = new VoxelSettings { StreamingRadiusMetres = RadiusMetres, Levels = Levels },
+            Renderer = new RendererSettings { MeshFinestLevel = 0 },
+        };
+        using var meshes = new WorldMeshes(
+            new GlowingPalette(),
+            targets,
+            targets,
+            Options.Create(options),
+            NullLogger<WorldMeshes>.Instance
+        );
+        meshes.Initialize();
+        meshes.BeginMatch(_world, _models, new NoVoxelTintMap());
+        var view = LookingDown(Centre);
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var frame = 0;
+        int slot;
+        do
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The meshes did not catch up.");
+            _world.Update(0);
+            slot = frame++ % FrameSync.FramesInFlight;
+            targets.Apply(meshes.Regions(slot, meshes.Upload(slot, frame / 60.0, in view)));
+            Thread.Sleep(1);
+        } while (!meshes.IsUpToDate);
+
+        slot = frame++ % FrameSync.FramesInFlight;
+        meshes.Upload(slot, frame / 60.0, in view);
+
+        var count = (int)targets.LightingOf(slot).LightCount;
+        Assert.InRange(count, 1, MeshPass.MostLights);
+        var ground = SlopeGenerator.Height(0, 0, 17) / 100f;
+        foreach (var light in targets.LightsOf(slot)[..count])
+        {
+            Assert.InRange(Vector3.Distance(light.Position, Centre), 0, 8);
+            Assert.InRange(light.Position.Y, ground - 1, ground + 1);
+            Assert.Equal(GlowingPalette.DirtColour, light.Colour);
+            Assert.True(light.Power > 0 && light.Reach > 0);
+        }
+
+        // An event's light joins them, ranked with them: a bright one near the camera first; one past the gathering
+        // distance or behind the view not at all.
+        PointLight[] events =
+        [
+            new(Centre + new Vector3(0.5f, -1, 0), Vector3.UnitX, 5000),
+            new(Centre + new Vector3(200, 0, 0), Vector3.UnitX, 5000),
+            new(Centre + new Vector3(0, 40, 0), Vector3.UnitX, 1),
+        ];
+        slot = frame++ % FrameSync.FramesInFlight;
+        meshes.Upload(slot, frame / 60.0, in view, default, events);
+        // The glowing ground may fill the budget (128 by default): the event's light then takes the dimmest one's place.
+        Assert.Equal(Math.Min(count + 1, new RendererSettings().MostLights), (int)targets.LightingOf(slot).LightCount);
+        Assert.Equal(Vector3.UnitX, targets.LightsOf(slot)[0].Colour);
+        Assert.Equal(5000, targets.LightsOf(slot)[0].Power);
+    }
+
+    /// <summary>The light budget (<c>Engine:Renderer:MostLights</c>) keeps the brightest at the camera.</summary>
+    [Fact]
+    public void The_light_budget_keeps_the_brightest_lights()
+    {
+        using var targets = new FakeTargets();
+        var options = new EngineOptions
+        {
+            Voxels = new VoxelSettings { StreamingRadiusMetres = RadiusMetres, Levels = Levels },
+            Renderer = new RendererSettings { MeshFinestLevel = 0, MostLights = 2 },
+        };
+        using var meshes = new WorldMeshes(
+            _palette,
+            targets,
+            targets,
+            Options.Create(options),
+            NullLogger<WorldMeshes>.Instance
+        );
+        meshes.Initialize();
+        meshes.BeginMatch(_world, _models, new NoVoxelTintMap());
+        PointLight[] events =
+        [
+            new(Centre + new Vector3(1, -1, 0), new Vector3(1, 0, 0), 10),
+            new(Centre + new Vector3(-1, -1, 0), new Vector3(0, 1, 0), 30),
+            new(Centre + new Vector3(0, -1, 1), new Vector3(0, 0, 1), 20),
+        ];
+        var view = LookingDown(Centre);
+        meshes.Upload(0, 0, in view, default, events);
+
+        Assert.Equal(2u, targets.LightingOf(0).LightCount);
+        Assert.Equal(30, targets.LightsOf(0)[0].Power);
+        Assert.Equal(20, targets.LightsOf(0)[1].Power);
+    }
+
+    [Fact]
+    public void A_removed_model_frees_its_meshes()
+    {
+        Begin();
+        RunUntilUpToDate();
+        var empty = _meshes.HeapUsedBytes;
+        var cube = AddCube(40);
+        RunUntil(() => _models.IsUploaded(cube));
+        Assert.True(_meshes.HeapUsedBytes > empty);
+
+        _models.RemoveAndFree(cube);
+        Frame();
+
+        Assert.Equal(empty, _meshes.HeapUsedBytes);
+    }
+
+    [Fact]
+    public void A_model_block_reads_its_voxels_with_air_round_the_box()
+    {
+        var voxels = new byte[VoxelConstants.ChunkVoxels];
+        var size = new VoxelCoord(40, 5, 3);
+        for (var z = 0; z < size.Z; z++)
+        {
+            for (var y = 0; y < size.Y; y++)
+            {
+                for (var x = 0; x < size.X; x++)
+                {
+                    voxels[x + VoxelConstants.ChunkSize * (y + VoxelConstants.ChunkSize * z)] = (byte)(1 + x);
+                }
+            }
+        }
+
+        var samples = new byte[VoxelWorld.BlockSamples];
+        WorldMeshes.ReadModelBlock(voxels, size, 1, 0, 0, samples);
+
+        const int edge = VoxelWorld.BlockSampleEdge;
+        static int At(int x, int y, int z) => x + edge * (y + edge * z);
+        // Sample s is voxel 32 + s - 3 along x, s - 3 along y and z.
+        Assert.Equal(1 + 29, samples[At(0, 3, 3)]);
+        Assert.Equal(1 + 39, samples[At(10, 7, 5)]);
+        Assert.Equal(0, samples[At(11, 3, 3)]);
+        Assert.Equal(0, samples[At(5, 2, 3)]);
+        Assert.Equal(0, samples[At(5, 8, 3)]);
+        Assert.Equal(0, samples[At(5, 3, 6)]);
+    }
+
+    /// <summary>
+    /// The four level-1 columns round the middle are drawn as their level-0 columns (their nearest parts within level 0's
+    /// reach times the share), the rest at level 1: the blocks along that square's sides are drawn from stitched meshes,
+    /// which leave a tenth of the open edges plain meshes leave there. (The slope is a stair of 1 cm steps without
+    /// densities, which the two levels sample apart: what stays open are the steps they disagree on.)
+    /// </summary>
+    [Fact]
+    public void Blocks_beside_a_coarser_column_are_stitched_to_it()
+    {
+        var drawn = StitchFromAbove();
+
+        // Drawing the stitched meshes allocates nothing.
+        for (var i = 0; i < 10; i++)
+        {
+            Frame(Above, shadows: true);
+        }
+
+        Assert.Equal(
+            0,
+            SystemAllocation.BytesAllocatedWithoutCollection(() =>
+            {
+                for (var i = 0; i < 100; i++)
+                {
+                    Frame(Above, shadows: true);
+                }
+            })
+        );
+        Assert.Equal(drawn, _meshes.StitchedDraws);
+
+        var stitched = OpenEdges(Frame(Above));
+        var plain = OpenEdges(Frame(Above, plain: true));
+        Assert.Equal(0, _meshes.StitchedDraws);
+        // The debug view of plain meshes keeps the stitched ones: back from it, they are drawn at once.
+        var started = _meshes.StitchesStarted;
+        Frame(Above);
+        Assert.Equal(drawn, _meshes.StitchedDraws);
+        Assert.Equal(started, _meshes.StitchesStarted);
+        _output.WriteLine($"{drawn} blocks stitched: {stitched} open edges along the seams, {plain} plain");
+        Assert.True(plain > 1000, $"Only {plain} open edges along the plain seams: the test does not see them.");
+        Assert.True(stitched * 8 <= plain, $"{stitched} open edges along the stitched seams, {plain} plain.");
+    }
+
+    /// <summary>
+    /// An edit across a seam changes the blocks on both sides, at both levels: the stitched meshes there are made again
+    /// from the new voxels, and the seam stays closed.
+    /// </summary>
+    [Fact]
+    public void An_edit_across_a_seam_is_stitched_again()
+    {
+        var drawn = StitchFromAbove();
+        var started = _meshes.StitchesStarted;
+        var ground = SlopeGenerator.Height(256, 0, 17);
+        _world.Apply(VoxelEdit.Sphere(new VoxelCoord(256, ground, 0), 40, VoxelEditOperation.Clear));
+        _world.Update(0);
+        Frame(Above);
+        RunUntilUpToDate(Above);
+        RunUntil(() => _meshes.StitchesSettled, at: Above);
+        var stitched = OpenEdges(Frame(Above));
+        var after = _meshes.StitchedDraws;
+        var plain = OpenEdges(Frame(Above, plain: true));
+        _output.WriteLine(
+            $"{_meshes.StitchesStarted - started} stitched meshes made again; {drawn} blocks stitched before, {after} after: {stitched} open edges, {plain} plain"
+        );
+        Assert.True(_meshes.StitchesStarted > started);
+        Assert.True(stitched * 8 <= plain, $"{stitched} open edges along the stitched seams, {plain} plain.");
+    }
+
+    /// <summary>
+    /// A heap too small for the world's meshes: the blocks that find no room no longer count as pending, so the world
+    /// comes up to date, and they are not read again while nothing frees a range (before, they were read and meshed
+    /// again every frame, and the world never came up to date).
+    /// </summary>
+    [Fact]
+    public void Blocks_a_full_heap_has_no_room_for_are_not_read_again_until_ranges_are_freed()
+    {
+        using var targets = new FakeTargets((int)(MeshPass.TintMapOffset + MeshPass.TintMapBytes) + (256 << 10));
+        using var meshes = NewMeshes(targets);
+        meshes.BeginMatch(_world, _models, new NoVoxelTintMap());
+        var view = LookingDown(Centre);
+        var frame = 0;
+        void Step()
+        {
+            var slot = frame++ % FrameSync.FramesInFlight;
+            targets.Apply(meshes.Regions(slot, meshes.Upload(slot, frame / 60.0, in view)));
+        }
+
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        do
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The meshes did not come up to date with the heap full.");
+            _world.Update(0);
+            Step();
+            Thread.Sleep(1);
+        } while (!meshes.IsUpToDate);
+
+        Assert.True(meshes.HeapUsedBytes > targets.Heap.Length / 2);
+        // Two seconds for a retry the ranges freed while loading may have called for (once a second at most).
+        for (var i = 0; i < 120; i++)
+        {
+            Step();
+        }
+
+        var read = meshes.BlocksRead;
+        for (var i = 0; i < 120; i++)
+        {
+            Step();
+        }
+
+        Assert.Equal(read, meshes.BlocksRead);
+        Assert.True(meshes.StarvedBlocks > 0, "No block found the heap full: the test does not see a full heap.");
+    }
+
+    /// <summary>
+    /// A heap with room for what the view draws (with shadows) and a quarter more, but not for every column it meshes:
+    /// the meshes of columns the view does not draw are freed to make room, so every block it draws has its mesh, as with
+    /// a heap of plenty; with three levels, columns between the coarsest and the drawn ones are freed too and the view
+    /// still splits through them; moved, the view finds the columns it needs again meshed again.
+    /// </summary>
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void A_full_heap_frees_the_columns_the_view_does_not_draw(int levels)
+    {
+        var moved = Above + new Vector3(2.6f, 0, 1.3f);
+        using var world = TestWorlds.Load(new SlopeGenerator(), Centre, radiusMetres: RadiusMetres, levels: levels);
+        var models = new VoxelModels(world);
+
+        // The heap of plenty: what the view draws, and what it does not.
+        using var plenty = new FakeTargets();
+        using var reference = NewMeshes(plenty, levels);
+        reference.BeginMatch(world, models, new NoVoxelTintMap());
+        var frame = 0;
+        void Step(WorldMeshes meshes, FakeTargets targets, Vector3 at)
+        {
+            var slot = frame++ % FrameSync.FramesInFlight;
+            var view = LookingDown(at);
+            view.SunDirection = ViewConstants.DefaultSunDirection;
+            view.Switches = ViewSwitches.Shadows;
+            targets.Apply(meshes.Regions(slot, meshes.Upload(slot, frame / 60.0, in view)));
+        }
+
+        void Settle(WorldMeshes meshes, FakeTargets targets, Vector3 at)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(60);
+            do
+            {
+                Assert.True(DateTime.UtcNow < deadline, "The meshes did not come up to date.");
+                world.Update(0);
+                Step(meshes, targets, at);
+                Thread.Sleep(1);
+            } while (!meshes.IsUpToDate);
+
+            for (var i = 0; i < 30; i++)
+            {
+                Step(meshes, targets, at);
+            }
+        }
+
+        Settle(reference, plenty, Above);
+        var used = reference.HeapUsedBytes;
+        var undrawn = reference.UndrawnBytes();
+        var draws = (reference.DrawCount, reference.Frame.NearShadows, reference.Frame.FarShadows);
+        Settle(reference, plenty, moved);
+        var movedDraws = (reference.DrawCount, reference.Frame.NearShadows, reference.Frame.FarShadows);
+        var fixedBytes = (long)(MeshPass.TintMapOffset + MeshPass.TintMapBytes);
+        var drawn = used - fixedBytes - undrawn;
+        _output.WriteLine(
+            $"{used} bytes used, {undrawn} of them in columns not drawn; draws {draws}, moved {movedDraws}"
+        );
+        Assert.True(
+            undrawn > drawn / 4,
+            $"Only {undrawn} bytes the view does not draw: the test sees nothing to free."
+        );
+
+        // A heap with room for what the view draws and a quarter more.
+        using var targets = new FakeTargets((int)(fixedBytes + drawn + drawn / 4));
+        using var meshes = NewMeshes(targets, levels);
+        meshes.BeginMatch(world, models, new NoVoxelTintMap());
+        Settle(meshes, targets, Above);
+        _output.WriteLine($"{meshes.Evictions} columns freed, {meshes.StarvedBlocks} blocks without room");
+        Assert.True(meshes.Evictions > 0);
+        Assert.Equal(0, meshes.StarvedBlocks);
+        Assert.Equal(draws, (meshes.DrawCount, meshes.Frame.NearShadows, meshes.Frame.FarShadows));
+
+        // Everything the view does not need freed at once: the frames after draw the same, no column dropping back to
+        // its coarser one while one between it and the drawn ones is meshed again.
+        var before = meshes.Evictions;
+        meshes.EvictForTests(1 << 28);
+        Assert.True(meshes.Evictions > before || levels == 2);
+        for (var i = 0; i < 10; i++)
+        {
+            world.Update(0);
+            Step(meshes, targets, Above);
+            Assert.Equal(draws, (meshes.DrawCount, meshes.Frame.NearShadows, meshes.Frame.FarShadows));
+        }
+
+        Settle(meshes, targets, moved);
+        _output.WriteLine(
+            $"moved: {meshes.Evictions} columns freed, {meshes.EvictionsWoken} meshed again, {meshes.StarvedBlocks} blocks without room"
+        );
+        Assert.Equal(0, meshes.StarvedBlocks);
+        Assert.Equal(movedDraws, (meshes.DrawCount, meshes.Frame.NearShadows, meshes.Frame.FarShadows));
+        Assert.True(meshes.EvictionsWoken > 0);
+    }
+
+    /// <summary>With shadows on and models drawn, so the cascades' fit, tests, and second pass, and the models' grouping, are measured too.</summary>
+    [Fact]
+    public void An_upload_allocates_nothing_once_up_to_date()
+    {
+        var small = AddCube(10);
+        var large = AddCube(40);
+        Begin();
+        RunUntilUpToDate();
+        RunUntil(() => _models.IsUploaded(small) && _models.IsUploaded(large));
+        ModelDraw[] draws =
+        [
+            new(large, 0, new Vector3(-0.2f, 1.6f, -0.2f), Quaternion.Identity, 0),
+            new(small, 0, new Vector3(0.3f, 1.8f, 0), Quaternion.Identity, 0),
+            new(small, 0, new Vector3(-0.5f, 1.8f, 0), Quaternion.Identity, 0),
+        ];
+        for (var i = 0; i < 100; i++)
+        {
+            Frame(shadows: true, draws: draws);
+        }
+
+        Assert.True(_meshes.Frame.NearShadows > 0 && _meshes.Frame.FarShadows > 0);
+        Assert.True(_meshes.Frame.ModelCamera.Commands > 0 && _meshes.Frame.ModelNear.Commands > 0);
+        var before = SystemAllocation.StartMeasurement();
+        for (var i = 0; i < 1000; i++)
+        {
+            Frame(shadows: true, draws: draws);
+        }
+
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+    }
+
+    private void Begin() => _meshes.BeginMatch(_world, _models, new NoVoxelTintMap());
+
+    /// <summary>From above the view sees the level-0 columns round the middle and the level-1 ones past them.</summary>
+    private static readonly Vector3 Above = new(0, 30, 0);
+
+    /// <summary>Begins the match, meshes the world seen from <see cref="Above"/>, and its seams' stitched meshes; returns how many are drawn.</summary>
+    private int StitchFromAbove()
+    {
+        Begin();
+        RunUntilUpToDate(Above);
+        RunUntil(() => _meshes.StitchedDraws > 0 && _meshes.StitchesSettled, at: Above);
+        return _meshes.StitchedDraws;
+    }
+
+    /// <summary>
+    /// One frame's upload, its copies applied to the emulated heap, with the sun's shadows when
+    /// <paramref name="shadows"/>, and every block from its plain mesh when <paramref name="plain"/>. Returns the slot it
+    /// used.
+    /// </summary>
+    private int Frame(Vector3? at = null, bool shadows = false, ModelDraw[]? draws = null, bool plain = false)
+    {
+        var slot = _frame++ % FrameSync.FramesInFlight;
+        var view = LookingDown(at ?? Centre);
+        if (shadows)
+        {
+            view.SunDirection = ViewConstants.DefaultSunDirection;
+            view.Switches = ViewSwitches.Shadows;
+        }
+
+        if (plain)
+        {
+            view.Switches |= ViewSwitches.Plain;
+        }
+
+        var count = _meshes.Upload(slot, _frame / 60.0, in view, draws);
+        _targets.Apply(_meshes.Regions(slot, count));
+        return slot;
+    }
+
+    /// <summary>Frames, with the world updated, until <paramref name="done"/> holds.</summary>
+    private void RunUntil(Func<bool> done, ModelDraw[]? draws = null, Vector3? at = null)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (!done())
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The meshes did not catch up.");
+            _world.Update(0);
+            Frame(at, draws: draws);
+            Thread.Sleep(1);
+        }
+    }
+
+    /// <summary>
+    /// The edges of the world's triangles the camera drew in <paramref name="slot"/> that one triangle alone uses, their
+    /// ends rounded to a sixty-fourth of a centimetre.
+    /// </summary>
+    private int OpenEdges(int slot)
+    {
+        var words = MemoryMarshal.Cast<byte, uint>(_targets.Heap.AsSpan());
+        var indices = MemoryMarshal.Cast<byte, ushort>(_targets.Heap.AsSpan());
+        var edges = new Dictionary<((int, int, int), (int, int, int)), int>();
+        var corners = new (int, int, int)[3];
+        for (var i = 0; i < _meshes.DrawCount; i++)
+        {
+            var command = _targets.CommandsOf(slot, 0)[i];
+            var record = _targets.DrawsOf(slot)[RecordOf(command, slot)];
+            for (var t = 0; t < command.IndexCount; t += 3)
+            {
+                for (var c = 0; c < 3; c++)
+                {
+                    var at = (int)record.VertexBase + MeshVertex.Words * indices[(int)command.FirstIndex + t + c];
+                    var vertex = new MeshVertex { PositionXY = words[at], PositionZMaterial = words[at + 1] };
+                    var p = (record.Origin + MeshVertex.DecodePosition(in vertex) * record.VoxelMetres) * 6400;
+                    corners[c] = ((int)MathF.Round(p.X), (int)MathF.Round(p.Y), (int)MathF.Round(p.Z));
+                }
+
+                for (var c = 0; c < 3; c++)
+                {
+                    var (a, b) = (corners[c], corners[(c + 1) % 3]);
+                    var key = a.CompareTo(b) < 0 ? (a, b) : (b, a);
+                    edges[key] = edges.GetValueOrDefault(key) + 1;
+                }
+            }
+        }
+
+        return edges.Count(edge => edge.Value == 1 && OnSeam(edge.Key.Item1) && OnSeam(edge.Key.Item2));
+    }
+
+    /// <summary>
+    /// True for a point (in sixty-fourths of a centimetre) within 8 cm of the square of 2.56 m half-width round the
+    /// middle: the seams between the level-0 columns there and the level-1 ones round them.
+    /// </summary>
+    private static bool OnSeam((int X, int Y, int Z) point)
+    {
+        const float Seam = 2.56f;
+        const float Near = 0.08f;
+        var x = MathF.Abs(point.X / 6400f);
+        var z = MathF.Abs(point.Z / 6400f);
+        return x < Seam + Near && z < Seam + Near && (MathF.Abs(x - Seam) < Near || MathF.Abs(z - Seam) < Near);
+    }
+
+    private void RunUntilUpToDate(Vector3? at = null)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        do
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The meshes did not catch up.");
+            _world.Update(0);
+            Frame(at);
+            Thread.Sleep(1);
+        } while (!_meshes.IsUpToDate);
+    }
+
+    /// <summary>Every index count drawn last frame, in order.</summary>
+    private List<uint> DrawnIndices()
+    {
+        Frame();
+        var slot = (_frame - 1) % FrameSync.FramesInFlight;
+        var counts = new List<uint>();
+        for (var i = 0; i < _meshes.DrawCount; i++)
+        {
+            counts.Add(_targets.CommandsOf(slot, 0)[i].IndexCount);
+        }
+
+        counts.Sort();
+        return counts;
+    }
+
+    /// <summary>The index of the draw a command names in its slot.</summary>
+    private static int RecordOf(DrawIndexedIndirectCommand command, int slot) =>
+        (int)command.FirstInstance - slot * MeshPass.MaxRecords;
+
+    /// <summary>A view 1.5 m above the ground looking straight down with a 90 degree field of view.</summary>
+    private static ViewConstants LookingDown(Vector3 at) =>
+        new()
+        {
+            Position = at,
+            Forward = new Vector3(0, -1, 0),
+            Right = new Vector3(1, 0, 0),
+            Up = new Vector3(0, 0, -1),
+            MaxDistance = 100,
+        };
+
+    /// <summary>A model of one solid cube of <paramref name="size"/> voxels a side, at level 0 alone.</summary>
+    private int AddCube(int size) => _models.Add([_models.Encode(CubeVoxels(size))], new VoxelCoord(size, size, size));
+
+    /// <summary>A chunk's voxels holding a solid cube of material 1, <paramref name="size"/> voxels a side, at its corner.</summary>
+    private static byte[] CubeVoxels(int size)
+    {
+        var voxels = new byte[VoxelConstants.ChunkVoxels];
+        for (var z = 0; z < size; z++)
+        {
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    voxels[x + (y << VoxelConstants.ChunkShift) + (z << (2 * VoxelConstants.ChunkShift))] = 1;
+                }
+            }
+        }
+
+        return voxels;
+    }
+
+    private sealed class CountingPalette : IVoxelPalette
+    {
+        public int Prepared { get; private set; }
+
+        public void Prepare() => Prepared++;
+
+        public VoxelLook Look(byte material) => VoxelLook.Plain(new Vector3(material / 255f, 0.5f, 0.25f));
+    }
+
+    /// <summary>A palette whose dirt glows.</summary>
+    private sealed class GlowingPalette : IVoxelPalette
+    {
+        public static readonly Vector3 DirtColour = new(0.5f, 0.25f, 0.125f);
+
+        public void Prepare() { }
+
+        public VoxelLook Look(byte material) =>
+            material == SlopeGenerator.Dirt
+                ? new VoxelLook(DirtColour, DirtColour, Patches: 0, Glow: 0.5f)
+                : VoxelLook.Plain(new Vector3(0.5f));
+    }
+
+    /// <summary>The draw target and staging in memory, and the heap emulated by applying the copy regions.</summary>
+    private sealed unsafe class FakeTargets(int heapBytes = 64 << 20) : IMeshDrawTarget, IStagingRegions, IDisposable
+    {
+        private const ulong RegionSize = 8UL << 20;
+        private readonly byte* _staging = (byte*)
+            NativeMemory.AllocZeroed((nuint)(RegionSize * FrameSync.FramesInFlight));
+        private readonly MeshDraw[][] _draws = [new MeshDraw[MeshPass.MaxRecords], new MeshDraw[MeshPass.MaxRecords]];
+        private readonly DrawIndexedIndirectCommand[][] _commands = CommandLists();
+        private readonly MeshLighting[] _shadows = new MeshLighting[FrameSync.FramesInFlight];
+        private readonly MeshLight[] _lights = new MeshLight[FrameSync.FramesInFlight * MeshPass.MostLights];
+        private readonly MeshModelDraw[][] _modelDraws = Lists<MeshModelDraw>(MeshPass.MaxModelRecords);
+        private readonly DrawIndexedIndirectCommand[][] _modelCommands = Lists<DrawIndexedIndirectCommand>(
+            MeshPass.MaxModelCommands
+        );
+
+        public byte[] Heap { get; } = new byte[heapBytes];
+
+        public ulong HeapBytes => (ulong)Heap.Length;
+
+        public ulong RegionBytes => RegionSize;
+
+        public ulong RegionOffset(int slot) => (ulong)slot * RegionSize;
+
+        public byte* Region(int slot) => _staging + RegionOffset(slot);
+
+        public void Flush(int slot, ulong bytes) => Assert.InRange(bytes, 0UL, RegionSize);
+
+        /// <summary>Byte <paramref name="index"/> of what was staged at <paramref name="offset"/> of the staging buffer.</summary>
+        public byte Staged(ulong offset, int index) => _staging[offset + (ulong)index];
+
+        public Span<MeshDraw> DrawsOf(int slot) => _draws[slot];
+
+        public Span<DrawIndexedIndirectCommand> CommandsOf(int slot, int list) =>
+            _commands[slot * MeshPass.Lists + list];
+
+        public ref MeshLighting LightingOf(int slot) => ref _shadows[slot];
+
+        public Span<MeshLight> LightsOf(int slot) => _lights.AsSpan(slot * MeshPass.MostLights, MeshPass.MostLights);
+
+        public Span<MeshModelDraw> ModelDrawsOf(int slot, int list) => _modelDraws[slot * MeshPass.Lists + list];
+
+        public Span<DrawIndexedIndirectCommand> ModelCommandsOf(int slot, int list) =>
+            _modelCommands[slot * MeshPass.Lists + list];
+
+        /// <summary>
+        /// Applies a frame's copy regions to the heap, after checking that no two write the same place: one copy
+        /// command's destination regions must not overlap (VUID-vkCmdCopyBuffer-pRegions-12482 in the Vulkan spec).
+        /// </summary>
+        public void Apply(ReadOnlySpan<BufferCopy> regions)
+        {
+            var sorted = regions.ToArray();
+            Array.Sort(sorted, static (a, b) => a.DstOffset.CompareTo(b.DstOffset));
+            for (var i = 1; i < sorted.Length; i++)
+            {
+                Assert.True(
+                    sorted[i - 1].DstOffset + sorted[i - 1].Size <= sorted[i].DstOffset,
+                    $"Two copies of one frame write heap bytes {sorted[i].DstOffset} on."
+                );
+            }
+
+            foreach (var region in regions)
+            {
+                Assert.True(region.DstOffset + region.Size <= HeapBytes);
+                new ReadOnlySpan<byte>(_staging + region.SrcOffset, (int)region.Size).CopyTo(
+                    Heap.AsSpan((int)region.DstOffset, (int)region.Size)
+                );
+            }
+        }
+
+        public void Dispose() => NativeMemory.Free(_staging);
+
+        private static T[][] Lists<T>(int length)
+        {
+            var lists = new T[FrameSync.FramesInFlight * MeshPass.Lists][];
+            for (var i = 0; i < lists.Length; i++)
+            {
+                lists[i] = new T[length];
+            }
+
+            return lists;
+        }
+
+        private static DrawIndexedIndirectCommand[][] CommandLists()
+        {
+            var lists = new DrawIndexedIndirectCommand[FrameSync.FramesInFlight * MeshPass.Lists][];
+            for (var i = 0; i < lists.Length; i++)
+            {
+                lists[i] = new DrawIndexedIndirectCommand[MeshPass.MaxDraws];
+            }
+
+            return lists;
+        }
+    }
+}

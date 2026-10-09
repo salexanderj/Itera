@@ -1,0 +1,8 @@
+{
+  "id": "itera.samplemod",
+  "name": "Itera Sample Mod",
+  "version": "0.1.0",
+  "entryAssembly": "Itera.SampleMod.dll",
+  "entryType": "Itera.SampleMod.SampleMod",
+  "apiVersion": 2
+}

@@ -1,0 +1,266 @@
+#version 460
+
+// Moves every particle of the pool one frame (ParticlePass), after the world's pass: one invocation per pool slot, and a
+// free slot (lifetime 0) stops at once. A living particle ages and dies at the end of its life (but never in the frame it
+// was made); one that is not resting turns towards its attractor, or falls, slows by its drag, and moves. Where it moves
+// to a point just behind what the camera's depth image shows (within SurfaceMetres and its step), it meets that surface
+// there: it bounces off it, sticks, or dies as its recipe says (the surface's slope from the neighbouring depths). Off
+// the image, behind the camera, or nearer than NearestMetres (the first-person arms), it meets nothing. A resting
+// particle falls again where the image shows its support gone. Particles in view and within the view distance go on the
+// frame's list of cubes or of sprites, whose counts are the instance counts of the two indirect draws; a lit one among
+// them takes its sunlight from the shadow cascades and its sky light from the sky field (mesh-light.glsl, MeshPass's
+// set as set 1), eased halfway each frame so a particle crossing a shadow's edge does not flicker.
+#define PARTICLE_WRITES
+#include "particle-constants.glsl"
+#include "particle-data.glsl"
+#define MESH_SET 1
+#include "mesh-data.glsl"
+#include "mesh-light.glsl"
+
+layout(local_size_x = 64) in;
+
+// The camera's depth image as the world's pass left it (DepthTarget): view.glsl's reverse depth, NearMetres over the
+// distance along the view, 0 for the sky. Only its top-left drawn part (push.width by push.height) is read.
+layout(set = 0, binding = 7) uniform sampler2D sceneDepth;
+
+// view.glsl's NearMetres: the compute pass has the particles' push constants, not the view's.
+const float SceneNearMetres = 0.01;
+
+// Nearer the camera than this, along the view, a particle meets nothing: the first-person arms are in the depth image.
+const float NearestMetres = 0.6;
+
+// How far behind the surface the image shows a particle may be found, besides its step, and still be put back on it.
+const float SurfaceMetres = 0.3;
+
+// How far in front of the surface a resting particle may be before its support counts as gone.
+const float RestSlackMetres = 0.1;
+
+// Below this speed, in metres per second, a particle that bounced off a floor rests there.
+const float RestSpeed = 0.4;
+
+// Where world point world lies on the drawn image (pixel, rows from the top) and its distance along the view; false off
+// the image or nearer than NearestMetres.
+bool onImage(vec3 world, out ivec2 pixel, out float along)
+{
+    vec3 offset = world - push.camera;
+    along = dot(offset, push.forward);
+    pixel = ivec2(0);
+    if (along < NearestMetres)
+    {
+        return false;
+    }
+
+    float x = dot(offset, push.right) / (dot(push.right, push.right) * along);
+    float y = dot(offset, push.up) / (dot(push.up, push.up) * along);
+    if (abs(x) >= 1.0 || abs(y) >= 1.0)
+    {
+        return false;
+    }
+
+    ivec2 size = ivec2(push.width, push.height);
+    pixel = clamp(ivec2(vec2(x * 0.5 + 0.5, 0.5 - y * 0.5) * vec2(size)), ivec2(0), size - 1);
+    return true;
+}
+
+// The distance along the view of what the image shows at pixel, metres; 0 for the sky.
+float sceneAlong(ivec2 pixel)
+{
+    float stored = texelFetch(sceneDepth, pixel, 0).r;
+    return stored > 0.0 ? SceneNearMetres / stored : 0.0;
+}
+
+// The world point the image shows at pixel, along at its distance along the view.
+vec3 scenePoint(ivec2 pixel, float along)
+{
+    vec2 ndc = vec2(
+        (float(pixel.x) + 0.5) / float(push.width) * 2.0 - 1.0,
+        1.0 - (float(pixel.y) + 0.5) / float(push.height) * 2.0);
+    return push.camera + (push.forward + ndc.x * push.right + ndc.y * push.up) * along;
+}
+
+// The neighbour of pixel by step whose distance is nearest along's, as a difference from point; on an edge the pixel's
+// own surface wins. Zero where neither neighbour shows anything.
+vec3 sceneStep(ivec2 pixel, ivec2 step, vec3 point, float along)
+{
+    ivec2 most = ivec2(push.width, push.height) - 1;
+    ivec2 a = clamp(pixel + step, ivec2(0), most);
+    ivec2 b = clamp(pixel - step, ivec2(0), most);
+    float alongA = sceneAlong(a);
+    float alongB = sceneAlong(b);
+    bool useA = alongA > 0.0 && (alongB <= 0.0 || abs(alongA - along) <= abs(alongB - along));
+    if (useA)
+    {
+        return scenePoint(a, alongA) - point;
+    }
+
+    return alongB > 0.0 ? point - scenePoint(b, alongB) : vec3(0.0);
+}
+
+// The surface's normal at pixel, facing the camera; the view ray back where the neighbours give none.
+vec3 sceneNormal(ivec2 pixel, vec3 point, float along)
+{
+    vec3 normal = cross(sceneStep(pixel, ivec2(1, 0), point, along), sceneStep(pixel, ivec2(0, 1), point, along));
+    vec3 back = push.camera - point;
+    if (dot(normal, normal) < 1e-12)
+    {
+        return normalize(back);
+    }
+
+    normal = normalize(normal);
+    return dot(normal, back) < 0.0 ? -normal : normal;
+}
+
+void main()
+{
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= push.capacity || particles[index].lifetime <= 0.0)
+    {
+        return;
+    }
+
+    Particle particle = particles[index];
+    // Every particle is drawn in the frame it was made, however short its life: a beam lives one frame.
+    float age = particle.age + push.delta;
+    if (age >= particle.lifetime)
+    {
+        if (particle.age > 0.0)
+        {
+            particles[index].lifetime = 0.0;
+            return;
+        }
+
+        age = particle.lifetime * 0.999;
+    }
+
+    ParticleRecipe recipe = recipeOf(push.slot, particle.packed);
+    vec3 position = particle.position;
+    vec3 velocity = particle.velocity;
+    uint packed = particle.packed;
+    if ((packed & PARTICLE_RESTING) == 0u)
+    {
+        uint attractor = (packed >> PARTICLE_ATTRACTOR_SHIFT) & PARTICLE_ATTRACTOR_MASK;
+        vec4 target = attractor != 0u ? attractors[push.slot * PARTICLE_MAX_ATTRACTORS + attractor] : vec4(0.0);
+        if (target.w > 0.0)
+        {
+            vec3 to = target.xyz - position;
+            float distance = length(to);
+            if (distance < 0.1)
+            {
+                particles[index].lifetime = 0.0;
+                return;
+            }
+
+            // Towards it at least as fast as it goes now, faster from afar, and slowing as it comes near.
+            float speed = clamp(max(length(velocity), distance * 3.0), 2.0, 25.0);
+            velocity = mix(velocity, to / distance * speed, 1.0 - exp(-recipe.attraction * push.delta));
+        }
+        else
+        {
+            velocity.y -= recipe.gravity * push.delta;
+        }
+
+        velocity *= exp(-recipe.drag * push.delta);
+        vec3 move = velocity * push.delta;
+        vec3 next = position + move;
+        ivec2 pixel;
+        float along;
+        if (recipe.collision != PARTICLE_COLLISION_NONE && onImage(next, pixel, along))
+        {
+            float surface = sceneAlong(pixel);
+            float behind = along - surface;
+            if (surface > 0.0 && behind > 0.0 && behind < SurfaceMetres + length(move))
+            {
+                if (recipe.collision == PARTICLE_COLLISION_DIE)
+                {
+                    particles[index].lifetime = 0.0;
+                    return;
+                }
+
+                vec3 hit = scenePoint(pixel, surface);
+                vec3 normal = sceneNormal(pixel, hit, surface);
+                next = hit + normal * 0.01;
+                if (recipe.collision == PARTICLE_COLLISION_STICK)
+                {
+                    velocity = vec3(0.0);
+                    packed |= PARTICLE_RESTING;
+                }
+                else
+                {
+                    float into = dot(velocity, normal);
+                    if (into < 0.0)
+                    {
+                        vec3 tangent = velocity - into * normal;
+                        velocity = tangent * (1.0 - recipe.friction) - into * recipe.restitution * normal;
+                    }
+
+                    if (normal.y > 0.7 && length(velocity) < RestSpeed)
+                    {
+                        velocity = vec3(0.0);
+                        packed |= PARTICLE_RESTING;
+                    }
+                }
+            }
+        }
+
+        position = next;
+    }
+    else
+    {
+        // Resting: it falls again where the image shows nothing under it any more (dug away, or a body that left).
+        ivec2 pixel;
+        float along;
+        if (onImage(position, pixel, along))
+        {
+            float surface = sceneAlong(pixel);
+            if (surface <= 0.0 || surface > along + RestSlackMetres)
+            {
+                packed &= ~PARTICLE_RESTING;
+            }
+        }
+
+        atomicAdd(counters[0].resting, 1u);
+    }
+
+    particles[index].position = position;
+    particles[index].age = age;
+    particles[index].velocity = velocity;
+    particles[index].packed = packed;
+    atomicAdd(counters[0].living, 1u);
+
+    if (push.draw == 0u)
+    {
+        return;
+    }
+
+    vec3 fromCamera = position - push.camera;
+    float distance = length(fromCamera);
+    float reach = max(recipe.sizeStart, recipe.sizeEnd) * particle.size
+        + (recipe.stretch == PARTICLE_STRETCH_SEGMENT ? length(particle.end - position) : 0.0);
+    bool inView = distance <= reach + 0.5 || dot(fromCamera, push.forward) >= push.viewCosine * distance - reach;
+    if (!inView || distance > push.maxDistance + reach)
+    {
+        return;
+    }
+
+    if ((recipe.flags & PARTICLE_FLAG_LIT) != 0u)
+    {
+        float sun = sunShadow(push.slot, position, push.sunDirection, dot(fromCamera, push.forward));
+        float sky = skyVisibility(push.slot, position, vec3(0.0, 1.0, 0.0));
+        uint oldSun = packed >> PARTICLE_SUN_SHIFT;
+        uint oldSky = (packed >> PARTICLE_SKY_SHIFT) & 255u;
+        uint newSun = (oldSun + uint(sun * 255.0 + 0.5) + 1u) >> 1u;
+        uint newSky = (oldSky + uint(sky * 255.0 + 0.5) + 1u) >> 1u;
+        packed = (packed & ~(0xFFu << PARTICLE_SUN_SHIFT | 0xFFu << PARTICLE_SKY_SHIFT)) | newSun << PARTICLE_SUN_SHIFT
+            | newSky << PARTICLE_SKY_SHIFT;
+        particles[index].packed = packed;
+    }
+
+    if (recipe.draw == PARTICLE_DRAW_CUBE)
+    {
+        cubeList[atomicAdd(counters[0].cubeInstanceCount, 1u)] = index;
+    }
+    else
+    {
+        spriteList[atomicAdd(counters[0].spriteInstanceCount, 1u)] = index;
+    }
+}

@@ -1,0 +1,72 @@
+<Project>
+  <PropertyGroup>
+    <!-- Central package management: versions live here only. Project files reference packages without a Version. -->
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>false</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Label="Silk.NET (windowing, input, Vulkan, audio, shader compiler)">
+    <PackageVersion Include="Silk.NET.Core" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.Maths" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.Windowing" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.Windowing.Glfw" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.Input" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.Input.Glfw" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.Vulkan" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.Vulkan.Extensions.KHR" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.Vulkan.Extensions.EXT" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.MoltenVK.Native" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.OpenAL" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.OpenAL.Soft.Native" Version="1.23.1" />
+    <PackageVersion Include="Silk.NET.Shaderc" Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.Shaderc.Native" Version="2.23.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="ECS">
+    <PackageVersion Include="Arch" Version="2.1.0" />
+    <PackageVersion Include="Arch.System" Version="1.1.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Physics">
+    <PackageVersion Include="BepuPhysics" Version="2.5.0-beta.29" />
+    <PackageVersion Include="BepuUtilities" Version="2.5.0-beta.29" />
+  </ItemGroup>
+
+  <ItemGroup Label="UI">
+    <PackageVersion Include="SkiaSharp" Version="4.152.1" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="4.152.1" />
+    <!-- tools/Textures only: block compression of the material textures (MIT or Unlicense). -->
+    <PackageVersion Include="BCnEncoder.Net" Version="2.3.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Networking">
+    <PackageVersion Include="LiteNetLib" Version="2.1.4" />
+    <!-- Steam's natives for this version are in src/Itera.Engine/Native/Steam; change them together. -->
+    <PackageVersion Include="Steamworks.NET" Version="2024.8.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Hosting, DI, logging, options">
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup Label="Logging">
+    <PackageVersion Include="Serilog" Version="4.4.0" />
+    <PackageVersion Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Settings.Configuration" Version="10.0.1" />
+    <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Async" Version="2.1.0" />
+    <PackageVersion Include="Serilog.Enrichers.Thread" Version="4.0.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Tests (versions as emitted by the SDK 10.0.112 xunit template)">
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+</Project>

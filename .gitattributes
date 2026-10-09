@@ -1,0 +1,18 @@
+# Normalise line endings so Linux, Windows, and macOS checkouts hold the same bytes.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.wav binary
+*.ogg binary
+*.mp3 binary
+*.ttf binary
+*.otf binary
+*.spv binary
+*.so binary
+*.dylib binary
+*.dll binary
+*.bin binary

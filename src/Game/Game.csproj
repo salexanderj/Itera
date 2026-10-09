@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- A windowed program on Windows, with no console window to close under it; elsewhere the same. -->
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>Game</AssemblyName>
+    <RootNamespace>Game</RootNamespace>
+    <RuntimeIdentifiers>$(IteraSupportedRids)</RuntimeIdentifiers>
+    <ApplicationIcon />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Game.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Itera.Engine\Itera.Engine.csproj" />
+    <ProjectReference Include="..\Itera.Modding\Itera.Modding.csproj" />
+    <!--
+      Build-order only: the sample mod copies itself into this project's Mods/ output folder after it builds.
+      Its assembly must not be copied next to Game.dll, or the host would load it directly instead of the mod loader.
+    -->
+    <ProjectReference
+      Include="..\..\samples\Itera.SampleMod\Itera.SampleMod.csproj"
+      ReferenceOutputAssembly="false"
+      Private="false"
+    />
+  </ItemGroup>
+
+  <ItemGroup Label="The world materials' texture sets (tools/Textures), copied to Textures/ next to the executable">
+    <None Update="Textures/*/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="appsettings.Development.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,108 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- The sound cache's key hashes this folder's sources (Directory.Build.targets). -->
+    <SoundCodeFolder>Audio</SoundCodeFolder>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Itera.Engine.Tests" />
+  </ItemGroup>
+
+  <ItemGroup Label="Windowing, input, Vulkan">
+    <PackageReference Include="Silk.NET.Maths" />
+    <PackageReference Include="Silk.NET.Windowing" />
+    <PackageReference Include="Silk.NET.Windowing.Glfw" />
+    <PackageReference Include="Silk.NET.Input" />
+    <PackageReference Include="Silk.NET.Input.Glfw" />
+    <PackageReference Include="Silk.NET.Vulkan" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" />
+    <PackageReference Include="Silk.NET.MoltenVK.Native" />
+  </ItemGroup>
+
+  <ItemGroup Label="Audio">
+    <PackageReference Include="Silk.NET.OpenAL" />
+    <PackageReference Include="Silk.NET.OpenAL.Soft.Native" />
+  </ItemGroup>
+
+  <ItemGroup Label="Shaders">
+    <PackageReference Include="Silk.NET.Shaderc" />
+    <PackageReference Include="Silk.NET.Shaderc.Native" />
+  </ItemGroup>
+
+  <ItemGroup Label="ECS">
+    <PackageReference Include="Arch" />
+    <PackageReference Include="Arch.System" />
+  </ItemGroup>
+
+  <ItemGroup Label="Physics">
+    <PackageReference Include="BepuPhysics" />
+    <PackageReference Include="BepuUtilities" />
+  </ItemGroup>
+
+  <ItemGroup Label="UI">
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
+  </ItemGroup>
+
+  <ItemGroup Label="Networking">
+    <PackageReference Include="LiteNetLib" />
+    <PackageReference Include="Steamworks.NET" />
+  </ItemGroup>
+
+  <ItemGroup Label="Steam's native libraries (see Native/Steam/README.md)">
+    <None Include="Native/Steam/libsteam_api.so;Native/Steam/libsteam_api.dylib;Native/Steam/steam_api64.dll">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup Label="DI, logging, options">
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+  </ItemGroup>
+
+  <ItemGroup Label="Logging sinks (Serilog behind Microsoft.Extensions.Logging)">
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Extensions.Hosting" />
+    <PackageReference Include="Serilog.Settings.Configuration" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Serilog.Sinks.Async" />
+    <PackageReference Include="Serilog.Enrichers.Thread" />
+  </ItemGroup>
+
+  <ItemGroup Label="Shader sources, copied to Shaders/ next to the executable (and next to test assemblies)">
+    <None Remove="Rendering/Shaders/**" />
+    <None
+      Include="Rendering/Shaders/**"
+      Exclude="Rendering/Shaders/**/*.cs"
+      Link="Shaders/%(RecursiveDir)%(Filename)%(Extension)"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+  </ItemGroup>
+
+  <ItemGroup Label="UI fonts and their licences, copied to Fonts/ next to the executable (and next to test assemblies)">
+    <None Remove="UI/Fonts/**" />
+    <None
+      Include="UI/Fonts/**"
+      Link="Fonts/%(RecursiveDir)%(Filename)%(Extension)"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+  </ItemGroup>
+
+  <ItemGroup Label="SMAA's lookup textures and their licence, copied to Smaa/ next to the executable (and next to test assemblies)">
+    <None Remove="Rendering/Smaa/**" />
+    <None
+      Include="Rendering/Smaa/**"
+      Link="Smaa/%(RecursiveDir)%(Filename)%(Extension)"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Itera.Modding\Itera.Modding.csproj" />
+  </ItemGroup>
+</Project>

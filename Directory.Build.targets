@@ -1,0 +1,64 @@
+<Project>
+  <!--
+    The sound code's hash: a SHA-256 of the source files under $(SoundCodeFolder) (set by Itera.Engine, and by a game
+    that has sound recipes of its own, to their Audio folder), sorted by path, written as the assembly's "SoundCode"
+    metadata. The sound cache keys its files by it (SoundCache.SoundCodeOf), so a commit that changes no sound code keeps
+    the rendered sounds; the module version id would change with the commit's hash in the informational version.
+  -->
+  <UsingTask
+    TaskName="SoundCodeHash"
+    TaskFactory="RoslynCodeTaskFactory"
+    AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll"
+  >
+    <ParameterGroup>
+      <Files ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+      <Folder ParameterType="System.String" Required="true" />
+      <Hash ParameterType="System.String" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.Collections.Generic" />
+      <Using Namespace="System.Security.Cryptography" />
+      <Using Namespace="System.Text" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+        // The task compiles against netstandard2.0: no SHA256.HashData or Convert.ToHexString.
+        var prefix = Folder.Replace('\\', '/').TrimEnd('/') + "/";
+        var lines = new List<string>();
+        using (var sha = SHA256.Create())
+        {
+            foreach (var item in Files)
+            {
+                var path = item.ItemSpec.Replace('\\', '/');
+                if (path.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    var bytes = File.ReadAllBytes(item.GetMetadata("FullPath"));
+                    lines.Add(path + "=" + BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", ""));
+                }
+            }
+
+            lines.Sort(StringComparer.Ordinal);
+            var all = sha.ComputeHash(Encoding.UTF8.GetBytes(string.Join("\n", lines)));
+            Hash = BitConverter.ToString(all).Replace("-", "").Substring(0, 32);
+        }
+      ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <Target
+    Name="AddSoundCodeHash"
+    BeforeTargets="CreateGeneratedAssemblyInfoInputsCacheFile"
+    DependsOnTargets="GetAssemblyAttributes"
+    Condition="'$(SoundCodeFolder)' != ''"
+  >
+    <SoundCodeHash Files="@(Compile)" Folder="$(SoundCodeFolder)">
+      <Output TaskParameter="Hash" PropertyName="SoundCodeHash" />
+    </SoundCodeHash>
+    <ItemGroup>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>SoundCode</_Parameter1>
+        <_Parameter2>$(SoundCodeHash)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+</Project>

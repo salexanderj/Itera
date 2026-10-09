@@ -1,0 +1,26 @@
+[
+  {
+    "set": "stone",
+    "site": "bake",
+    "asset": "stone",
+    "texels": 1024
+  },
+  {
+    "set": "grass",
+    "site": "bake",
+    "asset": "grass",
+    "texels": 1024
+  },
+  {
+    "set": "dirt",
+    "site": "bake",
+    "asset": "dirt",
+    "texels": 1024
+  },
+  {
+    "set": "gravel",
+    "site": "bake",
+    "asset": "gravel",
+    "texels": 1024
+  }
+]

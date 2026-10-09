@@ -1,0 +1,121 @@
+#version 460
+
+// Makes the frame's new particles (ParticlePass): one invocation per particle. It finds its burst (the last whose
+// prefix is not past it; the bursts are in prefix order), draws its own values from the burst's seed and its place in
+// the burst, and writes it into the pool slot the CPU gave it (the burst's first slot plus its place). A living particle
+// already in that slot is counted as overwritten.
+#define PARTICLE_WRITES
+#include "particle-constants.glsl"
+#include "particle-data.glsl"
+
+layout(local_size_x = 64) in;
+
+// A point in the unit ball, evenly spread.
+vec3 inBall(inout uint seed)
+{
+    for (int i = 0; i < 8; i++)
+    {
+        vec3 p = vec3(particleRandom(seed), particleRandom(seed), particleRandom(seed)) * 2.0 - 1.0;
+        if (dot(p, p) <= 1.0)
+        {
+            return p;
+        }
+    }
+
+    return vec3(0.0);
+}
+
+// A unit vector at most acos(spreadCosine) from the unit vector axis, evenly spread over that cap of the sphere.
+vec3 inCone(vec3 axis, float spreadCosine, inout uint seed)
+{
+    float cosine = 1.0 - particleRandom(seed) * (1.0 - spreadCosine);
+    float sine = sqrt(max(1.0 - cosine * cosine, 0.0));
+    float angle = 6.2831853 * particleRandom(seed);
+    vec3 u = particlePerpendicular(axis);
+    vec3 v = cross(axis, u);
+    return axis * cosine + (u * cos(angle) + v * sin(angle)) * sine;
+}
+
+void main()
+{
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= push.spawns || push.bursts == 0u)
+    {
+        return;
+    }
+
+    uint low = 0u;
+    uint high = push.bursts - 1u;
+    while (low < high)
+    {
+        uint middle = (low + high + 1u) >> 1u;
+        if (bursts[push.burstStart + middle].prefix <= index)
+        {
+            low = middle;
+        }
+        else
+        {
+            high = middle - 1u;
+        }
+    }
+
+    ParticleBurst burst = bursts[push.burstStart + low];
+    uint place = index - burst.prefix;
+    uint slot = burst.first + place;
+    if (place >= burst.count || slot >= push.capacity)
+    {
+        return;
+    }
+
+    ParticleRecipe recipe = recipeOf(push.slot, burst.packed);
+    uint seed = particleHash(burst.seed ^ particleHash(place + 0x632BE5ABu));
+    uint random = seed;
+
+    if (particles[slot].lifetime > particles[slot].age)
+    {
+        atomicAdd(counters[0].overwritten, 1u);
+    }
+
+    uint shape = (burst.packed >> 8u) & 15u;
+    vec3 position = burst.origin;
+    float along = length(burst.direction);
+    vec3 axis = along > 0.0 ? burst.direction / along : vec3(0.0, 1.0, 0.0);
+    if (shape == PARTICLE_SHAPE_SPHERE)
+    {
+        position += inBall(random) * burst.radius;
+    }
+    else if (shape == PARTICLE_SHAPE_SEGMENT && recipe.stretch != PARTICLE_STRETCH_SEGMENT)
+    {
+        position = mix(burst.origin, burst.end, particleRandom(random));
+    }
+    else if (shape == PARTICLE_SHAPE_DISC)
+    {
+        vec3 u = particlePerpendicular(axis);
+        vec3 v = cross(axis, u);
+        float angle = 6.2831853 * particleRandom(random);
+        position += (u * cos(angle) + v * sin(angle)) * sqrt(particleRandom(random)) * burst.radius;
+    }
+
+    // No direction: any way at the recipe's speed.
+    vec3 direction = along > 0.0 ? inCone(axis, recipe.spreadCosine, random) : inCone(axis, -1.0, random);
+    float speed = mix(recipe.speedMin, recipe.speedMax, particleRandom(random)) * (along > 0.0 ? along : 1.0);
+    float lifetime = mix(recipe.lifetimeMin, recipe.lifetimeMax, particleRandom(random));
+    float size = max(1.0 + (particleRandom(random) * 2.0 - 1.0) * recipe.sizeJitter, 0.05);
+    float shade = 1.0 + (particleRandom(random) * 2.0 - 1.0) * recipe.colourJitter;
+    vec4 tint = unpackUnorm4x8(burst.colour);
+    uint attractor = (burst.packed >> 12u) & PARTICLE_ATTRACTOR_MASK;
+
+    Particle particle;
+    particle.position = position;
+    particle.age = 0.0;
+    particle.velocity = direction * speed + burst.velocity;
+    particle.lifetime = lifetime;
+    particle.packed = (burst.packed & PARTICLE_RECIPE_MASK) | attractor << PARTICLE_ATTRACTOR_SHIFT
+        | 255u << PARTICLE_SKY_SHIFT | 255u << PARTICLE_SUN_SHIFT;
+    particle.colour = packUnorm4x8(vec4(clamp(tint.rgb * shade, 0.0, 1.0), tint.a));
+    particle.seed = seed;
+    particle.size = size;
+    particle.end = burst.end;
+    particle.spin = recipe.spin * (particleRandom(random) * 2.0 - 1.0);
+    particles[slot] = particle;
+}

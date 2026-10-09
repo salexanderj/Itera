@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Re-checks the .NET, glslang, and Arch facts that .claude/skills/ecs-vulkan relies on, against the package
+    versions pinned in Directory.Packages.props. Not part of Itera.sln. Run it with .claude/skills/ecs-vulkan/probe.sh.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Arch" />
+    <PackageReference Include="Silk.NET.Maths" />
+    <PackageReference Include="Silk.NET.Shaderc" />
+    <PackageReference Include="Silk.NET.Shaderc.Native" />
+  </ItemGroup>
+</Project>

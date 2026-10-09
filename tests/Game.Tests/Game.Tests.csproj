@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup Label="Helpers shared by the test projects that use Arch">
+    <!-- WireFingerprint reads the engine's internals, which a game's tests do not see. -->
+    <Compile Include="..\Shared\*.cs" Exclude="..\Shared\WireFingerprint.cs" LinkBase="Shared" />
+    <!-- Eight test classes at once: each starts threads of its own (voxel workers, physics), and more than eight only
+         stretched every test on 16 processors. -->
+    <None Include="..\Shared\xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <Using Include="Itera.TestSupport" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Game\Game.csproj" />
+  </ItemGroup>
+</Project>

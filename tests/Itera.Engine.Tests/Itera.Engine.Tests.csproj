@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup Label="Helpers shared by the test projects that use Arch">
+    <Compile Include="..\Shared\*.cs" LinkBase="Shared" />
+    <!-- Eight test classes at once: each starts threads of its own (voxel workers, physics), and more than eight only
+         stretched every test on 16 processors. -->
+    <None Include="..\Shared\xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <Using Include="Itera.TestSupport" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Itera.Engine\Itera.Engine.csproj" />
+    <!-- Build-order only. The sample mod is copied into TestMods/ below and loaded through the mod loader. -->
+    <ProjectReference
+      Include="..\..\samples\Itera.SampleMod\Itera.SampleMod.csproj"
+      ReferenceOutputAssembly="false"
+      Private="false"
+    />
+  </ItemGroup>
+
+  <Target Name="CopySampleModForTests" AfterTargets="Build">
+    <PropertyGroup>
+      <_SampleModDir>$(MSBuildThisFileDirectory)../../samples/Itera.SampleMod/bin/$(Configuration)/$(TargetFramework)/</_SampleModDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_SampleModFiles Include="$(_SampleModDir)Itera.SampleMod.dll;$(_SampleModDir)Itera.SampleMod.pdb;$(_SampleModDir)Itera.SampleMod.deps.json;$(_SampleModDir)mod.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_SampleModFiles)" DestinationFolder="$(OutDir)TestMods/SampleMod/" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
