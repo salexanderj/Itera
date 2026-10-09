@@ -31,8 +31,9 @@ voxels optional is open work.
 `ARCHITECTURE.md` holds the full description, the dependencies, the design decisions, and the open work. Read it before
 changing anything structural. `docs/` holds the write-ups behind decisions: `voxel-structures.md`, `edit-log-compaction.md`,
 `procedural-audio.md`, `anti-aliasing.md`, `rendering-redesign-brief.md` with `rendering-redesign.md` (the raster
-renderer's decisions and measurements), and `framework-plan.md` (how Itera became a framework). `docs/references/`
-holds notes on outside projects used as references.
+renderer's decisions and measurements), `framework-plan.md` (how Itera became a framework), and `framework-limits.md`
+(what kinds of game the engine blocks today, and the order of work). `docs/references/` holds notes on outside projects
+used as references.
 
 # How to work
 

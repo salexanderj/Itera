@@ -932,7 +932,8 @@ a piece's boxes was tried first and cost up to 137 ms a step.
 
 One peer is the host and owns the simulation. Deterministic lockstep is ruled out because Bepu does not guarantee
 bit-identical floating point across CPUs. Voxel deformation is synchronised as edits (position, shape, operation), never as
-voxel data. Only a player's own game hosts: no headless host and no host migration; the session ends when the host quits.
+voxel data. A host is a game run, with or without graphics (`Engine:Window:Mode=None`), and holds slot 0 as a player;
+there is no host migration, and the session ends when the host quits.
 
 - **Sessions** (`Networking/`). The menu's buttons and the console's `play`, `host`, and `join` start a match as Offline,
   Host, or Join; `Engine:Session:Mode` (Menu, Offline, Host, or Join, with `Address`, `host:port`) starts one at once without
