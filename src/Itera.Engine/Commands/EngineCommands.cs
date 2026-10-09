@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using Itera.Engine.Matches;
 using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Rendering.Meshes;
@@ -42,6 +43,7 @@ public sealed class EngineCommands
     private readonly DynamicRenderScale _dynamicScale;
     private readonly VulkanContext _vulkan;
     private readonly PointLights? _pointLights;
+    private readonly MatchControl? _matches;
     private uint _testLightSeed = 0x9E37_79B9;
 
     public EngineCommands(
@@ -58,9 +60,11 @@ public sealed class EngineCommands
         VulkanContext vulkan,
         PointLights? pointLights = null,
         WorldMeshes? meshes = null,
-        MeshPass? meshPass = null
+        MeshPass? meshPass = null,
+        MatchControl? matches = null
     )
     {
+        _matches = matches;
         _meshPass = meshPass;
         _vulkan = vulkan;
         _meshes = meshes;
@@ -141,8 +145,8 @@ public sealed class EngineCommands
         );
         _commands.Register(
             "wait",
-            "loaded|ticks N|frames N|seconds N [TIMEOUT]",
-            "Holds the commands after it in the line (or the startup script) until a match is played with its loading screen gone, N fixed steps have run, N frames are built, or N seconds of the game clock pass; past TIMEOUT seconds (300) it fails and they are dropped.",
+            "loaded|view|ticks N|frames N|seconds N [TIMEOUT]",
+            "Holds the commands after it in the line (or the startup script) until a match is played with its loading screen gone, the view's world is loaded and on the GPU (as the loading screen's World waits for: after a tp, before a screenshot), N fixed steps have run, N frames are built, or N seconds of real time pass (the loop's clock, not scaled by timescale); past TIMEOUT seconds (300) it fails and they are dropped.",
             CommandScope.Local,
             Wait
         );
@@ -160,6 +164,30 @@ public sealed class EngineCommands
             CommandScope.Local,
             Quit
         );
+    }
+
+    /// <summary>
+    /// True once every column the streaming centres want is resident and an upload after that left the GPU up to date,
+    /// as the loading screen's World task decides (<c>WorldLoadingTask</c>).
+    /// </summary>
+    private static Func<bool> ViewLoaded(WorldMeshes meshes, MatchControl matches)
+    {
+        long residentAt = -1;
+        return () =>
+        {
+            if (matches.World is not { } world || !world.WantedColumnsResident)
+            {
+                residentAt = -1;
+                return false;
+            }
+
+            if (residentAt < 0)
+            {
+                residentAt = meshes.Uploads;
+            }
+
+            return meshes.Uploads > residentAt && meshes.IsUpToDate;
+        };
     }
 
     private void Quit(CommandContext context)
@@ -188,6 +216,16 @@ public sealed class EngineCommands
         if (context.Is(0, "loaded"))
         {
             done = () => _console.Now.Loaded;
+        }
+        else if (context.Is(0, "view"))
+        {
+            if (_meshes is null || _matches is null)
+            {
+                context.PrintError("wait view: no world is drawn here.");
+                return;
+            }
+
+            done = ViewLoaded(_meshes, _matches);
         }
         else if (context.Count >= 2 && context.TryGetFloat(1, out var n) && n >= 0 && n <= MostWaited)
         {

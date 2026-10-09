@@ -26,6 +26,7 @@ public sealed partial class RenderThread
     private readonly FrameExchange _exchange;
     private readonly Action _wake;
     private readonly ILogger<RenderThread> _logger;
+    private readonly long _frameCapTicks;
     private Thread? _thread;
     private volatile bool _stopRequested;
     private volatile ExceptionDispatchInfo? _fault;
@@ -37,14 +38,22 @@ public sealed partial class RenderThread
         WindowService window,
         ILogger<RenderThread> logger
     )
-        : this(renderer, exchange, window.Wake, logger) { }
+        : this(renderer, exchange, window.Wake, logger, window.FrameCapSeconds) { }
 
     /// <param name="renderer">What draws the frames.</param>
     /// <param name="exchange">Where frames are asked for and handed over.</param>
     /// <param name="wake">Wakes the main loop, which then finds the thread faulted.</param>
     /// <param name="logger">Logger.</param>
-    internal RenderThread(IFrameRenderer renderer, FrameExchange exchange, Action wake, ILogger<RenderThread> logger)
+    /// <param name="frameCapSeconds">The least time between the starts of two frames; 0 for none (presenting paces).</param>
+    internal RenderThread(
+        IFrameRenderer renderer,
+        FrameExchange exchange,
+        Action wake,
+        ILogger<RenderThread> logger,
+        double frameCapSeconds = 0
+    )
     {
+        _frameCapTicks = (long)(Math.Max(0, frameCapSeconds) * Stopwatch.Frequency);
         _renderer = renderer;
         _exchange = exchange;
         _wake = wake;
@@ -108,8 +117,21 @@ public sealed partial class RenderThread
         {
             var lastPresent = Stopwatch.GetTimestamp();
             var lastFrame = default(RenderFrame);
+            var frameStart = 0L;
             while (!_stopRequested)
             {
+                // Without a window nothing paces the frames: each starts a frame's time after the last.
+                if (_frameCapTicks > 0)
+                {
+                    var wait = frameStart + _frameCapTicks - Stopwatch.GetTimestamp();
+                    if (wait > 0)
+                    {
+                        Thread.Sleep(TimeSpan.FromSeconds((double)wait / Stopwatch.Frequency));
+                    }
+
+                    frameStart = Stopwatch.GetTimestamp();
+                }
+
                 if (!_renderer.BeginFrame())
                 {
                     _renderer.WaitForResize(ResizeWaitMilliseconds);

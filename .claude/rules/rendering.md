@@ -60,6 +60,15 @@ one material from another loaded set (`WorldMeshes.SetTexture`, the materials st
 in the game. The sky, sunlight, haze, and colour grade come from a game's `IAtmosphereSource` at the camera
 (`AtmosphereSystem`), or the `Engine:Renderer` sky options without one.
 
+Without a window (`Engine:Window:Mode=Offscreen`, `WindowService.Offscreen`) the surface is headless
+(`HeadlessSurfaceSource`, `VK_EXT_headless_surface`; `WindowSurfaceSource` wraps GLFW's for a window: `ISurfaceSource`,
+`SurfaceSource.cs`). Mesa's headless surface offers only UNORM formats, so where the device has
+`VK_KHR_swapchain_mutable_format` (enabled where offered, asked of no device: `VulkanContext.SupportsMutableSwapchainFormat`)
+the swapchain is made mutable and its images viewed through their sRGB twin (`VulkanSwapchain.SrgbTwin`):
+`ImageFormat` is the twin, every pass draws as it does into a window's, and screenshots match a window's. Nothing
+paces a headless present, so the render thread starts frames at most `Engine:Window:OffscreenFps` (240) a second
+(`RenderThread`'s frame cap); the world uploads a share each frame, and at 60 the starter's view did not load in 15 s.
+
 A render scale below 1 draws the world, models, particles, and debug lines into a smaller image, and AMD's FSR 1
 (`UpscalePass`: EASU, then RCAS; `fsr-easu.frag`, `fsr-rcas.frag` over `ffx_a.glsl` and
 `ffx_fsr1.glsl`) upscales it before the UI. Dynamic render scaling (`DynamicRenderScale`,
@@ -222,7 +231,8 @@ count).
 ### Files in `src/Itera.Engine`
 
   - `Rendering/`: Vulkan bootstrap (`VulkanContext`, `DeviceRequirements`), the frame (`FrameRenderer`,
-    `RenderThread`, `FrameExchange`), `DepthTarget`, `ModelInstances`, `DebugLines` and `DebugLinePass`, `UiPass`,
+    `RenderThread`, `FrameExchange`), the surface's source (`ISurfaceSource`: the window's or a headless one, in
+    `SurfaceSource.cs`), `DepthTarget`, `ModelInstances`, `DebugLines` and `DebugLinePass`, `UiPass`,
     `RenderScale` and `UpscalePass`, `SmaaPass`, `SmaaTextures`, `FrameImages`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`,
     `ScreenshotEncoder`; the materials' texture sets (`MaterialTextureSets`, `DdsFile`) in `Materials/`; GPU memory (own block sub-allocator, `GpuBuffer`, `GpuImage`, per-slot `StagingBuffer`) in
     `Memory/` (with `GpuRangeHeap`, the mesh heap's ranges); `Pipelines/`; structs that shaders read in `GpuData/`; the

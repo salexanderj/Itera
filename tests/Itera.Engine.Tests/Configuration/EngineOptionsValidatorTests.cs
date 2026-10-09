@@ -347,6 +347,21 @@ public sealed class EngineOptionsValidatorTests
     }
 
     [Fact]
+    public void The_window_mode_and_the_offscreen_frame_cap_are_checked()
+    {
+        var options = new EngineOptions
+        {
+            Window = new WindowSettings { Mode = (WindowMode)7, OffscreenFps = 0 },
+        };
+
+        var failures = _validator.Validate(null, options).Failures!.ToArray();
+
+        Assert.Equal(2, failures.Length);
+        Assert.Contains(failures, f => f.StartsWith("Engine:Window:Mode must be", StringComparison.Ordinal));
+        Assert.Contains(failures, f => f.StartsWith("Engine:Window:OffscreenFps", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void A_console_run_file_must_exist_and_an_empty_one_means_none()
     {
         var missing = new EngineOptions { Console = new ConsoleSettings { RunFile = "/no/such/itera-script.txt" } };

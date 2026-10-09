@@ -26,7 +26,8 @@ cp -r src/Game/bin/Release/net10.0 /tmp/game-before         # keep a build to co
 tools/benchmark/run.sh before-1                              # BENCH_BIN picks the build; default: the Release output
 BENCH_BIN=/tmp/game-before tools/benchmark/run.sh before-2
 tools/benchmark/compare.py before before-1,before-2 after after-1,after-2
-tools/benchmark/imgdiff.py before-1 after-1                  # the same picture?
+tools/benchmark/imgdiff.py before-1 after-1                  # the same picture? (also two folders or two PNG files)
+tools/benchmark/run.sh before-3 --offscreen                  # no window (BENCH_SIZE, 2560x1440): the monitor stays free; no screenshots
 tools/benchmark/run.sh long --Engine:Benchmark:MeasureSeconds=1 --Engine:Benchmark:SettleSeconds=0 --Engine:Benchmark:FlightSeconds=600
 tools/benchmark/flight.py long                               # uploads, the mesh heap, and pending blocks, minute by minute
 ```

@@ -282,9 +282,18 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
     /// </summary>
     public void InjectPointer(Vector2 position) => _injectedPointer = position;
 
-    /// <summary>Creates the input context for the window. Call after the window exists.</summary>
+    /// <summary>
+    /// Creates the input context for the window. Call after the window exists. Without a window (offscreen) there are no
+    /// devices: input comes only from the control port's injections.
+    /// </summary>
     public void Initialize()
     {
+        if (!_windowService.HasWindow)
+        {
+            LogDevices(0, 0, 0);
+            return;
+        }
+
         _input = _windowService.Window.CreateInput();
         _input.ConnectionChanged += OnConnectionChanged;
         _windowService.FocusChanged += OnFocusChanged;

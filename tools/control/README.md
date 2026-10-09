@@ -5,7 +5,8 @@ One game stays open across many checks: console commands, screenshots, shader ed
 restart. It uses only Python's standard library. It is a development tool, not game code.
 
 ```bash
-tools/control/game.py start [--release] [--fullscreen] [--no-wait] [--menu] [-- game arguments]
+tools/control/game.py start [--release] [--fullscreen] [--offscreen] [--no-wait] [--menu] [-- game arguments]
+tools/control/game.py shots VIEW... --out DIR [--compare DIR] [--size 1280x720] [--release] [--settle 2.5]
 tools/control/game.py run [-q] "tp 0 20 0"  # console commands; quote a line with ';' in it; -q leaves out log lines
 tools/control/game.py run -s "step 60; wait ticks 60; pos"   # as a script: waits hold the rest; replies when done
 tools/control/game.py query [player | ID[:VERSION] | COMPONENT] [--most N]   # the match's entities as JSON
@@ -47,6 +48,16 @@ timings need. Without sway, the window stays where the system puts it.
 `start` then waits for the port and for the loading screen to finish. `--no-wait` skips the wait for loading. The
 state file `Run/state.json` holds the pid, the port, and the log's path. `start` refuses to start a second game while
 the first still runs.
+
+## No window, and screenshot sets
+
+`start --offscreen` runs the game with `--Engine:Window:Mode=Offscreen`: no window opens, the game draws into a headless
+surface at `Engine:Window:Width` x `Height`, and input comes only from this port (`input`). `shots` starts the game that
+way (with dynamic render scaling and the stats line off, so every set has the same size), flies the camera to each view
+(a game's `tp` place, or `x,y,z,yaw,pitch`), waits until the view's world is loaded and on the GPU and its light has
+settled, writes `DIR/<view>.png` without the UI, stops the game, and with `--compare` runs
+`tools/benchmark/imgdiff.py` against an earlier set (exit code 1 when a picture differs). It refuses while another game
+started by `start` runs.
 
 ## Replies
 

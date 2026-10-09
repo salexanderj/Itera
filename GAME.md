@@ -20,7 +20,8 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
   (`CameraPose`), checked by `PlayerOptionsValidator` and `WorldOptionsValidator`; a key under `Game` in no section of
   the game's stops the game (`GameServiceCollectionExtensions.ValidateOptions`). Every value in `appsettings.json` is
   the code's default except the name, data folder, and window title (`ShippedSettingsTests`).
-- The benchmark's views (`BenchmarkViews`): `start`, `start-low`, `down`, `up`, `high` (40 m over the middle), and `far`
+- The benchmark's views (`BenchmarkViews`), also `tp`'s places (`tp far`; `game.py shots far`): `start`, `start-low`,
+  `down`, `up`, `high` (40 m over the middle), and `far`
   (200 m out along +x, looking back).
 
 ## Systems

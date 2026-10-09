@@ -112,10 +112,11 @@ dotnet test                        # tests/Itera.Modding.Tests, Itera.Engine.Tes
 dotnet run --project src/Game [-- OPTIONS]                       # opens at the menu without --Engine:Session:Mode
 DOTNET_ENVIRONMENT=Development dotnet run --project src/Game     # Debug lines on the console too
 dotnet build -c Release && src/Game/bin/Release/net10.0/Game     # voxel numbers: Debug generates about 5 times slower
-tools/control/game.py start [--release] [--fullscreen] [--no-wait] [--menu] [-- game args]   # the game from a copy of the build, control port on; restart takes the same options
+tools/control/game.py start [--release] [--fullscreen] [--offscreen] [--no-wait] [--menu] [-- game args]   # the game from a copy of the build, control port on; --offscreen: no window; restart takes the same options
+tools/control/game.py shots start far high --out DIR [--compare DIR]   # screenshots of views with no window (about 5 s a view in Debug), compared with an earlier set
 tools/control/game.py run "balls 8; pos"   # console commands in the running game (-s: as a script, waits hold the rest); also query, shot, reload, gpu, input, wait, log, status, restart, stop
 DOTNET_WATCH_SUPPRESS_EMOJIS=1 dotnet watch --non-interactive --project src/Game run -- --Engine:Control:Enabled=true   # C# edits applied live
-tools/benchmark/run.sh <label> [game arguments]   # GPU benchmark (Engine:Benchmark) over the game's views and the circle; README there
+tools/benchmark/run.sh <label> [--offscreen] [game arguments]   # GPU benchmark (Engine:Benchmark) over the game's views and the circle; README there
 tools/steam/upload.sh [--preview] [--no-live] [--branch NAME] [--no-test]   # test, publish win-x64 and linux-x64, upload to Steam's "testing" branch (or NAME); README there
 dotnet run -c Release --project tools/Textures [-- SET ...]   # the materials' texture sets from baked recipes (src/Game/Textures/sources.json); README there
 ```

@@ -40,6 +40,28 @@ public sealed class RenderThreadTests
         Assert.False(thread.IsFaulted);
     }
 
+    /// <summary>Without a window nothing paces presents: a frame cap spaces the frames' starts.</summary>
+    [Fact]
+    public void A_frame_cap_spaces_the_frames_it_asks_for()
+    {
+        var renderer = new FakeRenderer();
+        var exchange = new FrameExchange(() => { });
+        var thread = new RenderThread(renderer, exchange, () => { }, NullLogger<RenderThread>.Instance, 0.05);
+        thread.Start(new Vector2D<int>(640, 480));
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        for (var i = 0; i < 5; i++)
+        {
+            Assert.True(SpinUntil(() => exchange.HasRequest));
+            Assert.True(exchange.TryTakeRequest(out _));
+            exchange.Publish(default);
+        }
+
+        // Five frames' starts, four gaps of at least 50 ms between them.
+        Assert.True(clock.Elapsed >= TimeSpan.FromMilliseconds(190), $"{clock.Elapsed.TotalMilliseconds} ms");
+        Assert.True(thread.Stop(s_timeout));
+    }
+
     [Fact]
     public void A_renderer_that_throws_faults_the_thread_and_wakes_the_main_loop()
     {

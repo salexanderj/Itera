@@ -51,6 +51,12 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         }
 
         Range(failures, "Window:Width", options.Window.Width, 1, 32768);
+        if (options.Window.Mode is not (WindowMode.Window or WindowMode.Offscreen))
+        {
+            failures.Add($"{Prefix}Window:Mode must be Window or Offscreen.");
+        }
+
+        Range(failures, "Window:OffscreenFps", options.Window.OffscreenFps, 1, 1000);
         Range(failures, "Window:Height", options.Window.Height, 1, 32768);
 
         Range(failures, "Renderer:MeshFinestLevel", options.Renderer.MeshFinestLevel, 0, VoxelConstants.MaxLevel);

@@ -30,6 +30,16 @@ public sealed class DeviceChoiceTests
         Assert.Equal(Format.A2B10G10R10UnormPack32, VulkanSwapchain.ChooseSurfaceFormat(otherSpace).Format);
     }
 
+    /// <summary>A headless surface offers UNORM formats only; their sRGB twins are what its images are drawn through.</summary>
+    [Fact]
+    public void Unorm_formats_have_srgb_twins_and_others_none()
+    {
+        Assert.Equal(Format.R8G8B8A8Srgb, VulkanSwapchain.SrgbTwin(Format.R8G8B8A8Unorm));
+        Assert.Equal(Format.B8G8R8A8Srgb, VulkanSwapchain.SrgbTwin(Format.B8G8R8A8Unorm));
+        Assert.Null(VulkanSwapchain.SrgbTwin(Format.B8G8R8A8Srgb));
+        Assert.Null(VulkanSwapchain.SrgbTwin(Format.A2B10G10R10UnormPack32));
+    }
+
     [Fact]
     public void Composite_alpha_prefers_opaque_then_inherit()
     {

@@ -149,13 +149,22 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<PhysicsWorld>(),
             sp.GetRequiredService<ILogger<PhysicsReadSystem>>()
         ));
-        services.AddScoped<IFixedUpdateSystem>(sp => new PlayerMovementSystem(
-            sp.GetRequiredService<EcsWorld>().World,
-            sp.GetRequiredService<VoxelCharacterMover>(),
-            sp.GetRequiredService<PlayArea>(),
-            sp.GetRequiredService<ILogger<PlayerMovementSystem>>(),
-            sp.GetRequiredService<ConsoleCommands>()
-        ));
+        // The benchmark's views are tp's places (tp far, tp high), for screenshots of the same views.
+        services.AddScoped<IFixedUpdateSystem>(sp =>
+        {
+            var views = BenchmarkViews.For(
+                sp.GetRequiredService<StartPose>(),
+                sp.GetRequiredService<SessionService>().Match.Seed
+            );
+            return new PlayerMovementSystem(
+                sp.GetRequiredService<EcsWorld>().World,
+                sp.GetRequiredService<VoxelCharacterMover>(),
+                sp.GetRequiredService<PlayArea>(),
+                sp.GetRequiredService<ILogger<PlayerMovementSystem>>(),
+                sp.GetRequiredService<ConsoleCommands>(),
+                name => BenchmarkViews.Place(views, name)
+            );
+        });
         services.AddScoped<IFixedUpdateSystem>(sp => new StandInSystem(
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<PhysicsWorld>(),

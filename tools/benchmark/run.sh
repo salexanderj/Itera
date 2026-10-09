@@ -3,7 +3,9 @@
 # $BENCH_OUT/<label>/: the game's log (game.log), one screenshot per view (for imgdiff.py), and summary.json (parse.py).
 # Prints one line: the world pass time per view in ms, the flight's, the exit code, and the sizes measured.
 #
-# Usage: run.sh <label> [game arguments...]     for example: run.sh base --Engine:Renderer:Shadows=false
+# Usage: run.sh <label> [--offscreen] [game arguments...]     for example: run.sh base --Engine:Renderer:Shadows=false
+#   --offscreen   no window (Engine:Window:Mode=Offscreen) at BENCH_SIZE (default 2560x1440): the monitor stays free and a
+#                 locked screen changes nothing, but no screenshots are taken (tools/control/game.py shots takes them).
 #   BENCH_BIN     folder of the build to run (default: the repo's Release output). Copy the output folder elsewhere to
 #                 keep building while a run goes on, and to compare two builds.
 #   BENCH_OUT     results folder (default the game's data folder's Benchmarks/, data_folder.py).
@@ -12,7 +14,7 @@
 set -uo pipefail
 
 if [[ $# -lt 1 ]]; then
-    echo "usage: run.sh <label> [game arguments...]" >&2
+    echo "usage: run.sh <label> [--offscreen] [game arguments...]" >&2
     exit 2
 fi
 
@@ -20,6 +22,16 @@ here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(git -C "$here" rev-parse --show-toplevel)"
 label="$1"
 shift
+offscreen=0
+if [[ "${1:-}" == "--offscreen" ]]; then
+    offscreen=1
+    shift
+fi
+size="${BENCH_SIZE:-2560x1440}"
+window_args=()
+if ((offscreen)); then
+    window_args=(--Engine:Window:Mode=Offscreen "--Engine:Window:Width=${size%x*}" "--Engine:Window:Height=${size#*x}")
+fi
 # The label names a folder that is deleted first: an empty, "/", ".", or ".." label once reached the whole Benchmarks
 # folder.
 if [[ ! "$label" =~ ^[A-Za-z0-9._-]+$ || "$label" == "." || "$label" == ".." ]]; then
@@ -52,20 +64,22 @@ mkdir -p "$out"
     --Engine:Renderer:DynamicRenderScaling=false --Engine:Renderer:RenderScale=1 \
     --Engine:Camera:FieldOfViewDegrees=90 --Engine:Window:Fullscreen=false \
     --Engine:Renderer:Shadows=true --Engine:Renderer:AntiAliasing=true \
-    --Engine:Logging:StatsIntervalSeconds=1 "$@" \
+    --Engine:Logging:StatsIntervalSeconds=1 "${window_args[@]}" "$@" \
     > "$out/console.txt" 2>&1 &
 pid=$!
 # A script stopped early (Ctrl+C, an error) stops the game too, rather than leaving it full screen.
 trap 'kill -TERM "$pid" 2> /dev/null' EXIT
 trap 'exit 130' INT TERM
 
-for _ in $(seq 100); do
-    if swaymsg -t get_tree | jq -e "[.. | select(.pid? == $pid)] | length > 0" > /dev/null 2>&1; then
-        break
-    fi
-    sleep 0.1
-done
-swaymsg "[pid=$pid] move container to output $output, focus, fullscreen enable" > /dev/null
+if ((!offscreen)); then
+    for _ in $(seq 100); do
+        if swaymsg -t get_tree | jq -e "[.. | select(.pid? == $pid)] | length > 0" > /dev/null 2>&1; then
+            break
+        fi
+        sleep 0.1
+    done
+    swaymsg "[pid=$pid] move container to output $output, focus, fullscreen enable" > /dev/null
+fi
 
 log=""
 for _ in $(seq 100); do
@@ -103,7 +117,7 @@ while kill -0 "$pid" 2> /dev/null; do
     fi
 
     count=$(grep -c 'Benchmark view .* measuring at' "$log" 2> /dev/null || true)
-    if ((count > shots)); then
+    if ((!offscreen && count > shots)); then
         sleep 2
         name=$(grep 'Benchmark view .* measuring at' "$log" | sed -n "$((shots + 1))p" |
             sed -E 's/.*Benchmark view ([0-9]+) ([a-z-]+) measuring.*/\1-\2/')
@@ -125,6 +139,9 @@ status=0
 if ! python3 "$here/parse.py" "$out/game.log" > "$out/summary.json"; then
     echo "$label: some views have no samples; see $out/game.log" >&2
     status=4
+fi
+if ((offscreen)); then
+    output="offscreen"
 fi
 python3 - "$out/summary.json" "$label" "$output" <<'PY'
 import json, subprocess, sys

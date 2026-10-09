@@ -22,6 +22,24 @@ public static class BenchmarkViews
     /// <summary>A person's eye height over the ground, in metres.</summary>
     public const float EyeMetres = 1.6f;
 
+    /// <summary>
+    /// The view named <paramref name="name"/> (any case) among <paramref name="views"/>, as <c>tp</c> takes a place: eye,
+    /// yaw, and pitch; null for a name none has.
+    /// </summary>
+    public static (Vector3 Eye, float Yaw, float Pitch)? Place(BenchmarkView[] views, string name)
+    {
+        ArgumentNullException.ThrowIfNull(views);
+        foreach (var view in views)
+        {
+            if (string.Equals(view.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return (view.Position, view.Yaw, view.Pitch);
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>The views of the world of <paramref name="seed"/> from <paramref name="start"/>.</summary>
     public static BenchmarkView[] For(StartPose start, ulong seed) =>
         [

@@ -118,7 +118,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     private readonly PlayArea _area;
     private readonly ILogger<PlayerMovementSystem> _logger;
     private readonly ConsoleCommands? _commands;
-    private readonly Func<string, (Vector3 Eye, float Yaw)?>? _places;
+    private readonly Func<string, (Vector3 Eye, float Yaw, float Pitch)?>? _places;
     private bool _localWaiting;
     private Request _request;
 
@@ -127,14 +127,17 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     /// <param name="area">The box <c>tp</c> keeps the eye in.</param>
     /// <param name="logger">Logger.</param>
     /// <param name="commands">The console's commands, which gets <c>pos</c> and <c>tp</c>; none in tests.</param>
-    /// <param name="places">The eye and yaw of a named place for <c>tp</c>, or null; the callback returns null for a name it lacks.</param>
+    /// <param name="places">
+    /// The eye, yaw, and pitch (radians) of a named place for <c>tp</c>, or null; the callback returns null for a name it
+    /// lacks.
+    /// </param>
     public PlayerMovementSystem(
         World world,
         VoxelCharacterMover mover,
         PlayArea area,
         ILogger<PlayerMovementSystem> logger,
         ConsoleCommands? commands = null,
-        Func<string, (Vector3 Eye, float Yaw)?>? places = null
+        Func<string, (Vector3 Eye, float Yaw, float Pitch)?>? places = null
     )
         : base(world)
     {
@@ -418,6 +421,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         if (context.Count == 1 && _places?.Invoke(context[0]) is { } place)
         {
             (eye, yaw, angles) = (place.Eye, place.Yaw, true);
+            pitch = Math.Clamp(place.Pitch, -CameraRules.MaxPitch, CameraRules.MaxPitch);
         }
         else if (context.Count == 1 && CameraPoseText.TryParse(context[0], out eye, out yaw, out pitch))
         {

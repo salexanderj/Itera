@@ -33,7 +33,8 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   (`EyeSmoothing.Height`). The local player crouches while Crouch is held (0.77 of its height and eye, 0.4 of its
   speed, no jump or sprint; it stands once the standing body fits) and moves backwards at 0.7 of its speed without
   sprint. While flying, its feet follow the fly camera. `pos` and `tp` are its commands (`tp` takes x y z [yaw pitch],
-  the form `pos` prints, `CameraPoseText`, or a game's named places).
+  the form `pos` prints, `CameraPoseText`, or a game's named places with their eye, yaw, and pitch: the starter's are its
+  benchmark views).
 - `PlayerCameraSystem` (frame) puts the active camera at the eye between the last two steps, looking where the command
   looks plus the mouse since the step, or behind the right shoulder (`ThirdPersonCamera`: 2.5 m back, 1.5 to 5 m by the
   wheel, pulled in by voxels); it makes the camera entity from a start pose (`CameraRules.CreateCamera`).

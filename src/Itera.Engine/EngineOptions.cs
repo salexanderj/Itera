@@ -115,6 +115,30 @@ public sealed class WindowSettings
 
     /// <summary>When true the window covers its screen. The menu's settings change it (and keep it in settings.json).</summary>
     public bool Fullscreen { get; set; }
+
+    /// <summary>
+    /// <see cref="WindowMode.Window"/> (the default): an OS window. <see cref="WindowMode.Offscreen"/>: no window; the
+    /// game draws as usual at <see cref="Width"/> x <see cref="Height"/> pixels into a headless surface
+    /// (<c>VK_EXT_headless_surface</c>), which nothing shows, for screenshots and checks that must not open a window. Input
+    /// comes only from the control port.
+    /// </summary>
+    public WindowMode Mode { get; set; } = WindowMode.Window;
+
+    /// <summary>
+    /// Frames a second drawn at most without a window (nothing paces a headless surface), 1 to 1000. The world's meshes
+    /// are read and uploaded a share each frame, so a low cap slows loading: at 60 the starter's view did not load in 15 s.
+    /// </summary>
+    public int OffscreenFps { get; set; } = 240;
+}
+
+/// <summary>Whether the game opens a window (<c>Engine:Window:Mode</c>).</summary>
+public enum WindowMode
+{
+    /// <summary>An OS window, as players get.</summary>
+    Window = 0,
+
+    /// <summary>No window: frames are drawn into a headless surface that nothing shows (screenshots, checks).</summary>
+    Offscreen = 1,
 }
 
 /// <summary>Renderer settings.</summary>

@@ -2,7 +2,8 @@
 # Builds the game (src/Game, Debug), runs it for a few seconds, then lists every [Vulkan] Warning or Error line from
 # the new log. Debug builds turn on core, synchronization, and best-practices validation in code
 # (VulkanContext, through VK_EXT_layer_settings); this script checks the log says so.
-# Exit code 0 means a clean run. Usage: validate.sh [seconds] [game arguments...]   (default 25: the Debug loading
+# Exit code 0 means a clean run. Usage: validate.sh [--offscreen] [seconds] [game arguments...]   (--offscreen: no window,
+# Engine:Window:Mode=Offscreen, so the run draws into a headless surface; default 25 s: the Debug loading
 # screen takes about 5 s, and only after it are the world, the models, the fade, and the upscale drawn). The starter
 # game draws no models until something makes a loose body or the game adds models; pass
 # --Engine:Renderer:DynamicRenderScaling=false --Engine:Renderer:RenderScale=0.75 for the upscale at a fixed scale.
@@ -21,8 +22,17 @@ set -euo pipefail
 
 VERIFIED_LAYER_VERSION="1.4.341"
 
+offscreen=0
+if [[ "${1:-}" == "--offscreen" ]]; then
+    offscreen=1
+    shift
+fi
 seconds="${1:-25}"
 shift || true
+mode_args=()
+if ((offscreen)); then
+    mode_args=(--Engine:Window:Mode=Offscreen)
+fi
 repo="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 data_folder_name="$(python3 "$repo/tools/benchmark/data_folder.py" --agent --name)"
 logs="$(python3 "$repo/tools/benchmark/data_folder.py" --agent)/Logs"
@@ -60,13 +70,15 @@ place_window() {
         sleep 0.1
     done
 }
-place_window &
+if ((!offscreen)); then
+    place_window &
+fi
 
 run_exit=0
 # Steam off: starting the Steam API loads Steam's overlay and fossilize Vulkan layers into the game, and the overlay's
 # own small image draws a best-practices warning (seen 2026-09-26) that is not Itera's.
 timeout --preserve-status -s INT "$seconds" "$binary" --Engine:Steam:Enabled=false --Engine:Session:Mode=Offline \
-    "--Engine:Application:DataFolder=$data_folder_name" "$@" > /dev/null 2>&1 || run_exit=$?
+    "--Engine:Application:DataFolder=$data_folder_name" "${mode_args[@]}" "$@" > /dev/null 2>&1 || run_exit=$?
 wait
 
 log="$(ls -t "$logs"/*.log 2>/dev/null | head -1 || true)"

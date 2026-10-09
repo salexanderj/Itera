@@ -595,8 +595,8 @@ public sealed class PlayerMovementSystemTests : IDisposable
         Assert.Equal(0, SystemAllocation.BytesAllocated(system, Step));
     }
 
-    private static (Vector3 Eye, float Yaw)? Places(string name) =>
-        name == "home" ? (new Vector3(-30, 2, 40), 0.5f) : null;
+    private static (Vector3 Eye, float Yaw, float Pitch)? Places(string name) =>
+        name == "home" ? (new Vector3(-30, 2, 40), 0.5f, -0.25f) : null;
 
     private static ConsoleCommands NewCommands() =>
         new(() => SessionRole.Offline, NullLogger<ConsoleCommands>.Instance);
@@ -633,7 +633,7 @@ public sealed class PlayerMovementSystemTests : IDisposable
         bool flying = false,
         VoxelCharacterMover? mover = null,
         ConsoleCommands? commands = null,
-        Func<string, (Vector3 Eye, float Yaw)?>? places = null
+        Func<string, (Vector3 Eye, float Yaw, float Pitch)?>? places = null
     )
     {
         var system = new PlayerMovementSystem(

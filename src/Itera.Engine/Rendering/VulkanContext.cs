@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Silk.NET.Core.Contexts;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.EXT;
@@ -19,6 +18,9 @@ public sealed unsafe partial class VulkanContext : IDisposable
     private const string ValidationLayerName = "VK_LAYER_KHRONOS_validation";
     private const string PortabilityEnumerationExtension = "VK_KHR_portability_enumeration";
     private const string PortabilitySubsetExtension = "VK_KHR_portability_subset";
+
+    /// <summary>Swapchain images viewed in another format than they were made in (<see cref="SupportsMutableSwapchainFormat"/>).</summary>
+    private const string MutableSwapchainFormatExtension = "VK_KHR_swapchain_mutable_format";
     private const string LayerSettingsExtension = "VK_EXT_layer_settings";
 
     private readonly RendererSettings _settings;
@@ -106,6 +108,13 @@ public sealed unsafe partial class VulkanContext : IDisposable
     public bool SupportsAnisotropy { get; private set; }
 
     /// <summary>
+    /// True when the device has <c>VK_KHR_swapchain_mutable_format</c>, enabled where offered and asked of no device: a
+    /// swapchain of UNORM images (a headless surface offers no sRGB format) can then be drawn into through sRGB views, as a
+    /// window's is. Valid after <see cref="Initialize"/>.
+    /// </summary>
+    public bool SupportsMutableSwapchainFormat { get; private set; }
+
+    /// <summary>
     /// Limits of the selected physical device: storage buffer range, alignments, timestamp period. Throws before
     /// <see cref="Initialize"/> has selected the device, so a constructor that reads it fails at the start instead of
     /// reading zeros (a renderer that did held every frame to render scale 0.05 from 2026-10-03 to 2026-10-04).
@@ -139,9 +148,13 @@ public sealed unsafe partial class VulkanContext : IDisposable
     /// </summary>
     public bool IsAbandoned { get; private set; }
 
-    /// <summary>Creates every object in order. <paramref name="surfaceSource"/> comes from the window.</summary>
-    public void Initialize(IVkSurface surfaceSource)
+    /// <summary>
+    /// Creates every object in order. <paramref name="surfaceSource"/> comes from the window, or is headless when the
+    /// game runs without one.
+    /// </summary>
+    public void Initialize(ISurfaceSource surfaceSource)
     {
+        ArgumentNullException.ThrowIfNull(surfaceSource);
         CreateInstance(surfaceSource);
         CreateDebugMessenger();
         CreateSurface(surfaceSource);
@@ -337,7 +350,7 @@ public sealed unsafe partial class VulkanContext : IDisposable
         return names;
     }
 
-    private void CreateInstance(IVkSurface surfaceSource)
+    private void CreateInstance(ISurfaceSource surfaceSource)
     {
         uint supportedVersion = Vk.Version10;
         Vk.EnumerateInstanceVersion(&supportedVersion).ThrowIfFailed("vkEnumerateInstanceVersion");
@@ -354,9 +367,17 @@ public sealed unsafe partial class VulkanContext : IDisposable
         var availableLayers = EnumerateInstanceLayers();
         var availableExtensions = EnumerateInstanceExtensions();
 
-        var extensions = new List<string>();
-        var requiredPtr = surfaceSource.GetRequiredExtensions(out var requiredCount);
-        extensions.AddRange(SilkMarshal.PtrToStringArray((nint)requiredPtr, (int)requiredCount));
+        var extensions = new List<string>(surfaceSource.InstanceExtensions);
+        foreach (var extension in extensions)
+        {
+            if (!availableExtensions.Contains(extension))
+            {
+                throw new VulkanException(
+                    $"The Vulkan loader does not offer {extension}, which the surface needs"
+                        + (extension == ExtHeadlessSurface.ExtensionName ? " (Engine:Window:Mode=Offscreen)." : ".")
+                );
+            }
+        }
 
         var layers = new List<string>();
         var layerSettingsAvailable = false;
@@ -591,7 +612,7 @@ public sealed unsafe partial class VulkanContext : IDisposable
         return LogLevel.Trace;
     }
 
-    private void CreateSurface(IVkSurface surfaceSource)
+    private void CreateSurface(ISurfaceSource surfaceSource)
     {
         // Load the extension first so Dispose can always destroy a surface that exists.
         if (!Vk.TryGetInstanceExtension(Instance, out KhrSurface khrSurface))
@@ -600,7 +621,7 @@ public sealed unsafe partial class VulkanContext : IDisposable
         }
 
         KhrSurface = khrSurface;
-        Surface = surfaceSource.Create<AllocationCallbacks>(Instance.ToHandle(), null).ToSurface();
+        Surface = surfaceSource.Create(Vk, Instance);
     }
 
     private void PickPhysicalDevice()
@@ -774,6 +795,7 @@ public sealed unsafe partial class VulkanContext : IDisposable
 
         var extensions = EnumerateDeviceExtensions(device);
         candidate.HasPortabilitySubset = extensions.Contains(PortabilitySubsetExtension);
+        candidate.HasMutableSwapchainFormat = extensions.Contains(MutableSwapchainFormatExtension);
         foreach (var required in DeviceRequirements.Extensions)
         {
             if (!extensions.Contains(required))
@@ -879,6 +901,13 @@ public sealed unsafe partial class VulkanContext : IDisposable
             enabledExtensions.Add(PortabilitySubsetExtension);
         }
 
+        // Optional: a surface without an sRGB format (a headless one) is viewed as sRGB (VulkanSwapchain).
+        if (selected.HasMutableSwapchainFormat)
+        {
+            enabledExtensions.Add(MutableSwapchainFormatExtension);
+            SupportsMutableSwapchainFormat = true;
+        }
+
         var uniqueFamilies =
             GraphicsQueueFamily == PresentQueueFamily
                 ? new[] { GraphicsQueueFamily }
@@ -981,6 +1010,8 @@ public sealed unsafe partial class VulkanContext : IDisposable
         public uint PresentFamily { get; set; }
 
         public bool HasPortabilitySubset { get; set; }
+
+        public bool HasMutableSwapchainFormat { get; set; }
 
         public bool HasFillModeNonSolid { get; set; }
 

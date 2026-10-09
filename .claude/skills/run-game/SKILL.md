@@ -36,13 +36,19 @@ lists the game's). Commonly used:
   `DynamicRenderScaling=false` with `RenderScale=0.75`, `DynamicScalingThreshold=60`, `AntiAliasing=false` (SMAA, which
   runs only with `MsaaSamples=1`), `ShaderSourceDirectory=$PWD/src/Itera.Engine/Rendering/Shaders` (then `shaders
   reload`), all under `Engine:Renderer`; `--Engine:Window:VSync=false`, `--Engine:Ui:Stats=true`.
+- No window: `--Engine:Window:Mode=Offscreen` draws at `Engine:Window:Width` x `Height` (1280x720) into a headless
+  surface (`VK_EXT_headless_surface`; its UNORM images are viewed as sRGB, so the picture is the window's), capped at
+  `Engine:Window:OffscreenFps` (240) frames a second; nothing shows on the desktop, a locked screen changes nothing, and
+  input comes only from the control port. Screenshots, `validate.sh --offscreen`, and `run.sh <label> --offscreen` work
+  as with a window. `tools/control/game.py start --offscreen` adds it.
 - Other systems: `--Engine:Physics:SettleSeconds` (0.5 to 60), `MaxLooseBodies` (1 to 1024);
   `--Engine:Particles:Enabled=false` (`Capacity` 16,384 to 1,048,576); `--Engine:Audio:Enabled=false` (`Volume` 0 to
   1, default 0.1; `MaxVoices` 8 to 255), `--Engine:Audio:Cache=false`; `--Engine:Loading:Enabled=false`;
   `--Engine:Control:Enabled=true` (127.0.0.1:47650, `Port`); `--Engine:Benchmark:Enabled=true` (`tools/benchmark`);
   `"--Engine:Console:Run=balls 8; pos"` (commands run once the first match's world and systems exist; with `wait`, a
   script), `--Engine:Console:RunFile=PATH` (a file of command lines, `#` comments, after `Run`'s),
-  `--Engine:Console:ExitOnFailure=true` (a failed startup command ends the run with exit code 1).
+  `--Engine:Console:ExitOnFailure=true` (a failed startup command ends the run with exit code 1; `quit CODE` sets
+  another).
 - Logging: `--Serilog:MinimumLevel:Default=Verbose`; `--Serilog:MinimumLevel:Override:Itera.Engine.Modding=Verbose
   --Engine:Logging:ConsoleLevel=Trace`; `--Engine:Logging:FileEnabled=false`.
 
@@ -69,7 +75,8 @@ naming the key.
 
 ## Unattended runs
 
-A startup script runs a check on its own and ends the run: `Engine:Console:Run` (and `Engine:Console:RunFile`, a file
+Prefer no window (`--Engine:Window:Mode=Offscreen`) for checks that need no one to watch. A startup script runs a
+check on its own and ends the run: `Engine:Console:Run` (and `Engine:Console:RunFile`, a file
 of command lines) with `wait` between the commands, `screenshot PATH`, and `quit`, and
 `--Engine:Console:ExitOnFailure=true` so a failed command or a wait past its time ends the run with exit code 1:
 
@@ -98,7 +105,12 @@ wait for loading, frames, fixed steps (`ticks`), seconds, or a log line, measure
 every pass compiles, then the pipelines are made again; an error keeps the old ones), and send input (keys, buttons,
 look, the wheel, a capture of the pointer that needs no focus, and `point X Y` and `type TEXT` for the menu). It reads
 lines of at most 1 MiB and takes 16 tools at once; a wait-for-log pattern has 50 ms a line. Use it instead of
-restarts. `game.py start` adds `--Engine:Window:VSync=false` only with `--fullscreen`; add it after `--` otherwise when
+restarts. `game.py shots VIEW... --out DIR [--compare DIR] [--size WxH] [--release]` starts the game offscreen, takes a
+screenshot of each view once its world has loaded and its light settled (`fly on`, `tp VIEW`, `wait view`), stops it,
+and compares with an earlier set (`tools/benchmark/imgdiff.py`): four views take about 20 s in Debug, and sets of the
+same build agree to a few pixels. A view is a game's `tp` place (the starter's benchmark views: `start`, `start-low`,
+`down`, `up`, `high`, `far`) or `x,y,z,yaw,pitch`. `game.py start` adds `--Engine:Window:VSync=false` only with
+`--fullscreen`; add it after `--` otherwise when
 the screen may lock. Under `dotnet watch` (Debug), a changed method body or a new method applies to the running game in
 about 1 to 3 s, from the method's next call (constructors and static initialisers do not run again); an edit it cannot
 apply restarts the game. Watch builds into `bin/Debug` in place, so no other build or test run may share it.
@@ -127,8 +139,9 @@ lists the commands (`ConsoleCommands`):
   draws material ID from a set, colour matched 0 to 1, or plain; `tune ID DETAIL RELIEF BLUR` keeps part of its set's
   colour variation and relief (0 to 1) and softens it by mip levels (0 to 4); `bake ID top|side [NAME]` writes material
   ID's recipe as images for `tools/Textures` into the data folder's `Bakes/`; the run's only), `stats`, `screenshot`
-  [SCALE] [noui] [PATH] (a PNG at PATH or in the data folder's `Screenshots/`), `wait` (loaded, ticks N, frames N, or
-  seconds N of the game clock, then an optional timeout in seconds), `shaders reload`, `quit` [CODE] (the exit code, 0
+  [SCALE] [noui] [PATH.png] (a PNG at PATH.png or in the data folder's `Screenshots/`), `wait` (loaded, view (the view's
+  world loaded and on the GPU, as the loading screen waits for), ticks N, frames N, or seconds N of real time, then an
+  optional timeout in seconds), `shaders reload`, `quit` [CODE] (the exit code, 0
   to 255), `ecs` (counts, list COMPONENT [N], show ID[:VERSION]|player: the match's entities and their components'
   fields, `EcsInspector`), `pause`, `resume`, `step` [N] (pauses, then N fixed steps), `timescale` [X] (0.05 to 16
   for the run; offline only, as are pause, resume, and step), `particles` (on, off, recipes, test NAME [COUNT],

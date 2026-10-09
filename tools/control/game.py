@@ -356,6 +356,9 @@ def cmd_start(args):
         command.append("--Engine:Session:Mode=Offline")
     if args.fullscreen:
         command.append("--Engine:Window:VSync=false")
+    if getattr(args, "offscreen", False):
+        # No window: drawn into a headless surface, input only from this port.
+        command.append("--Engine:Window:Mode=Offscreen")
     command += args.game
     console = open(RUN_ROOT / f"{configuration}-console.txt", "w")
     process = subprocess.Popen(command, cwd=folder, stdout=console, stderr=subprocess.STDOUT,
@@ -364,8 +367,11 @@ def cmd_start(args):
     save_state({"pid": process.pid, "port": port, "configuration": configuration, "folder": str(folder),
                 "built": built, "started": time.time(), "log_next": 0})
     print(f"started {configuration} build of {built}, pid {process.pid}, port {port}")
-    placement = place_window(process.pid, args.fullscreen)
-    print("window: " + placement)
+    if getattr(args, "offscreen", False):
+        print("window: none (offscreen)")
+    else:
+        placement = place_window(process.pid, args.fullscreen)
+        print("window: " + placement)
     deadline = time.time() + 60
     while True:
         if process.poll() is not None:
@@ -420,6 +426,53 @@ def cmd_stop(args):
     return 1
 
 
+def cmd_shots(args):
+    """Starts the game offscreen, takes a screenshot of each view once its world has loaded, stops it, and lists the
+    PNGs; with --compare, compares them with an earlier set (tools/benchmark/imgdiff.py)."""
+    if alive(load_state().get("pid"), load_state()):
+        print("a game already runs; 'game.py stop' first", file=sys.stderr)
+        return 2
+    try:
+        width, height = (int(v) for v in args.size.lower().split("x"))
+    except ValueError:
+        print(f"--size is WIDTHxHEIGHT, not {args.size}", file=sys.stderr)
+        return 2
+    out = Path(args.out).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    # The same size every set: no dynamic render scaling, no stats line.
+    game = [f"--Engine:Window:Width={width}", f"--Engine:Window:Height={height}",
+            "--Engine:Renderer:DynamicRenderScaling=false", "--Engine:Ui:Stats=false"] + args.game
+    start = argparse.Namespace(port=args.port, release=args.release, fullscreen=False, no_wait=False, menu=False,
+                               offscreen=True, game=game)
+    code = cmd_start(start)
+    if code != 0:
+        return code
+    failed = False
+    try:
+        # The fly camera holds a view in the air; tp moves it while it flies.
+        show(ask(args, {"op": "run", "line": "fly on; wait ticks 2", "script": True, "timeout": 30}), quiet_log=True)
+        for number, view in enumerate(args.views, 1):
+            name = view if "," not in view else f"view-{number}"
+            path = out / f"{name}.png"
+            # The sky field is built again about 2 s after columns load, so the light settles before the shot.
+            line = (f'tp {view}; wait view; wait seconds {args.settle}; wait view; screenshot noui "{path}"')
+            reply = ask(args, {"op": "run", "line": line, "script": True, "timeout": 180}, timeout=190)
+            if reply.get("ok"):
+                print(path)
+            else:
+                failed = True
+                show(reply, quiet_log=True)
+    finally:
+        cmd_stop(args)
+    if failed:
+        return 1
+    if args.compare:
+        sys.stdout.flush()
+        return subprocess.run([sys.executable, str(REPO / "tools" / "benchmark" / "imgdiff.py"), args.compare,
+                               str(out)]).returncode
+    return 0
+
+
 def cmd_restart(args):
     code = cmd_stop(args)
     if code != 0:
@@ -443,8 +496,18 @@ def main():
         sub.add_argument("--fullscreen", action="store_true", help="full screen on DP-1 with VSync off (for timings)")
         sub.add_argument("--no-wait", action="store_true", help="do not wait for the loading screen to finish")
         sub.add_argument("--menu", action="store_true", help="start at the menu instead of an offline match (no wait)")
+        sub.add_argument("--offscreen", action="store_true",
+                         help="no window: drawn into a headless surface; input only from this port")
         sub.add_argument("game", nargs=argparse.REMAINDER, help="game arguments, after --")
     add("stop", cmd_stop, "quit the game (then SIGTERM, then SIGKILL)")
+    sub = add("shots", cmd_shots, "start offscreen, take a screenshot of each view (a tp place or x,y,z,yaw,pitch), stop")
+    sub.add_argument("views", nargs="+")
+    sub.add_argument("--out", required=True, help="folder for the PNGs, one per view")
+    sub.add_argument("--size", default="1280x720", help="the picture's size (default 1280x720)")
+    sub.add_argument("--release", action="store_true", help="the Release build (default Debug)")
+    sub.add_argument("--settle", type=float, default=2.5, help="seconds after the view loads before the shot (2.5)")
+    sub.add_argument("--compare", help="an earlier set's folder to compare with (imgdiff.py)")
+    sub.add_argument("--game", nargs="*", default=[], help="more game arguments")
     sub = add("run", cmd_run, "run console commands (';' separates them)")
     sub.add_argument("-q", "--quiet", action="store_true", help="leave out the log lines")
     sub.add_argument("-s", "--script", action="store_true",

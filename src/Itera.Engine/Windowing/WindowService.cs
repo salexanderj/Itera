@@ -1,3 +1,4 @@
+using Itera.Engine.Rendering;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Silk.NET.GLFW;
@@ -6,7 +7,10 @@ using Silk.NET.Windowing;
 
 namespace Itera.Engine.Windowing;
 
-/// <summary>Owns the OS window. All calls must happen on the main thread, except <see cref="Wake"/>.</summary>
+/// <summary>
+/// Owns the OS window, or stands in for it without one (<c>Engine:Window:Mode=Offscreen</c>: no events, the size from
+/// the options, and a headless surface). All calls must happen on the main thread, except <see cref="Wake"/>.
+/// </summary>
 public sealed partial class WindowService : IDisposable
 {
     private readonly WindowSettings _settings;
@@ -46,8 +50,31 @@ public sealed partial class WindowService : IDisposable
     /// </summary>
     public int RefreshRate { get; private set; }
 
-    /// <summary>The window. Throws before <see cref="Initialize"/>.</summary>
-    public IWindow Window => _window ?? throw new InvalidOperationException("The window has not been initialised.");
+    /// <summary>The window. Throws before <see cref="Initialize"/>, and in a run without a window.</summary>
+    public IWindow Window => _window ?? throw new InvalidOperationException("There is no window.");
+
+    /// <summary>True while an OS window exists: not before <see cref="Initialize"/>, and never offscreen.</summary>
+    public bool HasWindow => _window is not null;
+
+    /// <summary>True when the run has no window (<c>Engine:Window:Mode=Offscreen</c>).</summary>
+    public bool Offscreen => _settings.Mode == WindowMode.Offscreen;
+
+    /// <summary>
+    /// The least time between two frames the render thread starts, in seconds: offscreen a frame cap
+    /// (<c>Engine:Window:OffscreenFps</c>), since nothing paces a headless surface; 0 with a window, which presenting paces.
+    /// </summary>
+    public double FrameCapSeconds => Offscreen ? 1.0 / _settings.OffscreenFps : 0;
+
+    /// <summary>True once the OS asked the window to close; never without a window.</summary>
+    public bool IsClosing => _window?.IsClosing ?? false;
+
+    /// <summary>Where the Vulkan surface comes from: the window's, or a headless one offscreen. After <see cref="Initialize"/>.</summary>
+    public ISurfaceSource SurfaceSource =>
+        Offscreen
+            ? new HeadlessSurfaceSource()
+            : new WindowSurfaceSource(
+                Window.VkSurface ?? throw new InvalidOperationException("The window has no Vulkan surface.")
+            );
 
     /// <summary>
     /// Puts the window over its whole screen, or back in a window; the resize follows as any resize does. Main thread;
@@ -67,8 +94,11 @@ public sealed partial class WindowService : IDisposable
     /// <summary>Why <see cref="ExitRequested"/> was set, for the shutdown log. Null while no exit is requested.</summary>
     public string? ExitReason { get; private set; }
 
-    /// <summary>Framebuffer size in pixels. Differs from the logical size under display scaling.</summary>
-    public Vector2D<int> FramebufferSize => Window.FramebufferSize;
+    /// <summary>
+    /// Framebuffer size in pixels. Differs from the logical size under display scaling. Offscreen, the options' size.
+    /// </summary>
+    public Vector2D<int> FramebufferSize =>
+        Offscreen ? new Vector2D<int>(_settings.Width, _settings.Height) : Window.FramebufferSize;
 
     /// <summary>
     /// Framebuffer pixels per unit of the window's size across, 1 to 4: 2 on a Retina Mac, 1 where they agree. Null before
@@ -79,9 +109,15 @@ public sealed partial class WindowService : IDisposable
             ? Math.Clamp(window.FramebufferSize.X / (float)window.Size.X, 1, 4)
             : null;
 
-    /// <summary>Creates the window without entering Silk.NET's own loop.</summary>
+    /// <summary>Creates the window without entering Silk.NET's own loop; offscreen, none.</summary>
     public void Initialize(bool fullscreen = false)
     {
+        if (Offscreen)
+        {
+            LogOffscreen(_settings.Width, _settings.Height);
+            return;
+        }
+
         // libsdl2 may be present on the system; make sure Silk.NET picks GLFW.
         Silk.NET.Windowing.Window.PrioritizeGlfw();
 
@@ -161,7 +197,10 @@ public sealed partial class WindowService : IDisposable
     /// </summary>
     public void SetTitle(string title)
     {
-        Window.Title = title;
+        if (_window is not null)
+        {
+            _window.Title = title;
+        }
     }
 
     /// <summary>Asks the loop to stop after the current frame.</summary>
@@ -184,10 +223,10 @@ public sealed partial class WindowService : IDisposable
     /// </summary>
     public int ExitCode { get; private set; }
 
-    /// <summary>Pumps OS events. Input and resize callbacks fire from here.</summary>
+    /// <summary>Pumps OS events. Input and resize callbacks fire from here. Nothing without a window.</summary>
     public void PollEvents()
     {
-        Window.DoEvents();
+        _window?.DoEvents();
     }
 
     /// <summary>
@@ -278,6 +317,12 @@ public sealed partial class WindowService : IDisposable
         Message = "Window created: {Width}x{Height} logical, {FbWidth}x{FbHeight} framebuffer, {Backend}"
     )]
     private partial void LogWindowCreated(int width, int height, int fbWidth, int fbHeight, string backend);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Window: none (offscreen): drawn at {Width}x{Height} into a headless surface; input only from the control port"
+    )]
+    private partial void LogOffscreen(int width, int height);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Window: refresh rate {Hz} Hz, of screen {Screen} ({How})")]
     private partial void LogRefreshRate(string screen, int hz, string how);

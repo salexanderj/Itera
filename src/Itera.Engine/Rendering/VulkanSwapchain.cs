@@ -122,6 +122,33 @@ public sealed unsafe partial class VulkanSwapchain : IDisposable
         }
 
         var surfaceFormat = ChooseSurfaceFormat(formats);
+        // A surface with no sRGB format (a headless one offers UNORM only): its images are drawn into through sRGB views,
+        // so the hardware encodes the linear output as it does for a window, and screenshots hold the same colours.
+        var viewFormat = surfaceFormat.Format;
+        if (
+            _context.SupportsMutableSwapchainFormat
+            && surfaceFormat.ColorSpace == ColorSpaceKHR.SpaceSrgbNonlinearKhr
+            && SrgbTwin(surfaceFormat.Format) is { } srgb
+            && CanDrawInto(vk, physicalDevice, srgb)
+        )
+        {
+            viewFormat = srgb;
+        }
+
+        var mutable = viewFormat != surfaceFormat.Format;
+        var viewFormats = stackalloc Format[] { surfaceFormat.Format, viewFormat };
+        var formatList = new ImageFormatListCreateInfo
+        {
+            SType = StructureType.ImageFormatListCreateInfo,
+            ViewFormatCount = 2,
+            PViewFormats = viewFormats,
+        };
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            var offered = string.Join(", ", formats.Select(f => $"{f.Format}/{f.ColorSpace}"));
+            LogFormatsOffered(offered);
+        }
+
         var presentMode = ChoosePresentMode(presentModes, _vsync);
         var extent = ChooseExtent(capabilities, framebufferSize);
 
@@ -142,6 +169,8 @@ public sealed unsafe partial class VulkanSwapchain : IDisposable
         var createInfo = new SwapchainCreateInfoKHR
         {
             SType = StructureType.SwapchainCreateInfoKhr,
+            PNext = mutable ? &formatList : null,
+            Flags = mutable ? SwapchainCreateFlagsKHR.MutableFormatBitKhr : 0,
             Surface = surface,
             MinImageCount = imageCount,
             ImageFormat = surfaceFormat.Format,
@@ -160,7 +189,8 @@ public sealed unsafe partial class VulkanSwapchain : IDisposable
         };
 
         Extent = extent;
-        ImageFormat = surfaceFormat.Format;
+        // What the passes draw into and the image views are: the sRGB view of mutable UNORM images.
+        ImageFormat = viewFormat;
         CanCopyImages = copyable;
 
         if (extent.Width == 0 || extent.Height == 0)
@@ -238,6 +268,23 @@ public sealed unsafe partial class VulkanSwapchain : IDisposable
         Images = [];
     }
 
+    /// <summary>The sRGB format with the same bytes as a UNORM one, or null.</summary>
+    internal static Format? SrgbTwin(Format format) =>
+        format switch
+        {
+            Format.B8G8R8A8Unorm => Format.B8G8R8A8Srgb,
+            Format.R8G8B8A8Unorm => Format.R8G8B8A8Srgb,
+            Format.A8B8G8R8UnormPack32 => Format.A8B8G8R8SrgbPack32,
+            _ => null,
+        };
+
+    /// <summary>True when <paramref name="format"/> can be a colour attachment with optimal tiling.</summary>
+    private static bool CanDrawInto(Vk vk, PhysicalDevice device, Format format)
+    {
+        vk.GetPhysicalDeviceFormatProperties(device, format, out var properties);
+        return (properties.OptimalTilingFeatures & FormatFeatureFlags.ColorAttachmentBit) != 0;
+    }
+
     /// <summary>An sRGB format in the sRGB colour space when the surface offers one; otherwise its first format.</summary>
     internal static SurfaceFormatKHR ChooseSurfaceFormat(SurfaceFormatKHR[] formats)
     {
@@ -312,6 +359,9 @@ public sealed unsafe partial class VulkanSwapchain : IDisposable
         );
         return new Extent2D(width, height);
     }
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Swapchain: the surface offers {Formats}")]
+    private partial void LogFormatsOffered(string formats);
 
     [LoggerMessage(
         Level = LogLevel.Information,

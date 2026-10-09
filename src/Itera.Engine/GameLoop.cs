@@ -352,7 +352,7 @@ public sealed partial class GameLoop
             new("steam", _steam.Initialize, _steam.Dispose),
             new("settings file", _playerSettings.Initialize, () => { }),
             new("window", () => _window.Initialize(_playerSettings.Fullscreen), _window.Dispose, Graphics: true),
-            new("vulkan context", () => _vulkan.Initialize(_window.Window.VkSurface!), _vulkan.Dispose, Graphics: true),
+            new("vulkan context", () => _vulkan.Initialize(_window.SurfaceSource), _vulkan.Dispose, Graphics: true),
             new("swapchain", InitializeSwapchain, _swapchain.Dispose, Graphics: true),
             new("frame sync", () => _frameSync.Initialize(_swapchain.Images.Count), _frameSync.Dispose, Graphics: true),
             new("gpu memory", InitializeGpuMemory, ShutdownGpuMemory, Graphics: true),
@@ -548,7 +548,7 @@ public sealed partial class GameLoop
         // the address: the menu joins it at once, and comes back with the reason if it cannot.
         _flow.Begin(_options, _matchCommands);
 
-        while (!_window.ExitRequested && !_cancelRequested && !_window.Window.IsClosing && !_flow.SessionEndsRun)
+        while (!_window.ExitRequested && !_cancelRequested && !_window.IsClosing && !_flow.SessionEndsRun)
         {
             CheckRenderThread();
             WaitForWork();
