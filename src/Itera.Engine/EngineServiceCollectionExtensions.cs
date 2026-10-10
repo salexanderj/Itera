@@ -106,6 +106,8 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<ModelInstances>();
         services.TryAddSingleton<MeshInstances>();
         services.TryAddSingleton<MeshAssetPass>();
+        // The game's own passes (IRenderPass, registered by the game), run at their stages.
+        services.TryAddSingleton<RenderPasses>();
         services.TryAddSingleton<MeshAssetDraws>();
         services.TryAddSingleton<PointLights>();
         services.TryAddScoped<VoxelTintSampler>();
@@ -127,7 +129,8 @@ public static class EngineServiceCollectionExtensions
             return new ShaderCompiler(
                 sp.GetRequiredService<ILogger<ShaderCompiler>>(),
                 Path.Combine(options.Application.DataDirectory(), "ShaderCache"),
-                options.Renderer.ShaderSourceDirectory
+                options.Renderer.ShaderSourceDirectory,
+                options.Renderer.GameShaderSourceDirectory
             );
         });
         services.TryAddSingleton<ShaderReloads>();

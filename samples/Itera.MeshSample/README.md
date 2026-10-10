@@ -11,6 +11,11 @@ matches have no voxel world. It shows what such a game composes and how the engi
   `ClimbingMode` (Space at a block grabs it; W, S, A, D on it; Space jumps off; Ctrl lets go; the top pulls up).
 - The starter's fox (its files linked from `src/Game/Models/Fox/`) walks a circle (`SampleFoxSystem`).
 - The console's `balls` drops loose bodies that land on the mesh ground and stay where they rest (no `ILooseBodyRest`).
+- A render pass of its own (`Rendering/AimHighlightPass.cs`, an `IRenderPass` at the `Transparent` stage): the block
+  the player aims at within 1.5 m (`AimHighlightSystem`, the shared ray from where the player's tools aim, through
+  `YardColliders` to the piece) glows along its edges, pulsing. Its shaders are in `Shaders/`, copied to
+  `Shaders/Game/` beside the engine's, and include the engine's `view.glsl`; `AimHighlightPassTests` checks them against
+  `AimHighlightData`.
 - The sky is the engine's default (no `IAtmosphereSource`).
 - Its play area is the yard (`PlayArea` with the yard's bounds, in place of the engine's 10 cm grid's): the mover's map
   edge is a wall at the yard's side, so nobody walks off it.

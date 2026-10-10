@@ -377,6 +377,38 @@ public sealed class MeshAssetDrawsTests
         Assert.Equal(new DrawIndexedIndirectCommand(3, 1, 3, 3, drawBase + 2), commands[2]);
     }
 
+    /// <summary>
+    /// The blended list stops at its commands' room: a two-sided primitive takes two, so 2,049 of them leave the last out,
+    /// with the rest drawn in order.
+    /// </summary>
+    [Fact]
+    public void A_full_blended_list_leaves_the_primitives_past_it_out()
+    {
+        var glass = new MeshMaterialData { AlphaMode = MeshAlphaMode.Blend, DoubleSided = true };
+        var targets = new FakeTargets(MeshAssetLayout.From([MeshAssetPassTests.Asset("glass", glass, vertices: 3)]));
+        var view = new MeshView(targets, Options.Create(new EngineOptions()));
+        var draws = new MeshAssetDraws(targets, NullLogger<MeshAssetDraws>.Instance);
+        view.Begin(0, LookingAlongMinusZ(shadows: false));
+        var instances = new MeshInstance[MeshAssetPass.MaxCommands / 2 + 1];
+        for (var i = 0; i < instances.Length; i++)
+        {
+            instances[i] = new MeshInstance(
+                0,
+                Matrix4x4.CreateTranslation(0, 0, -5 - i * 0.01f),
+                MeshInstances.NoTint,
+                ModelShadow.Casts
+            );
+        }
+
+        var frame = draws.Write(0, view, instances);
+
+        Assert.Equal(MeshAssetPass.MaxCommands, frame.Blended);
+        // The last instance is left out (the room fills in the order given); of those kept the farthest comes first.
+        var blended = targets.Draws(0, MeshAssetPass.BlendedList);
+        Assert.Equal(instances[^2].Transform, blended[0].Transform);
+        Assert.Equal(instances[0].Transform, blended[MeshAssetPass.MaxCommands - 1].Transform);
+    }
+
     [Fact]
     public void A_frame_of_blended_instances_allocates_nothing()
     {

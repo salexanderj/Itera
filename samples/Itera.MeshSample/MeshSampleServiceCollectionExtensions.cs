@@ -10,6 +10,7 @@ using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.Voxels;
 using Itera.Engine.Settings;
 using Itera.Engine.Systems;
+using Itera.MeshSample.Rendering;
 using Itera.MeshSample.Systems;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -31,6 +32,10 @@ public static class MeshSampleServiceCollectionExtensions
     {
         services.AddSingleton<StockEffects>();
         services.AddSingleton<IRunStartup, SampleRunStartup>();
+        // The sample's own render pass: the glow round the block the player aims at, which AimHighlightSystem finds.
+        services.AddSingleton<AimHighlight>();
+        services.AddSingleton<IRenderPass, AimHighlightPass>();
+        services.AddScoped<YardColliders>();
         // The play area round the yard: the mover's map edge is a wall at its side, and with the floor 1 m under the
         // ground, a body 11 m under the ground has fallen out.
         services.Replace(
@@ -55,7 +60,8 @@ public static class MeshSampleServiceCollectionExtensions
         services.AddScoped<IFixedUpdateSystem>(sp => new YardSystem(
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<MeshAssets>(),
-            sp.GetRequiredService<MeshColliders>()
+            sp.GetRequiredService<MeshColliders>(),
+            sp.GetRequiredService<YardColliders>()
         ));
         services.AddScoped<IFixedUpdateSystem>(sp => new SampleSpawnSystem(sp.GetRequiredService<EcsWorld>().World));
         services.AddScoped<IFixedUpdateSystem>(sp => new SampleFoxSystem(
@@ -122,7 +128,8 @@ public static class MeshSampleServiceCollectionExtensions
 
     /// <summary>
     /// The frame systems, in their run order: the camera at the player's eye, or the fly camera; the debug outlines;
-    /// the camera to the renderer; the loose bodies' models; and the mesh assets placed (the yard, the fox).
+    /// the camera to the renderer; the block the player aims at, from the camera's pose; the loose bodies' models; and
+    /// the mesh assets placed (the yard, the fox).
     /// </summary>
     private static void AddFrameSystems(IServiceCollection services)
     {
@@ -161,6 +168,12 @@ public static class MeshSampleServiceCollectionExtensions
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<RenderView>(),
             sp.GetRequiredService<PlayerSettings>()
+        ));
+        services.AddScoped<IFrameUpdateSystem>(sp => new AimHighlightSystem(
+            sp.GetRequiredService<EcsWorld>().World,
+            sp.GetRequiredService<CollisionSources>(),
+            sp.GetRequiredService<YardColliders>(),
+            sp.GetRequiredService<AimHighlight>()
         ));
         services.AddScoped<IFrameUpdateSystem>(sp => new LooseBodyModelSystem(
             sp.GetRequiredService<EcsWorld>().World,

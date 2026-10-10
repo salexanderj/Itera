@@ -35,6 +35,7 @@ arguments before yours:
 - `--Engine:Control:Enabled=true`
 - `--Engine:Steam:Enabled=false`
 - `--Engine:Renderer:ShaderSourceDirectory=<repo>/src/Itera.Engine/Rendering/Shaders`
+- `--Engine:Renderer:GameShaderSourceDirectory=<repo>/src/Game/Shaders`, when the game has that folder
 - `--Engine:Application:DataFolder=<DataFolder>-agent`
 - `--Engine:Session:Mode=Offline` (straight into an offline match), unless `--menu`
 
@@ -139,7 +140,8 @@ as usual.
 
 ## Timings
 
-`gpu` averages each GPU pass over the next frames it measures, so a before and after need no 10 s stats line. For
+`gpu` averages each GPU pass over the next frames it measures, so a before and after need no 10 s stats line; a game's
+own render passes come as `Game NAME` each and `Game` for their sum. For
 numbers to compare, start with `--release --fullscreen`. `tools/benchmark/run.sh` still takes its screenshots with
 grim; the in-game `shot` could replace that later.
 

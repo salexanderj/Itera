@@ -11,6 +11,7 @@ paths:
   `LongFirstCollectionOrderer`, `xunit.runner.json`, `VoxelLoading` (load a test's voxel world), `FakeTransport` (an in-memory session transport: no sockets, no
   clocks), `HostileValues` and `Watchdog` (hostile field values and damaged message bodies, and rows run on a worker thread that fail past 1 s of
   wall time, times `ITERA_TEST_TIME_SCALE` on a slower machine),
+  `GpuLayout` (a C# struct against a compiled shader's block, so a game's tests check its own passes' structs too),
   and `WireFingerprint` (the wire's bytes pinned with the protocol version; it reads the engine's internals, so the
   game's tests leave it out), compiled into the projects that use them.
 - Every system has a zero-allocation test and a behaviour test. Every measured window starts with
@@ -103,8 +104,9 @@ Where tests live:
   instances, and the blended list sorted back to front), `MeshViewTests` (the frame's frustum, cascades, and
   lights), `LevelBalanceTests`, `MeshColumnTests`,
   `WorldMeshesTests` over a draw target and staging in memory: the seams' stitched meshes, a full heap, the edits'
-  latency), `Memory/GpuRangeHeapTests`, `GpuLayout` (also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`,
-  `DeviceChoiceTests`, `RenderThreadTests` (a fake renderer), the passes' shaders against their push constants
+  latency), `Memory/GpuRangeHeapTests`, `GpuLayoutTests` (of `tests/Shared/GpuLayout`, also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`,
+  `DeviceChoiceTests`, `RenderThreadTests` (a fake renderer), `RenderPassesTests` (a game's pass at every stage in
+  `EngineComposition`, none made or written without graphics; too many, or names empty or used twice, refused), the passes' shaders against their push constants
   (`UiPassTests`, `UpscalePassTests`, `LoadingPassTests`, `ParticlePassTests`), `ScreenshotTests`, `ShaderReloadTests`.
 - Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `LoopbackTests`, `SteamTransportTests`,
   `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests` (a temporary folder), `Navigation/`

@@ -48,7 +48,7 @@ Audit of the code at commit `336006e` of the Zorf TD archive (`salexanderj/ZorfT
 
 ### Added
 
-- `tests/Itera.Engine.Tests/Rendering/GpuLayout.cs`: compares a C# struct with the block layout in compiled
+- `tests/Shared/GpuLayout.cs` (first in `tests/Itera.Engine.Tests/Rendering/`): compares a C# struct with the block layout in compiled
   SPIR-V (set and binding, or push constants), including array stride, member types, matrix order, and the
   128-byte push constant limit. `GpuLayoutTests` covers a match, std430 offsets and stride, a row-major
   matrix, a type mismatch, a `bool` field, a missing binding, and scalar push constants.

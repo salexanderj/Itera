@@ -42,7 +42,7 @@ public struct MeshAssetMaterial
     /// <summary>A texture reference's index for none: the material's factor alone.</summary>
     public const uint NoTexture = 0xFFFFu;
 
-    /// <summary><see cref="Flags"/>: pixels whose alpha is below the cutoff are not drawn (glTF's MASK, and BLEND for now).</summary>
+    /// <summary><see cref="Flags"/>: pixels whose alpha is below the cutoff are not drawn (glTF's MASK).</summary>
     public const uint Masked = 1u;
 
     /// <summary><see cref="Flags"/>: both faces drawn, the back lit from its own side.</summary>
@@ -69,7 +69,7 @@ public struct MeshAssetMaterial
             OcclusionStrength = material.OcclusionStrength,
             Metallic = material.Metallic,
             Roughness = material.Roughness,
-            Flags = (material.AlphaMode == MeshAlphaMode.Opaque ? 0u : Masked) | (material.DoubleSided ? TwoSided : 0u),
+            Flags = (material.AlphaMode == MeshAlphaMode.Mask ? Masked : 0u) | (material.DoubleSided ? TwoSided : 0u),
         };
     }
 

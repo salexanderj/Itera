@@ -38,11 +38,12 @@ tools/benchmark/flight.py long                               # uploads, the mesh
   anti-aliasing (on, as shipped) on the command line, so the player's `settings.json` (the menu's Settings) changes no
   measurement; the log's `Settings: ...` line shows what applied, and `--Engine:Renderer:RenderScale=0.67` after the
   label measures another fixed scale (`--Engine:Renderer:AntiAliasing=false` the picture without anti-aliasing).
-  `parse.py` also gives each view's anti-aliasing (SMAA) and upscale passes per frame, and `compare.py` prints them
-  when either group ran them. The label must be letters, digits, `.`, `_`, or `-`. Stopping the script stops the game,
-  and a view with no samples makes it exit non-zero. Results go to `BENCH_OUT` (default the data folder's
-  `Benchmarks/<label>`): `game.log`, a screenshot per view, and `summary.json`. `BENCH_AGENT=1` runs in the data
-  folder of the runs Claude starts (`<DataFolder>-agent`), so they leave the player's logs and benchmarks alone.
+  `parse.py` also gives each view's anti-aliasing (SMAA) and upscale passes per frame, and the game's own render passes
+  (their sum, `game_ms`), and `compare.py` prints them when either group ran them. The label must be letters, digits,
+  `.`, `_`, or `-`. Stopping the script stops the game, and a view with no samples makes it exit non-zero. Results go
+  to `BENCH_OUT` (default the data folder's `Benchmarks/<label>`): `game.log`, a screenshot per view, and
+  `summary.json`. `BENCH_AGENT=1` runs in the data folder of the runs Claude starts (`<DataFolder>-agent`), so they
+  leave the player's logs and benchmarks alone.
 - Take the runs of two builds in turn (before, after, before, after, ...): runs of one build agree within about 1 %
   per view, so differences of about 1 % are at the edge of the noise.
 - `--offscreen` runs with no window, its frames capped at 1000 a second (`Engine:Window:OffscreenFps`; at the offscreen

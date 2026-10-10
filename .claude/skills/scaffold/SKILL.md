@@ -151,6 +151,29 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 4. Check it: `game.py shots ... --compare OLD` against a set taken before, and a look at the PNGs (`time HH:MM` and
    `sun AZIMUTH ELEVATION` show other hours).
 
+## A render pass of the game's own
+
+GPU work the engine does not do (a highlight, an outline, a screen effect, a compute pass) is a render pass; the
+mesh sample's `AimHighlightPass` (`samples/Itera.MeshSample/Rendering/`) is a short one. Load the `vulkan` and
+`ecs-vulkan` skills first, and read `.claude/rules/rendering.md`, "Passes a game adds".
+
+1. A class implementing `IRenderPass`: its `Name` and `Stage`. `Initialize(setup)`: a host-visible buffer with a region a
+   frame slot (`setup.Allocator.CreateBuffer(..., MemoryUsage.Upload, ...)`, `RenderPassSetup.FramesInFlight`
+   regions), a set of it (`setup.CreateBufferSet`), a layout with the view's push constants (`setup.CreateLayout`,
+   `sizeof(ViewConstants)`), and a pipeline for the stage's targets (`setup.CreateTriangles`). `Write(slot, frame)`
+   writes the slot's region, write only, from what a frame system left in a run-wide service; `Record(context)`
+   flushes the slot's region, binds, pushes `context.View`, and draws; `OnTargetsChanged` makes the pipeline again when
+   the colour format or samples changed; `CompileShaders` and `ReplacePipelines` for shader reloads; `Dispose` safe
+   twice and when `Initialize` never ran (runs without graphics).
+2. Register it with the run-wide service it reads: `services.AddSingleton<IRenderPass, MyPass>()`. The match's frame
+   system that fills the service clears it in its `Dispose`, since the pass outlives the match.
+3. Its shaders go in the game's `Shaders/` folder, copied to `Shaders/Game/` (the sample's csproj item), and include the
+   engine's `../view.glsl` (`viewClip`, `view.slot`); the struct they read is `layout(scalar)`, with a `GpuLayout` test
+   in the game's tests (the sample's `AimHighlightPassTests`).
+4. Check it: the log's `Render pass of the game's: NAME at the STAGE stage`, `validate.sh` (with `--binary` for a game
+   outside `src/Game`) windowed and `--offscreen`, a screenshot of it, and its time in `game.py gpu` (`Game NAME`) and
+   the stats line's `game passes`.
+
 ## A test that plays the real game
 
 For a feature that needs the real world and systems, play the game without a window (`HeadlessMatch`; see

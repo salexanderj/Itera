@@ -35,6 +35,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
     private readonly LoadingPass _loadingPass;
     private readonly ParticlePass _particlePass;
     private readonly ScreenshotPass _screenshotPass;
+    private readonly RenderPasses _renderPasses;
     private readonly DepthTarget _depth;
     private readonly GpuTimer _timer;
     private readonly ILogger<FrameRenderer> _logger;
@@ -63,6 +64,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         LoadingPass loadingPass,
         ParticlePass particlePass,
         ScreenshotPass screenshotPass,
+        RenderPasses renderPasses,
         DepthTarget depth,
         GpuTimer timer,
         PlayerSettings settings,
@@ -82,6 +84,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         _loadingPass = loadingPass;
         _particlePass = particlePass;
         _screenshotPass = screenshotPass;
+        _renderPasses = renderPasses;
         _depth = depth;
         _timer = timer;
         _logger = logger;
@@ -252,6 +255,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
             _upscalePass,
             _smaaPass,
             _loadingPass,
+            .. _renderPasses.Passes,
         ];
         var compiled = new object[passes.Length];
         try
@@ -349,6 +353,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         _upscalePass.OnSwapchainRecreated();
         _smaaPass.OnSwapchainRecreated();
         _loadingPass.OnSwapchainRecreated();
+        _renderPasses.OnSwapchainRecreated();
         LogSwapchainRecreated(size.X, size.Y);
         return true;
     }
@@ -521,7 +526,19 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         var meshes = frame.Meshes;
         var assets = frame.MeshAssets;
         _assetPass.BeginFrame(frame.Slot, in assets, fresh);
-        _meshPass.Record(commandBuffer, target, _depth.View, drawn, in view, frame.Slot, in meshes, slot, _assetPass);
+        _renderPasses.BeginFrame(frame.Slot, slot, fresh);
+        _meshPass.Record(
+            commandBuffer,
+            target,
+            _depth.View,
+            drawn,
+            in view,
+            frame.Slot,
+            in meshes,
+            slot,
+            _assetPass,
+            _renderPasses
+        );
         _timer.End(commandBuffer, slot, GpuPass.Voxels);
 
         // The particles move after the world is drawn: they meet it through its depth image, and lit ones take their
@@ -552,6 +569,9 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
             _timer.End(commandBuffer, slot, GpuPass.DebugLines);
         }
 
+        // A game's passes over the resolved scene, before anti-aliasing and the upscale.
+        _renderPasses.RecordScene(commandBuffer, target, _depth.View, drawn, in view);
+
         if (antiAlias)
         {
             _timer.Begin(commandBuffer, slot, GpuPass.AntiAlias);
@@ -574,6 +594,9 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
             );
             _timer.End(commandBuffer, slot, GpuPass.Upscale);
         }
+
+        // A game's passes over the screen's picture, before the UI.
+        _renderPasses.RecordScreen(commandBuffer, _swapchain.ImageViews[(int)imageIndex], screen, in view);
     }
 
     /// <summary>True for the sRGB formats a swapchain may have: an image of one encodes the linear colour it is given.</summary>

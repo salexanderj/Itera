@@ -99,6 +99,11 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
             failures.Add($"{Prefix}Renderer:ShaderSourceDirectory is not a folder: {shaders}");
         }
 
+        if (options.Renderer.GameShaderSourceDirectory is { } gameShaders && !Directory.Exists(gameShaders))
+        {
+            failures.Add($"{Prefix}Renderer:GameShaderSourceDirectory is not a folder: {gameShaders}");
+        }
+
         var logging = options.Logging;
         Range(failures, "Logging:FileSizeLimitMegabytes", logging.FileSizeLimitMegabytes, 1, 1024 * 1024);
         Range(failures, "Logging:RetainedFiles", logging.RetainedFiles, 1, 100_000);

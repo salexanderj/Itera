@@ -35,7 +35,8 @@ and `ValidateOnBuild`, then `GameLoop.Run()`. A game with voxel terrain register
 `AddIteraVoxels()` (the voxel models, the loose bodies, the character mover, and the play area are the core's, and read
 the world when there is one); a game without it plays matches with no world (`MatchServices.Terrain` is null; its
 `Voxels` and the other terrain members throw). `IVoxelPalette` (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable), and
-`MenuStyle` (plain) have engine defaults it may replace. `tests/Itera.Engine.Tests/Matches/EngineComposition.cs` is the
+`MenuStyle` (plain) have engine defaults it may replace. Its own GPU passes are `IRenderPass` singletons it registers
+(`.claude/rules/rendering.md`, "Passes a game adds"). `tests/Itera.Engine.Tests/Matches/EngineComposition.cs` is the
 least a game adds (a floor generator with the terrain, which `terrain: false` leaves out, and one fixed and one frame
 system), over which `MatchFlowTests`, `MatchLifetimeTests`, `CompositionTests`, and `HeadlessMatchTests` run, with and
 without terrain.

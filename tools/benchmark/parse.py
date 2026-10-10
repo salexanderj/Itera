@@ -4,7 +4,8 @@
 For each view, the frame stats lines (one per second with --Engine:Logging:StatsIntervalSeconds=1) that fall wholly
 between its "measuring" and "done" lines are averaged, weighted by frames: the world pass time ("voxels", its shadow
 maps and the models' draws included), its range over those seconds, the longest frame, the upload pass per frame, the
-shadow maps' and the models' part of the world pass, and the anti-aliasing (SMAA) and upscale passes per frame; and from
+shadow maps' and the models' part of the world pass, the anti-aliasing (SMAA) and upscale passes per frame, and the game's
+own render passes per frame (their sum; 0 for a game with none or a log from before them); and from
 the meshes' stats lines, the megabytes uploaded, the triangles drawn in the camera's view and the shadow maps, and the
 mesh heap in use. The same for the flight. Logs from before the raymarcher left main (2026-10-06) give the voxel pass
 and the GPU passes as before, and no mesh figures.
@@ -24,7 +25,7 @@ lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
 gpu = []  # (time, frames, voxels avg, voxels max, upload frames, upload avg, shadow maps avg)
 models = {}  # time: (models frames, models avg, models max)
 meshes = []  # (time, uploaded megabytes, heap megabytes used, triangles, shadow triangles)
-post = {}  # time: (anti-aliasing frames, anti-aliasing avg, upscale frames, upscale avg)
+post = {}  # time: (anti-aliasing frames, anti-aliasing avg, upscale frames, upscale avg, game frames, game avg)
 windows = {}
 order = []
 exit_code = None
@@ -42,11 +43,14 @@ for line in lines:
         gpu.append((t, int(m[1]), float(m[5]), float(m[6]), int(m[2]), float(m[3]), float(maps[1]) if maps else 0.0))
         aa = re.search(r"anti-aliasing in (\d+) frames avg ([\d.]+) ms", line)
         up = re.search(r"upscale in (\d+) frames avg ([\d.]+) ms", line)
+        game = re.search(r"game passes in (\d+) frames avg ([\d.]+) ms", line)
         post[t] = (
             int(aa[1]) if aa else 0,
             float(aa[2]) if aa else 0.0,
             int(up[1]) if up else 0,
             float(up[2]) if up else 0.0,
+            int(game[1]) if game else 0,
+            float(game[2]) if game else 0.0,
         )
         m = re.search(r"models in (\d+) frames avg ([\d.]+) ms max ([\d.]+) ms", line)
         if m:
@@ -88,7 +92,7 @@ def summarise(start, end):
         return None
     mesh = [u for u in meshes if start + 1.05 < u[0] <= end + 0.05]
     drawn = [models.get(s[0], (0, 0.0, 0.0)) for s in samples]
-    after = [post.get(s[0], (0, 0.0, 0, 0.0)) for s in samples]
+    after = [post.get(s[0], (0, 0.0, 0, 0.0, 0, 0.0)) for s in samples]
     return {
         "voxels_ms": sum(s[1] * s[2] for s in samples) / frames,
         "voxels_min_s": min(s[2] for s in samples),
@@ -107,6 +111,7 @@ def summarise(start, end):
         "models_max_frame": max(d[2] for d in drawn),
         "aa_ms": sum(p[0] * p[1] for p in after) / frames,
         "upscale_ms": sum(p[2] * p[3] for p in after) / frames,
+        "game_ms": sum(p[4] * p[5] for p in after) / frames,
     }
 
 

@@ -288,6 +288,13 @@ public sealed class RendererSettings
     /// the running game.
     /// </summary>
     public string? ShaderSourceDirectory { get; set; }
+
+    /// <summary>
+    /// The folder a game's own shaders are compiled from (the paths under <c>Game/</c>); null for <c>Shaders/Game/</c>
+    /// next to the executable. Pointed at the game's <c>Shaders</c> folder in the repository, <c>shaders reload</c> shows
+    /// an edit of a game's shader too.
+    /// </summary>
+    public string? GameShaderSourceDirectory { get; set; }
 }
 
 /// <summary>

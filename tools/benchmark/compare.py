@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Compares two groups of benchmark runs view by view: the mean world pass time ("voxels") of each group, its range over
 the runs, and the change; then the same for the models' draws in the views that drew models, and for the shadow maps
-(both part of the world's time) and the anti-aliasing (SMAA) and upscale passes when either group ran them.
+(both part of the world's time), the anti-aliasing (SMAA) and upscale passes, and the game's own render passes when
+either group ran them.
 Usage: compare.py <name-a> <run,run,...> <name-b> <run,run,...>   (runs are labels under $BENCH_OUT)
 
 Take the runs of the two builds in turn (a, b, a, b, ...) so that drift in GPU clocks or temperature affects both.
@@ -45,7 +46,12 @@ drawn = [v for v in views if max(times(a, v, "models_ms") + times(b, v, "models_
 if drawn:
     print()
     table("models", "models_ms", drawn)
-for title, key in (("shadow maps", "shadow_maps_ms"), ("anti-alias", "aa_ms"), ("upscale", "upscale_ms")):
+for title, key in (
+    ("shadow maps", "shadow_maps_ms"),
+    ("anti-alias", "aa_ms"),
+    ("upscale", "upscale_ms"),
+    ("game passes", "game_ms"),
+):
     if max(t for v in views for t in times(a, v, key) + times(b, v, key)) > 0:
         print()
         table(title, key, views)

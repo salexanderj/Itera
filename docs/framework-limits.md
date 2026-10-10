@@ -27,7 +27,8 @@ Ordered by how many game types each blocks.
    world, its characters and loose bodies over the game's mesh colliders; the box remains. The box is set by constants (`VoxelGrid`: ±512 m across, -51 to +102 m at 10 cm voxels); the view
    reaches 2 km at most; nothing shifts the origin. Blocks open worlds, flight, space, and long race tracks.
 3. **Rendering is closed to a game.** The pass list is fixed in `FrameRenderer.Record`, and `IFrameRenderer` and
-   `PipelineFactory` are internal; no transparent pass (only particles blended; now mesh assets' blended materials do too, sorted per object,
+   `PipelineFactory` are internal (now a game adds its own passes at five stages, `IRenderPass`, and `PipelineFactory`
+   is public, 2026-10-10); no transparent pass (only particles blended; now mesh assets' blended materials do too, sorted per object,
    2026-10-10); the look was constants in the shaders
    (now data a game sets, `RenderLook`, 2026-10-10); the sun's direction was fixed (now a game sets it, with night, 2026-10-10); no spot lights or shadowed point
    lights; one perspective camera (`mesh.vert` always divides by depth; `RenderView` holds one camera), so no

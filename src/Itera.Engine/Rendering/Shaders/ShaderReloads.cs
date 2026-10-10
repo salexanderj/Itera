@@ -59,6 +59,9 @@ public sealed class ShaderReloads
     /// <summary>The folder shaders are compiled from.</summary>
     public string SourceDirectory => _compiler.SourceDirectory;
 
+    /// <summary>The folder a game's own shaders are compiled from.</summary>
+    public string GameSourceDirectory => _compiler.GameSourceDirectory;
+
     /// <summary>Queues <paramref name="request"/> for the next frame. Returns why not, or null.</summary>
     public string? Request(ShaderReloadRequest request)
     {

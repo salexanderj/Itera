@@ -6,9 +6,10 @@ namespace Itera.Engine.Rendering.Pipelines;
 /// <summary>
 /// Creates the Vulkan objects a pass needs: shader modules, pipeline layouts, and graphics pipelines for dynamic
 /// rendering. Pipelines take their viewport and scissor at record time, so they survive a swapchain resize; a
-/// change of the swapchain's format needs a new pipeline. Call from the thread that owns Vulkan at the time.
+/// change of the swapchain's format needs a new pipeline. Call from the thread that owns Vulkan at the time. A game's
+/// passes use it too (<see cref="RenderPassSetup"/> fills in a stage's formats and samples).
 /// </summary>
-internal static unsafe class PipelineFactory
+public static unsafe class PipelineFactory
 {
     /// <summary>Creates a shader module from SPIR-V. The caller destroys it once the pipelines using it exist.</summary>
     public static ShaderModule CreateShaderModule(VulkanContext context, byte[] spirv, string name)
@@ -247,16 +248,23 @@ internal static unsafe class PipelineFactory
                 RasterizationSamples = samples,
             };
             // Premultiplied: the shader's colour is already multiplied by its alpha, so it is added as it is over
-            // what is left of the colour below.
-            var premultiplied = blend == ColorBlend.Premultiplied;
+            // what is left of the colour below. Alpha: the shader's colour times its alpha over the colour below times
+            // what the alpha leaves. Additive: the shader's colour added to the colour below.
+            var (source, destination) = blend switch
+            {
+                ColorBlend.Premultiplied => (BlendFactor.One, BlendFactor.OneMinusSrcAlpha),
+                ColorBlend.Alpha => (BlendFactor.SrcAlpha, BlendFactor.OneMinusSrcAlpha),
+                ColorBlend.Additive => (BlendFactor.One, BlendFactor.One),
+                _ => (BlendFactor.One, BlendFactor.Zero),
+            };
             var blendAttachment = new PipelineColorBlendAttachmentState
             {
-                BlendEnable = premultiplied,
-                SrcColorBlendFactor = premultiplied ? BlendFactor.One : BlendFactor.Zero,
-                DstColorBlendFactor = premultiplied ? BlendFactor.OneMinusSrcAlpha : BlendFactor.Zero,
+                BlendEnable = blend != ColorBlend.None,
+                SrcColorBlendFactor = source,
+                DstColorBlendFactor = destination,
                 ColorBlendOp = BlendOp.Add,
-                SrcAlphaBlendFactor = premultiplied ? BlendFactor.One : BlendFactor.Zero,
-                DstAlphaBlendFactor = premultiplied ? BlendFactor.OneMinusSrcAlpha : BlendFactor.Zero,
+                SrcAlphaBlendFactor = blend == ColorBlend.None ? BlendFactor.Zero : BlendFactor.One,
+                DstAlphaBlendFactor = blend == ColorBlend.None ? BlendFactor.Zero : BlendFactor.OneMinusSrcAlpha,
                 AlphaBlendOp = BlendOp.Add,
                 ColorWriteMask =
                     ColorComponentFlags.RBit
@@ -370,16 +378,16 @@ internal static unsafe class PipelineFactory
 /// The depth attachment a pipeline renders with: its format (<see cref="Format.Undefined"/> for none), the compare op
 /// of the depth test, and whether the pipeline writes depth. The default is no depth attachment.
 /// </summary>
-internal readonly record struct DepthState(Format Format, CompareOp Compare, bool Write);
+public readonly record struct DepthState(Format Format, CompareOp Compare, bool Write);
 
 /// <summary>
 /// A pipeline's depth bias: <see cref="Constant"/> in the depth format's smallest steps and <see cref="Slope"/> times the
 /// primitive's depth slope, added to each fragment's depth. None by default.
 /// </summary>
-internal readonly record struct DepthBias(float Constant, float Slope);
+public readonly record struct DepthBias(float Constant, float Slope);
 
 /// <summary>How a pipeline's colour output is combined with the attachment.</summary>
-internal enum ColorBlend
+public enum ColorBlend
 {
     /// <summary>The output replaces the attachment's colour.</summary>
     None = 0,
@@ -388,4 +396,10 @@ internal enum ColorBlend
     /// The output is premultiplied by its alpha and drawn over the attachment: colour = src + dst * (1 - src alpha).
     /// </summary>
     Premultiplied = 1,
+
+    /// <summary>The output's colour, by its alpha, over the attachment's: colour = src * src alpha + dst * (1 - src alpha).</summary>
+    Alpha = 2,
+
+    /// <summary>The output's colour added to the attachment's (a glow): colour = src + dst.</summary>
+    Additive = 3,
 }

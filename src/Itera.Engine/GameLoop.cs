@@ -67,6 +67,7 @@ public sealed partial class GameLoop
     private readonly ModelInstances _modelInstances;
     private readonly MeshInstances _meshInstances;
     private readonly MeshAssetPass _meshAssetPass;
+    private readonly RenderPasses _renderPasses;
     private readonly MeshAssetDraws _meshAssetDraws;
     private readonly PointLights _pointLights;
     private readonly DepthTarget _depth;
@@ -149,6 +150,7 @@ public sealed partial class GameLoop
         ModelInstances modelInstances,
         MeshInstances meshInstances,
         MeshAssetPass meshAssetPass,
+        RenderPasses renderPasses,
         MeshAssetDraws meshAssetDraws,
         PointLights pointLights,
         DepthTarget depth,
@@ -212,6 +214,7 @@ public sealed partial class GameLoop
         _modelInstances = modelInstances;
         _meshInstances = meshInstances;
         _meshAssetPass = meshAssetPass;
+        _renderPasses = renderPasses;
         _meshAssetDraws = meshAssetDraws;
         _pointLights = pointLights;
         _depth = depth;
@@ -390,6 +393,8 @@ public sealed partial class GameLoop
             // After the game's and the mods' startups, which declare their models; textures only with graphics.
             new("mesh assets", () => _meshAssets.LoadAll(_window.Graphics), () => { }),
             new("mesh assets on the gpu", _meshAssetPass.Initialize, _meshAssetPass.Dispose, Graphics: true),
+            // The game's own passes, which may read the mesh pass's set and the run's assets.
+            new("render passes", _renderPasses.Initialize, _renderPasses.Dispose, Graphics: true),
             new("audio thread", _audio.Start, () => _audio.Stop()),
             new("render thread", () => _renderThread.Start(_window.FramebufferSize), StopRenderThread),
             new("control", _control.Initialize, _control.Dispose),
@@ -841,6 +846,7 @@ public sealed partial class GameLoop
         var lines = _linePass.Write(request.Slot, _debugLines.Vertices);
         _particleCommands.UpdateStress();
         var particles = _particlePass.Write(request.Slot, in frame, in view);
+        _renderPasses.Write(request.Slot, in frame, in view);
         var uiRows = WriteUi(in request, in ui);
         _exchange.Publish(
             new RenderFrame(

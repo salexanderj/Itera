@@ -21,6 +21,25 @@ public sealed class GpuTimingsTests
     }
 
     [Fact]
+    public void A_game_pass_is_timed_by_its_index_apart_from_the_engines_and_none_past_the_most()
+    {
+        var timings = new GpuTimings();
+        timings.RecordGame(0, 1_000_000);
+        timings.RecordGame(GpuTimings.MostGamePasses - 1, 2_000_000);
+        timings.RecordGame(GpuTimings.MostGamePasses, 3_000_000);
+        timings.RecordGame(-1, 3_000_000);
+        timings.Record(GpuPass.Game, 3_000_000);
+
+        Assert.Equal(new GpuPassTimes(1, 1.0, 1.0), timings.GamePass(0));
+        Assert.Equal(new GpuPassTimes(1, 1.0, 1.0), timings.TakeGame(0));
+        Assert.Equal(new GpuPassTimes(1, 2.0, 2.0), timings.TakeGame(GpuTimings.MostGamePasses - 1));
+        Assert.Equal(default, timings.TakeGame(GpuTimings.MostGamePasses));
+        Assert.Equal(default, timings.TakeGame(0));
+        Assert.Equal(new GpuPassTimes(1, 3.0, 3.0), timings.Take(GpuPass.Game));
+        Assert.Equal(default, timings.Take(GpuPass.Voxels));
+    }
+
+    [Fact]
     public void Recording_from_another_thread_loses_nothing()
     {
         var timings = new GpuTimings();

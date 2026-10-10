@@ -32,6 +32,16 @@
     />
   </ItemGroup>
 
+  <!-- The sample's shaders, in a folder of their own beside the engine's (Shaders/Game/), so they include its view.glsl. -->
+  <ItemGroup>
+    <None Remove="Shaders\**" />
+    <None
+      Include="Shaders\**"
+      Link="Shaders\Game\%(RecursiveDir)%(Filename)%(Extension)"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+  </ItemGroup>
+
   <ItemGroup>
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

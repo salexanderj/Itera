@@ -57,6 +57,8 @@ RUN_ROOT = DATA / "Run"
 STATE_FILE = RUN_ROOT / "state.json"
 LOGS = DATA / "Logs"
 SHADERS = REPO / "src" / "Itera.Engine" / "Rendering" / "Shaders"
+# The game's own shaders (its render passes'), when it has any: the paths under Game/.
+GAME_SHADERS = REPO / "src" / "Game" / "Shaders"
 
 
 def load_state():
@@ -361,6 +363,8 @@ def cmd_start(args):
         f"--Engine:Renderer:ShaderSourceDirectory={SHADERS}",
         f"--Engine:Application:DataFolder={data_folder_name()}",
     ]
+    if GAME_SHADERS.is_dir():
+        command.append(f"--Engine:Renderer:GameShaderSourceDirectory={GAME_SHADERS}")
     if not args.menu:
         # Straight into an offline match; --menu starts at the menu (game arguments after -- can still name a mode).
         command.append("--Engine:Session:Mode=Offline")

@@ -122,6 +122,53 @@ public sealed class ShaderCompilerTests : IDisposable
     }
 
     [Fact]
+    public void A_games_shaders_come_from_their_own_folder_and_include_the_engines()
+    {
+        var game = Path.Combine(_root, "game-shaders");
+        Directory.CreateDirectory(game);
+        WriteSource("shared.glsl", "const float Shared = 1.0;");
+        File.WriteAllText(Path.Combine(game, "own.glsl"), "const float Own = 2.0;");
+        File.WriteAllText(
+            Path.Combine(game, "glow.comp"),
+            "#version 450\n#include \"../shared.glsl\"\n#include \"own.glsl\"\nlayout(local_size_x = 1) in;\n"
+                + "void main() { float x = Shared + Own; }"
+        );
+        File.WriteAllText(
+            Path.Combine(game, "escape.comp"),
+            "#version 450\n#include \"../../x.glsl\"\nvoid main() { }"
+        );
+        File.WriteAllText(Path.Combine(game, "rooted.comp"), "#version 450\n#include \"/etc/x.glsl\"\nvoid main() { }");
+        using var compiler = new ShaderCompiler(NullLogger<ShaderCompiler>.Instance, _cache, _sources, game);
+        compiler.Initialize();
+
+        var spirv = compiler.Compile("Game/glow.comp");
+        var escape = Assert.Throws<ShaderCompilationException>(() => compiler.Compile("Game/escape.comp"));
+        var rooted = Assert.Throws<ShaderCompilationException>(() => compiler.Compile("Game/rooted.comp"));
+        var missing = Assert.Throws<ShaderCompilationException>(() => _compiler.Compile("Game/glow.comp"));
+
+        Assert.True(ShaderCompiler.LooksLikeSpirv(spirv));
+        Assert.Equal(Path.GetFullPath(game), compiler.GameSourceDirectory);
+        Assert.Contains("outside the shader folder", escape.Message, StringComparison.Ordinal);
+        Assert.Contains("outside the shader folder", rooted.Message, StringComparison.Ordinal);
+        // Without its folder, the game's shaders are looked for beside the executable, where this test has none.
+        Assert.Contains("Game/glow.comp", missing.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("", "a.vert", "a.vert")]
+    [InlineData("", "./x/../a.vert", "a.vert")]
+    [InlineData("Game/glow.frag", "../view.glsl", "view.glsl")]
+    [InlineData("Game/glow.frag", "parts/rim.glsl", "Game/parts/rim.glsl")]
+    [InlineData("Game/glow.frag", "../../view.glsl", null)]
+    [InlineData("a.vert", "..", null)]
+    [InlineData("a.vert", "/etc/passwd", null)]
+    [InlineData("a.vert", "x\\y.glsl", null)]
+    public void Include_paths_resolve_inside_the_tree(string from, string include, string? expected)
+    {
+        Assert.Equal(expected, ShaderSource.Resolve(from, include));
+    }
+
+    [Fact]
     public void Include_cycles_missing_files_and_paths_outside_the_folder_are_errors()
     {
         WriteSource("a.glsl", "#include \"b.glsl\"");

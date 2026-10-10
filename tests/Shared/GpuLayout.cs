@@ -3,7 +3,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace Itera.Engine.Tests.Rendering;
+namespace Itera.TestSupport;
 
 /// <summary>
 /// Compares a C# struct that a shader reads with the layout glslang gave the matching GLSL block, read from compiled

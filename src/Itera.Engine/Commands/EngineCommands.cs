@@ -902,7 +902,12 @@ public sealed class EngineCommands
     {
         if (context.Count == 0)
         {
-            context.Print("shaders from " + _shaderReloads.SourceDirectory);
+            context.Print(
+                "shaders from "
+                    + _shaderReloads.SourceDirectory
+                    + ", the game's from "
+                    + _shaderReloads.GameSourceDirectory
+            );
             return;
         }
 

@@ -5,7 +5,9 @@ using Silk.NET.Vulkan;
 namespace Itera.Engine.Rendering;
 
 /// <summary>
-/// Measures GPU time per pass with timestamp queries: two per <see cref="GpuPass"/> per frame slot. The render thread
+/// Measures GPU time per pass with timestamp queries: two per <see cref="GpuPass"/> per frame slot, and two for each of
+/// a game's passes (<see cref="BeginGame"/>, at most <see cref="GpuTimings.MostGamePasses"/>), whose sum is
+/// <see cref="GpuPass.Game"/>. The render thread
 /// resets a slot's queries at the start of its command buffer, writes a timestamp before and after each pass, and
 /// reads the results after that slot's next fence wait, when they are complete. Times go to <see cref="GpuTimings"/>,
 /// which <see cref="FrameStats"/> logs. When the graphics queue has no timestamps (<c>timestampValidBits</c> 0), it
@@ -13,7 +15,8 @@ namespace Itera.Engine.Rendering;
 /// </summary>
 public sealed unsafe partial class GpuTimer : IDisposable
 {
-    private const int QueriesPerSlot = GpuTimings.PassCount * 2;
+    private const int Pairs = GpuTimings.PassCount + GpuTimings.MostGamePasses;
+    private const int QueriesPerSlot = Pairs * 2;
 
     private readonly VulkanContext _context;
     private readonly GpuTimings _timings;
@@ -90,14 +93,31 @@ public sealed unsafe partial class GpuTimer : IDisposable
             }
         }
 
-        Span<long> nanoseconds = stackalloc long[GpuTimings.PassCount];
+        Span<long> nanoseconds = stackalloc long[Pairs];
         Parse(_results, _validMask, _nanosecondsPerTick, nanoseconds);
         for (var pass = 0; pass < GpuTimings.PassCount; pass++)
         {
-            if (nanoseconds[pass] >= 0)
+            if (nanoseconds[pass] >= 0 && pass != (int)GpuPass.Game)
             {
                 _timings.Record((GpuPass)pass, nanoseconds[pass]);
             }
+        }
+
+        // The game's passes one by one, and their sum when any ran.
+        long game = -1;
+        for (var index = 0; index < GpuTimings.MostGamePasses; index++)
+        {
+            var time = nanoseconds[GpuTimings.PassCount + index];
+            if (time >= 0)
+            {
+                _timings.RecordGame(index, time);
+                game = Math.Max(game, 0) + time;
+            }
+        }
+
+        if (game >= 0)
+        {
+            _timings.Record(GpuPass.Game, game);
         }
     }
 
@@ -143,6 +163,14 @@ public sealed unsafe partial class GpuTimer : IDisposable
 
     /// <summary>Writes the timestamp after <paramref name="pass"/>, once every earlier command has finished.</summary>
     public void End(CommandBuffer commandBuffer, int slot, GpuPass pass) => Write(commandBuffer, slot, pass, 1);
+
+    /// <summary>Writes the timestamp before the game's pass <paramref name="index"/> (below <see cref="GpuTimings.MostGamePasses"/>).</summary>
+    public void BeginGame(CommandBuffer commandBuffer, int slot, int index) =>
+        Write(commandBuffer, slot, (GpuPass)(GpuTimings.PassCount + index), 0);
+
+    /// <summary>Writes the timestamp after the game's pass <paramref name="index"/>.</summary>
+    public void EndGame(CommandBuffer commandBuffer, int slot, int index) =>
+        Write(commandBuffer, slot, (GpuPass)(GpuTimings.PassCount + index), 1);
 
     /// <summary>Marks the slot's queries as written by a submitted command buffer, so the next collect reads them.</summary>
     public void OnSubmitted(int slot)

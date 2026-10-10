@@ -335,10 +335,52 @@ GPU: N vertices, T triangles, M material(s), X texture(s) of Y MB; draws Z MB a 
 line's `mesh assets in N frames avg/max` and `skinning in N frames avg/max` are the `Meshes` and `Skinning` passes' GPU
 time.
 
+### Passes a game adds
+
+A game adds its own GPU work as render passes (`IRenderPass`, in `RenderPasses.cs`), registered in its composition
+(`services.AddSingleton<IRenderPass, MyPass>()`): at most `GpuTimings.MostGamePasses` (8), each named apart, or the
+run's "render passes" step stops the run. Each records at one stage of the frame (`RenderStage`):
+
+- `Compute`: after the mesh pass's light clusters and skinning, before the shadow maps, outside any rendering.
+- `Opaque`: inside the world's multisampled rendering (`MeshPass`'s colour format and samples; its depth, reversed and
+  compared Greater), after the engine's opaque draws (the world, the models, the mesh assets) and before the sky:
+  surfaces that write depth. The mesh pass binds its own set and constants again after them.
+- `Transparent`: inside that rendering, after the sky and the engine's blended mesh assets: surfaces that blend and
+  write no depth, drawn after the engine's blended ones, not sorted among them.
+- `Scene`: after the resolve, the particles, and the debug lines, on the drawn image (one sample a pixel, at the render
+  scale's size) and the resolved depth, before SMAA and the upscale.
+- `Screen`: after the upscale, on the swapchain image at the screen's size, colour only, before the UI.
+
+For `Scene` and `Screen`, `RenderPasses` begins the rendering itself (after a barrier from the frame's earlier colour
+and depth writes; the attachments loaded and stored) with the viewport (+y up) and scissor set; inside the world's
+rendering they are the mesh pass's. The engine calls `Initialize(RenderPassSetup)` once at the run's "render passes"
+step (after "mesh assets on the gpu", before the render thread; never in a run without graphics), `Write(slot,
+RenderPassFrame)` on the main thread each frame after the frame systems (the frame's time and view; the pass writes its
+slot's region of its host-visible memory, write only, and flushes it when it records), `Record(RenderPassContext)` on
+the render thread at its stage (the command buffer, the frame slot, whether the frame is fresh, the view constants with
+the stage's size, the extent, and `MeshPass`'s set), `OnTargetsChanged` when the swapchain is made again (the samples or
+format may differ; the device idle), the shader reloads (`IReloadsShaders`), and `Dispose` (perhaps twice, and perhaps
+without `Initialize`, so a pass's constructor makes no Vulkan object; after the engine gave up on a stuck device,
+`VulkanContext.IsAbandoned`, it destroys nothing). The mesh pass sets its viewport, scissor, set, and constants again
+after the `Opaque` stage.
+`RenderPassSetup` gives the device, the allocator, the shader compiler, the stage's colour and depth formats and samples,
+`MeshPass`'s set and its layout (a pipeline whose set 0 it is reads the look, the lighting, and the shadow maps), and
+helpers: `CreateLayout`, `CreateTriangles` (a pipeline for the stage's targets with no vertex input, depth compared
+Greater when tested, its colour blended as `ColorBlend` says: `None`, `Premultiplied`, `Alpha`, or `Additive`),
+`CreateCompute`, and `CreateBufferSet` (a descriptor set of storage buffers, `RenderPassBufferSet`); `PipelineFactory`
+and `VulkanResultExtensions` are public for more. A game's shaders are in its own `Shaders/` folder, copied to
+`Shaders/Game/` beside the engine's, named `Game/NAME` to the compiler, and include the engine's (`#include
+"../view.glsl"`: `viewClip` projects as every pass does); the compiler reads the `Game/` paths from
+`Engine:Renderer:GameShaderSourceDirectory` when it is set (the game's folder in the repository, for `shaders reload`;
+`game.py start` gives it), else from `Shaders/Game/` beside the executable, also while `ShaderSourceDirectory` points
+the engine's at the repository (`ShaderSource`, `ShaderRoots`). Each pass is timed with its own pair of queries: their sum is `GpuPass.Game` (the stats line's `game passes
+in N frames avg/max`; the `Compute`, `Opaque`, and `Transparent` stages' time is also part of the world's, `Voxels`), and each one has a Debug line (`GPU game pass NAME in N frames avg ... max ...`) and an entry in
+the control port's `gpu` reply (`Game NAME`). The mesh sample's `AimHighlightPass` is the example (its README).
+
 ### Files in `src/Itera.Engine`
 
   - `Rendering/`: Vulkan bootstrap (`VulkanContext`, `DeviceRequirements`), the frame (`FrameRenderer`,
-    `RenderThread`, `FrameExchange`), the surface's source (`ISurfaceSource`: the window's or a headless one, in
+    `RenderThread`, `FrameExchange`), a game's own passes (`RenderPasses`, `IRenderPass`), the surface's source (`ISurfaceSource`: the window's or a headless one, in
     `SurfaceSource.cs`), `DepthTarget`, `ModelInstances`, `MeshInstances`, `DebugLines` and `DebugLinePass`, `UiPass`,
     `RenderScale` and `UpscalePass`, `SmaaPass`, `SmaaTextures`, `FrameImages`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`,
     the look (`RenderLook`, `LookTuning`), `Atmosphere`,
@@ -355,7 +397,8 @@ time.
 ### Conventions
 
 - Shader sources are files in `src/Itera.Engine/Rendering/Shaders/` (`.vert`, `.frag`, `.comp`; `.glsl`
-  for include-only files), copied to `Shaders/` in the output and compiled with `ShaderCompiler.Compile`.
+  for include-only files), copied to `Shaders/` in the output and compiled with `ShaderCompiler.Compile`. The folder
+  `Game/` of the shader tree is the game's (`ShaderCompiler.GameFolder`); the engine's shaders use no folder of that name.
 
 - Structs that shaders read use GLSL `layout(scalar)` and have a `GpuLayout` test. Matrices go to
   the GPU unchanged and are used as `M * v` in GLSL. The view's push constants (`ViewConstants`) are 108 of the 128 bytes

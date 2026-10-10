@@ -8,8 +8,9 @@ namespace Itera.Engine.Rendering.Shaders;
 
 /// <summary>
 /// Compiles GLSL to SPIR-V for Vulkan 1.3 at runtime with Shaderc and caches the result on disk. Shader files live
-/// under <see cref="SourceDirectory"/> (copied from <c>Rendering/Shaders/</c> in the engine project) and may use
-/// <c>#include "file"</c>; see <see cref="ShaderSource"/>.
+/// under <see cref="SourceDirectory"/> (copied from <c>Rendering/Shaders/</c> in the engine project), a game's own under
+/// <see cref="GameFolder"/> (<see cref="GameSourceDirectory"/>), and may use <c>#include "file"</c>; see
+/// <see cref="ShaderSource"/>.
 /// </summary>
 public sealed unsafe partial class ShaderCompiler : IDisposable
 {
@@ -26,9 +27,16 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
     /// </summary>
     private const EnvVersion TargetVersion = EnvVersion.Vulkan13;
 
+    /// <summary>
+    /// The folder of the shader tree that holds a game's own shaders (<c>Game/name.frag</c>; next to the executable,
+    /// <c>Shaders/Game/</c>). The engine's shaders use no folder of this name.
+    /// </summary>
+    public const string GameFolder = "Game";
+
     private readonly ILogger<ShaderCompiler> _logger;
     private readonly string _cacheDirectory;
     private readonly string _sourceDirectory;
+    private readonly string _gameSourceDirectory;
     private Shaderc? _shaderc;
     private Compiler* _compiler;
     private CompileOptions* _options;
@@ -36,11 +44,23 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
     /// <param name="logger">Logger.</param>
     /// <param name="cacheDirectory">Folder for cached SPIR-V ("ShaderCache" in the application's data folder).</param>
     /// <param name="sourceDirectory">Folder that holds the shader files. Null uses "Shaders" next to the executable.</param>
-    public ShaderCompiler(ILogger<ShaderCompiler> logger, string cacheDirectory, string? sourceDirectory = null)
+    /// <param name="gameSourceDirectory">
+    /// Folder that holds the game's own shaders, which paths under <see cref="GameFolder"/> name. Null uses
+    /// "Shaders/Game" next to the executable, also when <paramref name="sourceDirectory"/> is another folder.
+    /// </param>
+    public ShaderCompiler(
+        ILogger<ShaderCompiler> logger,
+        string cacheDirectory,
+        string? sourceDirectory = null,
+        string? gameSourceDirectory = null
+    )
     {
         _logger = logger;
         _cacheDirectory = cacheDirectory;
         _sourceDirectory = Path.GetFullPath(sourceDirectory ?? Path.Combine(AppContext.BaseDirectory, "Shaders"));
+        _gameSourceDirectory = Path.GetFullPath(
+            gameSourceDirectory ?? Path.Combine(AppContext.BaseDirectory, "Shaders", GameFolder)
+        );
     }
 
     /// <summary>Folder the cache is written to.</summary>
@@ -48,6 +68,9 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
 
     /// <summary>Folder that shader paths passed to <see cref="Compile(string, string)"/> are relative to.</summary>
     public string SourceDirectory => _sourceDirectory;
+
+    /// <summary>Folder that shader paths under <see cref="GameFolder"/> name: the game's own shaders.</summary>
+    public string GameSourceDirectory => _gameSourceDirectory;
 
     /// <summary>
     /// Everything other than the source that changes the compiler's output: the cache format, the Shaderc binding
@@ -78,7 +101,8 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
     }
 
     /// <summary>
-    /// Compiles the shader file at <paramref name="relativePath"/> under <see cref="SourceDirectory"/>. The stage comes
+    /// Compiles the shader file at <paramref name="relativePath"/> under <see cref="SourceDirectory"/> (a game's under
+    /// <see cref="GameFolder"/>, from <see cref="GameSourceDirectory"/>). The stage comes
     /// from the extension: <c>.vert</c>, <c>.frag</c>, or <c>.comp</c>. Throws <see cref="ShaderCompilationException"/>
     /// on a compiler error, a missing file, or a bad include.
     /// </summary>
@@ -91,10 +115,9 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
     /// </summary>
     public byte[] Compile(string relativePath, IReadOnlyList<string> defines, string entryPoint = "main")
     {
-        var path = Path.GetFullPath(Path.Combine(_sourceDirectory, relativePath));
-        var kind = KindFromExtension(path);
-        var source = ShaderSource.Expand(path, _sourceDirectory);
-        var name = Path.GetRelativePath(_sourceDirectory, path).Replace(Path.DirectorySeparatorChar, '/');
+        var name = relativePath.Replace(Path.DirectorySeparatorChar, '/');
+        var kind = KindFromExtension(name);
+        var source = ShaderSource.Expand(name, new ShaderRoots(_sourceDirectory, _gameSourceDirectory));
         if (defines.Count > 0)
         {
             var version = source.IndexOf("#version", StringComparison.Ordinal);

@@ -49,6 +49,12 @@ public sealed class MeshAssetPassTests : IDisposable
         Assert.Empty(GpuLayout.PushConstantDifferences<ViewConstants>(fragment));
         Assert.Empty(GpuLayout.ArrayElementDifferences<MeshAssetMaterial>(masked, 1, 3));
         Assert.Equal([0u, 1u], GpuLayout.DescriptorSets(fragment));
+        // The blended variants: the draw's sides passed from the vertex to the fragment shader.
+        var blendVertex = _compiler.Compile("mesh-asset.vert", [Count, "MESH_ASSET_BLEND"]);
+        var blendFragment = _compiler.Compile("mesh-asset.frag", [Count, "MESH_ASSET_BLEND"]);
+        Assert.Empty(GpuLayout.ArrayElementDifferences<MeshAssetDraw>(blendVertex, 1, 4));
+        Assert.Empty(GpuLayout.ArrayElementDifferences<MeshAssetMaterial>(blendFragment, 1, 3));
+        Assert.Empty(GpuLayout.PushConstantDifferences<ViewConstants>(blendFragment));
     }
 
     [Fact]
@@ -83,7 +89,12 @@ public sealed class MeshAssetPassTests : IDisposable
         // 5 + 3 is past the room for 7: the factor alone.
         Assert.Equal(MeshAssetMaterial.NoTexture, packed.NormalTexture & 0xFFFFu);
         Assert.Equal(MeshAssetMaterial.NoTexture, packed.OcclusionTexture & 0xFFFFu);
-        Assert.Equal(MeshAssetMaterial.Masked | MeshAssetMaterial.TwoSided, packed.Flags);
+        // Blended, not cut at its alpha: two-sided alone.
+        Assert.Equal(MeshAssetMaterial.TwoSided, packed.Flags);
+        Assert.Equal(
+            MeshAssetMaterial.Masked,
+            MeshAssetMaterial.From(new MeshMaterialData { AlphaMode = MeshAlphaMode.Mask }, 0, 7).Flags
+        );
     }
 
     [Fact]

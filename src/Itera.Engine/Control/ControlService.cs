@@ -568,6 +568,22 @@ public sealed partial class ControlService : IDisposable
             writer.WriteEndObject();
         }
 
+        // The game's passes by name, those that ran.
+        for (var i = 0; i < _gpu.GamePassNames.Count; i++)
+        {
+            var times = _gpu.GamePass(i);
+            if (times.Count == 0)
+            {
+                continue;
+            }
+
+            writer.WriteStartObject("Game " + _gpu.GamePassNames[i]);
+            writer.WriteNumber("count", times.Count);
+            writer.WriteNumber("avg_ms", Math.Round(times.AverageMs, 4));
+            writer.WriteNumber("max_ms", Math.Round(times.MaxMs, 4));
+            writer.WriteEndObject();
+        }
+
         writer.WriteEndObject();
     }
 
@@ -657,6 +673,7 @@ public sealed partial class ControlService : IDisposable
                 writer =>
                 {
                     writer.WriteString("folder", _shaderReloads.SourceDirectory);
+                    writer.WriteString("game_folder", _shaderReloads.GameSourceDirectory);
                     writer.WriteNumber("pipelines", reload.Pipelines);
                     writer.WriteNumber("ms", Math.Round(reload.Milliseconds, 1));
                 }

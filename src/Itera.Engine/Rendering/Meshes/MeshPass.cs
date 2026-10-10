@@ -490,7 +490,8 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         int slot,
         in MeshFrame frame,
         int timerSlot,
-        IMeshPassDraws? draws = null
+        IMeshPassDraws? draws = null,
+        RenderPasses? passes = null
     )
     {
         var vk = _context.Vk;
@@ -499,6 +500,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         RecordBake(commandBuffer, slot);
         RecordClusters(commandBuffer, in view);
         draws?.RecordSkinning(commandBuffer, slot, timerSlot);
+        passes?.Record(RenderStage.Compute, commandBuffer, in view, extent);
 
         _timer.Begin(commandBuffer, timerSlot, GpuPass.ShadowMaps);
         RecordCascades(commandBuffer, slot, in frame, draws);
@@ -612,12 +614,20 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             _timer.End(commandBuffer, timerSlot, GpuPass.Models);
         }
 
-        if (assets is not null)
+        assets?.RecordCamera(commandBuffer, slot, in constants, timerSlot);
+        passes?.Record(RenderStage.Opaque, commandBuffer, in constants, extent);
+        if (assets is not null || passes?.Has(RenderStage.Opaque) == true)
         {
-            assets.RecordCamera(commandBuffer, slot, in constants, timerSlot);
             // The wireframe and the sky with this pass's set and constants again, whatever the draws bound.
             vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _layout, 0, 1, &set, 0, null);
             vk.CmdPushConstants(commandBuffer, _layout, Stages, 0, (uint)sizeof(ViewConstants), &constants);
+        }
+
+        if (passes?.Has(RenderStage.Opaque) == true)
+        {
+            // And the view's viewport and scissor, which a game's pass may have changed.
+            vk.CmdSetViewport(commandBuffer, 0, 1, &viewport);
+            vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
         }
 
         if (view.Has(ViewSwitches.Wireframe) && _wirePipeline.Handle != 0)
@@ -629,6 +639,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         vk.CmdDraw(commandBuffer, 3, 1, 0, 0);
         // Blended surfaces over everything drawn, the sky included, which would paint over them if it came after.
         assets?.RecordTransparent(commandBuffer, slot, in constants);
+        passes?.Record(RenderStage.Transparent, commandBuffer, in constants, extent);
         vk.CmdEndRendering(commandBuffer);
     }
 

@@ -35,24 +35,26 @@ public readonly record struct MeshAssetList(int Opaque, int OpaqueTwoSided, int 
 {
     public int Commands => Opaque + OpaqueTwoSided + Masked + MaskedTwoSided;
 
-    /// <summary>The commands of <paramref name="range"/>.</summary>
+    /// <summary>The commands of <paramref name="range"/>, one of the four list ranges (blended ones are in no list).</summary>
     public int Of(MeshAssetRange range) =>
         range switch
         {
             MeshAssetRange.Opaque => Opaque,
             MeshAssetRange.OpaqueTwoSided => OpaqueTwoSided,
             MeshAssetRange.Masked => Masked,
-            _ => MaskedTwoSided,
+            MeshAssetRange.MaskedTwoSided => MaskedTwoSided,
+            _ => throw new ArgumentOutOfRangeException(nameof(range), range, "Blended primitives are in no list."),
         };
 
-    /// <summary>The first command of <paramref name="range"/> in the list.</summary>
+    /// <summary>The first command of <paramref name="range"/> in the list, one of the four list ranges.</summary>
     public int FirstOf(MeshAssetRange range) =>
         range switch
         {
             MeshAssetRange.Opaque => 0,
             MeshAssetRange.OpaqueTwoSided => Opaque,
             MeshAssetRange.Masked => Opaque + OpaqueTwoSided,
-            _ => Opaque + OpaqueTwoSided + Masked,
+            MeshAssetRange.MaskedTwoSided => Opaque + OpaqueTwoSided + Masked,
+            _ => throw new ArgumentOutOfRangeException(nameof(range), range, "Blended primitives are in no list."),
         };
 }
 

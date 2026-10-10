@@ -70,7 +70,8 @@ lists the game's). Commonly used:
   `PreferredDevice=RAPHAEL` (any part of a device's name, any case; this machine's iGPU), `DebugLines=true`,
   `DynamicRenderScaling=false` with `RenderScale=0.75`, `DynamicScalingThreshold=60`, `AntiAliasing=false` (SMAA, which
   runs only with `MsaaSamples=1`), `ShaderSourceDirectory=$PWD/src/Itera.Engine/Rendering/Shaders` (then `shaders
-  reload`), all under `Engine:Renderer`; `--Engine:Window:VSync=false`, `--Engine:Ui:Stats=true`.
+  reload`; a game's own shaders, `Game/`, come from `Shaders/Game/` beside the executable, or with
+  `GameShaderSourceDirectory=$PWD/src/Game/Shaders` from the repository, which `game.py start` gives when the folder exists), all under `Engine:Renderer`; `--Engine:Window:VSync=false`, `--Engine:Ui:Stats=true`.
 - No window: `--Engine:Window:Mode=Offscreen` draws at `Engine:Window:Width` x `Height` (1280x720) into a headless
   surface (`VK_EXT_headless_surface`; its UNORM images are viewed as sRGB, so the picture is the window's), capped at
   `Engine:Window:OffscreenFps` (240) frames a second; nothing shows on the desktop, a locked screen changes nothing, and
@@ -103,7 +104,9 @@ per physical device, the selected device, swapchain, input devices, shader compi
 `UI: Skia CPU surface ...`, `Loaded mod itera.samplemod`, `Mesh assets: N model(s), ... read in N ms` (the models the game declared, with how many
 textures came from their compressed textures; a file that cannot be read stops the run with exit code 1; a Warning for
 compressed textures that do not match their image, an Information note for a model whose textures were all decoded), `Mesh assets on the GPU: N vertices, ... draws N MB a frame slot`
-(and with a skinned model `... N skinned vertices; posed instances skinned into V vertices ...`), `Audio: thread started ...`, `Render thread started`, `Engine
+(and with a skinned model `... N skinned vertices; posed instances skinned into V vertices ...`), for each pass a game
+registered `Render pass of the game's: NAME at the STAGE stage` (the starter has none; the mesh sample's is `aim
+highlight`), `Audio: thread started ...`, `Render thread started`, `Engine
 ready ... entering main loop`. Then the match's: `Match 1: offline, seed N` (or `host, seed N`, `host through Steam,
 ...`, or `join ADDRESS`), `Session: offline, seed N` (or `hosting on UDP port ...`, `hosting through Steam ...`, or
 `joined ADDRESS in slot N, seed N; downloaded ...`; with a save name, a `Save: starting from NAME ...` or `Save: NAME
@@ -149,7 +152,8 @@ The control port (`Engine:Control`, off unless `Enabled`; `ControlService`) lets
 drive a running game: start it from a copy of the build, run console commands and get their answers and log lines
 (`run -s`: as a script, so `wait` and `screenshot` hold the commands after them and the reply comes when all have run),
 read the match's entities as JSON (`query`) and its steps (`status`: tick, paused, time scale, the player's position),
-wait for loading, frames, fixed steps (`ticks`), seconds, or a log line, measure the GPU passes, take screenshots from
+wait for loading, frames, fixed steps (`ticks`), seconds, or a log line, measure the GPU passes (a game's own by name,
+`Game NAME`, and their sum, `Game`), take screenshots from
 the game itself (`ScreenshotPass`), reload the shaders from the repository (`Engine:Renderer:ShaderSourceDirectory`;
 `shaders reload`: every pass compiles, then the pipelines are made again; an error keeps the old ones), and send input
 (keys, buttons, look, the wheel, a capture of the pointer that needs no focus, and `point X Y` and `type TEXT` for the

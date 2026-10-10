@@ -22,7 +22,7 @@ namespace Itera.Engine.Rendering.Meshes;
 /// cast no shadow: each seen instance's are drawn in the slot's blended list (<see cref="MeshAssetPass.BlendedList"/>),
 /// instances sorted back to front by their sphere's centre, each primitive one draw and command (a two-sided one two: its
 /// back faces, then its front faces, <see cref="MeshAssetDraw.Sides"/>), at most <see cref="MeshAssetPass.MaxCommands"/>
-/// commands, past which they are left out with one Warning a run. Main thread, after the frame group, between the view's
+/// commands, past which they are left out (in the order given, not by distance) with one Warning a run. Main thread, after the frame group, between the view's
 /// start and end; allocates nothing once its arrays have grown to the run's assets.
 /// </summary>
 public sealed partial class MeshAssetDraws
@@ -139,7 +139,11 @@ public sealed partial class MeshAssetDraws
         {
             _deltas[i] = 0;
             ref readonly var instance = ref instances[i];
-            if (!instance.Posed || _lists[i] == 0 || !PaletteFits(in instance, layout, palettes))
+            if (
+                !instance.Posed
+                || !Draws(_lists[i], instance.Asset, layout)
+                || !PaletteFits(in instance, layout, palettes)
+            )
             {
                 continue;
             }
@@ -177,6 +181,34 @@ public sealed partial class MeshAssetDraws
         }
 
         return written;
+    }
+
+    /// <summary>
+    /// True when an instance in <paramref name="lists"/> draws anything: it is seen, or a cascade takes it and its asset
+    /// has a primitive that is not blended (blended ones cast no shadow).
+    /// </summary>
+    private static bool Draws(byte lists, int asset, MeshAssetLayout layout)
+    {
+        if ((lists & 1) != 0)
+        {
+            return true;
+        }
+
+        if (lists == 0)
+        {
+            return false;
+        }
+
+        ref readonly var place = ref layout.Assets[asset];
+        for (var p = 0; p < place.PrimitiveCount; p++)
+        {
+            if (layout.Primitives[layout.AssetPrimitives[place.FirstPrimitive + p]].Range < MeshAssetRange.Blended)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

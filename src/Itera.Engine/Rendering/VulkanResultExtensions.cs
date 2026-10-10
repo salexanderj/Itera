@@ -2,8 +2,8 @@ using Silk.NET.Vulkan;
 
 namespace Itera.Engine.Rendering;
 
-/// <summary>Helpers for Vulkan result codes.</summary>
-internal static class VulkanResultExtensions
+/// <summary>Helpers for Vulkan result codes (a game's own passes check theirs with them too).</summary>
+public static class VulkanResultExtensions
 {
     /// <summary>Throws when the result is not <see cref="Result.Success"/>.</summary>
     public static void ThrowIfFailed(this Result result, string operation)

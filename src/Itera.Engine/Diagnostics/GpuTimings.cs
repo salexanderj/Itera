@@ -44,6 +44,13 @@ public enum GpuPass
 
     /// <summary>Part of <see cref="Voxels"/>: the posed mesh assets skinned before the cascades (<c>MeshAssetPass.RecordSkinning</c>), when any are.</summary>
     Skinning = 13,
+
+    /// <summary>
+    /// A game's passes (<c>IRenderPass</c>), all of them, when any ran: the sum of their own times, each of which
+    /// <see cref="GpuTimings.GamePass"/> gives by name. Those at the Compute, Opaque, and Transparent stages run inside the
+    /// mesh pass, so their time is also part of <see cref="Voxels"/>; those at the Scene and Screen stages are not.
+    /// </summary>
+    Game = 14,
 }
 
 /// <summary>Average and longest GPU time of one pass over an interval.</summary>
@@ -59,23 +66,31 @@ public readonly record struct GpuPassTimes(long Count, double AverageMs, double 
 /// interval) for their percentiles; it is taken once per pass per frame and once per pass per interval, so it is never
 /// contended for long. Recording and taking never allocate. A second set of sums, the window, is started and read by the
 /// control port's <c>gpu</c> request (<see cref="StartWindow"/>, <see cref="Window"/>) without touching the interval's.
+/// A game's passes, up to <see cref="MostGamePasses"/>, are measured one by one after the engine's
+/// (<see cref="GamePassNames"/>, <see cref="RecordGame"/>, <see cref="GamePass"/>), and their sum as <see cref="GpuPass.Game"/>.
 /// </summary>
 public sealed class GpuTimings
 {
     /// <summary>Number of <see cref="GpuPass"/> values.</summary>
-    public const int PassCount = 14;
+    public const int PassCount = 15;
+
+    /// <summary>The game's passes measured one by one, at most.</summary>
+    public const int MostGamePasses = 8;
+
+    /// <summary>The engine's passes and the game's, each one entry.</summary>
+    private const int Entries = PassCount + MostGamePasses;
 
     /// <summary>How many whole-frame times an interval keeps one by one: 10 s at over 1,600 frames a second.</summary>
     public const int MostFrameTimes = 16_384;
 
     private readonly object _lock = new();
-    private readonly long[] _count = new long[PassCount];
-    private readonly long[] _sumNanoseconds = new long[PassCount];
-    private readonly long[] _maxNanoseconds = new long[PassCount];
+    private readonly long[] _count = new long[Entries];
+    private readonly long[] _sumNanoseconds = new long[Entries];
+    private readonly long[] _maxNanoseconds = new long[Entries];
     private readonly float[] _frameTimes = new float[MostFrameTimes];
-    private readonly long[] _windowCount = new long[PassCount];
-    private readonly long[] _windowSumNanoseconds = new long[PassCount];
-    private readonly long[] _windowMaxNanoseconds = new long[PassCount];
+    private readonly long[] _windowCount = new long[Entries];
+    private readonly long[] _windowSumNanoseconds = new long[Entries];
+    private readonly long[] _windowMaxNanoseconds = new long[Entries];
     private int _frameTimeCount;
     private long _lastFrameNanoseconds;
     private long _framesMeasured;
@@ -100,16 +115,32 @@ public sealed class GpuTimings
     /// </summary>
     public long FramesMeasured => Interlocked.Read(ref _framesMeasured);
 
+    /// <summary>The game's passes measured one by one, by their index (at most <see cref="MostGamePasses"/>); set once before the render thread starts.</summary>
+    public IReadOnlyList<string> GamePassNames { get; set; } = [];
+
     /// <summary>Adds one frame's time for a pass. Render thread.</summary>
     public void Record(GpuPass pass, long nanoseconds)
     {
-        var i = (int)pass;
         if (pass == GpuPass.Frame)
         {
             Interlocked.Exchange(ref _lastFrameNanoseconds, nanoseconds);
             Interlocked.Increment(ref _framesMeasured);
         }
 
+        Add((int)pass, nanoseconds, pass == GpuPass.Frame);
+    }
+
+    /// <summary>Adds one frame's time for the game's pass <paramref name="index"/> (<see cref="GamePassNames"/>). Render thread.</summary>
+    public void RecordGame(int index, long nanoseconds)
+    {
+        if ((uint)index < MostGamePasses)
+        {
+            Add(PassCount + index, nanoseconds, frame: false);
+        }
+    }
+
+    private void Add(int i, long nanoseconds, bool frame)
+    {
         lock (_lock)
         {
             _count[i]++;
@@ -118,7 +149,7 @@ public sealed class GpuTimings
             _windowCount[i]++;
             _windowSumNanoseconds[i] += nanoseconds;
             _windowMaxNanoseconds[i] = Math.Max(_windowMaxNanoseconds[i], nanoseconds);
-            if (pass == GpuPass.Frame && _frameTimeCount < _frameTimes.Length)
+            if (frame && _frameTimeCount < _frameTimes.Length)
             {
                 _frameTimes[_frameTimeCount++] = nanoseconds / 1e6f;
             }
@@ -141,9 +172,13 @@ public sealed class GpuTimings
     }
 
     /// <summary>Returns a pass's times since the last call and starts a new interval. Main thread.</summary>
-    public GpuPassTimes Take(GpuPass pass)
+    public GpuPassTimes Take(GpuPass pass) => TakeEntry((int)pass);
+
+    /// <summary>The game's pass <paramref name="index"/>'s times since the last call, as <see cref="Take(GpuPass)"/>. Main thread.</summary>
+    public GpuPassTimes TakeGame(int index) => (uint)index < MostGamePasses ? TakeEntry(PassCount + index) : default;
+
+    private GpuPassTimes TakeEntry(int i)
     {
-        var i = (int)pass;
         long count,
             sum,
             max;
@@ -172,9 +207,13 @@ public sealed class GpuTimings
     }
 
     /// <summary>A pass's times since <see cref="StartWindow"/>, leaving them in place. Any thread.</summary>
-    public GpuPassTimes Window(GpuPass pass)
+    public GpuPassTimes Window(GpuPass pass) => WindowEntry((int)pass);
+
+    /// <summary>The game's pass <paramref name="index"/>'s times since <see cref="StartWindow"/>. Any thread.</summary>
+    public GpuPassTimes GamePass(int index) => (uint)index < MostGamePasses ? WindowEntry(PassCount + index) : default;
+
+    private GpuPassTimes WindowEntry(int i)
     {
-        var i = (int)pass;
         long count,
             sum,
             max;
