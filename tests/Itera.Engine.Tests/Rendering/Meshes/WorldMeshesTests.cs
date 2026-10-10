@@ -393,6 +393,52 @@ public sealed class WorldMeshesTests : IDisposable
     }
 
     /// <summary>
+    /// Without voxel terrain the meshes follow the match's models alone: a model is meshed and counts as uploaded, a draw
+    /// of it goes into the camera's and the cascades' lists, no world column is followed or drawn, the upload is up to
+    /// date, and a retired model goes at the next frame.
+    /// </summary>
+    [Fact]
+    public void Without_terrain_the_models_alone_are_meshed_and_drawn()
+    {
+        var targets = new FakeTargets();
+        using var meshes = NewMeshes(targets);
+        using var models = new VoxelModels();
+        var cube = models.Add([models.Encode(CubeVoxels(10))], new VoxelCoord(10, 10, 10));
+        var other = models.Add([models.Encode(CubeVoxels(20))], new VoxelCoord(20, 20, 20));
+        meshes.BeginMatch(null, models, new NoVoxelTintMap());
+        var view = LookingDown(Centre);
+        view.SunDirection = ViewConstants.DefaultSunDirection;
+        view.Switches = ViewSwitches.Shadows;
+        ModelDraw[] draws = [new(cube, 0, new Vector3(0.3f, 1.8f, 0), Quaternion.Identity, 0)];
+        var frame = 0;
+        void Next()
+        {
+            var slot = frame++ % FrameSync.FramesInFlight;
+            var count = Frame(meshes, slot, frame / 60.0, in view, draws);
+            targets.Apply(meshes.Regions(slot, count));
+        }
+
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        do
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The models were not meshed.");
+            Next();
+            Thread.Sleep(1);
+        } while (!(models.IsUploaded(cube) && models.IsUploaded(other) && meshes.IsUpToDate));
+
+        Next();
+        models.Retire(other, 0, Vector3.Zero, Quaternion.Identity, 0);
+        Next();
+
+        Assert.Equal(0, meshes.ColumnCount);
+        Assert.Equal(0, meshes.DrawCount);
+        Assert.Equal(1, meshes.Frame.ModelCamera.Records);
+        Assert.True(meshes.Frame.ModelNear.Records > 0);
+        Assert.Equal(1, models.Count);
+        Assert.True(models.Retired.IsEmpty);
+    }
+
+    /// <summary>
     /// Two draws of one model level: one command for its one block, whose two instances are the two draws in order, each
     /// placing and turning the model; the block's vertices lie in the model's box.
     /// </summary>

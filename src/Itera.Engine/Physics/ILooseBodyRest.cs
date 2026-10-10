@@ -30,7 +30,7 @@ public enum LooseBodyRestChoice : byte
     /// <summary>
     /// The engine removes the body and leaves its model to the game (<see cref="LooseBodies.Release"/>): the game draws
     /// it where it lay (<see cref="RestedBody.ModelCorner"/> and <see cref="RestedBody.Orientation"/>, through
-    /// <c>ModelInstances</c>; voxel models are not drawn without terrain yet) or makes something else of it, and removes
+    /// <c>ModelInstances</c>) or makes something else of it, and removes
     /// it (<c>VoxelModels.Remove</c>) when done; never frees its tree (<c>VoxelModels.Free</c> or <c>RemoveAndFree</c>),
     /// which every ball of its radius and material shares.
     /// </summary>

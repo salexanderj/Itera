@@ -79,6 +79,9 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     private readonly List<ColumnKey> _resident = [];
     private MeshMaterial[] _materials = [];
     private VoxelWorld? _world;
+
+    // True between BeginMatch and EndMatch, with or without a world.
+    private bool _following;
     private VoxelModels? _models;
     private IVoxelTintMap? _tintMap;
     private VoxelChangeCursor? _cursor;
@@ -267,12 +270,12 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     }
 
     /// <summary>
-    /// Starts following a match's world: its columns at the meshed levels, from empty, and its models; the first frame
-    /// stages the materials and the match's tint map. Main thread, no Vulkan call.
+    /// Starts following a match's world: its columns at the meshed levels, from empty, and its models (only the models
+    /// in a match without voxel terrain, <paramref name="world"/> null: no columns, no sky field); the first frame stages
+    /// the materials and the match's tint map. Main thread, no Vulkan call.
     /// </summary>
-    public void BeginMatch(VoxelWorld world, VoxelModels models, IVoxelTintMap tintMap)
+    public void BeginMatch(VoxelWorld? world, VoxelModels models, IVoxelTintMap tintMap)
     {
-        ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(models);
         ArgumentNullException.ThrowIfNull(tintMap);
         if (_workers is null)
@@ -282,8 +285,12 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
 
         EndMatch();
         _world = world;
-        _grid = world.Grid;
-        _distances = world.Distances;
+        _grid = world?.Grid ?? VoxelGrid.Unit;
+        if (world is not null)
+        {
+            _distances = world.Distances;
+        }
+
         _models = models;
         _tintMap = tintMap;
         _heap = new GpuRangeHeap((long)(_pass.HeapBytes / sizeof(uint)));
@@ -304,13 +311,18 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         _editedBlocks = 0;
         LastEdit = default;
 
-        _cursor = world.CreateChangeCursor();
+        _cursor = world?.CreateChangeCursor();
         _listFullReported = false;
         _wantedStale = true;
         _worldDataStaged = false;
         _stats = default;
         _statsStart = double.NaN;
-        AddResidentColumns();
+        if (world is not null)
+        {
+            AddResidentColumns();
+        }
+
+        _following = true;
     }
 
     /// <summary>Stops following the match; frames upload and draw nothing until the next <see cref="BeginMatch"/>.</summary>
@@ -337,6 +349,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         }
 
         ClearModels();
+        _following = false;
         _world = null;
         _models = null;
         _tintMap = null;
@@ -352,12 +365,17 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     /// staging region of <paramref name="slot"/>, starts new jobs, and writes the frame's draws for
     /// <paramref name="view"/> into <see cref="MeshPass"/>'s regions of the slot, culled by the frame's
     /// <see cref="MeshView"/> (after its <see cref="MeshView.Begin"/>; the blocks' lights are offered to it before its
-    /// <see cref="MeshView.End"/>). Returns the copy regions staged (<see cref="Regions"/>). Main thread, between taking
-    /// the frame request and publishing the frame.
+    /// <see cref="MeshView.End"/>). Returns the copy regions staged (<see cref="Regions"/>). Without voxel terrain only
+    /// the models are meshed and drawn. Main thread, between taking the frame request and publishing the frame.
     /// </summary>
     public int Upload(int slot, double nowSeconds, in ViewConstants view, ReadOnlySpan<ModelDraw> models = default)
     {
-        var world = _world ?? throw new InvalidOperationException("The world meshes follow no match's world.");
+        if (!_following)
+        {
+            throw new InvalidOperationException("The world meshes follow no match.");
+        }
+
+        var world = _world;
         var start = Stopwatch.GetTimestamp();
         _writer.Begin(_staging.Region(slot), _staging.RegionOffset(slot), _staging.RegionBytes, _regions[slot]);
         _evictedWordsThisFrame = 0;
@@ -365,9 +383,13 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         ForgetRemovedModels();
         StageWorldData();
         _viewDistanceCentimetres = view.MaxDistance * VoxelConstants.CentimetresPerMetre;
-        ReadChanges(world);
-        UpdateSky(world, view.Position, nowSeconds);
-        UpdateWanted(world, view.Position);
+        if (world is not null)
+        {
+            ReadChanges(world);
+            UpdateSky(world, view.Position, nowSeconds);
+            UpdateWanted(world, view.Position);
+        }
+
         TakeFinished();
         // Retired models stay drawn until the world's meshes hold their voxels: none pending once the frame's are in.
         if (_pendingBlocks == 0 && _waiting.Count == 0)
@@ -377,9 +399,13 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
 
         var deadline = start + (long)(ReadMillisecondsPerFrame * Stopwatch.Frequency / 1000);
         StartModelJobs(deadline);
-        RetryStarved(world, nowSeconds);
-        StartJobs(world, view.Position, deadline);
-        StartStitchJobs(world, deadline);
+        if (world is not null)
+        {
+            RetryStarved(world, nowSeconds);
+            StartJobs(world, view.Position, deadline);
+            StartStitchJobs(world, deadline);
+        }
+
         // After the jobs start: a block they find empty or unreadable is done with this frame.
         ReportEditMeshed();
         _staging.Flush(slot, _writer.Used);

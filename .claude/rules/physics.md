@@ -42,8 +42,8 @@ by the mover in cells of `Engine:Physics:CollisionCentimetres`. A ball that rest
 goes to the game's `ILooseBodyRest` (registered in the match's scope; `LooseBodySystem` asks): `Keep` (and with no
 handler) leaves it where it is, asked again once it has moved (`LooseBody.Kept`); `Remove` removes it with its model;
 `TakeOver` removes the body and leaves the model to the game (`LooseBodies.Release`, with where it lay from
-`LooseBodies.Rested`), which draws and later removes it. Voxel models, the bodies' among them, are not drawn without
-terrain yet (`WorldMeshes` follows only a match with a world). A save without terrain holds no bodies (`SettleThrown` does
+`LooseBodies.Rested`), which draws and later removes it (`VoxelModels.Remove`; never `Free`: every ball of its radius
+and material shares its tree). A save without terrain holds no bodies (`SettleThrown` does
 nothing). `DebugBallSystem` does not check a ball's space and `MapResetSystem`'s `reset` only cleans up and counts the
 reset without a world.
 

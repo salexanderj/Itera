@@ -27,7 +27,7 @@ Bepu, plays procedural sound through OpenAL, draws its UI with Skia, carries ses
 world as its seed plus its edit log, and loads mods from `Mods/`. Input events become one `InputSnapshot` per frame
 (`InputService.Frame`) and one per fixed step (`InputService.Tick`). Voxel terrain is optional: a game that registers
 no generator and does not call `AddIteraVoxels` plays matches without it, its characters and loose bodies moving over
-the mesh colliders it registers; voxel models are not drawn without terrain yet (the mesh path's next step).
+the mesh colliders it registers.
 
 `ARCHITECTURE.md` holds the full description, the dependencies, the design decisions, and the open work. Read it before
 changing anything structural. `docs/` holds the write-ups behind decisions: `voxel-structures.md`, `edit-log-compaction.md`,

@@ -890,14 +890,13 @@ public sealed partial class GameLoop
         _stats.RecordFrame(frameSeconds);
     }
 
-    /// <summary>The match's world goes to the GPU: the meshes follow its voxel terrain, when it has one.</summary>
+    /// <summary>
+    /// The match's world goes to the GPU: the meshes follow its voxel terrain, when it has one, and its voxel models.
+    /// </summary>
     private void BeginMatchGpu(MatchServices match)
     {
-        if (match.Terrain is { } terrain)
-        {
-            _worldMeshes.BeginMatch(terrain.Voxels, match.Models, match.TintMap);
-            _worldOnGpu = true;
-        }
+        _worldMeshes.BeginMatch(match.Terrain?.Voxels, match.Models, match.TintMap);
+        _worldOnGpu = true;
     }
 
     /// <summary>The match's world leaves the GPU: the meshes stop following it, and its lights' flashes go.</summary>

@@ -105,7 +105,8 @@ open (`ViewSwitches.Plain`, read by `WorldMeshes` alone).
 
 ### The meshes
 
-`WorldMeshes` (`Rendering/Meshes/`) follows the match's world. It meshes the world block by block: a block is a 32-voxel
+`WorldMeshes` (`Rendering/Meshes/`) follows the match's world (in a match without voxel terrain, its voxel models alone:
+no columns, no sky field, no stitches; `BeginMatch` with a null world). It meshes the world block by block: a block is a 32-voxel
 cell of a chunk, read with a 2-voxel apron on the main thread (`VoxelWorld.TryReadBlock`, `BlockMayHaveSurface`;
 `VoxelWorld.Blocks.cs`, materials and densities) and meshed on `MeshWorkers` threads by `SurfaceNets`
 (`src/Itera.Engine/Meshing/`: naive Surface Nets, one vertex per cell, at the mean of the points where the density

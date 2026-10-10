@@ -444,7 +444,8 @@ A game is an executable that registers the engine, then itself, and runs `GameLo
   physics steps, nothing of a world on the GPU, a join payload and a save of the header alone (its match identity, seed,
   step rate, and match data), and the session, physics, ECS, UI, audio, particles, mesh assets, mods, the character
   mover over its mesh colliders, and loose bodies (balls and cut bodies, which a game's `ILooseBodyRest` decides about
-  once they rest, as there is no grid to settle into) as usual. Voxel models are not drawn without terrain yet.
+  once they rest, as there is no grid to settle into) as usual, and `WorldMeshes` meshes and draws its voxel models
+  alone.
 - These have engine defaults that a game may replace: `IVoxelPalette`
   (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable), `MenuStyle` (plain), and, for navigation,
   nothing (without an `INavGridSource` there is no navigation). A game adds an `IAtmosphereSource` for its sky, an
@@ -1296,10 +1297,9 @@ of buffers.
 
 Engine work that is known and not done:
 
-- **Voxels optional, the rest.** A match runs without voxel terrain (no generator, no `AddIteraVoxels`), and its
-  characters and loose bodies move over mesh colliders, but voxel models (the bodies' among them) are drawn only with
-  terrain (`WorldMeshes` follows a match's world); that, and the movement building blocks for climbing, are planned (the
-  mesh path's phase 5).
+- **Voxels optional, the rest.** A match runs without voxel terrain (no generator, no `AddIteraVoxels`), its characters
+  and loose bodies moving over mesh colliders and its voxel models drawn; the movement building blocks for climbing and
+  a sample game without voxel terrain are planned (the mesh path's phase 5).
 - **Per-game look data in the shaders.** The art direction's constants (saturation and darkening of the world, the side
   shading, the warm and cool light, the split tone, the occlusion floor, the fog and sky light terms) sit in `mesh.frag` and
   `lighting.glsl`. They should be data a game sets, with today's values as the starter's defaults.
