@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Assets;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Rendering.Materials;
 using Itera.Engine.Rendering.Voxels;
@@ -29,13 +30,14 @@ public sealed class MaterialTextureSetsTests : IDisposable
     {
         var mips = Levels(format, 16, seed: 3);
         using var stream = new MemoryStream();
-        DdsFile.Write(stream, format, 16, mips);
+        DdsFile.Write(stream, format, 16, 16, mips);
         var bytes = stream.ToArray();
 
         var dds = DdsFile.Read(bytes);
 
         Assert.Equal(format, dds.Format);
-        Assert.Equal(16, dds.Texels);
+        Assert.Equal(16, dds.Width);
+        Assert.Equal(16, dds.Height);
         Assert.Equal(5, dds.Offsets.Count);
         Assert.Equal(148, dds.Offsets[0]);
         for (var i = 0; i < mips.Count; i++)
@@ -46,7 +48,42 @@ public sealed class MaterialTextureSetsTests : IDisposable
         // Levels below a block are one block each: 16 texels are 4x4 blocks, then 2x2, then one, one, one.
         Assert.Equal([16, 4, 1, 1, 1], dds.Lengths.Select(l => l / DdsFile.BlockBytes(format)));
         Assert.Throws<InvalidDataException>(() => DdsFile.Read(bytes.AsSpan(0, bytes.Length - 1)));
-        Assert.Throws<ArgumentException>(() => DdsFile.Write(new MemoryStream(), format, 16, mips.Take(4).ToList()));
+        Assert.Throws<ArgumentException>(() =>
+            DdsFile.Write(new MemoryStream(), format, 16, 16, mips.Take(4).ToList())
+        );
+    }
+
+    [Fact]
+    public void A_file_of_any_size_reads_back_its_width_height_and_levels_as_the_mesh_assets_pack_them()
+    {
+        const int Width = 300;
+        const int Height = 200;
+        var mips = Levels(DdsFormat.Bc7Unorm, Width, Height, seed: 5);
+        using var stream = new MemoryStream();
+        DdsFile.Write(stream, DdsFormat.Bc7Unorm, Width, Height, mips);
+        var bytes = stream.ToArray();
+
+        var dds = DdsFile.Read(bytes);
+
+        // The header holds the height before the width.
+        Assert.Equal(Height, BitConverter.ToInt32(bytes, 12));
+        Assert.Equal(Width, BitConverter.ToInt32(bytes, 16));
+        Assert.Equal(DdsFormat.Bc7Unorm, dds.Format);
+        Assert.Equal(Width, dds.Width);
+        Assert.Equal(Height, dds.Height);
+        // 300x200 down to 1x1: nine levels, each in whole 4x4 blocks (75x50, 38x25, 19x13, 10x7, 5x3, 3x2, then one).
+        Assert.Equal([3750, 950, 247, 70, 15, 6, 1, 1, 1], dds.Lengths.Select(l => l / 16));
+        for (var i = 0; i < mips.Count; i++)
+        {
+            Assert.Equal(mips[i], bytes.AsSpan(dds.Offsets[i], dds.Lengths[i]).ToArray());
+            // A mesh asset's compressed texture packs its levels as the file does.
+            Assert.Equal(dds.Offsets[i] - 148, MipChain.LevelOffset(Width, Height, i, MeshTextureFormat.Bc7Unorm));
+        }
+
+        // One 2D texture only: an array of two is refused.
+        var array = bytes.ToArray();
+        array[140] = 2;
+        Assert.Throws<InvalidDataException>(() => DdsFile.Read(array));
     }
 
     [Fact]
@@ -108,13 +145,15 @@ public sealed class MaterialTextureSetsTests : IDisposable
         Assert.Equal(bands, (material.Texture & MeshMaterial.BandsTextureBit) != 0);
     }
 
-    private static List<byte[]> Levels(DdsFormat format, int texels, int seed)
+    private static List<byte[]> Levels(DdsFormat format, int texels, int seed) => Levels(format, texels, texels, seed);
+
+    private static List<byte[]> Levels(DdsFormat format, int width, int height, int seed)
     {
         var random = new Random(seed);
         var levels = new List<byte[]>();
-        for (var i = 0; i < DdsFile.MipCount(texels); i++)
+        for (var i = 0; i < DdsFile.MipCount(width, height); i++)
         {
-            var level = new byte[DdsFile.MipBytes(format, texels, i)];
+            var level = new byte[DdsFile.MipBytes(format, width, height, i)];
             random.NextBytes(level);
             levels.Add(level);
         }
@@ -130,7 +169,7 @@ public sealed class MaterialTextureSetsTests : IDisposable
         {
             using var file = File.Create(Path.Combine(folder, MaterialTextureSets.LayerFiles[i]));
             var format = MaterialTextureSets.LayerFormats[i];
-            DdsFile.Write(file, format, texels, Levels(format, texels, seed: i));
+            DdsFile.Write(file, format, texels, texels, Levels(format, texels, seed: i));
         }
 
         File.WriteAllText(

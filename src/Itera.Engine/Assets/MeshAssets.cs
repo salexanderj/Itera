@@ -9,7 +9,8 @@ namespace Itera.Engine.Assets;
 /// declares them at its run startup (<c>IRunStartup</c>, the run's "game" step), mods at theirs; the run's "mesh assets"
 /// step, after the mods', reads every declared file on worker threads (<see cref="LoadAll"/>), and a file that cannot be
 /// read stops the run with a message naming it. Assets stay for the whole run, so an index never goes stale and needs no
-/// generation. A run without graphics reads the files without decoding their textures. Main thread.
+/// generation. A run with graphics reads a model's textures from its compressed textures where they match its images
+/// (<see cref="CompressedTextures"/>) and decodes the rest; a run without graphics reads none. Main thread.
 /// </summary>
 public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
 {
@@ -71,9 +72,9 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
         );
 
     /// <summary>
-    /// Reads every declared file not read yet, in parallel on worker threads, logs their warnings, and then the totals;
-    /// with <paramref name="textures"/> false (no graphics), without decoding their images. Throws when a file cannot
-    /// be read, after logging each that failed. The run's "mesh assets" step; once.
+    /// Reads every declared file not read yet, in parallel on worker threads, logs their warnings and notes, and then
+    /// the totals; with <paramref name="textures"/> false (no graphics), without their textures. Throws when a file
+    /// cannot be read, after logging each that failed. The run's "mesh assets" step; once.
     /// </summary>
     internal void LoadAll(bool textures)
     {
@@ -84,6 +85,8 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
 
         var start = Stopwatch.GetTimestamp();
         var warnings = new List<string>[_entries.Count];
+        var notes = new List<string>[_entries.Count];
+        var reading = textures ? TextureReading.PreferCompressed : TextureReading.None;
         var failures = new Exception?[_entries.Count];
         Parallel.For(
             0,
@@ -92,6 +95,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
             {
                 var entry = _entries[i];
                 warnings[i] = [];
+                notes[i] = [];
                 if (entry.Asset is not null || entry.Path is null)
                 {
                     return;
@@ -99,7 +103,14 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
 
                 try
                 {
-                    entry.Asset = GltfImport.Load(entry.Name, entry.Path, entry.MetresPerUnit, textures, warnings[i]);
+                    entry.Asset = GltfImport.Load(
+                        entry.Name,
+                        entry.Path,
+                        entry.MetresPerUnit,
+                        reading,
+                        warnings[i],
+                        notes[i]
+                    );
                 }
                 catch (Exception ex)
                 {
@@ -115,6 +126,11 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
             foreach (var warning in warnings[i])
             {
                 LogWarning(_entries[i].Name, warning);
+            }
+
+            foreach (var note in notes[i])
+            {
+                LogNote(_entries[i].Name, note);
             }
 
             if (failures[i] is { } failure)
@@ -134,11 +150,16 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
         long triangles = 0;
         long textureBytes = 0;
         var textureCount = 0;
+        var compressed = 0;
         foreach (var entry in _entries)
         {
             triangles += entry.Asset!.TriangleCount;
             textureBytes += entry.Asset.TextureBytes;
             textureCount += entry.Asset.Textures.Length;
+            foreach (var texture in entry.Asset.Textures)
+            {
+                compressed += texture.Compressed ? 1 : 0;
+            }
         }
 
         var milliseconds = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
@@ -147,6 +168,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
             _entries.Count,
             triangles,
             textureCount,
+            compressed,
             megabytes,
             textures ? "" : " (not decoded: no graphics)",
             milliseconds
@@ -185,12 +207,13 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
 
     [LoggerMessage(
         Level = LogLevel.Information,
-        Message = "Mesh assets: {Models} model(s), {Triangles} triangles, {Textures} texture(s) of {Megabytes:F1} MB{Decoded}, read in {Milliseconds:F0} ms"
+        Message = "Mesh assets: {Models} model(s), {Triangles} triangles, {Textures} texture(s) ({Compressed} compressed) of {Megabytes:F1} MB{Decoded}, read in {Milliseconds:F0} ms"
     )]
     private partial void LogLoaded(
         int models,
         long triangles,
         int textures,
+        int compressed,
         double megabytes,
         string decoded,
         double milliseconds
@@ -198,6 +221,9 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Mesh assets: {Name}: {Warning}")]
     private partial void LogWarning(string name, string warning);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Mesh assets: {Name}: {Note}")]
+    private partial void LogNote(string name, string note);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Mesh assets: {Name} ({Path}) could not be read")]
     private partial void LogFailed(Exception exception, string name, string path);

@@ -114,8 +114,11 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 ## A model from glTF
 
 1. The files in `src/Game/Models/NAME/` (`.gltf` with its `.bin` and images, or one `.glb`; no Draco, meshopt, or Basis
-   compression), copied by the csproj's `Models/*/*` rule, and a row in `src/Game/Models/SOURCES.md` with its source,
-   authors, licence, and changes.
+   compression), copied by the csproj's `Models/*/**` rule, and a row in `src/Game/Models/SOURCES.md` with its source,
+   authors, licence, and changes. Its textures compressed for shipping: `dotnet run -c Release --project tools/Textures
+   -- model src/Game/Models/NAME/NAME.gltf` writes `NAME.textures/` beside it (BC7 and BC5, a quarter of the decoded
+   size); commit it, and run it again when an image changes (a test like `FoxModelTests`' compressed-textures test
+   catches one forgotten).
 2. A name in `GameModels` and a `Declare` line there: the path from the executable's folder and the file's unit
    (`metresPerUnit`: 1 for metres, 0.01 for centimetres). `GameRunStartup` declares them at the run's start; a mod
    declares its own at its startup.
@@ -130,7 +133,7 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
    changes clips runs before the engine's `MeshAnimatorSystem`, which the game registers once, after every such
    system.
 6. Check it: `meshes` lists it (triangles, materials, textures, size, joints, clips), `meshes place NAME [CLIP
-   [SECONDS]]` puts one in front of the camera, the log's `Mesh assets:` lines have no Warning about it, a
+   [SECONDS]]` puts one in front of the camera, the log's `Mesh assets:` lines have no Warning or note about it, a
    `ScenarioTests` row finds it in `MeshInstances`, and for a skinned model a test like `FoxModelTests` compares its
    clips with SharpGLTF's own world matrices.
 

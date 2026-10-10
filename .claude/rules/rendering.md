@@ -260,7 +260,8 @@ do not match its rig, it is drawn unposed, with one Warning a run. The counts tr
 the render thread: device-local buffers of every asset's vertices (`MeshAssetVertex`, pulled by `gl_VertexIndex`),
 32-bit indices, and materials (`MeshAssetMaterial`: factors, alpha cutoff, five packed texture references, flags), one
 image per texture with every mip (`Rgba8Srgb` colour and emission, `Rgba8Unorm` occlusion and metal-roughness, `Rg8Unorm`
-normals), and host-visible draws and commands a frame slot. The first frame copies the buffers and images from one upload
+normals; read from a model's compressed textures, `BC7_SRGB`, `BC7_UNORM`, and `BC5_UNORM`, each level copied in whole
+4x4 blocks with its own size as the extent), and host-visible draws and commands a frame slot. The first frame copies the buffers and images from one upload
 buffer (`RecordUploads`, before the mesh pass), freed `FrameSync.FramesInFlight` frames later. It owns descriptor set 1
 (`mesh-asset-data.glsl`: six immutable samplers, linear with 16x anisotropy where the device can or nearest, each
 repeating, clamped, or mirrored; the textures, `MESH_TEXTURE_COUNT` of them, a white stand-in first, indexed with

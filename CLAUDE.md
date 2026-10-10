@@ -126,6 +126,7 @@ DOTNET_WATCH_SUPPRESS_EMOJIS=1 dotnet watch --non-interactive --project src/Game
 tools/benchmark/run.sh <label> [--offscreen] [game arguments]   # GPU benchmark (Engine:Benchmark) over the game's views and the circle; README there
 tools/steam/upload.sh [--preview] [--no-live] [--branch NAME] [--no-test]   # test, publish win-x64 and linux-x64, upload to Steam's "testing" branch (or NAME); README there
 dotnet run -c Release --project tools/Textures [-- SET ...]   # the materials' texture sets from baked recipes (src/Game/Textures/sources.json); README there
+dotnet run -c Release --project tools/Textures -- model PATH.gltf   # a model's compressed textures (PATH.textures/ beside it, committed with it)
 ```
 
 Game options, the start-up log lines, exit codes, unattended runs, the console and its commands, and the control port
@@ -160,7 +161,8 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
 - `tools/control/`, `tools/benchmark/`, `tools/steam/`: READMEs there. They run the game in `src/Game` and read its data
   folder from its `appsettings.json` (`tools/benchmark/data_folder.py`).
 - `tools/Textures`: makes the world materials' texture sets (compressed DDS files and `set.json`) in
-  `src/Game/Textures/` from the bakes of the engine's recipes (or CC0 photographs) `sources.json` names; README there.
+  `src/Game/Textures/` from the bakes of the engine's recipes (or CC0 photographs) `sources.json` names, and with
+  `model PATH.gltf` a model's compressed textures; README there.
 
 # Conventions
 

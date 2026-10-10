@@ -36,8 +36,8 @@
     <None Update="Textures/*/*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <ItemGroup Label="The game's models (GameModels), copied to Models/ next to the executable">
-    <None Update="Models/*/*" CopyToOutputDirectory="PreserveNewest" />
+  <ItemGroup Label="The game's models (GameModels) with their compressed textures, copied to Models/ next to the executable">
+    <None Update="Models/*/**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

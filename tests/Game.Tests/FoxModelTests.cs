@@ -1,6 +1,7 @@
 using System.Numerics;
 using Itera.Engine.Assets;
 using Itera.Engine.Matches;
+using Itera.Engine.Rendering.Materials;
 using Microsoft.Extensions.DependencyInjection;
 using SharpGLTF.Schema2;
 
@@ -9,7 +10,8 @@ namespace Game.Tests;
 /// <summary>
 /// The fox as the run reads it (<c>Models/Fox/Fox.gltf</c>, in centimetres, under a root node that is not a joint): 24
 /// joints and its three clips; its rest pose skins every vertex to where the file stores it; a vertex in a clip lands
-/// where the file's own world matrices put it (SharpGLTF's, an independent reading), to a millimetre.
+/// where the file's own world matrices put it (SharpGLTF's, an independent reading), to a millimetre; its compressed
+/// textures (<c>Fox.textures</c>) were made from its image.
 /// </summary>
 public sealed class FoxModelTests
 {
@@ -40,6 +42,23 @@ public sealed class FoxModelTests
                 $"vertex {v}: {fox.Vertices[v].Position} at rest, {skinned[v]} skinned"
             );
         }
+    }
+
+    [Fact]
+    public void Its_compressed_textures_were_made_from_its_image()
+    {
+        var list = CompressedTextures.ReadList(CompressedTextures.FolderOf(s_path));
+        var textures = CompressedTextures.DecodeAll(s_path, []);
+
+        // A changed Texture.png needs Fox.textures made again: tools/Textures' model mode on src/Game/Models/Fox/Fox.gltf.
+        Assert.NotNull(list);
+        Assert.Equal(
+            textures.Select(texture => (texture.Image, texture.Role, texture.SourceHash)),
+            list.Textures.Select(entry => (entry.Image, entry.Role, entry.Sha256))
+        );
+        var file = Path.Combine(CompressedTextures.FolderOf(s_path), list.Textures[0].File);
+        var dds = DdsFile.Read(File.ReadAllBytes(file));
+        Assert.Equal((DdsFormat.Bc7Srgb, 1024, 1024), (dds.Format, dds.Width, dds.Height));
     }
 
     [Theory]

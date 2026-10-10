@@ -12,7 +12,8 @@ using SkiaSharp;
 namespace Itera.Tools.Textures;
 
 /// <summary>
-/// Makes the world materials' texture sets (README.md): for each set in <c>src/Game/Textures/sources.json</c> (or those
+/// Makes the world materials' texture sets (README.md), or with <c>model PATH.gltf ...</c> a model's compressed textures
+/// (<see cref="ModelTextures"/>): for each set in <c>src/Game/Textures/sources.json</c> (or those
 /// named on the command line), downloads its CC0 photograph's colour, normal, occlusion, and height maps from Poly Haven
 /// or ambientCG into a cache, makes every mip level (colour and occlusion averaged in linear light, normals averaged and
 /// made unit length again), compresses them (BC7 sRGB with occlusion in alpha, BC5, BC4), and writes the set's folder
@@ -26,6 +27,11 @@ internal static class Program
 
     private static int Main(string[] args)
     {
+        if (args.Length >= 1 && args[0] == "model")
+        {
+            return ModelTextures.Run(args[1..]);
+        }
+
         s_http.DefaultRequestHeaders.UserAgent.ParseAdd("Itera-texture-tool/1.0");
         var repo = FindRepository();
         var folder = Path.Combine(repo, "src", "Game", "Textures");
@@ -467,7 +473,7 @@ internal static class Program
     private static void Write(string path, DdsFormat format, int texels, List<byte[]> mips)
     {
         using var file = File.Create(path);
-        DdsFile.Write(file, format, texels, mips);
+        DdsFile.Write(file, format, texels, texels, mips);
     }
 
     private static uint Rgba(byte r, byte g, byte b, byte a) => r | (uint)g << 8 | (uint)b << 16 | (uint)a << 24;

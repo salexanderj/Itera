@@ -21,11 +21,12 @@ namespace Itera.Engine.Assets;
 /// materials' vertices without tangents generated ones (<see cref="MeshTangents"/>).</item>
 /// <item>Reads the first skin a mesh uses, and the animations of its joints, into the asset's <see cref="Rig"/>
 /// (<c>GltfImport.Rig.cs</c>).</item>
-/// <item>Reads each material's factors and textures; decodes each image a material uses (<see cref="TextureDecode"/>)
-/// and makes its mip levels in the role's format (<see cref="MipChain"/>). An image it cannot decode leaves the
+/// <item>Reads each material's factors and textures: each image a material uses, in each role, from the model's
+/// compressed textures when they match it (<see cref="CompressedTextures"/>), or decoded (<see cref="TextureDecode"/>)
+/// with its mip levels made in the role's format (<see cref="MipChain"/>). An image it cannot decode leaves the
 /// material's factor alone, with a warning.</item>
 /// </list>
-/// Warnings go into the list given, for the caller to log. Allocates freely: load time only.
+/// Warnings and notes go into the lists given, for the caller to log. Allocates freely: load time only.
 /// </summary>
 internal static partial class GltfImport
 {
@@ -37,11 +38,19 @@ internal static partial class GltfImport
     private const uint GlbJsonChunk = 0x4E4F534A;
 
     /// <summary>
-    /// Reads the file at <paramref name="path"/>; with <paramref name="textures"/> false (a run without graphics) its
-    /// images are not decoded and its materials name none. Throws <see cref="InvalidDataException"/> for a file it
-    /// cannot read, naming it.
+    /// Reads the file at <paramref name="path"/>, its textures as <paramref name="textures"/> says (with
+    /// <see cref="TextureReading.None"/>, a run without graphics, its materials name none). Throws
+    /// <see cref="InvalidDataException"/> for a file it cannot read, naming it. A model whose textures were all decoded,
+    /// with no compressed textures beside it, gets a note in <paramref name="notes"/>.
     /// </summary>
-    public static MeshAsset Load(string name, string path, float metresPerUnit, bool textures, List<string> warnings)
+    public static MeshAsset Load(
+        string name,
+        string path,
+        float metresPerUnit,
+        TextureReading textures,
+        List<string> warnings,
+        List<string>? notes = null
+    )
     {
         RefuseUnhandled(path, ReadRequiredExtensions(path));
         ModelRoot model;
@@ -54,7 +63,18 @@ internal static partial class GltfImport
             throw new InvalidDataException($"{path}: not a glTF 2.0 file the importer can read: {ex.Message}", ex);
         }
 
-        return Import(name, path, model, metresPerUnit, textures, warnings);
+        var context = new ImportContext(path, textures, warnings);
+        var asset = Import(name, model, metresPerUnit, context);
+        if (textures == TextureReading.PreferCompressed && context.DecodedTextures > 0 && !context.HasCompressed)
+        {
+            notes?.Add(
+                $"{Path.GetFileName(path)}: {context.DecodedTextures} texture(s) decoded at load, with no "
+                    + $"{Path.GetFileName(CompressedTextures.FolderOf(path))}/{CompressedTextures.ListFile} beside it: "
+                    + $"tools/Textures compresses them (`{CompressedTextures.Command}` on the source file)"
+            );
+        }
+
+        return asset;
     }
 
     /// <summary>
@@ -122,16 +142,8 @@ internal static partial class GltfImport
         }
     }
 
-    private static MeshAsset Import(
-        string name,
-        string path,
-        ModelRoot model,
-        float metresPerUnit,
-        bool textures,
-        List<string> warnings
-    )
+    private static MeshAsset Import(string name, ModelRoot model, float metresPerUnit, ImportContext context)
     {
-        var context = new ImportContext(path, textures, warnings);
         if (model.ExtensionsUsed.Contains("KHR_texture_transform", StringComparer.Ordinal))
         {
             context.Warn("uses KHR_texture_transform, which is not applied: textures may sit wrongly");
@@ -432,12 +444,12 @@ internal static partial class GltfImport
     }
 
     /// <summary>
-    /// The channel's texture, decoded and mipped in <paramref name="role"/>'s format the first time an image is used in
-    /// that role; none when the channel has none, the run decodes no textures, or the image cannot be decoded.
+    /// The channel's texture, read the first time an image is used in <paramref name="role"/>; none when the channel has
+    /// none, the run reads no textures, or the image cannot be decoded.
     /// </summary>
     private static MeshTextureRef ReadTexture(MaterialChannel channel, MeshTextureRole role, ImportContext context)
     {
-        if (channel.Texture is not { } texture || !context.DecodesTextures)
+        if (channel.Texture is not { } texture || context.Reading == TextureReading.None)
         {
             return MeshTextureRef.None;
         }
@@ -462,17 +474,48 @@ internal static partial class GltfImport
             return existing < 0 ? MeshTextureRef.None : new MeshTextureRef(existing, sampler, uvSet);
         }
 
-        var index = Decode(image, role, context);
+        var index = ReadImage(image, role, context);
         context.TextureIndices[key] = index;
         return index < 0 ? MeshTextureRef.None : new MeshTextureRef(index, sampler, uvSet);
     }
 
-    /// <summary>Decodes the image (once for every role) and makes its mip chain in the role's format; -1 when it cannot.</summary>
-    private static int Decode(Image image, MeshTextureRole role, ImportContext context)
+    /// <summary>
+    /// The image in <paramref name="role"/> as a texture of the asset: from the model's compressed textures when they
+    /// hold it made from this image, else decoded (once for every role) with its mip chain made in the role's format;
+    /// -1 when it cannot be decoded.
+    /// </summary>
+    private static int ReadImage(Image image, MeshTextureRole role, ImportContext context)
     {
+        var content = image.Content;
+        var hash = context.HashOf(image);
+        var name = $"{Path.GetFileName(context.Path)} image {image.LogicalIndex} ({role})";
+        // An image the model does not hold is never read from a list: it is decoded, which warns that it is missing.
+        if (!content.IsEmpty && context.CompressedList() is { } list)
+        {
+            var folder = CompressedTextures.FolderOf(context.Path);
+            var compressed = CompressedTextures.TryRead(
+                folder,
+                list,
+                name,
+                image.LogicalIndex,
+                role,
+                hash,
+                out var problem
+            );
+            if (compressed is not null)
+            {
+                context.Textures.Add(compressed);
+                return context.Textures.Count - 1;
+            }
+
+            context.Warn(
+                $"image {image.LogicalIndex} ({role}): {Path.GetFileName(folder)}: {problem}: decoded at load; make "
+                    + $"them again with tools/Textures (`{CompressedTextures.Command}` on the source file)"
+            );
+        }
+
         if (!context.Decoded.TryGetValue(image.LogicalIndex, out var decoded))
         {
-            var content = image.Content;
             decoded =
                 !content.IsEmpty
                 && TextureDecode.TryDecode(content.Content.Span, out var width, out var height, out var rgba)
@@ -494,8 +537,8 @@ internal static partial class GltfImport
         }
 
         var chain = MipChain.Build(texels, w, h, role, out var format, out var levels);
-        var name = $"{Path.GetFileName(context.Path)} image {image.LogicalIndex} ({role})";
-        context.Textures.Add(new MeshTextureData(name, w, h, levels, role, format, chain));
+        context.Textures.Add(new MeshTextureData(name, w, h, levels, role, format, chain, image.LogicalIndex, hash));
+        context.DecodedTextures++;
         return context.Textures.Count - 1;
     }
 
@@ -529,13 +572,21 @@ internal static partial class GltfImport
     }
 
     /// <summary>What an import gathers: the asset's arrays as they grow, its decoded images, and its warnings.</summary>
-    private sealed class ImportContext(string path, bool decodesTextures, List<string> warnings)
+    private sealed class ImportContext(string path, TextureReading reading, List<string> warnings)
     {
         private int _defaultMaterial = -1;
+        private bool _listRead;
+        private CompressedTextureList? _list;
 
         public string Path { get; } = path;
 
-        public bool DecodesTextures { get; } = decodesTextures;
+        public TextureReading Reading { get; } = reading;
+
+        /// <summary>True when the model has a list of compressed textures beside it, whether or not it reads.</summary>
+        public bool HasCompressed { get; private set; }
+
+        /// <summary>The textures decoded at load.</summary>
+        public int DecodedTextures { get; set; }
 
         public List<MeshAssetVertex> Vertices { get; } = [];
 
@@ -554,6 +605,9 @@ internal static partial class GltfImport
 
         public Dictionary<int, (int Width, int Height, byte[] Rgba)?> Decoded { get; } = [];
 
+        /// <summary>Each image's hash (<see cref="CompressedTextures.Hash"/>), taken once for all its roles.</summary>
+        public Dictionary<int, string> Hashes { get; } = [];
+
         public bool WrapWarned { get; set; }
 
         public bool SkinsWarned { get; set; }
@@ -561,6 +615,49 @@ internal static partial class GltfImport
         public bool JointsWarned { get; set; }
 
         public void Warn(string message) => warnings.Add($"{System.IO.Path.GetFileName(Path)} {message}");
+
+        /// <summary>The hash of the image's bytes as the model stores them; empty for an image it does not hold.</summary>
+        public string HashOf(Image image)
+        {
+            if (!Hashes.TryGetValue(image.LogicalIndex, out var hash))
+            {
+                var content = image.Content;
+                hash = content.IsEmpty ? "" : CompressedTextures.Hash(content.Content.Span);
+                Hashes[image.LogicalIndex] = hash;
+            }
+
+            return hash;
+        }
+
+        /// <summary>
+        /// The model's list of compressed textures when the run prefers them and it has one, read the first time a
+        /// texture asks (a list that cannot be read is a warning, and every texture is decoded).
+        /// </summary>
+        public CompressedTextureList? CompressedList()
+        {
+            if (_listRead || Reading != TextureReading.PreferCompressed)
+            {
+                return _list;
+            }
+
+            _listRead = true;
+            var folder = CompressedTextures.FolderOf(Path);
+            try
+            {
+                _list = CompressedTextures.ReadList(folder);
+                HasCompressed = _list is not null;
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+            {
+                HasCompressed = true;
+                Warn(
+                    $"{System.IO.Path.GetFileName(folder)}: {ex.Message}: its textures are decoded at load; make them "
+                        + $"again with tools/Textures (`{CompressedTextures.Command}` on the source file)"
+                );
+            }
+
+            return _list;
+        }
 
         /// <summary>The index of glTF's default material, added the first time a primitive names none.</summary>
         public int DefaultMaterial()

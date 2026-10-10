@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Makes the world materials' texture sets from CC0 photographs: downloads, mip levels, block compression (README.md). -->
+  <!-- Makes the world materials' texture sets and models' compressed textures: mip levels, block compression (README.md). -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <RootNamespace>Itera.Tools.Textures</RootNamespace>

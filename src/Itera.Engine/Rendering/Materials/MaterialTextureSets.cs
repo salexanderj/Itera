@@ -113,10 +113,10 @@ public sealed class MaterialTextureSets
         {
             var bytes = File.ReadAllBytes(Path.Combine(folder, LayerFiles[i]));
             var dds = DdsFile.Read(bytes);
-            if (dds.Format != LayerFormats[i] || dds.Texels != info.Texels)
+            if (dds.Format != LayerFormats[i] || dds.Width != info.Texels || dds.Height != info.Texels)
             {
                 throw new InvalidDataException(
-                    $"{LayerFiles[i]} is {dds.Format} at {dds.Texels} texels, not {LayerFormats[i]} at {info.Texels}."
+                    $"{LayerFiles[i]} is {dds.Format} at {dds.Width}x{dds.Height} texels, not {LayerFormats[i]} at {info.Texels} square."
                 );
             }
 

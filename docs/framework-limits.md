@@ -19,7 +19,9 @@ Ordered by how many game types each blocks.
 
 1. **Everything drawn is voxels.** `MeshVertex` has no texture coordinates; models are `VoxelModels` (at most 128 voxels a
    side, three levels, flat colours); no glTF or OBJ loader; no skinning (the `Animation/` poses move rigid voxel parts,
-   one model per bone). Blocks most games with authored art: characters, vehicles, imported assets.
+   one model per bone). Blocks most games with authored art: characters, vehicles, imported assets. Now models read from
+   glTF files are drawn as textured triangle meshes with the world's light, skinned and posed by their clips, their
+   textures compressed offline for shipping (`.claude/rules/mesh-assets.md`); no transparency yet (limit 3).
 2. **A voxel world is required, in a fixed box.** When this was written, `MatchServices` took `VoxelWorld`,
    `PhysicsWorld`, and the voxel colliders, and every match needed an `IChunkGenerator`. Now a match runs without a voxel
    world, its characters and loose bodies over the game's mesh colliders; the box remains. The box is set by constants (`VoxelGrid`: ±512 m across, -51 to +102 m at 10 cm voxels); the view
@@ -48,7 +50,7 @@ of players and bodies, and saving the game's own state.
 
 | Fits now | Workable with effort | Blocked by the engine |
 |---|---|---|
-| Voxel survival or building, co-op shooter, tower defence, physics sandbox, voxel puzzle or platformer, turn-based tactics | Strategy with a perspective camera, story games (sound and UI workarounds), small lockstep games with their own simulation | Racing, flight, space, open-world RPG, isometric games, split screen, fighting games, more than 16 players, games built on imported models |
+| Voxel survival or building, co-op shooter, tower defence, physics sandbox, voxel puzzle or platformer, turn-based tactics | Strategy with a perspective camera, story games (sound and UI workarounds), small lockstep games with their own simulation, games built on imported models (no transparency yet) | Racing, flight, space, open-world RPG, isometric games, split screen, fighting games, more than 16 players |
 
 ## Order of work
 
@@ -58,7 +60,9 @@ of players and bodies, and saving the game's own state.
    sessions, and saves without voxel terrain; mesh colliders that rays, loose bodies, and the character mover meet;
    voxel models and loose bodies without terrain, drawn there too; clip cross-fades; movement building blocks (wall
    normals, probes, a movement mode hook) and climbing (`ClimbingMode`); a sample game without voxel terrain
-   (`samples/Itera.MeshSample`). Next: compressed textures made offline.
+   (`samples/Itera.MeshSample`); models' textures compressed offline (`tools/Textures`' model mode). Finished
+   2026-10-10. Left for later: moving colliders for the mover, IK on mesh rigs, walking on walls, loading models during
+   play, morph targets (ARCHITECTURE.md, "Open work").
 2. Rendering a game can extend: its own passes, transparency, look data, a moving sun, other cameras and views.
 3. A map size the game sets, with origin shifting.
 4. Gamepads, typed text, sound files and music, a menu a game can replace.

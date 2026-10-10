@@ -232,6 +232,20 @@ internal sealed class GltfBuilder
         return _images.Count - 1;
     }
 
+    /// <summary>An image of the PNG bytes given, in the buffer (a .glb's BIN chunk), as exporters store them.</summary>
+    public int ImageInBuffer(byte[] png)
+    {
+        _images.Add(new JsonObject { ["bufferView"] = AddView(png), ["mimeType"] = "image/png" });
+        return _images.Count - 1;
+    }
+
+    /// <summary>An image in a file beside the model, named <paramref name="uri"/>, which the test writes.</summary>
+    public int ImageFile(string uri)
+    {
+        _images.Add(new JsonObject { ["uri"] = uri });
+        return _images.Count - 1;
+    }
+
     /// <summary>A texture of an image, with a sampler when given.</summary>
     public int Texture(int image, JsonObject? sampler = null)
     {

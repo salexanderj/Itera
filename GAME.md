@@ -13,7 +13,7 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
   (`GameAtmosphere`). A change to what the generator makes raises its `Version` (`tests/Game.Tests/WorldTests` pins a
   hash).
 - The fox (`GameModels.Fox`): Khronos's Fox sample (`Models/Fox/`, credits in `Models/SOURCES.md`; 24 joints, clips
-  Survey, Walk, and Run), declared at the run's start (`GameRunStartup`). `FoxSystem` puts it on the ground 4 m in front
+  Survey, Walk, and Run; its texture compressed in `Models/Fox/Fox.textures/`), declared at the run's start (`GameRunStartup`). `FoxSystem` puts it on the ground 4 m in front
   of the start pose, side on, then over and over: it looks about (Survey) for 6 s, walks (1.1 m/s) for 8 s and runs
   (4 m/s) for 6 s round a 3 m circle beyond where it started, on the voxel ground (`FoxRoute`), each clip fading into
   the next over 0.3 s (`FoxSystem.FadeSeconds`).
@@ -56,6 +56,6 @@ goes in this order where its comments say why, with a behaviour test and a zero-
   `Systems/FoxSystem.cs`, `Components/FoxRoute.cs`, `WorldGeneration/`, `Textures/`,
   `Models/`, `appsettings.json`.
 - `tests/Game.Tests`: `SystemOrderTests`, `ShippedSettingsTests`, `GameOptionsTests`, `WorldTests`, `PlayerSpawnSystemTests`,
-  `FoxSystemTests`, `FoxModelTests` (the fox's rig and clips against SharpGLTF's own world matrices), `BenchmarkViewsTests`,
+  `FoxSystemTests`, `FoxModelTests` (the fox's rig and clips against SharpGLTF's own world matrices; its compressed textures made from its image), `BenchmarkViewsTests`,
   and `ScenarioTests` (the starter played without a window through `HeadlessMatch`; the fox read, drawn posed, its clip
   moving with the steps, walking its circle; the boulder nearest the start climbed onto).

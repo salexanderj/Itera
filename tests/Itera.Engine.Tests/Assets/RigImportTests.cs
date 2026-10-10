@@ -34,7 +34,7 @@ public sealed class RigImportTests : IDisposable
     [Fact]
     public void The_skin_becomes_a_rig_parents_first_in_metres()
     {
-        var asset = GltfImport.Load("leg", _path, Unit, textures: false, _warnings);
+        var asset = GltfImport.Load("leg", _path, Unit, TextureReading.None, _warnings);
 
         var rig = Assert.IsType<Rig>(asset.Rig);
         Assert.Equal(["hip", "knee"], rig.Names);
@@ -79,7 +79,7 @@ public sealed class RigImportTests : IDisposable
     [Fact]
     public void The_rest_pose_skins_every_vertex_to_where_it_was_bound()
     {
-        var asset = GltfImport.Load("leg", _path, Unit, textures: false, _warnings);
+        var asset = GltfImport.Load("leg", _path, Unit, TextureReading.None, _warnings);
 
         var skinned = Skinned(asset, clip: -1, seconds: 0);
 
@@ -95,7 +95,7 @@ public sealed class RigImportTests : IDisposable
     [InlineData(1f)]
     public void A_posed_vertex_lands_where_the_files_own_world_matrices_put_it(float seconds)
     {
-        var asset = GltfImport.Load("leg", _path, Unit, textures: false, _warnings);
+        var asset = GltfImport.Load("leg", _path, Unit, TextureReading.None, _warnings);
         var model = ModelRoot.Load(_path, new ReadSettings { Validation = SharpGLTF.Validation.ValidationMode.TryFix });
         var animation = model.LogicalAnimations[0];
         var skin = model.LogicalSkins[0];

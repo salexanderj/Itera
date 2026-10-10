@@ -1,3 +1,5 @@
+using Itera.Engine.Rendering.Materials;
+
 namespace Itera.Engine.Assets;
 
 /// <summary>
@@ -16,7 +18,7 @@ internal static class MipChain
     public static (int Width, int Height) LevelSize(int width, int height, int level) =>
         (Math.Max(1, width >> level), Math.Max(1, height >> level));
 
-    /// <summary>The bytes of one texel in <paramref name="format"/>.</summary>
+    /// <summary>The bytes of one texel in an uncompressed <paramref name="format"/>.</summary>
     public static int BytesPerTexel(MeshTextureFormat format) =>
         format switch
         {
@@ -26,17 +28,40 @@ internal static class MipChain
             _ => throw new ArgumentOutOfRangeException(nameof(format)),
         };
 
+    /// <summary>The DDS format of a compressed <paramref name="format"/>; null for an uncompressed one.</summary>
+    public static DdsFormat? CompressedFormat(MeshTextureFormat format) =>
+        format switch
+        {
+            MeshTextureFormat.Bc7Srgb => DdsFormat.Bc7Srgb,
+            MeshTextureFormat.Bc7Unorm => DdsFormat.Bc7Unorm,
+            MeshTextureFormat.Bc5Unorm => DdsFormat.Bc5,
+            _ => null,
+        };
+
+    /// <summary>
+    /// The bytes of level <paramref name="level"/> in <paramref name="format"/>: its texels, or for a compressed format
+    /// its whole 4x4 blocks, as its DDS file holds them (<see cref="DdsFile.MipBytes"/>).
+    /// </summary>
+    public static int LevelBytes(int width, int height, int level, MeshTextureFormat format)
+    {
+        if (CompressedFormat(format) is { } compressed)
+        {
+            return DdsFile.MipBytes(compressed, width, height, level);
+        }
+
+        var (w, h) = LevelSize(width, height, level);
+        return w * h * BytesPerTexel(format);
+    }
+
     /// <summary>
     /// The byte offset of level <paramref name="level"/> in the packed chain: the sum of the earlier levels' sizes.
     /// </summary>
     public static int LevelOffset(int width, int height, int level, MeshTextureFormat format)
     {
-        var bytesPerTexel = BytesPerTexel(format);
         var offset = 0;
         for (var i = 0; i < level; i++)
         {
-            var (w, h) = LevelSize(width, height, i);
-            offset += w * h * bytesPerTexel;
+            offset += LevelBytes(width, height, i, format);
         }
 
         return offset;

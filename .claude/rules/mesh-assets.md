@@ -17,7 +17,8 @@ in `Octahedral` encodings with the bitangent's sign in the tangent word's top bi
 a linear RGBA colour) and its 32-bit indices (three a triangle, counter-clockwise from the front, into its own vertices)
 are split into primitives (`MeshPrimitive`), each a run of indices with one material (`MeshMaterialData`: glTF's
 metallic-roughness factors and textures, alpha mode and cutoff, double-sidedness). Its textures (`MeshTextureData`) hold
-every mip level, level 0 first. A skinned asset also has a `Rig` and each vertex's joints and weights (`Skin`,
+every mip level, level 0 first (a compressed one's in whole 4x4 blocks, `MipChain.LevelBytes`), with the model's image
+they were made from (`Image`) and its hash (`SourceHash`). A skinned asset also has a `Rig` and each vertex's joints and weights (`Skin`,
 `MeshSkinVertex`: four 16-bit joints and four 16-bit weights); its vertices are where the mesh was bound. They are drawn
 with the world (`.claude/rules/rendering.md`, "Mesh assets"): an entity with `MeshPlacement` and `DrawnMesh`, posed by a
 `MeshAnimator` (`.claude/rules/systems.md`), or any frame system through `MeshInstances` (`AddPosed` with the rig's
@@ -41,7 +42,7 @@ theirs. The run's "mesh assets" step, after the mods', reads every declared file
 graphics (`Engine:Window:Mode=None`, and `HeadlessRun`) it decodes no images and materials name no textures. A file
 that cannot be read stops the run with an Error line naming it; warnings (an image it cannot decode, an unlit
 material, lines or points left out, `KHR_texture_transform` not applied) are Warning lines. Then `Mesh assets: N
-model(s), T triangles, X texture(s) of Y MB, read in Z ms`. A declaration after the step is refused. Assets stay for the
+model(s), T triangles, X texture(s) (C compressed) of Y MB, read in Z ms`. A declaration after the step is refused. Assets stay for the
 run, so an ECS component refers to one by its `int` index (`Find(name)`, looked up once), with no generation. Reading
 models during play is not built.
 
@@ -74,6 +75,23 @@ models during play is not built.
   magnification filter is, its wrap along s for both directions, with a warning when t differs).
 - Alpha `BLEND` is kept as such in the material; there is no transparent pass yet, so the renderer draws it as `MASK`
   with one Warning an asset.
+
+### Compressed textures
+
+A model's textures can be compressed offline for shipping (`CompressedTextures`; `tools/Textures`' model mode,
+`dotnet run -c Release --project tools/Textures -- model PATH.gltf ...`, README there). Beside `Model.gltf`, the folder
+`Model.textures/` holds a DDS file for each texture the import makes, an image in a role (`imageN-colour.dds` BC7 sRGB,
+`imageN-linear.dds` BC7, `imageN-normal.dds` BC5): every level the import makes at load (`CompressedTextures.DecodeAll`,
+through `TextureDecode` and `MipChain`), compressed in whole 4x4 blocks (a level's edge repeated to fill its last
+blocks), and `textures.json` (`CompressedTextureList`: the model's file, the encoder, and each texture's image, role,
+file, size, and the SHA-256 of the image's bytes as the model stores them, whether a file, a data URI, or a buffer view).
+A run with graphics (`TextureReading.PreferCompressed`) reads a texture from there when its entry's hash matches the
+image's and its file is whole, in its role's format, and at the entry's size (`MeshTextureFormat.Bc7Srgb`, `Bc7Unorm`,
+`Bc5Unorm`; `MeshTextureData.Compressed`), a quarter of the decoded size (the fox's 1024-texel colour: 1.3 MB against
+5.3 MB). Anything else is decoded at load: a list that is stale, unreadable, or lacks the texture gives a Warning naming
+the tool; a model with decoded textures and no list gives an Information note. The hash covers the image alone, so after
+a change to `TextureDecode` or `MipChain` make the folders again. The folder ships with the model (`Models/*/**`); the
+starter's `FoxModelTests` checks `Fox.textures` against the fox's image.
 
 ### Package notes
 

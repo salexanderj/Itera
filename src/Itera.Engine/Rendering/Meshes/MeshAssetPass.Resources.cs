@@ -246,13 +246,17 @@ public sealed unsafe partial class MeshAssetPass
             $"mesh asset {texture.Name}",
             mips: (uint)texture.Levels
         );
+        // A compressed level is whole 4x4 blocks packed (a row length of 0), its extent the level's own size, which
+        // Vulkan allows for a size that is not a whole number of blocks because it reaches the level's edge; every
+        // level starts on 16 bytes, a multiple of a BC7 or BC5 block.
         var copies = new BufferImageCopy[texture.Levels];
+        var source = 0;
         for (var level = 0; level < texture.Levels; level++)
         {
             var (width, height) = MipChain.LevelSize(texture.Width, texture.Height, level);
-            var source = MipChain.LevelOffset(texture.Width, texture.Height, level, texture.Format);
-            var bytes = width * height * MipChain.BytesPerTexel(texture.Format);
+            var bytes = MipChain.LevelBytes(texture.Width, texture.Height, level, texture.Format);
             texture.Texels.AsSpan(source, bytes).CopyTo(new Span<byte>(upload + offset, bytes));
+            source += bytes;
             copies[level] = new BufferImageCopy
             {
                 BufferOffset = offset,
@@ -272,8 +276,7 @@ public sealed unsafe partial class MeshAssetPass
         ulong bytes = 0;
         for (var level = 0; level < texture.Levels; level++)
         {
-            var (width, height) = MipChain.LevelSize(texture.Width, texture.Height, level);
-            bytes += AlignLevel((ulong)(width * height * MipChain.BytesPerTexel(texture.Format)));
+            bytes += AlignLevel((ulong)MipChain.LevelBytes(texture.Width, texture.Height, level, texture.Format));
         }
 
         return bytes;
@@ -284,7 +287,11 @@ public sealed unsafe partial class MeshAssetPass
         {
             MeshTextureFormat.Rgba8Srgb => Format.R8G8B8A8Srgb,
             MeshTextureFormat.Rgba8Unorm => Format.R8G8B8A8Unorm,
-            _ => Format.R8G8Unorm,
+            MeshTextureFormat.Rg8Unorm => Format.R8G8Unorm,
+            MeshTextureFormat.Bc7Srgb => Format.BC7SrgbBlock,
+            MeshTextureFormat.Bc7Unorm => Format.BC7UnormBlock,
+            MeshTextureFormat.Bc5Unorm => Format.BC5UnormBlock,
+            _ => throw new ArgumentOutOfRangeException(nameof(format)),
         };
 
     /// <summary>

@@ -288,7 +288,7 @@ public sealed class GltfImportTests : IDisposable
         );
         gltf.Node(new JsonObject { ["mesh"] = mesh });
 
-        var asset = Load(gltf.WriteGltf(_folder, "untextured"), textures: false);
+        var asset = Load(gltf.WriteGltf(_folder, "untextured"), textures: TextureReading.None);
 
         Assert.Empty(asset.Textures);
         Assert.True(asset.Materials[0].BaseColourTexture.IsNone);
@@ -350,8 +350,11 @@ public sealed class GltfImportTests : IDisposable
         Assert.Contains("nonsense.gltf", error.Message, StringComparison.Ordinal);
     }
 
-    private MeshAsset Load(string path, float metresPerUnit = 1, bool textures = true) =>
-        GltfImport.Load("test", path, metresPerUnit, textures, _warnings);
+    private MeshAsset Load(
+        string path,
+        float metresPerUnit = 1,
+        TextureReading textures = TextureReading.PreferCompressed
+    ) => GltfImport.Load("test", path, metresPerUnit, textures, _warnings);
 
     private static GltfBuilder Triangle()
     {

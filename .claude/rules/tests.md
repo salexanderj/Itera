@@ -82,7 +82,8 @@ Where tests live:
 - `Itera.Engine.Tests/Assets/`: glTF files written in the test (`GltfBuilder`: accessors over a data-URI buffer or a
   .glb's BIN chunk, PNG images, skins, joints, and animations) read by `GltfImportTests` and `RigImportTests` (a rig
   posed against SharpGLTF's own world matrices); `RigClipTests` (step, linear, and cubic sampling); `MeshAssetsTests`,
-  `TextureDecodeTests`, `MipChainTests`, `MeshTangentsTests`.
+  `TextureDecodeTests`, `MipChainTests`, `MeshTangentsTests`; a model's compressed textures (`CompressedTexturesTests`:
+  read where they match, each mismatch decoded with a warning, the image's hash wherever the model keeps it).
 - `Itera.Engine.Tests/Physics/`: mesh colliders (`MeshCollidersTests`: two-sided rays across buckets, tags, a ball that
   lands on a collider's Bepu static at any voxel level) and the shared ray (`CollisionSourcesTests`); the colliders as
   the mover's cells (`MeshColumnsTests`); the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves)

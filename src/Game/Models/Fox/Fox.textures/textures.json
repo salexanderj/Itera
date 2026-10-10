@@ -1,0 +1,14 @@
+{
+  "model": "Fox.gltf",
+  "encoder": "BCnEncoder.Net 2.3.0, quality Balanced",
+  "textures": [
+    {
+      "image": 0,
+      "role": "Colour",
+      "file": "image0-colour.dds",
+      "width": 1024,
+      "height": 1024,
+      "sha256": "61c8b109ee7f8bf262791933380fafb1465f7b51cbe6472c2d21eff0b31f83a1"
+    }
+  ]
+}

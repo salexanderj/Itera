@@ -58,7 +58,7 @@ Versions are pinned in `Directory.Packages.props` (central package management).
 | Arch + Arch.System | 2.1.0 / 1.1.0 | Entity component system | Archetype-based, allocation-free queries, fast iteration. Game logic is systems over components. |
 | BepuPhysics + BepuUtilities | 2.5.0-beta.29 | Rigid body physics: loose bodies against the voxels (characters move with Itera's own mover) | Fast, SIMD-based, actively maintained. The 2.4 stable line only targets net6.0 and is old. |
 | SkiaSharp + SkiaSharp.NativeAssets.Linux | 4.152.1 | 2D UI drawing | Solid text and vector rendering. Linux needs the explicit native package; Windows and macOS natives come with the main package. |
-| BCnEncoder.Net | 2.3.0 | Block-compressed texture encoding, in `tools/Textures` | Pure managed BC1 to BC7 encoder. |
+| BCnEncoder.Net | 2.3.0 | Block-compressed texture encoding, in `tools/Textures` only (texture sets, models' compressed textures) | Pure managed BC1 to BC7 encoder. |
 | SharpGLTF.Core | 1.0.7 | Reads glTF 2.0 models (`Assets/GltfImport`), at load only | MIT, no dependencies, reads .gltf and .glb with skins and animations; the engine copies what it needs into its own arrays. It cannot read Draco or meshopt compression, which the importer refuses by name. |
 | LiteNetLib | 2.1.4 | UDP transport and reliability for sessions over LAN and direct addresses | Small, dependency free, widely used for .NET games. |
 | Steamworks.NET | 2024.8.0 (Steamworks SDK 1.60) | Internet play: Steam's networking sockets and relays (no port to open), friends-only lobbies, rich presence for joining from the friends list | A thin, faithful wrapper of the C++ API (MIT). The package has no native libraries: Valve's `steam_api` for Linux x64, macOS (universal), and Windows x64 from the same release are in `src/Itera.Engine/Native/Steam/` and copied next to the game. |
@@ -92,7 +92,8 @@ samples/Itera.MeshSample     a game without voxel terrain: mesh ground and block
 tools/benchmark              scripts that run the GPU benchmark (Engine:Benchmark) and compare runs
 tools/control                game.py: starts a game from a copy of the build and drives it through the control port
 tools/steam                  upload.sh: tests, publishes, and uploads a build to a Steam branch
-tools/Textures               makes the world materials' texture sets (compressed DDS files) from photographs or baked recipes
+tools/Textures               makes the world materials' texture sets (compressed DDS files) from photographs or baked recipes,
+                             and models' compressed textures (model mode)
 tests/Itera.Modding.Tests    manifest parsing and validation
 tests/Itera.Engine.Tests     the engine: see below
 tests/Game.Tests             the starter: its composition and system order, shipped settings, options, and generator
@@ -155,7 +156,7 @@ Rules:
 | `Components/` | The ECS components the engine's systems share: cameras, characters and players, loose bodies, and `NetEntity` |
 | `Systems/` | The systems a game registers: the player, the cameras, physics glue, streaming centres, the benchmark, and debug aids (see "The engine's components and systems") |
 | `Maths/` | `DeterministicMath`, `Rotation`, `RigidTransform`, and `Octahedral` (the packed normals and tangents of mesh vertices) |
-| `Assets/` | Mesh assets (`MeshAsset`, `MeshAssets`): models read from glTF files at the run's "mesh assets" step (`GltfImport`, `TextureDecode`, `MipChain`, `MeshTangents`) and meshes a game builds; a skinned model's `Rig`, `RigClip` with `RigTrack`, and `JointTransform` |
+| `Assets/` | Mesh assets (`MeshAsset`, `MeshAssets`): models read from glTF files at the run's "mesh assets" step (`GltfImport`, `TextureDecode`, `MipChain`, `MeshTangents`, `TextureReading`; a model's compressed textures `CompressedTextures`) and meshes a game builds; a skinned model's `Rig`, `RigClip` with `RigTrack`, and `JointTransform` |
 | `Animation/` | Skeletons, poses, clips, aim, and foot placement |
 | `Physics/` | `PhysicsWorld` (Bepu simulation, pool, thread dispatcher, shared voxel box shapes, characters' stand-ins), callbacks, `BodyKinds`, `VoxelColliders`, `LooseBodies`, `LooseBodyVoxels`, `SolidModelVoxels` and `SolidColumns`, `VoxelCharacterMover`, `MeshColliders` (a game's static triangle colliders, also Bepu mesh statics), `MeshColumns` (the colliders as the mover's cells), `CollisionSources` (the ray over the terrain and the colliders), `SurfaceHit` |
 | `Voxels/` | `VoxelWorld` (streaming, edits, change list, stats, `Raycast`, collision queries, block reads), `VoxelGrid` and `GridLevel`, `VoxelDensity`, `IVoxelPassability`, `VoxelBoxes`, `VoxelMemory` (native block pools), `BrickCodec`, `ChunkTree`, `Column`, `VoxelEditing` and `VoxelEdit`, `VoxelPiece` and `PieceRuns`, `VoxelModels` (small voxel volumes drawn at any position and turn), `EditLog` and `EditLogSerializer`, `VoxelChangeLog`, `IChunkGenerator`, `VoxelWorkers` and `ColumnJob`, `LevelDistances`, `StreamingCentre`, `VoxelConstants` |
@@ -549,7 +550,10 @@ A mesh asset is a triangle mesh with texture coordinates and materials, read fro
 
 - `MeshAssets` holds them for the run, by name and index; a game declares its files at its run startup. The run's step
   "mesh assets on the gpu", before the render thread, puts every asset's vertices, indices, materials, and textures (one
-  image each, every mip) into device-local memory once (`MeshAssetPass`); nothing is loaded or freed during play.
+  image each, every mip) into device-local memory once (`MeshAssetPass`); nothing is loaded or freed during play. A
+  texture is decoded at load (RGBA8 or RG8, its mips made on the CPU), or read from the model's compressed textures (BC7
+  or BC5, a quarter of the size) that `tools/Textures` made offline from the same levels (`CompressedTextures`), when
+  their hash matches the model's image.
 - Frame systems add instances to `MeshInstances` (asset, transform, tint, `ModelShadow`; at most 16,384 a frame).
   `MeshAssetDraws` culls them by bounding sphere against the view and both cascades (the `MeshView` the world's lists
   share) and writes one indirect command per primitive with instances, in three lists and four pipeline ranges (opaque or
@@ -1304,9 +1308,11 @@ of buffers.
 
 Engine work that is known and not done:
 
-- **Voxels optional, the rest.** A match runs without voxel terrain (no generator, no `AddIteraVoxels`), its characters
-  and loose bodies moving over mesh colliders and its voxel models drawn (`samples/Itera.MeshSample` is such a game).
-  Offline compressed textures for mesh assets are planned (the mesh path's phase 6).
+- **The mesh path, later.** Built: glTF models with textures (decoded at load or compressed offline), skinning, clip
+  fades, mesh colliders, and matches without voxel terrain (`samples/Itera.MeshSample`). Not built: moving colliders
+  (doors, platforms) for the mover, hands and feet placed on walls (IK on mesh rigs), walking on walls and ceilings,
+  loading models during play, MikkTSpace tangents, clips from other files by joint name, a bridge from a mesh rig to
+  `Skeleton` for foot IK and aim, `KHR_texture_transform`, transparency, morph targets, and GPU culling.
 - **Per-game look data in the shaders.** The art direction's constants (saturation and darkening of the world, the side
   shading, the warm and cool light, the split tone, the occlusion floor, the fog and sky light terms) sit in `mesh.frag` and
   `lighting.glsl`. They should be data a game sets, with today's values as the starter's defaults.

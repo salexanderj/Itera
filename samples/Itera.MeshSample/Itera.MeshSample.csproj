@@ -23,11 +23,11 @@
     <ProjectReference Include="..\..\src\Itera.Modding\Itera.Modding.csproj" />
   </ItemGroup>
 
-  <!-- The starter's fox (credits in src/Game/Models/SOURCES.md), copied to Models/Fox/ next to the executable. -->
+  <!-- The starter's fox (credits in src/Game/Models/SOURCES.md) with its compressed textures, copied to Models/Fox/. -->
   <ItemGroup>
     <None
-      Include="..\..\src\Game\Models\Fox\*"
-      Link="Models\Fox\%(Filename)%(Extension)"
+      Include="..\..\src\Game\Models\Fox\**"
+      Link="Models\Fox\%(RecursiveDir)%(Filename)%(Extension)"
       CopyToOutputDirectory="PreserveNewest"
     />
   </ItemGroup>

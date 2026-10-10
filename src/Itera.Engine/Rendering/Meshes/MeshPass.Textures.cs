@@ -75,7 +75,7 @@ public sealed unsafe partial class MeshPass
                 group.Count == 0 ? StandInTexels
                 : large ? (uint)MaterialTextureSets.LargeTexels
                 : (uint)MaterialTextureSets.SmallTexels;
-            var mips = group.Count > 0 ? (uint)DdsFile.MipCount((int)texels) : 1;
+            var mips = group.Count > 0 ? (uint)DdsFile.MipCount((int)texels, (int)texels) : 1;
             _textureArrays[array] = _allocator.CreateImage(
                 VulkanFormat(format),
                 new Extent2D(texels, texels),

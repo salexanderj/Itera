@@ -1,5 +1,34 @@
 # Textures
 
+Makes the world materials' texture sets (below), and with `model` a model's compressed textures (the next section).
+
+## A model's compressed textures
+
+```bash
+dotnet run -c Release --project tools/Textures -- model src/Game/Models/Fox/Fox.gltf [OTHER.gltf ...]
+```
+
+For each model (`.gltf` or `.glb`) it asks the engine for every texture the model's import makes
+(`CompressedTextures.DecodeAll`: each image in each role a material uses, decoded and given every level down to 1x1 by
+the engine's `MipChain`, as a run without compressed textures makes them), compresses each level with BCnEncoder.NET
+(quality Balanced; a level's last row and column repeated to fill whole 4x4 blocks), and writes `NAME.textures/` beside
+the model:
+
+- `imageN-colour.dds` (BC7 sRGB: base colour and emission), `imageN-linear.dds` (BC7: occlusion, roughness, and
+  metalness), `imageN-normal.dds` (BC5: a normal map's x and y), for image N of the model; any size;
+- `textures.json`: the model's file, the encoder, and for each texture its image, role, file, size, and the SHA-256 of
+  the image's bytes as the model stores them.
+
+Files of the folder the new list does not name are deleted (a model with no textures left loses them all). A run with
+graphics reads a texture from the folder when its hash matches the model's image, a quarter of the decoded size (the
+fox's 1024-texel colour: 1.3 MB against 5.3 MB), and decodes the rest: a stale list gives a Warning naming this command,
+a model with no list an Information note. The hash covers the image alone, so run the tool again after an image
+changes, and on every model after a change to the engine's `TextureDecode` or `MipChain`. Commit the folder with the
+model; the game's build copies it (`Models/*/**`). The fox takes about 2 s. A model that cannot be read is reported and
+the next one made; the exit code is then 1.
+
+## Material texture sets
+
 Makes the world materials' texture sets (docs/rendering-redesign.md, the materials plan and the art direction) from the
 game's own recipes, baked, or from CC0 photographs. Every set of the game is a bake today. For each set in
 `src/Game/Textures/sources.json` (or the sets named on the command line) it reads the bake's maps from the data
