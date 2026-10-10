@@ -2,13 +2,13 @@ namespace Itera.Engine.Networking;
 
 /// <summary>
 /// What every peer of a session must share to see the same world and run the same simulation: the seed, the fixed step
-/// rate, and the generator that builds the world from the seed. The host's apply; a client takes them before its world
-/// starts.
+/// rate, and the match's identity (<see cref="Matches.IMatchIdentity"/>: with a voxel world, the generator that builds
+/// it from the seed). The host's apply; a client takes them before its world starts.
 /// </summary>
 /// <param name="Seed">The world seed.</param>
 /// <param name="FixedStepHz">Fixed simulation steps per second.</param>
-/// <param name="GeneratorId">Id of the world generator (<c>IChunkGenerator.Id</c>).</param>
-/// <param name="GeneratorVersion">Its version: another builds other voxels from the seed.</param>
+/// <param name="Identity">The match identity's id (a generator's, <c>IChunkGenerator.Id</c>, with a voxel world).</param>
+/// <param name="IdentityVersion">Its version: another builds another world from the seed, or is another game.</param>
 /// <param name="Game">
 /// The game's own match data (its rules), written by the host's <see cref="ISessionMatchData"/>; empty when the game
 /// registers none. At most <see cref="SessionProtocol.MaxMatchGameBytes"/> bytes.
@@ -16,8 +16,8 @@ namespace Itera.Engine.Networking;
 public readonly record struct MatchSettings(
     ulong Seed,
     int FixedStepHz,
-    string GeneratorId,
-    int GeneratorVersion,
+    string Identity,
+    int IdentityVersion,
     byte[]? Game = null
 );
 

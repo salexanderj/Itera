@@ -45,7 +45,7 @@ goes in this order where its comments say why, with a behaviour test and a zero-
 ## Files
 
 - `src/Game`: `Program.cs` (the host, then `GameLoop.Run()`), `GameServiceCollectionExtensions` (`AddGame`: options,
-  world, systems), `GameOptions.cs`, `StartPose.cs`, `BenchmarkViews.cs`, `GameRunStartup.cs` (the movement keys first,
+  world: its generator and the engine's voxel terrain, `AddIteraVoxels`; systems), `GameOptions.cs`, `StartPose.cs`, `BenchmarkViews.cs`, `GameRunStartup.cs` (the movement keys first,
   then the game's, and the models), `GameModels.cs`, `Systems/PlayerSpawnSystem.cs`, `Systems/FoxSystem.cs`,
   `Components/FoxRoute.cs`, `WorldGeneration/`, `Textures/`, `Models/`, `appsettings.json`.
 - `tests/Game.Tests`: `SystemOrderTests`, `ShippedSettingsTests`, `GameOptionsTests`, `WorldTests`, `PlayerSpawnSystemTests`,

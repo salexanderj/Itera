@@ -56,6 +56,7 @@ internal static class EngineComposition
         services.AddSingleton<IConfiguration>(configuration);
         services.AddIteraEngine(configuration);
         services.AddSingleton<IChunkGenerator, FloorGenerator>();
+        services.AddIteraVoxels();
         services.AddScoped<IFixedUpdateSystem>(sp => new StepCounter(sp.GetRequiredService<EcsWorld>().World));
         services.AddScoped<IFrameUpdateSystem>(sp => new FrameCounter(sp.GetRequiredService<EcsWorld>().World));
         // The host adds ILogger<T>; a null factory keeps Serilog from writing a log file.

@@ -118,12 +118,11 @@ public sealed partial class SessionService
     {
         _host = peer;
         _join = JoinState.Welcoming;
-        var generator = _voxels.Generator;
         _writer.Reset();
         _writer.WriteByte((byte)MessageKind.Hello);
         _writer.WriteInt(SessionProtocol.Version);
-        _writer.WriteString(generator.Id);
-        _writer.WriteInt(generator.Version);
+        _writer.WriteString(_identity.Id);
+        _writer.WriteInt(_identity.Version);
         _writer.WriteInt(_fixedStepHz);
         _writer.WriteString(_playerName);
         Send(peer);
@@ -231,14 +230,13 @@ public sealed partial class SessionService
         var payloadBytes = reader.ReadLong();
         var snapshotEdits = reader.ReadLong();
         reader.EnsureEnd();
-        var generator = _voxels.Generator;
         if (
-            !string.Equals(match.GeneratorId, generator.Id, StringComparison.Ordinal)
-            || match.GeneratorVersion != generator.Version
+            !string.Equals(match.Identity, _identity.Id, StringComparison.Ordinal)
+            || match.IdentityVersion != _identity.Version
             || match.FixedStepHz != _fixedStepHz
         )
         {
-            throw new InvalidDataException("The host's match does not fit this game (generator or step rate).");
+            throw new InvalidDataException("The host's match does not fit this game (its identity or step rate).");
         }
 
         // A slot the host could not give (0 is its own, and there are MaxSlots) is refused: the game indexes its arrays of

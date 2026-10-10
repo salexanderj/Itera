@@ -1,5 +1,5 @@
 using System.Globalization;
-using Itera.Engine.Voxels;
+using Itera.Engine.Matches;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -53,11 +53,11 @@ public sealed partial class SteamFriendList : ISteamFriendsListener
 
     public SteamFriendList(
         SteamService steam,
-        IChunkGenerator generator,
+        IMatchIdentity identity,
         IOptions<EngineOptions> options,
         ILogger<SteamFriendList> logger
     )
-        : this(steam, SessionProtocol.MatchKey(generator.Id, generator.Version, options.Value.FixedStepHz), logger) { }
+        : this(steam, SessionProtocol.MatchKey(identity.Id, identity.Version, options.Value.FixedStepHz), logger) { }
 
     /// <param name="steam">Steam, when it runs.</param>
     /// <param name="matchKey">This build's match key (<see cref="SessionProtocol.MatchKey"/>).</param>

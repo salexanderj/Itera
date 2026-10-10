@@ -49,8 +49,8 @@ internal enum RejectReason : byte
     /// <summary>Another protocol version.</summary>
     Protocol = 1,
 
-    /// <summary>Another world generator or generator version.</summary>
-    Generator = 2,
+    /// <summary>Another match identity: with a voxel world, another generator or generator version.</summary>
+    Identity = 2,
 
     /// <summary>The session has as many players as it allows.</summary>
     Full = 3,
@@ -91,13 +91,14 @@ internal static class SessionProtocol
     public const string LobbyMatchKey = "itera_match";
 
     /// <summary>
-    /// What a host and a client must share to join: the protocol, the generator's id and version, and the step rate, as one
-    /// line ("protocol;game.world;9;60"). A friend's game whose lobby gives another shows it as another version.
+    /// What a host and a client must share to join: the protocol, the match identity's id and version (with a voxel world,
+    /// the generator's), and the step rate, as one line ("protocol;game.world;9;60"). A friend's game whose lobby gives
+    /// another shows it as another version.
     /// </summary>
-    public static string MatchKey(string generatorId, int generatorVersion, int fixedStepHz) =>
+    public static string MatchKey(string identity, int identityVersion, int fixedStepHz) =>
         string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
-            $"{Version};{generatorId};{generatorVersion};{fixedStepHz}"
+            $"{Version};{identity};{identityVersion};{fixedStepHz}"
         );
 
     /// <summary>The key LiteNetLib connection requests carry; others are ignored.</summary>
@@ -177,8 +178,8 @@ internal static class SessionProtocol
     {
         writer.WriteULong(match.Seed);
         writer.WriteInt(match.FixedStepHz);
-        writer.WriteString(match.GeneratorId);
-        writer.WriteInt(match.GeneratorVersion);
+        writer.WriteString(match.Identity);
+        writer.WriteInt(match.IdentityVersion);
         var game = match.Game ?? [];
         writer.WriteInt(game.Length);
         writer.WriteBytes(game);
@@ -188,8 +189,8 @@ internal static class SessionProtocol
     {
         var seed = reader.ReadULong();
         var fixedStepHz = reader.ReadInt();
-        var generatorId = reader.ReadString();
-        var generatorVersion = reader.ReadInt();
+        var identity = reader.ReadString();
+        var identityVersion = reader.ReadInt();
         var length = reader.ReadInt();
         if (length < 0 || length > MaxMatchGameBytes)
         {
@@ -198,7 +199,7 @@ internal static class SessionProtocol
             );
         }
 
-        return new MatchSettings(seed, fixedStepHz, generatorId, generatorVersion, reader.ReadBytes(length).ToArray());
+        return new MatchSettings(seed, fixedStepHz, identity, identityVersion, reader.ReadBytes(length).ToArray());
     }
 
     /// <summary>A disconnect's data: its kind, a reason byte, and a text for the other side's log.</summary>

@@ -450,7 +450,7 @@ public sealed class SessionServiceTests : IDisposable
 
         Assert.True(SessionProtocol.TryReadDisconnect(raw.DisconnectData, out var kind, out var reason, out var text));
         Assert.Equal(DisconnectKind.Reject, kind);
-        Assert.Equal((byte)RejectReason.Generator, reason);
+        Assert.Equal((byte)RejectReason.Identity, reason);
         Assert.Contains("ggg...", text, StringComparison.Ordinal);
         Assert.True(raw.DisconnectData!.Length <= SessionProtocol.MaxDisconnectTextBytes + 4);
     }

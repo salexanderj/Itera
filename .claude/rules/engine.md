@@ -6,7 +6,9 @@ paths:
 
 ## The engine
 
-- `src/Itera.Engine`: everything not game specific. Composition in `EngineServiceCollectionExtensions.AddIteraEngine`;
+- `src/Itera.Engine`: everything not game specific. Composition in `EngineServiceCollectionExtensions.AddIteraEngine`,
+  and the voxel terrain's in `VoxelServiceCollectionExtensions.AddIteraVoxels`; the match's identity a joining game must
+  share in `Matches/MatchIdentity.cs` (`IMatchIdentity`: the generator's with terrain, else the application's name);
   options checks in `EngineOptionsValidator`; the run's initialisation order (one step list), main loop, and shutdown
   in `GameLoop`; a match's start, join, and end in `Matches/MatchFlow.cs` (no window: `MatchFlowTests` drives it); a
   match without a window or GPU for tests and tools in `Matches/HeadlessMatch.cs` (`HeadlessRun`, `HeadlessMatch`, over
@@ -27,8 +29,10 @@ paths:
   - `Maths/` (`DeterministicMath`, `Rotation`, `RigidTransform`) and `Animation/` (skeletons, poses, clips, foot IK):
     `.claude/rules/animation.md`.
 
-A game composes the engine in its `Program.cs`: `AddIteraEngine`, then its own (the starter's `AddGame`), then the
-host with `ValidateScopes` and `ValidateOnBuild`, then `GameLoop.Run()`. A game must register an `IChunkGenerator`;
+A game composes the engine in its `Program.cs`: `AddIteraEngine`, then its own (the starter's `AddGame`, which registers
+its `IChunkGenerator` and calls `AddIteraVoxels()` before its own loading tasks), then the host with `ValidateScopes`
+and `ValidateOnBuild`, then `GameLoop.Run()`. Until matches run without a world (the mesh path's phase 5), a game must
+register an `IChunkGenerator` and call `AddIteraVoxels()`;
 `IVoxelPalette` (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable), and `MenuStyle` (plain) have
 engine defaults it may replace. `tests/Itera.Engine.Tests/Matches/EngineComposition.cs` is the least a game adds (a
 floor generator and one fixed and one frame system), over which `MatchFlowTests`, `MatchLifetimeTests`, and

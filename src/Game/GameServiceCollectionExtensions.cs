@@ -85,7 +85,9 @@ public static class GameServiceCollectionExtensions
     {
         // What a run keeps whatever match it plays is a singleton; what a match keeps is Scoped (each match has a scope of
         // its own) and is resolved only from the match's steps on, once its session has settled the seed.
+        // The starter's world is voxel terrain: its generator, and the engine's terrain services.
         services.AddSingleton<IChunkGenerator, GameGenerator>();
+        services.AddIteraVoxels();
         services.AddSingleton<IVoxelPalette, GamePalette>();
         services.AddSingleton<IAtmosphereSource, GameAtmosphere>();
         services.AddScoped(sp =>

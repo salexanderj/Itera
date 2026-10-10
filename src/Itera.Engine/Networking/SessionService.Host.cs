@@ -46,21 +46,21 @@ public sealed partial class SessionService
         }
 
         // Quoted in a refusal, so kept short: a peer's strings are not trusted.
-        var generatorId = SessionProtocol.Cut(reader.ReadString(), 64);
-        var generatorVersion = reader.ReadInt();
+        var identity = SessionProtocol.Cut(reader.ReadString(), 64);
+        var identityVersion = reader.ReadInt();
         var fixedStepHz = reader.ReadInt();
         var name = reader.ReadString();
         reader.EnsureEnd();
         var match = Match;
         if (
-            !string.Equals(generatorId, match.GeneratorId, StringComparison.Ordinal)
-            || generatorVersion != match.GeneratorVersion
+            !string.Equals(identity, match.Identity, StringComparison.Ordinal)
+            || identityVersion != match.IdentityVersion
         )
         {
             Reject(
                 peer,
-                RejectReason.Generator,
-                $"the host's world is {match.GeneratorId} version {match.GeneratorVersion}, the client's {generatorId} version {generatorVersion}"
+                RejectReason.Identity,
+                $"the host's match is {match.Identity} version {match.IdentityVersion}, the client's {identity} version {identityVersion}"
             );
             return;
         }

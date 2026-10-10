@@ -8,7 +8,6 @@ using Itera.Engine.Input;
 using Itera.Engine.Loading;
 using Itera.Engine.Matches;
 using Itera.Engine.Modding;
-using Itera.Engine.Navigation;
 using Itera.Engine.Networking;
 using Itera.Engine.Particles;
 using Itera.Engine.Physics;
@@ -34,10 +33,12 @@ using Microsoft.Extensions.Options;
 namespace Itera.Engine;
 
 /// <summary>
-/// Registers every engine service. The run's services are singletons: there is one window and one device. A match's
-/// services (its session, world, physics, navigation, save, and ECS world) are Scoped: each match has a DI scope of its
-/// own (<see cref="MatchServices"/>), made when it starts and disposed when it ends. A singleton never takes a scoped
-/// service in its constructor; it is given the match's when one starts (<see cref="MatchControl"/>).
+/// Registers the engine's services; a game with voxel terrain adds it with
+/// <see cref="VoxelServiceCollectionExtensions.AddIteraVoxels"/>. The run's services are singletons: there is one
+/// window and one device. A match's services (its session, physics, save, and ECS world, and with terrain its world and
+/// navigation) are Scoped: each match has a DI scope of its own (<see cref="MatchServices"/>), made when it starts and
+/// disposed when it ends. A singleton never takes a scoped service in its constructor; it is given the match's when one
+/// starts (<see cref="MatchControl"/>).
 /// </summary>
 public static class EngineServiceCollectionExtensions
 {
@@ -137,22 +138,24 @@ public static class EngineServiceCollectionExtensions
         services.TryAddScoped<MatchServices>();
         services.TryAddSingleton<MatchControl>();
         services.TryAddSingleton<WarmUps>();
+        // What a match is, as a joining game must share it: the voxel world's generator when the game has one.
+        services.TryAddSingleton<IMatchIdentity>(sp =>
+            sp.GetService<IChunkGenerator>() is { } generator
+                ? new GeneratorMatchIdentity(generator)
+                : new ApplicationMatchIdentity(sp.GetRequiredService<IOptions<EngineOptions>>())
+        );
         services.TryAddScoped<EcsWorld>();
         services.TryAddScoped<PhysicsWorld>();
-        services.TryAddScoped<VoxelColliders>();
         services.TryAddScoped<LooseBodies>();
         services.TryAddScoped<LooseBodyVoxels>();
-        services.TryAddScoped<VoxelWorld>();
         services.TryAddScoped<VoxelModels>();
         services.TryAddSingleton<IVoxelPassability, NothingPassable>();
         services.TryAddScoped<VoxelCharacterMover>();
-        // What the engine's player, camera, and benchmark systems share (Systems/): the play area round the match's
-        // world, the input block a game sets, the console's resets, the benchmark's view of the engine, and the movement
-        // keys, made when a game first asks for them (an IRunStartup, before its own keys).
-        services.TryAddScoped(sp => new PlayArea(sp.GetRequiredService<VoxelWorld>().Grid));
+        // What the engine's player, camera, and benchmark systems share (Systems/): the input block a game sets, the
+        // console's resets, and the movement keys, made when a game first asks for them (an IRunStartup, before its own
+        // keys). The play area and the benchmark's view of the engine come with the terrain (AddIteraVoxels).
         services.TryAddScoped<PlayerInputBlock>();
         services.TryAddScoped<WorldResets>();
-        services.TryAddScoped<IBenchmarkHost, EngineBenchmarkHost>();
         services.TryAddSingleton<MovementKeys>();
         // The transports live for the run; each match's session opens and closes the one it uses.
         services.TryAddSingleton<NetworkService>();
@@ -162,7 +165,6 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<SteamFriendList>();
         services.TryAddScoped<SaveService>();
         services.TryAddScoped<SessionService>();
-        services.TryAddScoped<NavigationService>();
         services.TryAddSingleton<UiFonts>();
         services.TryAddSingleton<ConsoleCommands>();
         services.TryAddSingleton<DevConsole>();
@@ -172,13 +174,10 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<SettingsCommands>();
         services.TryAddSingleton<ParticleCommands>();
         services.TryAddSingleton<SoundCommands>();
-        // The loading screen and the engine's loading tasks of each match, shown in this order; the game adds its own after
-        // them.
+        // The loading screen and the engine's loading tasks of each match, shown in this order: Sounds, then the terrain's
+        // (AddIteraVoxels), then the game's own.
         services.TryAddSingleton<LoadingScreen>();
         services.AddScoped<ILoadingTask, SoundsLoadingTask>();
-        services.AddScoped<ILoadingTask, WorldLoadingTask>();
-        services.AddScoped<ILoadingTask, NavigationLoadingTask>();
-        services.AddScoped<ILoadingTask, EditWarmUpLoadingTask>();
         // The run's UI layers, drawn in this order (later on top), the console over the match's (IMatchUiLayer).
         services.TryAddSingleton<LoadingLayer>();
         services.AddSingleton<IUiLayer>(sp => sp.GetRequiredService<LoadingLayer>());

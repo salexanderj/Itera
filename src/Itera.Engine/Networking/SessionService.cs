@@ -59,6 +59,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
     private readonly ulong _configuredSeed;
     private readonly double _statsIntervalSeconds;
     private readonly VoxelWorld _voxels;
+    private readonly IMatchIdentity _identity;
     private readonly ISessionTransport _transport;
     private readonly ILogger<SessionService> _logger;
     private readonly Func<double> _clock;
@@ -90,6 +91,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         IOptions<EngineOptions> options,
         MatchContext match,
         VoxelWorld voxels,
+        IMatchIdentity identity,
         ISessionTransports transports,
         SteamService steam,
         ILogger<SessionService> logger,
@@ -110,7 +112,8 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
             handlers,
             matchData,
             () => steam.PersonaName,
-            saves
+            saves,
+            identity
         ) { }
 
     /// <param name="settings">Mode, address, limits.</param>
@@ -126,6 +129,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
     /// <param name="matchData">Writes the game's match data on a host or offline; null for none.</param>
     /// <param name="steamName">This player's Steam name, or null without Steam; read when the session starts.</param>
     /// <param name="saves">The named save a host or offline game starts from; null for none.</param>
+    /// <param name="identity">What the match is, as a joining game must share it; the world's generator's when null.</param>
     internal SessionService(
         SessionSettings settings,
         int fixedStepHz,
@@ -139,9 +143,11 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         IEnumerable<ISessionGameHandler>? handlers = null,
         ISessionMatchData? matchData = null,
         Func<string?>? steamName = null,
-        SaveService? saves = null
+        SaveService? saves = null,
+        IMatchIdentity? identity = null
     )
     {
+        _identity = identity ?? new GeneratorMatchIdentity(voxels.Generator);
         _settings = settings;
         _fixedStepHz = fixedStepHz;
         _configuredSeed = configuredSeed;
@@ -277,11 +283,10 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
             : _playerName == DefaultPlayerName && string.IsNullOrWhiteSpace(steamName) ? "the default"
             : "Steam";
         LogPlayerName(_playerName, source);
-        var generator = _voxels.Generator;
         switch (_settings.Mode)
         {
             case SessionMode.Host:
-                _match = OwnMatch(generator);
+                _match = OwnMatch();
                 try
                 {
                     _transport.Listen(_settings.Port);
@@ -295,7 +300,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
                 // What friends read before they join: the match a client must share, and the seats.
                 _transport.SetLobbyData(
                     SessionProtocol.LobbyMatchKey,
-                    SessionProtocol.MatchKey(generator.Id, generator.Version, _fixedStepHz)
+                    SessionProtocol.MatchKey(_identity.Id, _identity.Version, _fixedStepHz)
                 );
                 _transport.SetLobbyData(
                     SessionProtocol.LobbyMaxKey,
@@ -314,7 +319,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
                 StartJoin();
                 break;
             default:
-                _match = OwnMatch(generator);
+                _match = OwnMatch();
                 Role = SessionRole.Offline;
                 _players = [new SessionPlayer(true, _playerName, HostJoin)];
                 RosterVersion++;
@@ -327,16 +332,16 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
     /// The match of a game that owns its world: the named save's seed, step rate, and match data when it starts from
     /// one (a save of format 2 or older has no match data, so the game's own is used), otherwise the options'.
     /// </summary>
-    private MatchSettings OwnMatch(IChunkGenerator generator)
+    private MatchSettings OwnMatch()
     {
         var saved = _saves?.ReadStart(_fixedStepHz, _configuredSeed);
         if (saved is not { } header)
         {
-            return new MatchSettings(_configuredSeed, _fixedStepHz, generator.Id, generator.Version, GameData());
+            return new MatchSettings(_configuredSeed, _fixedStepHz, _identity.Id, _identity.Version, GameData());
         }
 
         MatchFromSave = header.Game is not null;
-        return new MatchSettings(header.Seed, _fixedStepHz, generator.Id, generator.Version, header.Game ?? GameData());
+        return new MatchSettings(header.Seed, _fixedStepHz, _identity.Id, _identity.Version, header.Game ?? GameData());
     }
 
     /// <summary>

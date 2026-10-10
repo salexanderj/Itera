@@ -14,7 +14,8 @@ paths:
 Sessions (`Engine:Session`, `SessionService`): `Mode=Host` listens on UDP port 47600 (`Port`), and `Mode=Join` with
 `Address=host:port` joins it. A match is a DI scope of its own (`MatchServices`), started after the run's steps, so
 the window is open; the loading screen's ring shows `Joining ...` and the download (`SessionService.PollJoin`). The
-client says hello; the host answers with the match (seed, step rate, generator) and its edit log with the pieces, sent
+client says hello; the host answers with the match (seed, step rate, and identity: `IMatchIdentity`, the generator's id
+and version with voxel terrain, else the application's name) and its edit log with the pieces, sent
 from its polls as the transport has room (`ISessionTransport.ReliableRoom`), and the client's world is built from the
 host's seed whatever its own options say; a game may send match data of its own in the welcome and refuse a client
 whose rules differ (`ISessionMatchData`: its hash). A client drops a game message that arrives before the download ends. After each fixed step the host sends
@@ -50,7 +51,7 @@ and relays: the host opens a friends-only lobby and sets its rich presence, so f
 (Steam starts the game with `+connect_lobby ID`, which `Program.cs` turns into the menu joining that lobby), or a client
 joins with `Address=lobby:ID` or `steam:ID`; the host accepts only its lobby's members and its Steam friends. The host's
 lobby data gives its players (`itera_players`), limit
-(`itera_max`), and match key (`itera_match`: protocol, generator id and version, step rate; `SessionProtocol.MatchKey`,
+(`itera_max`), and match key (`itera_match`: protocol, the match identity's id and version, step rate; `SessionProtocol.MatchKey`,
 `ISessionTransport.SetLobbyData`). The menu's join page lists the friends who host (`SteamFriendList`, through a second
 listener, `ISteamFriendsListener`), with "Other version" where the match key differs. A friend's "Join game" in the
 Steam overlay joins from the menu, and asks first during a match.

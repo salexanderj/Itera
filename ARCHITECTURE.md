@@ -167,7 +167,7 @@ Rules:
 | `Diagnostics/` | `LoggingServiceCollectionExtensions` (`AddIteraLogging`, Serilog sinks), `LogSession`, `LogPaths`, `LogRetention`, `SessionInfo`, `FrameStats`, `GpuTimings`, `ConsoleLogBuffer`, `ControlLog`, `UnhandledExceptionLogger` |
 | `Matches/` | `MatchFlow` (a match's start, join, and end), `MatchStart`, `MatchContext`, `MatchServices` (a match's services and steps), `MatchControl`, `WarmUps`, `IRunStartup` |
 | `Saves/`, `Settings/` | `SaveService`; `PlayerSettings` (the menu's settings, kept in `settings.json`) and `CommandLineKeys` (the keys the command line gave, which win over the file) |
-| root | `EngineOptions`, `EngineOptionsValidator`, `UnknownOptionKeys`, `EngineServiceCollectionExtensions` (`AddIteraEngine`), `EngineSteps`, `GameLoop`, `ExitSignalPolicy` |
+| root | `EngineOptions`, `EngineOptionsValidator`, `UnknownOptionKeys`, `EngineServiceCollectionExtensions` (`AddIteraEngine`), `VoxelServiceCollectionExtensions` (`AddIteraVoxels`), `EngineSteps`, `GameLoop`, `ExitSignalPolicy` |
 
 ## 4. Runtime model
 
@@ -428,9 +428,15 @@ A game is an executable that registers the engine, then itself, and runs `GameLo
   option sections are read and checked before the window opens, and a key under `Game` that no section holds is named),
   installs the crash handlers, and returns `GameLoop.Run()` as the exit code.
 - `AddIteraEngine` registers the engine's services with `TryAdd`, so a game's later registration of the same service
-  type wins (the loading tasks and UI layers are lists a game adds to). The engine registers no ECS system. It also registers what systems share: `PlayArea` (from the match's
-  grid), `PlayerInputBlock`, `WorldResets`, `IBenchmarkHost`, and `MovementKeys`.
-- A game must register an `IChunkGenerator` (the world). These have engine defaults that it may replace: `IVoxelPalette`
+  type wins (the loading tasks and UI layers are lists a game adds to). The engine registers no ECS system. It also registers what systems share: `PlayerInputBlock`,
+  `WorldResets`, and `MovementKeys`; and the match's identity (`IMatchIdentity`: the generator's id and version with
+  voxel terrain, else the application's name at version 1; a game may register its own), which the hello, the welcome,
+  and a lobby's match key carry.
+- `AddIteraVoxels()` (`VoxelServiceCollectionExtensions`) adds the voxel terrain: each match's `VoxelWorld`, its
+  `VoxelColliders`, `NavigationService`, `PlayArea` (from the match's grid), `IBenchmarkHost`, and the World, Navigation,
+  and Warm-up loading tasks, after the engine's Sounds and before the game's own. A game with terrain registers an
+  `IChunkGenerator` and calls it; until matches run without a world (the mesh path's phase 5), every game does.
+- These have engine defaults that a game may replace: `IVoxelPalette`
   (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable), `MenuStyle` (plain), and, for navigation,
   nothing (without an `INavGridSource` there is no navigation). A game adds an `IAtmosphereSource` for its sky, an
   `INavGridSource` for walkers, `ILoadingTask`s, `IMatchUiLayer`s for its HUD, `ISessionGameHandler`s for its messages, and
@@ -985,10 +991,11 @@ there is no host migration, and the session ends when the host quits.
   `MessageReader`, which throws on anything short or oversized (a peer is not trusted). `SessionProtocol.Version` rises
   whenever any message changes shape or a kind is added, a game's included. `WireFingerprintTests` pin a fingerprint of
   every message's bytes with the version, so a change to the wire fails them until the version rises.
-- **The handshake** is plain messages, so every transport shares it: the client sends `Hello` (protocol version, generator
-  id and version, fixed step rate, name); the host answers `Welcome` (the client's slot from 1, the match: seed, step rate,
-  generator; the join payload's size and edit count; a game's match data), or refuses by closing the connection with a
-  reason (another protocol, generator, or step rate, a full session, no hello within the connect timeout, or, through
+- **The handshake** is plain messages, so every transport shares it: the client sends `Hello` (protocol version, the
+  match identity's id and version (`IMatchIdentity`: the generator's with voxel terrain), fixed step rate, name); the
+  host answers `Welcome` (the client's slot from 1, the match: seed, step rate, identity; the join payload's size and edit
+  count; a game's match data), or refuses by closing the connection with a reason (another protocol, identity, or step
+  rate, a full session, no hello within the connect timeout, or, through
   Steam, a player neither in the host's lobby nor its friend). A second hello is a protocol error. `MaxPlayers` counts the
   host.
 - **The join payload** is the host's saved edit log (`SaveEdits`, `EditLogSerializer`), saved when the hello is accepted,
@@ -1045,7 +1052,7 @@ overlay and fossilize Vulkan layers into the game; the overlay draws one best-pr
 - A match through Steam (`Transport=Steam`: the menu's Host Game when Steam runs, a join of `lobby:ID` or `steam:ID`)
   carries its session on `SteamTransport`: a host listens on a P2P socket (virtual port 0, through Steam's relays, so no
   port is opened), opens a friends-only lobby (`MaxPlayers` members; lobby data `itera_players`, `itera_max`, and
-  `itera_match`, the match key: protocol, generator id and version, step rate), and sets its rich presence's `connect` to
+  `itera_match`, the match key: protocol, the match identity's id and version, step rate), and sets its rich presence's `connect` to
   `+connect_lobby ID`. A friend who picks "Join game" while the game is not running gets it started with those arguments,
   which `SteamLaunchArguments` turns into the menu joining `lobby:ID`. A host accepts a connection only from a member of its
   lobby or a Steam friend; anyone else is refused with the reason. A friend is checked first, since Steam may tell the host
