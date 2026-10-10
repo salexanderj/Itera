@@ -5,19 +5,27 @@ namespace Itera.Engine.Voxels;
 /// <summary>
 /// Models: small voxel volumes drawn at any position and turn (as meshes, <c>WorldMeshes</c>), such as one part of a character's
 /// body or a loose body's piece. A model is one chunk tree per level of detail, from level 0 up to at most
-/// <see cref="MaxLevels"/> - 1, in the voxel memory, and its box in level-0 voxels: from (0, 0, 0) to
+/// <see cref="MaxLevels"/> - 1, in the models' voxel memory (the world's in a match with voxel terrain, where a lifted
+/// piece's tree lies; else their own, freed when they go), and its box in level-0 voxels: from (0, 0, 0) to
 /// <see cref="Size"/>, in the tree's own voxels at level 0 and the same box, halved per level, at the others. The owner
 /// of the trees keeps them for as long as the model lives (a piece's belong to the edit log), and may change them: a
 /// cut body part is a copy (<see cref="Copy"/>) edited in place (<see cref="Apply"/>), and <see cref="Replace"/>
 /// uploads its new trees while the old ones stay drawn. The owner frees trees it made (<see cref="Free"/>) only after
-/// <see cref="Remove"/> or <see cref="Replace"/> has taken them off the upload list. <c>WorldMeshes</c> meshes each new
+/// <see cref="Remove"/> or <see cref="Replace"/> has taken them off the upload list. Thrown balls' pieces are made here
+/// too (<see cref="MakeBall"/>). <c>WorldMeshes</c> meshes each new
 /// or replaced model and uploads its meshes; a model is drawn once that is done. Handles are reused after <see cref="Remove"/>. Main thread only, except <see cref="Encode(ReadOnlySpan{byte})"/>;
 /// allocates nothing once its tables have grown, except <see cref="Copy"/> and <see cref="Apply"/>, which take voxel
 /// memory.
 /// </summary>
-public sealed class VoxelModels
+public sealed class VoxelModels : IDisposable
 {
-    private readonly VoxelWorld _world;
+    private readonly VoxelWorld? _world;
+
+    // The models' own memory in a match without voxel terrain. Never limited: every model's and ball's encode may go
+    // over a budget, as in the world's.
+    private readonly VoxelMemory? _own;
+    private volatile bool _ownLeft;
+    private byte[]? _ballScratch;
 
     /// <summary>Levels a model may have: 0 to 2.</summary>
     public const int MaxLevels = 3;
@@ -49,25 +57,104 @@ public sealed class VoxelModels
     private int _count;
     private int _revisions;
 
-    public VoxelModels(VoxelWorld world)
+    /// <param name="world">The match's voxel world, whose memory the models share; null for a match without terrain.</param>
+    public VoxelModels(VoxelWorld? world = null)
     {
         _world = world;
+        // It takes no native memory until its first tree.
+        _own = world is null ? new VoxelMemory(long.MaxValue) : null;
     }
 
     /// <summary>Models that exist.</summary>
     public int Count { get; private set; }
 
     /// <summary>
-    /// Has the voxel world leave its memory to the OS at exit (<see cref="VoxelWorld.LeaveMemoryAtExit"/>), for a thread
-    /// that encodes models (<see cref="Encode(ReadOnlySpan{byte})"/>) and did not stop in time. Any thread.
+    /// The memory the trees are in: the voxel world's in a match with terrain (readable once the world is initialised),
+    /// else the models' own.
     /// </summary>
-    public void LeaveMemoryAtExit() => _world.LeaveMemoryAtExit();
+    internal VoxelMemory Memory => _own ?? _world!.ReadMemory;
+
+    /// <summary>True when the trees are in <paramref name="world"/>'s memory.</summary>
+    internal bool Follows(VoxelWorld world) => ReferenceEquals(_world, world);
 
     /// <summary>
-    /// Stores a chunk of voxels (128^3 materials at index <c>x + 128y + 16384z</c>) as a tree in the world's voxel
+    /// Has the models' memory left to the OS at exit (the voxel world's, <see cref="VoxelWorld.LeaveMemoryAtExit"/>), for
+    /// a thread that encodes models (<see cref="Encode(ReadOnlySpan{byte})"/>) and did not stop in time. Any thread.
+    /// </summary>
+    public void LeaveMemoryAtExit()
+    {
+        if (_world is not null)
+        {
+            _world.LeaveMemoryAtExit();
+        }
+        else
+        {
+            _ownLeft = true;
+        }
+    }
+
+    /// <summary>
+    /// Frees the models' own memory, with every tree in it, unless it was left (<see cref="LeaveMemoryAtExit"/>); the
+    /// world's stays the world's. Safe to call more than once.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_own is not null && !_ownLeft)
+        {
+            _own.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// A ball of <paramref name="material"/> made from nothing, for a thrown ball's body: the centimetres a sphere edit of
+    /// <paramref name="radius"/> covers about its pivot's voxel (<see cref="VoxelEdit.Contains"/>), in a box
+    /// <c>2 * radius + 1</c> centimetres a side. No lift made it, so its sequence is 0 and no edit log keeps it; its
+    /// tree stays in the models' memory until they go, so a caller makes each ball once. Throws
+    /// <see cref="ArgumentOutOfRangeException"/> for a radius outside 0 to 63 (the box must fit a chunk) and
+    /// <see cref="ArgumentException"/> for air. Main thread.
+    /// </summary>
+    internal VoxelPiece MakeBall(int radius, byte material)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(radius);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(radius, (VoxelConstants.ChunkSize - 1) / 2);
+        if (material == VoxelConstants.Air)
+        {
+            throw new ArgumentException("A ball of air holds nothing.", nameof(material));
+        }
+
+        var centre = new VoxelCoord(radius, radius, radius);
+        var sphere = VoxelEdit.Sphere(centre, radius, VoxelEditOperation.Fill, material);
+        var side = 2 * radius + 1;
+        var size = new VoxelCoord(side, side, side);
+        var scratch = _ballScratch ??= new byte[VoxelConstants.ChunkVoxels];
+        VoxelWorld.ClearBox(scratch, size);
+        var solid = 0;
+        var farthest = 0L;
+        for (var z = 0; z < side; z++)
+        {
+            for (var y = 0; y < side; y++)
+            {
+                for (var x = 0; x < side; x++)
+                {
+                    if (sphere.Contains(x, y, z))
+                    {
+                        scratch[x + VoxelConstants.ChunkSize * (y + VoxelConstants.ChunkSize * z)] = material;
+                        solid++;
+                        farthest = Math.Max(farthest, VoxelPiece.FarthestCornerSquared(centre, x, y, z));
+                    }
+                }
+            }
+        }
+
+        var tree = ChunkTree.Encode(Memory, scratch, size, mayExceedBudget: true, out _);
+        return new VoxelPiece(0, default, size, tree, solid, VoxelPiece.RadiusOf(farthest));
+    }
+
+    /// <summary>
+    /// Stores a chunk of voxels (128^3 materials at index <c>x + 128y + 16384z</c>) as a tree in the models' voxel
     /// memory, for <see cref="Add(ReadOnlySpan{ModelTree}, VoxelCoord, int)"/>. Any thread, once the voxel world is
-    /// initialised. The memory may go over its budget: models are few and small. The tree is kept until the process
-    /// ends.
+    /// initialised in a match with terrain. The memory may go over its budget: models are few and small. The tree is
+    /// kept until it is freed (<see cref="Free"/>) or the memory goes with the match.
     /// </summary>
     public ModelTree Encode(ReadOnlySpan<byte> voxels)
     {
@@ -76,7 +163,7 @@ public sealed class VoxelModels
             throw new ArgumentException("A model level is a whole chunk of voxels.", nameof(voxels));
         }
 
-        return new ModelTree(ChunkTree.Encode(_world.ReadMemory, voxels, mayExceedBudget: true, out _));
+        return new ModelTree(ChunkTree.Encode(Memory, voxels, mayExceedBudget: true, out _));
     }
 
     /// <summary>
@@ -91,14 +178,14 @@ public sealed class VoxelModels
             throw new ArgumentException("A model level is a whole chunk of voxels.", nameof(voxels));
         }
 
-        return new ModelTree(ChunkTree.Encode(_world.ReadMemory, voxels, extent, mayExceedBudget: true, out _));
+        return new ModelTree(ChunkTree.Encode(Memory, voxels, extent, mayExceedBudget: true, out _));
     }
 
     /// <summary>
     /// A copy of <paramref name="tree"/>, so edits to either leave the other alone: a character's own copy of a part it
     /// was cut in. The owner frees it (<see cref="Free"/>). Main thread.
     /// </summary>
-    public ModelTree Copy(ModelTree tree) => new(ChunkTree.Copy(_world.ReadMemory, tree.State, ChunkTree.RootDepth));
+    public ModelTree Copy(ModelTree tree) => new(ChunkTree.Copy(Memory, tree.State, ChunkTree.RootDepth));
 
     /// <summary>
     /// Applies <paramref name="edit"/>, a sphere, capsule, or box given in the model's level-0 voxels, to
@@ -123,7 +210,7 @@ public sealed class VoxelModels
 
         Span<int> bricks = stackalloc int[VoxelConstants.NodeChildren * VoxelConstants.NodeChildren];
         var state = VoxelEditing.ApplyToChunk(
-            _world.ReadMemory,
+            Memory,
             VoxelGrid.Unit,
             tree.State,
             new ChunkKey(level, 0, 0, 0),
@@ -148,20 +235,13 @@ public sealed class VoxelModels
             throw new ArgumentOutOfRangeException(nameof(level), level, "A model has levels 0 to 2.");
         }
 
-        VoxelEditing.CountInChunk(
-            _world.ReadMemory,
-            VoxelGrid.Unit,
-            tree.State,
-            new ChunkKey(level, 0, 0, 0),
-            in edit,
-            counts
-        );
+        VoxelEditing.CountInChunk(Memory, VoxelGrid.Unit, tree.State, new ChunkKey(level, 0, 0, 0), in edit, counts);
     }
 
     /// <summary>The material of a tree's voxel (x, y, z); air outside 0 to 127. Main thread.</summary>
     public byte ReadVoxel(ModelTree tree, int x, int y, int z) =>
         (uint)x < VoxelConstants.ChunkSize && (uint)y < VoxelConstants.ChunkSize && (uint)z < VoxelConstants.ChunkSize
-            ? ChunkTree.ReadVoxel(_world.ReadMemory, tree.State, x, y, z)
+            ? ChunkTree.ReadVoxel(Memory, tree.State, x, y, z)
             : VoxelConstants.Air;
 
     /// <summary>Writes a tree's 128^3 materials into <paramref name="voxels"/>, index <c>x + 128y + 16384z</c>.</summary>
@@ -172,7 +252,7 @@ public sealed class VoxelModels
             throw new ArgumentException("A model level is a whole chunk of voxels.", nameof(voxels));
         }
 
-        ChunkTree.Decode(_world.ReadMemory, tree.State, voxels);
+        ChunkTree.Decode(Memory, tree.State, voxels);
     }
 
     /// <summary>
@@ -186,14 +266,14 @@ public sealed class VoxelModels
             throw new ArgumentException("A model level is a whole chunk of voxels.", nameof(voxels));
         }
 
-        ChunkTree.Decode(_world.ReadMemory, tree.State, voxels, extent);
+        ChunkTree.Decode(Memory, tree.State, voxels, extent);
     }
 
     /// <summary>
     /// Frees a tree the caller made (<see cref="Encode(ReadOnlySpan{byte})"/>, <see cref="Copy"/>) and no model waits to upload: after
     /// <see cref="Remove"/>, or <see cref="Replace"/> with other trees. Main thread.
     /// </summary>
-    public void Free(ModelTree tree) => ChunkTree.Free(_world.ReadMemory, tree.State, ChunkTree.RootDepth);
+    public void Free(ModelTree tree) => ChunkTree.Free(Memory, tree.State, ChunkTree.RootDepth);
 
     /// <summary>
     /// Finds the first solid voxel of <paramref name="tree"/> (a model's level-0 tree whose box is
@@ -223,7 +303,7 @@ public sealed class VoxelModels
             dz = direction.Z / length;
         if (
             !ChunkTree.Raycast(
-                _world.ReadMemory,
+                Memory,
                 tree.State,
                 size,
                 origin.X,
@@ -342,7 +422,7 @@ public sealed class VoxelModels
         Remove(handle);
         for (var level = 0; level < levels; level++)
         {
-            ChunkTree.Free(_world.ReadMemory, trees[level], ChunkTree.RootDepth);
+            ChunkTree.Free(Memory, trees[level], ChunkTree.RootDepth);
         }
     }
 

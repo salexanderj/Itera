@@ -173,6 +173,25 @@ public sealed class MapResetSystemTests : IDisposable
         Assert.Equal(0, world.CountEntities(in s_bodies));
     }
 
+    [Fact]
+    public void Without_voxel_terrain_reset_cleans_up_and_counts_the_reset()
+    {
+        using var harness = new MeshGroundHarness();
+        using var world = World.Create();
+        using var system = new MapResetSystem(world, harness.Bodies, _emitter, null, _resets);
+        system.Initialize();
+        var ball = harness.ThrowBall(new Vector3(1, 1, 0));
+        world.Create(new LooseBody { Body = ball, BallRadius = MeshGroundHarness.BallRadius });
+        var before = _resets.Count;
+
+        system.RequestReset();
+        system.Update(in Step);
+
+        Assert.Equal(0, world.CountEntities(in s_bodies));
+        Assert.Equal(0, harness.Bodies.Count);
+        Assert.Equal(before + 1, _resets.Count);
+    }
+
     private MapResetSystem Create(World world, ConsoleCommands? commands = null)
     {
         var system = new MapResetSystem(world, _physics.Bodies, _emitter, _physics.Voxels, _resets, commands);

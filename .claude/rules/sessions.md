@@ -61,9 +61,9 @@ Steam overlay joins from the menu, and asks first during a match.
 Named saves (`Engine:Save:Name`, `SaveService`): a host or offline game starts from `Saves/NAME.save` in the data
 folder when it exists (its seed and match settings, a game's match data among them, replace the options'; another step
 rate or generator version ends the run; a game without terrain saves and reads the header alone, with its match
-identity, and refuses a save holding edits) and writes its world there when the match ends cleanly, after putting thrown
-balls still loose back into the grid: only the edits since the last reset, renumbered from 1 (a join payload keeps
-every edit). The old file is kept as `NAME.save.bak`; a failed write
+identity, refuses a save holding edits, and holds no loose bodies) and writes its world there when the match ends
+cleanly, after putting thrown balls still loose back into the grid: only the edits since the last reset, renumbered
+from 1 (a join payload keeps every edit). The old file is kept as `NAME.save.bak`; a failed write
 leaves the old save, deletes its temporary file, and is told at the menu. Save names refuse Windows device names (CON,
 NUL, COM1, ...). The file is the edit log stream, format
 6 (it may hold resets, capsule edits, and clears of some materials; formats 1 to 5 still read,

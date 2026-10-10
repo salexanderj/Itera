@@ -9,7 +9,7 @@ public sealed partial class VoxelWorld
     /// <summary>
     /// Lifts the voxels a <see cref="VoxelEditOperation.Lift"/> edit covers out of the world, read from the world itself
     /// (tests, and a game's own lifts of what is there; a thrown ball is not lifted, but made from nothing,
-    /// <see cref="MakeBall"/>). They are kept as a piece
+    /// <see cref="VoxelModels.MakeBall"/>). They are kept as a piece
     /// named by the edit's sequence, which this returns, and cleared as <see cref="VoxelEditOperation.Clear"/> would. The
     /// piece holds the level-0 voxels, so the level-0 columns the edit reaches must be resident; when one is not, nothing
     /// happens and this returns false. <paramref name="maker"/> is as <see cref="Apply"/>'s. Throws
@@ -124,7 +124,7 @@ public sealed partial class VoxelWorld
 
     /// <summary>
     /// Lifts with the piece's voxels given as <paramref name="runs"/> instead of read from this world (tests; a thrown
-    /// ball was made this way until 2026-10-07, when it became a body made from nothing, <see cref="MakeBall"/>). Gives
+    /// ball was made this way until 2026-10-07, when it became a body made from nothing, <see cref="VoxelModels.MakeBall"/>). Gives
     /// the edit the next sequence, as <see cref="TryLift"/> does, and returns it. Throws
     /// <see cref="ArgumentException"/> for an invalid lift or runs that do not fill its box, and
     /// <see cref="InvalidOperationException"/> on a world that follows a host. <paramref name="maker"/> is as
@@ -161,52 +161,6 @@ public sealed partial class VoxelWorld
         var visitor = new SolidInEdit(edit, Grid);
         WalkBlocking(min.X, min.Y, min.Z, end.X - 1, end.Y - 1, end.Z - 1, MaterialSet.None, ref visitor);
         return visitor.Found;
-    }
-
-    /// <summary>
-    /// A ball of <paramref name="material"/> made from nothing, for a thrown ball's body: the centimetres a sphere edit of
-    /// <paramref name="radius"/> covers about its pivot's voxel (<see cref="VoxelEdit.Contains"/>), in a box
-    /// <c>2 * radius + 1</c> centimetres a side. No lift made it, so its sequence is 0 and the log does not keep it; its
-    /// tree stays in the voxel memory until the world goes, as a lift's piece does, so a caller makes each ball once.
-    /// Throws <see cref="ArgumentOutOfRangeException"/> for a radius outside 0 to 63 (the box must fit a chunk) and
-    /// <see cref="ArgumentException"/> for air.
-    /// </summary>
-    internal VoxelPiece MakeBall(int radius, byte material)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegative(radius);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(radius, (VoxelConstants.ChunkSize - 1) / 2);
-        if (material == VoxelConstants.Air)
-        {
-            throw new ArgumentException("A ball of air holds nothing.", nameof(material));
-        }
-
-        var centre = new VoxelCoord(radius, radius, radius);
-        var sphere = VoxelEdit.Sphere(centre, radius, VoxelEditOperation.Fill, material);
-        var side = 2 * radius + 1;
-        var size = new VoxelCoord(side, side, side);
-        var scratch = _pieceScratch ??= new byte[VoxelConstants.ChunkVoxels];
-        _unpackedPiece = 0;
-        ClearBox(scratch, size);
-        var solid = 0;
-        var farthest = 0L;
-        for (var z = 0; z < side; z++)
-        {
-            for (var y = 0; y < side; y++)
-            {
-                for (var x = 0; x < side; x++)
-                {
-                    if (sphere.Contains(x, y, z))
-                    {
-                        scratch[x + VoxelConstants.ChunkSize * (y + VoxelConstants.ChunkSize * z)] = material;
-                        solid++;
-                        farthest = Math.Max(farthest, VoxelPiece.FarthestCornerSquared(centre, x, y, z));
-                    }
-                }
-            }
-        }
-
-        var tree = ChunkTree.Encode(Memory, scratch, size, mayExceedBudget: true, out _);
-        return new VoxelPiece(0, default, size, tree, solid, VoxelPiece.RadiusOf(farthest));
     }
 
     /// <summary>
@@ -328,7 +282,7 @@ public sealed partial class VoxelWorld
     /// into it and counts the rest as air, so the other 2 MB need no clearing (a 25 cm ball would otherwise clear and
     /// encode the whole chunk).
     /// </summary>
-    private static void ClearBox(byte[] scratch, VoxelCoord size)
+    internal static void ClearBox(byte[] scratch, VoxelCoord size)
     {
         // Whole bricks: a brick that reaches into the box is read whole, its voxels outside the box then counted as air.
         var width = Math.Min(VoxelConstants.ChunkSize, (size.X + 7) & ~7);

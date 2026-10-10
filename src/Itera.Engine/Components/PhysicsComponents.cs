@@ -26,6 +26,12 @@ public struct LooseBody
     /// <summary>Fixed steps in a row that the body has been at rest.</summary>
     public int RestTicks;
 
+    /// <summary>
+    /// True once a game kept the body after it rested in a match without voxel terrain (<c>ILooseBodyRest</c>): it is not
+    /// asked again until the body has moved.
+    /// </summary>
+    public bool Kept;
+
     /// <summary>Fixed steps since a <see cref="CutPiece"/> was made (<c>LooseBodySystem</c> counts them).</summary>
     public int AgeTicks;
 }

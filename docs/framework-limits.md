@@ -20,9 +20,10 @@ Ordered by how many game types each blocks.
 1. **Everything drawn is voxels.** `MeshVertex` has no texture coordinates; models are `VoxelModels` (at most 128 voxels a
    side, three levels, flat colours); no glTF or OBJ loader; no skinning (the `Animation/` poses move rigid voxel parts,
    one model per bone). Blocks most games with authored art: characters, vehicles, imported assets.
-2. **A voxel world is required, in a fixed box.** `MatchServices` takes `VoxelWorld`, `PhysicsWorld`, and the voxel
-   colliders, and every match needs an `IChunkGenerator` (an air-only one works, at the cost of streaming, workers, and
-   the loading task). The box is set by constants (`VoxelGrid`: ±512 m across, -51 to +102 m at 10 cm voxels); the view
+2. **A voxel world is required, in a fixed box.** When this was written, `MatchServices` took `VoxelWorld`,
+   `PhysicsWorld`, and the voxel colliders, and every match needed an `IChunkGenerator`. Now a match runs without a voxel
+   world, its characters and loose bodies over the game's mesh colliders (voxel models are not yet drawn there); the
+   box remains. The box is set by constants (`VoxelGrid`: ±512 m across, -51 to +102 m at 10 cm voxels); the view
    reaches 2 km at most; nothing shifts the origin. Blocks open worlds, flight, space, and long race tracks.
 3. **Rendering is closed to a game.** The pass list is fixed in `FrameRenderer.Record`, and `IFrameRenderer` and
    `PipelineFactory` are internal; no transparent pass (only particles blend); the look is constants in `mesh.frag` and
@@ -55,9 +56,9 @@ of players and bodies, and saving the game's own state.
 1. A general mesh path: triangle meshes with textures, glTF import, skinning, and voxels made optional (started
    2026-10-09). Done: glTF models read at the run's start and drawn as textured meshes with the world's light and
    shadows, skinned models posed by their clips on the GPU (`.claude/rules/rendering.md`, "Mesh assets"); matches,
-   sessions, and saves without voxel terrain; mesh colliders that rays, loose bodies, and the character mover meet.
-   Next: voxel models and loose bodies without terrain, the movement building blocks, then compressed textures made
-   offline.
+   sessions, and saves without voxel terrain; mesh colliders that rays, loose bodies, and the character mover meet;
+   voxel models and loose bodies without terrain. Next: drawing voxel models without terrain, the movement building
+   blocks, then compressed textures made offline.
 2. Rendering a game can extend: its own passes, transparency, look data, a moving sun, other cameras and views.
 3. A map size the game sets, with origin shifting.
 4. Gamepads, typed text, sound files and music, a menu a game can replace.

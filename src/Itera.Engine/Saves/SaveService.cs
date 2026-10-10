@@ -198,6 +198,7 @@ public sealed partial class SaveService
         }
 
         var start = Stopwatch.GetTimestamp();
+        // Thrown balls go into the grid first; without voxel terrain none does, and the save holds no bodies.
         var settled = _bodies?.SettleThrown() ?? 0;
         var temporary = path + ".tmp";
         try

@@ -14,9 +14,10 @@ namespace Itera.Engine.Systems;
 /// The console's <c>balls</c> (fixed group, before <see cref="PhysicsReadSystem"/>; <see cref="CommandScope.Match"/>): a
 /// debug aid that drops balls of one material, made from nothing, in a row across the view 3 m in front of the
 /// <see cref="ActiveCamera"/>, at the next step. Each is a loose body (<see cref="LooseBodies.TryCreateBall"/>) that
-/// falls, rolls, and goes back into the grid when it rests (<see cref="LooseBodySystem"/>), so a test run draws models and
-/// moves bodies (<c>--Engine:Console:Run=settle 60; balls 8</c>: the settle keeps them bodies past the loading
-/// screen). A ball whose space holds anything solid is left out; when as many
+/// falls, rolls, and goes back into the grid when it rests (<see cref="LooseBodySystem"/>; without voxel terrain, what the
+/// game decides), so a test run draws models and moves bodies (<c>--Engine:Console:Run=settle 60; balls 8</c>: the
+/// settle keeps them bodies past the loading screen). A ball whose space holds any solid voxel is left out (without
+/// terrain its space is not checked); when as many
 /// bodies as allowed exist, the oldest go first (<see cref="LooseBodyRoom"/>). Reads <see cref="CameraPose"/>; creates
 /// <see cref="LooseBody"/> entities.
 /// </summary>
@@ -31,7 +32,7 @@ public sealed class DebugBallSystem : BaseSystem<World, FixedStepTime>, IFixedUp
     private static readonly QueryDescription s_camera = new QueryDescription().WithAll<CameraPose, ActiveCamera>();
 
     private readonly LooseBodies _bodies;
-    private readonly VoxelWorld _voxels;
+    private readonly VoxelWorld? _voxels;
     private readonly LooseBodyRoom _room;
     private readonly ConsoleCommands? _commands;
     private readonly byte _defaultMaterial;
@@ -41,13 +42,13 @@ public sealed class DebugBallSystem : BaseSystem<World, FixedStepTime>, IFixedUp
 
     /// <param name="world">The ECS world.</param>
     /// <param name="bodies">The loose bodies.</param>
-    /// <param name="voxels">The voxels, which must leave a ball's space empty.</param>
+    /// <param name="voxels">The voxels, which must leave a ball's space empty; null without voxel terrain.</param>
     /// <param name="commands">The console's commands, which get <c>balls</c>; none in tests.</param>
     /// <param name="defaultMaterial">The material a ball is made of when the command names none: the game's (stone, say).</param>
     public DebugBallSystem(
         World world,
         LooseBodies bodies,
-        VoxelWorld voxels,
+        VoxelWorld? voxels,
         ConsoleCommands? commands = null,
         byte defaultMaterial = 1
     )
@@ -77,7 +78,7 @@ public sealed class DebugBallSystem : BaseSystem<World, FixedStepTime>, IFixedUp
         _commands?.Register(
             "balls",
             "[count] [radius cm] [material]",
-            "Drops balls made from nothing in a row 3 m in front of the camera (8 of 12 cm, of the game's default material, unless given): loose bodies that fall and go back into the grid at rest.",
+            "Drops balls made from nothing in a row 3 m in front of the camera (8 of 12 cm, of the game's default material, unless given): loose bodies that fall and go back into the grid at rest (without voxel terrain, become what the game decides).",
             CommandScope.Match,
             Balls
         );
@@ -116,7 +117,10 @@ public sealed class DebugBallSystem : BaseSystem<World, FixedStepTime>, IFixedUp
                 VoxelEditOperation.Fill,
                 _material
             );
-            if (!_voxels.CanApply(in space) || _voxels.AnySolidIn(in space) || !_room.MakeRoom(World, 1, false))
+            if (
+                (_voxels is not null && (!_voxels.CanApply(in space) || _voxels.AnySolidIn(in space)))
+                || !_room.MakeRoom(World, 1, false)
+            )
             {
                 continue;
             }

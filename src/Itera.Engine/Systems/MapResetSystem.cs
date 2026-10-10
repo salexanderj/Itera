@@ -19,8 +19,8 @@ namespace Itera.Engine.Systems;
 /// </para>
 /// <para>
 /// <c>reset</c> puts the world back as it started: it cleans up first (so no body settles into the grid after the
-/// reset), then resets the world to the seed's (<see cref="VoxelWorld.Reset"/>, which clients and saves follow; the
-/// loading screen covers the picture while the view is generated again), and counts it in <see cref="WorldResets"/>,
+/// reset), then resets the voxel world to the seed's when there is one (<see cref="VoxelWorld.Reset"/>, which clients
+/// and saves follow; the loading screen covers the picture while the view is generated again), and counts it in <see cref="WorldResets"/>,
 /// which the later systems of the same step read. A game's systems that watch <see cref="WorldResets"/> put their own
 /// things back.
 /// </para>
@@ -36,7 +36,7 @@ public sealed class MapResetSystem : BaseSystem<World, FixedStepTime>, IFixedUpd
 
     private readonly LooseBodies _bodies;
     private readonly ParticleEmitter _particles;
-    private readonly VoxelWorld _voxels;
+    private readonly VoxelWorld? _voxels;
     private readonly WorldResets _resets;
     private readonly ConsoleCommands? _commands;
     private readonly List<Entity> _found = [];
@@ -47,14 +47,14 @@ public sealed class MapResetSystem : BaseSystem<World, FixedStepTime>, IFixedUpd
     /// <param name="world">The ECS world.</param>
     /// <param name="bodies">The loose bodies.</param>
     /// <param name="particles">The particles.</param>
-    /// <param name="voxels">The voxel world, which <c>reset</c> resets.</param>
+    /// <param name="voxels">The voxel world, which <c>reset</c> resets; null without voxel terrain.</param>
     /// <param name="resets">Where resets are counted for the systems that put things back.</param>
     /// <param name="commands">The console's commands, which get <c>cleanup</c> and <c>reset</c>; none in tests.</param>
     public MapResetSystem(
         World world,
         LooseBodies bodies,
         ParticleEmitter particles,
-        VoxelWorld voxels,
+        VoxelWorld? voxels,
         WorldResets resets,
         ConsoleCommands? commands = null
     )
@@ -113,7 +113,7 @@ public sealed class MapResetSystem : BaseSystem<World, FixedStepTime>, IFixedUpd
         if (_reset)
         {
             _reset = false;
-            _voxels.Reset();
+            _voxels?.Reset();
             _resets.Add();
         }
     }

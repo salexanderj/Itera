@@ -20,13 +20,12 @@ public sealed class LooseBodyVoxels
     private const int Probes = 8;
 
     private readonly LooseBodies _bodies;
-    private readonly VoxelWorld _voxels;
     private readonly MaterialSet _passable;
     private readonly LoosePose[] _poses;
     private readonly Vector3[] _axes;
 
-    // The edge of the world's level-0 voxels (the mover's cells) in centimetres, the unit of a piece's voxels and of
-    // the poses' pivots.
+    // The edge of the mover's cells (the world's level-0 voxels, or Engine:Physics:CollisionCentimetres without terrain)
+    // in centimetres, the unit of a piece's voxels and of the poses' pivots.
     private readonly float _cell;
     private readonly long[] _keys = new long[CacheSize];
     private readonly int[] _stamps = new int[CacheSize];
@@ -34,15 +33,20 @@ public sealed class LooseBodyVoxels
     private int _count;
     private int _stamp = 1;
 
+    /// <summary>The bodies in the cells of a match's voxel world (its level-0 voxels).</summary>
     public LooseBodyVoxels(LooseBodies bodies, VoxelWorld voxels, IVoxelPassability passability)
+        : this(bodies, passability, voxels.Grid.BaseCentimetres) { }
+
+    /// <summary>The bodies in cells of <paramref name="cellCentimetres"/>, the character mover's.</summary>
+    public LooseBodyVoxels(LooseBodies bodies, IVoxelPassability passability, int cellCentimetres)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(cellCentimetres, 1);
         _bodies = bodies;
-        _voxels = voxels;
         _passable = MaterialSet.Passable(passability);
         _poses = new LoosePose[bodies.MaxBodies];
         _axes = new Vector3[3 * bodies.MaxBodies];
-        Solids = new SolidModelVoxels(voxels.Grid.BaseCentimetres);
-        _cell = voxels.Grid.BaseCentimetres;
+        Solids = new SolidModelVoxels(cellCentimetres);
+        _cell = cellCentimetres;
     }
 
     /// <summary>Loose bodies taken at the last <see cref="Refresh"/>, and the solid models (<see cref="Solids"/>).</summary>
@@ -260,7 +264,7 @@ public sealed class LooseBodyVoxels
             return;
         }
 
-        var memory = _voxels.ReadMemory;
+        var memory = _bodies.Memory;
         var pivot = new Vector3(piece.Pivot.X, piece.Pivot.Y, piece.Pivot.Z);
         Vector3 axisX = _axes[3 * index],
             axisY = _axes[3 * index + 1],

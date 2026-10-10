@@ -43,6 +43,26 @@ public sealed class DebugBallSystemTests
     }
 
     [Fact]
+    public void Without_voxel_terrain_a_request_drops_balls_unchecked()
+    {
+        using var harness = new MeshGroundHarness();
+        using var world = World.Create();
+        world.Create(new CameraPose { Position = new Vector3(0, 1, 0) }, new ActiveCamera());
+        using var system = new DebugBallSystem(world, harness.Bodies, voxels: null);
+        system.Initialize();
+
+        system.Request(3);
+        system.Update(new FixedStepTime(MeshGroundHarness.Step, 0));
+        harness.RunPhysics(120);
+
+        Assert.Equal(3, world.CountEntities(in s_bodies));
+        world.Query(
+            in s_bodies,
+            (ref LooseBody body) => Assert.InRange(harness.Bodies.PivotOf(body.Body).Y, 0.05f, 0.5f)
+        );
+    }
+
+    [Fact]
     public void A_step_without_a_request_does_nothing_and_allocates_nothing()
     {
         using var harness = new PhysicsTestHarness();

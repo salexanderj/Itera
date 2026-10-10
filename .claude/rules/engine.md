@@ -32,9 +32,9 @@ paths:
 A game composes the engine in its `Program.cs`: `AddIteraEngine`, then its own (the starter's `AddGame`, which registers
 its `IChunkGenerator` and calls `AddIteraVoxels()` before its own loading tasks), then the host with `ValidateScopes`
 and `ValidateOnBuild`, then `GameLoop.Run()`. A game with voxel terrain registers an `IChunkGenerator` and calls
-`AddIteraVoxels()` (with it come the voxel models and loose bodies, which still need the world's memory; the character
-mover and the play area are the core's, and read the world when there is one); a game without plays matches with no
-world (`MatchServices.Terrain` is null; its `Voxels` and the other terrain members throw). `IVoxelPalette` (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable), and
+`AddIteraVoxels()` (the voxel models, the loose bodies, the character mover, and the play area are the core's, and read
+the world when there is one); a game without it plays matches with no world (`MatchServices.Terrain` is null; its
+`Voxels` and the other terrain members throw). `IVoxelPalette` (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable), and
 `MenuStyle` (plain) have engine defaults it may replace. `tests/Itera.Engine.Tests/Matches/EngineComposition.cs` is the
 least a game adds (a floor generator with the terrain, which `terrain: false` leaves out, and one fixed and one frame
 system), over which `MatchFlowTests`, `MatchLifetimeTests`, `CompositionTests`, and `HeadlessMatchTests` run, with and

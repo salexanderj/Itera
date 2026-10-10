@@ -10,7 +10,9 @@ namespace Itera.Engine.Physics;
 /// <summary>
 /// Loose bodies: thrown balls made from nothing (<see cref="TryCreateBall"/>) and lifted pieces of voxels
 /// (<see cref="VoxelWorld.TryLift"/>) that Bepu moves until they rest, when they go back into the grid
-/// (<see cref="Settle"/>): a ball as a sphere filled, a piece as a piece edit. Both hold centimetres, whatever the
+/// (<see cref="Settle"/>): a ball as a sphere filled, a piece as a piece edit. In a match without voxel terrain there
+/// are no lifts and no grid: a game decides what a rested ball becomes (<see cref="ILooseBodyRest"/>,
+/// <see cref="Release"/>), the bodies meet the game's mesh colliders, and none ever freezes. Both hold centimetres, whatever the
 /// world's voxels. Bepu sees each body as the convex hull of its piece's
 /// blocking voxels (passable foliage rides along but neither collides nor weighs), 2000 kg per cubic metre of voxels,
 /// centred on the hull's middle; the piece's pivot is kept relative to that. A piece with hollows (a tree, later) will
@@ -72,8 +74,13 @@ public sealed partial class LooseBodies
     private const float Metres = 1f / VoxelConstants.CentimetresPerMetre;
 
     private readonly PhysicsWorld _physics;
-    private readonly VoxelWorld _voxels;
-    private readonly VoxelColliders _colliders;
+    private readonly VoxelWorld? _voxels;
+    private readonly VoxelColliders? _colliders;
+
+    // The height a body has fallen out under: the grid's, or the play area's read at the first need (a game's play area
+    // may read the match's settled seed, which the session settles after the bodies are made).
+    private readonly Func<float>? _fallLimitSource;
+    private float? _fallLimitMetres;
     private readonly VoxelModels _models;
     private readonly MaterialSet _passable;
     private readonly int _maxBodies;
@@ -81,7 +88,7 @@ public sealed partial class LooseBodies
     private readonly VoxelBoxes _boxes = new();
     private readonly Dictionary<BodyHandle, Loose> _bodies = [];
 
-    // Each thrown ball's piece, by radius and material, made once (VoxelWorld.MakeBall) and shared by every ball of them.
+    // Each thrown ball's piece, by radius and material, made once (VoxelModels.MakeBall) and shared by every ball of them.
     private readonly Dictionary<(int Radius, byte Material), VoxelPiece> _balls = [];
 
     // The bodies of thrown balls and lifted pieces, which are few: characters look for them every step among up to 384
@@ -98,6 +105,7 @@ public sealed partial class LooseBodies
     /// <summary>Bodies made since the start: the last one's <see cref="BornOf"/>.</summary>
     private long _births;
 
+    /// <summary>Loose bodies in a match with voxel terrain: they meet it through its colliders and go back into it.</summary>
     public LooseBodies(
         PhysicsWorld physics,
         VoxelWorld voxels,
@@ -107,6 +115,42 @@ public sealed partial class LooseBodies
         IOptions<EngineOptions> options,
         ILogger<LooseBodies> logger
     )
+        : this(physics, voxels, colliders, models, passability, options, logger, null)
+    {
+        if (!models.Follows(voxels))
+        {
+            // A lifted piece's tree is in the world's memory: models of their own memory would read it with theirs.
+            throw new ArgumentException("The models must keep their trees in this world's memory.", nameof(models));
+        }
+
+        _fallLimitMetres = FallLimitMetres(voxels.Grid);
+    }
+
+    /// <summary>
+    /// Loose bodies in a match without voxel terrain: balls and cut bodies only, which meet the game's mesh colliders;
+    /// below <paramref name="fallLimitMetres"/>'s height (the play area's fall limit, read at the first need) a body has
+    /// fallen out of the world.
+    /// </summary>
+    public LooseBodies(
+        PhysicsWorld physics,
+        VoxelModels models,
+        IVoxelPassability passability,
+        IOptions<EngineOptions> options,
+        ILogger<LooseBodies> logger,
+        Func<float> fallLimitMetres
+    )
+        : this(physics, null, null, models, passability, options, logger, fallLimitMetres) { }
+
+    private LooseBodies(
+        PhysicsWorld physics,
+        VoxelWorld? voxels,
+        VoxelColliders? colliders,
+        VoxelModels models,
+        IVoxelPassability passability,
+        IOptions<EngineOptions> options,
+        ILogger<LooseBodies> logger,
+        Func<float>? fallLimitMetres
+    )
     {
         _physics = physics;
         _voxels = voxels;
@@ -115,7 +159,11 @@ public sealed partial class LooseBodies
         _passable = MaterialSet.Passable(passability);
         _maxBodies = options.Value.Physics.MaxLooseBodies;
         _logger = logger;
-        colliders.GroupThawed = Rejoin;
+        _fallLimitSource = fallLimitMetres;
+        if (colliders is not null)
+        {
+            colliders.GroupThawed = Rejoin;
+        }
     }
 
     /// <summary>How far under a world's floor a body has fallen out of it, in metres.</summary>
@@ -133,6 +181,15 @@ public sealed partial class LooseBodies
 
     /// <summary>The most loose bodies at once (<c>Engine:Physics:MaxLooseBodies</c>).</summary>
     public int MaxBodies => _maxBodies;
+
+    /// <summary>
+    /// True in a match with voxel terrain, where a rested body goes back into the grid (<see cref="Settle"/>); without,
+    /// a game decides what it becomes (<see cref="ILooseBodyRest"/>).
+    /// </summary>
+    public bool CanSettle => _voxels is not null;
+
+    /// <summary>The memory the bodies' pieces and models are in (the models').</summary>
+    internal VoxelMemory Memory => _models.Memory;
 
     /// <summary>
     /// Puts a mirror (either <c>TryCreateMirror</c>) with its pivot at <paramref name="pivotMetres"/>, turned by
@@ -371,7 +428,7 @@ public sealed partial class LooseBodies
     /// <summary>True when one body moves and turns slowly enough to count as resting, whatever ragdoll it is in.</summary>
     private bool IsBodyAtRest(BodyHandle body, bool frozenCounts)
     {
-        if (_colliders.IsFrozen(body))
+        if (_colliders is not null && _colliders.IsFrozen(body))
         {
             return frozenCounts;
         }
@@ -387,9 +444,12 @@ public sealed partial class LooseBodies
             && velocity.Angular.LengthSquared() < RestSpin * RestSpin;
     }
 
-    /// <summary>True when the body is below <see cref="FallLimitMetres"/> of the world's grid.</summary>
+    /// <summary>
+    /// True when the body is below the world: <see cref="FallLimitMetres"/> of the world's grid, or the play area's fall
+    /// limit without terrain.
+    /// </summary>
     public bool HasFallenOut(BodyHandle body) =>
-        _physics.Simulation.Bodies[body].Pose.Position.Y < FallLimitMetres(_voxels.Grid);
+        _physics.Simulation.Bodies[body].Pose.Position.Y < (_fallLimitMetres ??= _fallLimitSource!());
 
     /// <summary>Removes a loose body without putting it back (a lifted piece stays in the log, unused).</summary>
     public void Remove(BodyHandle body) => RemoveBody(body, removeModel: true);
@@ -407,7 +467,7 @@ public sealed partial class LooseBodies
         }
 
         var simulation = _physics.Simulation;
-        _colliders.Forget(body);
+        _colliders?.Forget(body);
         if (loose.Ragdoll > 0 && _ragdolls.TryGetValue(loose.Ragdoll, out var members))
         {
             members.Remove(body);

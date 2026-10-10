@@ -44,8 +44,8 @@ public sealed class MatchControl
     /// <summary>The session role of the match now; offline without one.</summary>
     public SessionRole Role => Current?.Session.Role ?? SessionRole.Offline;
 
-    /// <summary>The match's world while it exists (loading or playing), else null.</summary>
-    public VoxelWorld? World => Phase is MatchPhase.Loading or MatchPhase.Playing ? Current?.Voxels : null;
+    /// <summary>The match's voxel world while it exists (loading or playing), else null; null without terrain.</summary>
+    public VoxelWorld? World => Phase is MatchPhase.Loading or MatchPhase.Playing ? Current?.Terrain?.Voxels : null;
 
     /// <summary>How far a client's join is, while <see cref="Phase"/> is <see cref="MatchPhase.Joining"/>.</summary>
     public JoinProgress JoinProgress { get; internal set; }

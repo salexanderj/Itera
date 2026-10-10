@@ -430,19 +430,21 @@ A game is an executable that registers the engine, then itself, and runs `GameLo
 - `AddIteraEngine` registers the engine's services with `TryAdd`, so a game's later registration of the same service
   type wins (the loading tasks and UI layers are lists a game adds to). The engine registers no ECS system. It also registers what systems share: `PlayArea`
   (round the match's grid with terrain, else `PlayArea.WithoutTerrain`, the bounds of a 10 cm grid, which a game whose
-  meshes reach farther replaces), `PlayerInputBlock`, `WorldResets`, and `MovementKeys`; the character mover (over the
-  terrain and the loose bodies when there is terrain, and the mesh colliders always); and the match's identity (`IMatchIdentity`: the generator's id and version with
+  meshes reach farther replaces), `PlayerInputBlock`, `WorldResets`, and `MovementKeys`; the voxel models (in the voxel
+  world's memory with terrain, where lifted pieces lie, else their own), the loose bodies (which meet the terrain
+  through its colliders, or the mesh colliders alone), the bodies as the mover's cells, and the character mover (over
+  the terrain when there is one, the mesh colliders, and the loose bodies); and the match's identity (`IMatchIdentity`: the generator's id and version with
   voxel terrain, else the application's name at version 1; a game may register its own), which the hello, the welcome,
   and a lobby's match key carry.
 - `AddIteraVoxels()` (`VoxelServiceCollectionExtensions`) adds the voxel terrain: each match's `VoxelWorld` and
   `MatchVoxels` (the match's terrain services together, `MatchServices.Terrain`), its `VoxelColliders`,
   `NavigationService`, `IBenchmarkHost`, and the World, Navigation, and Warm-up loading tasks, after the engine's Sounds
-  and before the game's own; and, while they keep their voxels in the world's memory, the voxel models and the loose
-  bodies. A game with terrain registers an
+  and before the game's own. A game with terrain registers an
   `IChunkGenerator` and calls it. A game without it plays matches with no voxel world: no voxels, navigation, or voxel
   physics steps, nothing of a world on the GPU, a join payload and a save of the header alone (its match identity, seed,
-  step rate, and match data), and the session, physics, ECS, UI, audio, particles, mesh assets, mods, and the character
-  mover over its mesh colliders as usual.
+  step rate, and match data), and the session, physics, ECS, UI, audio, particles, mesh assets, mods, the character
+  mover over its mesh colliders, and loose bodies (balls and cut bodies, which a game's `ILooseBodyRest` decides about
+  once they rest, as there is no grid to settle into) as usual. Voxel models are not drawn without terrain yet.
 - These have engine defaults that a game may replace: `IVoxelPalette`
   (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable), `MenuStyle` (plain), and, for navigation,
   nothing (without an `INavGridSource` there is no navigation). A game adds an `IAtmosphereSource` for its sky, an
@@ -893,8 +895,8 @@ holds the decisions, the measurements, and the history of how it replaced a raym
 
 A model is a small voxel volume drawn at any position and turn: a part of a character's body, a loose body's piece, an item.
 
-- `VoxelModels` (main thread) holds each model as one chunk tree per level (up to 3) in the voxel memory, with a voxel unit
-  of its own (1 cm in the starter), until its owner frees it. `WorldMeshes.Models.cs` meshes each level of each model as it
+- `VoxelModels` (main thread) holds each model as one chunk tree per level (up to 3) in a voxel memory (the world's with
+  terrain, its own without), with a voxel unit of its own (1 cm in the starter), until its owner frees it. `WorldMeshes.Models.cs` meshes each level of each model as it
   does the world: the level is cut into 32-voxel blocks starting one voxel before its box, each block read with a 2-voxel
   apron of air and meshed on the same workers, before the world's blocks, and kept in the mesh heap in a range of its own. A
   model counts as uploaded (`VoxelModels.SetUploaded`) once all its blocks are in; loading tasks wait for that. A replaced
@@ -974,13 +976,14 @@ a piece's boxes was tried first and cost up to 137 ms a step.
   reading the chunk trees was rejected: Bepu's worker threads would read the voxel world, which is main-thread only.
 - **Life.** A ball is made from nothing (`LooseBodies.TryCreateBall`: a round model of 1 cm stone voxels, one per radius and
   material, not in the edit log). After 3 s at rest (`Engine:Physics:SettleSeconds`) and not reaching into a character, it
-  goes back into the grid as a sphere of its material filled into the air, or as a piece edit if it is a lifted piece. One
-  that falls 10 m below the world is removed. At most 384 exist (`Engine:Physics:MaxLooseBodies`); when more are needed the
+  goes back into the grid as a sphere of its material filled into the air, or as a piece edit if it is a lifted piece;
+  without voxel terrain the game's `ILooseBodyRest` decides (`.claude/rules/physics.md`). One that falls 10 m below the
+  world is removed. At most 384 exist (`Engine:Physics:MaxLooseBodies`); when more are needed the
   oldest are removed (`LooseBodyRoom`), a ragdoll whole. Whatever removes a body destroys its entity in the same step, and
   each entity keeps its body's birth stamp (`LooseBody.Born`) so `PhysicsReadSystem` can tell a handle Bepu gave to a newer
   body.
-- **Characters and bodies act on each other.** The mover reads loose bodies as voxels (`LooseBodyVoxels`: a world brick a
-  query reaches is filled on demand with the voxels whose centres land on a body's blocking voxels, cached for the step), so
+- **Characters and bodies act on each other.** The mover reads loose bodies as voxels of its cells (`LooseBodyVoxels`: a
+  brick a query reaches is filled on demand with the voxels whose centres land on a body's blocking voxels, cached for the step), so
   characters are blocked by bodies and stand on them, but push rather than climb them. Each character within 3 m of a body of
   a lifted piece or ball has a stand-in (`PhysicsWorld.AddStandIn`): a Bepu cylinder of its size and mass that never tips
   and touches those bodies only, placed where the character ended each step at its velocity plus at most 10 m/s^2 towards
@@ -1294,8 +1297,9 @@ of buffers.
 Engine work that is known and not done:
 
 - **Voxels optional, the rest.** A match runs without voxel terrain (no generator, no `AddIteraVoxels`), and its
-  characters move over mesh colliders, but voxel models and loose bodies still keep their voxels in the world's memory and
-  need terrain; that, and the movement building blocks for climbing, are planned (the mesh path's phase 5).
+  characters and loose bodies move over mesh colliders, but voxel models (the bodies' among them) are drawn only with
+  terrain (`WorldMeshes` follows a match's world); that, and the movement building blocks for climbing, are planned (the
+  mesh path's phase 5).
 - **Per-game look data in the shaders.** The art direction's constants (saturation and darkening of the world, the side
   shading, the warm and cool light, the split tone, the occlusion floor, the fog and sky light terms) sit in `mesh.frag` and
   `lighting.glsl`. They should be data a game sets, with today's values as the starter's defaults.

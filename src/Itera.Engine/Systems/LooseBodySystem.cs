@@ -16,7 +16,9 @@ namespace Itera.Engine.Systems;
 /// Ends loose bodies (fixed group, after the tools): a body at rest (<see cref="LooseBodies.IsAtRest"/>) for
 /// <c>Engine:Physics:SettleSeconds</c> in a row goes back into the voxel grid where it lies
 /// (<see cref="LooseBodies.Settle"/>), unless its bounds reach into a character's cylinder (the piece would fill the air
-/// the character stands in); it waits then. A <see cref="CutPiece"/> never goes into the grid: it is removed after
+/// the character stands in); it waits then. Without voxel terrain there is no grid: the game's
+/// <see cref="ILooseBodyRest"/> decides whether it stays (<see cref="LooseBody.Kept"/> until it moves), goes, or becomes
+/// the game's (<see cref="LooseBodies.Release"/>); with none, it stays. A <see cref="CutPiece"/> never goes into the grid: it is removed after
 /// <see cref="CutRestSeconds"/> at rest, where a body frozen because the player left its columns behind counts as
 /// resting (<see cref="LooseBodies.IsAtRestOrFrozen"/>), so cut pieces left behind do not stay for the rest of the run
 /// and fill <c>Engine:Physics:MaxLooseBodies</c>; and at the latest <see cref="CutMostSeconds"/> after it was made,
@@ -48,6 +50,7 @@ public sealed class LooseBodySystem : BaseSystem<World, FixedStepTime>, IFixedUp
     public const float CutMostSeconds = 60;
 
     private readonly LooseBodies _bodies;
+    private readonly ILooseBodyRest? _rest;
     private readonly VoxelTintSampler? _tint;
     private readonly int _cutTicks;
     private readonly int _cutMostTicks;
@@ -65,16 +68,19 @@ public sealed class LooseBodySystem : BaseSystem<World, FixedStepTime>, IFixedUp
     /// gives 0.
     /// </param>
     /// <param name="console">The console's commands, which gets <c>settle</c>; none in tests.</param>
+    /// <param name="rest">What the game makes of a rested body without voxel terrain; none keeps it.</param>
     public LooseBodySystem(
         World world,
         LooseBodies bodies,
         IOptions<EngineOptions> options,
         VoxelTintSampler? tint = null,
-        ConsoleCommands? console = null
+        ConsoleCommands? console = null,
+        ILooseBodyRest? rest = null
     )
         : base(world)
     {
         _bodies = bodies;
+        _rest = rest;
         _tint = tint;
         _console = console;
         var engine = options.Value;
@@ -135,6 +141,7 @@ public sealed class LooseBodySystem : BaseSystem<World, FixedStepTime>, IFixedUp
                 var cut = _bodies.IsCut(body.Body);
                 var resting = cut ? _bodies.IsAtRestOrFrozen(body.Body) : _bodies.IsAtRest(body.Body);
                 body.RestTicks = resting ? body.RestTicks + 1 : 0;
+                body.Kept &= resting;
                 if (cut)
                 {
                     // A cut piece: removed after resting (or lying frozen), or at the latest when old enough; never put
@@ -149,8 +156,29 @@ public sealed class LooseBodySystem : BaseSystem<World, FixedStepTime>, IFixedUp
                     continue;
                 }
 
-                if (body.RestTicks < _settleTicks)
+                if (body.RestTicks < _settleTicks || body.Kept)
                 {
+                    continue;
+                }
+
+                if (!_bodies.CanSettle)
+                {
+                    var choice = _rest?.Rested(_bodies.Rested(body.Body)) ?? LooseBodyRestChoice.Keep;
+                    if (choice == LooseBodyRestChoice.Remove)
+                    {
+                        _bodies.Remove(body.Body);
+                        _commands.Destroy(chunk.Entity(index));
+                    }
+                    else if (choice == LooseBodyRestChoice.TakeOver)
+                    {
+                        _bodies.Release(body.Body);
+                        _commands.Destroy(chunk.Entity(index));
+                    }
+                    else
+                    {
+                        body.Kept = true;
+                    }
+
                     continue;
                 }
 

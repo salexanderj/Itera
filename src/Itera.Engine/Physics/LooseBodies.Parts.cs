@@ -272,8 +272,9 @@ public sealed partial class LooseBodies
         var mass = 0f;
         var hulls = 0;
         // A giant's body (every part of 4 cm voxels or coarser) collides with the world's coarse voxels, when it has them.
-        var coarseLevel = VoxelColliders.CoarseLevelOf(_voxels.Grid);
-        var level = _voxels.Levels > coarseLevel ? coarseLevel : 0;
+        // Without voxel terrain a body meets only the game's mesh colliders, which every level touches.
+        var coarseLevel = _voxels is null ? 0 : VoxelColliders.CoarseLevelOf(_voxels.Grid);
+        var level = _voxels is not null && _voxels.Levels > coarseLevel ? coarseLevel : 0;
         foreach (ref readonly var part in parts)
         {
             var coarse = VoxelModels.LevelCentimetres(part.Level) >= VoxelColliders.CoarsePartCentimetres;
@@ -386,7 +387,7 @@ public sealed partial class LooseBodies
             return true;
         }
 
-        _boxes.Build(_voxels.ReadMemory, new VoxelPiece(0, default, part.Size, part.Tree.State, 0, 0), in _passable);
+        _boxes.Build(_models.Memory, new VoxelPiece(0, default, part.Size, part.Tree.State, 0, 0), in _passable);
         var boxes = _boxes.Boxes;
         if (boxes.Length == 0)
         {

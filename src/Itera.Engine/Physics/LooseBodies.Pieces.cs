@@ -12,10 +12,11 @@ public sealed partial class LooseBodies
     /// <summary>
     /// Makes a loose body of a ball of <paramref name="material"/> of <paramref name="radius"/> centimetres made from
     /// nothing (a thrown ball): the centimetres a sphere edit of that radius covers about its pivot's voxel
-    /// (<see cref="VoxelWorld.MakeBall"/>; each radius and material made once and shared), unturned, with its pivot (the
+    /// (<see cref="VoxelModels.MakeBall"/>; each radius and material made once and shared), unturned, with its pivot (the
     /// low corner of its middle centimetre) at <paramref name="pivotMetres"/>, moving at <paramref name="velocity"/>. It
     /// takes nothing from the world and goes back as a sphere of its material filled into the air where it rests
-    /// (<see cref="Settle"/>). False when <see cref="MaxBodies"/> exist already. Throws as <see cref="VoxelWorld.MakeBall"/>.
+    /// (<see cref="Settle"/>), or, without voxel terrain, becomes what the game decides (<see cref="ILooseBodyRest"/>).
+    /// False when <see cref="MaxBodies"/> exist already. Throws as <see cref="VoxelModels.MakeBall"/>.
     /// </summary>
     public bool TryCreateBall(int radius, byte material, Vector3 pivotMetres, Vector3 velocity, out BodyHandle body) =>
         TryCreatePiece(
@@ -44,12 +45,14 @@ public sealed partial class LooseBodies
     /// <summary>
     /// Makes a loose body of the piece lifted by edit <paramref name="piece"/>, unturned, with the piece's pivot at
     /// <paramref name="pivotMetres"/>, moving at <paramref name="velocity"/>. False when <see cref="MaxBodies"/> exist
-    /// already, no lift made the piece, or the piece holds nothing that blocks.
+    /// already, no lift made the piece (always without voxel terrain), or the piece holds nothing that blocks.
     /// </summary>
     public bool TryCreate(long piece, Vector3 pivotMetres, Vector3 velocity, out BodyHandle body)
     {
         body = default;
-        return _voxels.TryGetPiece(piece, out var voxels)
+        VoxelPiece voxels = default;
+        return _voxels is not null
+            && _voxels.TryGetPiece(piece, out voxels)
             && TryCreatePiece(voxels, pivotMetres, Quaternion.Identity, velocity, false, 0, 0, out body);
     }
 
@@ -64,7 +67,9 @@ public sealed partial class LooseBodies
     public bool TryCreateMirror(long piece, Vector3 pivotMetres, Quaternion turn, out BodyHandle body)
     {
         body = default;
-        return _voxels.TryGetPiece(piece, out var voxels)
+        VoxelPiece voxels = default;
+        return _voxels is not null
+            && _voxels.TryGetPiece(piece, out voxels)
             && TryCreatePiece(voxels, pivotMetres, turn, Vector3.Zero, true, 0, 0, out body);
     }
 
@@ -73,7 +78,7 @@ public sealed partial class LooseBodies
     {
         if (!_balls.TryGetValue((radius, material), out var ball))
         {
-            ball = _voxels.MakeBall(radius, material);
+            ball = _models.MakeBall(radius, material);
             _balls.Add((radius, material), ball);
         }
 
@@ -103,7 +108,7 @@ public sealed partial class LooseBodies
             return false;
         }
 
-        _boxes.Build(_voxels.ReadMemory, in voxels, in _passable);
+        _boxes.Build(_models.Memory, in voxels, in _passable);
         if (_boxes.Count == 0)
         {
             return false;
@@ -215,7 +220,8 @@ public sealed partial class LooseBodies
     /// share of each that the sphere covers, as any fill); a lifted piece as a piece edit, its orientation rounded to a
     /// packed turn, which fills only air. Its model is retired: drawn where the body lies, blended
     /// <paramref name="tint"/> towards its tint colour, until the world's drawn copy holds the edit
-    /// (<see cref="VoxelModels.Retire"/>). Returns the edit's sequence.
+    /// (<see cref="VoxelModels.Retire"/>). Returns the edit's sequence. Throws without voxel terrain
+    /// (<see cref="CanSettle"/>).
     /// </summary>
     public long Settle(BodyHandle body, float tint = 0)
     {
@@ -223,6 +229,11 @@ public sealed partial class LooseBodies
         if (loose.Cut)
         {
             throw new InvalidOperationException("A body cut off a character never goes back into the grid.");
+        }
+
+        if (_voxels is null)
+        {
+            throw new InvalidOperationException("A match without voxel terrain has no grid to settle a body into.");
         }
 
         var pose = _physics.Simulation.Bodies[body].Pose;
@@ -246,23 +257,74 @@ public sealed partial class LooseBodies
             LogSettled(body.Value, loose.Piece, corner.X, corner.Y, corner.Z, sequence);
         }
 
-        var piecePivot = loose.Voxels.Pivot;
-        var boxCorner =
-            pivot * Metres
-            + Vector3.Transform(new Vector3(-piecePivot.X, -piecePivot.Y, -piecePivot.Z) * Metres, pose.Orientation);
-        _models.Retire(loose.Model, 0, boxCorner, pose.Orientation, tint);
+        _models.Retire(loose.Model, 0, ModelCorner(in loose, pivot * Metres, pose.Orientation), pose.Orientation, tint);
         RemoveBody(body, removeModel: false);
         return sequence;
+    }
+
+    /// <summary>
+    /// What a rested body is, for a game's <see cref="ILooseBodyRest"/>: its model and where that lies, its pivot, its
+    /// turn, and a ball's radius and material. Throws for a body cut off a character. Allocates nothing.
+    /// </summary>
+    public RestedBody Rested(BodyHandle body)
+    {
+        var loose = _bodies[body];
+        if (loose.Cut)
+        {
+            throw new InvalidOperationException("A body cut off a character goes after resting; no game takes it.");
+        }
+
+        var pose = _physics.Simulation.Bodies[body].Pose;
+        var pivot = pose.Position + Vector3.Transform(loose.PivotOffset, pose.Orientation);
+        return new RestedBody(
+            body,
+            loose.Model,
+            ModelCorner(in loose, pivot, pose.Orientation),
+            pose.Orientation,
+            pivot,
+            loose.BallRadius,
+            loose.BallMaterial,
+            loose.Mass
+        );
+    }
+
+    /// <summary>
+    /// Removes a loose body and leaves its model to the game (<see cref="LooseBodyRestChoice.TakeOver"/>): the model
+    /// stays until the game removes it (<see cref="VoxelModels.Remove"/>), drawn only where the game draws it. Throws for
+    /// a body cut off a character, whose models it owns.
+    /// </summary>
+    public void Release(BodyHandle body)
+    {
+        if (_bodies[body].Cut)
+        {
+            throw new InvalidOperationException("A body cut off a character owns its models; remove it instead.");
+        }
+
+        RemoveBody(body, removeModel: false);
+    }
+
+    /// <summary>The corner of a body's piece's box in the world, in metres, from its pivot there and its turn.</summary>
+    private static Vector3 ModelCorner(in Loose loose, Vector3 pivotMetres, Quaternion orientation)
+    {
+        var piecePivot = loose.Voxels.Pivot;
+        return pivotMetres
+            + Vector3.Transform(new Vector3(-piecePivot.X, -piecePivot.Y, -piecePivot.Z) * Metres, orientation);
     }
 
     /// <summary>
     /// Puts every thrown ball (and lifted piece) still loose back into the grid where it is (<see cref="Settle"/>), as if
     /// each had rested: before a save, so the saved world holds it (and a lifted piece's hole is not left with nothing to
     /// fill it); one frozen out of loaded range too. Bodies cut off characters are left alone. Only a game that owns its world saves, so there
-    /// are no mirrors of a host's bodies. Returns how many went back.
+    /// are no mirrors of a host's bodies. Returns how many went back: none without voxel terrain, whose save holds no
+    /// bodies.
     /// </summary>
     public int SettleThrown()
     {
+        if (_voxels is null)
+        {
+            return 0;
+        }
+
         var thrown = new List<BodyHandle>();
         foreach (var (handle, loose) in _bodies)
         {
@@ -283,11 +345,12 @@ public sealed partial class LooseBodies
     /// <summary>
     /// Puts the piece lifted by edit <paramref name="piece"/> straight back where it was lifted from, unturned: for a
     /// lift whose body could not be made. Returns the edit's sequence. Throws <see cref="ArgumentException"/> for a
-    /// piece no lift made (it would put back an empty piece at the origin).
+    /// piece no lift made (it would put back an empty piece at the origin; without voxel terrain no lift made any).
     /// </summary>
     public long PutBack(long piece)
     {
-        if (!_voxels.TryGetPiece(piece, out var voxels))
+        VoxelPiece voxels = default;
+        if (_voxels is null || !_voxels.TryGetPiece(piece, out voxels))
         {
             throw new ArgumentException($"No lift made piece {piece}.", nameof(piece));
         }

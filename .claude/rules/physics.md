@@ -16,7 +16,7 @@ top voxel ends where its density puts the ground's surface, a box to the millime
 whose parts are of coarse voxels collide with the level nearest their voxels, `VoxelColliders.CoarseLevelOf`, in cells
 of 32 voxels). A piece of more than 4,096 box corners is hulled from its farthest points in 42 directions
 (`LooseBodies.MaxHullPoints`). A ball is made from nothing (`LooseBodies.TryCreateBall`: one piece of 1 cm voxels per
-radius and material, `VoxelWorld.MakeBall`, shared; the console's `balls` drops a row, `DebugBallSystem`) and goes back
+radius and material, `VoxelModels.MakeBall`, shared; the console's `balls` drops a row, `DebugBallSystem`) and goes back
 into the grid as a sphere of its material filled into the air after 3 s at rest (`Engine:Physics:SettleSeconds`;
 `LooseBodySystem`, the console's `settle`); a lifted piece goes back as a piece edit. At most 384 loose bodies exist
 (`Engine:Physics:MaxLooseBodies`); more removes the oldest, a ragdoll whole (`LooseBodyRoom`). Bepu runs on
@@ -34,6 +34,19 @@ joints from its skeleton (`LooseBodies.TryCreateRagdoll`); no engine code calls 
 body's pose and each stand-in's push after a step; `LooseBodyModelSystem` hands the bodies' models to the renderer.
 Solid models that are not loose bodies (`SolidModelVoxels`, `SolidColumns`) are solid to the mover alone.
 
+Without voxel terrain (the core registers `VoxelModels`, `LooseBodies`, and `LooseBodyVoxels` either way): the models
+keep their trees in their own memory (with terrain, the world's, where a lifted piece lies), freed when the match
+ends; there are no lifts, no `VoxelColliders` (so no body ever freezes), and no grid to settle into. Bodies meet the
+game's mesh colliders (Bepu mesh statics every level touches), fall out under the play area's fall limit, and are read
+by the mover in cells of `Engine:Physics:CollisionCentimetres`. A ball that rests for `Engine:Physics:SettleSeconds`
+goes to the game's `ILooseBodyRest` (registered in the match's scope; `LooseBodySystem` asks): `Keep` (and with no
+handler) leaves it where it is, asked again once it has moved (`LooseBody.Kept`); `Remove` removes it with its model;
+`TakeOver` removes the body and leaves the model to the game (`LooseBodies.Release`, with where it lay from
+`LooseBodies.Rested`), which draws and later removes it. Voxel models, the bodies' among them, are not drawn without
+terrain yet (`WorldMeshes` follows only a match with a world). A save without terrain holds no bodies (`SettleThrown` does
+nothing). `DebugBallSystem` does not check a ball's space and `MapResetSystem`'s `reset` only cleans up and counts the
+reset without a world.
+
 The character mover (`VoxelCharacterMover`): an upright cylinder that slides along walls, steps up onto ledges up to its
 step height, walks up no slope past its max slope (steeper ground slides it down and it cannot jump there), lands, and
 walks through passable materials (`IVoxelPassability`). On voxels coarser than 1 cm it stands on the ground's surface
@@ -41,19 +54,20 @@ inside a voxel, where its density crosses one half (`VoxelWorld.SurfaceOver`), b
 that differ by less than the slope limit over a voxel. The map's edge is a wall at every height (`AddMapEdge`). It waits
 while the voxels round it are not loaded. Its widest body is 2 m in radius (`MaxRadiusMetres`). It also reads the
 match's mesh colliders in the same cells (`MeshColumns`), combined with the voxels by the higher top, the lower bottom,
-and either cell; without terrain it reads them alone in cells of `Engine:Physics:CollisionCentimetres` (10 by default),
-with no column to wait for, and its map edge at the play area's world edge. The core makes it (`AddIteraEngine`: the
-world's constructor with terrain, `VoxelCharacterMover(passability, colliders, cell, edge)` without), and the play area
+and either cell; without terrain it reads them and the loose bodies in cells of `Engine:Physics:CollisionCentimetres`
+(10 by default), with no column to wait for, and its map edge at the play area's world edge. The core makes it
+(`AddIteraEngine`: the world's constructor with terrain, `VoxelCharacterMover(passability, colliders, cell, edge,
+bodies)` without), and the play area
 (`PlayArea`, round the grid, or `PlayArea.WithoutTerrain`, a 10 cm grid's bounds, with a bounds constructor for a game
 to register its own). Where a mesh's top is over the voxels' but its surface lies under theirs (a steep triangle half in
 the ground), the voxels' surface holds the body.
 
 `MeshColumns` (internal): a column's spans, one for each triangle over the column's square: the lowest and highest
-cell it blocks, its plane's height at the square's centre (a wall's highest point over the square), and its tags. Only the cells a triangle
-passes through block: a closed mesh has no inside, so a body inside one is blocked only where a face lies in its height.
-A triangle on a cell's boundary blocks the cell behind its front (before it is cut it moves 0.01 cell behind its front
-along each axis it reaches less than that along), so a floor at y = k blocks the cell under it, a ceiling there the cell over
-it, and a closed mesh of a voxel box the box's outer voxels; a triangle that only touches a column's corner leaves it
+cell it blocks, its plane's height at the square's centre (a wall's highest point over the square), and its tags. Only
+the cells a triangle passes through block: a closed mesh has no inside, so a body inside one is blocked only where a
+face lies in its height. A triangle on a cell's boundary blocks the cell behind its front (before it is cut it moves
+0.01 cell behind its front along each axis it reaches less than that along), so a floor at y = k blocks the cell under
+it, a ceiling there the cell over it, and a closed mesh of a voxel box the box's outer voxels; a triangle that only touches a column's corner leaves it
 alone. A column's surface is the plane at its centre, anywhere in its top cell or under it on a slope (the voxels' lies
 within half a cell of their top; the mover reads surfaces for both). Chunks of 32 by 32 columns are made at their first
 read and kept until the colliders change (`MeshColliders.Version`), at most 256 (`MostChunks`; past that, the chunk read

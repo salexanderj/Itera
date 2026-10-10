@@ -49,7 +49,8 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
 The world and bodies: `StreamingCentreSystem` (fixed, last) centres streaming on the local player's eye (or the active
 camera while flying), round remote players on a host, and round loose bodies; `MapResetSystem` (fixed, first) runs
 `cleanup` (every loose body and particle) and `reset` (the world back to the seed's, counted in `WorldResets` for a
-game's systems to put their things back); the physics systems are in `.claude/rules/physics.md`;
+game's systems to put their things back; without voxel terrain, the clean-up and the count only); the physics systems,
+`LooseBodySystem`'s rest handler without terrain (`ILooseBodyRest`) among them, are in `.claude/rules/physics.md`;
 `DebugOutlineSystem` draws bodies' boxes and stand-ins with the debug lines.
 
 Mesh assets: `MeshDrawSystem` (frame, after `LooseBodyModelSystem`) hands every entity with a `MeshPlacement` (the

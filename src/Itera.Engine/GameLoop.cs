@@ -895,7 +895,7 @@ public sealed partial class GameLoop
     {
         if (match.Terrain is { } terrain)
         {
-            _worldMeshes.BeginMatch(terrain.Voxels, terrain.Models, match.TintMap);
+            _worldMeshes.BeginMatch(terrain.Voxels, match.Models, match.TintMap);
             _worldOnGpu = true;
         }
     }

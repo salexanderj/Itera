@@ -151,8 +151,13 @@ public static class EngineServiceCollectionExtensions
         services.TryAddScoped<CollisionSources>();
         services.TryAddSingleton<IVoxelPassability, NothingPassable>();
         services.TryAddSingleton<IVoxelSurfaceTags, NoVoxelSurfaceTags>();
-        // The character mover over the terrain when there is one (with the loose bodies as voxels) and the colliders, or
-        // the colliders alone in cells of Engine:Physics:CollisionCentimetres, the map's edge the play area's world edge.
+        // The voxel models (in the voxel world's memory with terrain, their own without), the loose bodies (which meet the
+        // terrain through its colliders, or the mesh colliders alone), and the bodies as the character mover's cells.
+        services.TryAddScoped(sp => new VoxelModels(sp.GetService<VoxelWorld>()));
+        services.TryAddScoped(CreateLooseBodies);
+        services.TryAddScoped(CreateLooseBodyVoxels);
+        // The character mover over the terrain when there is one and the colliders, or the colliders alone in cells of
+        // Engine:Physics:CollisionCentimetres, the map's edge the play area's world edge; the loose bodies either way.
         services.TryAddScoped(CreateCharacterMover);
         // What the engine's player, camera, and benchmark systems share (Systems/): the play area (round the terrain's
         // grid, or PlayArea.WithoutTerrain; a game without terrain may replace it), the input block a game sets, the
@@ -213,11 +218,59 @@ public static class EngineServiceCollectionExtensions
         var colliders = services.GetRequiredService<MeshColliders>();
         if (services.GetService<VoxelWorld>() is { } world)
         {
-            return new VoxelCharacterMover(world, passability, services.GetService<LooseBodyVoxels>(), colliders);
+            return new VoxelCharacterMover(
+                world,
+                passability,
+                services.GetRequiredService<LooseBodyVoxels>(),
+                colliders
+            );
         }
 
         var cell = services.GetRequiredService<IOptions<EngineOptions>>().Value.Physics.CollisionCentimetres;
         var edge = services.GetRequiredService<PlayArea>().WorldEdgeMetres;
-        return new VoxelCharacterMover(passability, colliders, cell, edge);
+        return new VoxelCharacterMover(
+            passability,
+            colliders,
+            cell,
+            edge,
+            services.GetRequiredService<LooseBodyVoxels>()
+        );
+    }
+
+    private static LooseBodies CreateLooseBodies(IServiceProvider services)
+    {
+        var physics = services.GetRequiredService<PhysicsWorld>();
+        var models = services.GetRequiredService<VoxelModels>();
+        var passability = services.GetRequiredService<IVoxelPassability>();
+        var options = services.GetRequiredService<IOptions<EngineOptions>>();
+        var logger = services.GetRequiredService<ILogger<LooseBodies>>();
+        if (services.GetService<VoxelWorld>() is { } world)
+        {
+            var colliders = services.GetRequiredService<VoxelColliders>();
+            return new LooseBodies(physics, world, colliders, models, passability, options, logger);
+        }
+
+        // Read at the first need: a game's play area may read the match's seed, which the session settles later.
+        return new LooseBodies(
+            physics,
+            models,
+            passability,
+            options,
+            logger,
+            () => services.GetRequiredService<PlayArea>().FallLimitMetres
+        );
+    }
+
+    private static LooseBodyVoxels CreateLooseBodyVoxels(IServiceProvider services)
+    {
+        var bodies = services.GetRequiredService<LooseBodies>();
+        var passability = services.GetRequiredService<IVoxelPassability>();
+        if (services.GetService<VoxelWorld>() is { } world)
+        {
+            return new LooseBodyVoxels(bodies, world, passability);
+        }
+
+        var cell = services.GetRequiredService<IOptions<EngineOptions>>().Value.Physics.CollisionCentimetres;
+        return new LooseBodyVoxels(bodies, passability, cell);
     }
 }

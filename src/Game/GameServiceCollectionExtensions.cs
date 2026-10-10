@@ -188,7 +188,8 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<LooseBodies>(),
             sp.GetRequiredService<IOptions<EngineOptions>>(),
             sp.GetRequiredService<VoxelTintSampler>(),
-            sp.GetRequiredService<ConsoleCommands>()
+            sp.GetRequiredService<ConsoleCommands>(),
+            sp.GetService<ILooseBodyRest>()
         ));
         services.AddScoped<IFixedUpdateSystem>(sp => new MeshAnimatorSystem(
             sp.GetRequiredService<EcsWorld>().World,

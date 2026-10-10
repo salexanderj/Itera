@@ -232,11 +232,13 @@ public sealed class VoxelCharacterMover
     /// <param name="meshes">The match's mesh colliders.</param>
     /// <param name="cellCentimetres">The cells' edge, in centimetres (<c>Engine:Physics:CollisionCentimetres</c>).</param>
     /// <param name="edgeMetres">How far the map reaches from the middle, in metres; infinity (the default) for no edge.</param>
+    /// <param name="bodies">Loose bodies, read in the same cells (made with <paramref name="cellCentimetres"/>); null for none.</param>
     public VoxelCharacterMover(
         IVoxelPassability passability,
         MeshColliders meshes,
         int cellCentimetres,
-        float edgeMetres = float.PositiveInfinity
+        float edgeMetres = float.PositiveInfinity,
+        LooseBodyVoxels? bodies = null
     )
         : this(
             null,
@@ -244,7 +246,7 @@ public sealed class VoxelCharacterMover
             -EdgeCells(edgeMetres, cellCentimetres),
             EdgeCells(edgeMetres, cellCentimetres),
             passability,
-            null,
+            bodies,
             meshes
         ) { }
 

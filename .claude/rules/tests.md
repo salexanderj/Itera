@@ -71,7 +71,8 @@ Where tests live:
   models (`ModelEditingTests`); `EditLogTests`.
 - `Itera.Engine.Tests/Systems/`: each engine system's behaviour and allocation, over `PhysicsTestHarness`,
   `FlatGenerator`, `FlatTestGenerator`, `RampGenerator`, `FakeTickInput`, and `FakeFrameInput`; the play area
-  (`PlayAreaTests`).
+  (`PlayAreaTests`); `LooseBodySystem` without voxel terrain, with a game's rest handler (`LooseBodyRestTests`, over
+  `MeshGroundHarness`).
 - `Itera.Engine.Tests/Voxels/Generation/`: the shapes' row spans against point tests, fractal noise, the jittered grid,
   the scalar field, the field tint map with `VoxelTintSampler`, and the heightfield generator (every description against
   its filled voxels, fills against a voxel-by-voxel reference, `HillsGenerator`).
@@ -88,7 +89,9 @@ Where tests live:
   from the same features (`MoverFeatureTests`: `VoxelCharacterMoverTests` and `MeshMoverFeatureTests` over a world of
   air; `DensityGroundTests` at 10 cm: `DensityMoverTests` and `MeshDensityGroundTests` with no world, both from
   `TestTriangles`), the mover over colliders alone (`MeshMoverTests`: a thin wall, a slope along no axis, a collider
-  added and removed, the map's edge), and over voxels and colliders in the same cells (`MixedGroundMoverTests`); wide bodies (`WideBodyMoverTests`); statics of voxel boxes,
+  added and removed, the map's edge), and over voxels and colliders in the same cells (`MixedGroundMoverTests`); loose
+  bodies without voxel terrain (`LooseBodiesWithoutTerrainTests`, over `Systems/MeshGroundHarness`: mesh ground, models
+  in their own memory, the mover reading the bodies); wide bodies (`WideBodyMoverTests`); statics of voxel boxes,
   coarse colliders (`CoarseCollidersTests`), ragdolls (`RagdollTests`), thrown and settled pieces, the mover among
   loose bodies (`MoverWithBodiesTests`), and solid models (`SolidModelVoxelsTests`).
 - `Itera.Engine.Tests/Rendering/`: `Materials/MaterialTextureSetsTests` (DDS files read back, sets loaded and left out,

@@ -58,11 +58,15 @@ public sealed partial class MatchServices
         FixedStepAccumulator accumulator,
         ParticleColours colours,
         ModLoader mods,
+        VoxelModels models,
+        LooseBodyVoxels bodyVoxels,
         ILogger<MatchServices> logger,
         MatchVoxels? terrain = null
     )
     {
         _mods = mods;
+        Models = models;
+        BodyVoxels = bodyVoxels;
         _scope = scope;
         _context = context;
         Session = session;
@@ -92,16 +96,16 @@ public sealed partial class MatchServices
     /// <summary>The terrain's world. Throws in a match without terrain: code that may run there reads <see cref="Terrain"/>.</summary>
     public VoxelWorld Voxels => (Terrain ?? throw NoTerrain()).Voxels;
 
-    /// <summary>The terrain's voxel models; throws in a match without terrain.</summary>
-    public VoxelModels Models => (Terrain ?? throw NoTerrain()).Models;
+    /// <summary>The match's voxel models (in the world's memory with terrain).</summary>
+    public VoxelModels Models { get; }
 
     public PhysicsWorld Physics { get; }
 
     /// <summary>The terrain's colliders; throws in a match without terrain.</summary>
     public VoxelColliders Colliders => (Terrain ?? throw NoTerrain()).Colliders;
 
-    /// <summary>The loose bodies as voxels; throws in a match without terrain.</summary>
-    public LooseBodyVoxels BodyVoxels => (Terrain ?? throw NoTerrain()).BodyVoxels;
+    /// <summary>The loose bodies as the character mover's cells.</summary>
+    public LooseBodyVoxels BodyVoxels { get; }
 
     /// <summary>Navigation over the terrain; throws in a match without terrain.</summary>
     public NavigationService Navigation => (Terrain ?? throw NoTerrain()).Navigation;
@@ -144,7 +148,7 @@ public sealed partial class MatchServices
         Physics.Step(step.StepSeconds);
         var bodyVoxelsStart = Stopwatch.GetTimestamp();
         // The character mover reads loose bodies where this step left them.
-        terrain?.BodyVoxels.Refresh();
+        BodyVoxels.Refresh();
         stats?.RecordStepParts(
             stepStart,
             editsStart,
