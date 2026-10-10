@@ -141,6 +141,9 @@ public sealed class VoxelCharacterMover
     /// </summary>
     private const double OverlapCentimetres = 0.1;
 
+    /// <summary>The least <see cref="LookAheadCentimetres"/> in cells: what it is in 10 cm cells.</summary>
+    private const double LeastLookAheadCells = 0.8;
+
     /// <summary>The widest circle at the centre of a body that the steepness rule reads first, in centimetres.</summary>
     private const double CentreCentimetres = 16;
 
@@ -284,7 +287,8 @@ public sealed class VoxelCharacterMover
         _stepGain = StepGainCentimetres / cell;
         _supportDepth = SupportDepthCentimetres / cell;
         _supportCells = Math.Max(1, (int)Math.Ceiling(_supportDepth - 1e-9));
-        _lookAhead = LookAheadCentimetres / cell;
+        // At least 0.8 of a cell (8 cm at 10 cm), so on cells coarser than 10 cm it still reaches the next column.
+        _lookAhead = Math.Max(LookAheadCentimetres / cell, LeastLookAheadCells);
         _oneStep = StepCentimetres / cell;
         _overlap = OverlapCentimetres / cell;
         _centreCells = CentreCentimetres / cell;

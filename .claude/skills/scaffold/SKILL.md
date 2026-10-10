@@ -106,8 +106,11 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 
 ## A change to what the generator makes
 
-A change of its voxels, or of its world's size (its grid: `VoxelGrid.Sized(base, halfWidthMetres, floorMetres,
-topMetres)`, up to ±160 km each way and 128 layers of chunks; `GameGenerator.WorldGrid` for the starter).
+A change of its voxels, or of its world's size or voxel size (its grid: `VoxelGrid.Sized(base, halfWidthMetres,
+floorMetres, topMetres)`, voxels of 1 cm to 1 m, up to ±160 km each way and 128 layers of chunks;
+`GameGenerator.WorldGrid` for the starter). Coarse voxels (50 cm, 1 m) make deformable terrain cheap; shapes under a
+voxel then show only as soft dips, walls come in voxel steps, and a generator's centimetre-sized features (a 5 cm
+surface layer, small stones) vanish.
 
 1. Raise the generator's `Version` (`GameGenerator.Version` for the starter).
 2. Pin the new hash and grid with it in `tests/Game.Tests/WorldTests`: the test compares `(Version, hash, grid

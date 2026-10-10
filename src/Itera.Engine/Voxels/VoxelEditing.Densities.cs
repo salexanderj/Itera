@@ -2,7 +2,9 @@ namespace Itera.Engine.Voxels;
 
 // The world's edits, which keep each voxel's density (VoxelDensity): a sphere, capsule, or box clear, fill, set, or clear
 // of some materials changes a voxel by the share of its cube the shape covers, not by its sample point, so a shape
-// smaller than a voxel still marks it and a dig's wall lies where the shape's does. Models keep the sample points.
+// smaller than a voxel still marks it and a dig's wall lies where the shape's does. A voxel is measured on at most 10
+// sub-rows each way, so a shape that meets none of them (under about a tenth of a voxel: 7 cm on 1 m voxels) changes
+// nothing. Models keep the sample points.
 internal static partial class VoxelEditing
 {
     /// <summary>The most sub-rows a voxel is measured on along y and along z.</summary>

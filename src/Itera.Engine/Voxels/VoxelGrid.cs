@@ -106,8 +106,12 @@ public readonly record struct VoxelGrid
         return new VoxelGrid(baseCentimetres, Clamp(halfWidth), Clamp(min), Clamp(max));
     }
 
-    /// <summary>The largest base: a level-9 voxel of it is 51.2 m, a chunk at level 0 12.8 m.</summary>
-    public const int MostBaseCentimetres = 10;
+    /// <summary>
+    /// The largest base, 1 m: a level-0 chunk of it is 128 m and a level-9 voxel 512 m. Voxels this coarse suit terrain a
+    /// game deforms in large strokes (craters, a heightmap's ground) for little memory: shapes under about a voxel show
+    /// only as soft dips, and walls and caves come in voxel steps.
+    /// </summary>
+    public const int MostBaseCentimetres = 100;
 
     /// <summary>
     /// How far a world may reach from the middle on any axis, in centimetres (160 km): inside the edit format's limit
@@ -117,7 +121,8 @@ public readonly record struct VoxelGrid
 
     /// <summary>
     /// The most level-0 layers a grid's columns may have. Every layer of a resident column costs memory, whether it holds
-    /// voxels or not, so the height a world reaches is capped by its chunk's size (164 m at 1 cm, 1,638 m at 10 cm).
+    /// voxels or not, so the height a world reaches is capped by its chunk's size (164 m at 1 cm, 1,638 m at 10 cm, 16.4 km
+    /// at 1 m).
     /// </summary>
     public const int MostLayers = 128;
 

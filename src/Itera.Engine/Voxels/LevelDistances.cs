@@ -8,7 +8,7 @@ namespace Itera.Engine.Voxels;
 /// 2^(<see cref="Levels"/> - 1), and rays use it to the end of the view. The defaults (level 0 drawn to the base radius
 /// less two columns, growth 2) make every level's radius the base radius times 2^k.
 /// </summary>
-/// <param name="BaseRadiusCentimetres"><c>Engine:Voxels:StreamingRadiusMetres</c>, in centimetres.</param>
+/// <param name="BaseRadiusCentimetres">The level-0 streaming radius (<see cref="VoxelSettings.StreamingRadiusMetresFor"/>), in centimetres.</param>
 /// <param name="Levels">Levels of detail.</param>
 /// <param name="Level0ReachCentimetres">
 /// How far level 0 is drawn; below zero (a base radius under two columns) it is drawn nowhere but still loads.
@@ -28,7 +28,7 @@ public readonly record struct LevelDistances(
     public static LevelDistances From(VoxelSettings settings, VoxelGrid grid)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        var radius = (long)(settings.StreamingRadiusMetres * VoxelConstants.CentimetresPerMetre);
+        var radius = (long)(settings.StreamingRadiusMetresFor(grid) * VoxelConstants.CentimetresPerMetre);
         var reach =
             settings.Level0ReachMetres > 0
                 ? (long)Math.Round(settings.Level0ReachMetres * VoxelConstants.CentimetresPerMetre)

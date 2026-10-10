@@ -204,7 +204,7 @@ internal static partial class SessionLog
 
     [LoggerMessage(
         Level = LogLevel.Debug,
-        Message = "Voxel options: streaming radius {RadiusMetres} m, memory budget {BudgetMegabytes} MB, worker threads {Workers}, configured seed {Seed}, debug walk {WalkSpeed} m/s"
+        Message = "Voxel options: streaming radius {RadiusMetres} m (0: from the grid), memory budget {BudgetMegabytes} MB, worker threads {Workers}, configured seed {Seed}, debug walk {WalkSpeed} m/s"
     )]
     public static partial void VoxelOptions(
         ILogger logger,

@@ -438,7 +438,7 @@ public sealed class EngineOptionsValidatorTests
         {
             Voxels = new VoxelSettings
             {
-                StreamingRadiusMetres = 0,
+                StreamingRadiusMetres = 1,
                 MemoryBudgetMegabytes = 1,
                 WorkerThreads = -1,
                 DebugWalkSpeed = double.NaN,
@@ -554,5 +554,53 @@ public sealed class EngineOptionsValidatorTests
         options.Control.Port = 47650;
         options.Renderer.ShaderSourceDirectory = Path.GetTempPath();
         Assert.True(_validator.Validate(null, options).Succeeded);
+    }
+
+    [Theory]
+    [InlineData(10, 500, true)]
+    [InlineData(10, 600, false)]
+    [InlineData(100, 5_000, true)]
+    [InlineData(100, 6_000, false)]
+    public void The_streaming_radius_and_level_0_reach_may_reach_39_columns_on_voxels_over_10_cm(
+        int baseCentimetres,
+        double metres,
+        bool valid
+    )
+    {
+        var validator = new EngineOptionsValidator([
+            new Itera.Engine.Tests.Voxels.GridShapesGenerator(new VoxelGrid(baseCentimetres)),
+        ]);
+        var radius = new EngineOptions
+        {
+            Voxels = new VoxelSettings { StreamingRadiusMetres = metres, Levels = 1 },
+        };
+        var reach = new EngineOptions
+        {
+            Voxels = new VoxelSettings { Level0ReachMetres = metres, Levels = 1 },
+        };
+
+        Assert.Equal(valid, validator.Validate(null, radius).Succeeded);
+        Assert.Equal(valid, validator.Validate(null, reach).Succeeded);
+    }
+
+    [Theory]
+    [InlineData(1, 59.2)]
+    [InlineData(10, 59.2)]
+    [InlineData(20, 118.4)]
+    [InlineData(100, 592)]
+    public void A_streaming_radius_of_0_is_59_2_m_or_4_625_level_0_columns_where_farther(
+        int baseCentimetres,
+        double metres
+    )
+    {
+        var grid = new VoxelGrid(baseCentimetres);
+        var validator = new EngineOptionsValidator([new Itera.Engine.Tests.Voxels.GridShapesGenerator(grid)]);
+        var options = new EngineOptions();
+
+        Assert.Equal(0, options.Voxels.StreamingRadiusMetres);
+        Assert.Equal(metres, options.Voxels.StreamingRadiusMetresFor(grid), 9);
+        Assert.Equal(25.5, new VoxelSettings { StreamingRadiusMetres = 25.5 }.StreamingRadiusMetresFor(grid));
+        Assert.True(validator.Validate(null, options).Succeeded);
+        Assert.Equal(metres * 8, VoxelWorld.ViewRadiusMetres(options.Voxels, grid), 6);
     }
 }

@@ -57,10 +57,12 @@ lists the game's). Commonly used:
   `--Engine:Save:Name=castle` (start from `Saves/castle.save` and write it at quit). Two games on one machine: add
   `--Engine:Voxels:WorkerThreads=4` to each (each takes a 512 MB mesh heap).
 - World: `--Engine:Voxels:Seed=7`, `Levels` (4 by default, 1 to 10: 10, 20, 40, and 80 cm voxels on a 10 cm world;
-  `Levels=1` is level 0 only, loaded to 59.2 m, a fraction of the memory), `StreamingRadiusMetres` (59.2: level 0 loads
-  to it and reaches it less two 12.8 m columns, 33.6 m), `WorkerThreads`, `EditColumnsPerStep` (1 to 64),
-  `DebugWalkSpeed=5` (the debug camera flies a 100 m circle, `Engine:Camera:CircleHeightMetres` up, 20 by default), `Level0ReachMetres` (0: the radius less two columns) and
-  `ReachGrowth` (2; 1.5 draws each level 1.5 times as far as the one before instead of twice; `LevelDistances`).
+  `Levels=1` is level 0 only, loaded to 59.2 m, a fraction of the memory), `StreamingRadiusMetres` (0, from the grid:
+  59.2 m on 10 cm voxels, where level 0 loads to it and reaches it less two 12.8 m columns, 33.6 m; 4.625 level-0
+  columns on voxels over 10 cm, 592 m at 1 m), `WorkerThreads`, `EditColumnsPerStep` (1 to 64), `DebugWalkSpeed=5` (the
+  debug camera flies a 100 m circle, `Engine:Camera:CircleHeightMetres` up, 20 by default), `Level0ReachMetres` (0: the
+  radius less two columns) and `ReachGrowth` (2; 1.5 draws each level 1.5 times as far as the one before instead of
+  twice; `LevelDistances`).
 - The starter: `--Game:World:CameraPose=x,y,z,yaw,pitch` (metres and degrees; `pos` prints it),
   `--Game:Player:StartFlying=true`, `ThirdPerson=true`, `HeightMetres=2.5` (1.2 to 2.5), `--Game:Minimap:Metres=128`
   (16 to 256; 64 by default).

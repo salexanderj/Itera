@@ -271,9 +271,11 @@ public sealed partial class GameLoop
             name => _phase = name,
             logger
         );
-        // The meshes reach the coarsest level's radius, or the view distance; fog hides where they stop.
+        // The meshes reach the coarsest level's radius, or the view distance; fog hides where they stop. The radius is the
+        // world's generator's grid's (1 cm without one, as the options' validator takes it).
         var voxels = _options.Voxels;
-        _maxViewDistance = (float)VoxelWorld.ViewRadiusMetres(voxels);
+        var grid = services.GetServices<IChunkGenerator>().FirstOrDefault()?.Grid ?? VoxelGrid.Unit;
+        _maxViewDistance = (float)VoxelWorld.ViewRadiusMetres(voxels, grid);
         if (_options.Renderer.ViewDistanceMetres > 0)
         {
             _maxViewDistance = Math.Min(_maxViewDistance, _options.Renderer.ViewDistanceMetres);

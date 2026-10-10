@@ -23,8 +23,13 @@ loose body where level 0 is not loaded freezes in the air.
 
 A world is made by its generator (`IChunkGenerator`, the game's): `DescribeColumn` says which layers of a column are air
 or one material, and `Fill` writes a chunk's materials and densities. Its grid (`IChunkGenerator.Grid`) sets the world's
-voxel size and its bounds in whole level-0 chunks: `VoxelGrid.Sized(base, halfWidthMetres, floorMetres, topMetres)`
-rounds each bound out to whole chunks, up to ±160 km each way (`VoxelGrid.MostReachCentimetres`) and 128 layers
+voxel size, 1 cm to 1 m (`VoxelGrid.MostBaseCentimetres`; a coarse world suits terrain deformed in large strokes, at the
+cost of shapes under a voxel showing only as soft dips in the densities, walls in voxel steps, and the ground's 1 m
+steps in a piece lifted from it; an edit measures a voxel on at most 10 sub-rows each way, so one under about a tenth of
+a voxel changes nothing, and a small ball settling into coarse voxels leaves no trace;
+`Engine:Voxels:StreamingRadiusMetres` 0 takes the radius from the grid, 4.625 level-0 columns where that passes 59.2 m),
+and its bounds in whole level-0 chunks: `VoxelGrid.Sized(base, halfWidthMetres, floorMetres, topMetres)` rounds each
+bound out to whole chunks, up to ±160 km each way (`VoxelGrid.MostReachCentimetres`) and 128 layers
 (`VoxelGrid.MostLayers`), and a grid of a base alone has the default bounds (±512 m and -51.2 to 102.4 m at 10 cm).
 Streaming, edits, rays, collision, the mover's edge wall, the fall limit, and the play area follow the grid's bounds;
 the grid is part of what the generator's id and version stand for, so a change of size raises the `Version`. The

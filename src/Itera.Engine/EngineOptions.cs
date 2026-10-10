@@ -1,3 +1,4 @@
+using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging;
 
 namespace Itera.Engine;
@@ -406,24 +407,43 @@ public sealed class VoxelSettings
 {
     /// <summary>
     /// Columns that reach within this horizontal distance of a streaming centre are loaded at full detail (level 0,
-    /// the world grid's voxels: 10 cm in the game), unless <see cref="Level0ReachMetres"/> sets level 0's distance:
-    /// 59.2 m by default, so level 0 reaches 33.6 m, two 12.8 m columns less, and is drawn to half that
-    /// (<c>Engine:Renderer:MeshReachShare</c>). The streamed world reaches this times 2^(<see cref="Levels"/> - 1);
-    /// <c>Engine:Renderer:ViewDistanceMetres</c> ends the view sooner.
+    /// the world grid's voxels: 10 cm in the game), unless <see cref="Level0ReachMetres"/> sets level 0's distance. 0
+    /// (the default) takes it from the grid (<see cref="StreamingRadiusMetresFor"/>): 59.2 m, or 4.625 level-0 columns
+    /// where that is farther (voxels over 10 cm: 592 m at 1 m); at 10 cm level 0 then reaches 33.6 m, two 12.8 m
+    /// columns less, and is drawn to half that (<c>Engine:Renderer:MeshReachShare</c>). The streamed world reaches this
+    /// times 2^(<see cref="Levels"/> - 1); <c>Engine:Renderer:ViewDistanceMetres</c> ends the view sooner.
     /// </summary>
-    public double StreamingRadiusMetres { get; set; } = 59.2;
+    public double StreamingRadiusMetres { get; set; }
+
+    /// <summary>The level-0 streaming radius of <see cref="StreamingRadiusMetres"/> 0 on voxels of 10 cm and finer, in metres.</summary>
+    public const double DefaultStreamingRadiusMetres = 59.2;
+
+    /// <summary>
+    /// The level-0 streaming radius of <see cref="StreamingRadiusMetres"/> 0 in the grid's level-0 columns, where that
+    /// is farther than <see cref="DefaultStreamingRadiusMetres"/> (voxels over 10 cm).
+    /// </summary>
+    public const double DefaultStreamingRadiusColumns = 4.625;
+
+    /// <summary>The level-0 streaming radius in a world of <paramref name="grid"/>, in metres.</summary>
+    public double StreamingRadiusMetresFor(VoxelGrid grid) =>
+        StreamingRadiusMetres > 0
+            ? StreamingRadiusMetres
+            : Math.Max(
+                DefaultStreamingRadiusMetres,
+                DefaultStreamingRadiusColumns * grid.ColumnCentimetres(0) / VoxelConstants.CentimetresPerMetre
+            );
 
     /// <summary>
     /// Levels of detail streamed, 1 to 10: level k has voxels 2^k times the grid's (10, 20, 40, and 80 cm in the game)
     /// and loads columns within <see cref="StreamingRadiusMetres"/> times 2^k (at the default
-    /// <see cref="ReachGrowth"/>). Four (the default) reach 473.6 m at the default radius, the coarsest giving the far
-    /// meshes; the sky field needs the level below the one nearest 64 cm (level 2 in the game).
+    /// <see cref="ReachGrowth"/>). Four (the default) reach 473.6 m at the default radius on 10 cm voxels, the coarsest
+    /// giving the far meshes; the sky field needs the level below the one nearest 64 cm (level 2 in the game).
     /// </summary>
     public int Levels { get; set; } = 4;
 
     /// <summary>
     /// How far the view draws level 0, in metres; its columns load two of them (25.6 m in the game) farther. 0 draws it
-    /// to <see cref="StreamingRadiusMetres"/> less those two columns (33.6 m at 59.2 m). Other streaming centres (a
+    /// to the streaming radius less those two columns (33.6 m at 59.2 m). Other streaming centres (a
     /// host's discs round remote players and bodies) keep their own radii.
     /// </summary>
     public double Level0ReachMetres { get; set; }
@@ -509,11 +529,14 @@ public sealed class PhysicsSettings
     public int Threads { get; set; }
 
     /// <summary>
-    /// The edge of the character mover's cells in a match without voxel terrain, in centimetres, 1 to 10: it reads the
-    /// mesh colliders as columns of these cells, and on cells coarser than 1 cm walks their slopes as ramps. With
-    /// terrain the cells are the world's level-0 voxels.
+    /// The edge of the character mover's cells in a match without voxel terrain, in centimetres, 1 to
+    /// <see cref="MostCollisionCentimetres"/>: it reads the mesh colliders as columns of these cells, and on cells
+    /// coarser than 1 cm walks their slopes as ramps. With terrain the cells are the world's level-0 voxels.
     /// </summary>
     public int CollisionCentimetres { get; set; } = 10;
+
+    /// <summary>The largest <see cref="CollisionCentimetres"/>: a mesh is read no coarser than this.</summary>
+    public const int MostCollisionCentimetres = 10;
 }
 
 /// <summary>What this game does in a session.</summary>

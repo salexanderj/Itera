@@ -111,14 +111,19 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         Range(failures, "Logging:StatsIntervalSeconds", logging.StatsIntervalSeconds, 0, 86_400);
 
         var voxels = options.Voxels;
-        // Below 3 m, level 0's reach (the radius less two columns) is under half a metre.
-        Range(failures, "Voxels:StreamingRadiusMetres", voxels.StreamingRadiusMetres, 3, 500);
+        // 0 takes the radius from the grid; below 3 m, level 0's reach (the radius less two columns) is under half a
+        // metre; the most is 500 m, or 39 level-0 columns on voxels over 10 cm.
+        if (voxels.StreamingRadiusMetres != 0)
+        {
+            Range(failures, "Voxels:StreamingRadiusMetres", voxels.StreamingRadiusMetres, 3, MostRadiusMetres(_grid));
+        }
+
         Range(failures, "Voxels:Levels", voxels.Levels, 1, VoxelConstants.MaxLevel + 1);
         Range(failures, "Voxels:MemoryBudgetMegabytes", voxels.MemoryBudgetMegabytes, 64, 65_536);
         Range(failures, "Voxels:WorkerThreads", voxels.WorkerThreads, 0, 64);
         Range(failures, "Voxels:DebugWalkSpeed", voxels.DebugWalkSpeed, 0, 100);
         Range(failures, "Voxels:EditColumnsPerStep", voxels.EditColumnsPerStep, 1, 64);
-        Range(failures, "Voxels:Level0ReachMetres", voxels.Level0ReachMetres, 0, 500);
+        Range(failures, "Voxels:Level0ReachMetres", voxels.Level0ReachMetres, 0, MostRadiusMetres(_grid));
         Range(failures, "Voxels:ReachGrowth", voxels.ReachGrowth, 1.25, 2);
         ReachesGrow(failures, voxels, _grid);
 
@@ -131,7 +136,13 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         Range(failures, "Physics:SettleSeconds", physics.SettleSeconds, 0.5, 60);
         Range(failures, "Physics:MaxLooseBodies", physics.MaxLooseBodies, 1, 1024);
         Range(failures, "Physics:Threads", physics.Threads, 0, 16);
-        Range(failures, "Physics:CollisionCentimetres", physics.CollisionCentimetres, 1, VoxelGrid.MostBaseCentimetres);
+        Range(
+            failures,
+            "Physics:CollisionCentimetres",
+            physics.CollisionCentimetres,
+            1,
+            PhysicsSettings.MostCollisionCentimetres
+        );
 
         var particles = options.Particles;
         Range(failures, "Particles:Capacity", particles.Capacity, 16_384, 1_048_576);
@@ -273,11 +284,21 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         return true;
     }
 
+    /// <summary>
+    /// The most a streaming radius or level 0's reach may be in a world of <paramref name="grid"/>, in metres: 500 m, or
+    /// as many of its level-0 columns as 500 m holds of 10 cm voxels' (39) on voxels over 10 cm.
+    /// </summary>
+    internal static double MostRadiusMetres(VoxelGrid grid) => 500 * Math.Max(1, grid.BaseCentimetres / 10.0);
+
     /// <summary>True when the options <see cref="LevelDistances"/> reads are within their ranges.</summary>
-    private static bool DistancesInRange(VoxelSettings voxels) =>
-        voxels.StreamingRadiusMetres is >= 3 and <= 500
+    private static bool DistancesInRange(VoxelSettings voxels, VoxelGrid grid) =>
+        (
+            voxels.StreamingRadiusMetres == 0
+            || voxels.StreamingRadiusMetres >= 3 && voxels.StreamingRadiusMetres <= MostRadiusMetres(grid)
+        )
         && voxels.Levels >= 1
-        && voxels.Level0ReachMetres is >= 0 and <= 500
+        && voxels.Level0ReachMetres >= 0
+        && voxels.Level0ReachMetres <= MostRadiusMetres(grid)
         && voxels.ReachGrowth is >= 1.25 and <= 2;
 
     /// <summary>
@@ -287,7 +308,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
     /// </summary>
     private static void ReachesGrow(List<string> failures, VoxelSettings voxels, VoxelGrid grid)
     {
-        if (!DistancesInRange(voxels))
+        if (!DistancesInRange(voxels, grid))
         {
             return;
         }
@@ -297,7 +318,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         {
             var margin = grid.ReachMarginCentimetres(0) / (double)VoxelConstants.CentimetresPerMetre;
             failures.Add(
-                $"{Prefix}Voxels:StreamingRadiusMetres ({voxels.StreamingRadiusMetres}) draws level 0 nowhere: with {Prefix}Voxels:Level0ReachMetres 0 it must be over {margin:F2} m, two of its columns."
+                $"{Prefix}Voxels:StreamingRadiusMetres ({voxels.StreamingRadiusMetresFor(grid):F2} m) draws level 0 nowhere: with {Prefix}Voxels:Level0ReachMetres 0 it must be over {margin:F2} m, two of its columns."
             );
             return;
         }
@@ -309,7 +330,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
                 var before = distances.ReachMetres(level - 1);
                 var reach = distances.ReachMetres(level);
                 failures.Add(
-                    $"{Prefix}Voxels:Level0ReachMetres ({voxels.Level0ReachMetres}) and {Prefix}Voxels:ReachGrowth ({voxels.ReachGrowth}) draw level {level} to {reach:F2} m, no farther than level {level - 1} ({before:F2} m); lower the reach or raise {Prefix}Voxels:StreamingRadiusMetres ({voxels.StreamingRadiusMetres})."
+                    $"{Prefix}Voxels:Level0ReachMetres ({voxels.Level0ReachMetres}) and {Prefix}Voxels:ReachGrowth ({voxels.ReachGrowth}) draw level {level} to {reach:F2} m, no farther than level {level - 1} ({before:F2} m); lower the reach or raise {Prefix}Voxels:StreamingRadiusMetres ({voxels.StreamingRadiusMetresFor(grid):F2} m)."
                 );
                 return;
             }

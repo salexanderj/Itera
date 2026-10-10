@@ -319,11 +319,10 @@ public sealed partial class VoxelWorld : IDisposable
 
     /// <summary>
     /// Horizontal distance from the view within which the coarsest level's columns of a world of
-    /// <paramref name="settings"/> load, in metres: the view distance, which no grid changes.
+    /// <paramref name="settings"/> and <paramref name="grid"/> load, in metres: the view distance.
     /// </summary>
-    public static double ViewRadiusMetres(VoxelSettings settings) =>
-        LevelDistances.From(settings, VoxelGrid.Unit).ViewRadiusCentimetres
-        / (double)VoxelConstants.CentimetresPerMetre;
+    public static double ViewRadiusMetres(VoxelSettings settings, VoxelGrid grid) =>
+        LevelDistances.From(settings, grid).ViewRadiusCentimetres / (double)VoxelConstants.CentimetresPerMetre;
 
     /// <summary>The streaming centres last passed to <see cref="SetStreamingCentres"/>, in metres.</summary>
     public ReadOnlySpan<Vector3> Centers => _centrePositions.AsSpan(0, _centreCount);

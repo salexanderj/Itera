@@ -50,17 +50,23 @@ reset without a world.
 The character mover (`VoxelCharacterMover`): an upright cylinder that slides along walls, steps up onto ledges up to its
 step height, walks up no slope past its max slope (steeper ground slides it down and it cannot jump there), lands, and
 walks through passable materials (`IVoxelPassability`). On voxels coarser than 1 cm it stands on the ground's surface
-inside a voxel, where its density crosses one half (`VoxelWorld.SurfaceOver`), blended between neighbouring columns
-that differ by less than the slope limit over a voxel. The map's edge is a wall at every height (`AddMapEdge`). It waits
-while the voxels round it are not loaded. Its widest body is 2 m in radius (`MaxRadiusMetres`). It also reads the
-match's mesh colliders in the same cells (`MeshColumns`), combined with the voxels by the higher top, the lower bottom,
-and either cell; without terrain it reads them and the loose bodies in cells of `Engine:Physics:CollisionCentimetres`
-(10 by default), with no column to wait for, and its map edge at the play area's world edge. The core makes it
-(`AddIteraEngine`: the world's constructor with terrain, `VoxelCharacterMover(passability, colliders, cell, edge,
-bodies)` without), and the play area
-(`PlayArea`, round the grid, or `PlayArea.WithoutTerrain`, a 10 cm grid's bounds, with a bounds constructor for a game
-to register its own). Where a mesh's top is over the voxels' but its surface lies under theirs (a steep triangle half in
-the ground), the voxels' surface holds the body.
+inside a voxel, where its density crosses one half (`VoxelWorld.SurfaceOver`), blended between neighbouring columns that
+differ by less than the slope limit over a voxel; its distances are in centimetres, but the steepness rule looks at
+least 0.8 of a cell around the body, so on voxels coarser than 10 cm a slope too steep to walk still reads as one (a
+coarse voxel blurs a slope's foot, which a body may step onto). On cells wider than the body's radius, a slope past the
+limit whose columns each rise less than the step height is the same voxels as steep stairs and is climbed a tread at a
+time (30 cm voxels at 50 degrees, for a person). On coarse cells it reads the rest in the same cells: a loose body or
+solid model blocks a cell only where it holds the cell's centre, so a ball smaller than a 1 m cell may not block it (its
+stand-in still pushes the ball), and a thin mesh wall blocks the whole cell it passes through. The map's edge is a wall
+at every height (`AddMapEdge`). It waits while the voxels round it are not loaded. Its widest body is 2 m in radius
+(`MaxRadiusMetres`). It also reads the match's mesh colliders in the same cells (`MeshColumns`), combined with the
+voxels by the higher top, the lower bottom, and either cell; without terrain it reads them and the loose bodies in cells
+of `Engine:Physics:CollisionCentimetres` (10 by default), with no column to wait for, and its map edge at the play
+area's world edge. The core makes it (`AddIteraEngine`: the world's constructor with terrain,
+`VoxelCharacterMover(passability, colliders, cell, edge, bodies)` without), and the play area (`PlayArea`, round the
+grid, or `PlayArea.WithoutTerrain`, a 10 cm grid's bounds, with a bounds constructor for a game to register its own).
+Where a mesh's top is over the voxels' but its surface lies under theirs (a steep triangle half in the ground), the
+voxels' surface holds the body.
 
 Building blocks for a game's movement modes (`IMovementMode`, `.claude/rules/systems.md`): a move reports the last
 wall it met (`CharacterMoveResult.WallNormal`, across x and z, out of the wall; zero for none; also

@@ -27,7 +27,7 @@ The numbers that shape the engine's technical decisions:
 
 | Quantity | Value |
 |---|---|
-| World voxel edge | 10 cm at level 0 (set by the generator's `VoxelGrid`); level k is `10 * 2^k` cm; models have a unit of their own, 1 cm in the starter |
+| World voxel edge | 1 cm to 1 m at level 0, set by the generator's `VoxelGrid` (10 cm in the starter); level k is twice level k-1; models have a unit of their own, 1 cm in the starter |
 | World extent | whole level-0 chunks a game sets in its generator's grid, up to ±160 km each way and 128 layers; by default about ±512 m, from -51.2 m to +102.4 m at 10 cm |
 | Voxels in a dense grid of that extent | about 1.5 x 10^11 (too many to store; see "Voxel storage") |
 | Simulation rate | 60 fixed steps per second (`Engine:FixedStepHz`) |
@@ -776,18 +776,25 @@ it was 4 x 10^13 (5 TB at one bit each).
   change of size raises the version. A grid of a base alone has the default bounds: whole chunks covering ±500 m, the
   floor at the first chunk at or below -40.96 m, and the top at whole chunks above 81.92 m rounded up to a multiple of
   8; at a 10 cm base, ±512 m, -51.2 m, and +102.4 m. Columns and generation jobs hold as many layers as their world's
-  grid. The limit is one of storage and streaming: positions in metres are floats about the map's middle, which step
-  coarser far from it (about 1 mm at 8 km, 1.6 cm at 160 km) until an origin that moves with the camera keeps them near
-  zero (open work), and navigation keeps heights within ±327.67 m. Code where the world and a model meet uses the grid's
-  and the model's units, never a level's 2^k.
-- A column (the chunks at one x, z) is the unit of streaming. Level k (voxels of `Edge(k)` cm, chunks of 128 of them) loads
-  the columns whose nearest point is within `Engine:Voxels:StreamingRadiusMetres` * 2^k of a streaming centre and unloads
-  those beyond that plus one level-k column. The distance is to the column's nearest point, so a disc smaller than a column
-  (a body's 3 m disc in a 12.8 m column) still loads the columns it meets. Every level holds a full disc, so the renderer
-  can use a coarser level where a finer column is still loading. `Engine:Voxels:Levels` (4 by default: levels of 10 to 80
-  cm; 1 to 10) sets how many, and `Engine:Renderer:ViewDistanceMetres` (256 m) ends the view sooner. Each level draws to a
-  share of its voxel size (`Level0ReachMetres` and `ReachGrowth`, `LevelDistances`): 10 cm voxels to 16.8 m, 20 cm to
-  33.6 m, 40 cm to 67.2 m, 80 cm to the view.
+  grid. Level-0 voxels may be 1 cm to 1 m (`VoxelGrid.MostBaseCentimetres`): coarse voxels suit terrain a game deforms
+  in large strokes (craters, a heightmap's ground) for little memory, since the engine already handles voxels that large
+  at its coarse levels; a shape under about a voxel shows only as a soft dip in the voxels' densities (and one under
+  about a tenth of a voxel, which meets none of the 10 sub-rows an edit measures a voxel on each way, changes nothing),
+  walls and caves come in voxel steps, and a piece lifted from the ground, read a centimetre at a time, keeps the
+  voxels' steps. The limit is one of storage and streaming: positions in metres are floats about the map's middle, which
+  step coarser far from it (about 1 mm at 8 km, 1.6 cm at 160 km) until an origin that moves with the camera keeps them
+  near zero (open work), and navigation keeps heights within ±327.67 m. Code where the world and a model meet uses the
+  grid's and the model's units, never a level's 2^k.
+- A column (the chunks at one x, z) is the unit of streaming. Level k (voxels of `Edge(k)` cm, chunks of 128 of them)
+  loads the columns whose nearest point is within the level-0 streaming radius * 2^k of a streaming centre
+  (`Engine:Voxels:StreamingRadiusMetres`; 0, the default, takes it from the grid: 59.2 m on voxels of 10 cm and finer,
+  4.625 level-0 columns on coarser ones, 592 m at 1 m) and unloads those beyond that plus one level-k column. The
+  distance is to the column's nearest point, so a disc smaller than a column (a body's 3 m disc in a 12.8 m column)
+  still loads the columns it meets. Every level holds a full disc, so the renderer can use a coarser level where a finer
+  column is still loading. `Engine:Voxels:Levels` (4 by default: levels of 10 to 80 cm; 1 to 10) sets how many, and
+  `Engine:Renderer:ViewDistanceMetres` (256 m) ends the view sooner. Each level draws to a share of its voxel size
+  (`Level0ReachMetres` and `ReachGrowth`, `LevelDistances`): 10 cm voxels to 16.8 m, 20 cm to 33.6 m, 40 cm to 67.2 m,
+  80 cm to the view.
 - Load order: first the coarsest level's columns, nearest first (that level is drawn to the view distance, so a missing
   column is a hole); then columns the view draws now, nearest first in their own level, coarse before fine at equal
   distance; then the ring beyond reach, by metres beyond reach. Each level keeps its own sorted list, rebuilt when a centre

@@ -75,8 +75,8 @@ public sealed class VoxelGridTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    [InlineData(11)]
-    public void A_base_outside_1_to_10_cm_is_refused(int baseCentimetres)
+    [InlineData(101)]
+    public void A_base_outside_1_cm_to_1_m_is_refused(int baseCentimetres)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new VoxelGrid(baseCentimetres));
     }
@@ -152,6 +152,23 @@ public sealed class VoxelGridTests
         Assert.ThrowsAny<ArgumentException>(() => VoxelGrid.Sized(10, 10, 5, 5));
         Assert.ThrowsAny<ArgumentException>(() => VoxelGrid.Sized(10, 1e12, 0, 1));
         Assert.ThrowsAny<ArgumentException>(() => VoxelGrid.Sized(1, 10, 0, 165));
-        Assert.ThrowsAny<ArgumentException>(() => VoxelGrid.Sized(11, 10, 0, 1));
+        Assert.ThrowsAny<ArgumentException>(() => VoxelGrid.Sized(101, 10, 0, 1));
+    }
+
+    [Theory]
+    [InlineData(20, 2_560)]
+    [InlineData(50, 6_400)]
+    [InlineData(100, 12_800)]
+    public void Voxels_up_to_1_m_have_columns_of_128_voxels_and_the_default_bounds(int baseCentimetres, int column)
+    {
+        var grid = new VoxelGrid(baseCentimetres);
+
+        Assert.Equal(column, grid.ColumnCentimetres(0));
+        Assert.Equal(column << 9, grid.ColumnCentimetres(9));
+        // The default bounds hold the default world (±500 m, -40.96 m to 81.92 m) in whole chunks.
+        Assert.True(grid.ToCentimetres(grid.EndVoxelXZ) >= VoxelGrid.DefaultHalfWidthCentimetres);
+        Assert.True(grid.ToCentimetres(grid.MinVoxelY) <= VoxelGrid.DefaultFloorCentimetres);
+        Assert.True(grid.ToCentimetres(grid.EndVoxelY) >= VoxelGrid.DefaultTopCentimetres);
+        Assert.True(grid.MaxLayers <= VoxelGrid.MostLayers);
     }
 }
