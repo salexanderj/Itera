@@ -30,8 +30,20 @@ public sealed partial class MeshAssetDraws
     private readonly IMeshAssetTarget _target;
     private readonly ILogger<MeshAssetDraws> _logger;
 
-    // The lists (bit 0 the camera's, 1 the near cascade's, 2 the far cascade's) each instance is drawn in this frame.
+    // The lists (bit 0 the camera's, 1 the near cascade's, 2 the far cascade's, then one an image view drawn this frame,
+    // from ViewBit) each instance is drawn in this frame.
     private readonly byte[] _lists = new byte[MeshInstances.MaxInstances];
+
+    /// <summary>The first image view's list bit; the others follow in their order this frame.</summary>
+    private const int ViewBit = 3;
+
+    /// <summary>The bits of the lists that see an instance (rather than take its shadow): the camera's and the views'.</summary>
+    private const byte SeenBits = 1 | (((1 << RenderViews.MostViews) - 1) << ViewBit);
+
+    // The image views drawn this frame (RenderViewPass), and each instance's centre's key nearest first in each.
+    private readonly IRenderViewLists[] _views = new IRenderViewLists[RenderViews.MostViews];
+    private readonly float[][] _viewKeys = NewViewKeys();
+    private int _viewCount;
     private readonly int[] _deltas = new int[MeshInstances.MaxInstances];
     private readonly MeshAssetDraw[] _draws = new MeshAssetDraw[MeshAssetPass.MaxDraws];
     private readonly DrawIndexedIndirectCommand[] _commands = new DrawIndexedIndirectCommand[MeshAssetPass.MaxCommands];
@@ -53,6 +65,9 @@ public sealed partial class MeshAssetDraws
     private int[] _filled = [];
     private bool _fullReported;
     private bool _commandsFullReported;
+    private bool _viewFullReported;
+    private bool _viewCommandsFullReported;
+    private bool _viewBlendFullReported;
     private bool _skinFullReported;
     private bool _jointsReported;
     private bool _unknownReported;
@@ -78,9 +93,25 @@ public sealed partial class MeshAssetDraws
         MeshView view,
         ReadOnlySpan<MeshInstance> instances,
         ReadOnlySpan<Matrix4x4> palettes = default
+    ) => Write(slot, view, instances, palettes, default);
+
+    /// <summary>
+    /// <see cref="Write(int, MeshView, ReadOnlySpan{MeshInstance}, ReadOnlySpan{Matrix4x4})"/>, also writing what each
+    /// image view drawn this frame sees (<paramref name="views"/>, after their <see cref="MeshView.Begin"/>) into its
+    /// records: its list in the four ranges and its blended list, back to front in it. A posed instance only a view sees
+    /// is skinned too.
+    /// </summary>
+    internal MeshAssetFrame Write(
+        int slot,
+        MeshView view,
+        ReadOnlySpan<MeshInstance> instances,
+        ReadOnlySpan<Matrix4x4> palettes,
+        ReadOnlySpan<IRenderViewLists> views
     )
     {
         ArgumentNullException.ThrowIfNull(view);
+        _viewCount = Math.Min(views.Length, RenderViews.MostViews);
+        views[.._viewCount].CopyTo(_views);
         var layout = _target.Layout;
         if (_counts.Length != layout.Primitives.Length)
         {
@@ -92,10 +123,38 @@ public sealed partial class MeshAssetDraws
         var count = Math.Min(instances.Length, _lists.Length);
         for (var i = 0; i < count; i++)
         {
-            _lists[i] = ListsOf(in instances[i], layout, view, palettes, out _distances[i]);
+            _lists[i] = ListsOf(in instances[i], layout, view, palettes, i, out _distances[i]);
         }
 
         var groups = WriteSkins(slot, instances[..count], layout, palettes, out var mostVertices, out var joints);
+        for (var v = 0; v < _viewCount; v++)
+        {
+            var target = _views[v];
+            ref var frame = ref target.FrameOf(slot);
+            const int seen = RenderViewTarget.AssetSeenList;
+            const int blended = RenderViewTarget.AssetBlendedList;
+            frame.Assets = WriteList(
+                ViewBit + v,
+                instances[..count],
+                layout,
+                target.AssetDrawsOf(slot, seen),
+                target.AssetCommandsOf(slot, seen),
+                RenderViewTarget.AssetDrawBase(slot, seen),
+                RenderViewTarget.MaxAssetDraws,
+                RenderViewTarget.MaxAssetCommands
+            );
+            frame.Blended = WriteBlended(
+                ViewBit + v,
+                _viewKeys[v],
+                instances[..count],
+                layout,
+                target.AssetDrawsOf(slot, blended),
+                target.AssetCommandsOf(slot, blended),
+                RenderViewTarget.AssetDrawBase(slot, blended),
+                RenderViewTarget.MaxAssetCommands
+            );
+        }
+
         return new MeshAssetFrame(
             WriteList(slot, 0, instances[..count], layout),
             WriteList(slot, 1, instances[..count], layout),
@@ -189,7 +248,7 @@ public sealed partial class MeshAssetDraws
     /// </summary>
     private static bool Draws(byte lists, int asset, MeshAssetLayout layout)
     {
-        if ((lists & 1) != 0)
+        if ((lists & SeenBits) != 0)
         {
             return true;
         }
@@ -273,15 +332,17 @@ public sealed partial class MeshAssetDraws
     }
 
     /// <summary>
-    /// The lists an instance is drawn in: the camera's where its sphere may be seen, the cascades' where it may cast; and
-    /// its sphere's centre's key for the blended sort (<see cref="MeshView.NearFirstKey"/>: the squared distance from the
-    /// camera, or an orthographic view's depth).
+    /// The lists an instance is drawn in: the camera's and each image view's where its sphere may be seen, the cascades'
+    /// where it may cast; and its sphere's centre's key for the blended sort (<see cref="MeshView.NearFirstKey"/>: the
+    /// squared distance from the camera, or an orthographic view's depth), and each view's (in its keys at
+    /// <paramref name="index"/>).
     /// </summary>
     private byte ListsOf(
         in MeshInstance instance,
         MeshAssetLayout layout,
         MeshView view,
         ReadOnlySpan<Matrix4x4> palettes,
+        int index,
         out float distance
     )
     {
@@ -315,16 +376,65 @@ public sealed partial class MeshAssetDraws
         var casts = instance.Shadow != ModelShadow.None && view.Shadows;
         var near = casts && view.NearCascade.Holds(centre, radius);
         var far = casts && view.FarCascade.Holds(centre, radius);
-        return (byte)((seen ? 1 : 0) | (near ? 2 : 0) | (far ? 4 : 0));
+        var lists = (seen ? 1 : 0) | (near ? 2 : 0) | (far ? 4 : 0);
+        // The views show the player's own body (Only) but not what the camera alone shows (None: the first-person arms).
+        for (var v = 0; v < _viewCount && instance.Shadow != ModelShadow.None; v++)
+        {
+            var other = _views[v].View;
+            if (other.InView(centre, radius))
+            {
+                lists |= 1 << (ViewBit + v);
+                _viewKeys[v][index] = other.NearFirstKey(centre);
+            }
+        }
+
+        return (byte)lists;
+    }
+
+    private static float[][] NewViewKeys()
+    {
+        var keys = new float[RenderViews.MostViews][];
+        for (var v = 0; v < keys.Length; v++)
+        {
+            keys[v] = new float[MeshInstances.MaxInstances];
+        }
+
+        return keys;
     }
 
     /// <summary>
     /// One list: counts each primitive's draws, places them by primitive (a counting sort), writes them and one command
     /// per primitive drawn into the slot's regions, and returns the list's counts.
     /// </summary>
-    private MeshAssetList WriteList(int slot, int list, ReadOnlySpan<MeshInstance> instances, MeshAssetLayout layout)
+    private MeshAssetList WriteList(int slot, int list, ReadOnlySpan<MeshInstance> instances, MeshAssetLayout layout) =>
+        WriteList(
+            list,
+            instances,
+            layout,
+            _target.DrawsOf(slot, list),
+            _target.CommandsOf(slot, list),
+            MeshAssetPass.DrawBase(slot, list),
+            MeshAssetPass.MaxDraws,
+            MeshAssetPass.MaxCommands
+        );
+
+    /// <summary>
+    /// The list of bit <paramref name="bitIndex"/> into <paramref name="drawsTarget"/> and <paramref name="commandsTarget"/>
+    /// (the slot's list, or an image view's), whose first draw the shaders find at <paramref name="drawBase"/>, at most
+    /// <paramref name="mostDraws"/> draws and <paramref name="mostCommands"/> commands.
+    /// </summary>
+    private MeshAssetList WriteList(
+        int bitIndex,
+        ReadOnlySpan<MeshInstance> instances,
+        MeshAssetLayout layout,
+        Span<MeshAssetDraw> drawsTarget,
+        Span<DrawIndexedIndirectCommand> commandsTarget,
+        int drawBase,
+        int mostDraws,
+        int mostCommands
+    )
     {
-        var bit = (byte)(1 << list);
+        var bit = (byte)(1 << bitIndex);
         Array.Clear(_counts);
         var total = 0;
         for (var i = 0; i < instances.Length; i++)
@@ -335,13 +445,14 @@ public sealed partial class MeshAssetDraws
             }
 
             ref readonly var place = ref layout.Assets[instances[i].Asset];
-            if (total + place.PrimitiveCount > MeshAssetPass.MaxDraws)
+            if (total + place.PrimitiveCount > mostDraws)
             {
                 _lists[i] &= (byte)~bit;
-                if (!_fullReported)
+                ref var reported = ref bitIndex < ViewBit ? ref _fullReported : ref _viewFullReported;
+                if (!reported)
                 {
-                    _fullReported = true;
-                    LogListFull(MeshAssetPass.MaxDraws);
+                    reported = true;
+                    LogListFull(mostDraws);
                 }
 
                 continue;
@@ -393,7 +504,6 @@ public sealed partial class MeshAssetDraws
             }
         }
 
-        var drawBase = MeshAssetPass.DrawBase(slot, list);
         var commands = 0;
         int opaque = 0,
             opaqueTwoSided = 0,
@@ -406,12 +516,13 @@ public sealed partial class MeshAssetDraws
                 continue;
             }
 
-            if (commands == MeshAssetPass.MaxCommands)
+            if (commands == mostCommands)
             {
-                if (!_commandsFullReported)
+                ref var reported = ref bitIndex < ViewBit ? ref _commandsFullReported : ref _viewCommandsFullReported;
+                if (!reported)
                 {
-                    _commandsFullReported = true;
-                    LogCommandsFull(MeshAssetPass.MaxCommands);
+                    reported = true;
+                    LogCommandsFull(mostCommands);
                 }
 
                 break;
@@ -442,8 +553,8 @@ public sealed partial class MeshAssetDraws
             }
         }
 
-        _draws.AsSpan(0, next).CopyTo(_target.DrawsOf(slot, list));
-        _commands.AsSpan(0, commands).CopyTo(_target.CommandsOf(slot, list));
+        _draws.AsSpan(0, next).CopyTo(drawsTarget);
+        _commands.AsSpan(0, commands).CopyTo(commandsTarget);
         return new MeshAssetList(opaque, opaqueTwoSided, masked, maskedTwoSided, next);
     }
 
@@ -452,13 +563,40 @@ public sealed partial class MeshAssetDraws
     /// the order given) and each one's primitives in its asset's order, as draws and commands in the slot's blended
     /// region. Returns its commands.
     /// </summary>
-    private int WriteBlended(int slot, ReadOnlySpan<MeshInstance> instances, MeshAssetLayout layout)
+    private int WriteBlended(int slot, ReadOnlySpan<MeshInstance> instances, MeshAssetLayout layout) =>
+        WriteBlended(
+            0,
+            _distances,
+            instances,
+            layout,
+            _target.DrawsOf(slot, MeshAssetPass.BlendedList),
+            _target.CommandsOf(slot, MeshAssetPass.BlendedList),
+            MeshAssetPass.DrawBase(slot, MeshAssetPass.BlendedList),
+            MeshAssetPass.MaxCommands
+        );
+
+    /// <summary>
+    /// The blended list of the instances bit <paramref name="bitIndex"/> sees, back to front by <paramref name="keys"/>,
+    /// into <paramref name="drawsTarget"/> and <paramref name="commandsTarget"/> (the slot's, or an image view's), whose
+    /// first draw the shaders find at <paramref name="drawBase"/>, at most <paramref name="mostCommands"/>.
+    /// </summary>
+    private int WriteBlended(
+        int bitIndex,
+        float[] keys,
+        ReadOnlySpan<MeshInstance> instances,
+        MeshAssetLayout layout,
+        Span<MeshAssetDraw> drawsTarget,
+        Span<DrawIndexedIndirectCommand> commandsTarget,
+        int drawBase,
+        int mostCommands
+    )
     {
+        var bit = (byte)(1 << bitIndex);
         var entries = 0;
         var commands = 0;
         for (var i = 0; i < instances.Length; i++)
         {
-            if ((_lists[i] & 1) == 0)
+            if ((_lists[i] & bit) == 0)
             {
                 continue;
             }
@@ -474,19 +612,20 @@ public sealed partial class MeshAssetDraws
                 }
 
                 var need = range == MeshAssetRange.BlendedTwoSided ? 2 : 1;
-                if (commands + need > MeshAssetPass.MaxCommands)
+                if (commands + need > mostCommands)
                 {
-                    if (!_blendFullReported)
+                    ref var reported = ref bitIndex < ViewBit ? ref _blendFullReported : ref _viewBlendFullReported;
+                    if (!reported)
                     {
-                        _blendFullReported = true;
-                        LogBlendedFull(MeshAssetPass.MaxCommands);
+                        reported = true;
+                        LogBlendedFull(mostCommands);
                     }
 
                     continue;
                 }
 
                 // Farther first: a key's bits (never below 0) order as its value, and the entry's place keeps ties in order.
-                var bits = BitConverter.SingleToInt32Bits(MathF.Max(_distances[i], 0));
+                var bits = BitConverter.SingleToInt32Bits(MathF.Max(keys[i], 0));
                 _blendKeys[entries] = ((long)(int.MaxValue - bits) << 16) | (uint)entries;
                 _blendOrder[entries] = entries;
                 _blendInstances[entries] = i;
@@ -497,7 +636,6 @@ public sealed partial class MeshAssetDraws
         }
 
         Array.Sort(_blendKeys, _blendOrder, 0, entries);
-        var drawBase = MeshAssetPass.DrawBase(slot, MeshAssetPass.BlendedList);
         var written = 0;
         for (var j = 0; j < entries; j++)
         {
@@ -520,8 +658,8 @@ public sealed partial class MeshAssetDraws
             WriteBlendedDraw(in instances[i], in primitive, _deltas[i], MeshAssetDraw.FrontOnly, drawBase, written++);
         }
 
-        _blendDraws.AsSpan(0, written).CopyTo(_target.DrawsOf(slot, MeshAssetPass.BlendedList));
-        _blendCommands.AsSpan(0, written).CopyTo(_target.CommandsOf(slot, MeshAssetPass.BlendedList));
+        _blendDraws.AsSpan(0, written).CopyTo(drawsTarget);
+        _blendCommands.AsSpan(0, written).CopyTo(commandsTarget);
         return written;
     }
 

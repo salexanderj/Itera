@@ -416,78 +416,8 @@ public sealed unsafe partial class MeshAssetPass
         vk.CreateDescriptorSetLayout(device, &layoutInfo, null, out _setLayout)
             .ThrowIfFailed("vkCreateDescriptorSetLayout");
 
-        var poolSizes = stackalloc DescriptorPoolSize[3]
-        {
-            new(DescriptorType.Sampler, Samplers),
-            new(DescriptorType.SampledImage, textureCount),
-            new(DescriptorType.StorageBuffer, 6),
-        };
-        var poolInfo = new DescriptorPoolCreateInfo
-        {
-            SType = StructureType.DescriptorPoolCreateInfo,
-            MaxSets = 1,
-            PoolSizeCount = 3,
-            PPoolSizes = poolSizes,
-        };
-        vk.CreateDescriptorPool(device, &poolInfo, null, out _descriptorPool).ThrowIfFailed("vkCreateDescriptorPool");
-
-        var setLayout = _setLayout;
-        var allocateInfo = new DescriptorSetAllocateInfo
-        {
-            SType = StructureType.DescriptorSetAllocateInfo,
-            DescriptorPool = _descriptorPool,
-            DescriptorSetCount = 1,
-            PSetLayouts = &setLayout,
-        };
-        DescriptorSet set;
-        vk.AllocateDescriptorSets(device, &allocateInfo, &set).ThrowIfFailed("vkAllocateDescriptorSets");
-        _set = set;
-
-        var images = new DescriptorImageInfo[textureCount];
-        for (var i = 0; i < images.Length; i++)
-        {
-            images[i] = new DescriptorImageInfo(default, _textures[i].View, ImageLayout.ShaderReadOnlyOptimal);
-        }
-
-        const int bufferCount = 6;
-        var infos = stackalloc DescriptorBufferInfo[bufferCount]
-        {
-            new(Vertices.Buffer, 0, Vk.WholeSize),
-            new(Materials.Buffer, 0, Vk.WholeSize),
-            new(Draws.Buffer, 0, Vk.WholeSize),
-            new(Skins.Buffer, 0, Vk.WholeSize),
-            new(SkinGroups.Buffer, 0, Vk.WholeSize),
-            new(Palettes.Buffer, 0, Vk.WholeSize),
-        };
-        fixed (DescriptorImageInfo* imageInfos = images)
-        {
-            var writes = stackalloc WriteDescriptorSet[1 + bufferCount];
-            writes[0] = new WriteDescriptorSet
-            {
-                SType = StructureType.WriteDescriptorSet,
-                DstSet = _set,
-                DstBinding = 1,
-                DescriptorCount = textureCount,
-                DescriptorType = DescriptorType.SampledImage,
-                PImageInfo = imageInfos,
-            };
-            for (var i = 0; i < bufferCount; i++)
-            {
-                writes[1 + i] = new WriteDescriptorSet
-                {
-                    SType = StructureType.WriteDescriptorSet,
-                    DstSet = _set,
-                    DstBinding = (uint)(2 + i),
-                    DescriptorCount = 1,
-                    DescriptorType = DescriptorType.StorageBuffer,
-                    PBufferInfo = &infos[i],
-                };
-            }
-
-            vk.UpdateDescriptorSets(device, 1 + bufferCount, writes, 0, null);
-        }
-
-        _context.SetObjectName(ObjectType.DescriptorSet, _set.Handle, "mesh assets");
+        _descriptorPool = CreatePool();
+        _set = WriteSet(_descriptorPool, Draws, "mesh assets");
 
         // Set 0 is the mesh pass's (the view's lighting, the cascades, the sky field, the lights), set 1 this pass's.
         var sets = stackalloc DescriptorSetLayout[2] { _meshPass.SetLayout, _setLayout };
@@ -573,12 +503,63 @@ public sealed unsafe partial class MeshAssetPass
         _skinPipeline = PipelineFactory.CreateCompute(_context, _skinSpirv, _skinLayout, "mesh asset skinning");
         _format = format;
         _samples = samples;
+        CreateViewPipelines();
+    }
+
+    /// <summary>
+    /// The camera's pipelines again at one sample a pixel, for the image views (<see cref="WantViewPipelines"/>), when
+    /// the world is multisampled; with one sample the world's serve.
+    /// </summary>
+    private void CreateViewPipelines()
+    {
+        if (!_viewPipelinesWanted || _samples == SampleCountFlags.Count1Bit || _viewBlendPipeline.Handle != 0)
+        {
+            return;
+        }
+
+        var depth = new DepthState(DeviceRequirements.DepthFormat, CompareOp.Greater, Write: true);
+        for (var range = 0; range < MeshAssetLayout.ListRanges; range++)
+        {
+            var masked = range >= (int)MeshAssetRange.Masked;
+            var cull = range is (int)MeshAssetRange.OpaqueTwoSided or (int)MeshAssetRange.MaskedTwoSided
+                ? CullModeFlags.None
+                : CullModeFlags.BackBit;
+            _viewPipelines[range] = PipelineFactory.CreateTriangles(
+                _context,
+                _vertexSpirv,
+                masked ? _maskedFragmentSpirv : _fragmentSpirv,
+                _layout,
+                _format,
+                cull,
+                in depth,
+                $"image view mesh assets {(MeshAssetRange)range}"
+            );
+        }
+
+        var blendDepth = new DepthState(DeviceRequirements.DepthFormat, CompareOp.Greater, Write: false);
+        _viewBlendPipeline = PipelineFactory.CreateTriangles(
+            _context,
+            _blendVertexSpirv,
+            _blendFragmentSpirv,
+            _layout,
+            _format,
+            CullModeFlags.None,
+            in blendDepth,
+            "image view mesh assets blended",
+            ColorBlend.Premultiplied
+        );
     }
 
     private void DestroyPipelines()
     {
         DestroyPipeline(ref _skinPipeline);
         DestroyPipeline(ref _blendPipeline);
+        DestroyPipeline(ref _viewBlendPipeline);
+        for (var i = 0; i < MeshAssetLayout.ListRanges; i++)
+        {
+            DestroyPipeline(ref _viewPipelines[i]);
+        }
+
         for (var i = 0; i < MeshAssetLayout.ListRanges; i++)
         {
             DestroyPipeline(ref _pipelines[i]);
@@ -594,5 +575,96 @@ public sealed unsafe partial class MeshAssetPass
         }
 
         pipeline = default;
+    }
+
+    /// <summary>A pool for one set of the pass's layout.</summary>
+    private DescriptorPool CreatePool()
+    {
+        var textureCount = (uint)_textures!.Length;
+        var poolSizes = stackalloc DescriptorPoolSize[3]
+        {
+            new(DescriptorType.Sampler, Samplers),
+            new(DescriptorType.SampledImage, textureCount),
+            new(DescriptorType.StorageBuffer, 6),
+        };
+        var poolInfo = new DescriptorPoolCreateInfo
+        {
+            SType = StructureType.DescriptorPoolCreateInfo,
+            MaxSets = 1,
+            PoolSizeCount = 3,
+            PPoolSizes = poolSizes,
+        };
+        _context
+            .Vk.CreateDescriptorPool(_context.Device, &poolInfo, null, out var pool)
+            .ThrowIfFailed("vkCreateDescriptorPool");
+        return pool;
+    }
+
+    /// <summary>
+    /// A set of the pass's layout from <paramref name="pool"/>: the textures, the vertices, the materials, the given
+    /// draws (the pass's own, or an image view's), and the skinning's buffers.
+    /// </summary>
+    private DescriptorSet WriteSet(DescriptorPool pool, GpuBuffer draws, string name)
+    {
+        var vk = _context.Vk;
+        var device = _context.Device;
+        var textureCount = (uint)_textures!.Length;
+        var setLayout = _setLayout;
+        var allocateInfo = new DescriptorSetAllocateInfo
+        {
+            SType = StructureType.DescriptorSetAllocateInfo,
+            DescriptorPool = pool,
+            DescriptorSetCount = 1,
+            PSetLayouts = &setLayout,
+        };
+        DescriptorSet set;
+        vk.AllocateDescriptorSets(device, &allocateInfo, &set).ThrowIfFailed("vkAllocateDescriptorSets");
+
+        var images = new DescriptorImageInfo[textureCount];
+        for (var i = 0; i < images.Length; i++)
+        {
+            images[i] = new DescriptorImageInfo(default, _textures[i].View, ImageLayout.ShaderReadOnlyOptimal);
+        }
+
+        const int bufferCount = 6;
+        var infos = stackalloc DescriptorBufferInfo[bufferCount]
+        {
+            new(Vertices.Buffer, 0, Vk.WholeSize),
+            new(Materials.Buffer, 0, Vk.WholeSize),
+            new(draws.Buffer, 0, Vk.WholeSize),
+            new(Skins.Buffer, 0, Vk.WholeSize),
+            new(SkinGroups.Buffer, 0, Vk.WholeSize),
+            new(Palettes.Buffer, 0, Vk.WholeSize),
+        };
+        fixed (DescriptorImageInfo* imageInfos = images)
+        {
+            var writes = stackalloc WriteDescriptorSet[1 + bufferCount];
+            writes[0] = new WriteDescriptorSet
+            {
+                SType = StructureType.WriteDescriptorSet,
+                DstSet = set,
+                DstBinding = 1,
+                DescriptorCount = textureCount,
+                DescriptorType = DescriptorType.SampledImage,
+                PImageInfo = imageInfos,
+            };
+            for (var i = 0; i < bufferCount; i++)
+            {
+                writes[1 + i] = new WriteDescriptorSet
+                {
+                    SType = StructureType.WriteDescriptorSet,
+                    DstSet = set,
+                    DstBinding = (uint)(2 + i),
+                    DescriptorCount = 1,
+                    DescriptorType = DescriptorType.StorageBuffer,
+                    PBufferInfo = &infos[i],
+                };
+            }
+
+            vk.UpdateDescriptorSets(device, 1 + bufferCount, writes, 0, null);
+        }
+
+        _context.SetObjectName(ObjectType.DescriptorSet, set.Handle, name);
+        return set;
     }
 }

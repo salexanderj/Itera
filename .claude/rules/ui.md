@@ -10,7 +10,10 @@ paths:
 
 The UI (`UISurface`, `UiPass`): Skia draws its layers into a CPU surface the size of the frame, only the area of the
 layers that changed, each layer clipped to its bounds (`IUiLayer.Bounds` must hold all it draws; `LayerInk` checks), and
-the changed rows go to a storage buffer that a full-screen pass blends over the picture.
+the changed rows go to a storage buffer that a full-screen pass blends over the picture. Under those pixels the pass
+draws the image views a HUD layer shows this frame (`RenderViews.Show`, a rectangle of screen pixels each, from the
+layer's `Bounds`: `.claude/rules/rendering.md`, "Image views"); the layer draws its frame and marks over them and leaves
+the inside clear (the starter's `MinimapLayer`, which keeps below the stats line while that shows).
 
 How the console works and the list of its commands are in the `run-game` skill; change that list when you add or remove a command.
 
@@ -64,7 +67,10 @@ build does not know are kept); the next start reads it (a step before the window
 command line gave (`CommandLineKeys`, prefixed or bare `key=value`), which win for that run. The console's `settings`,
 `shadows`, and `sound volume` change the player's settings as the menu does, so a test run
 that uses them writes its data folder's file (the player's, unless it runs with the agent data folder,
-`<DataFolder>-agent`); give render options on the command line instead. Bindings read from the file or
+`<DataFolder>-agent`); give render options on the command line instead. A game's own on/off settings are
+`GameSwitch`es its `IRunStartup` registers once a run (`PlayerSettings.RegisterSwitch(name, default)`, then `IsOn` and
+`SetSwitch`, which allocate nothing); `settings.json` keeps them in a `"Game"` object, with any entry this run did not
+register kept as it was. Bindings read from the file or
 registered later that clash with another action keep the file's (`KeyBindings` unbinds the default).
 
 ### Files in `src/Itera.Engine`

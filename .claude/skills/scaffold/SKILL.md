@@ -174,6 +174,25 @@ mesh sample's `AimHighlightPass` (`samples/Itera.MeshSample/Rendering/`) is a sh
    outside `src/Game`) windowed and `--offscreen`, a screenshot of it, and its time in `game.py gpu` (`Game NAME`) and
    the stats line's `game passes`.
 
+## An image view (a minimap, a camera's picture)
+
+A view of the world the engine draws into an image (`RenderViews`; `.claude/rules/rendering.md`, "Image views"); the
+starter's minimap (`src/Game/Minimap.cs`, `MinimapLayer.cs`, `Systems/MinimapSystem.cs`) is the example.
+
+1. Declare it in the game's `IRunStartup.Start`: `views.Declare(name, width, height, everyFrames)` (keep the index),
+   and its key (`KeyBindings.Register`) and a saved on/off (`PlayerSettings.RegisterSwitch`) if the player turns it on
+   and off.
+2. A frame system (after `CameraExtractSystem`) asks for it each frame it should be drawn: `views.Draw(index, camera)`
+   with a `CameraView` (an orthographic one: `CameraProjection.Orthographic`, a height in metres, NaN near and far for
+   the view distance each way round its position). It goes in `SystemOrderTests` and `GAME.md`, with a behaviour test
+   (`RenderViews.Asked` gives what it asked) and a zero-allocation test.
+3. To show it on the HUD, an `IMatchUiLayer` calls `views.Show(index, x, y, width, height)` in its `Bounds` (asked
+   every frame it shows, at the screen's size) and draws its frame and marks round the rectangle, leaving the inside
+   clear; register it `services.AddScoped<IMatchUiLayer, MyLayer>()`. The engine's stats line sits in the top-right
+   corner too: keep clear of it (the starter's `MinimapLayer` takes it).
+4. Check it: the log's `Image view NAME: ...` line, `validate.sh` windowed and `--offscreen`, a screenshot with the UI
+   (`screenshot 1 PATH`, not `noui`), and its cost in `game.py gpu` (`ImageViews`, a time per update).
+
 ## A test that plays the real game
 
 For a feature that needs the real world and systems, play the game without a window (`HeadlessMatch`; see

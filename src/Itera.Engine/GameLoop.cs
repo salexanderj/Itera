@@ -68,6 +68,8 @@ public sealed partial class GameLoop
     private readonly MeshInstances _meshInstances;
     private readonly MeshAssetPass _meshAssetPass;
     private readonly RenderPasses _renderPasses;
+    private readonly RenderViews _renderViews;
+    private readonly RenderViewPass _renderViewPass;
     private readonly MeshAssetDraws _meshAssetDraws;
     private readonly PointLights _pointLights;
     private readonly DepthTarget _depth;
@@ -151,6 +153,8 @@ public sealed partial class GameLoop
         MeshInstances meshInstances,
         MeshAssetPass meshAssetPass,
         RenderPasses renderPasses,
+        RenderViews renderViews,
+        RenderViewPass renderViewPass,
         MeshAssetDraws meshAssetDraws,
         PointLights pointLights,
         DepthTarget depth,
@@ -215,6 +219,8 @@ public sealed partial class GameLoop
         _meshInstances = meshInstances;
         _meshAssetPass = meshAssetPass;
         _renderPasses = renderPasses;
+        _renderViews = renderViews;
+        _renderViewPass = renderViewPass;
         _meshAssetDraws = meshAssetDraws;
         _pointLights = pointLights;
         _depth = depth;
@@ -393,6 +399,8 @@ public sealed partial class GameLoop
             // After the game's and the mods' startups, which declare their models; textures only with graphics.
             new("mesh assets", () => _meshAssets.LoadAll(_window.Graphics), () => { }),
             new("mesh assets on the gpu", _meshAssetPass.Initialize, _meshAssetPass.Dispose, Graphics: true),
+            // The image views the game declared at its startup, drawn with the mesh passes' pipelines.
+            new("image views", _renderViewPass.Initialize, _renderViewPass.Dispose, Graphics: true),
             // The game's own passes, which may read the mesh pass's set and the run's assets.
             new("render passes", _renderPasses.Initialize, _renderPasses.Dispose, Graphics: true),
             new("audio thread", _audio.Start, () => _audio.Stop()),
@@ -807,6 +815,7 @@ public sealed partial class GameLoop
         _modelInstances.Clear();
         _meshInstances.Clear();
         _pointLights.BeginFrame(now);
+        _renderViews.BeginFrame();
         match.Ecs.Update(in frame);
         _mods.Update(in frame);
         if (_modelInstances.Dropped > 0 && !_modelsDroppedReported)
@@ -827,17 +836,21 @@ public sealed partial class GameLoop
         _meshPass.LookOf(request.Slot) = LookConstants.From(in look, in view);
         var loading = _loading.Drawn ? new LoadingDraw(_loading.Alpha, _loading.Seconds) : default;
         // The models are drawn with the world, in the frame's view, whose point lights the world's glowing blocks and the
-        // events give.
+        // events give; and the image views due this frame, in theirs.
         _meshView.Begin(request.Slot, in view);
+        var views = _renderViewPass.BeginViews(request.Slot, _renderView, _maxViewDistance);
         // Without terrain no world is followed: nothing to upload or draw of it.
-        var copies = _worldOnGpu ? _worldMeshes.Upload(request.Slot, now, in view, _modelInstances.Draws) : 0;
+        var copies = _worldOnGpu ? _worldMeshes.Upload(request.Slot, now, in view, _modelInstances.Draws, views) : 0;
         var meshAssets = _meshAssetDraws.Write(
             request.Slot,
             _meshView,
             _meshInstances.Instances,
-            _meshInstances.Palettes
+            _meshInstances.Palettes,
+            views
         );
-        _meshView.End(request.Slot, _pointLights.Frame(now));
+        var lights = _pointLights.Frame(now);
+        _meshView.End(request.Slot, lights);
+        _renderViewPass.EndViews(request.Slot, views, lights);
         if (_debugLines.Enabled)
         {
             match.Terrain?.Colliders.AddOutlines(_debugLines);
@@ -891,6 +904,7 @@ public sealed partial class GameLoop
         _modelInstances.Clear();
         _meshInstances.Clear();
         _pointLights.BeginFrame(now);
+        _renderViews.BeginFrame();
         match.Ecs.Update(in frame);
         _mods.Update(in frame);
         // No uploader waits to draw a retired model until the world's meshes hold its voxels.
@@ -919,6 +933,7 @@ public sealed partial class GameLoop
         }
 
         _meshView.ForgetSun();
+        _renderViews.EndMatch();
 
         _pointLights.Clear();
     }
@@ -938,6 +953,8 @@ public sealed partial class GameLoop
         _debugLines.Clear();
         _modelInstances.Clear();
         _meshInstances.Clear();
+        _renderViews.BeginFrame();
+        _renderViewPass.NoViews(request.Slot);
         var ui = DrawUi(in frame, in request);
         _dynamicScale.Update(now);
         var view = CreateView(in request);

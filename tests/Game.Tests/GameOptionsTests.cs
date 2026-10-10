@@ -26,6 +26,9 @@ public sealed class GameOptionsTests
     [InlineData("Game:Player:HeightMetre", "2", "Game:Player:HeightMetre is not an option")]
     [InlineData("Game:Wrld:CameraPose", "1,2,3,4,5", "Game:Wrld is not an option")]
     [InlineData("Game:Player:HeightMetres", "tall", "Game:Player")]
+    [InlineData("Game:Minimap:Metres", "8", "Game:Minimap:Metres must be between")]
+    [InlineData("Game:Minimap:Metres", "300", "Game:Minimap:Metres must be between")]
+    [InlineData("Game:Minimap:Metre", "64", "Game:Minimap:Metre is not an option")]
     public void A_bad_value_or_key_is_named(string key, string value, string message)
     {
         using var services = GameComposition.Build(new Dictionary<string, string?> { [key] = value });

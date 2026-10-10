@@ -34,6 +34,7 @@ public sealed class SystemOrderTests
         "DebugFlyCameraSystem",
         "DebugOutlineSystem",
         "CameraExtractSystem",
+        "MinimapSystem",
         "LooseBodyModelSystem",
         "MeshDrawSystem",
         "AtmosphereSystem",

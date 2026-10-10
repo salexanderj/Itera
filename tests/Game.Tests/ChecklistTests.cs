@@ -45,6 +45,7 @@ public sealed class ChecklistTests
         {
             (new PlayerOptions(), new PlayerOptionsValidator(), PlayerOptions.SectionName),
             (new WorldOptions(), new WorldOptionsValidator(), WorldOptions.SectionName),
+            (new MinimapOptions(), new MinimapOptionsValidator(), MinimapOptions.SectionName),
         };
         var unranged = new List<string>();
         foreach (var (defaults, validator, section) in pairs)

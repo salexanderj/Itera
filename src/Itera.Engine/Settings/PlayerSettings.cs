@@ -19,7 +19,8 @@ namespace Itera.Engine.Settings;
 /// sensitivity and field of view are read where they are used, a VSync change has the render thread make the swapchain
 /// again (<see cref="PresentModeChanged"/>), as a change of the samples does with the world's pipelines and images
 /// (<see cref="SamplesChanged"/>), and full screen goes to the window. The file's <c>"Keys"</c> holds the
-/// keybindings that differ from their defaults (<see cref="Keys"/>). <see cref="Initialize"/> reads the file, in a step
+/// keybindings that differ from their defaults (<see cref="Keys"/>), and its <c>"Game"</c> holds a game's own on/off
+/// switches (<see cref="RegisterSwitch"/>). <see cref="Initialize"/> reads the file, in a step
 /// before the window opens, and <see cref="Save"/> writes it. Main thread.
 /// </summary>
 public sealed partial class PlayerSettings
@@ -44,6 +45,7 @@ public sealed partial class PlayerSettings
     private const string AntiAliasingKey = "AntiAliasing";
     private const string MsaaSamplesKey = "MsaaSamples";
     private const string KeysKey = "Keys";
+    private const string GameKey = "Game";
     private const string VSyncKey = "VSync";
     private const string FullscreenKey = "Fullscreen";
 
@@ -84,6 +86,7 @@ public sealed partial class PlayerSettings
         VSyncKey,
         FullscreenKey,
         KeysKey,
+        GameKey,
     };
 
     private static readonly byte[] s_byteOrderMark = [0xEF, 0xBB, 0xBF];
@@ -95,6 +98,9 @@ public sealed partial class PlayerSettings
     private readonly ILogger<PlayerSettings> _logger;
     private readonly HashSet<string> _fromCommandLine = new(StringComparer.Ordinal);
     private readonly Dictionary<string, JsonElement> _file = new(StringComparer.Ordinal);
+    private readonly List<string> _switchNames = [];
+    private readonly List<bool> _switchValues = [];
+    private readonly Dictionary<string, int> _switchIndex = new(StringComparer.Ordinal);
     private bool _changed;
     private int _keysSaved;
 
@@ -241,6 +247,61 @@ public sealed partial class PlayerSettings
 
     /// <summary>The keybindings, kept in the file's <c>"Keys"</c> (<see cref="KeyBindings"/>).</summary>
     public KeyBindings Keys { get; }
+
+    /// <summary>
+    /// Makes one of a game's own on/off settings, kept as <paramref name="name"/> in the file's <c>"Game"</c> object. Its
+    /// value is the file's when that is a JSON boolean, else <paramref name="defaultValue"/>. A game calls it once for
+    /// each switch at its run's <c>game</c> step (<c>IRunStartup.Start</c>), which runs after <see cref="Initialize"/>
+    /// has read the file.
+    /// </summary>
+    /// <exception cref="ArgumentException">The name is empty or white space, or was registered before.</exception>
+    public GameSwitch RegisterSwitch(string name, bool defaultValue)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        if (_switchIndex.ContainsKey(name))
+        {
+            throw new ArgumentException($"The game switch '{name}' is registered twice.", nameof(name));
+        }
+
+        var on = defaultValue;
+        if (
+            _file.TryGetValue(GameKey, out var section)
+            && section.ValueKind == JsonValueKind.Object
+            && section.TryGetProperty(name, out var element)
+            && element.ValueKind is JsonValueKind.True or JsonValueKind.False
+        )
+        {
+            on = element.GetBoolean();
+        }
+
+        var which = new GameSwitch(_switchNames.Count);
+        _switchIndex.Add(name, which.Index);
+        _switchNames.Add(name);
+        _switchValues.Add(on);
+        return which;
+    }
+
+    /// <summary>True when the game's switch is on. Allocates nothing.</summary>
+    public bool IsOn(GameSwitch which) => _switchValues[which.Index];
+
+    /// <summary>The name a game's switch was registered with, as it is kept in the file.</summary>
+    public string SwitchName(GameSwitch which) => _switchNames[which.Index];
+
+    /// <summary>
+    /// Turns a game's switch on or off. A change is written by the next <see cref="Save"/>; the same value changes
+    /// nothing. Allocates nothing.
+    /// </summary>
+    public void SetSwitch(GameSwitch which, bool on)
+    {
+        if (_switchValues[which.Index] == on)
+        {
+            return;
+        }
+
+        _switchValues[which.Index] = on;
+        _changed = true;
+        Version++;
+    }
 
     /// <summary>Rises whenever a setting changes.</summary>
     public int Version { get; private set; }
@@ -395,8 +456,9 @@ public sealed partial class PlayerSettings
 
     /// <summary>
     /// Writes <c>settings.json</c> when a setting or a keybinding changed since: every setting, but those the command line
-    /// gave keep what the file had, then the keybindings that differ from their defaults, then what the file held that
-    /// this build does not know. It writes a file beside it and moves that
+    /// gave keep what the file had, then the keybindings that differ from their defaults, then the game's switches
+    /// (<c>"Game"</c>: every registered one, then what the file's object held that this run did not register), then what
+    /// the file held that this build does not know. It writes a file beside it and moves that
     /// over the old one, so a failed write leaves the old file whole; a failure is a Warning,
     /// the game goes on, and the next save tries again.
     /// </summary>
@@ -427,6 +489,7 @@ public sealed partial class PlayerSettings
                 WriteBoolean(writer, VSyncKey, VSync);
                 WriteBoolean(writer, FullscreenKey, Fullscreen);
                 Keys.Write(writer);
+                WriteGame(writer);
                 foreach (var (key, value) in _file)
                 {
                     if (!s_known.Contains(key))
@@ -550,6 +613,41 @@ public sealed partial class PlayerSettings
         _fromCommandLine.Remove(key);
         _changed = true;
         Version++;
+    }
+
+    private void WriteGame(Utf8JsonWriter writer)
+    {
+        _file.TryGetValue(GameKey, out var section);
+        if (_switchNames.Count == 0)
+        {
+            // No switch registered: the file's value stays as it was, whatever it is.
+            if (section.ValueKind != JsonValueKind.Undefined)
+            {
+                writer.WritePropertyName(GameKey);
+                section.WriteTo(writer);
+            }
+
+            return;
+        }
+
+        writer.WriteStartObject(GameKey);
+        for (var i = 0; i < _switchNames.Count; i++)
+        {
+            writer.WriteBoolean(_switchNames[i], _switchValues[i]);
+        }
+
+        if (section.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in section.EnumerateObject())
+            {
+                if (!_switchIndex.ContainsKey(property.Name))
+                {
+                    property.WriteTo(writer);
+                }
+            }
+        }
+
+        writer.WriteEndObject();
     }
 
     private void WriteNumber(Utf8JsonWriter writer, string key, float value)

@@ -40,6 +40,16 @@ public sealed unsafe partial class WorldMeshes
     private readonly DrawIndexedIndirectCommand[] _cameraCommands = new DrawIndexedIndirectCommand[MeshPass.MaxDraws];
     private readonly float[] _cameraDistances = new float[MeshPass.MaxDraws];
 
+    // The image views drawn this frame (RenderViewPass), and each one's commands and keys nearest first, gathered in the
+    // camera's pass as the camera's are; each command has a draw of its own in the view's records.
+    private readonly IRenderViewLists[] _views = new IRenderViewLists[RenderViews.MostViews];
+    private readonly DrawIndexedIndirectCommand[][] _viewCommands = NewViewArrays<DrawIndexedIndirectCommand>();
+    private readonly float[][] _viewKeys = NewViewArrays<float>();
+    private readonly int[] _viewDrawn = new int[RenderViews.MostViews];
+    private int _viewCount;
+    private bool _viewListFull;
+    private bool _viewListFullReported;
+
     /// <summary>
     /// Writes the frame's draws into <see cref="MeshPass"/>'s regions of <paramref name="slot"/> and returns what it
     /// wrote. Each column of the coarsest meshed level is drawn whole, or by its four columns of the level below where
@@ -65,6 +75,12 @@ public sealed unsafe partial class WorldMeshes
         _shadowTriangles = 0;
         _stitching = !view.Has(ViewSwitches.Plain);
         WriteSky(ref _pass.LightingOf(slot));
+        for (var v = 0; v < _viewCount; v++)
+        {
+            _viewDrawn[v] = 0;
+            WriteSky(ref _views[v].LightingOf(slot));
+        }
+
         var lists = new DrawLists(
             _pass.DrawsOf(slot),
             _pass.CommandsOf(slot, 0),
@@ -73,11 +89,13 @@ public sealed unsafe partial class WorldMeshes
         );
         _farPass = false;
         _listFull = false;
+        _viewListFull = false;
         _cutShare = _reachShare;
         _stitchedDraws = 0;
         SelectAll(in lists);
         StitchedDraws = _stitchedDraws;
         WriteCameraNearestFirst(lists.Camera);
+        WriteViewsNearestFirst(slot);
         if (_view.Shadows)
         {
             _farPass = true;
@@ -89,6 +107,12 @@ public sealed unsafe partial class WorldMeshes
         {
             _listFullReported = true;
             LogListFull(MeshPass.MaxDraws);
+        }
+
+        if (_viewListFull && !_viewListFullReported)
+        {
+            _viewListFullReported = true;
+            LogViewListFull(RenderViewTarget.MaxDraws);
         }
 
         _stats.LastTriangles = _triangles;
@@ -305,12 +329,14 @@ public sealed unsafe partial class WorldMeshes
             var seen = !_farPass && _view.InView(centre, extent) && Room(_drawn);
             var near = !_farPass && _view.Shadows && _view.NearCascade.Holds(centre, radius) && Room(_nearShadows);
             var far = _farPass && _view.FarCascade.Holds(centre, radius) && Room(_farShadows);
-            if (!seen && !near && !far)
+            var views = _farPass ? 0 : ViewsSeeing(centre, extent);
+            var listed = seen || near || far;
+            if (!listed && views == 0)
             {
                 continue;
             }
 
-            if (_records >= MeshPass.MaxRecords)
+            if (listed && _records >= MeshPass.MaxRecords)
             {
                 _listFull = true;
                 return;
@@ -330,7 +356,8 @@ public sealed unsafe partial class WorldMeshes
                     ref var stitch = ref column.StitchesMade()[index];
                     if (!stitch.IsCurrent(blockSides, block.Version))
                     {
-                        if (!stitch.InFlight)
+                        // A block only an image view sees asks for none: the views take what the camera has.
+                        if (!stitch.InFlight && listed)
                         {
                             RequestStitch(column, index, blockSides, distanceSquared);
                         }
@@ -353,6 +380,16 @@ public sealed unsafe partial class WorldMeshes
             if (indexCount == 0)
             {
                 // Its stitched mesh is empty: the coarser column's mesh covers what it held.
+                continue;
+            }
+
+            if (views != 0)
+            {
+                WriteViewDraws(views, origin, voxelMetres, vertexBase, firstIndex, indexCount, centre);
+            }
+
+            if (!listed)
+            {
                 continue;
             }
 
@@ -403,6 +440,97 @@ public sealed unsafe partial class WorldMeshes
     {
         Array.Sort(_cameraDistances, _cameraCommands, 0, _drawn);
         _cameraCommands.AsSpan(0, _drawn).CopyTo(camera);
+    }
+
+    /// <summary>The image views (a bit each, in their order this frame) whose frustum the block's box meets.</summary>
+    private int ViewsSeeing(Vector3 centre, float extent)
+    {
+        var views = 0;
+        for (var v = 0; v < _viewCount; v++)
+        {
+            if (_views[v].View.InView(centre, extent))
+            {
+                views |= 1 << v;
+            }
+        }
+
+        return views;
+    }
+
+    /// <summary>
+    /// A block's draw and command for each view in <paramref name="views"/>, in the view's records (as the camera's
+    /// list draws it: its stitched mesh where the camera's does); a full list notes that a block went without.
+    /// </summary>
+    private void WriteViewDraws(
+        int views,
+        Vector3 origin,
+        float voxelMetres,
+        uint vertexBase,
+        uint firstIndex,
+        int indexCount,
+        Vector3 centre
+    )
+    {
+        for (var v = 0; v < _viewCount; v++)
+        {
+            if ((views & (1 << v)) == 0)
+            {
+                continue;
+            }
+
+            var drawn = _viewDrawn[v];
+            if (drawn >= RenderViewTarget.MaxDraws)
+            {
+                _viewListFull = true;
+                continue;
+            }
+
+            var target = _views[v];
+            target.DrawsOf(_drawSlot)[drawn] = new MeshDraw
+            {
+                Origin = origin,
+                VoxelMetres = voxelMetres,
+                VertexBase = vertexBase,
+            };
+            _viewCommands[v][drawn] = new DrawIndexedIndirectCommand(
+                (uint)indexCount,
+                1,
+                firstIndex,
+                0,
+                (uint)(RenderViewTarget.RecordBase(_drawSlot) + drawn)
+            );
+            _viewKeys[v][drawn] = target.View.NearFirstKey(centre);
+            _viewDrawn[v] = drawn + 1;
+        }
+    }
+
+    /// <summary>
+    /// Writes each view's commands into its list nearest first, as the camera's (<see cref="WriteCameraNearestFirst"/>),
+    /// and its counts into its frame record.
+    /// </summary>
+    private void WriteViewsNearestFirst(int slot)
+    {
+        for (var v = 0; v < _viewCount; v++)
+        {
+            var drawn = _viewDrawn[v];
+            Array.Sort(_viewKeys[v], _viewCommands[v], 0, drawn);
+            var target = _views[v];
+            _viewCommands[v].AsSpan(0, drawn).CopyTo(target.CommandsOf(slot, 0));
+            ref var frame = ref target.FrameOf(slot);
+            frame.Records = drawn;
+            frame.Draws = drawn;
+        }
+    }
+
+    private static T[][] NewViewArrays<T>()
+    {
+        var arrays = new T[RenderViews.MostViews][];
+        for (var v = 0; v < arrays.Length; v++)
+        {
+            arrays[v] = new T[RenderViewTarget.MaxDraws];
+        }
+
+        return arrays;
     }
 
     /// <summary>True when a list of <paramref name="count"/> commands has room for one more; else notes that a block went without.</summary>

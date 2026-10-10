@@ -95,7 +95,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
 
     internal const int ClusterLights = 32;
 
-    private const int ClusterSlotWords = ClusterCount * (1 + ClusterLights);
+    internal const int ClusterSlotWords = ClusterCount * (1 + ClusterLights);
 
     /// <summary>Invocations in a workgroup of <c>mesh-clusters.comp</c>, one a cluster.</summary>
     private const int ClusterGroup = 64;
@@ -165,6 +165,10 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     private Pipeline _modelShadowPipeline;
     private Pipeline _wirePipeline;
     private Pipeline _modelWirePipeline;
+    private Pipeline _viewMeshPipeline;
+    private Pipeline _viewModelPipeline;
+    private Pipeline _viewSkyPipeline;
+    private bool _viewPipelinesWanted;
     private SampleCountFlags _samples = SampleCountFlags.Count1Bit;
     private Format _format;
     private bool _disposed;
@@ -498,7 +502,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         FlushSlot(slot, in frame);
         RecordTextures(commandBuffer);
         RecordBake(commandBuffer, slot);
-        RecordClusters(commandBuffer, in view);
+        RecordClusters(commandBuffer, in view, _set);
         draws?.RecordSkinning(commandBuffer, slot, timerSlot);
         passes?.Record(RenderStage.Compute, commandBuffer, in view, extent);
 
@@ -648,10 +652,9 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     /// world's fragments to read: the slot's region of the cluster buffer, which the slot's last frame read before its
     /// fence.
     /// </summary>
-    private void RecordClusters(CommandBuffer commandBuffer, in ViewConstants view)
+    private void RecordClusters(CommandBuffer commandBuffer, in ViewConstants view, DescriptorSet set)
     {
         var vk = _context.Vk;
-        var set = _set;
         var constants = view;
         vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Compute, _clusterPipeline);
         vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Compute, _clusterLayout, 0, 1, &set, 0, null);
@@ -824,7 +827,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         TakeShaders((byte[][])compiled);
         CreatePipelines(_format);
         ReplaceBakePipeline();
-        return _wirePipeline.Handle != 0 ? 8 : 6;
+        return (_wirePipeline.Handle != 0 ? 8 : 6) + (_viewSkyPipeline.Handle != 0 ? 3 : 0);
     }
 
     private GpuBuffer Heap => _heap ?? throw NotInitialised();
@@ -1283,10 +1286,58 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         }
 
         _format = format;
+        CreateViewPipelines();
+    }
+
+    /// <summary>
+    /// The world's, the models', and the sky's pipelines at one sample a pixel, for the image views
+    /// (<see cref="WantViewPipelines"/>), when the world is multisampled; with one sample the world's serve.
+    /// </summary>
+    private void CreateViewPipelines()
+    {
+        if (!_viewPipelinesWanted || _samples == SampleCountFlags.Count1Bit || _viewSkyPipeline.Handle != 0)
+        {
+            return;
+        }
+
+        var meshDepth = new DepthState(DeviceRequirements.DepthFormat, CompareOp.Greater, Write: true);
+        _viewMeshPipeline = PipelineFactory.CreateTriangles(
+            _context,
+            _meshVertexSpirv,
+            _meshFragmentSpirv,
+            _layout,
+            _format,
+            CullModeFlags.BackBit,
+            in meshDepth,
+            "image view world meshes"
+        );
+        _viewModelPipeline = PipelineFactory.CreateTriangles(
+            _context,
+            _modelVertexSpirv,
+            _meshFragmentSpirv,
+            _layout,
+            _format,
+            CullModeFlags.BackBit,
+            in meshDepth,
+            "image view model meshes"
+        );
+        var skyDepth = new DepthState(DeviceRequirements.DepthFormat, CompareOp.Equal, Write: false);
+        _viewSkyPipeline = PipelineFactory.CreateFullscreen(
+            _context,
+            _skyVertexSpirv,
+            _skySpirv,
+            _layout,
+            _format,
+            in skyDepth,
+            "image view sky"
+        );
     }
 
     private void DestroyPipelines()
     {
+        DestroyPipeline(ref _viewMeshPipeline);
+        DestroyPipeline(ref _viewModelPipeline);
+        DestroyPipeline(ref _viewSkyPipeline);
         DestroyPipeline(ref _clusterPipeline);
         DestroyPipeline(ref _meshPipeline);
         DestroyPipeline(ref _skyPipeline);
@@ -1403,6 +1454,13 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         vk.CreateDescriptorSetLayout(device, &layoutInfo, null, out _setLayout)
             .ThrowIfFailed("vkCreateDescriptorSetLayout");
 
+        _descriptorPool = CreatePool();
+        _set = WriteSet(_descriptorPool, Draws, Lighting, ModelDraws, Lights, Clusters, "world meshes");
+    }
+
+    /// <summary>A pool for one set of the pass's layout.</summary>
+    private DescriptorPool CreatePool()
+    {
         var poolSizes = stackalloc DescriptorPoolSize[2]
         {
             new(DescriptorType.StorageBuffer, Bindings - 3 - TextureArrays),
@@ -1415,19 +1473,38 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             PoolSizeCount = 2,
             PPoolSizes = poolSizes,
         };
-        vk.CreateDescriptorPool(device, &poolInfo, null, out _descriptorPool).ThrowIfFailed("vkCreateDescriptorPool");
+        _context
+            .Vk.CreateDescriptorPool(_context.Device, &poolInfo, null, out var pool)
+            .ThrowIfFailed("vkCreateDescriptorPool");
+        return pool;
+    }
 
+    /// <summary>
+    /// A set of the pass's layout from <paramref name="pool"/>, with the given frame records (the pass's own, or an image
+    /// view's: <see cref="RenderViewTarget"/>) and the pass's heap, maps, sky field, textures, and looks.
+    /// </summary>
+    private DescriptorSet WriteSet(
+        DescriptorPool pool,
+        GpuBuffer draws,
+        GpuBuffer lighting,
+        GpuBuffer modelDraws,
+        GpuBuffer lights,
+        GpuBuffer clusters,
+        string name
+    )
+    {
+        var vk = _context.Vk;
+        var device = _context.Device;
         var setLayout = _setLayout;
         var allocateInfo = new DescriptorSetAllocateInfo
         {
             SType = StructureType.DescriptorSetAllocateInfo,
-            DescriptorPool = _descriptorPool,
+            DescriptorPool = pool,
             DescriptorSetCount = 1,
             PSetLayouts = &setLayout,
         };
         DescriptorSet set;
         vk.AllocateDescriptorSets(device, &allocateInfo, &set).ThrowIfFailed("vkAllocateDescriptorSets");
-        _set = set;
 
         // In binding order (mesh-data.glsl): the whole heap as words, the draws of every slot, the heap's materials and
         // tint map at their fixed places (multiples of 256 bytes, and so of any storage buffer alignment), the cascades'
@@ -1437,16 +1514,16 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         var infos = stackalloc DescriptorBufferInfo[FirstTextureBinding]
         {
             new(Heap.Buffer, 0, Vk.WholeSize),
-            new(Draws.Buffer, 0, Vk.WholeSize),
+            new(draws.Buffer, 0, Vk.WholeSize),
             new(Heap.Buffer, MaterialsOffset, MaterialsBytes),
             new(Heap.Buffer, TintMapOffset, TintMapBytes),
-            new(Lighting.Buffer, 0, Vk.WholeSize),
+            new(lighting.Buffer, 0, Vk.WholeSize),
             default,
-            new(ModelDraws.Buffer, 0, Vk.WholeSize),
-            new(Lights.Buffer, 0, Vk.WholeSize),
+            new(modelDraws.Buffer, 0, Vk.WholeSize),
+            new(lights.Buffer, 0, Vk.WholeSize),
             default,
             default,
-            new(Clusters.Buffer, 0, Vk.WholeSize),
+            new(clusters.Buffer, 0, Vk.WholeSize),
         };
         var look = new DescriptorBufferInfo(Look.Buffer, 0, Vk.WholeSize);
         var images = stackalloc DescriptorImageInfo[3 + TextureArrays];
@@ -1464,7 +1541,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             writes[i] = new WriteDescriptorSet
             {
                 SType = StructureType.WriteDescriptorSet,
-                DstSet = _set,
+                DstSet = set,
                 DstBinding = (uint)i,
                 DescriptorCount = 1,
                 DescriptorType = TypeOf(i),
@@ -1482,7 +1559,8 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         }
 
         vk.UpdateDescriptorSets(device, Bindings, writes, 0, null);
-        _context.SetObjectName(ObjectType.DescriptorSet, _set.Handle, "world meshes");
+        _context.SetObjectName(ObjectType.DescriptorSet, set.Handle, name);
+        return set;
     }
 
     private static DescriptorType TypeOf(int binding) =>

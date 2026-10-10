@@ -73,6 +73,9 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     private readonly Pipeline[] _pipelines = new Pipeline[MeshAssetLayout.ListRanges];
     private readonly Pipeline[] _shadowPipelines = new Pipeline[MeshAssetLayout.ListRanges];
     private Pipeline _blendPipeline;
+    private readonly Pipeline[] _viewPipelines = new Pipeline[MeshAssetLayout.ListRanges];
+    private Pipeline _viewBlendPipeline;
+    private bool _viewPipelinesWanted;
     private MeshAssetLayout? _assetLayout;
     private GpuBuffer? _upload;
     private GpuBuffer? _vertices;
@@ -521,7 +524,9 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         DestroyPipelines();
         TakeShaders((byte[][])compiled);
         CreatePipelines(_format, _samples);
-        return (2 * MeshAssetLayout.ListRanges) + 2;
+        return (2 * MeshAssetLayout.ListRanges)
+            + 2
+            + (_viewBlendPipeline.Handle != 0 ? MeshAssetLayout.ListRanges + 1 : 0);
     }
 
     /// <summary>Destroys everything the pass made. The GPU must be done with it. Safe to call more than once.</summary>
@@ -604,9 +609,13 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         _commands = null;
     }
 
-    private void BindSets(CommandBuffer commandBuffer, PipelineLayout layout)
+    private void BindSets(CommandBuffer commandBuffer, PipelineLayout layout) =>
+        BindSets(commandBuffer, layout, _meshPass.Set, _set);
+
+    /// <summary>Binds set 0 (the mesh pass's layout) and set 1 (this pass's), and the indices.</summary>
+    private void BindSets(CommandBuffer commandBuffer, PipelineLayout layout, DescriptorSet meshSet, DescriptorSet set)
     {
-        var sets = stackalloc DescriptorSet[2] { _meshPass.Set, _set };
+        var sets = stackalloc DescriptorSet[2] { meshSet, set };
         _context.Vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, layout, 0, 2, sets, 0, null);
         _context.Vk.CmdBindIndexBuffer(commandBuffer, Indices.Buffer, 0, IndexType.Uint32);
     }
@@ -618,12 +627,23 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         int list,
         in MeshAssetList counts,
         Pipeline[] pipelines
+    ) => DrawRanges(commandBuffer, Commands.Buffer, CommandsOffset(slot, list, 0), MaxCommands, in counts, pipelines);
+
+    /// <summary>Each range's commands of a list starting at <paramref name="offset"/> in <paramref name="buffer"/>, with its pipeline.</summary>
+    private void DrawRanges(
+        CommandBuffer commandBuffer,
+        Silk.NET.Vulkan.Buffer buffer,
+        ulong offset,
+        int most,
+        in MeshAssetList counts,
+        Pipeline[] pipelines
     )
     {
         var vk = _context.Vk;
         for (var range = 0; range < MeshAssetLayout.ListRanges; range++)
         {
-            var commands = Math.Clamp(counts.Of((MeshAssetRange)range), 0, MaxCommands);
+            var first = counts.FirstOf((MeshAssetRange)range);
+            var commands = Math.Clamp(counts.Of((MeshAssetRange)range), 0, Math.Max(most - first, 0));
             if (commands == 0)
             {
                 continue;
@@ -632,8 +652,8 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
             vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, pipelines[range]);
             vk.CmdDrawIndexedIndirect(
                 commandBuffer,
-                Commands.Buffer,
-                CommandsOffset(slot, list, counts.FirstOf((MeshAssetRange)range)),
+                buffer,
+                offset + (ulong)first * (ulong)sizeof(DrawIndexedIndirectCommand),
                 (uint)commands,
                 (uint)sizeof(DrawIndexedIndirectCommand)
             );

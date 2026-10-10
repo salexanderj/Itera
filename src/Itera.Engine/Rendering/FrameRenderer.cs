@@ -36,6 +36,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
     private readonly ParticlePass _particlePass;
     private readonly ScreenshotPass _screenshotPass;
     private readonly RenderPasses _renderPasses;
+    private readonly RenderViewPass _viewPass;
     private readonly DepthTarget _depth;
     private readonly GpuTimer _timer;
     private readonly ILogger<FrameRenderer> _logger;
@@ -65,6 +66,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         ParticlePass particlePass,
         ScreenshotPass screenshotPass,
         RenderPasses renderPasses,
+        RenderViewPass viewPass,
         DepthTarget depth,
         GpuTimer timer,
         PlayerSettings settings,
@@ -85,6 +87,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         _particlePass = particlePass;
         _screenshotPass = screenshotPass;
         _renderPasses = renderPasses;
+        _viewPass = viewPass;
         _depth = depth;
         _timer = timer;
         _logger = logger;
@@ -347,6 +350,8 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         _depth.OnSwapchainRecreated();
         _meshPass.OnSwapchainRecreated();
         _assetPass.OnSwapchainRecreated();
+        // The image views' images follow the mesh pass's samples and format.
+        _viewPass.OnSwapchainRecreated();
         _linePass.OnSwapchainRecreated();
         _particlePass.OnSwapchainRecreated();
         _uiPass.OnSwapchainRecreated();
@@ -381,6 +386,8 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
 
         // The mesh assets go to the GPU in the first frame, and their upload buffer later; under the loading screen too.
         _assetPass.RecordUploads(commandBuffer);
+        // The image views' shown images are cleared in the first frame, before anything reads them.
+        _viewPass.RecordFirstFrame(commandBuffer);
 
         // A new sky field goes into its image with the frame's other copies, under the loading screen too.
         if (fresh)
@@ -440,18 +447,21 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         // The UI goes over everything, with the picture dimmed under it. Its changed rows are copied here, outside
         // rendering, only when the frame is fresh: a frame presented a second time must not copy its upload region again.
         var uiRows = fresh ? frame.UiRows : 0;
-        if (uiRows > 0 || frame.UiVisible || frame.ScreenDim > 0)
+        // The image views the HUD shows, under the UI's pixels.
+        var panels = _viewPass.PanelsOf(frame.Slot);
+        if (uiRows > 0 || frame.UiVisible || frame.ScreenDim > 0 || !panels.IsEmpty)
         {
             _timer.Begin(commandBuffer, slot, GpuPass.Ui);
             _uiPass.RecordUpload(commandBuffer, frame.Slot, frame.UiRowStart, uiRows);
-            if (frame.UiVisible || frame.ScreenDim > 0)
+            if (frame.UiVisible || frame.ScreenDim > 0 || !panels.IsEmpty)
             {
                 _uiPass.Record(
                     commandBuffer,
                     _swapchain.ImageViews[(int)imageIndex],
                     _swapchain.Extent,
                     frame.UiVisible,
-                    frame.ScreenDim
+                    frame.ScreenDim,
+                    panels
                 );
             }
 
@@ -540,6 +550,15 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
             _renderPasses
         );
         _timer.End(commandBuffer, slot, GpuPass.Voxels);
+
+        // The image views due this frame, after the world's pass (the frame's posed mesh assets are skinned), each into
+        // its own images; a frame presented again keeps their last updates.
+        if (fresh && _viewPass.AnyDue(frame.Slot))
+        {
+            _timer.Begin(commandBuffer, slot, GpuPass.ImageViews);
+            _viewPass.Record(commandBuffer, frame.Slot);
+            _timer.End(commandBuffer, slot, GpuPass.ImageViews);
+        }
 
         // The particles move after the world is drawn: they meet it through its depth image, and lit ones take their
         // light from its shadow cascades and sky field. A frame with none alive records nothing and marks its slot as

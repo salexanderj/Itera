@@ -38,6 +38,31 @@ internal interface IMeshDrawTarget
 }
 
 /// <summary>
+/// Where <see cref="WorldMeshes"/> and <see cref="MeshAssetDraws"/> write an image view's lists for a frame, and its view
+/// (<see cref="MeshView"/>: its frustum and lights): <see cref="RenderViewTarget"/>, or memory of a test's own. Its one
+/// list of the world's draws, of the models', and its two of the mesh assets' (<see cref="RenderViewTarget.AssetSeenList"/>
+/// and <see cref="RenderViewTarget.AssetBlendedList"/>), sized and based as <see cref="RenderViewTarget"/>'s constants
+/// say.
+/// </summary>
+internal interface IRenderViewLists : IMeshDrawTarget
+{
+    /// <summary>The view's place among <see cref="RenderViews"/>'.</summary>
+    int Index { get; }
+
+    /// <summary>The view's frustum and point lights each frame it is drawn.</summary>
+    MeshView View { get; }
+
+    /// <summary>The frame record of a frame slot.</summary>
+    ref RenderViewFrame FrameOf(int slot);
+
+    /// <summary>The mesh assets' draws of list <paramref name="list"/> of a frame slot.</summary>
+    Span<MeshAssetDraw> AssetDrawsOf(int slot, int list);
+
+    /// <summary>The mesh assets' commands of list <paramref name="list"/> of a frame slot.</summary>
+    Span<DrawIndexedIndirectCommand> AssetCommandsOf(int slot, int list);
+}
+
+/// <summary>
 /// The staging memory a frame's uploads go through: <see cref="Memory.StagingBuffer"/>, or memory of a test's own.
 /// </summary>
 internal unsafe interface IStagingRegions

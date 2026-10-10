@@ -51,6 +51,12 @@ public enum GpuPass
     /// mesh pass, so their time is also part of <see cref="Voxels"/>; those at the Scene and Screen stages are not.
     /// </summary>
     Game = 14,
+
+    /// <summary>
+    /// The image views drawn this frame (<c>RenderViewPass</c>: each due view's light clusters, its world, models, mesh
+    /// assets, and sky, and its copy into the image the HUD reads), when any were; after the world's pass, not part of it.
+    /// </summary>
+    ImageViews = 15,
 }
 
 /// <summary>Average and longest GPU time of one pass over an interval.</summary>
@@ -72,7 +78,7 @@ public readonly record struct GpuPassTimes(long Count, double AverageMs, double 
 public sealed class GpuTimings
 {
     /// <summary>Number of <see cref="GpuPass"/> values.</summary>
-    public const int PassCount = 15;
+    public const int PassCount = 16;
 
     /// <summary>The game's passes measured one by one, at most.</summary>
     public const int MostGamePasses = 8;

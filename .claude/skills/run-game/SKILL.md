@@ -106,7 +106,8 @@ textures came from their compressed textures; a file that cannot be read stops t
 compressed textures that do not match their image, an Information note for a model whose textures were all decoded), `Mesh assets on the GPU: N vertices, ... draws N MB a frame slot`
 (and with a skinned model `... N skinned vertices; posed instances skinned into V vertices ...`), for each pass a game
 registered `Render pass of the game's: NAME at the STAGE stage` (the starter has none; the mesh sample's is `aim
-highlight`), `Audio: thread started ...`, `Render thread started`, `Engine
+highlight`), for each image view a game declared `Image view NAME: WxH texels, one sample a pixel, drawn at most every N
+frame(s)` (the starter's `minimap`), `Audio: thread started ...`, `Render thread started`, `Engine
 ready ... entering main loop`. Then the match's: `Match 1: offline, seed N` (or `host, seed N`, `host through Steam,
 ...`, or `join ADDRESS`), `Session: offline, seed N` (or `hosting on UDP port ...`, `hosting through Steam ...`, or
 `joined ADDRESS in slot N, seed N; downloaded ...`; with a save name, a `Save: starting from NAME ...` or `Save: NAME
@@ -153,7 +154,7 @@ drive a running game: start it from a copy of the build, run console commands an
 (`run -s`: as a script, so `wait` and `screenshot` hold the commands after them and the reply comes when all have run),
 read the match's entities as JSON (`query`) and its steps (`status`: tick, paused, time scale, the player's position),
 wait for loading, frames, fixed steps (`ticks`), seconds, or a log line, measure the GPU passes (a game's own by name,
-`Game NAME`, and their sum, `Game`), take screenshots from
+`Game NAME`, and their sum, `Game`; the image views' updates, `ImageViews`), take screenshots from
 the game itself (`ScreenshotPass`), reload the shaders from the repository (`Engine:Renderer:ShaderSourceDirectory`;
 `shaders reload`: every pass compiles, then the pipelines are made again; an error keeps the old ones), and send input
 (keys, buttons, look, the wheel, a capture of the pointer that needs no focus, and `point X Y` and `type TEXT` for the

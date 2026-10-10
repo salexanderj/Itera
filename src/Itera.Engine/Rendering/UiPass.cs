@@ -18,8 +18,9 @@ namespace Itera.Engine.Rendering;
 /// when its surface has that size, so the two always agree. Each remake raises <see cref="Generation"/>, which the
 /// surface follows by sending every row (a size that changed and changed back between
 /// two requests would leave the new buffer empty). On a screen larger than the device's largest storage buffer there are no
-/// UI pixels, only a placeholder buffer, so the screen's dim still draws. Created before the render thread starts;
-/// recorded by the render thread.
+/// UI pixels, only a placeholder buffer, so the screen's dim still draws. The image views the HUD shows
+/// (<see cref="RenderViews.Show"/>) are drawn under the UI's pixels from their shown images (<see cref="SetViewImages"/>;
+/// a 1x1 stand-in in each place without one). Created before the render thread starts; recorded by the render thread.
 /// </summary>
 public sealed unsafe partial class UiPass : IDisposable, IReloadsShaders
 {
@@ -38,6 +39,9 @@ public sealed unsafe partial class UiPass : IDisposable, IReloadsShaders
     private PipelineLayout _layout;
     private Pipeline _pipeline;
     private Format _format;
+    private GpuImage? _standIn;
+    private bool _standInReady;
+    private Sampler _viewSampler;
 
     // Written by the render thread when the buffers are made, before the frame request that carries the new size; the
     // main thread reads them after taking that request, which FrameExchange orders after the writes.
@@ -78,7 +82,16 @@ public sealed unsafe partial class UiPass : IDisposable, IReloadsShaders
     /// <summary>Creates the buffers for the swapchain's size, their descriptor set, and the pipeline.</summary>
     public void Initialize()
     {
+        CreateViewSampler();
+        _standIn = _allocator.CreateImage(
+            Format.R8G8B8A8Unorm,
+            new Extent2D(1, 1),
+            ImageUsageFlags.SampledBit | ImageUsageFlags.TransferDstBit,
+            ImageAspectFlags.ColorBit,
+            "ui view stand-in"
+        );
         CreateDescriptorLayout();
+        SetViewImages([]);
         TakeShaders((byte[][])CompileShaders());
         var setLayout = _setLayout;
         _layout = PipelineFactory.CreateLayout(
@@ -184,20 +197,84 @@ public sealed unsafe partial class UiPass : IDisposable, IReloadsShaders
     }
 
     /// <summary>
+    /// Points the set's view images at <paramref name="shown"/> (the image views' shown images, in their order), and the
+    /// rest at the stand-in. Before the render thread starts, or on it with the device idle: no submitted frame may use
+    /// the set.
+    /// </summary>
+    public void SetViewImages(ReadOnlySpan<ImageView> shown)
+    {
+        var images = stackalloc DescriptorImageInfo[RenderViews.MostViews];
+        for (var i = 0; i < RenderViews.MostViews; i++)
+        {
+            images[i] = new DescriptorImageInfo(
+                _viewSampler,
+                i < shown.Length ? shown[i] : _standIn!.View,
+                ImageLayout.ShaderReadOnlyOptimal
+            );
+        }
+
+        var write = new WriteDescriptorSet
+        {
+            SType = StructureType.WriteDescriptorSet,
+            DstSet = _set,
+            DstBinding = 1,
+            DescriptorCount = RenderViews.MostViews,
+            DescriptorType = DescriptorType.CombinedImageSampler,
+            PImageInfo = images,
+        };
+        _context.Vk.UpdateDescriptorSets(_context.Device, 1, &write, 0, null);
+    }
+
+    /// <summary>
     /// Records the UI over <paramref name="target"/>, which the earlier passes drew, with the picture under it darkened
     /// by <paramref name="dim"/> (0 to 1, black at 1): the barrier waits for their colour writes, and the attachment loads
     /// them. The UI's pixels are read only where <paramref name="ui"/> and once rows have been copied into the current
-    /// pixel buffer; with neither those nor a dim it draws nothing. Render thread.
+    /// pixel buffer; under them the image views of <paramref name="panels"/> (at most <see cref="RenderViews.MostViews"/>)
+    /// are drawn; with none of those nor a dim it draws nothing. Render thread.
     /// </summary>
-    public void Record(CommandBuffer commandBuffer, ImageView target, Extent2D extent, bool ui, float dim)
+    public void Record(
+        CommandBuffer commandBuffer,
+        ImageView target,
+        Extent2D extent,
+        bool ui,
+        float dim,
+        ReadOnlySpan<ViewPanel> panels = default
+    )
     {
         var pixels = ui && _uploaded;
-        if (_pixels is null || (!pixels && !(dim > 0)))
+        if (_pixels is null || (!pixels && !(dim > 0) && panels.IsEmpty))
         {
             return;
         }
 
         var vk = _context.Vk;
+        if (!_standInReady)
+        {
+            // The stand-in is never read, but the set names it: it is cleared and left in the layout the set gives.
+            StandInBarrier(
+                commandBuffer,
+                PipelineStageFlags2.None,
+                AccessFlags2.None,
+                PipelineStageFlags2.AllTransferBit,
+                AccessFlags2.TransferWriteBit,
+                ImageLayout.Undefined,
+                ImageLayout.TransferDstOptimal
+            );
+            var clear = default(ClearColorValue);
+            var range = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, 1);
+            vk.CmdClearColorImage(commandBuffer, _standIn!.Image, ImageLayout.TransferDstOptimal, &clear, 1, &range);
+            StandInBarrier(
+                commandBuffer,
+                PipelineStageFlags2.AllTransferBit,
+                AccessFlags2.TransferWriteBit,
+                PipelineStageFlags2.FragmentShaderBit,
+                AccessFlags2.ShaderSampledReadBit,
+                ImageLayout.TransferDstOptimal,
+                ImageLayout.ShaderReadOnlyOptimal
+            );
+            _standInReady = true;
+        }
+
         Barrier(
             commandBuffer,
             PipelineStageFlags2.ColorAttachmentOutputBit,
@@ -234,7 +311,30 @@ public sealed unsafe partial class UiPass : IDisposable, IReloadsShaders
             Height = _height,
             Dim = Math.Clamp(dim, 0, 1),
             Pixels = pixels ? 1u : 0u,
+            Panels = (uint)Math.Min(panels.Length, RenderViews.MostViews),
         };
+        for (var i = 0; i < (int)constants.Panels; i++)
+        {
+            ref readonly var panel = ref panels[i];
+            constants.PanelViews |= (uint)(panel.View & 0xFF) << (8 * i);
+            var rect = new System.Numerics.Vector4(panel.X, panel.Y, panel.Width, panel.Height);
+            switch (i)
+            {
+                case 0:
+                    constants.Panel0 = rect;
+                    break;
+                case 1:
+                    constants.Panel1 = rect;
+                    break;
+                case 2:
+                    constants.Panel2 = rect;
+                    break;
+                default:
+                    constants.Panel3 = rect;
+                    break;
+            }
+        }
+
         vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _pipeline);
         vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _layout, 0, 1, &set, 0, null);
         vk.CmdSetViewport(commandBuffer, 0, 1, &viewport);
@@ -284,7 +384,16 @@ public sealed unsafe partial class UiPass : IDisposable, IReloadsShaders
             {
                 vk.DestroyDescriptorSetLayout(device, _setLayout, null);
             }
+
+            if (_viewSampler.Handle != 0)
+            {
+                vk.DestroySampler(device, _viewSampler, null);
+            }
         }
+
+        _viewSampler = default;
+        _standIn?.Dispose();
+        _standIn = null;
 
         _pipeline = default;
         _layout = default;
@@ -387,29 +496,43 @@ public sealed unsafe partial class UiPass : IDisposable, IReloadsShaders
     {
         var vk = _context.Vk;
         var device = _context.Device;
-        var binding = new DescriptorSetLayoutBinding
+        var bindings = stackalloc DescriptorSetLayoutBinding[2]
         {
-            Binding = 0,
-            DescriptorType = DescriptorType.StorageBuffer,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
+            new()
+            {
+                Binding = 0,
+                DescriptorType = DescriptorType.StorageBuffer,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.FragmentBit,
+            },
+            new()
+            {
+                Binding = 1,
+                DescriptorType = DescriptorType.CombinedImageSampler,
+                DescriptorCount = RenderViews.MostViews,
+                StageFlags = ShaderStageFlags.FragmentBit,
+            },
         };
         var layoutInfo = new DescriptorSetLayoutCreateInfo
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 1,
-            PBindings = &binding,
+            BindingCount = 2,
+            PBindings = bindings,
         };
         vk.CreateDescriptorSetLayout(device, &layoutInfo, null, out _setLayout)
             .ThrowIfFailed("vkCreateDescriptorSetLayout");
 
-        var poolSize = new DescriptorPoolSize(DescriptorType.StorageBuffer, 1);
+        var poolSizes = stackalloc DescriptorPoolSize[2]
+        {
+            new(DescriptorType.StorageBuffer, 1),
+            new(DescriptorType.CombinedImageSampler, RenderViews.MostViews),
+        };
         var poolInfo = new DescriptorPoolCreateInfo
         {
             SType = StructureType.DescriptorPoolCreateInfo,
             MaxSets = 1,
-            PoolSizeCount = 1,
-            PPoolSizes = &poolSize,
+            PoolSizeCount = 2,
+            PPoolSizes = poolSizes,
         };
         vk.CreateDescriptorPool(device, &poolInfo, null, out _pool).ThrowIfFailed("vkCreateDescriptorPool");
 
@@ -425,6 +548,57 @@ public sealed unsafe partial class UiPass : IDisposable, IReloadsShaders
         vk.AllocateDescriptorSets(device, &allocateInfo, &set).ThrowIfFailed("vkAllocateDescriptorSets");
         _set = set;
         _context.SetObjectName(ObjectType.DescriptorSet, _set.Handle, "ui");
+    }
+
+    private void StandInBarrier(
+        CommandBuffer commandBuffer,
+        PipelineStageFlags2 sourceStage,
+        AccessFlags2 sourceAccess,
+        PipelineStageFlags2 destinationStage,
+        AccessFlags2 destinationAccess,
+        ImageLayout from,
+        ImageLayout to
+    )
+    {
+        var barrier = new ImageMemoryBarrier2
+        {
+            SType = StructureType.ImageMemoryBarrier2,
+            SrcStageMask = sourceStage,
+            SrcAccessMask = sourceAccess,
+            DstStageMask = destinationStage,
+            DstAccessMask = destinationAccess,
+            OldLayout = from,
+            NewLayout = to,
+            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            Image = _standIn!.Image,
+            SubresourceRange = new ImageSubresourceRange(ImageAspectFlags.ColorBit, 0, 1, 0, 1),
+        };
+        var dependency = new DependencyInfo
+        {
+            SType = StructureType.DependencyInfo,
+            ImageMemoryBarrierCount = 1,
+            PImageMemoryBarriers = &barrier,
+        };
+        _context.Vk.CmdPipelineBarrier2(commandBuffer, &dependency);
+    }
+
+    /// <summary>The image views' sampler: blended between texels, clamped at the edges.</summary>
+    private void CreateViewSampler()
+    {
+        var info = new SamplerCreateInfo
+        {
+            SType = StructureType.SamplerCreateInfo,
+            MagFilter = Filter.Linear,
+            MinFilter = Filter.Linear,
+            MipmapMode = SamplerMipmapMode.Nearest,
+            AddressModeU = SamplerAddressMode.ClampToEdge,
+            AddressModeV = SamplerAddressMode.ClampToEdge,
+            AddressModeW = SamplerAddressMode.ClampToEdge,
+            MaxLod = 0,
+        };
+        _context.Vk.CreateSampler(_context.Device, &info, null, out _viewSampler).ThrowIfFailed("vkCreateSampler");
+        _context.SetObjectName(ObjectType.Sampler, _viewSampler.Handle, "ui views");
     }
 
     /// <summary>Points the set at the current pixel buffer. No submitted frame may use the set.</summary>

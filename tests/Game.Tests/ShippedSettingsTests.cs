@@ -30,6 +30,7 @@ public sealed class ShippedSettingsTests
             ("Engine", new EngineOptions()),
             (WorldOptions.SectionName, new WorldOptions()),
             (PlayerOptions.SectionName, new PlayerOptions()),
+            (MinimapOptions.SectionName, new MinimapOptions()),
         };
 
         var differences = new List<string>();
@@ -74,6 +75,7 @@ public sealed class ShippedSettingsTests
                 ("Engine", new EngineOptions()),
                 (WorldOptions.SectionName, new WorldOptions()),
                 (PlayerOptions.SectionName, new PlayerOptions()),
+                (MinimapOptions.SectionName, new MinimapOptions()),
             }
         )
         {

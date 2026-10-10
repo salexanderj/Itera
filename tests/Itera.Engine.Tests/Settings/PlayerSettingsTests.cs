@@ -366,6 +366,165 @@ public sealed class PlayerSettingsTests : IDisposable
         Assert.False(CommandLineKeys.None.Contains("Engine:Audio:Volume"));
     }
 
+    [Fact]
+    public void A_game_switch_is_its_default_when_the_file_has_none()
+    {
+        var settings = Create(new EngineOptions());
+
+        var on = settings.RegisterSwitch("Minimap", defaultValue: true);
+        var off = settings.RegisterSwitch("Compass", defaultValue: false);
+
+        Assert.True(settings.IsOn(on));
+        Assert.False(settings.IsOn(off));
+        Assert.Equal("Minimap", settings.SwitchName(on));
+        Assert.Equal("Compass", settings.SwitchName(off));
+        settings.Save();
+        Assert.False(File.Exists(FilePath));
+    }
+
+    [Fact]
+    public void A_game_switch_is_read_from_the_file_and_a_value_that_is_not_a_boolean_is_ignored()
+    {
+        File.WriteAllText(FilePath, """{ "Game": { "Minimap": false, "Compass": "yes", "Grid": 1 } }""");
+        var settings = Create(new EngineOptions());
+
+        var minimap = settings.RegisterSwitch("Minimap", defaultValue: true);
+        var compass = settings.RegisterSwitch("Compass", defaultValue: true);
+        var grid = settings.RegisterSwitch("Grid", defaultValue: false);
+        var other = settings.RegisterSwitch("Other", defaultValue: true);
+
+        Assert.False(settings.IsOn(minimap));
+        Assert.True(settings.IsOn(compass));
+        Assert.False(settings.IsOn(grid));
+        Assert.True(settings.IsOn(other));
+    }
+
+    [Fact]
+    public void A_game_section_that_is_not_an_object_is_ignored_and_kept_until_a_switch_replaces_it()
+    {
+        File.WriteAllText(FilePath, """{ "Game": 5 }""");
+        var settings = Create(new EngineOptions());
+        settings.SetVolume(0.3f);
+        settings.Save();
+        using (var kept = JsonDocument.Parse(File.ReadAllText(FilePath)))
+        {
+            Assert.Equal(5, kept.RootElement.GetProperty("Game").GetInt32());
+        }
+
+        var minimap = settings.RegisterSwitch("Minimap", defaultValue: true);
+        Assert.True(settings.IsOn(minimap));
+        settings.SetSwitch(minimap, false);
+        settings.Save();
+
+        using var written = JsonDocument.Parse(File.ReadAllText(FilePath));
+        Assert.False(written.RootElement.GetProperty("Game").GetProperty("Minimap").GetBoolean());
+    }
+
+    [Fact]
+    public void A_changed_game_switch_is_written_and_read_back_by_a_new_start()
+    {
+        var settings = Create(new EngineOptions());
+        var minimap = settings.RegisterSwitch("Minimap", defaultValue: true);
+        var version = settings.Version;
+
+        settings.SetSwitch(minimap, true);
+        settings.Save();
+        Assert.False(File.Exists(FilePath));
+        Assert.Equal(version, settings.Version);
+
+        settings.SetSwitch(minimap, false);
+        settings.Save();
+        Assert.NotEqual(version, settings.Version);
+
+        using (var written = JsonDocument.Parse(File.ReadAllText(FilePath)))
+        {
+            Assert.False(written.RootElement.GetProperty("Game").GetProperty("Minimap").GetBoolean());
+        }
+
+        var next = Create(new EngineOptions());
+        var again = next.RegisterSwitch("Minimap", defaultValue: true);
+        Assert.False(next.IsOn(again));
+    }
+
+    [Fact]
+    public void Game_entries_this_run_did_not_register_are_written_back_after_the_registered_ones()
+    {
+        File.WriteAllText(
+            FilePath,
+            """{ "Game": { "Old": 7, "Minimap": true, "Names": ["a"] }, "Colour": "red", "Volume": 0.6 }"""
+        );
+        var settings = Create(new EngineOptions());
+        var grid = settings.RegisterSwitch("Grid", defaultValue: false);
+        var minimap = settings.RegisterSwitch("Minimap", defaultValue: true);
+
+        settings.SetSwitch(grid, true);
+        settings.Save();
+
+        using var written = JsonDocument.Parse(File.ReadAllText(FilePath));
+        var section = written.RootElement.GetProperty("Game");
+        Assert.Equal(["Grid", "Minimap", "Old", "Names"], section.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.True(section.GetProperty("Grid").GetBoolean());
+        Assert.True(section.GetProperty("Minimap").GetBoolean());
+        Assert.Equal(7, section.GetProperty("Old").GetInt32());
+        Assert.Equal("a", section.GetProperty("Names")[0].GetString());
+        Assert.Equal(1, written.RootElement.EnumerateObject().Count(p => p.Name == "Game"));
+        Assert.Equal("red", written.RootElement.GetProperty("Colour").GetString());
+        Assert.True(settings.IsOn(minimap));
+    }
+
+    [Fact]
+    public void A_game_section_with_no_switch_registered_is_written_back_as_it_was()
+    {
+        File.WriteAllText(FilePath, """{ "Game": { "Minimap": false, "Old": 7 }, "Volume": 0.6 }""");
+        var settings = Create(new EngineOptions());
+
+        settings.SetVolume(0.3f);
+        settings.Save();
+
+        using var written = JsonDocument.Parse(File.ReadAllText(FilePath));
+        Assert.False(written.RootElement.GetProperty("Game").GetProperty("Minimap").GetBoolean());
+        Assert.Equal(7, written.RootElement.GetProperty("Game").GetProperty("Old").GetInt32());
+    }
+
+    [Fact]
+    public void A_game_switch_registered_twice_or_with_an_empty_name_is_refused()
+    {
+        var settings = Create(new EngineOptions());
+        settings.RegisterSwitch("Minimap", defaultValue: true);
+
+        Assert.Throws<ArgumentException>(() => settings.RegisterSwitch("Minimap", defaultValue: false));
+        Assert.Throws<ArgumentException>(() => settings.RegisterSwitch("", defaultValue: true));
+        Assert.Throws<ArgumentException>(() => settings.RegisterSwitch("  ", defaultValue: true));
+        // Names compare ordinally.
+        settings.RegisterSwitch("minimap", defaultValue: true);
+    }
+
+    [Fact]
+    public void Reading_and_setting_a_game_switch_allocate_nothing()
+    {
+        var settings = Create(new EngineOptions());
+        var minimap = settings.RegisterSwitch("Minimap", defaultValue: true);
+        for (var i = 0; i < 100; i++)
+        {
+            settings.SetSwitch(minimap, i % 2 == 0);
+            _ = settings.IsOn(minimap);
+        }
+
+        var before = SystemAllocation.StartMeasurement();
+        var on = 0;
+        for (var i = 0; i < 1000; i++)
+        {
+            settings.SetSwitch(minimap, i % 2 == 0);
+            if (settings.IsOn(minimap))
+            {
+                on++;
+            }
+        }
+
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal(500, on);
+    }
+
     /// <summary>The settings with the file read, as the run's <c>settings file</c> step does.</summary>
     private PlayerSettings Create(EngineOptions options, CommandLineKeys? keys = null, KeyBindings? bindings = null)
     {

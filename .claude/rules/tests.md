@@ -104,7 +104,7 @@ Where tests live:
   instances, and the blended list sorted back to front), `MeshViewTests` (the frame's frustum, cascades, and
   lights), `LevelBalanceTests`, `MeshColumnTests`,
   `WorldMeshesTests` over a draw target and staging in memory: the seams' stitched meshes, a full heap, the edits'
-  latency), `Memory/GpuRangeHeapTests`, `GpuLayoutTests` (of `tests/Shared/GpuLayout`, also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`,
+  latency, an image view's lists over `FakeViewLists`), `RenderViewsTests` (declaring, the cadence, panels), `Memory/GpuRangeHeapTests`, `GpuLayoutTests` (of `tests/Shared/GpuLayout`, also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`,
   `DeviceChoiceTests`, `RenderThreadTests` (a fake renderer), `RenderPassesTests` (a game's pass at every stage in
   `EngineComposition`, none made or written without graphics; too many, or names empty or used twice, refused), the passes' shaders against their push constants
   (`UiPassTests`, `UpscalePassTests`, `LoadingPassTests`, `ParticlePassTests`), `ScreenshotTests`, `ShaderReloadTests`.

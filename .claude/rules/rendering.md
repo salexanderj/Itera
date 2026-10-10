@@ -397,10 +397,47 @@ the engine's at the repository (`ShaderSource`, `ShaderRoots`). Each pass is tim
 in N frames avg/max`; the `Compute`, `Opaque`, and `Transparent` stages' time is also part of the world's, `Voxels`), and each one has a Debug line (`GPU game pass NAME in N frames avg ... max ...`) and an entry in
 the control port's `gpu` reply (`Game NAME`). The mesh sample's `AimHighlightPass` is the example (its README).
 
+### Image views
+
+A game draws views of the world into images of their own (`RenderViews`, run-wide). It declares each at its run's start
+(`IRunStartup.Start`: a name, a size in texels, 16 to 4096, and how often it is drawn, once in 1 to 60 frames; at most
+`RenderViews.MostViews`, 4); the run's "image views" step, after "mesh assets on the gpu", makes them and seals the
+declarations. Each frame it wants one drawn, a frame system asks for it with a camera (`RenderViews.Draw`, any lens: the
+starter's minimap is orthographic; `Asked` reads the ask back), and it is drawn on such a frame once its frames since
+the last update reach its cadence. A HUD layer shows one in a rectangle of screen pixels each frame (`RenderViews.Show`,
+from its `Bounds`, which the surface asks every frame it shows, at the screen's size); the UI pass draws it under the
+UI's pixels (`ui.frag`'s `views[4]`, binding 1, a 1x1 stand-in where there is none; the panels in `UiConstants`),
+dimmed with the picture. A view shows its last update until its next.
+
+A view draws the world, the models, the mesh assets, the sky, and the point lights, without shadows (the sun lights it
+unshadowed) or particles, with one sample a pixel whatever the world's (`MeshPass` and `MeshAssetPass` make their
+camera pipelines again at one sample while the world is multisampled, `WantViewPipelines`: a view from above takes
+every block round it at the camera's finest levels, many triangles smaller than its texels, and four samples doubled
+an update's time). It shows the local player's own body (`ModelShadow.Only`) and not what the camera alone shows
+(`ModelShadow.None`, the first-person arms). The terrain's levels and meshes stay the main camera's: `WorldMeshes` lists
+for each view due (`IRenderViewLists`) the camera's leaf columns' blocks its frustum meets, from their stitched meshes
+where the camera's are (a block only a view sees asks for no stitched mesh), nearest first by its depth, and offers it
+their lights; the models and the mesh assets list for it as for the camera (a posed instance only a view sees is
+skinned too).
+
+Each view (`RenderViewTarget`, `Rendering/Meshes/`) has its own frame records, a region a slot: the world's draws and
+commands (at most 8,192 blocks), the models' (16,384 draws, 4,096 commands), its lighting record (no shadows, the sky
+field's place), its point lights and their clusters, and the mesh assets' seen list (4,096 draws, 1,024 commands) and
+blended list; its own sets of the mesh pass's and the asset pass's layouts name them, so it draws with their pipelines
+and shaders unchanged. `RenderViewPass` starts the due views after the frame systems (`BeginViews`: their constants
+from the asked camera at the view's size, the frame's sun and sky, no shadows; their `MeshView`s), ends them with the
+events' lights (`EndViews`; the HUD's panels go into the slot), and records each after the world's pass (timed as
+`GpuPass.ImageViews`, the stats log's `image views in N frames avg/max`, not part of `Voxels`): its clusters, then the
+world, the models, the mesh assets, the sky, and the blended assets into its colour and depth, then a copy of the colour
+into the image the shaders and the HUD read (`Shown`, cleared in the first frame, always in the shader-read layout but
+during that copy, so no rendering reads the image it draws into). Its log line: `Image view NAME: WxH texels, one sample
+a pixel, drawn at most every N frame(s)`.
+
 ### Files in `src/Itera.Engine`
 
   - `Rendering/`: Vulkan bootstrap (`VulkanContext`, `DeviceRequirements`), the frame (`FrameRenderer`,
-    `RenderThread`, `FrameExchange`), a game's own passes (`RenderPasses`, `IRenderPass`), the surface's source (`ISurfaceSource`: the window's or a headless one, in
+    `RenderThread`, `FrameExchange`), a game's own passes (`RenderPasses`, `IRenderPass`), image views (`RenderViews`,
+    `RenderViewPass`; `RenderViewTarget` and `MeshPass.Views.cs` in `Meshes/`), the surface's source (`ISurfaceSource`: the window's or a headless one, in
     `SurfaceSource.cs`), `DepthTarget`, `ModelInstances`, `MeshInstances`, `DebugLines` and `DebugLinePass`, `UiPass`,
     `RenderScale` and `UpscalePass`, `SmaaPass`, `SmaaTextures`, `FrameImages`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`,
     the look (`RenderLook`, `LookTuning`), `Atmosphere`,

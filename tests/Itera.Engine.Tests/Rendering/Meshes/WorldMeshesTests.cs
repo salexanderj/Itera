@@ -200,6 +200,60 @@ public sealed class WorldMeshesTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// An image view lists, in its own records, the camera's levels' blocks its own box holds (more than the camera's
+    /// narrow look down sees), nearest first by its depth, and the models in it the camera does not see; its lighting
+    /// record has the sky field's place as the frame's.
+    /// </summary>
+    [Fact]
+    public void An_image_view_lists_the_blocks_and_models_its_box_holds()
+    {
+        var cube = AddCube(10);
+        Begin();
+        RunUntil(() => _models.IsUploaded(cube));
+        RunUntilUpToDate();
+        var lists = new FakeViewLists();
+        var slot = _frame++ % FrameSync.FramesInFlight;
+        var view = LookingDown(Centre);
+        var middle = Centre + new Vector3(0, 5, 0);
+        var viewConstants = FakeViewLists.LookingDown(middle);
+        ModelDraw[] models = [new(cube, 0, new Vector3(10, 1.8f, 0), Quaternion.Identity, 0)];
+
+        _meshes.View.Begin(slot, in view);
+        lists.View.Begin(slot, in viewConstants);
+        _meshes.Upload(slot, _frame / 60.0, in view, models, [lists]);
+        _meshes.View.End(slot, default);
+        lists.View.End(slot, default);
+
+        ref readonly var frame = ref lists.FrameOf(slot);
+        Assert.True(
+            frame.Draws > _meshes.DrawCount,
+            $"{frame.Draws} drawn in the view, {_meshes.DrawCount} by the camera."
+        );
+        Assert.Equal(frame.Draws, frame.Records);
+        var records = new HashSet<int>();
+        var last = float.MinValue;
+        for (var i = 0; i < frame.Draws; i++)
+        {
+            var command = lists.CommandsOf(slot, 0)[i];
+            var record = (int)command.FirstInstance - RenderViewTarget.RecordBase(slot);
+            Assert.True(records.Add(record));
+            var draw = lists.DrawsOf(slot)[record];
+            var centre = draw.Origin + new Vector3(16 * draw.VoxelMetres);
+            var reach = 16 * draw.VoxelMetres + draw.VoxelMetres;
+            Assert.InRange(centre.X, middle.X - 16 - reach, middle.X + 16 + reach);
+            Assert.InRange(centre.Z, middle.Z - 9 - reach, middle.Z + 9 + reach);
+            var key = lists.View.NearFirstKey(centre);
+            Assert.True(key >= last, $"Draw {i} is nearer than the one before it.");
+            last = key;
+        }
+
+        Assert.Equal(0, _meshes.Frame.ModelCamera.Records);
+        Assert.Equal(1, frame.Models.Records);
+        Assert.Equal(_targets.LightingOf(slot).SkyCorner, lists.LightingOf(slot).SkyCorner);
+        Assert.Equal(_targets.LightingOf(slot).SkyCellMetres, lists.LightingOf(slot).SkyCellMetres);
+    }
+
     [Fact]
     public void An_edit_is_meshed_again()
     {

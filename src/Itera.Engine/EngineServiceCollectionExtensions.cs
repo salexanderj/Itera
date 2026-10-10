@@ -105,7 +105,9 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<ScreenshotPass>();
         services.TryAddSingleton<ModelInstances>();
         services.TryAddSingleton<MeshInstances>();
+        services.TryAddSingleton<RenderViews>();
         services.TryAddSingleton<MeshAssetPass>();
+        services.TryAddSingleton<RenderViewPass>();
         // The game's own passes (IRenderPass, registered by the game), run at their stages.
         services.TryAddSingleton<RenderPasses>();
         services.TryAddSingleton<MeshAssetDraws>();

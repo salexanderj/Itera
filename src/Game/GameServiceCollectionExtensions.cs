@@ -14,6 +14,7 @@ using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.Voxels;
 using Itera.Engine.Settings;
 using Itera.Engine.Systems;
+using Itera.Engine.UI;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -52,7 +53,8 @@ public static class GameServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         Read<PlayerOptions>(services, PlayerOptions.SectionName);
         Read<WorldOptions>(services, WorldOptions.SectionName);
-        string[] sections = [PlayerOptions.SectionName, WorldOptions.SectionName];
+        Read<MinimapOptions>(services, MinimapOptions.SectionName);
+        string[] sections = [PlayerOptions.SectionName, WorldOptions.SectionName, MinimapOptions.SectionName];
         var unknown = services
             .GetRequiredService<IConfiguration>()
             .GetSection("Game")
@@ -72,6 +74,11 @@ public static class GameServiceCollectionExtensions
         services.AddSingleton<IValidateOptions<PlayerOptions>, PlayerOptionsValidator>();
         services.AddSingleton<IValidateOptions<PlayerOptions>>(
             new UnknownOptionKeys<PlayerOptions>(configuration.GetSection(PlayerOptions.SectionName))
+        );
+        services.Configure<MinimapOptions>(configuration.GetSection(MinimapOptions.SectionName));
+        services.AddSingleton<IValidateOptions<MinimapOptions>, MinimapOptionsValidator>();
+        services.AddSingleton<IValidateOptions<MinimapOptions>>(
+            new UnknownOptionKeys<MinimapOptions>(configuration.GetSection(MinimapOptions.SectionName))
         );
         services.Configure<WorldOptions>(configuration.GetSection(WorldOptions.SectionName));
         services.AddSingleton<IValidateOptions<WorldOptions>, WorldOptionsValidator>();
@@ -109,6 +116,14 @@ public static class GameServiceCollectionExtensions
         // particle effects.
         services.AddSingleton<StockEffects>();
         services.AddSingleton<IRunStartup, GameRunStartup>();
+        // The minimap: its view, key, and switch (run-wide), and its frame and arrow over the match's HUD.
+        services.AddSingleton<Minimap>();
+        services.AddScoped<IMatchUiLayer>(sp => new MinimapLayer(
+            sp.GetRequiredService<Minimap>(),
+            sp.GetRequiredService<RenderViews>(),
+            sp.GetRequiredService<Itera.Engine.Loading.LoadingScreen>(),
+            sp.GetRequiredService<StatsLayer>()
+        ));
     }
 
     /// <summary>
@@ -268,6 +283,17 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<RenderView>(),
             sp.GetRequiredService<PlayerSettings>()
+        ));
+        // After the camera's systems, so its key and the player's place are this frame's; the benchmark hides it.
+        services.AddScoped<IFrameUpdateSystem>(sp => new MinimapSystem(
+            sp.GetRequiredService<EcsWorld>().World,
+            sp.GetRequiredService<Minimap>(),
+            sp.GetRequiredService<RenderViews>(),
+            sp.GetRequiredService<PlayerSettings>(),
+            sp.GetRequiredService<IFrameInput>(),
+            sp.GetRequiredService<PlayerInputBlock>(),
+            sp.GetRequiredService<IOptions<MinimapOptions>>().Value,
+            benchmark is { Enabled: true }
         ));
         services.AddScoped<IFrameUpdateSystem>(sp => new LooseBodyModelSystem(
             sp.GetRequiredService<EcsWorld>().World,

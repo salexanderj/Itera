@@ -18,7 +18,7 @@ namespace Itera.Engine.Rendering.Meshes;
 /// It meshes the resident columns of the meshed levels (<c>Engine:Renderer:MeshFinestLevel</c> to the coarsest) block by
 /// block: a block is a 32-voxel cell of a chunk, read with its apron on the main thread
 /// (<see cref="VoxelWorld.TryReadBlock(int, int, int, int, Span{byte}, Span{byte})"/>) and meshed by <see cref="MeshWorkers"/> (<see cref="SurfaceNets"/>). Each
-/// frame, <see cref="Upload"/> follows the world's change list (columns loaded and unloaded, bricks and chunks changed),
+/// frame, <see cref="Upload(int, double, in ViewConstants, ReadOnlySpan{ModelDraw})"/> follows the world's change list (columns loaded and unloaded, bricks and chunks changed),
 /// starts jobs nearest the view first within a time budget, uploads finished meshes through the frame slot's staging
 /// region into <see cref="MeshPass"/>'s heap, and writes the frame's draws (WorldMeshes.Draws.cs). It meshes the models
 /// too (WorldMeshes.Models.cs) and counts each as uploaded once its meshes are in (cuts, loose bodies, and loading tasks
@@ -160,10 +160,10 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
 
     public long Uploads { get; private set; }
 
-    /// <summary>What the last <see cref="Upload"/> wrote into the slot's draws, for the frame (<see cref="MeshPass.Record"/>).</summary>
+    /// <summary>What the last <see cref="Upload(int, double, in ViewConstants, ReadOnlySpan{ModelDraw})"/> wrote into the slot's draws, for the frame (<see cref="MeshPass.Record"/>).</summary>
     public MeshFrame Frame { get; private set; }
 
-    /// <summary>Blocks the last <see cref="Upload"/> wrote draws for in the camera's list.</summary>
+    /// <summary>Blocks the last <see cref="Upload(int, double, in ViewConstants, ReadOnlySpan{ModelDraw})"/> wrote draws for in the camera's list.</summary>
     public int DrawCount => Frame.Draws;
 
     /// <summary>The frame's view the world's draws are culled by. For tests.</summary>
@@ -313,6 +313,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
 
         _cursor = world?.CreateChangeCursor();
         _listFullReported = false;
+        _viewListFullReported = false;
         _wantedStale = true;
         _worldDataStaged = false;
         _stats = default;
@@ -368,8 +369,24 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     /// <see cref="MeshView.End"/>). Returns the copy regions staged (<see cref="Regions"/>). Without voxel terrain only
     /// the models are meshed and drawn. Main thread, between taking the frame request and publishing the frame.
     /// </summary>
-    public int Upload(int slot, double nowSeconds, in ViewConstants view, ReadOnlySpan<ModelDraw> models = default)
+    public int Upload(int slot, double nowSeconds, in ViewConstants view, ReadOnlySpan<ModelDraw> models = default) =>
+        Upload(slot, nowSeconds, in view, models, default);
+
+    /// <summary>
+    /// <see cref="Upload(int, double, in ViewConstants, ReadOnlySpan{ModelDraw})"/>, also writing the draws of the image
+    /// views drawn this frame (<paramref name="views"/>, after their <see cref="MeshView.Begin"/>) into their records: the
+    /// camera's levels' blocks and the models each one's frustum meets, and their lights offered to it.
+    /// </summary>
+    internal int Upload(
+        int slot,
+        double nowSeconds,
+        in ViewConstants view,
+        ReadOnlySpan<ModelDraw> models,
+        ReadOnlySpan<IRenderViewLists> views
+    )
     {
+        _viewCount = Math.Min(views.Length, RenderViews.MostViews);
+        views[.._viewCount].CopyTo(_views);
         if (!_following)
         {
             throw new InvalidOperationException("The world meshes follow no match.");
@@ -420,7 +437,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         return _writer.RegionCount;
     }
 
-    /// <summary>The copy regions <see cref="Upload"/> staged for <paramref name="slot"/>. Render thread.</summary>
+    /// <summary>The copy regions <see cref="Upload(int, double, in ViewConstants, ReadOnlySpan{ModelDraw})"/> staged for <paramref name="slot"/>. Render thread.</summary>
     public ReadOnlySpan<BufferCopy> Regions(int slot, int count) => _regions[slot].AsSpan(0, count);
 
     /// <summary>Stops the mesh workers. After the render thread has stopped. Safe to call more than once.</summary>
@@ -1592,6 +1609,12 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         Message = "Mesh draws: a frame's list reached {MaxDraws} blocks; blocks past it went undrawn (logged once a match)"
     )]
     private partial void LogListFull(int maxDraws);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Mesh draws: an image view's list reached {MaxDraws} blocks; blocks past it went undrawn in it (logged once a match)"
+    )]
+    private partial void LogViewListFull(int maxDraws);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

@@ -32,17 +32,14 @@ public sealed unsafe partial class WorldMeshes
     private ModelMesh?[] _modelMeshes = new ModelMesh?[64];
     private readonly List<ModelMesh> _trackedModels = [];
     private bool _modelListFullReported;
+    private bool _viewModelListFullReported;
 
-    // The frame's model draws in view or casting, and per list the places of those it takes.
+    // The frame's model draws in view or casting, and per list the places of those it takes: the camera's, the cascades',
+    // then each image view's drawn this frame.
     private readonly ModelFrameDraw[] _modelFrame = new ModelFrameDraw[ModelInstances.MaxModels];
     private int _modelFrameCount;
-    private readonly int[][] _listDraws =
-    [
-        new int[ModelInstances.MaxModels],
-        new int[ModelInstances.MaxModels],
-        new int[ModelInstances.MaxModels],
-    ];
-    private readonly int[] _listCounts = new int[MeshPass.Lists];
+    private readonly int[][] _listDraws = NewModelLists();
+    private readonly int[] _listCounts = new int[MeshPass.Lists + RenderViews.MostViews];
     private readonly long[] _modelTrianglesByLevel = new long[VoxelModels.MaxLevels];
 
     // The grouping of one list's draws by model level: a count, then a start, per key (handle * levels + tree), the
@@ -341,6 +338,7 @@ public sealed unsafe partial class WorldMeshes
         _trackedModels.Clear();
         _decodedHandle = -1;
         _modelListFullReported = false;
+        _viewModelListFullReported = false;
     }
 
     /// <summary>
@@ -376,7 +374,31 @@ public sealed unsafe partial class WorldMeshes
             );
         }
 
+        for (var v = 0; v < _viewCount; v++)
+        {
+            var target = _views[v];
+            target.FrameOf(slot).Models = WriteModelList(
+                slot,
+                MeshPass.Lists + v,
+                target,
+                RenderViewTarget.ModelRecordBase(slot),
+                RenderViewTarget.MaxModelRecords,
+                RenderViewTarget.MaxModelCommands
+            );
+        }
+
         return (WriteModelList(slot, 0), WriteModelList(slot, 1), WriteModelList(slot, 2));
+    }
+
+    private static int[][] NewModelLists()
+    {
+        var lists = new int[MeshPass.Lists + RenderViews.MostViews][];
+        for (var i = 0; i < lists.Length; i++)
+        {
+            lists[i] = new int[ModelInstances.MaxModels];
+        }
+
+        return lists;
     }
 
     /// <summary>
@@ -420,7 +442,14 @@ public sealed unsafe partial class WorldMeshes
         var casts = shadow != ModelShadow.None && _view.Shadows;
         var near = casts && _view.NearCascade.Holds(centre, radius);
         var far = casts && _view.FarCascade.Holds(centre, radius);
-        if (!seen && !near && !far)
+        var views = 0;
+        // The views show the player's own body (Only) but not what the camera alone shows (None: the first-person arms).
+        for (var v = 0; v < _viewCount && shadow != ModelShadow.None; v++)
+        {
+            views |= _views[v].View.InView(centre, radius) ? 1 << v : 0;
+        }
+
+        if (!seen && !near && !far && views == 0)
         {
             return;
         }
@@ -441,6 +470,15 @@ public sealed unsafe partial class WorldMeshes
         {
             _listDraws[2][_listCounts[2]++] = index;
         }
+
+        for (var v = 0; v < _viewCount; v++)
+        {
+            if ((views & (1 << v)) != 0)
+            {
+                var list = MeshPass.Lists + v;
+                _listDraws[list][_listCounts[list]++] = index;
+            }
+        }
     }
 
     /// <summary>
@@ -448,7 +486,30 @@ public sealed unsafe partial class WorldMeshes
     /// one command over that block's draws, which lie together in address order. A level whose draws do not fit is left
     /// out (warned once a match).
     /// </summary>
-    private MeshModelList WriteModelList(int slot, int list)
+    private MeshModelList WriteModelList(int slot, int list) =>
+        WriteModelList(
+            slot,
+            list,
+            _pass,
+            MeshPass.ModelRecordBase(slot, list),
+            MeshPass.MaxModelRecords,
+            MeshPass.MaxModelCommands
+        );
+
+    /// <summary>
+    /// Writes list <paramref name="list"/> into <paramref name="target"/>'s model list of <paramref name="slot"/> (its
+    /// list <paramref name="list"/>, or an image view's one list), whose first draw the shaders find at
+    /// <paramref name="recordBase"/>, at most <paramref name="mostRecords"/> draws and <paramref name="mostCommands"/>
+    /// commands.
+    /// </summary>
+    private MeshModelList WriteModelList(
+        int slot,
+        int list,
+        IMeshDrawTarget target,
+        int recordBase,
+        int mostRecords,
+        int mostCommands
+    )
     {
         var count = _listCounts[list];
         if (count == 0)
@@ -481,9 +542,8 @@ public sealed unsafe partial class WorldMeshes
         }
 
         // Each level's draws, block by block.
-        var records = _pass.ModelDrawsOf(slot, list);
-        var commands = _pass.ModelCommandsOf(slot, list);
-        var recordBase = MeshPass.ModelRecordBase(slot, list);
+        var records = target.ModelDrawsOf(slot, list);
+        var commands = target.ModelCommandsOf(slot, list);
         var written = 0;
         var commanded = 0;
         var from = 0;
@@ -496,12 +556,9 @@ public sealed unsafe partial class WorldMeshes
             ref readonly var first = ref _modelFrame[group[0]];
             var blocks = first.Mesh.Drawn[first.Tree];
             var level = _models!.BaseLevel(first.Mesh.Handle) + first.Tree;
-            if (
-                written + blocks.Count * instances > MeshPass.MaxModelRecords
-                || commanded + blocks.Count > MeshPass.MaxModelCommands
-            )
+            if (written + blocks.Count * instances > mostRecords || commanded + blocks.Count > mostCommands)
             {
-                ReportModelListFull();
+                ReportModelListFull(list >= MeshPass.Lists, mostRecords, mostCommands);
                 continue;
             }
 
@@ -534,7 +591,7 @@ public sealed unsafe partial class WorldMeshes
                     _stats.LastModelTriangles += triangles;
                     _modelTrianglesByLevel[Math.Min(level, VoxelModels.MaxLevels - 1)] += triangles;
                 }
-                else
+                else if (list < MeshPass.Lists)
                 {
                     _stats.LastShadowTriangles += triangles;
                 }
@@ -550,15 +607,17 @@ public sealed unsafe partial class WorldMeshes
         return model.Mesh.Handle * VoxelModels.MaxLevels + model.Tree;
     }
 
-    private void ReportModelListFull()
+    /// <summary>A model list was full: warned once a match for the camera's and the cascades', once for the views'.</summary>
+    private void ReportModelListFull(bool view, int mostRecords, int mostCommands)
     {
-        if (_modelListFullReported)
+        ref var reported = ref view ? ref _viewModelListFullReported : ref _modelListFullReported;
+        if (reported)
         {
             return;
         }
 
-        _modelListFullReported = true;
-        LogModelListFull(MeshPass.MaxModelRecords, MeshPass.MaxModelCommands);
+        reported = true;
+        LogModelListFull(mostRecords, mostCommands);
     }
 
     /// <summary>One model draw taken this frame: its meshes, the tree drawn, and where and how it stands.</summary>

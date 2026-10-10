@@ -27,8 +27,15 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
   Space with a boulder within 0.3 m ahead grabs it instead of jumping; on it W and S climb at 1.5 m/s, A and D move
   along it at 2 m/s, nothing held hangs, Space jumps off it (4 m/s away, 5 m/s up), and Ctrl lets go; climbing past
   its top pulls the player up onto it where there is room to stand. Its state per player is `Climber`.
-- Options: `Game:Player` (`HeightMetres` 1.7, 1.2 to 2.5; `StartFlying`; `ThirdPerson`) and `Game:World`
-  (`CameraPose`), checked by `PlayerOptionsValidator` and `WorldOptionsValidator`; a key under `Game` in no section of
+- The minimap (`Minimap`, `MinimapSystem`, `MinimapLayer`): the engine's image view `minimap` (512 texels square,
+  drawn at most every 4 frames, one sample a pixel), an orthographic camera at the player's eye looking straight down,
+  north (-z) up, `Game:Minimap:Metres` across (64), shown in the HUD's top-right corner a fifth of the screen's height
+  square (below the stats line while that shows) with a thin dark frame and a white arrow at its middle turned to where
+  the player looks; on from the start, M (the Keybindings tab's Minimap) hides and shows it, kept in `settings.json` (its `Game` section's `Minimap`); the
+  benchmark hides it.
+- Options: `Game:Player` (`HeightMetres` 1.7, 1.2 to 2.5; `StartFlying`; `ThirdPerson`), `Game:World`
+  (`CameraPose`), and `Game:Minimap` (`Metres` 64, 16 to 256), checked by `PlayerOptionsValidator`,
+  `WorldOptionsValidator`, and `MinimapOptionsValidator`; a key under `Game` in no section of
   the game's stops the game (`GameServiceCollectionExtensions.ValidateOptions`). Every value in `appsettings.json` is
   the code's default except the name, data folder, and window title (`ShippedSettingsTests`).
 - The benchmark's views (`BenchmarkViews`), also `tp`'s places (`tp far`; `game.py shots far`): `start`, `start-low`,
@@ -44,19 +51,21 @@ Registered in `GameServiceCollectionExtensions` in run order; `tests/Game.Tests/
   `PhysicsReadSystem`, `PlayerMovementSystem`, `StandInSystem`, `LooseBodySystem`, `MeshAnimatorSystem` (the clips moved
   on, after every system that chooses one), `StreamingCentreSystem`.
 - Frame: `PlayerCameraSystem`, `DebugFlyCameraSystem`, `BenchmarkSystem` (with `Engine:Benchmark:Enabled`),
-  `DebugOutlineSystem`, `CameraExtractSystem`, `LooseBodyModelSystem`, `MeshDrawSystem`, `AtmosphereSystem`.
+  `DebugOutlineSystem`, `CameraExtractSystem`, `MinimapSystem` (the minimap round the player, after the camera's
+  systems), `LooseBodyModelSystem`, `MeshDrawSystem`, `AtmosphereSystem`.
 
-Every system but `PlayerSpawnSystem` and `FoxSystem` is the engine's (`.claude/rules/systems.md`). A game's own system
+Every system but `PlayerSpawnSystem`, `FoxSystem`, and `MinimapSystem` is the engine's (`.claude/rules/systems.md`). A game's own system
 goes in this order where its comments say why, with a behaviour test and a zero-allocation test in `tests/Game.Tests`.
 
 ## Files
 
 - `src/Game`: `Program.cs` (the host, then `GameLoop.Run()`), `GameServiceCollectionExtensions` (`AddGame`: options,
   world: its generator and the engine's voxel terrain, `AddIteraVoxels`; systems), `GameOptions.cs`, `StartPose.cs`, `BenchmarkViews.cs`, `GameRunStartup.cs` (the movement keys first,
-  then the game's, and the models), `GameModels.cs`, `GameSurfaceTags.cs`, `Systems/PlayerSpawnSystem.cs`,
+  then the game's, the models, and the minimap's view, key, and switch), `GameModels.cs`, `GameSurfaceTags.cs`,
+  `Minimap.cs` (with its options), `MinimapLayer.cs`, `Systems/PlayerSpawnSystem.cs`, `Systems/MinimapSystem.cs`,
   `Systems/FoxSystem.cs`, `Components/FoxRoute.cs`, `WorldGeneration/`, `Textures/`,
   `Models/`, `appsettings.json`.
 - `tests/Game.Tests`: `SystemOrderTests`, `ShippedSettingsTests`, `GameOptionsTests`, `WorldTests`, `PlayerSpawnSystemTests`,
-  `FoxSystemTests`, `FoxModelTests` (the fox's rig and clips against SharpGLTF's own world matrices; its compressed textures made from its image), `BenchmarkViewsTests`,
+  `FoxSystemTests`, `MinimapSystemTests` (the view asked round the eye, M, the benchmark, the HUD's square), `FoxModelTests` (the fox's rig and clips against SharpGLTF's own world matrices; its compressed textures made from its image), `BenchmarkViewsTests`,
   and `ScenarioTests` (the starter played without a window through `HeadlessMatch`; the fox read, drawn posed, its clip
   moving with the steps, walking its circle; the boulder nearest the start climbed onto).

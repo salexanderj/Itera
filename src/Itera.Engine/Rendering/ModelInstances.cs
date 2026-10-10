@@ -72,15 +72,24 @@ public readonly record struct ModelDraw(
     ModelShadow Shadow = ModelShadow.Casts
 );
 
-/// <summary>How a model meets the camera and the sun's shadow maps (<see cref="ModelInstances.Add"/>).</summary>
+/// <summary>
+/// How a model meets the camera, the image views (<see cref="RenderViews"/>), and the sun's shadow maps
+/// (<see cref="ModelInstances.Add"/>).
+/// </summary>
 public enum ModelShadow
 {
     /// <summary>Drawn, and casts the sun's shadow.</summary>
     Casts,
 
-    /// <summary>Drawn, and casts no shadow: the first-person arms and what they hold.</summary>
+    /// <summary>
+    /// Drawn by the camera alone, and casts no shadow: the first-person arms and what they hold, which no other view
+    /// shows.
+    /// </summary>
     None,
 
-    /// <summary>Not drawn, and casts the sun's shadow: the local player's own body in first person.</summary>
+    /// <summary>
+    /// Not drawn by the camera, and casts the sun's shadow: the local player's own body in first person, which the image
+    /// views show.
+    /// </summary>
     Only,
 }

@@ -489,6 +489,73 @@ public sealed class MeshAssetDrawsTests
         _view.End(0, []);
     }
 
+    /// <summary>
+    /// An image view lists what its own frustum holds, in its own records: the posed instance behind the camera, which
+    /// only the view (looking down on it) sees, is skinned all the same and drawn posed in the view, and the static one
+    /// the camera sees, outside the view's box, is in the camera's list alone.
+    /// </summary>
+    [Fact]
+    public void An_image_view_lists_what_it_sees_and_a_posed_instance_only_it_sees_is_skinned()
+    {
+        var (targets, view, draws) = Skinned(capacity: 100);
+        var lists = new FakeViewLists();
+        view.Begin(1, LookingAlongMinusZ(shadows: false));
+        lists.View.Begin(1, FakeViewLists.LookingDown(new Vector3(0, 10, 20)));
+        var posed = Matrix4x4.CreateTranslation(0, 0, 20);
+        MeshInstance[] instances =
+        [
+            new(0, Matrix4x4.CreateTranslation(0, 0, -10), MeshInstances.NoTint, ModelShadow.Casts),
+            new(1, posed, MeshInstances.NoTint, ModelShadow.Casts, FirstJoint: 0, Joints: 2),
+        ];
+        Matrix4x4[] palettes = [Matrix4x4.Identity, Matrix4x4.CreateTranslation(0, 1, 0)];
+
+        var frame = draws.Write(1, view, instances, palettes, [lists]);
+
+        Assert.Equal(1, frame.SkinGroups);
+        Assert.Equal(1, frame.Camera.Draws);
+        Assert.Equal(Matrix4x4.CreateTranslation(0, 0, -10), targets.Draws(1, 0)[0].Transform);
+        ref readonly var viewFrame = ref lists.FrameOf(1);
+        Assert.Equal((1, 1), (viewFrame.Assets.Draws, viewFrame.Assets.Commands));
+        var seen = lists.AssetDrawsOf(1, RenderViewTarget.AssetSeenList)[0];
+        Assert.Equal(posed, seen.Transform);
+        Assert.Equal(targets.SkinVertexBase(1) - targets.Layout.Assets[1].FirstVertex, seen.VertexDelta);
+        Assert.Equal(
+            (uint)RenderViewTarget.AssetDrawBase(1, RenderViewTarget.AssetSeenList),
+            lists.AssetCommandsOf(1, RenderViewTarget.AssetSeenList)[0].FirstInstance
+        );
+        Assert.Equal(0, viewFrame.Blended);
+    }
+
+    /// <summary>
+    /// An image view's blended instances go into its own blended list, deepest first by its own depth: from above, the
+    /// pane on the ground before the one 3 m up; the camera, looking away, lists neither.
+    /// </summary>
+    [Fact]
+    public void An_image_views_blended_instances_are_sorted_by_its_own_depth()
+    {
+        var glass = new MeshMaterialData { AlphaMode = MeshAlphaMode.Blend };
+        var targets = new FakeTargets(MeshAssetLayout.From([MeshAssetPassTests.Asset("pane", glass, vertices: 3)]));
+        var view = new MeshView(targets, Options.Create(new EngineOptions()));
+        var draws = new MeshAssetDraws(targets, NullLogger<MeshAssetDraws>.Instance);
+        var lists = new FakeViewLists();
+        view.Begin(0, LookingAlongMinusZ(shadows: false));
+        lists.View.Begin(0, FakeViewLists.LookingDown(new Vector3(0, 10, 20)));
+        MeshInstance[] instances =
+        [
+            new(0, Matrix4x4.CreateTranslation(0, 3, 15), MeshInstances.NoTint, ModelShadow.Casts),
+            new(0, Matrix4x4.CreateTranslation(0, 0, 15), MeshInstances.NoTint, ModelShadow.Casts),
+        ];
+
+        var frame = draws.Write(0, view, instances, default, [lists]);
+
+        Assert.Equal(0, frame.Blended);
+        Assert.Equal(2, lists.FrameOf(0).Blended);
+        Assert.Equal(
+            [instances[1].Transform, instances[0].Transform],
+            lists.AssetDrawsOf(0, RenderViewTarget.AssetBlendedList)[..2].ToArray().Select(d => d.Transform)
+        );
+    }
+
     /// <summary>A static asset (0) and a skinned one (1, <see cref="MeshAssetPassTests.SkinnedAsset"/>), with room for <paramref name="capacity"/> skinned vertices a slot.</summary>
     private static (FakeTargets Targets, MeshView View, MeshAssetDraws Draws) Skinned(int capacity)
     {

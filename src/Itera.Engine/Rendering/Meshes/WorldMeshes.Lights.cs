@@ -48,7 +48,7 @@ public sealed unsafe partial class WorldMeshes
         }
     }
 
-    /// <summary>Offers a drawn block's light, if it has one, to the frame's view.</summary>
+    /// <summary>Offers a drawn block's light, if it has one, to the frame's view and the image views drawn this frame.</summary>
     private void OfferLight(in MeshBlock block, Vector3 origin, float voxelMetres)
     {
         if (block.LightPower <= 0)
@@ -57,6 +57,11 @@ public sealed unsafe partial class WorldMeshes
         }
 
         var power = block.LightPower * voxelMetres * voxelMetres * LightPowerScale;
-        _view.Offer(origin + block.LightAt * voxelMetres, block.LightColour, power);
+        var at = origin + block.LightAt * voxelMetres;
+        _view.Offer(at, block.LightColour, power);
+        for (var v = 0; v < _viewCount; v++)
+        {
+            _views[v].View.Offer(at, block.LightColour, power);
+        }
     }
 }
