@@ -11,7 +11,9 @@ namespace Itera.Engine.Tests.Rendering.Meshes;
 
 /// <summary>
 /// <see cref="MeshAssetDraws"/> over regions in memory: instances culled by the view and the cascades as their shadow
-/// allows, grouped into one command per primitive with its instances' draws, by pipeline range; nothing allocated.
+/// allows, grouped into one command per primitive with its instances' draws, by pipeline range; posed instances bounded
+/// by their joints, given skin groups and skinning matrices in the slot's regions, their draws reading their skinned
+/// copies, and drawn unposed past the slot's room or with the wrong joints; nothing allocated.
 /// </summary>
 public sealed class MeshAssetDrawsTests
 {
@@ -167,6 +169,149 @@ public sealed class MeshAssetDrawsTests
     }
 
     [Fact]
+    public void A_posed_instance_is_skinned_into_the_slots_region_and_its_draws_read_it()
+    {
+        var (targets, view, draws) = Skinned(capacity: 100);
+        view.Begin(1, LookingAlongMinusZ(shadows: false));
+        var at = Matrix4x4.CreateTranslation(0, 0, -10);
+        MeshInstance[] instances =
+        [
+            new(0, at, MeshInstances.NoTint, ModelShadow.Casts),
+            new(1, at, MeshInstances.NoTint, ModelShadow.Casts, FirstJoint: 0, Joints: 2),
+        ];
+        Matrix4x4[] palettes = [Matrix4x4.Identity, Matrix4x4.CreateTranslation(0, 1, 0)];
+
+        var frame = draws.Write(1, view, instances, palettes);
+
+        Assert.Equal((1, 3, 2), (frame.SkinGroups, frame.SkinVertices, frame.SkinJoints));
+        var group = targets.SkinGroupsOf(1)[0];
+        var place = targets.Layout.Assets[1];
+        Assert.Equal((uint)place.FirstVertex, group.SourceFirst);
+        Assert.Equal(0u, group.SkinFirst);
+        Assert.Equal((uint)targets.SkinVertexBase(1), group.OutputFirst);
+        Assert.Equal((uint)MeshAssetPass.PaletteBase(1), group.PaletteFirst);
+        Assert.Equal(3u, group.VertexCount);
+        Assert.Equal(palettes, targets.PalettesOf(1)[..2].ToArray());
+        // The static asset's draw reads its own vertices, the posed one's its copy.
+        var written = targets.Draws(1, 0);
+        Assert.Equal(0, written[0].VertexDelta);
+        Assert.Equal(targets.SkinVertexBase(1) - place.FirstVertex, written[1].VertexDelta);
+    }
+
+    [Fact]
+    public void A_posed_instance_is_culled_where_its_joints_are_not_where_its_asset_was()
+    {
+        var (_, view, draws) = Skinned(capacity: 100);
+        view.Begin(0, LookingAlongMinusZ(shadows: false));
+        // Placed behind the camera, its joints moved 30 m along -z: in view.
+        var behind = new MeshInstance(
+            1,
+            Matrix4x4.CreateTranslation(0, 0, 10),
+            MeshInstances.NoTint,
+            ModelShadow.Casts,
+            0,
+            2
+        );
+        Matrix4x4[] forward = [Matrix4x4.CreateTranslation(0, 0, -30), Matrix4x4.CreateTranslation(0, 0, -30)];
+        // Placed ahead, its joints moved 30 m along +z: out of view.
+        var ahead = behind with
+        {
+            Transform = Matrix4x4.CreateTranslation(0, 0, -10),
+        };
+        Matrix4x4[] back = [Matrix4x4.CreateTranslation(0, 0, 30), Matrix4x4.CreateTranslation(0, 0, 30)];
+
+        Assert.Equal(1, draws.Write(0, view, [behind], forward).Camera.Draws);
+        Assert.Equal(0, draws.Write(0, view, [ahead], back).Camera.Draws);
+    }
+
+    [Fact]
+    public void Posed_instances_past_the_slots_room_are_drawn_unposed()
+    {
+        var (targets, view, draws) = Skinned(capacity: 4);
+        view.Begin(0, LookingAlongMinusZ(shadows: false));
+        var posed = new MeshInstance(
+            1,
+            Matrix4x4.CreateTranslation(0, 0, -10),
+            MeshInstances.NoTint,
+            ModelShadow.Casts,
+            0,
+            2
+        );
+        Matrix4x4[] palettes = [Matrix4x4.Identity, Matrix4x4.Identity];
+
+        var frame = draws.Write(0, view, [posed, posed], palettes);
+
+        Assert.Equal(1, frame.SkinGroups);
+        var written = targets.Draws(0, 0);
+        Assert.NotEqual(0, written[0].VertexDelta);
+        Assert.Equal(0, written[1].VertexDelta);
+    }
+
+    [Fact]
+    public void A_posed_instance_with_the_wrong_joints_is_drawn_unposed()
+    {
+        var (targets, view, draws) = Skinned(capacity: 100);
+        view.Begin(0, LookingAlongMinusZ(shadows: false));
+        var posed = new MeshInstance(
+            1,
+            Matrix4x4.CreateTranslation(0, 0, -10),
+            MeshInstances.NoTint,
+            ModelShadow.Casts,
+            0,
+            1
+        );
+
+        var frame = draws.Write(0, view, [posed], [Matrix4x4.Identity]);
+
+        Assert.Equal((0, 1), (frame.SkinGroups, frame.Camera.Draws));
+        Assert.Equal(0, targets.Draws(0, 0)[0].VertexDelta);
+    }
+
+    [Fact]
+    public void A_frame_of_posed_instances_allocates_nothing()
+    {
+        var (_, view, draws) = Skinned(capacity: 1000);
+        var constants = LookingAlongMinusZ(shadows: true);
+        var instances = new MeshInstance[100];
+        var palettes = new Matrix4x4[200];
+        for (var i = 0; i < instances.Length; i++)
+        {
+            instances[i] = new MeshInstance(
+                1,
+                Matrix4x4.CreateTranslation(i % 10, 0, -5 - i / 10),
+                MeshInstances.NoTint,
+                ModelShadow.Casts,
+                2 * i,
+                2
+            );
+            palettes[2 * i] = Matrix4x4.Identity;
+            palettes[2 * i + 1] = Matrix4x4.Identity;
+        }
+
+        void Frame()
+        {
+            view.Begin(0, in constants);
+            draws.Write(0, view, instances, palettes);
+            view.End(0, []);
+        }
+
+        for (var i = 0; i < 50; i++)
+        {
+            Frame();
+        }
+
+        var bytes = SystemAllocation.BytesAllocatedWithoutCollection(() =>
+        {
+            for (var i = 0; i < 200; i++)
+            {
+                Frame();
+            }
+        });
+
+        Assert.Equal(0, bytes);
+    }
+
+    [Fact]
     public void A_frame_allocates_nothing()
     {
         var constants = LookingAlongMinusZ(shadows: true);
@@ -204,6 +349,23 @@ public sealed class MeshAssetDrawsTests
         _view.End(0, []);
     }
 
+    /// <summary>A static asset (0) and a skinned one (1, <see cref="MeshAssetPassTests.SkinnedAsset"/>), with room for <paramref name="capacity"/> skinned vertices a slot.</summary>
+    private static (FakeTargets Targets, MeshView View, MeshAssetDraws Draws) Skinned(int capacity)
+    {
+        var targets = new FakeTargets(
+            MeshAssetLayout.From([
+                MeshAssetPassTests.Asset("static", MeshMaterialData.Default, vertices: 3),
+                MeshAssetPassTests.SkinnedAsset("posed"),
+            ]),
+            capacity
+        );
+        return (
+            targets,
+            new MeshView(targets, Options.Create(new EngineOptions())),
+            new MeshAssetDraws(targets, NullLogger<MeshAssetDraws>.Instance)
+        );
+    }
+
     private static ViewConstants LookingAlongMinusZ(bool shadows) =>
         new()
         {
@@ -217,8 +379,15 @@ public sealed class MeshAssetDrawsTests
         };
 
     /// <summary>The asset draws' and the view's regions of two slots, in memory.</summary>
-    private sealed class FakeTargets(MeshAssetLayout layout) : IMeshAssetTarget, IMeshDrawTarget
+    private sealed class FakeTargets(MeshAssetLayout layout, int skinCapacity = 0) : IMeshAssetTarget, IMeshDrawTarget
     {
+        private readonly MeshSkinGroup[] _groups = new MeshSkinGroup[
+            FrameSync.FramesInFlight * MeshAssetPass.MaxSkinGroups
+        ];
+        private readonly Matrix4x4[] _palettes = new Matrix4x4[
+            FrameSync.FramesInFlight * MeshInstances.MaxPaletteJoints
+        ];
+
         private readonly MeshAssetDraw[] _draws = new MeshAssetDraw[
             MeshAssetPass.DrawBase(FrameSync.FramesInFlight, 0)
         ];
@@ -241,6 +410,16 @@ public sealed class MeshAssetDrawsTests
         public MeshAssetDraw[] Draws(int slot, int list) => DrawsOf(slot, list).ToArray();
 
         public DrawIndexedIndirectCommand[] Commands(int slot, int list) => CommandsOf(slot, list).ToArray();
+
+        public int SkinVertexCapacity => skinCapacity;
+
+        public int SkinVertexBase(int slot) => Layout.VertexCount + slot * skinCapacity;
+
+        public Span<MeshSkinGroup> SkinGroupsOf(int slot) =>
+            _groups.AsSpan(MeshAssetPass.GroupBase(slot), MeshAssetPass.MaxSkinGroups);
+
+        public Span<Matrix4x4> PalettesOf(int slot) =>
+            _palettes.AsSpan(MeshAssetPass.PaletteBase(slot), MeshInstances.MaxPaletteJoints);
 
         public ref MeshLighting LightingOf(int slot) => ref _lighting[slot];
 

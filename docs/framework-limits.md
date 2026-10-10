@@ -53,9 +53,9 @@ of players and bodies, and saving the game's own state.
 ## Order of work
 
 1. A general mesh path: triangle meshes with textures, glTF import, skinning, and voxels made optional (started
-   2026-10-09). Done: glTF models read at the run's start and drawn as static textured meshes with the world's light and
-   shadows (`.claude/rules/rendering.md`, "Mesh assets"). Next: skinning and clips, then matches without voxels, then
-   compressed textures made offline.
+   2026-10-09). Done: glTF models read at the run's start and drawn as textured meshes with the world's light and
+   shadows, skinned models posed by their clips on the GPU (`.claude/rules/rendering.md`, "Mesh assets"). Next: matches
+   without voxels, then compressed textures made offline.
 2. Rendering a game can extend: its own passes, transparency, look data, a moving sun, other cameras and views.
 3. A map size the game sets, with origin shifting.
 4. Gamepads, typed text, sound files and music, a menu a game can replace.

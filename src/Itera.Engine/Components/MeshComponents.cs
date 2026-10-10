@@ -51,3 +51,29 @@ public struct DrawnMesh
 
 /// <summary>A mesh the console's <c>meshes place</c> or <c>meshes test</c> made, which <c>meshes clear</c> removes.</summary>
 public struct ConsoleMesh;
+
+/// <summary>
+/// Plays a clip of a skinned mesh asset's rig on a <see cref="DrawnMesh"/> (<c>Rig.Clips</c>, its index from
+/// <c>Rig.FindClip</c>; -1 for the rest pose): the clip's time at the last two fixed steps, which the frame blends by its
+/// <c>Alpha</c>, advanced by <c>MeshAnimatorSystem</c> at <see cref="Speed"/> times the step (0 holds it). A looping clip
+/// wraps both times together at its end; one played <see cref="Once"/> holds its last pose. Drawing only: the pose is
+/// never the same on every machine, so nothing peers agree on reads it.
+/// </summary>
+public struct MeshAnimator
+{
+    public int Clip;
+    public float Seconds;
+    public float PreviousSeconds;
+    public float Speed;
+    public bool Once;
+
+    /// <summary>Clip <paramref name="clip"/> from <paramref name="seconds"/>, at <paramref name="speed"/>, looping.</summary>
+    public static MeshAnimator Playing(int clip, float seconds = 0, float speed = 1) =>
+        new()
+        {
+            Clip = clip,
+            Seconds = seconds,
+            PreviousSeconds = seconds,
+            Speed = speed,
+        };
+}

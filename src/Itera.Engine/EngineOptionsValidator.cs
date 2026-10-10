@@ -77,6 +77,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         // The heap's first granules hold the materials and the tint map (about 70 KB); every device takes 2D images of
         // 4096 texels a side (maxImageDimension2D's least).
         Range(failures, "Renderer:MeshMegabytes", options.Renderer.MeshMegabytes, 64, 4096);
+        Range(failures, "Renderer:SkinMegabytes", options.Renderer.SkinMegabytes, 1, 512);
         Range(failures, "Renderer:ShadowMapTexels", options.Renderer.ShadowMapTexels, 512, 4096);
         Range(failures, "Renderer:MostLights", options.Renderer.MostLights, 1, 256);
 

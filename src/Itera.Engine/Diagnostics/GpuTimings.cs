@@ -41,6 +41,9 @@ public enum GpuPass
 
     /// <summary>Part of <see cref="Voxels"/>: the mesh assets drawn in the world's pass (<c>MeshAssetPass</c>), when any are.</summary>
     Meshes = 12,
+
+    /// <summary>Part of <see cref="Voxels"/>: the posed mesh assets skinned before the cascades (<c>MeshAssetPass.RecordSkinning</c>), when any are.</summary>
+    Skinning = 13,
 }
 
 /// <summary>Average and longest GPU time of one pass over an interval.</summary>
@@ -60,7 +63,7 @@ public readonly record struct GpuPassTimes(long Count, double AverageMs, double 
 public sealed class GpuTimings
 {
     /// <summary>Number of <see cref="GpuPass"/> values.</summary>
-    public const int PassCount = 13;
+    public const int PassCount = 14;
 
     /// <summary>How many whole-frame times an interval keeps one by one: 10 s at over 1,600 frames a second.</summary>
     public const int MostFrameTimes = 16_384;

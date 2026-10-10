@@ -120,11 +120,15 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
    (`metresPerUnit`: 1 for metres, 0.01 for centimetres). `GameRunStartup` declares them at the run's start; a mod
    declares its own at its startup.
 3. A system that places it: `World.Create(MeshPlacement.At(position, orientation, scale), DrawnMesh.Of(index))`, with
-   the index from `MeshAssets.Find(name)` looked up once (`FoxSpawnSystem`); a fixed system that moves it copies the pose
+   the index from `MeshAssets.Find(name)` looked up once (`FoxSystem`); a fixed system that moves it copies the pose
    into the previous one first. `MeshDrawSystem` draws it. A glTF model's front is +z.
-4. Check it: `meshes` lists it (triangles, materials, textures, size), `meshes place NAME` puts one in front of the
-   camera, the log's `Mesh assets:` line has no Warning about it, and a `ScenarioTests` row finds it in
-   `MeshInstances`.
+4. A skinned model plays a clip with `MeshAnimator.Playing(rig.FindClip("Walk"))` added to it (the rig from
+   `MeshAssets.TryGet`); a system that changes clips runs before the engine's `MeshAnimatorSystem`, which the game
+   registers once, after every such system.
+5. Check it: `meshes` lists it (triangles, materials, textures, size, joints, clips), `meshes place NAME [CLIP
+   [SECONDS]]` puts one in front of the camera, the log's `Mesh assets:` lines have no Warning about it, a
+   `ScenarioTests` row finds it in `MeshInstances`, and for a skinned model a test like `FoxModelTests` compares its
+   clips with SharpGLTF's own world matrices.
 
 ## A test that plays the real game
 

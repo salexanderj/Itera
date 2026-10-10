@@ -480,6 +480,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         RecordTextures(commandBuffer);
         RecordBake(commandBuffer, slot);
         RecordClusters(commandBuffer, in view);
+        draws?.RecordSkinning(commandBuffer, slot, timerSlot);
 
         _timer.Begin(commandBuffer, timerSlot, GpuPass.ShadowMaps);
         RecordCascades(commandBuffer, slot, in frame, draws);

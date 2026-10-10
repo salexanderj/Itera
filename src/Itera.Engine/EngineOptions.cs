@@ -192,6 +192,14 @@ public sealed class RendererSettings
     public int MeshMegabytes { get; set; } = 512;
 
     /// <summary>
+    /// Megabytes of GPU memory a frame slot takes for the posed mesh assets' skinned vertices, 1 to 512, taken once at
+    /// start and only when a skinned asset was read: 16 by default (about 466,000 vertices, 270 of the starter's fox). It is
+    /// lowered to fit the device's storage buffer range beside every asset's own vertices. Posed instances past it are
+    /// drawn unposed (warned once a run).
+    /// </summary>
+    public int SkinMegabytes { get; set; } = 16;
+
+    /// <summary>
     /// Texels along each side of each sun shadow cascade's depth map, 512 to 4096: 2048 by
     /// default. Fewer texels draw and filter faster, with blurrier and blockier shadow edges.
     /// </summary>

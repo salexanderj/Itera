@@ -115,6 +115,104 @@ public sealed class MeshAssetPassTests : IDisposable
         Assert.Equal(3, layout.Primitives[2].FirstVertex);
     }
 
+    [Fact]
+    public void The_skinning_shader_reads_the_vertices_skins_groups_and_matrices_as_the_structs_lay_them_out()
+    {
+        var skin = _compiler.Compile("mesh-skin.comp", [Count]);
+
+        Assert.Empty(GpuLayout.ArrayElementDifferences<MeshAssetVertex>(skin, 1, 2));
+        Assert.Empty(GpuLayout.ArrayElementDifferences<MeshSkinVertex>(skin, 1, 5));
+        Assert.Empty(GpuLayout.ArrayElementDifferences<MeshSkinGroup>(skin, 1, 6));
+        Assert.Empty(GpuLayout.ArrayElementDifferences<SkinMatrix>(skin, 1, 7));
+        Assert.Empty(GpuLayout.PushConstantDifferences<MeshSkinConstants>(skin));
+        Assert.Equal([1u], GpuLayout.DescriptorSets(skin));
+    }
+
+    [Fact]
+    public void The_layout_places_each_skinned_assets_skins_and_joints_after_the_last()
+    {
+        var layout = MeshAssetLayout.From([
+            Asset("static", MeshMaterialData.Default, vertices: 3),
+            SkinnedAsset("first"),
+            SkinnedAsset("second"),
+        ]);
+
+        Assert.Equal(6, layout.SkinVertexCount);
+        Assert.Equal((-1, 0), (layout.Assets[0].FirstSkin, layout.Assets[0].Joints));
+        Assert.Equal((0, 0, 2), (layout.Assets[1].FirstSkin, layout.Assets[1].FirstJoint, layout.Assets[1].Joints));
+        Assert.Equal((3, 2, 2), (layout.Assets[2].FirstSkin, layout.Assets[2].FirstJoint, layout.Assets[2].Joints));
+        Assert.Equal(3, layout.Assets[2].VertexCount);
+        Assert.Equal(new Vector3(1, 0, 0), layout.JointPositions[3]);
+        Assert.Equal(1, layout.JointReaches[3], 1e-6f);
+        // Every vertex is weighted: none stands unmoved.
+        Assert.Equal(-1, layout.Assets[1].StaticRadius);
+    }
+
+    /// <summary>
+    /// A skinned asset of three vertices along x, at 0, 1, and 2 m: a root joint at 0 moves the first, a tip joint at 1 m
+    /// the other two; bound at rest. With <paramref name="bend"/>, one clip, "bend", that turns the tip a quarter about z
+    /// over a second.
+    /// </summary>
+    internal static MeshAsset SkinnedAsset(string name, bool bend = false)
+    {
+        var plain = Asset(name, MeshMaterialData.Default, vertices: 3);
+        var vertices = new MeshAssetVertex[3];
+        for (var i = 0; i < 3; i++)
+        {
+            vertices[i] = MeshAssetVertex.Pack(
+                new Vector3(i, 0, 0),
+                Vector3.UnitZ,
+                new Vector4(1, 0, 0, 1),
+                Vector2.Zero,
+                Vector2.Zero,
+                Vector4.One
+            );
+        }
+
+        var rig = new Rig(
+            ["root", "tip"],
+            [-1, 0],
+            [Matrix4x4.Identity, Matrix4x4.Identity],
+            [JointTransform.Identity, JointTransform.Identity with { Translation = Vector3.UnitX }],
+            [Matrix4x4.Identity, Matrix4x4.CreateTranslation(-1, 0, 0)],
+            [0, 1],
+            bend ? [BendClip()] : []
+        );
+        MeshSkinVertex[] skin =
+        [
+            MeshSkinVertex.Pack(0, 0, 0, 0, Vector4.UnitX),
+            MeshSkinVertex.Pack(1, 0, 0, 0, Vector4.UnitX),
+            MeshSkinVertex.Pack(1, 0, 0, 0, Vector4.UnitX),
+        ];
+        return new MeshAsset(name, vertices, plain.Indices, plain.Primitives, plain.Materials, [], rig, skin);
+    }
+
+    // Read by GpuLayout through reflection only.
+#pragma warning disable CS0649
+    private static RigClip BendClip()
+    {
+        var quarter = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2);
+        return new RigClip(
+            "bend",
+            [
+                new RigTrack(
+                    1,
+                    RigPath.Rotation,
+                    RigInterpolation.Linear,
+                    [0, 1],
+                    [new(0, 0, 0, 1), new(quarter.X, quarter.Y, quarter.Z, quarter.W)]
+                ),
+            ]
+        );
+    }
+
+    /// <summary>The skinning matrices' element as the shader declares it: one matrix.</summary>
+    private struct SkinMatrix
+    {
+        public Matrix4x4 Matrix;
+    }
+#pragma warning restore CS0649
+
     /// <summary>
     /// An asset of <paramref name="vertices"/> vertices in a line along x and one triangle a primitive: one of
     /// <paramref name="first"/>, and with <paramref name="second"/> a second.

@@ -23,7 +23,7 @@ layout(location = 2) flat out uint outMaterial;
 void main()
 {
     MeshAssetDraw draw = assetDraws[gl_InstanceIndex];
-    MeshAssetVertex vertex = assetVertices[gl_VertexIndex];
+    MeshAssetVertex vertex = assetVertices[gl_VertexIndex + draw.vertexDelta];
     vec3 world = (draw.transform * vec4(vertex.position, 1.0)).xyz;
     MeshLighting cascades = lighting[push.slot];
     mat4 cascade = push.cascade == 0u ? cascades.nearCascade : cascades.farCascade;

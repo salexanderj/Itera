@@ -77,8 +77,9 @@ Where tests live:
 - `Itera.Engine.Tests/Maths/` and `Animation/`: the deterministic maths and rotations, the octahedral encoding, and
   skeletons, clips, aiming, and foot IK over a humanoid test skeleton (`HumanoidTestSkeleton`).
 - `Itera.Engine.Tests/Assets/`: glTF files written in the test (`GltfBuilder`: accessors over a data-URI buffer or a
-  .glb's BIN chunk, PNG images) read by `GltfImportTests`; `MeshAssetsTests`, `TextureDecodeTests`, `MipChainTests`,
-  `MeshTangentsTests`.
+  .glb's BIN chunk, PNG images, skins, joints, and animations) read by `GltfImportTests` and `RigImportTests` (a rig
+  posed against SharpGLTF's own world matrices); `RigClipTests` (step, linear, and cubic sampling); `MeshAssetsTests`,
+  `TextureDecodeTests`, `MipChainTests`, `MeshTangentsTests`.
 - `Itera.Engine.Tests/Physics/`: the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves) and
   10,000 random moves that never leave it inside a voxel; wide bodies (`WideBodyMoverTests`); statics of voxel boxes,
   coarse colliders (`CoarseCollidersTests`), ragdolls (`RagdollTests`), thrown and settled pieces, the mover among

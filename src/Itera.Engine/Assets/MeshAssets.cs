@@ -53,6 +53,16 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
     /// <summary>The index of the asset <paramref name="name"/>, or -1 when there is none.</summary>
     public int Find(string name) => _byName.TryGetValue(name, out var index) ? index : -1;
 
+    /// <summary>
+    /// The asset at <paramref name="index"/> when there is one and it is read (a declared file's once the run's "mesh
+    /// assets" step has read it; one added in code at once). Allocates nothing.
+    /// </summary>
+    public bool TryGet(int index, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out MeshAsset? asset)
+    {
+        asset = (uint)index < (uint)_entries.Count ? _entries[index].Asset : null;
+        return asset is not null;
+    }
+
     /// <summary>The asset at <paramref name="index"/> (<see cref="Find"/>); a declared file's once the run has read it.</summary>
     public MeshAsset this[int index] =>
         _entries[index].Asset

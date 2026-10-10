@@ -14,8 +14,9 @@ namespace Itera.Engine.Tests.Systems;
 
 /// <summary>
 /// <see cref="MeshDrawSystem"/>: each placed mesh is drawn at its pose between the last two fixed steps, scaled, with its
-/// tint and shadow; the console's <c>meshes</c> lists the assets, places one or many in front of the camera facing it,
-/// and clears only those it placed; and drawing allocates nothing.
+/// tint and shadow, a posed one with its clip's skinning matrices at the blend of its last two times; the console's
+/// <c>meshes</c> lists the assets and their clips, places one or many in front of the camera facing it, playing a clip or
+/// held at a time of it, and clears only those it placed; and drawing allocates nothing.
 /// </summary>
 public sealed class MeshDrawSystemTests
 {
@@ -28,6 +29,102 @@ public sealed class MeshDrawSystemTests
         _assets.Add(
             "pair",
             MeshAssetPassTests.Asset("pair", MeshMaterialData.Default, vertices: 4, second: MeshMaterialData.Default)
+        );
+        _assets.Add("bending", MeshAssetPassTests.SkinnedAsset("bending", bend: true));
+    }
+
+    [Fact]
+    public void A_posed_mesh_is_drawn_with_its_clips_skinning_matrices_at_the_blended_time()
+    {
+        using var world = World.Create();
+        using var system = Create(world);
+        var animator = MeshAnimator.Playing(0);
+        animator.PreviousSeconds = 0.2f;
+        animator.Seconds = 0.6f;
+        world.Create(MeshPlacement.At(Vector3.Zero, Quaternion.Identity), DrawnMesh.Of(2), animator);
+
+        system.Update(new FrameTime(1f / 240, 1, 1, 0.5f));
+
+        var instance = Assert.Single(_instances.Instances.ToArray());
+        Assert.True(instance.Posed);
+        Assert.Equal(2, instance.Joints);
+        var rig = _assets[2].Rig!;
+        var locals = new JointTransform[2];
+        var expected = new Matrix4x4[2];
+        rig.Pose(0, 0.4f, locals);
+        rig.WritePalette(locals, expected);
+        var palette = _instances.Palettes.Slice(instance.FirstJoint, instance.Joints).ToArray();
+        for (var j = 0; j < 2; j++)
+        {
+            Assert.True(
+                Vector3.Distance(
+                    Vector3.Transform(Vector3.One, expected[j]),
+                    Vector3.Transform(Vector3.One, palette[j])
+                ) < 1e-5f
+            );
+        }
+    }
+
+    [Fact]
+    public void A_looping_clip_blends_across_its_wrap()
+    {
+        using var world = World.Create();
+        using var system = Create(world);
+        // After a wrap of the one-second clip: from -0.1 s (0.9 s before the wrap) to 0.15 s; a fifth of the way is 0.95 s.
+        var animator = MeshAnimator.Playing(0);
+        animator.PreviousSeconds = -0.1f;
+        animator.Seconds = 0.15f;
+        world.Create(MeshPlacement.At(Vector3.Zero, Quaternion.Identity), DrawnMesh.Of(2), animator);
+
+        system.Update(new FrameTime(1f / 240, 1, 1, 0.2f));
+
+        var instance = Assert.Single(_instances.Instances.ToArray());
+        var rig = _assets[2].Rig!;
+        var locals = new JointTransform[2];
+        var expected = new Matrix4x4[2];
+        rig.Pose(0, 0.95f, locals);
+        rig.WritePalette(locals, expected);
+        var tip = Vector3.Transform(new Vector3(2, 0, 0), _instances.Palettes[instance.FirstJoint + 1]);
+        Assert.True(Vector3.Distance(Vector3.Transform(new Vector3(2, 0, 0), expected[1]), tip) < 1e-4f);
+    }
+
+    [Fact]
+    public void Meshes_place_with_a_clip_and_seconds_holds_that_time_and_without_seconds_plays_it()
+    {
+        using var world = World.Create();
+        var commands = NewCommands();
+        using var system = Create(world, commands);
+        world.Create(new CameraPose(), new ActiveCamera());
+        var output = new RecordingOutput();
+
+        commands.Execute("meshes place bending bend 0.5", output);
+        commands.Execute("meshes place bending 2 bend", output);
+
+        Assert.Empty(output.Errors);
+        var animators = new List<(MeshAnimator Animator, float Scale)>();
+        world.Query(
+            new QueryDescription().WithAll<MeshAnimator, MeshPlacement>(),
+            (ref MeshAnimator animator, ref MeshPlacement placement) => animators.Add((animator, placement.Scale))
+        );
+        Assert.Contains((MeshAnimator.Playing(0, 0.5f, speed: 0), 1f), animators);
+        Assert.Contains((MeshAnimator.Playing(0), 2f), animators);
+    }
+
+    [Fact]
+    public void Meshes_place_with_a_clip_the_asset_does_not_have_names_its_clips()
+    {
+        using var world = World.Create();
+        var commands = NewCommands();
+        using var system = Create(world, commands);
+        world.Create(new CameraPose(), new ActiveCamera());
+        var output = new RecordingOutput();
+
+        commands.Execute("meshes place bending wave", output);
+        commands.Execute("meshes place box wave", output);
+
+        Assert.Equal(
+            ["meshes: bending has no clip named wave; its clips: bend", "meshes: box has no rig, so no clips"],
+            output.Errors
         );
     }
 
@@ -75,7 +172,11 @@ public sealed class MeshDrawSystemTests
 
         Assert.Equal("0: box, 1 triangles, 1 material(s), 0 texture(s), 2.00 x 1.00 x 0.00 m", output.Lines[0]);
         Assert.Equal("1: pair, 2 triangles, 2 material(s), 0 texture(s), 3.00 x 1.00 x 0.00 m", output.Lines[1]);
-        Assert.Equal("2 mesh asset(s)", output.Lines[2]);
+        Assert.Equal(
+            "2: bending, 1 triangles, 1 material(s), 0 texture(s), 2.00 x 0.00 x 0.00 m, 2 joints, clips: bend 1.00 s",
+            output.Lines[2]
+        );
+        Assert.Equal("3 mesh asset(s)", output.Lines[3]);
     }
 
     [Fact]
@@ -158,6 +259,9 @@ public sealed class MeshDrawSystemTests
     [InlineData("meshes place box -1")]
     [InlineData("meshes test 0")]
     [InlineData("meshes spin")]
+    [InlineData("meshes place bending bend -1")]
+    [InlineData("meshes place bending bend 1 more")]
+    [InlineData("meshes test 2 bending wave")]
     public void Meshes_refuses_what_it_cannot_do(string line)
     {
         using var world = World.Create();
@@ -179,13 +283,18 @@ public sealed class MeshDrawSystemTests
         using var system = Create(world);
         world.Create(MeshPlacement.At(Vector3.Zero, Quaternion.Identity), DrawnMesh.Of(0));
         world.Create(MeshPlacement.At(Vector3.One, Quaternion.Identity, 2), DrawnMesh.Of(1));
+        world.Create(
+            MeshPlacement.At(Vector3.UnitX, Quaternion.Identity),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.3f)
+        );
 
-        // The list is cleared between frames by the loop; here every update adds two, far below the limit.
+        // The list is cleared between frames by the loop; here every update adds three, far below the limit.
         Assert.Equal(
             0,
             SystemAllocation.BytesAllocated(system, new FrameTime(1f / 240, 1, 1, 0.5f), warmup: 10, measured: 100)
         );
-        Assert.Equal(220, _instances.Count);
+        Assert.Equal(330, _instances.Count);
     }
 
     private static ConsoleCommands NewCommands() =>

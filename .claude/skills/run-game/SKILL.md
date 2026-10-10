@@ -101,7 +101,8 @@ starter has no App ID; a game with one logs `Steam: signed in as ...` or a Warni
 per physical device, the selected device, swapchain, input devices, shader compiler and its smoke test, audio device,
 `UI: Skia CPU surface ...`, `Loaded mod itera.samplemod`, `Mesh assets: N model(s), ... read in N ms` (the models the game declared; a file that
 cannot be read stops the run with exit code 1), `Mesh assets on the GPU: N vertices, ... draws N MB a frame slot`
-(then a Warning for each model whose blended materials draw as masked), `Audio: thread started ...`, `Render thread started`, `Engine
+(and with a skinned model `... N skinned vertices; posed instances skinned into V vertices ...`; then a Warning for each
+model whose blended materials draw as masked), `Audio: thread started ...`, `Render thread started`, `Engine
 ready ... entering main loop`. Then the match's: `Match 1: offline, seed N` (or `host, seed N`, `host through Steam,
 ...`, or `join ADDRESS`), `Session: offline, seed N` (or `hosting on UDP port ...`, `hosting through Steam ...`, or
 `joined ADDRESS in slot N, seed N; downloaded ...`; with a save name, a `Save: starting from NAME ...` or `Save: NAME
@@ -205,9 +206,10 @@ lists the commands (`ConsoleCommands`):
   again, on clients too), `balls` [COUNT] [RADIUS] [MATERIAL] (balls dropped 3 m in front of the camera, of the game's
   default material unless given, the starter's stone: loose bodies that draw models; `settle 60` first keeps them
   bodies), `meshes` (the run's mesh assets, models read from glTF files, with their triangles, materials, textures,
-  and size; `place NAME [SCALE]` puts one 4 m in front of the camera on the ground, facing it; `test COUNT [NAME]`
-  puts COUNT, at most 4096, in rows ahead, the first asset unless named; `clear` removes those it placed; this game
-  only, on clients too).
+  size, and a rig's joints and clips; `place NAME [SCALE] [CLIP [SECONDS]]` puts one 4 m in front of the camera on the
+  ground, facing it, playing CLIP or held at SECONDS of it (repeatable shots); `test COUNT [NAME [CLIP]]` puts COUNT, at
+  most 4096, in rows ahead, the first asset unless named, each from another time of CLIP; `clear` removes those it
+  placed; this game only, on clients too).
 - The game's own commands go here (the starter has none).
 
 In a session, `tp`, `settle`, `cleanup`, `reset`, and `balls` work only on the host; `pause`, `resume`, `step`, and

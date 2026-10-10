@@ -12,9 +12,10 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
   `GamePalette` from the texture sets `grass`, `dirt`, `stone`, and `gravel` in `Textures/`. The sky is one clear day
   (`GameAtmosphere`). A change to what the generator makes raises its `Version` (`tests/Game.Tests/WorldTests` pins a
   hash).
-- The fox (`GameModels.Fox`): Khronos's Fox sample (`Models/Fox/`, credits in `Models/SOURCES.md`), declared at the
-  run's start (`GameRunStartup`) and placed by `FoxSpawnSystem` on the ground 4 m in front of the start pose, side on.
-  It stands still in its rest pose until skinning comes (the mesh path's phase 4).
+- The fox (`GameModels.Fox`): Khronos's Fox sample (`Models/Fox/`, credits in `Models/SOURCES.md`; 24 joints, clips
+  Survey, Walk, and Run), declared at the run's start (`GameRunStartup`). `FoxSystem` puts it on the ground 4 m in front
+  of the start pose, side on, then over and over: it looks about (Survey) for 6 s, walks (1.1 m/s) for 8 s and runs
+  (4 m/s) for 6 s round a 3 m circle beyond where it started, on the voxel ground (`FoxRoute`).
 - The player starts at the world's middle, its eye a person's height over the ground or a boulder there
   (`GameGenerator.SurfaceHeight`), looking along -z (`StartPose`; `Game:World:CameraPose` sets another, which must lie in
   the play area). `PlayerSpawnSystem` makes it with the engine's components; the engine's systems
@@ -31,21 +32,23 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
 
 Registered in `GameServiceCollectionExtensions` in run order; `tests/Game.Tests/SystemOrderTests` checks the order.
 
-- Fixed: `PlayerSpawnSystem` (makes the player at the start), `FoxSpawnSystem` (puts the fox at the start), `MapResetSystem` (`cleanup`, `reset`), `DebugBallSystem`
-  (`balls`), `PlayerInputSystem`, `PhysicsReadSystem`, `PlayerMovementSystem`, `StandInSystem`, `LooseBodySystem`,
-  `StreamingCentreSystem`.
+- Fixed: `PlayerSpawnSystem` (makes the player at the start), `FoxSystem` (puts the fox at the start, then moves it and
+  chooses its clip), `MapResetSystem` (`cleanup`, `reset`), `DebugBallSystem` (`balls`), `PlayerInputSystem`,
+  `PhysicsReadSystem`, `PlayerMovementSystem`, `StandInSystem`, `LooseBodySystem`, `MeshAnimatorSystem` (the clips moved
+  on, after every system that chooses one), `StreamingCentreSystem`.
 - Frame: `PlayerCameraSystem`, `DebugFlyCameraSystem`, `BenchmarkSystem` (with `Engine:Benchmark:Enabled`),
   `DebugOutlineSystem`, `CameraExtractSystem`, `LooseBodyModelSystem`, `MeshDrawSystem`, `AtmosphereSystem`.
 
-Every system but `PlayerSpawnSystem` and `FoxSpawnSystem` is the engine's (`.claude/rules/systems.md`). A game's own system goes in this
-order where its comments say why, with a behaviour test and a zero-allocation test in `tests/Game.Tests`.
+Every system but `PlayerSpawnSystem` and `FoxSystem` is the engine's (`.claude/rules/systems.md`). A game's own system
+goes in this order where its comments say why, with a behaviour test and a zero-allocation test in `tests/Game.Tests`.
 
 ## Files
 
 - `src/Game`: `Program.cs` (the host, then `GameLoop.Run()`), `GameServiceCollectionExtensions` (`AddGame`: options,
   world, systems), `GameOptions.cs`, `StartPose.cs`, `BenchmarkViews.cs`, `GameRunStartup.cs` (the movement keys first,
-  then the game's, and the models), `GameModels.cs`, `Systems/PlayerSpawnSystem.cs`, `Systems/FoxSpawnSystem.cs`,
-  `WorldGeneration/`, `Textures/`, `Models/`, `appsettings.json`.
+  then the game's, and the models), `GameModels.cs`, `Systems/PlayerSpawnSystem.cs`, `Systems/FoxSystem.cs`,
+  `Components/FoxRoute.cs`, `WorldGeneration/`, `Textures/`, `Models/`, `appsettings.json`.
 - `tests/Game.Tests`: `SystemOrderTests`, `ShippedSettingsTests`, `GameOptionsTests`, `WorldTests`, `PlayerSpawnSystemTests`,
-  `FoxSpawnSystemTests`, `BenchmarkViewsTests`, and `ScenarioTests` (the starter played without a window through
-  `HeadlessMatch`; the fox read from its file and drawn).
+  `FoxSystemTests`, `FoxModelTests` (the fox's rig and clips against SharpGLTF's own world matrices), `BenchmarkViewsTests`,
+  and `ScenarioTests` (the starter played without a window through `HeadlessMatch`; the fox read, drawn posed, its clip
+  moving with the steps, walking its circle).

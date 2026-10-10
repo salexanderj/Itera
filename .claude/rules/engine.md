@@ -13,7 +13,8 @@ paths:
   `MatchFlow`); a match's services, step list, and fixed step (`RunFixedStep`) in `Matches/MatchServices.cs` (`MatchStart`,
   `MatchContext`, `MatchControl`, `IRunStartup` for the game's run-wide registries); the transports a session takes
   through `ISessionTransports`. Folders:
-  - `Assets/`: mesh assets, models read from glTF files at the run's "mesh assets" step (`.claude/rules/mesh-assets.md`).
+  - `Assets/`: mesh assets, models read from glTF files at the run's "mesh assets" step, with a skinned model's rig and
+    clips (`.claude/rules/mesh-assets.md`).
   - `Saves/` (`SaveService`), `Modding/` (mod loading: `ModLoader`, `ModLoadContext`, `ModDispatcher`), `Diagnostics/`
     (Serilog setup `LoggingServiceCollectionExtensions`, the session header `SessionInfo`, loop stats `FrameStats`, GPU
     pass times `GpuTimings`, `ConsoleLogBuffer`, crash logging, `ControlLog`), `Time/` (`GameClock`,

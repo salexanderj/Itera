@@ -1,5 +1,6 @@
 using System.Numerics;
 using Arch.Core;
+using Game.Components;
 using Game.Systems;
 using Game.WorldGeneration;
 using Itera.Engine.Assets;
@@ -35,6 +36,12 @@ public sealed class ScenarioTests
 
     private static readonly QueryDescription s_balls = new QueryDescription().WithAll<LooseBody>();
 
+    private static readonly QueryDescription s_fox = new QueryDescription().WithAll<
+        FoxRoute,
+        MeshPlacement,
+        MeshAnimator
+    >();
+
     [Fact]
     public void The_player_stands_on_the_starters_ground()
     {
@@ -62,12 +69,67 @@ public sealed class ScenarioTests
         var fox = Assert.Single(provider.GetRequiredService<MeshInstances>().Instances.ToArray());
         Assert.Equal(assets.Find(GameModels.Fox), fox.Asset);
         Assert.Equal(576, assets[fox.Asset].TriangleCount);
+        // Posed by its rig's 24 joints, looking about.
+        Assert.True(fox.Posed);
+        Assert.Equal(24, fox.Joints);
         // The start pose looks along -z from over the middle.
         var at = Vector3.Transform(Vector3.Zero, fox.Transform);
         var ground = GameGenerator.SurfaceHeight(0, -400, 1) / (float)VoxelConstants.CentimetresPerMetre;
         Assert.Equal(0, at.X, 1e-4f);
         Assert.Equal(ground, at.Y, 1e-4f);
-        Assert.Equal(-FoxSpawnSystem.AheadMetres, at.Z, 1e-4f);
+        Assert.Equal(-FoxSystem.AheadMetres, at.Z, 1e-4f);
+    }
+
+    [Fact]
+    public void The_foxs_clip_moves_on_with_the_steps_and_not_between_them()
+    {
+        using var provider = GameComposition.Build(s_options);
+        using var match = new HeadlessRun(provider).Play(seed: 1);
+        Assert.True(match.WaitUntilLoaded());
+        match.Step(30);
+        var before = Fox(match.World).Animator.Seconds;
+
+        // Frames with no step between them, as while the match is paused: the clip stays.
+        for (var i = 0; i < 30; i++)
+        {
+            match.Frame();
+        }
+
+        var held = Fox(match.World).Animator.Seconds;
+        match.Step(60);
+        var after = Fox(match.World).Animator.Seconds;
+
+        Assert.Equal(before, held);
+        var survey = provider.GetRequiredService<MeshAssets>()[0].Rig!.Clips[0];
+        Assert.Equal("Survey", survey.Name);
+        Assert.Equal((before + 1) % survey.Duration, after, 1e-3f);
+    }
+
+    [Fact]
+    public void The_fox_walks_round_its_circle_after_looking_about()
+    {
+        using var provider = GameComposition.Build(s_options);
+        using var match = new HeadlessRun(provider).Play(seed: 1);
+        Assert.True(match.WaitUntilLoaded());
+        var start = Fox(match.World).Placement.Position;
+
+        // Two seconds into its walk.
+        match.Step((int)((FoxSystem.SurveySeconds + 2) * 60));
+
+        var (route, placement, animator) = Fox(match.World);
+        var walk = provider.GetRequiredService<MeshAssets>()[0].Rig!.FindClip("Walk");
+        Assert.Equal(walk, animator.Clip);
+        var flat = new Vector2(placement.Position.X - route.Centre.X, placement.Position.Z - route.Centre.Z);
+        Assert.Equal(FoxSystem.CircleMetres, flat.Length(), 1e-3f);
+        Assert.InRange(Vector3.Distance(start, placement.Position), 1.5f, 2.5f);
+        // On the ground: within a voxel of where a ray down finds it.
+        var ground =
+            GameGenerator.SurfaceHeight(
+                (int)MathF.Round(placement.Position.X * 100),
+                (int)MathF.Round(placement.Position.Z * 100),
+                1
+            ) / 100;
+        Assert.Equal((float)ground, placement.Position.Y, 0.15f);
     }
 
     [Fact]
@@ -111,6 +173,22 @@ public sealed class ScenarioTests
         Assert.Equal(4, dropped);
         Assert.Equal(0, match.World.CountEntities(in s_balls));
         Assert.Equal(edits + 4, match.Match.Voxels.EditCount);
+    }
+
+    private static (FoxRoute Route, MeshPlacement Placement, MeshAnimator Animator) Fox(World world)
+    {
+        var found = default((FoxRoute, MeshPlacement, MeshAnimator));
+        var count = 0;
+        world.Query(
+            in s_fox,
+            (ref FoxRoute route, ref MeshPlacement placement, ref MeshAnimator animator) =>
+            {
+                found = (route, placement, animator);
+                count++;
+            }
+        );
+        Assert.Equal(1, count);
+        return found;
     }
 
     private static (CharacterPosition Position, CharacterContact Contact) Player(World world)

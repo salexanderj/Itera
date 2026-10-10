@@ -16,9 +16,22 @@ in `Octahedral` encodings with the bitangent's sign in the tangent word's top bi
 a linear RGBA colour) and its 32-bit indices (three a triangle, counter-clockwise from the front, into its own vertices)
 are split into primitives (`MeshPrimitive`), each a run of indices with one material (`MeshMaterialData`: glTF's
 metallic-roughness factors and textures, alpha mode and cutoff, double-sidedness). Its textures (`MeshTextureData`) hold
-every mip level, level 0 first. They are drawn with the world (`.claude/rules/rendering.md`, "Mesh assets"): an
-entity with `MeshPlacement` and `DrawnMesh` (`.claude/rules/systems.md`), or any frame system through `MeshInstances`.
-Skinned meshes are drawn in the pose their file stores until skinning is built (the mesh path's plan, phase 4).
+every mip level, level 0 first. A skinned asset also has a `Rig` and each vertex's joints and weights (`Skin`,
+`MeshSkinVertex`: four 16-bit joints and four 16-bit weights); its vertices are where the mesh was bound. They are drawn
+with the world (`.claude/rules/rendering.md`, "Mesh assets"): an entity with `MeshPlacement` and `DrawnMesh`, posed by a
+`MeshAnimator` (`.claude/rules/systems.md`), or any frame system through `MeshInstances` (`AddPosed` with the rig's
+skinning matrices).
+
+A `Rig` (`Rig.cs`) is the joints of a skin, parents first, in metres: each joint's parent (-1 for none), the fixed
+transform from its parent joint (or the scene's root) to its own parent node (`Offsets`: the nodes between that are not
+joints), its rest transform (`JointTransform`: translation, rotation, scale), its inverse bind matrix, its place in the
+bound pose (`BindPositions`), and how far its vertices reach from it (`Reaches`, which bound a posed instance), and its
+clips (`RigClip`: tracks of one joint's translation, rotation, or scale, `RigTrack`, sampled step, linear with the shorter
+arc for rotations, or cubic spline with the file's tangents scaled by the time between keys; held at the ends; the
+clip's `Duration` is its last key). `Pose(clip, seconds, locals)` (the rest pose for clip -1) and `WritePalette(locals,
+palette)` (each joint's inverse bind, then its place in the asset's space: `v * InverseBind * Global`, `Global = local *
+offset * parent's Global`) allocate nothing. Drawing only, in floats: never for what peers must agree on; the
+deterministic skeletons for bodies, aim, and foot IK are `Animation.Skeleton`'s (`.claude/rules/animation.md`).
 
 `MeshAssets` (run-wide singleton) holds the run's assets by name and index. A game declares its models at its run
 startup (`IRunStartup`, the run's "game" step): `Declare(name, path, metresPerUnit)` (a relative path from the
@@ -39,7 +52,15 @@ models during play is not built.
 - It walks the default scene (else the first): each mesh's triangles, strips, and fans, with the node's world transform
   and the unit scale baked into the vertices (normals by the inverse transpose), the winding and the tangents'
   handedness flipped where the transform mirrors. A skinned mesh is kept as its file stores it (glTF: its node's own
-  transform does not apply); its joints, and drawing it posed, come with skinning (phase 4).
+  transform does not apply).
+- The first skin a mesh of the scene uses becomes the asset's rig (`GltfImport.Rig.cs`); meshes on another skin stand as
+  stored, with a warning. Its joints are ordered by their depth below the scene's root (parents first), and every
+  translation (rest, offsets, inverse binds, clip keys and tangents) is multiplied by the file's unit (the uniform
+  scale's `S⁻¹ M S`), so the rig is in metres as the vertices are. Each skinned vertex keeps its four largest weights of
+  `JOINTS_0`/`WEIGHTS_0` and `JOINTS_1`/`WEIGHTS_1`, scaled to sum to one, its joints in the rig's order; a vertex no
+  joint weighs (a mesh of the asset off the skin) keeps all-zero weights and stands as stored. Each animation's channels
+  on the rig's joints become a clip by its name; channels on other nodes and morph weights are left out, with a
+  warning.
 - Triangles without normals get flat ones, each its own three vertices (glTF asks for flat normals); a primitive without
   indices gets them in order. A normal-mapped material's vertices without tangents get generated ones (`MeshTangents`:
   Lengyel's method, not MikkTSpace, so they differ at mirrored UV seams; the bitangent `cross(normal, tangent) * w`

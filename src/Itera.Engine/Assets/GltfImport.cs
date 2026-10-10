@@ -19,13 +19,15 @@ namespace Itera.Engine.Assets;
 /// apply).</item>
 /// <item>Gives triangles without normals flat ones (each its own three vertices, as glTF asks), and normal-mapped
 /// materials' vertices without tangents generated ones (<see cref="MeshTangents"/>).</item>
+/// <item>Reads the first skin a mesh uses, and the animations of its joints, into the asset's <see cref="Rig"/>
+/// (<c>GltfImport.Rig.cs</c>).</item>
 /// <item>Reads each material's factors and textures; decodes each image a material uses (<see cref="TextureDecode"/>)
 /// and makes its mip levels in the role's format (<see cref="MipChain"/>). An image it cannot decode leaves the
 /// material's factor alone, with a warning.</item>
 /// </list>
 /// Warnings go into the list given, for the caller to log. Allocates freely: load time only.
 /// </summary>
-internal static class GltfImport
+internal static partial class GltfImport
 {
     /// <summary>Extensions a file may require that the importer reads: quantised accessors, and an emission strength.</summary>
     private static readonly string[] s_handled = ["KHR_mesh_quantization", "KHR_materials_emissive_strength"];
@@ -141,50 +143,67 @@ internal static class GltfImport
         }
 
         var scene = model.DefaultScene ?? (model.LogicalScenes.Count > 0 ? model.LogicalScenes[0] : null);
+        RigPlan? plan = null;
         if (scene is null)
         {
             context.Warn("has no scene: no triangles");
         }
         else
         {
+            Skin? skin = null;
+            foreach (var node in scene.VisualChildren)
+            {
+                skin = FindSkin(node, skin, context);
+            }
+
+            plan = skin is null ? null : PlanRig(skin);
             var scale = Matrix4x4.CreateScale(metresPerUnit);
             foreach (var node in scene.VisualChildren)
             {
-                AddNode(node, scale, context);
+                AddNode(node, scale, plan, context);
             }
         }
 
+        var rig = plan is null ? null : BuildRig(model, plan, metresPerUnit, context);
         return new MeshAsset(
             name,
             [.. context.Vertices],
             [.. context.Indices],
             [.. context.Primitives],
             [.. context.Materials],
-            [.. context.Textures]
+            [.. context.Textures],
+            rig,
+            rig is null ? null : [.. context.Skins]
         );
     }
 
-    private static void AddNode(Node node, Matrix4x4 scale, ImportContext context)
+    private static void AddNode(Node node, Matrix4x4 scale, RigPlan? plan, ImportContext context)
     {
         if (node.Mesh is { } mesh)
         {
             // glTF: a skinned mesh's node transform does not apply; its joints place it.
             var transform = (node.Skin is null ? node.WorldMatrix : Matrix4x4.Identity) * scale;
+            var posedBy = plan is not null && node.Skin?.LogicalIndex == plan.Skin.LogicalIndex ? plan : null;
             foreach (var primitive in mesh.Primitives)
             {
-                AddPrimitive(primitive, transform, context);
+                AddPrimitive(primitive, transform, posedBy, context);
             }
         }
 
         foreach (var child in node.VisualChildren)
         {
-            AddNode(child, scale, context);
+            AddNode(child, scale, plan, context);
         }
     }
 
+    /// <summary>
+    /// The primitive's triangles and vertices; with <paramref name="plan"/>, each vertex's joints and weights in the rig
+    /// (else none, so the rig never moves it).
+    /// </summary>
     private static void AddPrimitive(
         SharpGLTF.Schema2.MeshPrimitive primitive,
         Matrix4x4 transform,
+        RigPlan? plan,
         ImportContext context
     )
     {
@@ -216,6 +235,18 @@ internal static class GltfImport
         var sourceUv0 = primitive.GetVertexAccessor("TEXCOORD_0")?.AsVector2Array();
         var sourceUv1 = primitive.GetVertexAccessor("TEXCOORD_1")?.AsVector2Array();
         var sourceColours = primitive.GetVertexAccessor("COLOR_0")?.AsColorArray(1f);
+        var skinAccessors = plan is null
+            ? null
+            : new SkinAccessors(
+                primitive.GetVertexAccessor("JOINTS_0")?.AsVector4Array(),
+                primitive.GetVertexAccessor("WEIGHTS_0")?.AsVector4Array(),
+                primitive.GetVertexAccessor("JOINTS_1")?.AsVector4Array(),
+                primitive.GetVertexAccessor("WEIGHTS_1")?.AsVector4Array()
+            );
+        if (skinAccessors is { Joints0: null } or { Weights0: null })
+        {
+            context.Warn("has a skinned primitive without joints or weights, which stands as stored");
+        }
         var mirrored = transform.GetDeterminant() < 0;
         if (!Matrix4x4.Invert(transform, out var inverse))
         {
@@ -232,10 +263,12 @@ internal static class GltfImport
         var uv0 = new List<Vector2>();
         var uv1 = new List<Vector2>();
         var colours = new List<Vector4>();
+        var skins = new List<MeshSkinVertex>();
         var triangles = new List<uint>();
         void Add(int source, Vector3 normal)
         {
             positions.Add(Vector3.Transform(sourcePositions[source], transform));
+            skins.Add(skinAccessors is null ? default : SkinOf(source, skinAccessors, plan!, context));
             normals.Add(normal);
             uv0.Add(sourceUv0 is null ? Vector2.Zero : sourceUv0[source]);
             uv1.Add(sourceUv1 is null ? Vector2.Zero : sourceUv1[source]);
@@ -306,6 +339,8 @@ internal static class GltfImport
                 MeshAssetVertex.Pack(positions[i], normals[i], tangents[i], uv0[i], uv1[i], colours[i])
             );
         }
+
+        context.Skins.AddRange(skins);
 
         context.Primitives.Add(new MeshPrimitive(context.Indices.Count, triangles.Count, materialIndex));
         foreach (var index in triangles)
@@ -504,6 +539,9 @@ internal static class GltfImport
 
         public List<MeshAssetVertex> Vertices { get; } = [];
 
+        /// <summary>Each vertex's joints and weights, beside <see cref="Vertices"/>; kept when the asset has a rig.</summary>
+        public List<MeshSkinVertex> Skins { get; } = [];
+
         public List<uint> Indices { get; } = [];
 
         public List<MeshPrimitive> Primitives { get; } = [];
@@ -517,6 +555,10 @@ internal static class GltfImport
         public Dictionary<int, (int Width, int Height, byte[] Rgba)?> Decoded { get; } = [];
 
         public bool WrapWarned { get; set; }
+
+        public bool SkinsWarned { get; set; }
+
+        public bool JointsWarned { get; set; }
 
         public void Warn(string message) => warnings.Add($"{System.IO.Path.GetFileName(Path)} {message}");
 

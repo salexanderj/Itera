@@ -16,7 +16,7 @@ public sealed class SystemOrderTests
     private static readonly string[] s_fixedOrder =
     [
         "PlayerSpawnSystem",
-        "FoxSpawnSystem",
+        "FoxSystem",
         "MapResetSystem",
         "DebugBallSystem",
         "PlayerInputSystem",
@@ -24,6 +24,7 @@ public sealed class SystemOrderTests
         "PlayerMovementSystem",
         "StandInSystem",
         "LooseBodySystem",
+        "MeshAnimatorSystem",
         "StreamingCentreSystem",
     ];
 

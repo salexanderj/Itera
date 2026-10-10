@@ -12,7 +12,7 @@ paths:
 (`LocalPlayer`, `RemotePlayer`, `Bodiless`, `PlayerCommand` with `PlayerButtons` and a game's own `Actions` bits,
 `PlayerMode` with `Flying` and `Crouching`, `ThirdPersonView`, `CharacterSize` with `ForHeight`, `CharacterPosition`,
 `CharacterVelocity`, `CharacterContact`, `EyeSmoothing`, `MovementStats` with a person's `Default`), mesh assets
-(`MeshPlacement` with `At`, `DrawnMesh` with `Of`, `ConsoleMesh`), physics
+(`MeshPlacement` with `At`, `DrawnMesh` with `Of`, `MeshAnimator` with `Playing`, `ConsoleMesh`), physics
 (`LooseBody`, `BodyPose` (a loose body's pose, not `Animation.BodyPose`), `BodyBox`, `CutPiece`, `RemoteBody`,
 `CharacterStandIn`), and networking (`NetEntity`).
 `src/Itera.Engine/Systems/` holds the systems (namespace `Itera.Engine.Systems`). The engine registers no system: a game
@@ -55,9 +55,15 @@ game's systems to put their things back); the physics systems are in `.claude/ru
 Mesh assets: `MeshDrawSystem` (frame, after `LooseBodyModelSystem`) hands every entity with a `MeshPlacement` (the
 pose at the last two fixed steps and a uniform scale; a fixed system that moves it copies the pose into the previous
 one first) and a `DrawnMesh` (the asset's index from `MeshAssets.Find`, a tint, a `ModelShadow`) to `MeshInstances`, its
-pose blended by the frame's `Alpha`. `meshes` is its command: the run's assets; `place NAME [SCALE]` 4 m in front of
-the camera, facing it, dropped to the voxel ground by a ray where there is one; `test COUNT [NAME]` in rows;
-`clear` removes those it placed (`ConsoleMesh`). A game places its own (the starter's `FoxSpawnSystem`).
+pose blended by the frame's `Alpha`; one with a `MeshAnimator` (a clip of the asset's rig by index, `Rig.FindClip`, -1
+for the rest pose; its time at the last two steps; a speed, 0 to hold; `Once` to stop at the end) is posed by the clip
+at the blend of its two times, wrapped by a looping clip's length (`MeshInstances.AddPosed`, `Rig.WritePalette`).
+`MeshAnimatorSystem` (fixed, after every system that chooses a clip) moves each clip's time on by its speed, so clips
+follow the match's time and stop while it is paused; at a looping clip's end it wraps both times together. `meshes` is
+`MeshDrawSystem`'s command: the run's assets with their rigs' joints and clips; `place NAME [SCALE] [CLIP [SECONDS]]` 4 m
+in front of the camera, facing it, dropped to the voxel ground by a ray where there is one, playing CLIP or held at
+SECONDS of it; `test COUNT [NAME [CLIP]]` in rows, each from another time of the clip; `clear` removes those it placed
+(`ConsoleMesh`). A game places its own (the starter's `FoxSystem`).
 
 The benchmark (`BenchmarkSystem`, frame, after the fly camera; a game registers it when `Engine:Benchmark:Enabled`,
 with its own views, `BenchmarkView`): it puts the camera at each view, waits until it has loaded

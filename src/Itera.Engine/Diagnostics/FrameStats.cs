@@ -182,6 +182,7 @@ public sealed partial class FrameStats
         var gpuLines = _gpu?.Take(GpuPass.DebugLines) ?? default;
         var gpuModels = _gpu?.Take(GpuPass.Models) ?? default;
         var gpuMeshes = _gpu?.Take(GpuPass.Meshes) ?? default;
+        var gpuSkinning = _gpu?.Take(GpuPass.Skinning) ?? default;
         var gpuUi = _gpu?.Take(GpuPass.Ui) ?? default;
         var gpuUpscale = _gpu?.Take(GpuPass.Upscale) ?? default;
         var gpuAntiAlias = _gpu?.Take(GpuPass.AntiAlias) ?? default;
@@ -262,6 +263,9 @@ public sealed partial class FrameStats
                 gpuMeshes.Count,
                 gpuMeshes.AverageMs,
                 gpuMeshes.MaxMs,
+                gpuSkinning.Count,
+                gpuSkinning.AverageMs,
+                gpuSkinning.MaxMs,
                 gpuUi.Count,
                 gpuUi.AverageMs,
                 gpuUi.MaxMs,
@@ -387,7 +391,7 @@ public sealed partial class FrameStats
 
     [LoggerMessage(
         Level = LogLevel.Debug,
-        Message = "GPU passes over {Seconds:F1} s ({Frames} frames measured): upload in {UploadFrames} frames avg {UploadAverageMs:F3} ms max {UploadMaxMs:F3} ms, voxels avg {VoxelsAverageMs:F3} ms max {VoxelsMaxMs:F3} ms, debug lines in {LineFrames} frames avg {LinesAverageMs:F3} ms max {LinesMaxMs:F3} ms, models in {ModelFrames} frames avg {ModelsAverageMs:F3} ms max {ModelsMaxMs:F3} ms, mesh assets in {MeshFrames} frames avg {MeshesAverageMs:F3} ms max {MeshesMaxMs:F3} ms, UI in {UiFrames} frames avg {UiAverageMs:F3} ms max {UiMaxMs:F3} ms, anti-aliasing in {AntiAliasFrames} frames avg {AntiAliasAverageMs:F3} ms max {AntiAliasMaxMs:F3} ms, upscale in {UpscaleFrames} frames avg {UpscaleAverageMs:F3} ms max {UpscaleMaxMs:F3} ms, particles moved in {ParticleFrames} frames avg {ParticleSimulateAverageMs:F3} ms max {ParticleSimulateMaxMs:F3} ms and drawn avg {ParticlesAverageMs:F3} ms max {ParticlesMaxMs:F3} ms, loading screen in {LoadingFrames} frames avg {LoadingAverageMs:F3} ms max {LoadingMaxMs:F3} ms; of the world, shadow maps avg {ShadowMapsAverageMs:F3} ms"
+        Message = "GPU passes over {Seconds:F1} s ({Frames} frames measured): upload in {UploadFrames} frames avg {UploadAverageMs:F3} ms max {UploadMaxMs:F3} ms, voxels avg {VoxelsAverageMs:F3} ms max {VoxelsMaxMs:F3} ms, debug lines in {LineFrames} frames avg {LinesAverageMs:F3} ms max {LinesMaxMs:F3} ms, models in {ModelFrames} frames avg {ModelsAverageMs:F3} ms max {ModelsMaxMs:F3} ms, mesh assets in {MeshFrames} frames avg {MeshesAverageMs:F3} ms max {MeshesMaxMs:F3} ms, skinning in {SkinFrames} frames avg {SkinningAverageMs:F3} ms max {SkinningMaxMs:F3} ms, UI in {UiFrames} frames avg {UiAverageMs:F3} ms max {UiMaxMs:F3} ms, anti-aliasing in {AntiAliasFrames} frames avg {AntiAliasAverageMs:F3} ms max {AntiAliasMaxMs:F3} ms, upscale in {UpscaleFrames} frames avg {UpscaleAverageMs:F3} ms max {UpscaleMaxMs:F3} ms, particles moved in {ParticleFrames} frames avg {ParticleSimulateAverageMs:F3} ms max {ParticleSimulateMaxMs:F3} ms and drawn avg {ParticlesAverageMs:F3} ms max {ParticlesMaxMs:F3} ms, loading screen in {LoadingFrames} frames avg {LoadingAverageMs:F3} ms max {LoadingMaxMs:F3} ms; of the world, shadow maps avg {ShadowMapsAverageMs:F3} ms"
     )]
     private partial void LogGpuPasses(
         double seconds,
@@ -406,6 +410,9 @@ public sealed partial class FrameStats
         long meshFrames,
         double meshesAverageMs,
         double meshesMaxMs,
+        long skinFrames,
+        double skinningAverageMs,
+        double skinningMaxMs,
         long uiFrames,
         double uiAverageMs,
         double uiMaxMs,

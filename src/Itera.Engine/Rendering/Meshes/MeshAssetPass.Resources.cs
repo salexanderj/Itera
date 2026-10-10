@@ -16,10 +16,10 @@ public sealed unsafe partial class MeshAssetPass
     private const int MeshPassImageSamplers = 9;
 
     /// <summary>
-    /// What the fragment stage holds beside the textures that counts against the device's per-stage resources: the
-    /// mesh pass's 17 descriptors, this set's three storage buffers, and the colour attachment.
+    /// What a stage holds beside the textures that counts against the device's per-stage resources: the mesh pass's 17
+    /// descriptors, this set's six storage buffers, and the colour attachment.
     /// </summary>
-    private const int OtherStageResources = 21;
+    private const int OtherStageResources = 24;
 
     /// <summary>Every level of a texture starts on 16 bytes in the upload buffer.</summary>
     private static ulong AlignLevel(ulong bytes) => (bytes + 15) & ~15UL;
@@ -52,12 +52,29 @@ public sealed unsafe partial class MeshAssetPass
 
         var vertexBytes = (ulong)layout.VertexCount * (ulong)sizeof(MeshAssetVertex);
         // The shaders see the vertices as one storage buffer, which the device's range limits.
-        if (vertexBytes > _context.Limits.MaxStorageBufferRange)
+        var range = (ulong)_context.Limits.MaxStorageBufferRange;
+        if (vertexBytes > range)
         {
             throw new InvalidOperationException(
-                $"The mesh assets' {layout.VertexCount} vertices take {vertexBytes} bytes, past this device's storage buffer range of {_context.Limits.MaxStorageBufferRange} bytes."
+                $"The mesh assets' {layout.VertexCount} vertices take {vertexBytes} bytes, past this device's storage buffer range of {range} bytes."
             );
         }
+
+        // Each frame slot's region of skinned vertices follows every asset's own, within the same range.
+        var slots = (ulong)FrameSync.FramesInFlight;
+        var vertexSize = (ulong)sizeof(MeshAssetVertex);
+        _skinBase = layout.VertexCount;
+        _skinCapacity =
+            layout.SkinVertexCount == 0
+                ? 0
+                : (int)
+                    Math.Min(
+                        Math.Min((ulong)_options.Value.Renderer.SkinMegabytes << 20, (range - vertexBytes) / slots)
+                            / vertexSize,
+                        int.MaxValue / slots
+                    );
+        var skinned = _skinCapacity > 0;
+        var skinBytes = (ulong)layout.SkinVertexCount * (ulong)sizeof(MeshSkinVertex);
 
         var indexBytes = (ulong)layout.IndexCount * sizeof(uint);
         var materialBytes = (ulong)layout.MaterialCount * (ulong)sizeof(MeshAssetMaterial);
@@ -77,7 +94,12 @@ public sealed unsafe partial class MeshAssetPass
             textureBytes += texture is null ? 16 : LevelBytes(texture);
         }
 
-        var uploadBytes = AlignLevel(vertexBytes) + AlignLevel(indexBytes) + AlignLevel(materialBytes) + textureBytes;
+        var uploadBytes =
+            AlignLevel(vertexBytes)
+            + AlignLevel(indexBytes)
+            + AlignLevel(materialBytes)
+            + AlignLevel(skinBytes)
+            + textureBytes;
         _upload = _allocator.CreateBuffer(
             uploadBytes,
             BufferUsageFlags.TransferSrcBit,
@@ -85,7 +107,7 @@ public sealed unsafe partial class MeshAssetPass
             "mesh asset upload"
         );
         _vertices = _allocator.CreateBuffer(
-            Math.Max(vertexBytes, (ulong)sizeof(MeshAssetVertex)),
+            Math.Max(vertexBytes + slots * (ulong)_skinCapacity * vertexSize, vertexSize),
             BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit,
             MemoryUsage.DeviceLocal,
             "mesh asset vertices"
@@ -102,7 +124,25 @@ public sealed unsafe partial class MeshAssetPass
             MemoryUsage.DeviceLocal,
             "mesh asset materials"
         );
-        var slots = (ulong)FrameSync.FramesInFlight;
+        _skins = _allocator.CreateBuffer(
+            Math.Max(skinBytes, (ulong)sizeof(MeshSkinVertex)),
+            BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit,
+            MemoryUsage.DeviceLocal,
+            "mesh asset skins"
+        );
+        // Without skinned assets, one entry each, which nothing reads.
+        _skinGroups = _allocator.CreateBuffer(
+            (skinned ? slots * MaxSkinGroups : 1) * (ulong)sizeof(MeshSkinGroup),
+            BufferUsageFlags.StorageBufferBit,
+            MemoryUsage.Upload,
+            "mesh asset skin groups"
+        );
+        _palettes = _allocator.CreateBuffer(
+            (skinned ? slots * MeshInstances.MaxPaletteJoints : 1) * (ulong)sizeof(System.Numerics.Matrix4x4),
+            BufferUsageFlags.StorageBufferBit,
+            MemoryUsage.Upload,
+            "mesh asset skinning matrices"
+        );
         _draws = _allocator.CreateBuffer(
             slots * MeshPass.Lists * MaxDraws * (ulong)sizeof(MeshAssetDraw),
             BufferUsageFlags.StorageBufferBit,
@@ -116,7 +156,7 @@ public sealed unsafe partial class MeshAssetPass
             "mesh asset commands"
         );
 
-        // The upload buffer: vertices, indices, and materials in that order, then every texture's levels.
+        // The upload buffer: vertices, indices, materials, and skins in that order, then every texture's levels.
         var upload = _upload.Mapped;
         ulong offset = 0;
         _vertexCopy = new BufferCopy(offset, 0, vertexBytes);
@@ -140,6 +180,8 @@ public sealed unsafe partial class MeshAssetPass
         }
 
         offset = AlignLevel(offset + materialBytes);
+        _skinCopy = new BufferCopy(offset, 0, skinBytes);
+        offset = CopyAll(upload, offset, static asset => asset.Skin ?? []);
         _textures = new GpuImage[textures.Count];
         _textureCopies = new BufferImageCopy[textures.Count][];
         for (var t = 0; t < textures.Count; t++)
@@ -282,7 +324,8 @@ public sealed unsafe partial class MeshAssetPass
 
     /// <summary>
     /// Set 1 of the asset pipelines (<c>mesh-asset-data.glsl</c>): the six samplers, fixed in the layout; the textures;
-    /// and the vertices, the materials, and every slot's draws.
+    /// the vertices, the materials, and every slot's draws; and for the skinning (<c>mesh-skin.comp</c>) the skins, every
+    /// slot's skin groups, and every slot's skinning matrices.
     /// </summary>
     private void CreateDescriptors()
     {
@@ -335,6 +378,27 @@ public sealed unsafe partial class MeshAssetPass
                 DescriptorCount = 1,
                 StageFlags = buffers,
             },
+            new()
+            {
+                Binding = 5,
+                DescriptorType = DescriptorType.StorageBuffer,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.ComputeBit,
+            },
+            new()
+            {
+                Binding = 6,
+                DescriptorType = DescriptorType.StorageBuffer,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.ComputeBit,
+            },
+            new()
+            {
+                Binding = 7,
+                DescriptorType = DescriptorType.StorageBuffer,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.ComputeBit,
+            },
         };
         var layoutInfo = new DescriptorSetLayoutCreateInfo
         {
@@ -349,7 +413,7 @@ public sealed unsafe partial class MeshAssetPass
         {
             new(DescriptorType.Sampler, Samplers),
             new(DescriptorType.SampledImage, textureCount),
-            new(DescriptorType.StorageBuffer, 3),
+            new(DescriptorType.StorageBuffer, 6),
         };
         var poolInfo = new DescriptorPoolCreateInfo
         {
@@ -378,15 +442,19 @@ public sealed unsafe partial class MeshAssetPass
             images[i] = new DescriptorImageInfo(default, _textures[i].View, ImageLayout.ShaderReadOnlyOptimal);
         }
 
-        var infos = stackalloc DescriptorBufferInfo[3]
+        const int bufferCount = 6;
+        var infos = stackalloc DescriptorBufferInfo[bufferCount]
         {
             new(Vertices.Buffer, 0, Vk.WholeSize),
             new(Materials.Buffer, 0, Vk.WholeSize),
             new(Draws.Buffer, 0, Vk.WholeSize),
+            new(Skins.Buffer, 0, Vk.WholeSize),
+            new(SkinGroups.Buffer, 0, Vk.WholeSize),
+            new(Palettes.Buffer, 0, Vk.WholeSize),
         };
         fixed (DescriptorImageInfo* imageInfos = images)
         {
-            var writes = stackalloc WriteDescriptorSet[4];
+            var writes = stackalloc WriteDescriptorSet[1 + bufferCount];
             writes[0] = new WriteDescriptorSet
             {
                 SType = StructureType.WriteDescriptorSet,
@@ -396,7 +464,7 @@ public sealed unsafe partial class MeshAssetPass
                 DescriptorType = DescriptorType.SampledImage,
                 PImageInfo = imageInfos,
             };
-            for (var i = 0; i < 3; i++)
+            for (var i = 0; i < bufferCount; i++)
             {
                 writes[1 + i] = new WriteDescriptorSet
                 {
@@ -409,7 +477,7 @@ public sealed unsafe partial class MeshAssetPass
                 };
             }
 
-            vk.UpdateDescriptorSets(device, 4, writes, 0, null);
+            vk.UpdateDescriptorSets(device, 1 + bufferCount, writes, 0, null);
         }
 
         _context.SetObjectName(ObjectType.DescriptorSet, _set.Handle, "mesh assets");
@@ -429,6 +497,13 @@ public sealed unsafe partial class MeshAssetPass
             ShaderStageFlags.VertexBit,
             (uint)sizeof(MeshShadowConstants),
             "mesh asset shadow layout"
+        );
+        _skinLayout = PipelineFactory.CreateLayout(
+            _context,
+            new ReadOnlySpan<DescriptorSetLayout>(sets, 2),
+            ShaderStageFlags.ComputeBit,
+            (uint)sizeof(MeshSkinConstants),
+            "mesh asset skin layout"
         );
     }
 
@@ -474,12 +549,14 @@ public sealed unsafe partial class MeshAssetPass
             );
         }
 
+        _skinPipeline = PipelineFactory.CreateCompute(_context, _skinSpirv, _skinLayout, "mesh asset skinning");
         _format = format;
         _samples = samples;
     }
 
     private void DestroyPipelines()
     {
+        DestroyPipeline(ref _skinPipeline);
         for (var i = 0; i < MeshAssetLayout.Ranges; i++)
         {
             DestroyPipeline(ref _pipelines[i]);

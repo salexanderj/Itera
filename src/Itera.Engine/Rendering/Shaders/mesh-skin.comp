@@ -1,0 +1,98 @@
+#version 460
+
+// Skins the frame's posed mesh assets (MeshAssetPass.RecordSkinning), before the shadow cascades: each workgroup row is
+// one instance (MeshSkinGroup), each invocation one of its vertices. The vertex (its asset's, unchanged since the
+// upload) is moved by its four joints' skinning matrices (Rig.WritePalette: the inverse bind matrix, then the joint's
+// posed place, uploaded unchanged and used as M * v) blended by its weights, its normal and tangent turned with it and
+// packed again; the rest is copied. Written into the instance's output, in the frame slot's region of the same vertex
+// buffer, which the draws read through their vertexDelta. A vertex whose weights are all zero is copied as it is.
+#extension GL_EXT_scalar_block_layout : require
+#define MESH_ASSET_SKINNING
+#include "mesh-asset-data.glsl"
+
+layout(local_size_x = 64) in;
+
+struct MeshSkinVertex
+{
+    uint joints01;
+    uint joints23;
+    uint weights01;
+    uint weights23;
+};
+
+struct MeshSkinGroup
+{
+    uint sourceFirst;
+    uint skinFirst;
+    uint outputFirst;
+    uint paletteFirst;
+    uint vertexCount;
+};
+
+layout(scalar, set = 1, binding = 5) restrict readonly buffer MeshSkinVertices
+{
+    MeshSkinVertex skinVertices[];
+};
+
+layout(scalar, set = 1, binding = 6) restrict readonly buffer MeshSkinGroups
+{
+    MeshSkinGroup skinGroups[];
+};
+
+// A skinning matrix (a Matrix4x4 of MeshInstances.Palettes, uploaded unchanged).
+struct MeshSkinMatrix
+{
+    mat4 matrix;
+};
+
+layout(scalar, set = 1, binding = 7) restrict readonly buffer MeshSkinPalettes
+{
+    MeshSkinMatrix skinPalettes[];
+};
+
+layout(push_constant, scalar) uniform MeshSkinConstants
+{
+    uint firstGroup;
+    uint groups;
+} skin;
+
+void main()
+{
+    if (gl_WorkGroupID.y >= skin.groups)
+    {
+        return;
+    }
+
+    MeshSkinGroup group = skinGroups[skin.firstGroup + gl_WorkGroupID.y];
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= group.vertexCount)
+    {
+        return;
+    }
+
+    MeshAssetVertex vertex = assetVertices[group.sourceFirst + index];
+    MeshSkinVertex influence = skinVertices[group.skinFirst + index];
+    vec4 weights = vec4(unpackUnorm2x16(influence.weights01), unpackUnorm2x16(influence.weights23));
+    float sum = weights.x + weights.y + weights.z + weights.w;
+    if (sum > 0.0)
+    {
+        weights /= sum;
+        uvec4 joints = uvec4(
+            influence.joints01 & 0xFFFFu,
+            influence.joints01 >> 16u,
+            influence.joints23 & 0xFFFFu,
+            influence.joints23 >> 16u
+        ) + group.paletteFirst;
+        mat4 m = skinPalettes[joints.x].matrix * weights.x
+            + skinPalettes[joints.y].matrix * weights.y
+            + skinPalettes[joints.z].matrix * weights.z
+            + skinPalettes[joints.w].matrix * weights.w;
+        mat3 turn = mat3(m);
+        vec4 tangent = assetTangent(vertex.tangent);
+        vertex.position = (m * vec4(vertex.position, 1.0)).xyz;
+        vertex.normal = assetPackNormal(turn * assetNormal(vertex.normal));
+        vertex.tangent = assetPackTangent(turn * tangent.xyz, tangent.w);
+    }
+
+    assetVertices[group.outputFirst + index] = vertex;
+}

@@ -14,6 +14,7 @@ internal sealed class GltfBuilder
 {
     private const int ComponentFloat = 5126;
     private const int ComponentUnsignedInt = 5125;
+    private const int ComponentUnsignedShort = 5123;
 
     private readonly List<byte> _buffer = [];
     private readonly JsonArray _accessors = [];
@@ -25,6 +26,8 @@ internal sealed class GltfBuilder
     private readonly JsonArray _meshes = [];
     private readonly JsonArray _nodes = [];
     private readonly JsonArray _sceneNodes = [];
+    private readonly JsonArray _skins = [];
+    private readonly JsonArray _animations = [];
 
     public List<string> ExtensionsUsed { get; } = [];
 
@@ -70,6 +73,135 @@ internal sealed class GltfBuilder
 
         AddFloats(floats, values.Length, "VEC4");
         return _accessors.Count - 1;
+    }
+
+    /// <summary>A SCALAR float accessor: an animation's key times.</summary>
+    public int Accessor(ReadOnlySpan<float> values)
+    {
+        var accessor = AddFloats(values.ToArray(), values.Length, "SCALAR");
+        accessor["min"] = new JsonArray(values.Length == 0 ? 0 : values.ToArray().Min());
+        accessor["max"] = new JsonArray(values.Length == 0 ? 0 : values.ToArray().Max());
+        return _accessors.Count - 1;
+    }
+
+    /// <summary>A VEC4 accessor of rotations, x, y, z, w.</summary>
+    public int Accessor(ReadOnlySpan<Quaternion> values)
+    {
+        var vectors = new Vector4[values.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            vectors[i] = new Vector4(values[i].X, values[i].Y, values[i].Z, values[i].W);
+        }
+
+        return Accessor(vectors);
+    }
+
+    /// <summary>
+    /// A MAT4 accessor: glTF stores a matrix's columns for <c>M * v</c>, which are System.Numerics' rows for
+    /// <c>v * M</c>, so the matrices are written row after row.
+    /// </summary>
+    public int Accessor(ReadOnlySpan<Matrix4x4> values)
+    {
+        var floats = new float[values.Length * 16];
+        for (var i = 0; i < values.Length; i++)
+        {
+            var m = values[i];
+            float[] row =
+            [
+                m.M11,
+                m.M12,
+                m.M13,
+                m.M14,
+                m.M21,
+                m.M22,
+                m.M23,
+                m.M24,
+                m.M31,
+                m.M32,
+                m.M33,
+                m.M34,
+                m.M41,
+                m.M42,
+                m.M43,
+                m.M44,
+            ];
+            row.CopyTo(floats, i * 16);
+        }
+
+        AddFloats(floats, values.Length, "MAT4");
+        return _accessors.Count - 1;
+    }
+
+    /// <summary>A VEC4 unsigned-short accessor of joints, four a vertex.</summary>
+    public int Joints(params ushort[] joints)
+    {
+        var bytes = new byte[joints.Length * 2];
+        for (var i = 0; i < joints.Length; i++)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(i * 2), joints[i]);
+        }
+
+        _accessors.Add(
+            new JsonObject
+            {
+                ["bufferView"] = AddView(bytes),
+                ["componentType"] = ComponentUnsignedShort,
+                ["count"] = joints.Length / 4,
+                ["type"] = "VEC4",
+            }
+        );
+        return _accessors.Count - 1;
+    }
+
+    /// <summary>A skin over the nodes <paramref name="joints"/>, with the inverse bind matrices' accessor.</summary>
+    public int Skin(int inverseBinds, params int[] joints)
+    {
+        _skins.Add(
+            new JsonObject
+            {
+                ["inverseBindMatrices"] = inverseBinds,
+                ["joints"] = new JsonArray([.. joints.Select(j => (JsonNode)j)]),
+            }
+        );
+        return _skins.Count - 1;
+    }
+
+    /// <summary>An animation: each channel sets a node's path from its sampler's input times and output values.</summary>
+    public int Animation(
+        string name,
+        params (int Node, string Path, int Input, int Output, string Interpolation)[] channels
+    )
+    {
+        var samplers = new JsonArray();
+        var list = new JsonArray();
+        foreach (var channel in channels)
+        {
+            samplers.Add(
+                new JsonObject
+                {
+                    ["input"] = channel.Input,
+                    ["output"] = channel.Output,
+                    ["interpolation"] = channel.Interpolation,
+                }
+            );
+            list.Add(
+                new JsonObject
+                {
+                    ["sampler"] = samplers.Count - 1,
+                    ["target"] = new JsonObject { ["node"] = channel.Node, ["path"] = channel.Path },
+                }
+            );
+        }
+
+        _animations.Add(
+            new JsonObject
+            {
+                ["name"] = name,
+                ["channels"] = list,
+                ["samplers"] = samplers,
+            }
+        );
+        return _animations.Count - 1;
     }
 
     public int Indices(params uint[] indices)
@@ -133,10 +265,22 @@ internal sealed class GltfBuilder
         int? uv = null,
         int? indices = null,
         int? material = null,
-        int? tangent = null
+        int? tangent = null,
+        int? joints = null,
+        int? weights = null
     )
     {
         var attributes = new JsonObject { ["POSITION"] = position };
+        if (joints is { } j)
+        {
+            attributes["JOINTS_0"] = j;
+        }
+
+        if (weights is { } w)
+        {
+            attributes["WEIGHTS_0"] = w;
+        }
+
         if (normal is { } n)
         {
             attributes["NORMAL"] = n;
@@ -281,6 +425,8 @@ internal sealed class GltfBuilder
         Optional(root, "textures", _textures);
         Optional(root, "images", _images);
         Optional(root, "samplers", _samplers);
+        Optional(root, "skins", _skins);
+        Optional(root, "animations", _animations);
         if (ExtensionsUsed.Count > 0)
         {
             root["extensionsUsed"] = new JsonArray([.. ExtensionsUsed.Select(e => (JsonNode)e)]);

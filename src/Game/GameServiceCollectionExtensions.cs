@@ -104,10 +104,11 @@ public static class GameServiceCollectionExtensions
     }
 
     /// <summary>
-    /// The fixed systems, in their run order: the player and the fox made at the start; the console's cleanup and reset (the
-    /// systems after them put things back in the same step) and its balls; the player's input; what the last physics step did; the
-    /// player's move (it reads the physics' pushes, and stand-ins are placed after it); the stand-ins and the loose
-    /// bodies; and last the streaming centres, from where everything ended up.
+    /// The fixed systems, in their run order: the player made at the start, and the fox (made at the start, then moved
+    /// round and its clip chosen); the console's cleanup and reset (the systems after them put things back in the same
+    /// step) and its balls; the player's input; what the last physics step did; the player's move (it reads the physics'
+    /// pushes, and stand-ins are placed after it); the stand-ins and the loose bodies; the mesh assets' clips moved on,
+    /// after every system that chooses one; and last the streaming centres, from where everything ended up.
     /// </summary>
     private static void AddFixedSystems(IServiceCollection services, BenchmarkSettings? benchmark)
     {
@@ -117,12 +118,14 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<StartPose>(),
             sp.GetRequiredService<ILogger<PlayerSpawnSystem>>()
         ));
-        services.AddScoped<IFixedUpdateSystem>(sp => new FoxSpawnSystem(
+        // The fox chooses its clip before the clips move on (MeshAnimatorSystem).
+        services.AddScoped<IFixedUpdateSystem>(sp => new FoxSystem(
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<MeshAssets>(),
             sp.GetRequiredService<StartPose>(),
             sp.GetRequiredService<SessionService>().Match.Seed,
-            sp.GetRequiredService<ILogger<FoxSpawnSystem>>()
+            sp.GetRequiredService<ILogger<FoxSystem>>(),
+            sp.GetRequiredService<VoxelWorld>()
         ));
         services.AddScoped<IFixedUpdateSystem>(sp => new MapResetSystem(
             sp.GetRequiredService<EcsWorld>().World,
@@ -184,6 +187,10 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<IOptions<EngineOptions>>(),
             sp.GetRequiredService<VoxelTintSampler>(),
             sp.GetRequiredService<ConsoleCommands>()
+        ));
+        services.AddScoped<IFixedUpdateSystem>(sp => new MeshAnimatorSystem(
+            sp.GetRequiredService<EcsWorld>().World,
+            sp.GetRequiredService<MeshAssets>()
         ));
         services.AddScoped<IFixedUpdateSystem>(sp => new StreamingCentreSystem(
             sp.GetRequiredService<EcsWorld>().World,

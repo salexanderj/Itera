@@ -8,7 +8,10 @@ namespace Itera.Engine.Rendering.Meshes;
 /// buffer, one index buffer, one material table, and one texture array for all, each asset's after the one before;
 /// texture 0 is a white stand-in, so an asset's texture i is <see cref="AssetPlace.FirstTexture"/> + i. Its primitives are
 /// listed sorted by the pipeline that draws them (<see cref="MeshAssetRange"/>), so a list's commands, grouped by
-/// primitive in that order, come out grouped by pipeline. Built once, after the run has read its assets.
+/// primitive in that order, come out grouped by pipeline. A skinned asset's joints and weights lie in one skin buffer
+/// (<see cref="AssetPlace.FirstSkin"/>), and its joints' places in the bound pose and their reaches in
+/// <see cref="JointPositions"/> and <see cref="JointReaches"/> (from <see cref="AssetPlace.FirstJoint"/>), which bound a
+/// posed instance. Built once, after the run has read its assets.
 /// </summary>
 public sealed class MeshAssetLayout
 {
@@ -23,9 +26,15 @@ public sealed class MeshAssetLayout
         int vertexCount,
         int indexCount,
         int materialCount,
-        int textureCount
+        int textureCount,
+        int skinVertexCount,
+        Vector3[] jointPositions,
+        float[] jointReaches
     )
     {
+        SkinVertexCount = skinVertexCount;
+        JointPositions = jointPositions;
+        JointReaches = jointReaches;
         Assets = assets;
         Primitives = primitives;
         AssetPrimitives = assetPrimitives;
@@ -57,6 +66,15 @@ public sealed class MeshAssetLayout
     /// <summary>Textures of every asset, and the stand-in at 0.</summary>
     public int TextureCount { get; }
 
+    /// <summary>The skinned assets' vertices, each with a skin entry (<c>MeshSkinVertex</c>).</summary>
+    public int SkinVertexCount { get; }
+
+    /// <summary>Each skinned asset's joints' places in the bound pose, in its space (<c>Rig.BindPositions</c>).</summary>
+    public Vector3[] JointPositions { get; }
+
+    /// <summary>How far from its joint each joint's vertices reach (<c>Rig.Reaches</c>), beside <see cref="JointPositions"/>.</summary>
+    public float[] JointReaches { get; }
+
     /// <summary>The layout of the run's assets, every one read (<see cref="MeshAssets.Loaded"/>).</summary>
     public static MeshAssetLayout From(MeshAssets assets)
     {
@@ -76,15 +94,19 @@ public sealed class MeshAssetLayout
         ArgumentNullException.ThrowIfNull(assets);
         var places = new AssetPlace[assets.Count];
         var unsorted = new List<(PrimitivePlace Place, int Asset, int Local)>();
+        var jointPositions = new List<Vector3>();
+        var jointReaches = new List<float>();
         int vertices = 0,
             indices = 0,
             materials = 0,
-            textures = 1;
+            textures = 1,
+            skins = 0;
         for (var a = 0; a < assets.Count; a++)
         {
             var asset = assets[a];
             var centre = (asset.BoundsMin + asset.BoundsMax) / 2;
             var radius = (asset.BoundsMax - asset.BoundsMin).Length() / 2;
+            var (staticCentre, staticRadius) = UnweightedSphere(asset);
             places[a] = new AssetPlace(
                 vertices,
                 indices,
@@ -93,8 +115,23 @@ public sealed class MeshAssetLayout
                 materials,
                 textures,
                 centre,
-                radius
-            );
+                radius,
+                asset.Rig is null ? -1 : skins,
+                jointPositions.Count,
+                asset.Rig?.JointCount ?? 0,
+                staticCentre,
+                staticRadius
+            )
+            {
+                VertexCount = asset.Vertices.Length,
+            };
+            if (asset.Rig is { } rig)
+            {
+                jointPositions.AddRange(rig.BindPositions);
+                jointReaches.AddRange(rig.Reaches);
+                skins += asset.Vertices.Length;
+            }
+
             for (var p = 0; p < asset.Primitives.Length; p++)
             {
                 var primitive = asset.Primitives[p];
@@ -161,8 +198,36 @@ public sealed class MeshAssetLayout
             vertices,
             indices,
             materials,
-            textures
+            textures,
+            skins,
+            [.. jointPositions],
+            [.. jointReaches]
         );
+    }
+
+    /// <summary>
+    /// The bounding sphere of a skinned asset's vertices that no joint moves (their weights all zero), which stand where
+    /// the asset stores them; a radius of -1 when there are none, or for a static asset.
+    /// </summary>
+    private static (Vector3 Centre, float Radius) UnweightedSphere(MeshAsset asset)
+    {
+        if (asset.Skin is not { } skin)
+        {
+            return (Vector3.Zero, -1);
+        }
+
+        var min = new Vector3(float.MaxValue);
+        var max = new Vector3(float.MinValue);
+        for (var v = 0; v < skin.Length; v++)
+        {
+            if (skin[v].Weights01 == 0 && skin[v].Weights23 == 0)
+            {
+                min = Vector3.Min(min, asset.Vertices[v].Position);
+                max = Vector3.Max(max, asset.Vertices[v].Position);
+            }
+        }
+
+        return min.X > max.X ? (Vector3.Zero, -1) : ((min + max) / 2, (max - min).Length() / 2);
     }
 
     /// <summary>The pipeline range a material's primitives draw in.</summary>
@@ -181,7 +246,9 @@ public sealed class MeshAssetLayout
 
     /// <summary>
     /// An asset's place: its first vertex, index, material, and texture in the pass's buffers, its primitives' first entry
-    /// in <see cref="AssetPrimitives"/> and their count, and its bounding sphere in its own space.
+    /// in <see cref="AssetPrimitives"/> and their count, and its bounding sphere in its own space; for a skinned asset, its
+    /// first skin entry (-1 for a static asset), its first joint in <see cref="JointPositions"/> and its joint count, and
+    /// the sphere of its vertices no joint moves (a radius of -1 for none).
     /// </summary>
     public readonly record struct AssetPlace(
         int FirstVertex,
@@ -191,8 +258,17 @@ public sealed class MeshAssetLayout
         int FirstMaterial,
         int FirstTexture,
         Vector3 Centre,
-        float Radius
-    );
+        float Radius,
+        int FirstSkin = -1,
+        int FirstJoint = 0,
+        int Joints = 0,
+        Vector3 StaticCentre = default,
+        float StaticRadius = -1
+    )
+    {
+        /// <summary>The asset's vertices (from its first to the next asset's).</summary>
+        public int VertexCount { get; init; }
+    }
 
     /// <summary>
     /// A primitive's place: its indices in the pass's index buffer, the vertex its indices count from, its material

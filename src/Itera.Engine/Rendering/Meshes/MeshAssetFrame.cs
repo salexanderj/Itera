@@ -5,10 +5,18 @@ namespace Itera.Engine.Rendering.Meshes;
 
 /// <summary>
 /// What <see cref="MeshAssetDraws"/> wrote into a frame slot's regions for each of the mesh pass's three lists (the
-/// camera's, the near cascade's, the far cascade's): its commands per pipeline range and its draws. Carried to the
-/// render thread in <c>RenderFrame</c>.
+/// camera's, the near cascade's, the far cascade's): its commands per pipeline range and its draws; and the posed
+/// instances to skin (<see cref="MeshSkinGroup"/>), with the most vertices any has and the skinning matrices they take.
+/// Carried to the render thread in <c>RenderFrame</c>.
 /// </summary>
-public readonly record struct MeshAssetFrame(MeshAssetList Camera, MeshAssetList Near, MeshAssetList Far)
+public readonly record struct MeshAssetFrame(
+    MeshAssetList Camera,
+    MeshAssetList Near,
+    MeshAssetList Far,
+    int SkinGroups = 0,
+    int SkinVertices = 0,
+    int SkinJoints = 0
+)
 {
     /// <summary>List 0 (the camera's), 1 (the near cascade's), or 2 (the far cascade's).</summary>
     public MeshAssetList List(int list) =>
@@ -63,4 +71,16 @@ internal interface IMeshAssetTarget
     /// command's first instance is <see cref="MeshAssetPass.DrawBase"/> plus its first draw's place in the list.
     /// </summary>
     Span<DrawIndexedIndirectCommand> CommandsOf(int slot, int list);
+
+    /// <summary>The skin groups of a frame slot, <see cref="MeshAssetPass.MaxSkinGroups"/> long.</summary>
+    Span<MeshSkinGroup> SkinGroupsOf(int slot);
+
+    /// <summary>The skinning matrices of a frame slot, <see cref="MeshInstances.MaxPaletteJoints"/> long.</summary>
+    Span<System.Numerics.Matrix4x4> PalettesOf(int slot);
+
+    /// <summary>The skinned vertices a frame slot's region of the vertex buffer holds (0 without skinned assets).</summary>
+    int SkinVertexCapacity { get; }
+
+    /// <summary>The first vertex of a frame slot's skinned region in the vertex buffer.</summary>
+    int SkinVertexBase(int slot);
 }

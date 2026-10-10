@@ -1,9 +1,11 @@
+using System.Numerics;
 using Itera.Engine.Assets;
 using Itera.Engine.Diagnostics;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Rendering.Memory;
 using Itera.Engine.Rendering.Shaders;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Silk.NET.Vulkan;
 
 namespace Itera.Engine.Rendering.Meshes;
@@ -18,7 +20,11 @@ namespace Itera.Engine.Rendering.Meshes;
 /// white stand-in first), all copied by the first frame from an upload buffer that goes once no frame in flight can read
 /// it. Set 1 of its pipelines holds those, six samplers, and every frame slot's draws (<see cref="MeshAssetDraw"/>),
 /// which <see cref="MeshAssetDraws"/> writes with the indirect commands, grouped into four pipeline ranges
-/// (<see cref="MeshAssetRange"/>). Created before the render thread starts; recorded by the render thread.
+/// (<see cref="MeshAssetRange"/>). Skinned assets also have their joints and weights (<see cref="MeshSkinVertex"/>), and
+/// each frame slot a region of the vertex buffer (<c>Engine:Renderer:SkinMegabytes</c>) that <c>mesh-skin.comp</c> fills
+/// with the frame's posed instances (<see cref="RecordSkinning"/>, before the cascades), from the slot's skin groups
+/// (<see cref="MeshSkinGroup"/>) and skinning matrices. Created before the render thread starts; recorded by the render
+/// thread.
 /// </summary>
 public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders, IMeshAssetTarget, IMeshPassDraws
 {
@@ -31,7 +37,19 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     /// <summary>The samplers of <see cref="MeshSampler"/>, in its order.</summary>
     public const int Samplers = 6;
 
-    private const int Bindings = 5;
+    /// <summary>Posed instances a frame slot skins (one <see cref="MeshSkinGroup"/> each).</summary>
+    public const int MaxSkinGroups = MeshInstances.MaxInstances;
+
+    /// <summary>Vertices one invocation group of <c>mesh-skin.comp</c> skins (its <c>local_size_x</c>).</summary>
+    private const int SkinGroupSize = 64;
+
+    /// <summary>
+    /// The most vertices one posed asset may have: a dispatch row of invocation groups every device takes
+    /// (<c>maxComputeWorkGroupCount</c>'s least, 65,535). Larger assets are drawn unposed.
+    /// </summary>
+    public const int MostSkinnedVertices = 65_535 * SkinGroupSize;
+
+    private const int Bindings = 8;
     private const string MaskDefine = "MESH_ASSET_MASK";
 
     private readonly VulkanContext _context;
@@ -40,6 +58,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     private readonly MeshPass _meshPass;
     private readonly GpuTimer _timer;
     private readonly MeshAssets _assets;
+    private readonly IOptions<EngineOptions> _options;
     private readonly ILogger<MeshAssetPass> _logger;
     private readonly Sampler[] _samplers = new Sampler[Samplers];
     private readonly Pipeline[] _pipelines = new Pipeline[MeshAssetLayout.Ranges];
@@ -51,6 +70,16 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     private GpuBuffer? _materials;
     private GpuBuffer? _draws;
     private GpuBuffer? _commands;
+    private GpuBuffer? _skins;
+    private GpuBuffer? _skinGroups;
+    private GpuBuffer? _palettes;
+    private BufferCopy _skinCopy;
+    private int _skinBase;
+    private int _skinCapacity;
+    private PipelineLayout _skinLayout;
+    private Pipeline _skinPipeline;
+    private byte[] _skinSpirv = [];
+    private bool _fresh;
     private GpuImage[]? _textures;
     private BufferImageCopy[][]? _textureCopies;
     private BufferCopy _vertexCopy;
@@ -83,6 +112,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         MeshPass meshPass,
         GpuTimer timer,
         MeshAssets assets,
+        IOptions<EngineOptions> options,
         ILogger<MeshAssetPass> logger
     )
     {
@@ -92,6 +122,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         _meshPass = meshPass;
         _timer = timer;
         _assets = assets;
+        _options = options;
         _logger = logger;
     }
 
@@ -121,6 +152,21 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
             _textureBytes / (1024.0 * 1024.0),
             drawMegabytes
         );
+        if (_skinCapacity > 0)
+        {
+            var skinMegabytes = (double)_skinCapacity * sizeof(MeshAssetVertex) / (1024.0 * 1024.0);
+            LogSkinning(layout.SkinVertexCount, _skinCapacity, skinMegabytes);
+        }
+
+        // A skinned asset that no frame slot's room can take is always drawn unposed: said once, here.
+        foreach (var place in layout.Assets)
+        {
+            if (place.FirstSkin >= 0 && place.VertexCount > Math.Min(_skinCapacity, MostSkinnedVertices))
+            {
+                LogSkinTooSmall(place.VertexCount, _skinCapacity);
+                break;
+            }
+        }
         WarnBlended();
     }
 
@@ -143,14 +189,45 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     /// <summary>The index in the shaders' draws of list <paramref name="list"/> of <paramref name="slot"/>'s first.</summary>
     public static int DrawBase(int slot, int list) => (slot * MeshPass.Lists + list) * MaxDraws;
 
+    /// <summary>The index in the shaders' skin groups of <paramref name="slot"/>'s first.</summary>
+    public static int GroupBase(int slot) => slot * MaxSkinGroups;
+
+    /// <summary>The index in the shaders' skinning matrices of <paramref name="slot"/>'s first.</summary>
+    public static int PaletteBase(int slot) => slot * MeshInstances.MaxPaletteJoints;
+
+    public Span<MeshSkinGroup> SkinGroupsOf(int slot) =>
+        new(SkinGroups.Mapped + (ulong)GroupBase(slot) * (ulong)sizeof(MeshSkinGroup), MaxSkinGroups);
+
+    public Span<Matrix4x4> PalettesOf(int slot) =>
+        new(Palettes.Mapped + (ulong)PaletteBase(slot) * (ulong)sizeof(Matrix4x4), MeshInstances.MaxPaletteJoints);
+
+    /// <summary>The skinned vertices a frame slot's region holds; 0 when the run read no skinned asset.</summary>
+    public int SkinVertexCapacity => _skinCapacity;
+
+    public int SkinVertexBase(int slot) => _skinBase + slot * _skinCapacity;
+
     /// <summary>
     /// The frame's counts (<see cref="MeshAssetFrame"/>), kept for this frame's recording, and what the main thread wrote
-    /// into <paramref name="slot"/> made visible to the GPU on memory that is not coherent. Render thread, before the mesh
-    /// pass records.
+    /// into <paramref name="slot"/> made visible to the GPU on memory that is not coherent. A frame presented again
+    /// (<paramref name="fresh"/> false, on the way to stopping) skins nothing: its skinned vertices are still in its slot.
+    /// Render thread, before the mesh pass records.
     /// </summary>
-    public void BeginFrame(int slot, in MeshAssetFrame frame)
+    public void BeginFrame(int slot, in MeshAssetFrame frame, bool fresh = true)
     {
         _frame = frame;
+        _fresh = fresh;
+        if (fresh && frame.SkinGroups > 0)
+        {
+            SkinGroups.Flush(
+                (ulong)GroupBase(slot) * (ulong)sizeof(MeshSkinGroup),
+                (ulong)Math.Min(frame.SkinGroups, MaxSkinGroups) * (ulong)sizeof(MeshSkinGroup)
+            );
+            Palettes.Flush(
+                (ulong)PaletteBase(slot) * (ulong)sizeof(Matrix4x4),
+                (ulong)Math.Clamp(frame.SkinJoints, 0, MeshInstances.MaxPaletteJoints) * (ulong)sizeof(Matrix4x4)
+            );
+        }
+
         for (var list = 0; list < MeshPass.Lists; list++)
         {
             var counts = frame.List(list);
@@ -200,6 +277,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         CopyBuffer(commandBuffer, upload, Vertices.Buffer, _vertexCopy);
         CopyBuffer(commandBuffer, upload, Indices.Buffer, _indexCopy);
         CopyBuffer(commandBuffer, upload, Materials.Buffer, _materialCopy);
+        CopyBuffer(commandBuffer, upload, Skins.Buffer, _skinCopy);
         for (var t = 0; t < _textures!.Length; t++)
         {
             var image = _textures[t];
@@ -221,7 +299,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
             _textureCopies[t] = [];
         }
 
-        // The buffers' copies before every later read: vertices and materials in the shaders, indices as indices.
+        // The buffers' copies before every later read: vertices, materials, and skins in the shaders, indices as indices.
         var barrier = new MemoryBarrier2
         {
             SType = StructureType.MemoryBarrier2,
@@ -241,6 +319,60 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
             PMemoryBarriers = &barrier,
         };
         vk.CmdPipelineBarrier2(commandBuffer, &dependency);
+    }
+
+    /// <summary>
+    /// Skins the frame's posed instances (<see cref="MeshSkinGroup"/>) into the slot's region of the vertex buffer, before
+    /// the cascades and the camera read them: one row of invocation groups an instance. Only on a fresh frame. Outside
+    /// rendering. Timed as <see cref="GpuPass.Skinning"/>.
+    /// </summary>
+    public void RecordSkinning(CommandBuffer commandBuffer, int slot, int timerSlot)
+    {
+        var groups = Math.Min(_frame.SkinGroups, MaxSkinGroups);
+        if (!_fresh || groups <= 0 || _frame.SkinVertices <= 0)
+        {
+            return;
+        }
+
+        var vk = _context.Vk;
+        _timer.Begin(commandBuffer, timerSlot, GpuPass.Skinning);
+        vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Compute, _skinPipeline);
+        var set = _set;
+        vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Compute, _skinLayout, 1, 1, &set, 0, null);
+        var constants = new MeshSkinConstants { FirstGroup = (uint)GroupBase(slot), Groups = (uint)groups };
+        vk.CmdPushConstants(
+            commandBuffer,
+            _skinLayout,
+            ShaderStageFlags.ComputeBit,
+            0,
+            (uint)sizeof(MeshSkinConstants),
+            &constants
+        );
+        vk.CmdDispatch(
+            commandBuffer,
+            (uint)((_frame.SkinVertices + SkinGroupSize - 1) / SkinGroupSize),
+            (uint)groups,
+            1
+        );
+
+        // The skinned vertices before the cascades' and the camera's vertex shaders read them. Their last readers, this
+        // slot's frame before, finished before its fence.
+        var barrier = new MemoryBarrier2
+        {
+            SType = StructureType.MemoryBarrier2,
+            SrcStageMask = PipelineStageFlags2.ComputeShaderBit,
+            SrcAccessMask = AccessFlags2.ShaderStorageWriteBit,
+            DstStageMask = PipelineStageFlags2.VertexShaderBit,
+            DstAccessMask = AccessFlags2.ShaderStorageReadBit,
+        };
+        var dependency = new DependencyInfo
+        {
+            SType = StructureType.DependencyInfo,
+            MemoryBarrierCount = 1,
+            PMemoryBarriers = &barrier,
+        };
+        vk.CmdPipelineBarrier2(commandBuffer, &dependency);
+        _timer.End(commandBuffer, timerSlot, GpuPass.Skinning);
     }
 
     /// <summary>
@@ -314,6 +446,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
             _shaders.Compile("mesh-asset-shadow.vert", [count, MaskDefine]),
             _shaders.Compile("mesh-asset-shadow.frag", [count]),
             _shaders.Compile("depth-only.frag"),
+            _shaders.Compile("mesh-skin.comp", [count]),
         };
     }
 
@@ -322,7 +455,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         DestroyPipelines();
         TakeShaders((byte[][])compiled);
         CreatePipelines(_format, _samples);
-        return 2 * MeshAssetLayout.Ranges;
+        return 2 * MeshAssetLayout.Ranges + 1;
     }
 
     /// <summary>Destroys everything the pass made. The GPU must be done with it. Safe to call more than once.</summary>
@@ -349,6 +482,11 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
                 vk.DestroyPipelineLayout(device, _shadowLayout, null);
             }
 
+            if (_skinLayout.Handle != 0)
+            {
+                vk.DestroyPipelineLayout(device, _skinLayout, null);
+            }
+
             if (_descriptorPool.Handle != 0)
             {
                 vk.DestroyDescriptorPool(device, _descriptorPool, null);
@@ -370,6 +508,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
 
         _layout = default;
         _shadowLayout = default;
+        _skinLayout = default;
         _descriptorPool = default;
         _setLayout = default;
         Array.Clear(_samplers);
@@ -385,6 +524,12 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         _materials?.Dispose();
         _draws?.Dispose();
         _commands?.Dispose();
+        _skins?.Dispose();
+        _skinGroups?.Dispose();
+        _palettes?.Dispose();
+        _skins = null;
+        _skinGroups = null;
+        _palettes = null;
         _upload = null;
         _vertices = null;
         _indices = null;
@@ -480,6 +625,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         _maskedShadowVertexSpirv = compiled[4];
         _shadowFragmentSpirv = compiled[5];
         _depthOnlySpirv = compiled[6];
+        _skinSpirv = compiled[7];
     }
 
     private static ulong CommandsOffset(int slot, int list, int first) =>
@@ -517,6 +663,12 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
 
     private GpuBuffer Commands => _commands ?? throw NotInitialised();
 
+    private GpuBuffer Skins => _skins ?? throw NotInitialised();
+
+    private GpuBuffer SkinGroups => _skinGroups ?? throw NotInitialised();
+
+    private GpuBuffer Palettes => _palettes ?? throw NotInitialised();
+
     private static InvalidOperationException NotInitialised() => new("The mesh asset pass has not been initialised.");
 
     [LoggerMessage(
@@ -543,14 +695,30 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         Message = "Mesh assets on the GPU: {Name} has {Count} blended material(s), drawn cut at their alpha cutoff (as masked): the engine has no transparent pass yet"
     )]
     private partial void LogBlendedAsMasked(string name, int count);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Mesh assets on the GPU: {SkinVertices} skinned vertices; posed instances skinned into {Capacity} vertices ({Megabytes:F1} MB) a frame slot"
+    )]
+    private partial void LogSkinning(int skinVertices, int capacity, double megabytes);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Mesh assets on the GPU: a skinned asset of {Vertices} vertices does not fit a frame slot's room for skinned vertices ({Capacity}; Engine:Renderer:SkinMegabytes and the device's storage buffer range) or one skinning: it is drawn unposed"
+    )]
+    private partial void LogSkinTooSmall(int vertices, int capacity);
 }
 
 /// <summary>
 /// What draws inside <see cref="MeshPass"/>'s renderings besides the world and the models (<see cref="MeshAssetPass"/>):
-/// its shadows into each cascade, and its surfaces in the main view after the models. Render thread.
+/// its compute work before the cascades, its shadows into each cascade, and its surfaces in the main view after the
+/// models. Render thread.
 /// </summary>
 public interface IMeshPassDraws
 {
+    /// <summary>Work on the GPU before the cascades, outside rendering: the posed instances' skinning.</summary>
+    void RecordSkinning(CommandBuffer commandBuffer, int slot, int timerSlot);
+
     /// <summary>Draws into cascade <paramref name="cascade"/>'s depth map, inside its rendering; sets its own viewport.</summary>
     void RecordShadows(CommandBuffer commandBuffer, int slot, int cascade);
 

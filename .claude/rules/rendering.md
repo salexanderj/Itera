@@ -239,14 +239,21 @@ world, lit as it is. A frame system adds each one to draw to `MeshInstances` (ru
 shadow)`: the asset's index, a `Matrix4x4` used as `M * v`, a linear RGBA tint, `NoTint` for none, and a `ModelShadow`;
 at most 16,384 a frame, those past it left out with one Warning a run), which `GameLoop` clears on every frame
 path; the engine's `MeshDrawSystem` adds every entity with `MeshPlacement` and `DrawnMesh` (`.claude/rules/systems.md`).
+A skinned asset drawn posed (`AddPosed`) also gives its rig's skinning matrices (`Rig.WritePalette`), kept in the
+frame's pool (`MeshInstances.Palettes`, at most 32,768 a frame).
 `MeshAssetDraws.Write` (main thread, after `WorldMeshes.Upload`, before `MeshView.End`) culls each instance's bounding
-sphere (the asset's, its radius times the transform's largest scale) against the view and both cascades as its shadow
-allows, groups the draws by asset primitive with a counting sort, and writes into the frame slot's regions one
+sphere (the asset's, its radius times the transform's largest scale; a posed instance's from its joints' posed places
+grown by their reaches, `MeshAssetLayout.JointPositions` and `JointReaches`, and its unweighted vertices' sphere) against
+the view and both cascades as its shadow allows, groups the draws by asset primitive with a counting sort, and writes into the frame slot's regions one
 `DrawIndexedIndirectCommand` per primitive with instances (its `vertexOffset` the asset's first vertex, its
-`firstInstance` its first `MeshAssetDraw`: the transform, the material, the tint) for each of three lists, the camera's
+`firstInstance` its first `MeshAssetDraw`: the transform, the material, the tint, the vertex delta) for each of three lists, the camera's
 and the two cascades', each in four ranges of pipeline (`MeshAssetRange`: opaque or masked, one-sided or two-sided);
 at most `MeshAssetPass.MaxDraws` (16,384) draws and `MaxCommands` (4,096) commands a list, a full list warning once.
-The counts travel in `RenderFrame.MeshAssets` (`MeshAssetFrame`).
+Each posed instance any list draws gets a skin group (`MeshSkinGroup`: its asset's first vertex and skin entry, its output's
+first vertex, its first skinning matrix, its vertex count) and its matrices in the slot's regions, and its draws read
+its skinned copy (`MeshAssetDraw.VertexDelta`, added to `gl_VertexIndex`); past the slot's room, or with matrices that
+do not match its rig, it is drawn unposed, with one Warning a run. The counts travel in `RenderFrame.MeshAssets`
+(`MeshAssetFrame`, with the skin groups, their most vertices, and their matrices).
 
 `MeshAssetPass` (`Rendering/Meshes/`) is made at the run's step "mesh assets on the gpu", after "mesh assets" and before
 the render thread: device-local buffers of every asset's vertices (`MeshAssetVertex`, pulled by `gl_VertexIndex`),
@@ -256,10 +263,19 @@ normals), and host-visible draws and commands a frame slot. The first frame copi
 buffer (`RecordUploads`, before the mesh pass), freed `FrameSync.FramesInFlight` frames later. It owns descriptor set 1
 (`mesh-asset-data.glsl`: six immutable samplers, linear with 16x anisotropy where the device can or nearest, each
 repeating, clamped, or mirrored; the textures, `MESH_TEXTURE_COUNT` of them, a white stand-in first, indexed with
-`nonuniformEXT`; the vertices; the materials; the draws); set 0 is `MeshPass`'s. The device's room caps the textures
-(the lower of its per-stage and per-set sampled images less the mesh pass's nine, and its per-stage resources less the
-21 other descriptors and attachment the fragment stage holds); those past it are left out with one Warning, and their
-materials drawn with their factors. Vertices past the device's storage buffer range stop the run at the step. Eight pipelines: the camera's (`mesh-asset.vert`,
+`nonuniformEXT`; the vertices; the materials; the draws; for the skinning, the skins, every slot's skin groups, and every
+slot's skinning matrices); set 0 is `MeshPass`'s. The device's room caps the textures (the lower of its per-stage and
+per-set sampled images less the mesh pass's nine, and its per-stage resources less the 24 other descriptors and
+attachment a stage holds); those past it are left out with one Warning, and their
+materials drawn with their factors. Vertices past the device's storage buffer range stop the run at the step. When the
+run read a skinned asset, the vertex buffer also holds a region for each frame slot (`Engine:Renderer:SkinMegabytes`, 16
+by default, lowered to fit the range), into which `RecordSkinning` (before the cascades, outside rendering; only on a
+fresh frame, since a frame presented again reuses its slot's) dispatches `mesh-skin.comp`: a row of 64-vertex groups
+an instance, each vertex moved by its four joints' matrices blended by its weights, its normal and tangent turned by the
+blended matrix (right for turns and uniform scales; a joint scaled unevenly skews them) and packed again in `Octahedral`'s
+encoding (an unweighted vertex copied; an asset of more than `MostSkinnedVertices`, 4,194,240, or past the slot's room is
+drawn unposed, with one Warning), then a barrier from the compute writes to the
+vertex shaders' reads (timed as `Skinning`, part of `Voxels`). Eight pipelines and the skinning's: the camera's (`mesh-asset.vert`,
 `mesh-asset.frag`) and the cascades' (`mesh-asset-shadow.vert` with `depth-only.frag`, or `mesh-asset-shadow.frag` for
 masked materials), for each range; depth and culling as the world's (back faces culled unless two-sided; the cascades
 drawn from the faces turned away from the sun, so an open single-sided mesh, such as one quad, casts no shadow when
@@ -270,10 +286,11 @@ pipeline on a shader reload. `mesh-asset.frag` draws glTF's base colour (the fac
 and the draw's tint), cut at the alpha cutoff in the masked ranges, the normal map tilting the lit normal in tangent
 space (a two-sided surface's back lit from its own side), the occlusion as the cavity, and the emission as glow, then
 `shadeSurface` with the openness of flat ground; metalness and roughness are read and kept, not drawn. A blended material
-is drawn as masked, with one Warning an asset at the step (no transparent pass yet). A skinned mesh is drawn in the pose
-its file stores until skinning is built (the mesh path's plan, phase 4). Its log line: `Mesh assets on the GPU: N
-vertices, T triangles, M material(s), X texture(s) of Y MB; draws Z MB a frame slot`; the stats line's `mesh assets in
-N frames avg/max` is the `Meshes` pass's GPU time.
+is drawn as masked, with one Warning an asset at the step (no transparent pass yet). Its log lines: `Mesh assets on the
+GPU: N vertices, T triangles, M material(s), X texture(s) of Y MB; draws Z MB a frame slot`, and with skinned assets
+`Mesh assets on the GPU: N skinned vertices; posed instances skinned into V vertices (M MB) a frame slot`; the stats
+line's `mesh assets in N frames avg/max` and `skinning in N frames avg/max` are the `Meshes` and `Skinning` passes' GPU
+time.
 
 ### Files in `src/Itera.Engine`
 

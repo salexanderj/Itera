@@ -520,7 +520,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         _depth.RecordFrameStart(commandBuffer, resolvedInto: _meshPass.Multisampled);
         var meshes = frame.Meshes;
         var assets = frame.MeshAssets;
-        _assetPass.BeginFrame(frame.Slot, in assets);
+        _assetPass.BeginFrame(frame.Slot, in assets, fresh);
         _meshPass.Record(commandBuffer, target, _depth.View, drawn, in view, frame.Slot, in meshes, slot, _assetPass);
         _timer.End(commandBuffer, slot, GpuPass.Voxels);
 

@@ -822,7 +822,12 @@ public sealed partial class GameLoop
         // events give.
         _meshView.Begin(request.Slot, in view);
         var copies = _worldMeshes.Upload(request.Slot, now, in view, _modelInstances.Draws);
-        var meshAssets = _meshAssetDraws.Write(request.Slot, _meshView, _meshInstances.Instances);
+        var meshAssets = _meshAssetDraws.Write(
+            request.Slot,
+            _meshView,
+            _meshInstances.Instances,
+            _meshInstances.Palettes
+        );
         _meshView.End(request.Slot, _pointLights.Frame(now));
         if (_debugLines.Enabled)
         {

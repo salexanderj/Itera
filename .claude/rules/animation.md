@@ -9,7 +9,8 @@ paths:
 ## Poses, clips, and foot IK
 
 `src/Itera.Engine/Animation/` (namespace `Itera.Engine.Animation`) poses jointed bodies; no engine system uses it yet,
-so a game drives it. A `Skeleton` is up to 32 bones (`MaxBones`), each with a parent, a rest turn, a joint axis and its
+so a game drives it. (A glTF model's skeleton and clips are another thing: `Assets/`'s `Rig` and `RigClip`, in floats
+and for drawing only, `.claude/rules/mesh-assets.md`.) A `Skeleton` is up to 32 bones (`MaxBones`), each with a parent, a rest turn, a joint axis and its
 swing, a share of the look (`LookShare`), and its legs (`LegChain`: hip, knee, ankle, foot). A `BodyPose` (this namespace's, not the
 `Components.BodyPose` of a loose body) is a turn per bone, mirrored and blended; an `AnimationClip` is keyframes that add onto a pose, mirrored, with legs it claims. `Aim`
 spreads a look at a point over the skeleton's look bones; `LimbPose` turns a bone towards a world direction and reaches
