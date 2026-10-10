@@ -313,11 +313,12 @@ normals; read from a model's compressed textures, `BC7_SRGB`, `BC7_UNORM`, and `
 4x4 blocks with its own size as the extent), and host-visible draws and commands a frame slot. The first frame copies the buffers and images from one upload
 buffer (`RecordUploads`, before the mesh pass), freed `FrameSync.FramesInFlight` frames later. It owns descriptor set 1
 (`mesh-asset-data.glsl`: six immutable samplers, linear with 16x anisotropy where the device can or nearest, each
-repeating, clamped, or mirrored; the textures, `MESH_TEXTURE_COUNT` of them, a white stand-in first, indexed with
+repeating, clamped, or mirrored; the textures, `MESH_TEXTURE_COUNT` of them (a white stand-in first, the assets',
+then a slot for each image view), indexed with
 `nonuniformEXT`; the vertices; the materials; the draws; for the skinning, the skins, every slot's skin groups, and every
 slot's skinning matrices); set 0 is `MeshPass`'s. The device's room caps the textures (the lower of its per-stage and
 per-set sampled images less the mesh pass's nine, and its per-stage resources less the 25 other descriptors and
-attachment a stage holds); those past it are left out with one Warning, and their
+attachment a stage holds; both less one slot for each image view); those past it are left out with one Warning, and their
 materials drawn with their factors. Vertices past the device's storage buffer range stop the run at the step. When the
 run read a skinned asset, the vertex buffer also holds a region for each frame slot (`Engine:Renderer:SkinMegabytes`, 16
 by default, lowered to fit the range), into which `RecordSkinning` (before the cascades, outside rendering; only on a
@@ -407,7 +408,14 @@ starter's minimap is orthographic; `Asked` reads the ask back), and it is drawn 
 the last update reach its cadence. A HUD layer shows one in a rectangle of screen pixels each frame (`RenderViews.Show`,
 from its `Bounds`, which the surface asks every frame it shows, at the screen's size); the UI pass draws it under the
 UI's pixels (`ui.frag`'s `views[4]`, binding 1, a 1x1 stand-in where there is none; the panels in `UiConstants`),
-dimmed with the picture. A view shows its last update until its next.
+dimmed with the picture. A view shows its last update until its next. A mesh material shows one too
+(`RenderViews.ShowOnMaterial(view, asset, material)`, by the run's asset and material names, at the run's start): each
+declared view has a slot of the asset pass's texture array after the asset textures (a white stand-in until the views
+are made, then its shown image, in the pass's set and every view's: `MeshAssetPass.SetViewImages`), and the material
+reads it for its colour, and for its emission when it glows, clamped, through the colour's texture coordinates
+(`MeshAssetMaterial.ShowingView`; a name no asset has is a Warning at "mesh assets on the gpu"); the mesh sample's
+screen. A view that sees a material showing itself shows its last update there. The picture was tone-mapped and graded
+when it was drawn, and the material shades it again (its colour lit, its glow added), as any texture.
 
 A view draws the world, the models, the mesh assets, the sky, and the point lights, without shadows (the sun lights it
 unshadowed) or particles, with one sample a pixel whatever the world's (`MeshPass` and `MeshAssetPass` make their

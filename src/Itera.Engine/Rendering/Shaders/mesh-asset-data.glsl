@@ -1,7 +1,8 @@
 // The mesh assets' data (MeshAssetPass), the asset pipelines' set 1 (set 0 is MeshPass's, mesh-data.glsl): the
-// samplers, the textures of every asset (MESH_TEXTURE_COUNT of them, the white stand-in first), every asset's vertices
-// (MeshAssetVertex), every asset's materials (MeshAssetMaterial), and the frame's draws of every slot and list
-// (MeshAssetDraw, read at gl_InstanceIndex: a command's first instance names its first draw). The vertex buffer also
+// samplers, the texture slots (MESH_TEXTURE_COUNT of them: the white stand-in first, every asset's textures, then one
+// for each image view, RenderViews), every asset's vertices (MeshAssetVertex), every asset's materials
+// (MeshAssetMaterial), and the frame's draws of every slot and list (MeshAssetDraw, read at gl_InstanceIndex: a
+// command's first instance names its first draw). The vertex buffer also
 // holds each frame slot's skinned vertices, which mesh-skin.comp writes (compiled with MESH_ASSET_SKINNING, where the
 // buffer is writable): a draw adds its vertexDelta to gl_VertexIndex to read them. Mirrors GpuData's MeshAssetVertex,
 // MeshAssetMaterial, and MeshAssetDraw member for member; GpuLayout tests check them.

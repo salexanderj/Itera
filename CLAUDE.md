@@ -157,7 +157,8 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
 - `samples/Itera.SampleMod`: the reference mod. Its build copies the output into
   `src/Game/bin/<Config>/net10.0/Mods/SampleMod/` and into the engine tests' `TestMods/`.
 - `samples/Itera.MeshSample`: a game without voxel terrain (mesh ground and blocks built in code with their colliders,
-  the starter's fox, climbing, balls, and a render pass of its own); README there; its tests in `tests/Itera.MeshSample.Tests`.
+  the starter's fox, climbing, balls, a render pass of its own, and a screen showing an image view); README there; its
+  tests in `tests/Itera.MeshSample.Tests`.
 - `tools/control/`, `tools/benchmark/`, `tools/steam/`: READMEs there. They run the game in `src/Game` and read its data
   folder from its `appsettings.json` (`tools/benchmark/data_folder.py`).
 - `tools/Textures`: makes the world materials' texture sets (compressed DDS files and `set.json`) in

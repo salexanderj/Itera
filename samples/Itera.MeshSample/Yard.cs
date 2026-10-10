@@ -14,8 +14,10 @@ public readonly record struct YardPiece(string Asset, Vector3 Position, float Sc
 /// The sample's world, all built in code: a 60 m square of flat ground (a grey-green checker of 1 m squares), cubes of
 /// stone 1, 2, 3, and 4 m tall that the player climbs (their material <see cref="StoneMaterial"/>, tagged
 /// <see cref="Climbable"/>), two ramps, of 20 and 40 degrees, a pane of glass, and two amber see-through cubes behind it
-/// as the start sees them (blended, two-sided materials: drawn back to front, the far faces through the near). Each
-/// piece is drawn as a mesh asset and collides as the same triangles (<c>MeshColliders</c>).
+/// as the start sees them (blended, two-sided materials: drawn back to front, the far faces through the near), and a
+/// screen 4 m up on a post past the blocks, ahead of the start, that shows the yard camera's picture
+/// (<see cref="YardCamera"/>, an image view shown on its <see cref="ScreenMaterial"/>). Each piece is drawn as a mesh
+/// asset and collides as the same triangles (<c>MeshColliders</c>).
 /// </summary>
 public static class Yard
 {
@@ -25,6 +27,10 @@ public static class Yard
     public const string SteepRamp = "yard-ramp-40";
     public const string Glass = "yard-glass";
     public const string Amber = "yard-amber";
+    public const string Screen = "yard-screen";
+
+    /// <summary>The screen's material that shows the yard camera's picture.</summary>
+    public const string ScreenMaterial = "screen";
 
     /// <summary>The material the player climbs.</summary>
     public const string StoneMaterial = "stone";
@@ -36,8 +42,8 @@ public static class Yard
     public const float GroundHalfMetres = 30;
 
     /// <summary>
-    /// Where the pieces stand: the ground, the four blocks along the north, the ramps to the west and east, and the glass
-    /// pane before the start with the amber cubes beyond it.
+    /// Where the pieces stand: the ground, the four blocks along the north, the ramps to the west and east, the glass
+    /// pane before the start with the amber cubes beyond it, and the screen past the blocks.
     /// </summary>
     public static IReadOnlyList<YardPiece> Pieces { get; } =
     [
@@ -51,6 +57,7 @@ public static class Yard
         new(Glass, new Vector3(2, 0, 1)),
         new(Amber, new Vector3(6, 0, -3)),
         new(Amber, new Vector3(7.5f, 0, -2.5f)),
+        new(Screen, new Vector3(-5, 0, -12)),
     ];
 
     /// <summary>The surface tags of each of the yard's materials: the stone's climbable.</summary>
@@ -69,6 +76,33 @@ public static class Yard
             SeeThroughBox(Glass, "glass", new Vector3(3, 2.5f, 0.1f), new Vector4(0.55f, 0.75f, 0.85f, 0.3f))
         );
         assets.Add(Amber, SeeThroughBox(Amber, "amber", Vector3.One, new Vector4(0.9f, 0.55f, 0.15f, 0.5f)));
+        assets.Add(Screen, ScreenMesh());
+    }
+
+    /// <summary>
+    /// The screen: a dark panel 3.4 m wide, 2 m tall, and 0.12 m deep, 4 m up on a post behind its middle, and on the
+    /// panel's front (+z) a picture 3.2 by 1.8 m (16:9) whose material (<see cref="ScreenMaterial"/>) shows an image view:
+    /// dimly lit, and glowing with it.
+    /// </summary>
+    private static MeshAsset ScreenMesh()
+    {
+        var builder = new Builder();
+        builder.Box(new Vector3(1.6f, 0, -0.1f), new Vector3(1.8f, 4, -0.02f));
+        builder.Box(new Vector3(0, 4, -0.12f), new Vector3(3.4f, 6, 0));
+        builder.NextMaterial();
+        builder.Picture(new Vector3(0.1f, 4.1f, 0.004f), new Vector2(3.2f, 1.8f));
+        var frame = MeshMaterialData.Default with
+        {
+            Name = "screen-frame",
+            BaseColour = new Vector4(0.08f, 0.08f, 0.09f, 1),
+        };
+        var picture = MeshMaterialData.Default with
+        {
+            Name = ScreenMaterial,
+            BaseColour = new Vector4(0.2f, 0.2f, 0.2f, 1),
+            Emission = new Vector3(0.8f),
+        };
+        return builder.Build(Screen, [frame, picture], []);
     }
 
     /// <summary>
@@ -173,6 +207,8 @@ public static class Yard
     {
         private readonly List<MeshAssetVertex> _vertices = [];
         private readonly List<uint> _indices = [];
+        private readonly List<MeshPrimitive> _primitives = [];
+        private int _primitiveStart;
 
         public void Triangle(Vector3 a, Vector3 b, Vector3 c, float uvMetres = 1)
         {
@@ -214,7 +250,46 @@ public static class Yard
             Quad(C(1, 0, 0), C(1, 1, 0), C(1, 1, 1), C(1, 0, 1));
         }
 
+        /// <summary>
+        /// A quad in the plane of x and y facing +z, from <paramref name="corner"/> (its bottom left) across
+        /// <paramref name="size"/>, its texture coordinates 0 to 1 across it, v 0 at its top (an image's first row).
+        /// </summary>
+        public void Picture(Vector3 corner, Vector2 size)
+        {
+            var first = (uint)_vertices.Count;
+            var normal = Vector3.UnitZ;
+            Vector3 a = corner,
+                b = corner + new Vector3(size.X, 0, 0),
+                c = corner + new Vector3(size.X, size.Y, 0),
+                d = corner + new Vector3(0, size.Y, 0);
+            foreach (
+                var (point, uv) in (ReadOnlySpan<(Vector3, Vector2)>)
+                    [(a, new(0, 1)), (b, new(1, 1)), (c, new(1, 0)), (d, new(0, 0))]
+            )
+            {
+                _vertices.Add(
+                    MeshAssetVertex.Pack(point, normal, new Vector4(1, 0, 0, 1), uv, Vector2.Zero, Vector4.One)
+                );
+            }
+
+            _indices.AddRange([first, first + 1, first + 2, first, first + 2, first + 3]);
+        }
+
+        /// <summary>Ends the triangles so far as one primitive of the next material; the rest are the one after.</summary>
+        public void NextMaterial()
+        {
+            _primitives.Add(new MeshPrimitive(_primitiveStart, _indices.Count - _primitiveStart, _primitives.Count));
+            _primitiveStart = _indices.Count;
+        }
+
         public MeshAsset Build(string name, MeshMaterialData material, MeshTextureData[] textures) =>
-            new(name, [.. _vertices], [.. _indices], [new MeshPrimitive(0, _indices.Count, 0)], [material], textures);
+            Build(name, [material], textures);
+
+        /// <summary>The asset: a primitive a material, in order (<see cref="NextMaterial"/> ends each but the last).</summary>
+        public MeshAsset Build(string name, MeshMaterialData[] materials, MeshTextureData[] textures)
+        {
+            NextMaterial();
+            return new(name, [.. _vertices], [.. _indices], [.. _primitives], materials, textures);
+        }
     }
 }

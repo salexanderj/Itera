@@ -17,7 +17,8 @@ public sealed unsafe partial class MeshAssetPass
 
     /// <summary>
     /// What a stage holds beside the textures that counts against the device's per-stage resources: the mesh pass's 18
-    /// descriptors, this set's six storage buffers, and the colour attachment.
+    /// descriptors, this set's six storage buffers, and the colour attachment. The image views' slots (one a view) count
+    /// among the textures.
     /// </summary>
     private const int OtherStageResources = 25;
 
@@ -25,9 +26,9 @@ public sealed unsafe partial class MeshAssetPass
     private static ulong AlignLevel(ulong bytes) => (bytes + 15) & ~15UL;
 
     /// <summary>
-    /// The textures the fragment stage can hold beside <see cref="MeshPass"/>'s: the device's per-stage and per-set limits
-    /// on sampled images less the mesh pass's own, and its per-stage resources less the rest of both sets', at most
-    /// <see cref="MeshAssetMaterial.NoTexture"/>.
+    /// The texture slots the fragment stage can hold beside <see cref="MeshPass"/>'s (the assets' textures and one slot an
+    /// image view share them): the device's per-stage and per-set limits on sampled images less the mesh pass's own, and
+    /// its per-stage resources less the rest of both sets', at most <see cref="MeshAssetMaterial.NoTexture"/>.
     /// </summary>
     private int TextureCapacity()
     {
@@ -43,8 +44,9 @@ public sealed unsafe partial class MeshAssetPass
     /// </summary>
     private void CreateBuffersAndTextures(MeshAssetLayout layout)
     {
-        // Textures past the device's room are left out, their materials drawn with their factors alone.
-        var keptTextures = Math.Min(layout.TextureCount, TextureCapacity());
+        // Textures past the device's room are left out, their materials drawn with their factors alone; the image views'
+        // slots come after the textures kept.
+        var keptTextures = Math.Max(Math.Min(layout.TextureCount, TextureCapacity() - _views.Count), 1);
         if (keptTextures < layout.TextureCount)
         {
             LogTexturesLeftOut(layout.TextureCount - keptTextures, keptTextures - 1);
@@ -171,13 +173,15 @@ public sealed unsafe partial class MeshAssetPass
             var place = layout.Assets[a];
             for (var m = 0; m < asset.Materials.Length; m++)
             {
-                materials[place.FirstMaterial + m] = MeshAssetMaterial.From(
-                    asset.Materials[m],
-                    place.FirstTexture,
-                    keptTextures
-                );
+                var material = asset.Materials[m];
+                var packed = MeshAssetMaterial.From(material, place.FirstTexture, keptTextures);
+                var view = _views.ViewOnMaterial(asset.Name, material.Name);
+                materials[place.FirstMaterial + m] =
+                    view >= 0 ? MeshAssetMaterial.ShowingView(in packed, material, keptTextures + view) : packed;
             }
         }
+
+        ReportUnknownViewMaterials();
 
         offset = AlignLevel(offset + materialBytes);
         _skinCopy = new BufferCopy(offset, 0, skinBytes);
@@ -191,6 +195,30 @@ public sealed unsafe partial class MeshAssetPass
 
         _upload.Flush(0, _upload.Size);
         _textureBytes = textureBytes;
+    }
+
+    /// <summary>A Warning for each material a view is shown on that no asset of the run has.</summary>
+    private void ReportUnknownViewMaterials()
+    {
+        foreach (var shown in _views.MaterialViews)
+        {
+            var found = false;
+            for (var a = 0; a < _assets.Count && !found; a++)
+            {
+                if (string.Equals(_assets[a].Name, shown.Asset, StringComparison.Ordinal))
+                {
+                    foreach (var material in _assets[a].Materials)
+                    {
+                        found |= string.Equals(material.Name, shown.Material, StringComparison.Ordinal);
+                    }
+                }
+            }
+
+            if (!found)
+            {
+                LogUnknownViewMaterial(shown.Asset, shown.Material);
+            }
+        }
     }
 
     /// <summary>
@@ -338,7 +366,7 @@ public sealed unsafe partial class MeshAssetPass
     {
         var vk = _context.Vk;
         var device = _context.Device;
-        var textureCount = (uint)_textures!.Length;
+        var textureCount = (uint)SlotCount;
         var samplers = stackalloc Sampler[Samplers];
         for (var i = 0; i < Samplers; i++)
         {
@@ -580,7 +608,7 @@ public sealed unsafe partial class MeshAssetPass
     /// <summary>A pool for one set of the pass's layout.</summary>
     private DescriptorPool CreatePool()
     {
-        var textureCount = (uint)_textures!.Length;
+        var textureCount = (uint)SlotCount;
         var poolSizes = stackalloc DescriptorPoolSize[3]
         {
             new(DescriptorType.Sampler, Samplers),
@@ -608,7 +636,7 @@ public sealed unsafe partial class MeshAssetPass
     {
         var vk = _context.Vk;
         var device = _context.Device;
-        var textureCount = (uint)_textures!.Length;
+        var textureCount = (uint)SlotCount;
         var setLayout = _setLayout;
         var allocateInfo = new DescriptorSetAllocateInfo
         {
@@ -623,7 +651,9 @@ public sealed unsafe partial class MeshAssetPass
         var images = new DescriptorImageInfo[textureCount];
         for (var i = 0; i < images.Length; i++)
         {
-            images[i] = new DescriptorImageInfo(default, _textures[i].View, ImageLayout.ShaderReadOnlyOptimal);
+            // The asset textures, then each image view's shown image (the white stand-in until the views are made).
+            var view = i < _textures!.Length ? _textures[i].View : ViewImage(i - _textures.Length);
+            images[i] = new DescriptorImageInfo(default, view, ImageLayout.ShaderReadOnlyOptimal);
         }
 
         const int bufferCount = 6;

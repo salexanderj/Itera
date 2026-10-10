@@ -35,6 +35,8 @@ public static class MeshSampleServiceCollectionExtensions
         // The sample's own render pass: the glow round the block the player aims at, which AimHighlightSystem finds.
         services.AddSingleton<AimHighlight>();
         services.AddSingleton<IRenderPass, AimHighlightPass>();
+        // The yard camera's image view, shown on the yard's screen.
+        services.AddSingleton<YardCamera>();
         services.AddScoped<YardColliders>();
         // The play area round the yard: the mover's map edge is a wall at its side, and with the floor 1 m under the
         // ground, a body 11 m under the ground has fallen out.
@@ -174,6 +176,12 @@ public static class MeshSampleServiceCollectionExtensions
             sp.GetRequiredService<CollisionSources>(),
             sp.GetRequiredService<YardColliders>(),
             sp.GetRequiredService<AimHighlight>()
+        ));
+        // The yard camera asked for each frame (any place in the frame group: it reads nothing the others write).
+        services.AddScoped<IFrameUpdateSystem>(sp => new YardCameraSystem(
+            sp.GetRequiredService<EcsWorld>().World,
+            sp.GetRequiredService<YardCamera>(),
+            sp.GetRequiredService<RenderViews>()
         ));
         services.AddScoped<IFrameUpdateSystem>(sp => new LooseBodyModelSystem(
             sp.GetRequiredService<EcsWorld>().World,

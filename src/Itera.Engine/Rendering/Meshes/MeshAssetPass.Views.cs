@@ -22,6 +22,48 @@ public sealed unsafe partial class MeshAssetPass
     }
 
     /// <summary>
+    /// Puts the image views' shown images (<paramref name="shown"/>, in their order) in their slots of the texture array,
+    /// after the asset textures, in the pass's set and in <paramref name="viewSets"/> (each view's of this layout), for the
+    /// materials that show them (<see cref="RenderViews.ShowOnMaterial"/>). At the "image views" step, before the render
+    /// thread, or on it with the device idle: no submitted frame may use the sets.
+    /// </summary>
+    internal void SetViewImages(ReadOnlySpan<ImageView> shown, ReadOnlySpan<DescriptorSet> viewSets)
+    {
+        _viewImages = shown.ToArray();
+        if (shown.IsEmpty)
+        {
+            return;
+        }
+
+        var images = stackalloc DescriptorImageInfo[RenderViews.MostViews];
+        for (var i = 0; i < shown.Length; i++)
+        {
+            images[i] = new DescriptorImageInfo(default, shown[i], ImageLayout.ShaderReadOnlyOptimal);
+        }
+
+        WriteViewImages(_set, images, shown.Length);
+        foreach (var set in viewSets)
+        {
+            WriteViewImages(set, images, shown.Length);
+        }
+    }
+
+    private void WriteViewImages(DescriptorSet set, DescriptorImageInfo* images, int count)
+    {
+        var write = new WriteDescriptorSet
+        {
+            SType = StructureType.WriteDescriptorSet,
+            DstSet = set,
+            DstBinding = 1,
+            DstArrayElement = (uint)_textures!.Length,
+            DescriptorCount = (uint)count,
+            DescriptorType = DescriptorType.SampledImage,
+            PImageInfo = images,
+        };
+        _context.Vk.UpdateDescriptorSets(_context.Device, 1, &write, 0, null);
+    }
+
+    /// <summary>
     /// A set of the pass's layout naming an image view's <paramref name="draws"/>, from a pool of its own
     /// (<paramref name="pool"/>, which the view destroys).
     /// </summary>

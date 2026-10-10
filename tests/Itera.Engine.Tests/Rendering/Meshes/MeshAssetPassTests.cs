@@ -97,6 +97,33 @@ public sealed class MeshAssetPassTests : IDisposable
         );
     }
 
+    /// <summary>
+    /// A material showing an image view reads the view's slot for its colour, blended and clamped, through the colour's
+    /// texture coordinates; for its emission too when it glows; its other textures as before.
+    /// </summary>
+    [Fact]
+    public void A_material_showing_a_view_reads_its_slot_for_the_colour_and_the_glow()
+    {
+        var screen = new MeshMaterialData
+        {
+            BaseColourTexture = new MeshTextureRef(0, MeshSampler.NearestRepeat, 1),
+            NormalTexture = new MeshTextureRef(1, MeshSampler.LinearRepeat, 0),
+            Emission = new System.Numerics.Vector3(0.8f),
+        };
+        var dark = screen with { Emission = System.Numerics.Vector3.Zero };
+
+        var packed = MeshAssetMaterial.From(screen, firstTexture: 3, textureCapacity: 10);
+        var shown = MeshAssetMaterial.ShowingView(in packed, screen, viewTexture: 12);
+        var unlit = MeshAssetMaterial.ShowingView(MeshAssetMaterial.From(dark, 3, 10), dark, viewTexture: 12);
+
+        var view = 12u | ((uint)MeshSampler.LinearClamp << 16) | (1u << 19);
+        Assert.Equal(view, shown.BaseColourTexture);
+        Assert.Equal(view, shown.EmissionTexture);
+        Assert.Equal(packed.NormalTexture, shown.NormalTexture);
+        Assert.Equal(view, unlit.BaseColourTexture);
+        Assert.Equal(MeshAssetMaterial.NoTexture, unlit.EmissionTexture & 0xFFFFu);
+    }
+
     [Fact]
     public void The_layout_places_each_asset_after_the_last_and_groups_primitives_by_range()
     {

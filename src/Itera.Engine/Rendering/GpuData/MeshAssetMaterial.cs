@@ -73,6 +73,29 @@ public struct MeshAssetMaterial
         };
     }
 
+    /// <summary>
+    /// <paramref name="packed"/> with an image view's image (the pass's texture <paramref name="viewTexture"/>, read
+    /// blended and clamped at its edges, through the colour's texture coordinates) in place of its colour texture, and of
+    /// its emission's when it glows (<see cref="Emission"/> above 0), so a screen glows with its picture.
+    /// </summary>
+    public static MeshAssetMaterial ShowingView(in MeshAssetMaterial packed, MeshMaterialData material, int viewTexture)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+        var view = PackTexture(
+            new MeshTextureRef(viewTexture, MeshSampler.LinearClamp, material.BaseColourTexture.UvSet),
+            0,
+            int.MaxValue
+        );
+        var shown = packed;
+        shown.BaseColourTexture = view;
+        if (material.Emission.X > 0 || material.Emission.Y > 0 || material.Emission.Z > 0)
+        {
+            shown.EmissionTexture = view;
+        }
+
+        return shown;
+    }
+
     /// <summary>A texture reference as the shaders read it (see the type's summary).</summary>
     public static uint PackTexture(MeshTextureRef texture, int firstTexture, int textureCapacity)
     {

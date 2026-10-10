@@ -67,6 +67,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     private readonly MeshPass _meshPass;
     private readonly GpuTimer _timer;
     private readonly MeshAssets _assets;
+    private readonly RenderViews _views;
     private readonly IOptions<EngineOptions> _options;
     private readonly ILogger<MeshAssetPass> _logger;
     private readonly Sampler[] _samplers = new Sampler[Samplers];
@@ -76,6 +77,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     private readonly Pipeline[] _viewPipelines = new Pipeline[MeshAssetLayout.ListRanges];
     private Pipeline _viewBlendPipeline;
     private bool _viewPipelinesWanted;
+    private ImageView[] _viewImages = [];
     private MeshAssetLayout? _assetLayout;
     private GpuBuffer? _upload;
     private GpuBuffer? _vertices;
@@ -127,6 +129,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         MeshPass meshPass,
         GpuTimer timer,
         MeshAssets assets,
+        RenderViews views,
         IOptions<EngineOptions> options,
         ILogger<MeshAssetPass> logger
     )
@@ -137,6 +140,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         _meshPass = meshPass;
         _timer = timer;
         _assets = assets;
+        _views = views;
         _options = options;
         _logger = logger;
     }
@@ -503,7 +507,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
 
     public object CompileShaders()
     {
-        var count = $"MESH_TEXTURE_COUNT {Math.Max(_textures?.Length ?? 1, 1)}";
+        var count = $"MESH_TEXTURE_COUNT {Math.Max(_textures is null ? 1 : SlotCount, 1)}";
         return new[]
         {
             _shaders.Compile("mesh-asset.vert", [count]),
@@ -719,6 +723,13 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     private static ulong CommandsOffset(int slot, int list, int first) =>
         ((ulong)CommandBase(slot, list) + (ulong)first) * (ulong)sizeof(DrawIndexedIndirectCommand);
 
+    /// <summary>The texture array's slots: the asset textures kept, then one an image view.</summary>
+    private int SlotCount => _textures!.Length + _views.Count;
+
+    /// <summary>The image view <paramref name="view"/>'s shown image, or the white stand-in until it is made.</summary>
+    private ImageView ViewImage(int view) =>
+        view < _viewImages.Length && _viewImages[view].Handle != 0 ? _viewImages[view] : _textures![0].View;
+
     private GpuBuffer Upload => _upload ?? throw NotInitialised();
 
     private GpuBuffer Vertices => _vertices ?? throw NotInitialised();
@@ -751,6 +762,12 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         double megabytes,
         double drawMegabytes
     );
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Mesh assets on the GPU: an image view is shown on material {Material} of {Asset}, which no mesh asset of the run has"
+    )]
+    private partial void LogUnknownViewMaterial(string asset, string material);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

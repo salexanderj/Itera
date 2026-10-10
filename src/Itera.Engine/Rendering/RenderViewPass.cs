@@ -250,15 +250,19 @@ public sealed partial class RenderViewPass : IDisposable
         _targets = [];
     }
 
+    /// <summary>The views' shown images to the HUD and to the mesh assets' texture array (the pass's set and each view's).</summary>
     private void GiveShownImages()
     {
         Span<ImageView> shown = stackalloc ImageView[RenderViews.MostViews];
+        Span<DescriptorSet> sets = stackalloc DescriptorSet[RenderViews.MostViews];
         for (var i = 0; i < _targets.Length; i++)
         {
             shown[i] = _targets[i].Shown.View;
+            sets[i] = _targets[i].AssetSet;
         }
 
         _uiPass.SetViewImages(shown[.._targets.Length]);
+        _assetPass.SetViewImages(shown[.._targets.Length], sets[.._targets.Length]);
     }
 
     [LoggerMessage(

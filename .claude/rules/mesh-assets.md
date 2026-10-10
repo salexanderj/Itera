@@ -16,9 +16,12 @@ RGBA8 texels with `MeshTextureData.FromRgba`, which makes the mips; `samples/Ite
 in `Octahedral` encodings with the bitangent's sign in the tangent word's top bit, two sets of texture coordinates, and
 a linear RGBA colour) and its 32-bit indices (three a triangle, counter-clockwise from the front, into its own vertices)
 are split into primitives (`MeshPrimitive`), each a run of indices with one material (`MeshMaterialData`: glTF's
-metallic-roughness factors and textures, alpha mode and cutoff, double-sidedness). Its textures (`MeshTextureData`) hold
-every mip level, level 0 first (a compressed one's in whole 4x4 blocks, `MipChain.LevelBytes`), with the model's image
-they were made from (`Image`) and its hash (`SourceHash`). A skinned asset also has a `Rig` and each vertex's joints and weights (`Skin`,
+metallic-roughness factors and textures, alpha mode and cutoff, double-sidedness; a material a game names may show an
+image view instead of its colour texture, `RenderViews.ShowOnMaterial`, `.claude/rules/rendering.md`, "Image views":
+every material of the asset with that name shows it, and one with no name, `""` from a glTF file, cannot be named). Its
+textures (`MeshTextureData`) hold every mip level, level 0 first (a compressed one's in whole 4x4 blocks,
+`MipChain.LevelBytes`), with the model's image they were made from (`Image`) and its hash (`SourceHash`). A skinned
+asset also has a `Rig` and each vertex's joints and weights (`Skin`,
 `MeshSkinVertex`: four 16-bit joints and four 16-bit weights); its vertices are where the mesh was bound. They are drawn
 with the world (`.claude/rules/rendering.md`, "Mesh assets"): an entity with `MeshPlacement` and `DrawnMesh`, posed by a
 `MeshAnimator` (`.claude/rules/systems.md`), or any frame system through `MeshInstances` (`AddPosed` with the rig's

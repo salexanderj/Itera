@@ -446,4 +446,26 @@ public sealed class RenderViewsTests
         Assert.Equal(camera, given);
         Assert.False(views.Asked(map, out _));
     }
+
+    /// <summary>A view is shown on a material by the asset's and the material's names, once a material, before the seal.</summary>
+    [Fact]
+    public void A_view_is_shown_on_a_named_material_once_before_the_seal()
+    {
+        var views = new RenderViews();
+        var first = views.Declare("first", 64, 64);
+        var second = views.Declare("second", 64, 64);
+
+        views.ShowOnMaterial(second, "screen-asset", "screen");
+        views.ShowOnMaterial(first, "screen-asset", "other");
+
+        Assert.Equal(second, views.ViewOnMaterial("screen-asset", "screen"));
+        Assert.Equal(first, views.ViewOnMaterial("screen-asset", "other"));
+        Assert.Equal(-1, views.ViewOnMaterial("screen-asset", "Screen"));
+        Assert.Equal(2, views.MaterialViews.Count);
+        Assert.Throws<ArgumentException>(() => views.ShowOnMaterial(first, "screen-asset", "screen"));
+        Assert.Throws<ArgumentException>(() => views.ShowOnMaterial(first, " ", "screen"));
+        Assert.Throws<ArgumentOutOfRangeException>(() => views.ShowOnMaterial(2, "a", "b"));
+        views.Seal();
+        Assert.Throws<InvalidOperationException>(() => views.ShowOnMaterial(first, "a", "b"));
+    }
 }

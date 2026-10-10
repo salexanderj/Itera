@@ -7,6 +7,12 @@ namespace Itera.Engine.Rendering;
 /// <param name="EveryFrames">The most often the view is drawn: once in this many frames.</param>
 public readonly record struct RenderViewInfo(string Name, int Width, int Height, int EveryFrames);
 
+/// <summary>A mesh asset's material that shows a view (<see cref="RenderViews.ShowOnMaterial"/>).</summary>
+/// <param name="Asset">The mesh asset's name.</param>
+/// <param name="Material">The material's name.</param>
+/// <param name="View">The view's index.</param>
+public readonly record struct MaterialView(string Asset, string Material, int View);
+
 /// <summary>A view shown on the screen this frame, in a rectangle of screen pixels (x and y from the top-left).</summary>
 /// <param name="View">The view's index.</param>
 /// <param name="X">Left edge in pixels.</param>
@@ -48,6 +54,7 @@ public sealed class RenderViews
     private readonly int[] _panelOf = new int[MostViews];
     private int _panelCount;
     private bool _sealed;
+    private readonly List<MaterialView> _materials = [];
 
     public RenderViews()
     {
@@ -186,6 +193,58 @@ public sealed class RenderViews
 
         _panels[slot] = new ViewPanel(view, x, y, width, height);
     }
+
+    /// <summary>
+    /// Shows view <paramref name="view"/> on mesh asset <paramref name="asset"/>'s material named
+    /// <paramref name="material"/> (both as the run's mesh assets name them): its picture in place of the material's colour
+    /// texture, and of its emission's when it glows, through the colour's texture coordinates (a screen showing a camera).
+    /// At the run's start, as views are declared; a material shows one view.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">No view has that index.</exception>
+    /// <exception cref="ArgumentException">A name is empty, or the material shows a view already.</exception>
+    /// <exception cref="InvalidOperationException">The views are sealed.</exception>
+    public void ShowOnMaterial(int view, string asset, string material)
+    {
+        CheckIndex(view);
+        ArgumentException.ThrowIfNullOrWhiteSpace(asset);
+        ArgumentException.ThrowIfNullOrWhiteSpace(material);
+        if (ViewOnMaterial(asset, material) >= 0)
+        {
+            throw new ArgumentException(
+                $"The material '{material}' of '{asset}' shows a view already.",
+                nameof(material)
+            );
+        }
+
+        if (_sealed)
+        {
+            throw new InvalidOperationException(
+                "Views are shown on materials at the run's start; the engine has made their images."
+            );
+        }
+
+        _materials.Add(new MaterialView(asset, material, view));
+    }
+
+    /// <summary>The view mesh asset <paramref name="asset"/>'s material <paramref name="material"/> shows, or -1.</summary>
+    public int ViewOnMaterial(string asset, string material)
+    {
+        foreach (var shown in _materials)
+        {
+            if (
+                string.Equals(shown.Asset, asset, StringComparison.Ordinal)
+                && string.Equals(shown.Material, material, StringComparison.Ordinal)
+            )
+            {
+                return shown.View;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>The materials views are shown on (<see cref="ShowOnMaterial"/>), in the order given.</summary>
+    internal IReadOnlyList<MaterialView> MaterialViews => _materials;
 
     /// <summary>
     /// Whether a frame system asked for view <paramref name="view"/> this frame (<see cref="Draw"/>), and the camera it

@@ -88,7 +88,8 @@ src/Itera.Modding            the mod contract: IGameMod, IModContext, ModManifes
 src/Itera.Engine             everything that is not specific to one game
 src/Game                     the starter game: the executable, its composition, a generator, a palette, a start pose
 samples/Itera.SampleMod      reference mod, copied into the game's Mods/ folder on build
-samples/Itera.MeshSample     a game without voxel terrain: mesh ground and blocks with colliders, the fox, climbing, balls
+samples/Itera.MeshSample     a game without voxel terrain: mesh ground and blocks with colliders, the fox, climbing, balls,
+                             a render pass, a screen showing an image view
 tools/benchmark              scripts that run the GPU benchmark (Engine:Benchmark) and compare runs
 tools/control                game.py: starts a game from a copy of the build and drives it through the control port
 tools/steam                  upload.sh: tests, publishes, and uploads a build to a Steam branch
@@ -612,7 +613,8 @@ HUD in a rectangle. Each view keeps its own lists and records of a frame and dra
 shaders through sets that name them, with one sample a pixel, without shadows or particles, after the world's pass;
 the terrain's levels stay the main camera's, and the world's, the models', and the mesh assets' lists take what each
 view's own frustum holds. Its colour is copied into an image only shaders read, which the UI pass draws under the
-HUD's pixels. The starter's minimap is the example: an orthographic camera at the player's eye looking down, 64 m
+HUD's pixels, and a mesh material may show it (a slot of the asset pass's texture array a view: the mesh sample's
+screen shows a camera over its yard). The starter's minimap is the example: an orthographic camera at the player's eye looking down, 64 m
 across, every fourth frame, in the top-right corner; an update cost 0.74 ms of GPU time on the RX 5700 XT (1.59 ms at
 the world's 4x samples, which is why views draw with one).
 
@@ -1362,7 +1364,8 @@ Engine work that is known and not done:
 - **Rendering a game can extend** (2026-10-10, in phases): the look is data (`RenderLook`), the sun moves, with night,
   mesh assets' blended materials are drawn sorted per object, a game adds passes of its own at five stages
   (`IRenderPass`), a camera's lens may be orthographic, and a game draws views into images (`RenderViews`, the
-  starter's minimap); a mesh material showing a view comes next. Image views draw no shadows or particles yet. A low
+  starter's minimap; a mesh material may show one, the mesh sample's screen). Image views draw no shadows or particles
+  yet, and split screen is not built. A low
   sun's shadow maps cost more (the starter's start view at 2560x1440: 0.15 ms at the engine's sun, 0.19 ms at 30
   degrees, 0.36 ms at 15, 0.40 ms at 5; their longer reach adds 0.01 to 0.03 ms of that); at night they cost 0.015 ms.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no

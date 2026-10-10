@@ -190,7 +190,11 @@ starter's minimap (`src/Game/Minimap.cs`, `MinimapLayer.cs`, `Systems/MinimapSys
    every frame it shows, at the screen's size) and draws its frame and marks round the rectangle, leaving the inside
    clear; register it `services.AddScoped<IMatchUiLayer, MyLayer>()`. The engine's stats line sits in the top-right
    corner too: keep clear of it (the starter's `MinimapLayer` takes it).
-4. Check it: the log's `Image view NAME: ...` line, `validate.sh` windowed and `--offscreen`, a screenshot with the UI
+4. To show it on a mesh material (a screen in the world), call `views.ShowOnMaterial(index, assetName, materialName)`
+   in the same startup: the material shows the picture for its colour, and for its emission when it glows, through its
+   colour's texture coordinates (0 to 1 across the picture, v 0 at its top); the mesh sample's `YardCamera` and the
+   yard's `yard-screen`.
+5. Check it: the log's `Image view NAME: ...` line, `validate.sh` windowed and `--offscreen`, a screenshot with the UI
    (`screenshot 1 PATH`, not `noui`), and its cost in `game.py gpu` (`ImageViews`, a time per update).
 
 ## A test that plays the real game
