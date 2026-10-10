@@ -87,6 +87,87 @@ public sealed class MeshViewTests
     }
 
     [Fact]
+    public void Casters_reach_farther_as_the_sun_sinks()
+    {
+        Assert.Equal(MeshView.CasterMetres, MeshView.CasterReach(ViewConstants.DefaultSunDirection));
+        Assert.Equal(MeshView.CasterMetres, MeshView.CasterReach(SunPath.FromAngles(10, 30)), 3);
+        // A caster as tall at 15 degrees: 100 m times tan 30 over tan 15.
+        Assert.Equal(215.47f, MeshView.CasterReach(SunPath.FromAngles(10, 15)), 1);
+        Assert.Equal(MeshView.MostCasterMetres, MeshView.CasterReach(SunPath.FromAngles(10, 5)));
+        Assert.Equal(MeshView.MostCasterMetres, MeshView.CasterReach(SunPath.FromAngles(10, -5)));
+    }
+
+    /// <summary>
+    /// The test day through the view, a frame every six minutes: the cascades fit at every hour with an image axis that
+    /// turns no more than a few degrees a frame, and the shadow maps are on exactly while the sun is less than 2 degrees
+    /// under the horizon.
+    /// </summary>
+    [Fact]
+    public void A_full_test_day_fits_the_cascades_and_draws_no_shadow_maps_at_night()
+    {
+        var view = NewView();
+        var camera = CameraView.Default with { Position = new Vector3(3, 2, 1) };
+        var atmosphere = Atmosphere.Clear(new Vector3(0.5f, 0.6f, 0.8f));
+        var lastAxis = Vector3.Zero;
+        for (var hours = 0f; hours <= 24; hours += 0.1f)
+        {
+            var sun = SunPath.AtHour(hours);
+            var constants = ViewConstants.Create(in camera, 640, 480, 0, sun, in atmosphere, 100, true);
+
+            view.Begin(0, in constants);
+
+            ref readonly var lighting = ref _target.LightingOf(0);
+            Assert.Equal(sun.Y > SunPath.NightSine ? 1u : 0u, lighting.Shadows);
+            var near = lighting.Near;
+            Assert.True(float.IsFinite(near.M11 + near.M22 + near.M33 + near.M41 + near.M42 + near.M43));
+            var axis = Vector3.Normalize(new Vector3(near.M11, near.M21, near.M31));
+            Assert.Equal(0, Vector3.Dot(axis, sun), 4);
+            if (lastAxis != Vector3.Zero)
+            {
+                var turn = MathF.Acos(Math.Clamp(Vector3.Dot(axis, lastAxis), -1, 1)) * 180 / MathF.PI;
+                Assert.True(turn < 5, $"{hours} h: the image axis turned {turn} degrees");
+            }
+
+            lastAxis = axis;
+        }
+    }
+
+    /// <summary>
+    /// A sun that passes straight overhead turns the maps' image axis a little each frame (the fit's own axis would turn
+    /// half round as it passes); a match's end forgets it, so the next match's fixed sun gets the fit's own axis again.
+    /// </summary>
+    [Fact]
+    public void A_sun_passing_overhead_turns_the_maps_a_little_a_frame_and_a_matchs_end_forgets_it()
+    {
+        var view = NewView();
+        var constants = LookingAlongMinusZ(ViewSwitches.Shadows);
+        var lastAxis = Vector3.Zero;
+        for (var degrees = 80f; degrees <= 100; degrees += 0.1f)
+        {
+            var angle = degrees * MathF.PI / 180;
+            constants.SunDirection = new Vector3(MathF.Cos(angle), MathF.Sin(angle), 0);
+            view.Begin(0, in constants);
+            var near = _target.LightingOf(0).Near;
+            var axis = Vector3.Normalize(new Vector3(near.M11, near.M21, near.M31));
+            if (lastAxis != Vector3.Zero)
+            {
+                var turn = MathF.Acos(Math.Clamp(Vector3.Dot(axis, lastAxis), -1, 1)) * 180 / MathF.PI;
+                Assert.True(turn < 0.5f, $"{degrees} degrees: the image axis turned {turn} degrees");
+            }
+
+            lastAxis = axis;
+        }
+
+        constants.SunDirection = ViewConstants.DefaultSunDirection;
+        view.ForgetSun();
+        view.Begin(0, in constants);
+        var forgotten = _target.LightingOf(0).Near;
+        var fresh = NewView();
+        fresh.Begin(0, in constants);
+        Assert.Equal(_target.LightingOf(0).Near, forgotten);
+    }
+
+    [Fact]
     public void A_frame_allocates_nothing()
     {
         var view = NewView();

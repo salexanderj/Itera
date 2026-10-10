@@ -912,6 +912,8 @@ public sealed partial class GameLoop
             _worldOnGpu = false;
         }
 
+        _meshView.ForgetSun();
+
         _pointLights.Clear();
     }
 
@@ -966,7 +968,7 @@ public sealed partial class GameLoop
             request.Width,
             request.Height,
             request.Slot,
-            ViewConstants.DefaultSunDirection,
+            _renderView.DrawnSun,
             in atmosphere,
             _maxViewDistance,
             _renderView.Shadows,

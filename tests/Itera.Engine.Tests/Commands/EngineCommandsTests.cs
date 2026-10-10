@@ -337,6 +337,38 @@ public sealed class EngineCommandsTests : IDisposable
         Assert.Equal("Exposure 0.5", Last());
     }
 
+    /// <summary>
+    /// <c>sun</c> and <c>time</c> set the run's sun in place of the game's (at night, said so), and off gives the game's
+    /// back; angles or a time out of range change nothing.
+    /// </summary>
+    [Fact]
+    public void Sun_and_time_set_the_runs_sun_and_off_gives_the_games_back()
+    {
+        Run("sun");
+        Assert.Equal("sun azimuth 126.9 elevation 58 (the game's)", Last());
+
+        Run("sun 90 30");
+        Assert.Equal("sun azimuth 90 elevation 30 (set for this run)", Last());
+        Assert.Equal(SunPath.FromAngles(90, 30), _view.DrawnSun);
+
+        Run("time 22:30");
+        Assert.EndsWith("(set for this run, night)", Last(), StringComparison.Ordinal);
+        Assert.Equal(SunPath.AtHour(22.5f), _view.DrawnSun);
+
+        foreach (
+            var line in (string[])["sun 1 100", "sun nan 4", "sun 1", "time 25:00", "time 24:30", "time 7", "time 7:60"]
+        )
+        {
+            Run(line);
+            Assert.StartsWith("usage: ", Last(), StringComparison.Ordinal);
+        }
+
+        Assert.Equal(SunPath.AtHour(22.5f), _view.DrawnSun);
+        Run("time off");
+        Assert.Null(_view.SunOverride);
+        Assert.Equal(ViewConstants.DefaultSunDirection, _view.DrawnSun);
+    }
+
     [Theory]
     [InlineData("shadows maybe")]
     [InlineData("scale 1.5")]

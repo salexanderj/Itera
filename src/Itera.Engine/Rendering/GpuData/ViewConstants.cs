@@ -54,7 +54,10 @@ public struct ViewConstants
     /// <summary>True when every switch in <paramref name="switches"/> is on.</summary>
     public readonly bool Has(ViewSwitches switches) => (Switches & switches) == switches;
 
-    /// <summary>The sun's direction until lighting has options: high, from the south-east.</summary>
+    /// <summary>
+    /// The engine's sun, high (58 degrees) and from +x and +z, which an atmosphere without a sun direction gives and the
+    /// test clock's noon is (<see cref="SunPath.AtHour"/>).
+    /// </summary>
     public static Vector3 DefaultSunDirection { get; } = Vector3.Normalize(new Vector3(0.4f, 0.8f, 0.3f));
 
     /// <summary>
@@ -101,7 +104,10 @@ public struct ViewConstants
             SkyHorizon = atmosphere.SkyHorizon,
             Slot = (uint)slot,
             MaxDistance = maxDistance,
-            Switches = (shadows ? ViewSwitches.Shadows : ViewSwitches.None) | (debugViews & DebugViewSwitches),
+            // At night (the sun under the horizon) no shadow maps are drawn: the sun lights nothing (LookConstants).
+            Switches =
+                (shadows && SunPath.CastsShadows(sunDirection) ? ViewSwitches.Shadows : ViewSwitches.None)
+                | (debugViews & DebugViewSwitches),
             Width = RenderScale.Apply(width, renderScale),
             Height = RenderScale.Apply(height, renderScale),
             SunColour = atmosphere.SunColour,

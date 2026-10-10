@@ -28,7 +28,7 @@ Ordered by how many game types each blocks.
    reaches 2 km at most; nothing shifts the origin. Blocks open worlds, flight, space, and long race tracks.
 3. **Rendering is closed to a game.** The pass list is fixed in `FrameRenderer.Record`, and `IFrameRenderer` and
    `PipelineFactory` are internal; no transparent pass (only particles blend); the look was constants in the shaders
-   (now data a game sets, `RenderLook`, 2026-10-10); the sun's direction is fixed (`ViewConstants.DefaultSunDirection`); no spot lights or shadowed point
+   (now data a game sets, `RenderLook`, 2026-10-10); the sun's direction was fixed (now a game sets it, with night, 2026-10-10); no spot lights or shadowed point
    lights; one perspective camera (`mesh.vert` always divides by depth; `RenderView` holds one camera), so no
    orthographic view, split screen, minimap, or render to texture.
 4. **Sessions are one host with clients.** At most 16 slots (`SessionProtocol.MaxSlots`); clients reach each other only

@@ -24,7 +24,7 @@ void main()
     }
     else
     {
-        float sunlight = max(dot(inNormal, view.sunDirection), 0.0) * inLight.x;
+        float sunlight = max(dot(inNormal, view.sunDirection), 0.0) * inLight.x * LOOK.daylight;
         vec3 light = view.sunColour * sunlight + ambientLight(inNormal, 1.0) * inLight.z;
         shaded = inColour * (light + inLight.y);
     }

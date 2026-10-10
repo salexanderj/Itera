@@ -14,7 +14,18 @@ namespace Itera.Engine.Rendering;
 /// <param name="Overcast">0 to 1: flattens the sky towards its horizon colour and hides the sun's disc.</param>
 /// <param name="Grade">0 to 1: how far the picture is desaturated, darkened, and shifted towards the sky's hue. 0 leaves
 /// it as the tone curve gives it.</param>
-public readonly record struct Atmosphere(Vector3 SkyHorizon, Vector3 SunColour, float Haze, float Overcast, float Grade)
+/// <param name="SunDirection">From the ground towards the sun (any length); zero, the default, is the engine's sun
+/// (<see cref="GpuData.ViewConstants.DefaultSunDirection"/>). Its light fades out from 2 degrees over the horizon to 2
+/// degrees under it, where night starts: no sunlight, no disc, and no shadow maps (<see cref="SunPath"/>). A game's moon
+/// is this light at night, dim and cool.</param>
+public readonly record struct Atmosphere(
+    Vector3 SkyHorizon,
+    Vector3 SunColour,
+    float Haze,
+    float Overcast,
+    float Grade,
+    Vector3 SunDirection = default
+)
 {
     /// <summary>The sunlight used before the atmosphere had options: slightly warm white.</summary>
     public static Vector3 DefaultSunColour => new(1.0f, 0.93f, 0.82f);
@@ -27,6 +38,12 @@ public readonly record struct Atmosphere(Vector3 SkyHorizon, Vector3 SunColour, 
     /// layout of GLSL's <c>unpackUnorm4x8</c>: x haze, y overcast, z grade, w unused). Values are clamped to 0 to 1.
     /// </summary>
     public uint PackAir() => Byte(Haze) | Byte(Overcast) << 8 | Byte(Grade) << 16;
+
+    /// <summary>The unit direction towards the sun: <see cref="SunDirection"/>, or the engine's sun when it is zero.</summary>
+    public Vector3 TowardsSun =>
+        !(SunDirection.LengthSquared() is > 1e-12f and < float.PositiveInfinity)
+            ? GpuData.ViewConstants.DefaultSunDirection
+            : Vector3.Normalize(SunDirection);
 
     private static uint Byte(float value) => (uint)MathF.Round(Math.Clamp(value, 0f, 1f) * 255f);
 }

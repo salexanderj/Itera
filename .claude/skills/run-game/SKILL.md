@@ -191,7 +191,11 @@ lists the commands (`ConsoleCommands`):
   keeps part of its set's colour variation and relief (0 to 1) and softens it by mip levels (0 to 4);
   `bake ID top|side [NAME]` writes material ID's recipe as images for `tools/Textures` into the data folder's `Bakes/`;
   the run's only), `look` (every value of the look, `RenderLook`, with `*` on those set here; NAME prints one; NAME VALUE,
-  or NAME R G B for a colour, sets it over every frame's look; reset gives the game's back; the run's only), `stats`,
+  or NAME R G B for a colour, sets it over every frame's look; reset gives the game's back; the run's only), `sun`
+  [AZIMUTH ELEVATION|off] (the sun towards AZIMUTH degrees from -z round towards +x and ELEVATION over the horizon, in
+  place of the game's; under 2 degrees below the horizon it is night: no sunlight or shadow maps; the run's only),
+  `time` [HH:MM|off] (the sun at a time of a test day: sunrise 06:00, the engine's sun at 12:00, sunset 18:00; the
+  run's only), `stats`,
   `screenshot` [SCALE] [noui] [PATH.png] (a PNG at PATH.png or in the data folder's
   `Screenshots/`), `wait` (loaded, view (the view's world loaded and on the GPU, as the loading screen waits for), ticks
   N, frames N, or seconds N of real time, then an optional timeout in seconds), `shaders` [reload] (the folder shaders

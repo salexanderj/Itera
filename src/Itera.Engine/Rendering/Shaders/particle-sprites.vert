@@ -77,7 +77,8 @@ void main()
     {
         float sunlight = float(particle.packed >> PARTICLE_SUN_SHIFT) / 255.0;
         float sky = float((particle.packed >> PARTICLE_SKY_SHIFT) & 255u) / 255.0;
-        light = view.sunColour * (0.6 * sunlight) + ambientLight(vec3(0.0, 1.0, 0.0), 1.0) * sky + recipe.glow;
+        light = view.sunColour * (0.6 * sunlight * LOOK.daylight) + ambientLight(vec3(0.0, 1.0, 0.0), 1.0) * sky
+            + recipe.glow;
     }
 
     float opacity = colour.a;

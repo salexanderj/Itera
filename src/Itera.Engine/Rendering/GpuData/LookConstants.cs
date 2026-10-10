@@ -11,7 +11,7 @@ namespace Itera.Engine.Rendering.GpuData;
 /// </summary>
 public struct LookConstants
 {
-    /// <summary>The sunlight: the sun's colour times the look's warmth.</summary>
+    /// <summary>The sunlight: the sun's colour times the look's warmth, faded out as the sun sets (<see cref="SunPath.Daylight"/>).</summary>
     public Vector3 SunLight;
     public float WorldSaturation;
     public Vector3 ShadeCool;
@@ -37,7 +37,7 @@ public struct LookConstants
     public Vector3 GradeLights;
     public float LightsAbove;
 
-    /// <summary>The sun's disc: the sun's colour times the look's disc strength, less what the overcast hides.</summary>
+    /// <summary>The sun's disc: the sun's colour times the look's disc strength, less what the overcast hides, faded out as it sets.</summary>
     public Vector3 SunDisc;
     public float SunDiscSharpness;
 
@@ -58,6 +58,9 @@ public struct LookConstants
     public float HazePerMetre;
     public float Exposure;
 
+    /// <summary>How much of its light the sun gives (<see cref="SunPath.Daylight"/>): the particles' sunlight, which takes no warmth.</summary>
+    public float Daylight;
+
     private static readonly Vector3 s_luma = new(0.2126f, 0.7152f, 0.0722f);
 
     /// <summary>
@@ -69,9 +72,11 @@ public struct LookConstants
         var haze = (view.Air & 0xFF) / 255f;
         var overcast = ((view.Air >> 8) & 0xFF) / 255f;
         var grade = ((view.Air >> 16) & 0xFF) / 255f;
+        // The sun fades out as it sets and gives no light, and shows no disc, at night.
+        var daylight = SunPath.Daylight(view.SunDirection);
         return new LookConstants
         {
-            SunLight = view.SunColour * look.SunWarmth,
+            SunLight = view.SunColour * look.SunWarmth * daylight,
             WorldSaturation = look.WorldSaturation,
             ShadeCool = look.ShadeCool,
             WorldValue = look.WorldValue,
@@ -88,7 +93,7 @@ public struct LookConstants
             ShadowsBelow = look.ShadowsBelow,
             GradeLights = look.GradeLights,
             LightsAbove = look.LightsAbove,
-            SunDisc = view.SunColour * look.SunDiscStrength * (1 - look.SunDiscOvercast * overcast),
+            SunDisc = view.SunColour * look.SunDiscStrength * (1 - look.SunDiscOvercast * overcast) * daylight,
             SunDiscSharpness = look.SunDiscSharpness,
             GradeHue = view.SkyHorizon / MathF.Max(Vector3.Dot(view.SkyHorizon, s_luma), 0.01f),
             GradeMix = look.GradeDesaturate * grade,
@@ -99,6 +104,7 @@ public struct LookConstants
             FogStart = look.FogStart,
             HazePerMetre = haze / look.HazeHalfMetres,
             Exposure = look.Exposure,
+            Daylight = daylight,
         };
     }
 }

@@ -101,6 +101,15 @@ public sealed class RenderView
     /// </summary>
     public RenderLook Look { get; private set; } = RenderLook.Default;
 
+    /// <summary>
+    /// The console's <c>sun</c> and <c>time</c>: a direction towards the sun for the run in place of the atmosphere's, or
+    /// null.
+    /// </summary>
+    public Vector3? SunOverride { get; set; }
+
+    /// <summary>The direction towards the sun the next frame is drawn with: <see cref="SunOverride"/>, else the atmosphere's.</summary>
+    public Vector3 DrawnSun => SunOverride ?? Atmosphere.TowardsSun;
+
     /// <summary>The console's <c>look</c>: values set for the run over every frame's look.</summary>
     public LookTuning LookTuning { get; } = new();
 

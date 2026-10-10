@@ -42,6 +42,7 @@ struct Look
     float fogStart;
     float hazePerMetre;
     float exposure;
+    float daylight;
 };
 
 layout(scalar, set = LOOK_SET, binding = LOOK_BINDING) restrict readonly buffer Looks

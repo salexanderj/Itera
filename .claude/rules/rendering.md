@@ -75,6 +75,18 @@ the zenith and below-horizon colours, the sun's disc, the grade's hue and amount
 0 binding 17, and binding 8 of the particles' draw set, compiled with `LOOK_BINDING 8`), which `lighting.glsl`,
 `sky.glsl`, `mesh-shade.glsl`, and `mesh.frag` read as `LOOK` (the slot's by `view.slot`).
 
+The sun moves as a game says: its direction is the atmosphere's (`Atmosphere.SunDirection`, from the game's source each
+frame; zero for the engine's, `ViewConstants.DefaultSunDirection`, high from +x and +z; `Atmosphere.TowardsSun`), or the
+console's run-only `sun AZIMUTH ELEVATION` and `time HH:MM` (a test day: sunrise at 06:00, the engine's sun at 12:00,
+sunset at 18:00; `RenderView.SunOverride`, `DrawnSun`). `SunPath` says how much light it gives: all from 2 degrees over
+the horizon, none from 2 degrees under, fading between (the look's sunlight and sun disc, `LookConstants.From`); from 2
+degrees under it is night: `ViewConstants.Create` leaves the shadows switch off, so no caster is listed and the maps
+are only cleared. A game's moon is this light at night, dim and cool, with its own disc (the look's sharpness and
+strength). While the sun moves, `MeshView` carries the maps' image axis from frame to frame
+(`ShadowCascades.ImageAxis`: the least turn that keeps it square to the sun, so it never jumps, also overhead); a sun
+that never moved keeps the fit's own axis, as before, and a match's end forgets the sun (`MeshView.ForgetSun`). The
+particles' sunlight fades with the daylight too (`LookConstants.Daylight`).
+
 Without a window (`Engine:Window:Mode=Offscreen`, `WindowService.Offscreen`) the surface is headless
 (`HeadlessSurfaceSource`, `VK_EXT_headless_surface`; `WindowSurfaceSource` wraps GLFW's for a window: `ISurfaceSource`,
 `SurfaceSource.cs`). Mesa's headless surface offers only UNORM formats, so where the device has
@@ -162,7 +174,8 @@ centre (`WriteCameraNearestFirst`), so the depth test rejects hidden leaves befo
 load order they did not; the shadow lists stay unsorted). The frame's view (`MeshView`, which `GameLoop` starts before
 `WorldMeshes.Upload` and ends after it, and whose frustum, cascades, and lights every list drawn in `MeshPass` shares)
 fits two sun shadow cascades (`ShadowCascades.Fit`: a square round the bounding sphere of the view's slice from 0 to 30 m
-and from 30 m to 200 m or the view distance, its centre snapped to whole texels, reaching 100 m further towards the sun)
+and from 30 m to 200 m or the view distance, its centre snapped to whole texels, reaching 100 m further towards the sun,
+and further as the sun sinks: `MeshView.CasterReach`, up to 300 m)
 and writes the slot's `MeshLighting`; with the view's shadows on, `WorldMeshes` lists the blocks that cast into each
 (`CascadeBounds`): those whose bounding sphere meets the cascade's box and lies inside each plane of its slice that faces
 the sun (a block shades the slice only from the sun's side). The near cascade takes the camera's levels; the far one

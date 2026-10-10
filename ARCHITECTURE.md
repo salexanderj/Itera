@@ -894,7 +894,8 @@ holds the decisions, the measurements, and the history of how it replaced a raym
   is worked out once a frame on the CPU: moving the constants into data left the starter's pictures as they were (within
   1 level) and, with that, made the world pass 1.2 to 2.2 % faster (0.02 to 0.05 ms at 2560x1440 offscreen, 2026-10-10;
   read from the buffer at every pixel instead, it was 1.4 to 2.1 % slower).
-- **Atmosphere** (`RenderView.SetAtmosphere`, in `ViewConstants`): the sky colour, the sun's colour, haze (fog that thickens
+- **Atmosphere** (`RenderView.SetAtmosphere`, in `ViewConstants`): the sun's direction (moving as the game says; under the
+  horizon it is night: no sunlight and no shadow maps, `SunPath`), the sky colour, the sun's colour, haze (fog that thickens
   with distance), overcast (a flatter sky, a hidden sun disc, more sky light), and grade, from a game's `IAtmosphereSource`
   at the camera, so a game can differ by place.
 - **The sky field** (`SkyField`) holds how much of the open sky each cell of a box of 200 x 100 x 200 cells round the view
@@ -1321,8 +1322,10 @@ Engine work that is known and not done:
   (doors, platforms) for the mover, hands and feet placed on walls (IK on mesh rigs), walking on walls and ceilings,
   loading models during play, MikkTSpace tangents, clips from other files by joint name, a bridge from a mesh rig to
   `Skeleton` for foot IK and aim, `KHR_texture_transform`, transparency, morph targets, and GPU culling.
-- **Rendering a game can extend** (2026-10-10, in phases): the look is data (`RenderLook`); a moving sun and night,
-  transparency for mesh assets, passes a game adds, an orthographic lens, and rendering into an image come next.
+- **Rendering a game can extend** (2026-10-10, in phases): the look is data (`RenderLook`) and the sun moves, with night;
+  transparency for mesh assets, passes a game adds, an orthographic lens, and rendering into an image come next. A low
+  sun's shadow maps cost more (the starter's start view at 2560x1440: 0.15 ms at the engine's sun, 0.19 ms at 30
+  degrees, 0.36 ms at 15, 0.40 ms at 5; their longer reach adds 0.01 to 0.03 ms of that); at night they cost 0.015 ms.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no
   engine system replicates players, thrown bodies, or characters; the Zorf TD archive has a working design (a player's
   state every step with the host's checks and corrections, bodies as kinematic mirrors played back a few ticks behind,

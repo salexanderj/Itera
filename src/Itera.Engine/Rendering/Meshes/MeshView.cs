@@ -33,8 +33,20 @@ public sealed class MeshView
     /// <summary>The share of the far cascade's end over which its shadows fade out.</summary>
     internal const float FarFadeShare = 0.1f;
 
-    /// <summary>How far towards the sun beyond a cascade's slice a caster still casts into it.</summary>
-    private const float CasterMetres = 100;
+    /// <summary>
+    /// How far towards the sun beyond a cascade's slice a caster still casts into it with the sun at
+    /// <see cref="CasterElevationDegrees"/> or higher; a lower sun's longer shadows reach farther, up to
+    /// <see cref="MostCasterMetres"/> (<see cref="CasterReach"/>).
+    /// </summary>
+    internal const float CasterMetres = 100;
+
+    /// <summary>The sun's height, in degrees, down to which <see cref="CasterMetres"/> reaches far enough.</summary>
+    internal const float CasterElevationDegrees = 30;
+
+    /// <summary>The casters' reach towards a sun on the horizon.</summary>
+    internal const float MostCasterMetres = 300;
+
+    private static readonly float s_casterTangent = MathF.Tan(CasterElevationDegrees * MathF.PI / 180);
 
     /// <summary>Lights farther than this from the camera are not gathered, in metres.</summary>
     internal const float LightGatherMetres = 48;
@@ -56,6 +68,10 @@ public sealed class MeshView
     private readonly MeshLight[] _offered = new MeshLight[MostOffered];
     private readonly float[] _offeredRanks = new float[MostOffered];
     private int _offeredCount;
+
+    // The last frame's sun, and the shadow maps' image axis since the sun first moved (zero until then: the fit's own).
+    private Vector3 _lastSun;
+    private Vector3 _imageAxis;
 
     public MeshView(MeshPass pass, IOptions<EngineOptions> options)
         : this((IMeshDrawTarget)pass, options) { }
@@ -199,6 +215,17 @@ public sealed class MeshView
     /// </summary>
     private void WriteCascades(int slot, in ViewConstants view)
     {
+        // A sun that moves turns the maps' image axis as little as it turns (no jump as it passes overhead); a sun that
+        // has never moved keeps the fit's own.
+        var sun = view.SunDirection;
+        if (_lastSun != Vector3.Zero && sun != _lastSun)
+        {
+            var previous = _imageAxis != Vector3.Zero ? _imageAxis : ShadowCascades.ImageAxis(_lastSun, Vector3.Zero);
+            _imageAxis = ShadowCascades.ImageAxis(sun, previous);
+        }
+
+        _lastSun = sun;
+        var reach = CasterReach(sun);
         var farEnd = Math.Max(Math.Min(FarShadowMetres, view.MaxDistance), 2 * NearShadowMetres);
         var near = ShadowCascades.Fit(
             view.Position,
@@ -209,7 +236,8 @@ public sealed class MeshView
             NearShadowMetres,
             view.SunDirection,
             _shadowMapTexels,
-            CasterMetres
+            reach,
+            _imageAxis
         );
         var farStart = NearShadowMetres - NearBlendMetres;
         var far = ShadowCascades.Fit(
@@ -221,7 +249,8 @@ public sealed class MeshView
             farEnd,
             view.SunDirection,
             _shadowMapTexels,
-            CasterMetres
+            reach,
+            _imageAxis
         );
         NearCascade.Set(
             in near,
@@ -255,6 +284,33 @@ public sealed class MeshView
             NearBlendStart = farStart,
             FarFadeStart = farEnd * (1 - FarFadeShare),
         };
+    }
+
+    /// <summary>
+    /// Forgets the sun: the next frame's maps take the fit's own image axis, as at the run's start, so a match whose sun
+    /// never moves draws the same shadows whatever the last match's sun did. When a match ends.
+    /// </summary>
+    public void ForgetSun()
+    {
+        _lastSun = Vector3.Zero;
+        _imageAxis = Vector3.Zero;
+    }
+
+    /// <summary>
+    /// How far towards a sun along <paramref name="towardsSun"/> casters still cast into a cascade: what keeps a caster as
+    /// tall as <see cref="CasterMetres"/> reaches at <see cref="CasterElevationDegrees"/> (its shadow's length grows as the
+    /// height's tangent falls), from <see cref="CasterMetres"/> to <see cref="MostCasterMetres"/>.
+    /// </summary>
+    internal static float CasterReach(Vector3 towardsSun)
+    {
+        var sine = towardsSun.Y;
+        if (sine <= 0)
+        {
+            return MostCasterMetres;
+        }
+
+        var tangent = sine / MathF.Sqrt(Math.Max(1 - (sine * sine), 1e-12f));
+        return Math.Clamp(CasterMetres * s_casterTangent / tangent, CasterMetres, MostCasterMetres);
     }
 
     /// <summary>The frustum's side planes from the view's axes (right and up reach the image's edges at unit forward).</summary>

@@ -14,6 +14,23 @@ public sealed class ShadowCascadesTests
     private static readonly float TanHalf = MathF.Tan(MathF.PI / 6);
     private const float Aspect = 16f / 9f;
 
+    private static float Angle(Vector3 a, Vector3 b) =>
+        MathF.Acos(Math.Clamp(Vector3.Dot(Vector3.Normalize(a), Vector3.Normalize(b)), -1, 1)) * 180 / MathF.PI;
+
+    private static float Distance(Matrix4x4 a, Matrix4x4 b)
+    {
+        var most = 0f;
+        for (var row = 0; row < 4; row++)
+        {
+            for (var column = 0; column < 4; column++)
+            {
+                most = MathF.Max(most, MathF.Abs(a[row, column] - b[row, column]));
+            }
+        }
+
+        return most;
+    }
+
     private static Vector3 Sun(float elevationDegrees, float azimuthDegrees)
     {
         var e = elevationDegrees * MathF.PI / 180;
@@ -239,6 +256,59 @@ public sealed class ShadowCascadesTests
         Assert.Throws<ArgumentOutOfRangeException>(() => ShadowCascades.Fit(default, f, r, u, -1, 10, sun, Map, 10));
         Assert.Throws<ArgumentOutOfRangeException>(() => ShadowCascades.Fit(default, f, r, u, 10, 10, sun, Map, 10));
         Assert.Throws<ArgumentOutOfRangeException>(() => ShadowCascades.Fit(default, f, r, u, 10, 5, sun, Map, 10));
+    }
+
+    /// <summary>
+    /// A sun that passes straight overhead turns the maps' image axis with it, a little each step, when the axis is
+    /// carried from step to step; the fit's own axis (world up's cross with the sun) turns half round as it passes.
+    /// </summary>
+    [Fact]
+    public void A_sun_passing_overhead_turns_a_carried_image_axis_smoothly()
+    {
+        var axis = ShadowCascades.ImageAxis(Sun(80, 0), Vector3.Zero);
+        var own = axis;
+        var mostTurn = 0f;
+        var mostOwnTurn = 0f;
+        for (var elevation = 80.05f; elevation <= 100; elevation += 0.05f)
+        {
+            // Past 90 degrees the sun goes on over to the other side.
+            var sun = Sun(elevation, 0);
+            var next = ShadowCascades.ImageAxis(sun, axis);
+            var nextOwn = ShadowCascades.ImageAxis(sun, Vector3.Zero);
+            Assert.Equal(0, Vector3.Dot(next, sun), 5);
+            Assert.Equal(1, next.Length(), 5);
+            mostTurn = MathF.Max(mostTurn, Angle(axis, next));
+            mostOwnTurn = MathF.Max(mostOwnTurn, Angle(own, nextOwn));
+            axis = next;
+            own = nextOwn;
+        }
+
+        Assert.True(mostTurn < 0.1f, $"turned {mostTurn} degrees in a step");
+        Assert.True(mostOwnTurn > 45, $"the fit's own axis turned at most {mostOwnTurn} degrees");
+    }
+
+    [Fact]
+    public void An_image_axis_square_to_the_sun_gives_the_fits_own_matrix_when_it_is_the_fits_own()
+    {
+        Camera(30, -10, out var forward, out var right, out var up);
+        var sun = Sun(40, 120);
+        var own = ShadowCascades.Fit(new Vector3(5, 2, -3), forward, right, up, Near, Far, sun, Map, Caster);
+
+        var given = ShadowCascades.Fit(
+            new Vector3(5, 2, -3),
+            forward,
+            right,
+            up,
+            Near,
+            Far,
+            sun,
+            Map,
+            Caster,
+            ShadowCascades.ImageAxis(sun, Vector3.Zero)
+        );
+
+        Assert.True(Distance(own.ViewProjection, given.ViewProjection) < 1e-5f);
+        Assert.Equal(own.TexelMetres, given.TexelMetres);
     }
 
     [Fact]

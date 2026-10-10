@@ -14,7 +14,8 @@ namespace Itera.Engine.Commands;
 /// <summary>
 /// The engine's console commands, all <see cref="CommandScope.Local"/>: <c>help</c>, <c>clear</c>, <c>lines</c>,
 /// <c>shadows</c>, <c>scale</c> (the render scale), <c>aa</c>, <c>lights</c> (test lights), <c>view</c> (the debug views),
-/// <c>materials</c>, <c>look</c> (the look's values), <c>stats</c> (its key, F1 by default),
+/// <c>materials</c>, <c>look</c> (the look's values), <c>sun</c> and <c>time</c> (the run's sun), <c>stats</c> (its key,
+/// F1 by default),
 /// <c>screenshot</c>, <c>wait</c> (holds a script: <see cref="DevConsole.Hold"/>), <c>shaders</c>, and <c>quit</c>. A setting given no value prints what it is. <c>shadows</c>
 /// changes the player's settings (<see cref="PlayerSettings"/>), as the menu does, so the next change of another
 /// setting keeps it (otherwise it would put the file's back).
@@ -136,6 +137,20 @@ public sealed class EngineCommands
             "The look for this run (not saved; RenderLook): with no name lists every value (* marks one set here), NAME prints one, VALUE (or R G B for a colour) sets it over every frame's look, reset gives every value back to the game's.",
             CommandScope.Local,
             Look
+        );
+        _commands.Register(
+            "sun",
+            "[AZIMUTH ELEVATION|off]",
+            "The sun for this run (not saved): towards AZIMUTH degrees (from -z round towards +x) and ELEVATION degrees over the horizon, in place of the game's; its light fades out from 2 degrees over the horizon to 2 under, where night starts (no sunlight, no shadow maps); off gives the game's back.",
+            CommandScope.Local,
+            Sun
+        );
+        _commands.Register(
+            "time",
+            "[HH:MM|off]",
+            "The sun for this run at a time of a test day (not saved): sunrise at 06:00, the engine's sun at 12:00, sunset at 18:00, night between; off gives the game's back.",
+            CommandScope.Local,
+            Time
         );
         _commands.Register(
             "stats",
@@ -508,6 +523,81 @@ public sealed class EngineCommands
         tuning.Set(index, new Vector3(parts[0], parts[1], parts[2]));
         look = _view.DrawnLook;
         context.Print(DescribeLook(index, in look));
+    }
+
+    /// <summary>The sun for the run at compass angles (<see cref="SunPath.FromAngles"/>), or the game's again.</summary>
+    private void Sun(CommandContext context)
+    {
+        if (context.Count == 1 && context.Is(0, "off"))
+        {
+            _view.SunOverride = null;
+        }
+        else if (context.Count == 2)
+        {
+            if (
+                !context.TryGetFloat(0, out var azimuth)
+                || !context.TryGetFloat(1, out var elevation)
+                || !float.IsFinite(azimuth)
+                || elevation is < -90 or > 90
+            )
+            {
+                context.PrintUsage();
+                return;
+            }
+
+            _view.SunOverride = SunPath.FromAngles(azimuth, elevation);
+        }
+        else if (context.Count != 0)
+        {
+            context.PrintUsage();
+            return;
+        }
+
+        context.Print(DescribeSun());
+    }
+
+    /// <summary>The sun for the run at a time of the test day (<see cref="SunPath.AtHour"/>), or the game's again.</summary>
+    private void Time(CommandContext context)
+    {
+        if (context.Count == 1 && context.Is(0, "off"))
+        {
+            _view.SunOverride = null;
+        }
+        else if (context.Count == 1)
+        {
+            var parts = context[0].Split(':');
+            if (
+                parts.Length != 2
+                || !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var hours)
+                || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var minutes)
+                || hours > 24
+                || minutes > 59
+                || (hours == 24 && minutes > 0)
+            )
+            {
+                context.PrintUsage();
+                return;
+            }
+
+            _view.SunOverride = SunPath.AtHour(hours + (minutes / 60f));
+        }
+        else if (context.Count != 0)
+        {
+            context.PrintUsage();
+            return;
+        }
+
+        context.Print(DescribeSun());
+    }
+
+    /// <summary>The sun as <c>sun</c> and <c>time</c> print it: its angles, whose it is, and night.</summary>
+    private string DescribeSun()
+    {
+        var sun = _view.DrawnSun;
+        var (azimuth, elevation) = SunPath.Angles(sun);
+        var whose = _view.SunOverride is null ? "the game's" : "set for this run";
+        var night = SunPath.CastsShadows(sun) ? "" : ", night";
+        return FormattableString.Invariant($"sun azimuth {azimuth:0.#} elevation {elevation:0.#} ({whose}{night})");
     }
 
     /// <summary>A look value as <c>look</c> prints it: its name, its value, and a star when the console set it.</summary>

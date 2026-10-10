@@ -145,7 +145,11 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
    two looks (`RenderLook.Lerp`); it runs every frame, so it allocates nothing.
 2. Try values live with the console's run-only `look NAME VALUE` (`look NAME R G B` for a colour; `look` lists them,
    `look reset` drops them), then copy the ones chosen into code.
-3. Check it: `game.py shots ... --compare OLD` against a set taken before, and a look at the PNGs.
+3. A moving sun: the source's `At` gives the `Atmosphere` with its `SunDirection` (a day's course, `SunPath.AtHour` the
+   test day's; under the horizon it is night, or a moon as the light with a dim, cool sun colour), and the sky's and the
+   look's colours for the hour.
+4. Check it: `game.py shots ... --compare OLD` against a set taken before, and a look at the PNGs (`time HH:MM` and
+   `sun AZIMUTH ELEVATION` show other hours).
 
 ## A test that plays the real game
 

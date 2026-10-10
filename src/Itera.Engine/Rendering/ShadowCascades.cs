@@ -25,7 +25,8 @@ public static class ShadowCascades
     /// <summary>
     /// Fits one cascade around the slice of the view frustum between two view depths. The square is the slice's
     /// bounding sphere, so its size does not change when the camera only turns. Its centre snaps to whole texels on the
-    /// light's two image axes (which depend on the sun alone), so a fixed world point keeps its place within its texel
+    /// light's two image axes (which depend on the sun, and while it moves on the last frame's axes), so a fixed world
+    /// point keeps its place within its texel
     /// as the camera moves.
     /// </summary>
     /// <param name="position">The camera's position.</param>
@@ -39,6 +40,10 @@ public static class ShadowCascades
     /// <param name="sunDirection">A unit vector from the ground towards the sun.</param>
     /// <param name="mapTexels">The shadow map's width and height in texels.</param>
     /// <param name="casterMetres">How far towards the sun beyond the slice the box reaches.</param>
+    /// <param name="imageAxis">
+    /// The image's x axis, square to the sun (<see cref="ImageAxis"/>, for a sun that moves); zero, the default, takes world
+    /// up's (or, within a degree of straight up or down, +z's) cross with the sun.
+    /// </param>
     /// <remarks>
     /// The radius is the farthest corner's distance from the slice's centre, grown by one part in
     /// <c>mapTexels - 1</c> so that the snap of up to half a texel cannot push a corner out of the square, then rounded
@@ -53,7 +58,8 @@ public static class ShadowCascades
         float farMetres,
         Vector3 sunDirection,
         int mapTexels,
-        float casterMetres
+        float casterMetres,
+        Vector3 imageAxis = default
     )
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(mapTexels, 0);
@@ -108,23 +114,7 @@ public static class ShadowCascades
             sz /= sunLength;
         }
 
-        // The reference axis is world up, or a fixed axis when the sun is within a degree of straight up or down.
-        double rx = 0;
-        double ry = 1;
-        double rz = 0;
-        if (Math.Abs(sy) > NearVerticalDot)
-        {
-            ry = 0;
-            rz = 1;
-        }
-
-        var ax = (ry * sz) - (rz * sy);
-        var ay = (rz * sx) - (rx * sz);
-        var az = (rx * sy) - (ry * sx);
-        var aLength = Math.Sqrt((ax * ax) + (ay * ay) + (az * az));
-        ax /= aLength;
-        ay /= aLength;
-        az /= aLength;
+        AxisSquareTo(sx, sy, sz, imageAxis, out var ax, out var ay, out var az);
         var bx = (sy * az) - (sz * ay);
         var by = (sz * ax) - (sx * az);
         var bz = (sx * ay) - (sy * ax);
@@ -159,6 +149,69 @@ public static class ShadowCascades
             1
         );
         return new CascadeFit(m, (float)texel);
+    }
+
+    /// <summary>
+    /// The image's x axis for a sun towards <paramref name="sunDirection"/> that has moved since the last frame, whose axis
+    /// was <paramref name="previous"/> (zero for none): the last axis turned square to the new sun, the least turn that
+    /// keeps it so, so the map's texels turn no more than the sun does, also when it passes straight overhead; with no last
+    /// axis, or one along the sun, the fit's own (<see cref="Fit"/> without one).
+    /// </summary>
+    public static Vector3 ImageAxis(Vector3 sunDirection, Vector3 previous)
+    {
+        var sun = Vector3.Normalize(sunDirection);
+        AxisSquareTo(sun.X, sun.Y, sun.Z, previous, out var x, out var y, out var z);
+        return new Vector3((float)x, (float)y, (float)z);
+    }
+
+    /// <summary>
+    /// The unit axis square to the unit sun (<paramref name="sx"/>, <paramref name="sy"/>, <paramref name="sz"/>):
+    /// <paramref name="hint"/> less its part along the sun, or, when it is zero or along the sun, world up's cross with
+    /// the sun (+z's within a degree of straight up or down).
+    /// </summary>
+    private static void AxisSquareTo(
+        double sx,
+        double sy,
+        double sz,
+        Vector3 hint,
+        out double ax,
+        out double ay,
+        out double az
+    )
+    {
+        double hx = hint.X;
+        double hy = hint.Y;
+        double hz = hint.Z;
+        var along = (hx * sx) + (hy * sy) + (hz * sz);
+        ax = hx - (along * sx);
+        ay = hy - (along * sy);
+        az = hz - (along * sz);
+        var length = Math.Sqrt((ax * ax) + (ay * ay) + (az * az));
+        if (length > 1e-3)
+        {
+            ax /= length;
+            ay /= length;
+            az /= length;
+            return;
+        }
+
+        // The reference axis is world up, or a fixed axis when the sun is within a degree of straight up or down.
+        double rx = 0;
+        double ry = 1;
+        double rz = 0;
+        if (Math.Abs(sy) > NearVerticalDot)
+        {
+            ry = 0;
+            rz = 1;
+        }
+
+        ax = (ry * sz) - (rz * sy);
+        ay = (rz * sx) - (rx * sz);
+        az = (rx * sy) - (ry * sx);
+        length = Math.Sqrt((ax * ax) + (ay * ay) + (az * az));
+        ax /= length;
+        ay /= length;
+        az /= length;
     }
 
     /// <summary>Corner <paramref name="index"/> of the slice: bit 0 is right, bit 1 is up, bit 2 is near or far.</summary>
