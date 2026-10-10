@@ -616,7 +616,9 @@ view's own frustum holds. Its colour is copied into an image only shaders read, 
 HUD's pixels, and a mesh material may show it (a slot of the asset pass's texture array a view: the mesh sample's
 screen shows a camera over its yard). The starter's minimap is the example: an orthographic camera at the player's eye looking down, 64 m
 across, every fourth frame, in the top-right corner; an update cost 0.74 ms of GPU time on the RX 5700 XT (1.59 ms at
-the world's 4x samples, which is why views draw with one).
+the world's 4x samples, which is why views draw with one). With no view drawn (the benchmark hides the minimap), the
+world pass took the same time as before image views on every benchmark view (-0.4 % to +0.0 %, two offscreen runs each
+at 2560x1440, 2026-10-10).
 
 ## 7. The engine's components and systems
 
