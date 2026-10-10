@@ -2,6 +2,7 @@ using System.Numerics;
 using Itera.Engine.Ecs;
 using Itera.Engine.Matches;
 using Itera.Engine.Physics;
+using Itera.Engine.Rendering;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Itera.Engine.Tests.Matches;
@@ -9,7 +10,8 @@ namespace Itera.Engine.Tests.Matches;
 /// <summary>
 /// <see cref="HeadlessRun"/> and <see cref="HeadlessMatch"/> over the engine's real services and a test game: a match
 /// played with no window or GPU, its fixed steps each followed by a frame, the run's view of it kept up, a retired
-/// model removed after a frame, and the match ended when disposed.
+/// model removed after a frame, an image view's ask and panel forgotten at the next frame, and the match ended when
+/// disposed.
 /// </summary>
 public sealed class HeadlessMatchTests
 {
@@ -73,6 +75,26 @@ public sealed class HeadlessMatchTests
 
         Assert.True(models.Retired.IsEmpty);
         Assert.Equal(before, models.Count);
+    }
+
+    [Fact]
+    public void A_frame_forgets_the_image_views_asked_for_and_shown_before_it_as_the_main_loop_does()
+    {
+        using var provider = EngineComposition.Build(terrain: false);
+        var run = new HeadlessRun(provider);
+        using var match = run.Play(seed: 9);
+        var views = provider.GetRequiredService<RenderViews>();
+        var view = views.Declare("test view", 64, 64);
+        views.Draw(view, CameraView.Default);
+        views.Show(view, 0, 0, 16, 16);
+        Assert.True(views.Asked(view, out _));
+        Assert.Equal(1, views.Panels.Length);
+
+        match.Frame();
+
+        // The test game's frame systems ask for nothing, so nothing is asked for or shown after the frame.
+        Assert.False(views.Asked(view, out _));
+        Assert.Equal(0, views.Panels.Length);
     }
 
     [Fact]

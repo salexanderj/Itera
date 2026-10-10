@@ -125,11 +125,12 @@ installed too. Compiled shaders are cached in the data folder's `ShaderCache` (`
 Without a window (`Engine:Window:Mode=Offscreen`, `WindowService.Offscreen`) the surface is headless
 (`HeadlessSurfaceSource`, `VK_EXT_headless_surface`; `WindowSurfaceSource` wraps GLFW's for a window: `ISurfaceSource`,
 `SurfaceSource.cs`). Mesa's headless surface offers only UNORM formats, so where the device has
-`VK_KHR_swapchain_mutable_format` (enabled where offered, asked of no device: `VulkanContext.SupportsMutableSwapchainFormat`)
-the swapchain is made mutable and its images viewed through their sRGB twin (`VulkanSwapchain.SrgbTwin`):
-`ImageFormat` is the twin, every pass draws as it does into a window's, and screenshots match a window's. Nothing
-paces a headless present, so the render thread starts frames at most `Engine:Window:OffscreenFps` (240) a second
-(`RenderThread`'s frame cap); the world uploads a share each frame, and at 60 the starter's view did not load in 15 s.
+`VK_KHR_swapchain_mutable_format` (enabled where offered, asked of no device:
+`VulkanContext.SupportsMutableSwapchainFormat`) the swapchain is made mutable and its images viewed through their sRGB
+twin (`VulkanSwapchain.SrgbTwin`): `ImageFormat` is the twin, every pass draws as it does into a window's, and
+screenshots match a window's. Nothing paces a headless present, so the render thread starts frames at most
+`Engine:Window:OffscreenFps` (240) a second (`RenderThread`'s frame cap); the world uploads a share each frame, so a low
+cap slows loading (ARCHITECTURE.md has the measurement).
 
 A render scale below 1 draws the world, models, particles, and debug lines into a smaller image, and AMD's FSR 1
 (`UpscalePass`: EASU, then RCAS; `fsr-easu.frag`, `fsr-rcas.frag` over `ffx_a.glsl` and
@@ -144,26 +145,25 @@ console's `scale` sets one for the run (`scale auto` gives it back).
 Anti-aliasing: the world is drawn with `Engine:Renderer:MsaaSamples` (4 by default) samples a pixel. With one, SMAA 1x
 runs instead when `Engine:Renderer:AntiAliasing` is on (`SmaaPass`; the console's `aa` for the run). The settings'
 Anti-aliasing (`AntiAliasMode`: Off, SMAA, MSAA 2x, 4x, 8x; `PlayerSettings.SetAntiAliasMode`) sets both; a change of
-the samples raises `PlayerSettings.SamplesChanged`, and the render thread makes the swapchain again with the device idle,
-where `MeshPass.OnSwapchainRecreated` makes its pipelines and multisampled images with the samples asked for
-(`RequestSamples`; the most the device offers up to them). At 2560x1440 on Zorf TD's view along its players' path (a measurement of that game's world) the world took 1.26 ms
-with one sample, 1.65 with two, 1.95 with four, and 2.52 with eight; SMAA adds 0.30. SMAA's shaders: `smaa.glsl` (SMAA.hlsl unchanged, MIT), `smaa-common.glsl`, `smaa-edges.frag`, `smaa-weights.frag`,
-`smaa-blend.frag`, before FSR 1, as AMD asks of its input (`docs/anti-aliasing.md` has the research). The world, models,
-particles, and lines then draw into a scene image of the drawn size; the edges pass finds edges by luma in its
-sRGB-encoded values (a UNORM view), the weights pass works out the blend weights with SMAA's lookup textures
-(`SmaaTextures`, `Smaa/AreaTex.bin` and `SearchTex.bin`, copied to the GPU in the first anti-aliased frame), and the
-blend pass blends in linear light into the swapchain image (scale 1) or FSR 1's source. 0.23
-to 0.31 ms at 2560x1440 on the RX 5700 XT; `aa edges` and `aa weights` show what it found. `FrameImages` keeps the
-drawn-size images of SMAA and the upscale until no frame in flight uses them. The console's `lines` draws the bodies'
-outlines, stand-ins, and collision cells. The console's `view` sets the run's debug views (`RenderView.DebugViews`, the
-view's switches `Wireframe`, `Levels`, and `Plain`; not saved): `wire` draws the camera's world and model commands again as lines
-over what they drew (`MeshPass`'s wire pipelines, `mesh-wire.frag`: near black, depth test greater or equal without
-writes, a depth bias of 64 steps and 1.5 times the slope; made only where the device draws triangles as lines,
-`VulkanContext.SupportsWireframe`), and `levels` tints each surface by its voxels' size (`mesh.vert` passes the draw's
-level, log2 of its voxel's centimetres, in bits 8 to 15 of the material output; `mesh.frag` mixes in 1 cm magenta, 2
-violet, 4 blue, 8 cyan, 16 green, 32 yellow, 64 orange, 128 red; 10, 20, 40, and 80 cm voxels round to the 8, 16,
-32, and 64 cm colours); `plain` draws every block of the world from its plain mesh, the seams between levels
-open (`ViewSwitches.Plain`, read by `WorldMeshes` alone).
+the samples raises `PlayerSettings.SamplesChanged`, and the render thread makes the swapchain again with the device
+idle, where `MeshPass.OnSwapchainRecreated` makes its pipelines and multisampled images with the samples asked for
+(`RequestSamples`; the most the device offers up to them; their costs are in ARCHITECTURE.md). SMAA's shaders:
+`smaa.glsl` (SMAA.hlsl unchanged, MIT), `smaa-common.glsl`, `smaa-edges.frag`, `smaa-weights.frag`, `smaa-blend.frag`,
+before FSR 1, as AMD asks of its input (`docs/anti-aliasing.md` has the research). The world, models, particles, and
+lines then draw into a scene image of the drawn size; the edges pass finds edges by luma in its sRGB-encoded values (a
+UNORM view), the weights pass works out the blend weights with SMAA's lookup textures (`SmaaTextures`,
+`Smaa/AreaTex.bin` and `SearchTex.bin`, copied to the GPU in the first anti-aliased frame), and the blend pass blends in
+linear light into the swapchain image (scale 1) or FSR 1's source; `aa edges` and `aa weights` show what it found.
+`FrameImages` keeps the drawn-size images of SMAA and the upscale until no frame in flight uses them. The console's
+`lines` draws the bodies' outlines, stand-ins, and collision cells. The console's `view` sets the run's debug views
+(`RenderView.DebugViews`, the view's switches `Wireframe`, `Levels`, and `Plain`; not saved): `wire` draws the camera's
+world and model commands again as lines over what they drew (`MeshPass`'s wire pipelines, `mesh-wire.frag`: near black,
+depth test greater or equal without writes, a depth bias of 64 steps and 1.5 times the slope; made only where the device
+draws triangles as lines, `VulkanContext.SupportsWireframe`), and `levels` tints each surface by its voxels' size
+(`mesh.vert` passes the draw's level, log2 of its voxel's centimetres, in bits 8 to 15 of the material output;
+`mesh.frag` mixes in 1 cm magenta, 2 violet, 4 blue, 8 cyan, 16 green, 32 yellow, 64 orange, 128 red; 10, 20, 40, and 80
+cm voxels round to the 8, 16, 32, and 64 cm colours); `plain` draws every block of the world from its plain mesh, the
+seams between levels open (`ViewSwitches.Plain`, read by `WorldMeshes` alone).
 
 ### The meshes
 
@@ -470,8 +470,8 @@ cleared in the first frame, always in the shader-read layout but during that cop
 draws into). Its log line: `Image view NAME: WxH texels, one sample a pixel, drawn at most every N frame(s)`. Without
 graphics (`Engine:Window:Mode=None`, `HeadlessMatch`) the "image views" and "render passes" steps do not run:
 declarations are not sealed, no view is drawn, and no pass is made. `Declare`, `Draw`, `Asked`, and `Show` still work,
-for a game's tests: with `Mode=None` the loop clears each frame's asks and panels as with graphics, but
-`HeadlessMatch.Frame` does not, so an ask stays once made, and no UI is drawn there to call `Show`.
+for a game's tests: the loop with `Mode=None` and `HeadlessMatch.Frame` forget each frame's asks and panels before the
+frame systems, as with graphics (no UI is drawn there to call `Show`).
 
 ### Files in `src/Itera.Engine`
 

@@ -72,19 +72,19 @@ the nearest point, distance, and tags, and the mean of the hits' normals: a voxe
 where it starts inside the wall), and `HasRoom` (the mover's `OverlapsAnything`). Loose bodies are not in the shared
 ray, so no probe meets them.
 
-`MeshColumns` (internal): a column's spans, one for each triangle over the column's square: the lowest and highest
-cell it blocks, its plane's height at the square's centre (a wall's highest point over the square), and its tags. Only
-the cells a triangle passes through block: a closed mesh has no inside, so a body inside one is blocked only where a
-face lies in its height. A triangle on a cell's boundary blocks the cell behind its front (before it is cut it moves
-0.01 cell behind its front along each axis it reaches less than that along), so a floor at y = k blocks the cell under
-it, a ceiling there the cell over it, and a closed mesh of a voxel box the box's outer voxels; a triangle that only touches a column's corner leaves it
-alone. A column's surface is the plane at its centre, anywhere in its top cell or under it on a slope (the voxels' lies
-within half a cell of their top; the mover reads surfaces for both). Chunks of 32 by 32 columns are made at their first
-read and kept until the colliders change (`MeshColliders.Version`), at most 256 (`MostChunks`; past that, the chunk read
-longest ago is dropped and its memory used for the new one, so bodies far apart that need more at once make chunks
-again at every read); making one allocates until the cache is full. A move over triangles alone costs about 1.5
-times one over voxels in 10 cm cells, and about 6.5 times in 1 cm cells (columns are read one by one, voxels a brick's
-mask at a time).
+`MeshColumns` (internal): a column's spans, one for each triangle over the column's square: the lowest and highest cell
+it blocks, its plane's height at the square's centre (a wall's highest point over the square), and its tags. Only the
+cells a triangle passes through block: a closed mesh has no inside, so a body inside one is blocked only where a face
+lies in its height. A triangle on a cell's boundary blocks the cell behind its front (before it is cut it moves 0.01
+cell behind its front along each axis it reaches less than that along), so a floor at y = k blocks the cell under it, a
+ceiling there the cell over it, and a closed mesh of a voxel box the box's outer voxels; a triangle that only touches a
+column's corner leaves it alone. A column's surface is the plane at its centre, anywhere in its top cell or under it on
+a slope (the voxels' lies within half a cell of their top; the mover reads surfaces for both). Chunks of 32 by 32
+columns are made at their first read and kept until the colliders change (`MeshColliders.Version`), at most 256
+(`MostChunks`; past that, the chunk read longest ago is dropped and its memory used for the new one, so bodies far apart
+that need more at once make chunks again at every read); making one allocates until the cache is full. A move over
+triangles alone costs more than one over voxels, more so in small cells (columns are read one by one, voxels a brick's
+mask at a time; the figures are in ARCHITECTURE.md).
 
 ## Mesh colliders and the shared ray
 

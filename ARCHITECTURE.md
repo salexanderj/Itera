@@ -105,6 +105,7 @@ tests/Itera.Modding.Tests    manifest parsing and validation
 tests/Itera.Engine.Tests     the engine: see below
 tests/Game.Tests             the starter: its composition and system order, shipped settings, options, and generator,
                              the fox, the minimap's system and HUD layer, and the starter played without a window
+                             (`ScenarioTests`, about 6 s)
 tests/Itera.MeshSample.Tests the mesh sample played without a window, its yard's meshes, its fox, its render pass and
                              the system that aims it, and its yard camera
 tests/Shared                 helpers compiled into the test projects that use them (SystemAllocation, ArchStartup,
@@ -310,10 +311,17 @@ game gets empty input snapshots (Escape and the console still work), fixed steps
 instead of the frame stats' Warning, and the frame carries a `LoadingDraw`: the render thread still records the mesh
 copies and the particle simulate call, then draws `loading.frag` (a retro ring of voxels, `LoadingPass`) over the whole
 swapchain image instead of the world, then the UI, where `LoadingLayer` lists the tasks. When all are done, or after
-`MaxSeconds` (default 15, a Warning naming what had not finished), it fades out over 0.3 s, blended over the world. After
-a reset of the world (the console's `reset`, or the host's on a client) it covers the picture again
-(`LoadingScreen.BeginAgain`) and waits for every task afresh: the tasks already done report done at once, World waits
-for the view generated again, and Navigation for the grid filled again.
+`MaxSeconds` (default 15, a Warning naming what had not finished), it fades out over 0.3 s, blended over the world. The
+starter's covers the picture for about 3.5 s in Debug (the world; the edit warm-up runs one round there, since Debug
+code is never optimised) and 2 s in Release. After a reset of the world (the console's `reset`, or the host's on a
+client) it covers the picture again (`LoadingScreen.BeginAgain`) and waits for every task afresh: the tasks already done
+report done at once, World waits for the view generated again, and Navigation for the grid filled again.
+
+**Window modes (`Engine:Window:Mode`).** A run draws into a window; or offscreen (`Offscreen`), at
+`Engine:Window:Width` x `Height` into a headless surface (`VK_EXT_headless_surface`) with nothing on the desktop, for
+screenshots and checks; or with no graphics (`None`): no window, Vulkan, or render thread, while the fixed steps and the
+frame group run. Nothing paces a headless present, so offscreen frames are capped at `Engine:Window:OffscreenFps` (240
+by default): the world uploads a share each frame, and at 60 the starter's view did not load in 15 s.
 
 **Render loop (render thread).** Each frame: wait on the frame slot's fence and reset its command pool
 (`FrameRenderer.BeginFrame`), acquire an image, ask the main thread for a frame (`FrameExchange.Request`), wait for it,
@@ -407,12 +415,14 @@ shows Information and above. Serilog sits behind `Microsoft.Extensions.Logging`,
   line with uptime and exit code. A shutdown step that throws is logged and skipped so the remaining steps still run.
 - `FrameStats` logs one line every 10 seconds: frames built, average and maximum time between frames (measured, not
   clamped) with the median, 95th, and 99th percentiles, fixed steps, dropped steps, managed bytes allocated on the main
-  thread and on the render thread (in total and per frame), garbage collections per generation, heap size, and the average
-  and longest GPU time per frame (timestamp queries; a Debug line gives each pass). Frames and steps are counted
+  thread and on the render thread (in total and per frame), garbage collections per generation, heap size, and the
+  average and longest GPU time per frame (timestamp queries; a Debug line gives each pass). Frames and steps are counted
   separately, so the line still appears while no frames are drawn. Dropped steps also produce a warning. The allocation
   numbers are the whole-loop check for the zero-allocation rule: in the steady state the main thread's should come only
-  from log lines, and the render thread's should be 0. A Debug line gives the fixed steps' CPU time by part and the eight
-  slowest fixed systems (`SystemTimes`).
+  from log lines, and the render thread's should be 0. Each system's own zero-allocation test runs with tiered
+  compilation off in the test projects, so every method is optimised at its first call and no test measures what
+  unoptimised library code allocates; the suite takes about 4 % longer for it. A Debug line gives the fixed steps' CPU
+  time by part and the eight slowest fixed systems (`SystemTimes`).
 - `VoxelWorld` logs one line per stats interval: columns resident and pending, mixed chunks, stored bricks, memory used
   and reserved against the budget, columns loaded and unloaded, jobs that ran out of memory, average and maximum column
   job time, the longest `Update` split into install, rebuild, unload, and queue, and edits. These come from running counts,
@@ -1297,14 +1307,16 @@ of it it raises the scale by at most 0.02; between the two it holds. The least s
 ### Anti-aliasing with SMAA 1x
 
 AMD asks for an anti-aliased, tone-mapped, sRGB picture before FSR 1; CMAA2 is cheaper but lacks diagonal handling and a
-GLSL version; only TAA fixes features under a pixel, at FSR 2's complexity (`docs/anti-aliasing.md`). `SmaaPass` runs SMAA's
-three passes (`smaa.glsl`, SMAA.hlsl unchanged, MIT, the HIGH preset) between the world, models, particles, and lines and
-FSR 1, so with it on they draw into a scene image of the drawn size at every scale, and the blend writes the swapchain image
-(at scale 1) or FSR 1's source. It runs only when the world is drawn with one sample a pixel (`MsaaSamples` 1); 4x MSAA is
-the default. Edges are found by luma in sRGB-encoded values and blended in linear light. SMAA's lookup textures are copied
-in the first anti-aliased frame from a buffer the main thread filled before the render thread started. The console's `aa
-edges` and `aa weights` show what SMAA found. It costs 0.23 to 0.31 ms at 2560x1440. It smooths the steps along edges; it
-does not fix features under a pixel that flicker. SMAA's stencil step and depth predication are not built.
+GLSL version; only TAA fixes features under a pixel, at FSR 2's complexity (`docs/anti-aliasing.md`). `SmaaPass` runs
+SMAA's three passes (`smaa.glsl`, SMAA.hlsl unchanged, MIT, the HIGH preset) between the world, models, particles, and
+lines and FSR 1, so with it on they draw into a scene image of the drawn size at every scale, and the blend writes the
+swapchain image (at scale 1) or FSR 1's source. It runs only when the world is drawn with one sample a pixel
+(`MsaaSamples` 1); 4x MSAA is the default. Edges are found by luma in sRGB-encoded values and blended in linear light.
+SMAA's lookup textures are copied in the first anti-aliased frame from a buffer the main thread filled before the render
+thread started. The console's `aa edges` and `aa weights` show what SMAA found. It costs 0.23 to 0.31 ms at 2560x1440.
+On Zorf TD's view along its players' path (a measurement of that game's world, at 2560x1440) the world took 1.26 ms with
+one sample, 1.65 with two, 1.95 with four, and 2.52 with eight, and SMAA added 0.30. It smooths the steps along edges;
+it does not fix features under a pixel that flicker. SMAA's stencil step and depth predication are not built.
 
 ### Particles live on the GPU
 
@@ -1332,17 +1344,18 @@ count.
 
 ### Sound is made in code
 
-Sound is made from models of physics, after Andy Farnell's *Designing Sound* (`docs/procedural-audio.md`): synthesis is good
-and cheap for physical sounds (hits, footsteps, digs, wind, fire, explosions) and poor for voices and music. A recipe is a
-small model of a sound's physics driven by one number, its level (0 to 1), registered by name in `SoundRecipes` (at most
-128). A `OneShotRecipe` is rendered at start, `Levels` times `VariationsPerLevel` variations (4 by 4) at fixed seeds, into
-OpenAL buffers, and kept in `SoundCache/` in the data folder (a file per recipe keyed by the format, rate, levels,
-variations, name, the build's configuration, and the sound code: a hash of the source files under the `Audio/` folders of
-the recipe's assembly and the engine, written as assembly metadata by `Directory.Build.targets`, so a later start reads it
-in milliseconds and only a change to sound code renders it again; `Engine:Audio:Cache` turns it off). An event plays the
-variation nearest its level, never the same one twice running, with its own gain and pitch. A `StreamRecipe` (a beam, wind,
-fire) makes a `SoundGenerator` that the audio thread runs live, 512 samples at a time with four blocks queued (about 43 ms
-at 48 kHz), following the level the game gives it.
+Sound is made from models of physics, after Andy Farnell's *Designing Sound* (`docs/procedural-audio.md`): synthesis is
+good and cheap for physical sounds (hits, footsteps, digs, wind, fire, explosions) and poor for voices and music. A
+recipe is a small model of a sound's physics driven by one number, its level (0 to 1), registered by name in
+`SoundRecipes` (at most 128). A `OneShotRecipe` is rendered at start (seconds for a game with many recipes, more in
+Debug), `Levels` times `VariationsPerLevel` variations (4 by 4) at fixed seeds, into OpenAL buffers, and kept in
+`SoundCache/` in the data folder (a file per recipe keyed by the format, rate, levels, variations, name, the build's
+configuration, and the sound code: a hash of the source files under the `Audio/` folders of the recipe's assembly and
+the engine, written as assembly metadata by `Directory.Build.targets`, so a later start reads it in about 0.01 s and
+only a change to sound code renders it again; `Engine:Audio:Cache` turns it off). An event plays the variation nearest
+its level, never the same one twice running, with its own gain and pitch. A `StreamRecipe` (a beam, wind, fire) makes a
+`SoundGenerator` that the audio thread runs live, 512 samples at a time with four blocks queued (about 43 ms at 48 kHz),
+following the level the game gives it.
 
 Game code queues one-shots with `AudioService.Play` (a gain, a pitch, and a reach) and holds streams with `Sustain` (a recipe
 and a key: a stream plays while it is sustained, for 0.1 s after the last, then fades out over 80 ms); `Publish`, once a
