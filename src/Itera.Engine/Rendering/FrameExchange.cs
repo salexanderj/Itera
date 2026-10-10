@@ -41,6 +41,7 @@ public readonly record struct RenderFrameRequest(int Slot, uint Width, uint Heig
 /// </param>
 /// <param name="AntiAliasPicture">What the anti-aliasing shows (<see cref="RenderView.AntiAliasPicture"/>).</param>
 /// <param name="Meshes">The draws <c>WorldMeshes</c> wrote in the slot's regions.</param>
+/// <param name="MeshAssets">The mesh assets' draws <c>MeshAssetDraws</c> wrote in the slot's regions.</param>
 public readonly record struct RenderFrame(
     FrameTime Time,
     int Slot,
@@ -58,7 +59,8 @@ public readonly record struct RenderFrame(
     float ScreenDim = 0,
     bool AntiAlias = false,
     SmaaPicture AntiAliasPicture = SmaaPicture.Blended,
-    Meshes.MeshFrame Meshes = default
+    Meshes.MeshFrame Meshes = default,
+    Meshes.MeshAssetFrame MeshAssets = default
 );
 
 /// <summary>The loading screen in a frame (<see cref="LoadingPass"/>).</summary>

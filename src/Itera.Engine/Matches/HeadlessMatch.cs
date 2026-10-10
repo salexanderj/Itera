@@ -54,6 +54,7 @@ public sealed class HeadlessMatch : IDisposable
     private readonly MatchControl _matches;
     private readonly DebugLines _debugLines;
     private readonly ModelInstances _models;
+    private readonly MeshInstances _meshes;
     private readonly PointLights _lights;
     private readonly int _editColumns;
     private readonly float _stepSeconds;
@@ -66,6 +67,7 @@ public sealed class HeadlessMatch : IDisposable
         _matches = services.GetRequiredService<MatchControl>();
         _debugLines = services.GetRequiredService<DebugLines>();
         _models = services.GetRequiredService<ModelInstances>();
+        _meshes = services.GetRequiredService<MeshInstances>();
         _lights = services.GetRequiredService<PointLights>();
         Input = services.GetRequiredService<InputService>();
         _editColumns = options.Voxels.EditColumnsPerStep;
@@ -155,6 +157,7 @@ public sealed class HeadlessMatch : IDisposable
         Input.BeginFrame();
         _debugLines.Clear();
         _models.Clear();
+        _meshes.Clear();
         _lights.BeginFrame(Seconds);
         // Just before the next step: the frame shows the last step's state.
         var frame = new FrameTime(_stepSeconds, Seconds, _frame++, 0.999999f);

@@ -11,7 +11,8 @@ paths:
 `Itera.Engine.Components`): cameras (`CameraPose`, `CameraLens`, `FlyCamera`, `ActiveCamera`), characters
 (`LocalPlayer`, `RemotePlayer`, `Bodiless`, `PlayerCommand` with `PlayerButtons` and a game's own `Actions` bits,
 `PlayerMode` with `Flying` and `Crouching`, `ThirdPersonView`, `CharacterSize` with `ForHeight`, `CharacterPosition`,
-`CharacterVelocity`, `CharacterContact`, `EyeSmoothing`, `MovementStats` with a person's `Default`), physics
+`CharacterVelocity`, `CharacterContact`, `EyeSmoothing`, `MovementStats` with a person's `Default`), mesh assets
+(`MeshPlacement` with `At`, `DrawnMesh` with `Of`, `ConsoleMesh`), physics
 (`LooseBody`, `BodyPose` (a loose body's pose, not `Animation.BodyPose`), `BodyBox`, `CutPiece`, `RemoteBody`,
 `CharacterStandIn`), and networking (`NetEntity`).
 `src/Itera.Engine/Systems/` holds the systems (namespace `Itera.Engine.Systems`). The engine registers no system: a game
@@ -50,6 +51,13 @@ camera while flying), round remote players on a host, and round loose bodies; `M
 `cleanup` (every loose body and particle) and `reset` (the world back to the seed's, counted in `WorldResets` for a
 game's systems to put their things back); the physics systems are in `.claude/rules/physics.md`;
 `DebugOutlineSystem` draws bodies' boxes and stand-ins with the debug lines.
+
+Mesh assets: `MeshDrawSystem` (frame, after `LooseBodyModelSystem`) hands every entity with a `MeshPlacement` (the
+pose at the last two fixed steps and a uniform scale; a fixed system that moves it copies the pose into the previous
+one first) and a `DrawnMesh` (the asset's index from `MeshAssets.Find`, a tint, a `ModelShadow`) to `MeshInstances`, its
+pose blended by the frame's `Alpha`. `meshes` is its command: the run's assets; `place NAME [SCALE]` 4 m in front of
+the camera, facing it, dropped to the voxel ground by a ray where there is one; `test COUNT [NAME]` in rows;
+`clear` removes those it placed (`ConsoleMesh`). A game places its own (the starter's `FoxSpawnSystem`).
 
 The benchmark (`BenchmarkSystem`, frame, after the fly camera; a game registers it when `Engine:Benchmark:Enabled`,
 with its own views, `BenchmarkView`): it puts the camera at each view, waits until it has loaded

@@ -65,6 +65,9 @@ public sealed partial class GameLoop
     private readonly LoadingScreen _loading;
     private readonly ParticlePass _particlePass;
     private readonly ModelInstances _modelInstances;
+    private readonly MeshInstances _meshInstances;
+    private readonly MeshAssetPass _meshAssetPass;
+    private readonly MeshAssetDraws _meshAssetDraws;
     private readonly PointLights _pointLights;
     private readonly DepthTarget _depth;
     private readonly DebugLines _debugLines;
@@ -107,6 +110,7 @@ public sealed partial class GameLoop
     private bool _renderThreadFaulted;
     private bool _renderThreadFaultReported;
     private bool _modelsDroppedReported;
+    private bool _meshesDroppedReported;
     private readonly ExitSignalPolicy _exitSignals = new();
     private volatile bool _cancelRequested;
     private PosixSignal _signal;
@@ -142,6 +146,9 @@ public sealed partial class GameLoop
         LoadingScreen loading,
         ParticlePass particlePass,
         ModelInstances modelInstances,
+        MeshInstances meshInstances,
+        MeshAssetPass meshAssetPass,
+        MeshAssetDraws meshAssetDraws,
         PointLights pointLights,
         DepthTarget depth,
         DebugLines debugLines,
@@ -202,6 +209,9 @@ public sealed partial class GameLoop
         _loading = loading;
         _particlePass = particlePass;
         _modelInstances = modelInstances;
+        _meshInstances = meshInstances;
+        _meshAssetPass = meshAssetPass;
+        _meshAssetDraws = meshAssetDraws;
         _pointLights = pointLights;
         _depth = depth;
         _debugLines = debugLines;
@@ -378,6 +388,7 @@ public sealed partial class GameLoop
             new("mods", () => _mods.LoadAll(), ShutdownMods),
             // After the game's and the mods' startups, which declare their models; textures only with graphics.
             new("mesh assets", () => _meshAssets.LoadAll(_window.Graphics), () => { }),
+            new("mesh assets on the gpu", _meshAssetPass.Initialize, _meshAssetPass.Dispose, Graphics: true),
             new("audio thread", _audio.Start, () => _audio.Stop()),
             new("render thread", () => _renderThread.Start(_window.FramebufferSize), StopRenderThread),
             new("control", _control.Initialize, _control.Dispose),
@@ -788,6 +799,7 @@ public sealed partial class GameLoop
         _input.BeginFrame();
         _debugLines.Clear();
         _modelInstances.Clear();
+        _meshInstances.Clear();
         _pointLights.BeginFrame(now);
         match.Ecs.Update(in frame);
         _mods.Update(in frame);
@@ -795,6 +807,12 @@ public sealed partial class GameLoop
         {
             _modelsDroppedReported = true;
             LogModelsDropped(_modelInstances.Dropped, ModelInstances.MaxModels);
+        }
+
+        if (_meshInstances.Dropped > 0 && !_meshesDroppedReported)
+        {
+            _meshesDroppedReported = true;
+            LogMeshesDropped(_meshInstances.Dropped, MeshInstances.MaxInstances);
         }
         var ui = DrawUi(in frame, in request);
         _dynamicScale.Update(now);
@@ -804,6 +822,7 @@ public sealed partial class GameLoop
         // events give.
         _meshView.Begin(request.Slot, in view);
         var copies = _worldMeshes.Upload(request.Slot, now, in view, _modelInstances.Draws);
+        var meshAssets = _meshAssetDraws.Write(request.Slot, _meshView, _meshInstances.Instances);
         _meshView.End(request.Slot, _pointLights.Frame(now));
         if (_debugLines.Enabled)
         {
@@ -832,7 +851,8 @@ public sealed partial class GameLoop
                 _renderView.ScreenDim,
                 _renderView.AntiAliasDrawn,
                 _renderView.AntiAliasPicture,
-                _worldMeshes.Frame
+                _worldMeshes.Frame,
+                meshAssets
             )
         );
         _frameIndex++;
@@ -854,6 +874,7 @@ public sealed partial class GameLoop
         _input.BeginFrame();
         _debugLines.Clear();
         _modelInstances.Clear();
+        _meshInstances.Clear();
         _pointLights.BeginFrame(now);
         match.Ecs.Update(in frame);
         _mods.Update(in frame);
@@ -883,6 +904,7 @@ public sealed partial class GameLoop
         _input.BeginFrame();
         _debugLines.Clear();
         _modelInstances.Clear();
+        _meshInstances.Clear();
         var ui = DrawUi(in frame, in request);
         _dynamicScale.Update(now);
         var view = CreateView(in request);
@@ -977,6 +999,12 @@ public sealed partial class GameLoop
         Message = "Models: {Dropped} model(s) past the {Most} a frame can draw were not drawn (reported once)"
     )]
     private partial void LogModelsDropped(int dropped, int most);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Mesh assets: {Dropped} instance(s) past the {Most} a frame can draw were not drawn (reported once)"
+    )]
+    private partial void LogMeshesDropped(int dropped, int most);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Shaderc smoke test: compiled {Words} words of SPIR-V")]
     private partial void LogShaderSmokeTest(int words);

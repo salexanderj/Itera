@@ -71,6 +71,11 @@ internal static class DeviceRequirements
         Feature(ref core.TextureCompressionBC, "textureCompressionBC");
         // Buffers and push constants that mirror C# structs use layout(scalar) (ecs-vulkan skill).
         Feature(ref v12.ScalarBlockLayout, "scalarBlockLayout");
+        // The mesh assets' textures are one array the fragment shader indexes by the draw's material
+        // (mesh-asset-data.glsl), which may differ between the draws of one indirect call: nonuniformEXT (RADV and
+        // MoltenVK 1.4 on macOS report both).
+        Feature(ref core.ShaderSampledImageArrayDynamicIndexing, "shaderSampledImageArrayDynamicIndexing");
+        Feature(ref v12.ShaderSampledImageArrayNonUniformIndexing, "shaderSampledImageArrayNonUniformIndexing");
         // Rendering without render pass and framebuffer objects.
         Feature(ref v13.DynamicRendering, "dynamicRendering");
         // CmdPipelineBarrier2 and QueueSubmit2.

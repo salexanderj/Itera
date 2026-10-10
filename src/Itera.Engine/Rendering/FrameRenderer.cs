@@ -26,6 +26,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
     private readonly VulkanSwapchain _swapchain;
     private readonly FrameSync _sync;
     private readonly MeshPass _meshPass;
+    private readonly MeshAssetPass _assetPass;
     private readonly WorldMeshes _worldMeshes;
     private readonly DebugLinePass _linePass;
     private readonly UiPass _uiPass;
@@ -53,6 +54,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         FrameSync sync,
         WindowService window,
         MeshPass meshPass,
+        MeshAssetPass assetPass,
         WorldMeshes worldMeshes,
         DebugLinePass linePass,
         UiPass uiPass,
@@ -71,6 +73,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         _swapchain = swapchain;
         _sync = sync;
         _meshPass = meshPass;
+        _assetPass = assetPass;
         _worldMeshes = worldMeshes;
         _linePass = linePass;
         _uiPass = uiPass;
@@ -242,6 +245,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         IReloadsShaders[] passes =
         [
             _meshPass,
+            _assetPass,
             _particlePass,
             _linePass,
             _uiPass,
@@ -338,6 +342,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         _sync.OnSwapchainRecreated(_swapchain.Images.Count);
         _depth.OnSwapchainRecreated();
         _meshPass.OnSwapchainRecreated();
+        _assetPass.OnSwapchainRecreated();
         _linePass.OnSwapchainRecreated();
         _particlePass.OnSwapchainRecreated();
         _uiPass.OnSwapchainRecreated();
@@ -368,6 +373,9 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
             _meshPass.RecordUploads(commandBuffer, _worldMeshes.Regions(frame.Slot, frame.MeshCopies));
             _timer.End(commandBuffer, slot, GpuPass.Upload);
         }
+
+        // The mesh assets go to the GPU in the first frame, and their upload buffer later; under the loading screen too.
+        _assetPass.RecordUploads(commandBuffer);
 
         // A new sky field goes into its image with the frame's other copies, under the loading screen too.
         if (fresh)
@@ -511,7 +519,9 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         _timer.Begin(commandBuffer, slot, GpuPass.Voxels);
         _depth.RecordFrameStart(commandBuffer, resolvedInto: _meshPass.Multisampled);
         var meshes = frame.Meshes;
-        _meshPass.Record(commandBuffer, target, _depth.View, drawn, in view, frame.Slot, in meshes, slot);
+        var assets = frame.MeshAssets;
+        _assetPass.BeginFrame(frame.Slot, in assets);
+        _meshPass.Record(commandBuffer, target, _depth.View, drawn, in view, frame.Slot, in meshes, slot, _assetPass);
         _timer.End(commandBuffer, slot, GpuPass.Voxels);
 
         // The particles move after the world is drawn: they meet it through its depth image, and lit ones take their

@@ -1,6 +1,6 @@
 ---
 name: scaffold
-description: "Steps, file lists, and templates for adding to Itera or a game on it: a system (engine or game), an option, a console command, a game message, a generator change, and a test that plays the real game. Use before adding any of these, so every place they touch changes together; the checklist tests (ChecklistTests, ShippedSettingsTests, SystemOrderTests, WorldTests) fail when one is missed."
+description: "Steps, file lists, and templates for adding to Itera or a game on it: a system (engine or game), an option, a console command, a game message, a generator change, a model from glTF, and a test that plays the real game. Use before adding any of these, so every place they touch changes together; the checklist tests (ChecklistTests, ShippedSettingsTests, SystemOrderTests, WorldTests) fail when one is missed."
 ---
 
 # Adding to Itera
@@ -110,6 +110,21 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 2. Pin the new hash with it in `tests/Game.Tests/WorldTests`: the test compares `(Version, hash)`, so a new world with
    the old version fails.
 3. `GAME.md`'s world description.
+
+## A model from glTF
+
+1. The files in `src/Game/Models/NAME/` (`.gltf` with its `.bin` and images, or one `.glb`; no Draco, meshopt, or Basis
+   compression), copied by the csproj's `Models/*/*` rule, and a row in `src/Game/Models/SOURCES.md` with its source,
+   authors, licence, and changes.
+2. A name in `GameModels` and a `Declare` line there: the path from the executable's folder and the file's unit
+   (`metresPerUnit`: 1 for metres, 0.01 for centimetres). `GameRunStartup` declares them at the run's start; a mod
+   declares its own at its startup.
+3. A system that places it: `World.Create(MeshPlacement.At(position, orientation, scale), DrawnMesh.Of(index))`, with
+   the index from `MeshAssets.Find(name)` looked up once (`FoxSpawnSystem`); a fixed system that moves it copies the pose
+   into the previous one first. `MeshDrawSystem` draws it. A glTF model's front is +z.
+4. Check it: `meshes` lists it (triangles, materials, textures, size), `meshes place NAME` puts one in front of the
+   camera, the log's `Mesh assets:` line has no Warning about it, and a `ScenarioTests` row finds it in
+   `MeshInstances`.
 
 ## A test that plays the real game
 

@@ -16,3 +16,4 @@
 *.dylib binary
 *.dll binary
 *.bin binary
+*.glb binary

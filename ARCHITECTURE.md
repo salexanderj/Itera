@@ -136,15 +136,15 @@ Rules:
 | `Time/` | `GameClock` (clamped frame delta), `FixedStepAccumulator` (60 Hz steps, capped per frame) |
 | `Windowing/` | `WindowService`: creates the GLFW window, pumps events, exposes framebuffer size, refresh rate, and exit request |
 | `Input/` | `InputService` (collects key, button, movement, and scroll events into one `InputSnapshot` per frame and one per fixed step), `InputAccumulator`, `PointerCapture` (a left click locks the pointer for mouse look; Escape goes to the menu at once and frees it), `IPanelInput` (a panel that takes the free pointer), `IKeyboardFocus` (the console takes the keys while open), `IMenuInput` and `UiPointer` (the menu), `KeyBindings`, `KeyAction`, and `InputBinding` (the actions a game registers and the Settings page's rebinding), `ITickInput` and `IFrameInput` (what fixed and frame systems read) |
-| `Rendering/` | `VulkanContext`, `DeviceRequirements`, `VulkanSwapchain`, `SwapchainState`, `FrameSync`, `FrameRenderer` (fence wait, acquire, barriers, recording the passes, submit, present, recreate), `GpuTimer`, `CameraView` and `RenderView` (the camera and atmosphere of the frame being built), `Atmosphere`, `RenderThread`, `FrameExchange` (hands each frame from the main thread to the render thread), `DebugLines` and `DebugLinePass`, `UiPass`, `RenderScale` and `UpscalePass`, `SmaaPass` and `SmaaTextures`, `FrameImages`, `DynamicRenderScale`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`, `ScreenshotEncoder`, `DepthTarget`, `ShadowCascades`, `IWorldOnGpu`, `ModelInstances` (the models frame systems ask to draw this frame, each with its `ModelShadow`), `PointLights` (event lights) |
+| `Rendering/` | `VulkanContext`, `DeviceRequirements`, `VulkanSwapchain`, `SwapchainState`, `FrameSync`, `FrameRenderer` (fence wait, acquire, barriers, recording the passes, submit, present, recreate), `GpuTimer`, `CameraView` and `RenderView` (the camera and atmosphere of the frame being built), `Atmosphere`, `RenderThread`, `FrameExchange` (hands each frame from the main thread to the render thread), `DebugLines` and `DebugLinePass`, `UiPass`, `RenderScale` and `UpscalePass`, `SmaaPass` and `SmaaTextures`, `FrameImages`, `DynamicRenderScale`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`, `ScreenshotEncoder`, `DepthTarget`, `ShadowCascades`, `IWorldOnGpu`, `ModelInstances` (the models frame systems ask to draw this frame, each with its `ModelShadow`), `MeshInstances` (the mesh assets they ask to draw), `PointLights` (event lights) |
 | `Rendering/Memory/` | `GpuMemoryAllocator` (own block sub-allocator: 64 MB blocks, dedicated allocations for large resources, persistent mapping, flush and invalidate), `MemoryTypeSelector`, `BlockSuballocator`, `GpuBuffer`, `GpuImage`, `StagingBuffer` (one upload region per frame slot), `GpuRangeHeap` (first-fit ranges of 256-byte granules in one buffer, for the mesh heap) |
 | `Rendering/Pipelines/` | `PipelineFactory`: shader modules, pipeline layouts with push constants, full-screen, line, and triangle graphics pipelines without vertex input (the mesh shaders read their vertices from storage buffers) for dynamic rendering, and compute pipelines |
-| `Rendering/GpuData/` | Structs that shaders read, each with a `GpuLayout` test: `ViewConstants` (camera vectors, sun, sky, frame slot, view distance, image size, switches; push constants, 108 bytes), `MeshVertex`, `MeshDraw`, `MeshModelDraw`, `MeshMaterial`, `MeshLighting` and `MeshLight`, the passes' constants (`SmaaConstants`, `UiConstants`, `UpscaleConstants`, `LoadingConstants`, `ParticleConstants`), the particles' records, and `DebugLineVertex` |
+| `Rendering/GpuData/` | Structs that shaders read, each with a `GpuLayout` test: `ViewConstants` (camera vectors, sun, sky, frame slot, view distance, image size, switches; push constants, 108 bytes), `MeshVertex`, `MeshDraw`, `MeshModelDraw`, `MeshMaterial`, `MeshLighting` and `MeshLight`, the mesh assets' `MeshAssetVertex`, `MeshAssetDraw`, and `MeshAssetMaterial`, the passes' constants (`SmaaConstants`, `UiConstants`, `UpscaleConstants`, `LoadingConstants`, `ParticleConstants`), the particles' records, and `DebugLineVertex` |
 | `Rendering/Voxels/` | `IVoxelPalette` and `VoxelLook` (how each material is drawn), `IVoxelTintMap` (a 256 x 256 map over the world that blends each material from its colour to its tint colour) and `VoxelTintSampler` (reads it on the CPU as the shader does), `StagingWriter` |
 | `Rendering/Materials/` | `MaterialTextureSets` and `DdsFile`: the materials' texture sets read at start into texture arrays |
-| `Rendering/Meshes/` | `WorldMeshes` (the world and the models as triangle meshes; partial files for the draws, the models, the point lights, the sky field, and the stitches between levels), `MeshWorkers` (the threads that mesh), `MeshColumn`, `LevelBalance`, `MeshPass` (the mesh heap, the frame's buffers, the shadow maps, the multisampled images, the recording), `MeshView` (the frame's frustum, the cascades' fit with `CascadeBounds`, and the point lights, shared by every list drawn in `MeshPass`), `MeshFrame`, `SkyField`, and the interfaces that tests replace (`IMeshDrawTarget` and `IStagingRegions` (`IMeshTargets.cs`)) |
+| `Rendering/Meshes/` | `WorldMeshes` (the world and the models as triangle meshes; partial files for the draws, the models, the point lights, the sky field, and the stitches between levels), `MeshWorkers` (the threads that mesh), `MeshColumn`, `LevelBalance`, `MeshPass` (the mesh heap, the frame's buffers, the shadow maps, the multisampled images, the recording), `MeshView` (the frame's frustum, the cascades' fit with `CascadeBounds`, and the point lights, shared by every list drawn in `MeshPass`), `MeshFrame`, `SkyField`, the mesh assets' `MeshAssetPass` (their buffers, textures, set 1, and pipelines), `MeshAssetLayout`, `MeshAssetDraws`, and `MeshAssetFrame`, and the interfaces that tests replace (`IMeshDrawTarget` and `IStagingRegions` (`IMeshTargets.cs`)) |
 | `Meshing/` | `SurfaceNets` (the CPU mesher: a 32-voxel block of materials and densities with a 2-voxel apron into vertices and 16-bit indices, with a transition mode beside a coarser level) and `MeshBuffers` |
-| `Rendering/Shaders/` | GLSL files copied to `Shaders/` in the output: the full-screen, mesh, shadow, sky, FSR, SMAA, loading, UI, debug-line, particle, cluster, and material-bake shaders, and the include-only files (`view.glsl`, `turns.glsl`, `mesh-data.glsl`, `mesh-light.glsl`, `mesh-surface.glsl`, `mesh-shade.glsl` (the light and grade every surface of the mesh pass takes), `surface-noise.glsl`, `lighting.glsl`, `sky.glsl`, `particle-data.glsl`, `particle-constants.glsl`); `ShaderCompiler` (GLSL to SPIR-V through Shaderc with a disk cache), `ShaderSource` (`#include` expansion), `ShaderReloads` and `IReloadsShaders` |
+| `Rendering/Shaders/` | GLSL files copied to `Shaders/` in the output: the full-screen, mesh, mesh asset, shadow, sky, FSR, SMAA, loading, UI, debug-line, particle, cluster, and material-bake shaders, and the include-only files (`view.glsl`, `mesh-asset-data.glsl`, `turns.glsl`, `mesh-data.glsl`, `mesh-light.glsl`, `mesh-surface.glsl`, `mesh-shade.glsl` (the light and grade every surface of the mesh pass takes), `surface-noise.glsl`, `lighting.glsl`, `sky.glsl`, `particle-data.glsl`, `particle-constants.glsl`); `ShaderCompiler` (GLSL to SPIR-V through Shaderc with a disk cache), `ShaderSource` (`#include` expansion), `ShaderReloads` and `IReloadsShaders` |
 | `Particles/` | `ParticleEmitter` (bursts queued for the next frame, the pool's ring, attractors, the stress test), `ParticleBurst`, `ParticleRecipe` and `ParticleRecipes` (by name, at most 128), `ParticleStats`, `ParticleColours`, `StockEffects` (seven general recipes); the GPU side is `Rendering/ParticlePass` |
 | `Native/` | Valve's `steam_api` library for each platform (`Native/Steam/`, with a README naming the release), copied next to the game. |
 | `Audio/` | `AudioService` (where game code queues sounds), `AudioMixer` (the audio thread's work), `RecipeRenderer`, `AudioExchange`, `AudioStats`, `SoundRecipe` (`OneShotRecipe`, `StreamRecipe`, `SoundGenerator`) and `SoundRecipes` (by name, at most 128), `SoundEvent` and `SoundLoop`, `EngineSounds`, `SoundCache`, `WavWriter`; `Synthesis/` (`SoundRandom`, `Dsp`, `OnePole`, `StateVariableFilter`, `NoiseSource`, `ModalBank`); the device (`IAudioDevice`, `OpenAlAudioDevice`, `NullAudioDevice`, `AudioDeviceFactory`) |
@@ -524,6 +524,25 @@ A narrower, versioned API surface for mods is open work. In a session only the h
 `SessionService.IsAuthority` before calling `VoxelWorld.Apply` or `TryLift`, which throw on a client; the host sends a
 mod's edits to the clients as it does a game's.
 
+### Mesh assets are drawn beside the world
+
+A mesh asset is a triangle mesh with texture coordinates and materials, read from a glTF 2.0 file at the run's start
+(`Assets/`, SharpGLTF at load only) or built by a game, and drawn in the world's pass with the world's light.
+
+- `MeshAssets` holds them for the run, by name and index; a game declares its files at its run startup. The run's step
+  "mesh assets on the gpu", before the render thread, puts every asset's vertices, indices, materials, and textures (one
+  image each, every mip) into device-local memory once (`MeshAssetPass`); nothing is loaded or freed during play.
+- Frame systems add instances to `MeshInstances` (asset, transform, tint, `ModelShadow`; at most 16,384 a frame).
+  `MeshAssetDraws` culls them by bounding sphere against the view and both cascades (the `MeshView` the world's lists
+  share) and writes one indirect command per primitive with instances, in three lists and four pipeline ranges (opaque or
+  masked, one-sided or two-sided). `MeshPass.Record` draws them inside its own renderings (`IMeshPassDraws`): into each
+  cascade, and into the main view after the models, so they meet the world's depth, multisampling, and resolve.
+- The vertex shader pulls its vertices from a storage buffer, as the world's does, and projects with `viewClip`. The
+  fragment shader reads the material's textures from one array indexed per pixel (`nonuniformEXT`, needing descriptor
+  indexing of sampled images) and ends in `mesh-shade.glsl`'s `shadeSurface`, the light and grade every surface of the
+  pass takes. Blended materials draw as masked until a transparent pass exists; metalness and roughness are kept, not
+  drawn. Skinning, and matches without voxels, are the next phases (`docs/framework-limits.md`).
+
 ## 7. The engine's components and systems
 
 `src/Itera.Engine/Components/` and `src/Itera.Engine/Systems/` hold what most games on a voxel world need. The engine
@@ -544,6 +563,8 @@ and `Alpha`, how far the frame lies between the last two steps). Components are 
   steepest slope, which a game may write each step from its own rules; `Default` is a person's).
 - Physics: `LooseBody` (the Bepu body's handle and birth stamp), `BodyPose`, `BodyBox`, `CutPiece`, `RemoteBody`, and
   `CharacterStandIn`.
+- Mesh assets: `MeshPlacement` (the pose at the last two steps and a scale), `DrawnMesh` (the asset's index, a tint, a
+  `ModelShadow`), and the tag `ConsoleMesh` (placed by the console's `meshes`).
 - Networking: `NetEntity`, the stable id a host gives an entity it sends. Entities are local to each game; this id is what
   every game shares.
 
@@ -578,6 +599,8 @@ and `Alpha`, how far the frame lies between the last two steps). Components are 
   cut bodies. `LooseBodyRoom` makes room when the body limit is reached. `LooseBodyModelSystem` hands the bodies' models to
   the renderer. `DebugBallSystem` is the console's `balls`. `DebugOutlineSystem` draws bodies' boxes and stand-ins with the
   debug lines.
+- `MeshDrawSystem` (frame) hands every placed mesh asset to the renderer, its pose blended by `Alpha`; `meshes` is its
+  command (list, place, test, clear).
 
 **The benchmark.** `BenchmarkSystem` (frame, after the fly camera; a game registers it when `Engine:Benchmark:Enabled`, with
 its own list of `BenchmarkView`s) puts the camera at each view of the seed's world in turn, waits until the world is

@@ -232,17 +232,61 @@ of the drawn image by 24 slices of depth (the first to 1 m, the last from 48 m, 
 test N` scatters test lights for the run. The per-slot record is `MeshLighting` (the cascades, the field's corner and cell, the light
 count).
 
+### Mesh assets
+
+The run's mesh assets (`MeshAssets`, models read from glTF files: `.claude/rules/mesh-assets.md`) are drawn with the
+world, lit as it is. A frame system adds each one to draw to `MeshInstances` (run-wide; `Add(asset, transform, tint,
+shadow)`: the asset's index, a `Matrix4x4` used as `M * v`, a linear RGBA tint, `NoTint` for none, and a `ModelShadow`;
+at most 16,384 a frame, those past it left out with one Warning a run), which `GameLoop` clears on every frame
+path; the engine's `MeshDrawSystem` adds every entity with `MeshPlacement` and `DrawnMesh` (`.claude/rules/systems.md`).
+`MeshAssetDraws.Write` (main thread, after `WorldMeshes.Upload`, before `MeshView.End`) culls each instance's bounding
+sphere (the asset's, its radius times the transform's largest scale) against the view and both cascades as its shadow
+allows, groups the draws by asset primitive with a counting sort, and writes into the frame slot's regions one
+`DrawIndexedIndirectCommand` per primitive with instances (its `vertexOffset` the asset's first vertex, its
+`firstInstance` its first `MeshAssetDraw`: the transform, the material, the tint) for each of three lists, the camera's
+and the two cascades', each in four ranges of pipeline (`MeshAssetRange`: opaque or masked, one-sided or two-sided);
+at most `MeshAssetPass.MaxDraws` (16,384) draws and `MaxCommands` (4,096) commands a list, a full list warning once.
+The counts travel in `RenderFrame.MeshAssets` (`MeshAssetFrame`).
+
+`MeshAssetPass` (`Rendering/Meshes/`) is made at the run's step "mesh assets on the gpu", after "mesh assets" and before
+the render thread: device-local buffers of every asset's vertices (`MeshAssetVertex`, pulled by `gl_VertexIndex`),
+32-bit indices, and materials (`MeshAssetMaterial`: factors, alpha cutoff, five packed texture references, flags), one
+image per texture with every mip (`Rgba8Srgb` colour and emission, `Rgba8Unorm` occlusion and metal-roughness, `Rg8Unorm`
+normals), and host-visible draws and commands a frame slot. The first frame copies the buffers and images from one upload
+buffer (`RecordUploads`, before the mesh pass), freed `FrameSync.FramesInFlight` frames later. It owns descriptor set 1
+(`mesh-asset-data.glsl`: six immutable samplers, linear with 16x anisotropy where the device can or nearest, each
+repeating, clamped, or mirrored; the textures, `MESH_TEXTURE_COUNT` of them, a white stand-in first, indexed with
+`nonuniformEXT`; the vertices; the materials; the draws); set 0 is `MeshPass`'s. The device's room caps the textures
+(the lower of its per-stage and per-set sampled images less the mesh pass's nine, and its per-stage resources less the
+21 other descriptors and attachment the fragment stage holds); those past it are left out with one Warning, and their
+materials drawn with their factors. Vertices past the device's storage buffer range stop the run at the step. Eight pipelines: the camera's (`mesh-asset.vert`,
+`mesh-asset.frag`) and the cascades' (`mesh-asset-shadow.vert` with `depth-only.frag`, or `mesh-asset-shadow.frag` for
+masked materials), for each range; depth and culling as the world's (back faces culled unless two-sided; the cascades
+drawn from the faces turned away from the sun, so an open single-sided mesh, such as one quad, casts no shadow when
+its front faces the sun). `MeshPass.Record` calls it through `IMeshPassDraws`: `RecordShadows`
+inside each cascade's rendering, and `RecordCamera` in the main view after the models and before the sky (timed as
+`Meshes`, `GpuPass`). Its camera pipelines are made again when the mesh pass's samples or colour format change, and every
+pipeline on a shader reload. `mesh-asset.frag` draws glTF's base colour (the factor times the texture, the vertex colour,
+and the draw's tint), cut at the alpha cutoff in the masked ranges, the normal map tilting the lit normal in tangent
+space (a two-sided surface's back lit from its own side), the occlusion as the cavity, and the emission as glow, then
+`shadeSurface` with the openness of flat ground; metalness and roughness are read and kept, not drawn. A blended material
+is drawn as masked, with one Warning an asset at the step (no transparent pass yet). A skinned mesh is drawn in the pose
+its file stores until skinning is built (the mesh path's plan, phase 4). Its log line: `Mesh assets on the GPU: N
+vertices, T triangles, M material(s), X texture(s) of Y MB; draws Z MB a frame slot`; the stats line's `mesh assets in
+N frames avg/max` is the `Meshes` pass's GPU time.
+
 ### Files in `src/Itera.Engine`
 
   - `Rendering/`: Vulkan bootstrap (`VulkanContext`, `DeviceRequirements`), the frame (`FrameRenderer`,
     `RenderThread`, `FrameExchange`), the surface's source (`ISurfaceSource`: the window's or a headless one, in
-    `SurfaceSource.cs`), `DepthTarget`, `ModelInstances`, `DebugLines` and `DebugLinePass`, `UiPass`,
+    `SurfaceSource.cs`), `DepthTarget`, `ModelInstances`, `MeshInstances`, `DebugLines` and `DebugLinePass`, `UiPass`,
     `RenderScale` and `UpscalePass`, `SmaaPass`, `SmaaTextures`, `FrameImages`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`,
     `ScreenshotEncoder`; the materials' texture sets (`MaterialTextureSets`, `DdsFile`) in `Materials/`; GPU memory (own block sub-allocator, `GpuBuffer`, `GpuImage`, per-slot `StagingBuffer`) in
     `Memory/` (with `GpuRangeHeap`, the mesh heap's ranges); `Pipelines/`; structs that shaders read in `GpuData/`; the
     palette and its looks (`IVoxelPalette`, `VoxelLook`), the tint map (`IVoxelTintMap`) and the CPU's read of it
     (`VoxelTintSampler`), and `StagingWriter` in `Voxels/`; the sun shadow cascades' fit (`ShadowCascades`);
-    `WorldMeshes`, `MeshPass`, and the frame's view `MeshView` (with `CascadeBounds`) in `Meshes/` (with `MeshColumn`, `MeshWorkers`, `SkyField`, `LevelBalance`, and the
+    `WorldMeshes`, `MeshPass`, the frame's view `MeshView` (with `CascadeBounds`), and the mesh assets' `MeshAssetPass`,
+    `MeshAssetDraws`, `MeshAssetLayout`, and `MeshAssetFrame` in `Meshes/` (with `MeshColumn`, `MeshWorkers`, `SkyField`, `LevelBalance`, and the
     test's interfaces `IMeshDrawTarget` and `IStagingRegions`, in `IMeshTargets.cs`), and `IWorldOnGpu`, which `WorldMeshes` answers; the CPU mesher (`SurfaceNets`, `MeshBuffers`) in `src/Itera.Engine/Meshing/`;
     GLSL files, the shader compiler, and reloads (`ShaderReloads`, `IReloadsShaders`, which every pass implements) in
     `Shaders/`.
@@ -262,7 +306,8 @@ count).
 - Vulkan 1.3 is required on the loader and the device; there is no 1.2 fallback. `DeviceRequirements`
   requires `dynamicRendering`, `synchronization2`, `scalarBlockLayout`, and `multiDrawIndirect` with
   `drawIndirectFirstInstance` (the world's indirect draws, whose first instance names each block's draw), and
-  `D32_SFLOAT` with optimal tiling as a depth attachment; it enables `fillModeNonSolid` where the device has it (the
+  `shaderSampledImageArrayDynamicIndexing` with `shaderSampledImageArrayNonUniformIndexing` (the mesh assets' texture
+  array, indexed per pixel by material), and `D32_SFLOAT` with optimal tiling as a depth attachment; it enables `fillModeNonSolid` where the device has it (the
   wireframe debug view, `VulkanContext.SupportsWireframe`) and asks it of no device. Rendering uses dynamic
   rendering (no render pass or framebuffer objects), barriers use `CmdPipelineBarrier2`, and submits use
   `QueueSubmit2`.

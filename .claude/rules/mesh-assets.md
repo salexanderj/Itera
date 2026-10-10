@@ -16,7 +16,9 @@ in `Octahedral` encodings with the bitangent's sign in the tangent word's top bi
 a linear RGBA colour) and its 32-bit indices (three a triangle, counter-clockwise from the front, into its own vertices)
 are split into primitives (`MeshPrimitive`), each a run of indices with one material (`MeshMaterialData`: glTF's
 metallic-roughness factors and textures, alpha mode and cutoff, double-sidedness). Its textures (`MeshTextureData`) hold
-every mip level, level 0 first. Drawing them is not built yet (the mesh path's plan, phase 3).
+every mip level, level 0 first. They are drawn with the world (`.claude/rules/rendering.md`, "Mesh assets"): an
+entity with `MeshPlacement` and `DrawnMesh` (`.claude/rules/systems.md`), or any frame system through `MeshInstances`.
+Skinned meshes are drawn in the pose their file stores until skinning is built (the mesh path's plan, phase 4).
 
 `MeshAssets` (run-wide singleton) holds the run's assets by name and index. A game declares its models at its run
 startup (`IRunStartup`, the run's "game" step): `Declare(name, path, metresPerUnit)` (a relative path from the
@@ -48,7 +50,8 @@ models during play is not built.
   red, roughness in green, metalness in blue) as `Rgba8Unorm`, `Normal` as `Rg8Unorm` (x and y of the renormalised
   vector; z is rebuilt). An image in two roles makes two textures. A sampler maps to `MeshSampler` (nearest when its
   magnification filter is, its wrap along s for both directions, with a warning when t differs).
-- Alpha `BLEND` is kept as such in the material; there is no transparent pass yet.
+- Alpha `BLEND` is kept as such in the material; there is no transparent pass yet, so the renderer draws it as `MASK`
+  with one Warning an asset.
 
 ### Package notes
 

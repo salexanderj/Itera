@@ -212,6 +212,12 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     /// <summary>True when the world is drawn with more than one sample a pixel, which smooths its edges without SMAA.</summary>
     public bool Multisampled => _samples != SampleCountFlags.Count1Bit;
 
+    /// <summary>The samples a pixel the main rendering's attachments have, for pipelines that draw in it.</summary>
+    internal SampleCountFlags Samples => _samples;
+
+    /// <summary>The colour format the main rendering draws in, for pipelines that draw in it.</summary>
+    internal Format ColorFormat => _format;
+
     /// <summary>
     /// The world's samples a pixel the player's setting asks for (1, 2, 4, or 8; <c>Engine:Renderer:MsaaSamples</c> until
     /// then): taken by <see cref="Initialize"/>, and after it by the next <see cref="OnSwapchainRecreated"/>, which the
@@ -453,7 +459,9 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     /// Records the shadow cascades, then the world into <paramref name="target"/>, which it covers completely: the blocks
     /// the main thread wrote for <paramref name="slot"/> (<paramref name="frame"/> counts them), then the sky. Writes
     /// <paramref name="depth"/>, which must be in the depth attachment layout (<see cref="DepthTarget.RecordFrameStart"/>).
-    /// Times the cascades with the <see cref="GpuTimer"/> queries of <paramref name="timerSlot"/>. Render thread.
+    /// Times the cascades with the <see cref="GpuTimer"/> queries of <paramref name="timerSlot"/>. What else draws in its
+    /// renderings (<paramref name="draws"/>: the mesh assets) draws into each cascade after the world's and the models'
+    /// shadows, and in the main view after the models. Render thread.
     /// </summary>
     public void Record(
         CommandBuffer commandBuffer,
@@ -463,7 +471,8 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         in ViewConstants view,
         int slot,
         in MeshFrame frame,
-        int timerSlot
+        int timerSlot,
+        IMeshPassDraws? draws = null
     )
     {
         var vk = _context.Vk;
@@ -473,7 +482,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         RecordClusters(commandBuffer, in view);
 
         _timer.Begin(commandBuffer, timerSlot, GpuPass.ShadowMaps);
-        RecordCascades(commandBuffer, slot, in frame);
+        RecordCascades(commandBuffer, slot, in frame, draws);
         _timer.End(commandBuffer, timerSlot, GpuPass.ShadowMaps);
 
         // The image size the shaders find a pixel's cluster of lights by (mesh.frag's pointLight) is the image drawn to.
@@ -552,8 +561,9 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
         vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _layout, 0, 1, &set, 0, null);
         vk.CmdPushConstants(commandBuffer, _layout, Stages, 0, (uint)sizeof(ViewConstants), &constants);
-        var draws = Math.Clamp(frame.Draws, 0, MaxDraws);
-        if (draws > 0)
+        var assets = draws;
+        var worldDraws = Math.Clamp(frame.Draws, 0, MaxDraws);
+        if (worldDraws > 0)
         {
             vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _meshPipeline);
             vk.CmdBindIndexBuffer(commandBuffer, Heap.Buffer, 0, IndexType.Uint16);
@@ -561,7 +571,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
                 commandBuffer,
                 Commands.Buffer,
                 CommandsOffset(slot, 0),
-                (uint)draws,
+                (uint)worldDraws,
                 (uint)sizeof(DrawIndexedIndirectCommand)
             );
         }
@@ -583,9 +593,17 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             _timer.End(commandBuffer, timerSlot, GpuPass.Models);
         }
 
+        if (assets is not null)
+        {
+            assets.RecordCamera(commandBuffer, slot, in constants, timerSlot);
+            // The wireframe and the sky with this pass's set and constants again, whatever the draws bound.
+            vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Graphics, _layout, 0, 1, &set, 0, null);
+            vk.CmdPushConstants(commandBuffer, _layout, Stages, 0, (uint)sizeof(ViewConstants), &constants);
+        }
+
         if (view.Has(ViewSwitches.Wireframe) && _wirePipeline.Handle != 0)
         {
-            RecordWireframe(commandBuffer, slot, draws, models);
+            RecordWireframe(commandBuffer, slot, worldDraws, models);
         }
 
         vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _skyPipeline);
@@ -933,7 +951,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     /// map in the layout <c>mesh.frag</c> and the particles' simulate pass read it in. With shadows off the lists are empty and the layers only cleared:
     /// <c>mesh.frag</c> does not read the map then.
     /// </summary>
-    private void RecordCascades(CommandBuffer commandBuffer, int slot, in MeshFrame frame)
+    private void RecordCascades(CommandBuffer commandBuffer, int slot, in MeshFrame frame, IMeshPassDraws? draws)
     {
         var vk = _context.Vk;
         // The last frame's lookups finish before this frame's draws; the old contents go.
@@ -1014,6 +1032,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
                 );
             }
 
+            draws?.RecordShadows(commandBuffer, slot, cascade);
             vk.CmdEndRendering(commandBuffer);
         }
 

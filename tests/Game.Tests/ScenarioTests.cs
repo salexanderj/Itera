@@ -1,9 +1,12 @@
 using System.Numerics;
 using Arch.Core;
+using Game.Systems;
 using Game.WorldGeneration;
+using Itera.Engine.Assets;
 using Itera.Engine.Commands;
 using Itera.Engine.Components;
 using Itera.Engine.Matches;
+using Itera.Engine.Rendering;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.DependencyInjection;
 using Silk.NET.Input;
@@ -45,6 +48,26 @@ public sealed class ScenarioTests
         var ground = GameGenerator.SurfaceHeight(0, 0, 1) / (float)VoxelConstants.CentimetresPerMetre;
         Assert.True(contact.Grounded);
         Assert.Equal(ground, position.Feet.Y, 0.15f);
+    }
+
+    [Fact]
+    public void The_fox_stands_in_front_of_the_start_and_is_drawn_every_frame()
+    {
+        using var provider = GameComposition.Build(s_options);
+        using var match = new HeadlessRun(provider).Play(seed: 1);
+        Assert.True(match.WaitUntilLoaded());
+        match.Step(2);
+
+        var assets = provider.GetRequiredService<MeshAssets>();
+        var fox = Assert.Single(provider.GetRequiredService<MeshInstances>().Instances.ToArray());
+        Assert.Equal(assets.Find(GameModels.Fox), fox.Asset);
+        Assert.Equal(576, assets[fox.Asset].TriangleCount);
+        // The start pose looks along -z from over the middle.
+        var at = Vector3.Transform(Vector3.Zero, fox.Transform);
+        var ground = GameGenerator.SurfaceHeight(0, -400, 1) / (float)VoxelConstants.CentimetresPerMetre;
+        Assert.Equal(0, at.X, 1e-4f);
+        Assert.Equal(ground, at.Y, 1e-4f);
+        Assert.Equal(-FoxSpawnSystem.AheadMetres, at.Z, 1e-4f);
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using Game.Systems;
 using Game.WorldGeneration;
 using Itera.Engine;
+using Itera.Engine.Assets;
 using Itera.Engine.Commands;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
@@ -103,7 +104,7 @@ public static class GameServiceCollectionExtensions
     }
 
     /// <summary>
-    /// The fixed systems, in their run order: the player made at the start; the console's cleanup and reset (the
+    /// The fixed systems, in their run order: the player and the fox made at the start; the console's cleanup and reset (the
     /// systems after them put things back in the same step) and its balls; the player's input; what the last physics step did; the
     /// player's move (it reads the physics' pushes, and stand-ins are placed after it); the stand-ins and the loose
     /// bodies; and last the streaming centres, from where everything ended up.
@@ -115,6 +116,13 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<IOptions<PlayerOptions>>().Value,
             sp.GetRequiredService<StartPose>(),
             sp.GetRequiredService<ILogger<PlayerSpawnSystem>>()
+        ));
+        services.AddScoped<IFixedUpdateSystem>(sp => new FoxSpawnSystem(
+            sp.GetRequiredService<EcsWorld>().World,
+            sp.GetRequiredService<MeshAssets>(),
+            sp.GetRequiredService<StartPose>(),
+            sp.GetRequiredService<SessionService>().Match.Seed,
+            sp.GetRequiredService<ILogger<FoxSpawnSystem>>()
         ));
         services.AddScoped<IFixedUpdateSystem>(sp => new MapResetSystem(
             sp.GetRequiredService<EcsWorld>().World,
@@ -187,8 +195,8 @@ public static class GameServiceCollectionExtensions
 
     /// <summary>
     /// The frame systems, in their run order: the camera at the player's eye, or the fly camera (and the benchmark over
-    /// it); the debug outlines; the camera to the renderer; the loose bodies' models; and the sky from where the camera
-    /// is.
+    /// it); the debug outlines; the camera to the renderer; the loose bodies' models; the mesh assets placed (the fox);
+    /// and the sky from where the camera is.
     /// </summary>
     private static void AddFrameSystems(IServiceCollection services, BenchmarkSettings? benchmark)
     {
@@ -250,6 +258,13 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<LooseBodies>(),
             sp.GetRequiredService<VoxelTintSampler>(),
             sp.GetRequiredService<RenderView>()
+        ));
+        services.AddScoped<IFrameUpdateSystem>(sp => new MeshDrawSystem(
+            sp.GetRequiredService<EcsWorld>().World,
+            sp.GetRequiredService<MeshInstances>(),
+            sp.GetRequiredService<MeshAssets>(),
+            sp.GetRequiredService<VoxelWorld>(),
+            sp.GetRequiredService<ConsoleCommands>()
         ));
         services.AddScoped<IFrameUpdateSystem>(sp => new AtmosphereSystem(
             sp.GetRequiredService<EcsWorld>().World,

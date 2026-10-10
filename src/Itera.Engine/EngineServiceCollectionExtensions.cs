@@ -103,6 +103,9 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<Screenshots>();
         services.TryAddSingleton<ScreenshotPass>();
         services.TryAddSingleton<ModelInstances>();
+        services.TryAddSingleton<MeshInstances>();
+        services.TryAddSingleton<MeshAssetPass>();
+        services.TryAddSingleton<MeshAssetDraws>();
         services.TryAddSingleton<PointLights>();
         services.TryAddScoped<VoxelTintSampler>();
         services.TryAddSingleton(sp => new DebugLines(
