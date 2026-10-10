@@ -91,7 +91,8 @@ Where tests live:
   `TestTriangles`), the mover over colliders alone (`MeshMoverTests`: a thin wall, a slope along no axis, a collider
   added and removed, the map's edge), and over voxels and colliders in the same cells (`MixedGroundMoverTests`); loose
   bodies without voxel terrain (`LooseBodiesWithoutTerrainTests`, over `Systems/MeshGroundHarness`: mesh ground, models
-  in their own memory, the mover reading the bodies); wide bodies (`WideBodyMoverTests`); statics of voxel boxes,
+  in their own memory, the mover reading the bodies); the movement modes' probes over meshes and voxels
+  (`MovementProbesTests`, `MovementProbesVoxelTests`); wide bodies (`WideBodyMoverTests`); statics of voxel boxes,
   coarse colliders (`CoarseCollidersTests`), ragdolls (`RagdollTests`), thrown and settled pieces, the mover among
   loose bodies (`MoverWithBodiesTests`), and solid models (`SolidModelVoxelsTests`).
 - `Itera.Engine.Tests/Rendering/`: `Materials/MaterialTextureSetsTests` (DDS files read back, sets loaded and left out,

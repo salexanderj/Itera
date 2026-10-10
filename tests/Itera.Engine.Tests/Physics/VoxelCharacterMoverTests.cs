@@ -259,6 +259,7 @@ public abstract class MoverFeatureTests
         Assert.Equal(2.00f, feet.Y, 4);
         Assert.True(result.Grounded);
         Assert.Equal(0, velocity.Y);
+        Assert.Equal(Vector2.Zero, result.WallNormal);
     }
 
     [Fact]
@@ -273,6 +274,8 @@ public abstract class MoverFeatureTests
         Assert.InRange(feet.X * 100, -200 - 26 - 0.05f, -200 - 26);
         Assert.Equal(-240, feet.Z * 100, 2);
         Assert.Equal(0, velocity.X, 3);
+        // The wall's normal points back out of it, along -x.
+        Assert.True(Vector2.Distance(-Vector2.UnitX, result.WallNormal) < 1e-3f, $"Normal {result.WallNormal}.");
     }
 
     [Fact]

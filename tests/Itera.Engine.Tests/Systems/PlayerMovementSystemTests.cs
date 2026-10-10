@@ -584,6 +584,52 @@ public sealed class PlayerMovementSystemTests : IDisposable
     }
 
     [Fact]
+    public void A_movement_mode_that_takes_the_step_moves_the_body_by_its_velocity_through_the_mover()
+    {
+        using var world = World.Create();
+        // Straight up at 1 m/s with no step and no gravity, from standing on the floor.
+        var mode = new Rising { Taking = true };
+        using var system = Create(world, new Vector3(0, 1.6f, 0), mode: mode);
+        Run(world, system, 30, default);
+        var standing = Read(world).Position.Feet.Y;
+
+        Run(world, system, 30, new PlayerCommand { Buttons = PlayerButtons.Jump });
+        var (position, velocity, contact) = Read(world);
+
+        Assert.Equal(Player(world), mode.Entity);
+        Assert.Equal(standing + 0.5f, position.Feet.Y, 0.01f);
+        Assert.Equal(1, velocity.MetresPerSecond.Y, 1e-4f);
+        Assert.False(contact.Grounded);
+        Assert.False(contact.Jumped);
+    }
+
+    [Fact]
+    public void A_movement_mode_that_leaves_the_step_lets_the_engine_walk_and_jump()
+    {
+        using var world = World.Create();
+        var mode = new Rising { Taking = false };
+        using var system = Create(world, new Vector3(0, 1.6f, 0), mode: mode);
+        Run(world, system, 30, default);
+        var standing = Read(world).Position.Feet.Y;
+
+        Run(world, system, 1, new PlayerCommand { Buttons = PlayerButtons.Jump });
+
+        Assert.True(Read(world).Contact.Jumped);
+        Assert.True(Read(world).Position.Feet.Y > standing);
+        Assert.True(mode.Asked > 30);
+    }
+
+    [Fact]
+    public void Update_with_a_movement_mode_allocates_nothing()
+    {
+        using var world = World.Create();
+        using var system = Create(world, new Vector3(0, 1.6f, 0), mode: new Rising { Taking = true });
+        world.Create(new CameraPose(), new ActiveCamera());
+
+        Assert.Equal(0, SystemAllocation.BytesAllocated(system, Step));
+    }
+
+    [Fact]
     public void Update_allocates_nothing()
     {
         using var world = World.Create();
@@ -593,6 +639,28 @@ public sealed class PlayerMovementSystemTests : IDisposable
         Assert.Equal(0, SystemAllocation.BytesAllocated(system, Step));
         world.Get<PlayerMode>(Player(world)).Flying = true;
         Assert.Equal(0, SystemAllocation.BytesAllocated(system, Step));
+    }
+
+    /// <summary>A movement mode that takes every step (while Jump is held) at 1 m/s straight up with no step, or none.</summary>
+    private sealed class Rising : IMovementMode
+    {
+        public bool Taking;
+        public int Asked;
+        public Entity Entity = Entity.Null;
+
+        public bool Steer(in MovementModeInput input, ref MovementModeMove move)
+        {
+            Asked++;
+            Entity = input.Entity;
+            if (!Taking || (input.Command.Buttons & PlayerButtons.Jump) == 0)
+            {
+                return false;
+            }
+
+            move.Velocity = Vector3.UnitY;
+            move.StepMetres = 0;
+            return true;
+        }
     }
 
     private static (Vector3 Eye, float Yaw, float Pitch)? Places(string name) =>
@@ -633,7 +701,8 @@ public sealed class PlayerMovementSystemTests : IDisposable
         bool flying = false,
         VoxelCharacterMover? mover = null,
         ConsoleCommands? commands = null,
-        Func<string, (Vector3 Eye, float Yaw, float Pitch)?>? places = null
+        Func<string, (Vector3 Eye, float Yaw, float Pitch)?>? places = null,
+        IMovementMode? mode = null
     )
     {
         var system = new PlayerMovementSystem(
@@ -642,7 +711,8 @@ public sealed class PlayerMovementSystemTests : IDisposable
             _area,
             NullLogger<PlayerMovementSystem>.Instance,
             commands,
-            places
+            places,
+            mode
         );
         system.Initialize();
         CreatePlayer(world, eye, yaw, flying);

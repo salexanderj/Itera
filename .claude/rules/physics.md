@@ -62,6 +62,16 @@ bodies)` without), and the play area
 to register its own). Where a mesh's top is over the voxels' but its surface lies under theirs (a steep triangle half in
 the ground), the voxels' surface holds the body.
 
+Building blocks for a game's movement modes (`IMovementMode`, `.claude/rules/systems.md`): a move reports the last
+wall it met (`CharacterMoveResult.WallNormal`, across x and z, out of the wall; zero for none; also
+`CharacterContact.WallNormal`); a step height of 0 turns off stepping up and keeping to the ground; and
+`MovementProbes` (scoped, in the core) gives `TryWallAhead` (three rays from the body's axis, over its step, at half
+and nine tenths of its height, of the shared ray: a hit steeper than 60 degrees within the reach past its side, with
+the nearest point, distance, and tags, and the mean of the hits' normals: a voxel's is the face the ray entered),
+`TryLedgeTop` (a ray down from over the head, past the wall's face, onto walkable ground above the wall's point; none
+where it starts inside the wall), and `HasRoom` (the mover's `OverlapsAnything`). Loose bodies are not in the shared
+ray, so no probe meets them.
+
 `MeshColumns` (internal): a column's spans, one for each triangle over the column's square: the lowest and highest
 cell it blocks, its plane's height at the square's centre (a wall's highest point over the square), and its tags. Only
 the cells a triangle passes through block: a closed mesh has no inside, so a body inside one is blocked only where a

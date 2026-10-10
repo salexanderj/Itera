@@ -24,7 +24,9 @@ namespace Itera.Engine.Systems;
 /// it cannot jump or sprint; let go, it stands up once the standing body fits where it is
 /// (<see cref="VoxelCharacterMover.OverlapsAnything"/>), so it stays down under a low roof. Flying ends the crouch at
 /// once. Moving backwards, the local player moves at most <see cref="BackwardSpeedShare"/> of its speed (of its crouched
-/// speed while crouched) and cannot sprint. A <see cref="Bodiless"/> entity is not moved. The velocity before the move
+/// speed while crouched) and cannot sprint. A game's <see cref="IMovementMode"/> may take a walking player's step before
+/// the engine steers it (a climb): it gives the velocity and step height, and the move, contact, and eye go on as for any
+/// step. A <see cref="Bodiless"/> entity is not moved. The velocity before the move
 /// is kept as <see cref="CharacterVelocity.Wanted"/> for a stand-in, and the push loose bodies gave the stand-in
 /// (<see cref="CharacterVelocity.Push"/>) is added after steering. While a player flies the debug camera, its feet
 /// follow the camera, so walking resumes under it; reading a pose a frame system wrote is a debug case. It creates no
@@ -119,6 +121,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     private readonly ILogger<PlayerMovementSystem> _logger;
     private readonly ConsoleCommands? _commands;
     private readonly Func<string, (Vector3 Eye, float Yaw, float Pitch)?>? _places;
+    private readonly IMovementMode? _mode;
     private bool _localWaiting;
     private Request _request;
 
@@ -131,16 +134,19 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     /// The eye, yaw, and pitch (radians) of a named place for <c>tp</c>, or null; the callback returns null for a name it
     /// lacks.
     /// </param>
+    /// <param name="mode">A game's own way of moving, offered each walking player's step first; none for the engine's alone.</param>
     public PlayerMovementSystem(
         World world,
         VoxelCharacterMover mover,
         PlayArea area,
         ILogger<PlayerMovementSystem> logger,
         ConsoleCommands? commands = null,
-        Func<string, (Vector3 Eye, float Yaw, float Pitch)?>? places = null
+        Func<string, (Vector3 Eye, float Yaw, float Pitch)?>? places = null,
+        IMovementMode? mode = null
     )
         : base(world)
     {
+        _mode = mode;
         ArgumentNullException.ThrowIfNull(mover);
         ArgumentNullException.ThrowIfNull(area);
         _commands = commands;
@@ -185,21 +191,38 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         var job = new Move
         {
             Mover = _mover,
+            Mode = _mode,
+            World = World,
             Seconds = step.StepSeconds,
             CameraFound = camera.Found,
             CameraPosition = camera.Position,
         };
-        World.InlineQuery<
-            Move,
-            PlayerCommand,
-            PlayerMode,
-            CharacterSize,
-            CharacterPosition,
-            CharacterVelocity,
-            CharacterContact,
-            EyeSmoothing,
-            MovementStats
-        >(in s_players, ref job);
+        // A chunk loop, so a movement mode knows each player's entity.
+        foreach (ref var chunk in World.Query(in s_players))
+        {
+            var commands = chunk.GetSpan<PlayerCommand>();
+            var modes = chunk.GetSpan<PlayerMode>();
+            var sizes = chunk.GetSpan<CharacterSize>();
+            var positions = chunk.GetSpan<CharacterPosition>();
+            var velocities = chunk.GetSpan<CharacterVelocity>();
+            var contacts = chunk.GetSpan<CharacterContact>();
+            var eyes = chunk.GetSpan<EyeSmoothing>();
+            var stats = chunk.GetSpan<MovementStats>();
+            foreach (var index in chunk)
+            {
+                job.Update(
+                    chunk.Entity(index),
+                    ref commands[index],
+                    ref modes[index],
+                    ref sizes[index],
+                    ref positions[index],
+                    ref velocities[index],
+                    ref contacts[index],
+                    ref eyes[index],
+                    ref stats[index]
+                );
+            }
+        }
 
         // Only the local player's waiting is logged: other bodies move through the same job.
         var local = new FindLocalWaiting();
@@ -577,23 +600,16 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     }
 
     private struct Move
-        : IForEach<
-            PlayerCommand,
-            PlayerMode,
-            CharacterSize,
-            CharacterPosition,
-            CharacterVelocity,
-            CharacterContact,
-            EyeSmoothing,
-            MovementStats
-        >
     {
         public VoxelCharacterMover Mover;
+        public IMovementMode? Mode;
+        public World World;
         public float Seconds;
         public bool CameraFound;
         public Vector3 CameraPosition;
 
         public readonly void Update(
+            Entity entity,
             ref PlayerCommand command,
             ref PlayerMode mode,
             ref CharacterSize size,
@@ -642,6 +658,62 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             var most = HeightEyeMetresPerSecond * Seconds;
             eye.Height = MathF.Abs(eye.Height) <= most ? 0 : eye.Height - MathF.CopySign(most, eye.Height);
 
+            var v = velocity.MetresPerSecond;
+            var jumped = false;
+            var step = size.StepMetres;
+            var taken = new MovementModeMove { Velocity = v, StepMetres = step };
+            if (
+                Mode is not null
+                && Mode.Steer(
+                    new MovementModeInput(entity, World, command, size, position.Feet, v, contact, stats, Seconds),
+                    ref taken
+                )
+            )
+            {
+                // The game's mode took the step: its velocity, with the loose bodies' push, and its step height.
+                v = taken.Velocity + velocity.Push;
+                velocity.Push = default;
+                step = float.IsFinite(taken.StepMetres) ? Math.Max(0, taken.StepMetres) : 0;
+                if (!IsFinite(v))
+                {
+                    v = Vector3.Zero;
+                }
+            }
+            else
+            {
+                v = Steer(in command, in contact, ref velocity, in stats, out jumped);
+            }
+
+            var shape = new CharacterShape(size.HeightMetres, size.RadiusMetres, step, stats.MaxSlopeDegrees);
+            velocity.Wanted = v;
+            var result = Mover.Move(ref position.Feet, ref v, in shape, Seconds);
+            velocity.MetresPerSecond = v;
+
+            var waiting = result.Status == CharacterMoveStatus.Waiting;
+            contact.Grounded = result.Grounded;
+            contact.Steep = result.Steep;
+            contact.Downhill = result.Downhill;
+            contact.WallNormal = result.WallNormal;
+            contact.Waiting = waiting;
+            contact.Jumped = jumped;
+
+            // The eye starts where it was before a step and eases to where the body puts it.
+            var offset = Math.Clamp(eye.Offset - result.SteppedMetres, -size.StepMetres, size.StepMetres) * EyeEase;
+            eye.Offset = MathF.Abs(offset) < 0.001f ? 0 : offset;
+        }
+
+        /// <summary>
+        /// The engine's walking: the horizontal velocity turned towards the command's, a slide down steep ground, the
+        /// loose bodies' push, a jump from walkable ground, and gravity. Returns the velocity to move by.
+        /// </summary>
+        private readonly Vector3 Steer(
+            in PlayerCommand command,
+            in CharacterContact contact,
+            ref CharacterVelocity velocity,
+            in MovementStats stats,
+            out bool jumped
+        )
+        {
             // Forward at yaw y is (-sin y, 0, -cos y) and right is (cos y, 0, -sin y).
             var sin = MathF.Sin(command.Yaw);
             var cos = MathF.Cos(command.Yaw);
@@ -674,7 +746,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             velocity.Push = default;
 
             var vy = v.Y;
-            var jumped = (command.Buttons & PlayerButtons.Jump) != 0 && walkable;
+            jumped = (command.Buttons & PlayerButtons.Jump) != 0 && walkable;
             if (jumped)
             {
                 // The height grows with the square of the speed.
@@ -683,27 +755,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             }
 
             vy = MathF.Max(vy - stats.Gravity * Seconds, -stats.MaxFall);
-            v = new Vector3(horizontal.X, vy, horizontal.Y);
-            var shape = new CharacterShape(
-                size.HeightMetres,
-                size.RadiusMetres,
-                size.StepMetres,
-                stats.MaxSlopeDegrees
-            );
-            velocity.Wanted = v;
-            var result = Mover.Move(ref position.Feet, ref v, in shape, Seconds);
-            velocity.MetresPerSecond = v;
-
-            var waiting = result.Status == CharacterMoveStatus.Waiting;
-            contact.Grounded = result.Grounded;
-            contact.Steep = result.Steep;
-            contact.Downhill = result.Downhill;
-            contact.Waiting = waiting;
-            contact.Jumped = jumped;
-
-            // The eye starts where it was before a step and eases to where the body puts it.
-            var offset = Math.Clamp(eye.Offset - result.SteppedMetres, -size.StepMetres, size.StepMetres) * EyeEase;
-            eye.Offset = MathF.Abs(offset) < 0.001f ? 0 : offset;
+            return new Vector3(horizontal.X, vy, horizontal.Y);
         }
     }
 }

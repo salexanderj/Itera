@@ -46,6 +46,10 @@ public enum CharacterMoveStatus : byte
 /// body. The body should slide towards <paramref name="Downhill"/> and not jump.
 /// </param>
 /// <param name="Downhill">On steep ground, the horizontal direction (x, z) away from what holds the body up.</param>
+/// <param name="WallNormal">
+/// When the horizontal move met a wall, the last one's normal across x and z (a unit length, pointing out of the wall
+/// towards the body); zero when it met none.
+/// </param>
 public readonly record struct CharacterMoveResult(
     CharacterMoveStatus Status,
     bool Grounded,
@@ -54,7 +58,8 @@ public readonly record struct CharacterMoveResult(
     bool HitWall,
     float SteppedMetres,
     bool Steep = false,
-    Vector2 Downhill = default
+    Vector2 Downhill = default,
+    Vector2 WallNormal = default
 );
 
 /// <summary>
@@ -421,6 +426,7 @@ public sealed class VoxelCharacterMover
         var stepped = 0.0;
         double vx = velocity.X,
             vz = velocity.Z;
+        var wallNormal = Vector2.Zero;
 
         // Horizontal, in parts short enough for one window of cells.
         var hitWall =
@@ -439,7 +445,8 @@ public sealed class VoxelCharacterMover
                 canStep,
                 ref vx,
                 ref vz,
-                ref stepped
+                ref stepped,
+                ref wallNormal
             );
 
         // Vertical.
@@ -479,7 +486,8 @@ public sealed class VoxelCharacterMover
             hitWall,
             (float)(stepped / _cellsPerMetre),
             steep,
-            new Vector2((float)downX, (float)downZ)
+            new Vector2((float)downX, (float)downZ),
+            hitWall ? wallNormal : Vector2.Zero
         );
     }
 
@@ -487,7 +495,8 @@ public sealed class VoxelCharacterMover
     /// The horizontal part of a move of (<paramref name="dx"/>, <paramref name="dz"/>) voxels, in parts short enough for
     /// one window of cells: each part slides along the walls, or, where <paramref name="canStep"/> and a ledge stops it,
     /// steps up onto the ledge (<see cref="TryStepUp"/>). The velocity loses what points into the walls met, and
-    /// <paramref name="stepped"/> gains the steps' height. Returns true when a wall was met.
+    /// <paramref name="stepped"/> gains the steps' height; <paramref name="wallNormal"/> is the last wall's normal.
+    /// Returns true when a wall was met.
     /// </summary>
     private bool MoveHorizontally(
         ref double px,
@@ -503,7 +512,8 @@ public sealed class VoxelCharacterMover
         bool canStep,
         ref double vx,
         ref double vz,
-        ref double stepped
+        ref double stepped,
+        ref Vector2 wallNormal
     )
     {
         var hitWall = false;
@@ -548,6 +558,11 @@ public sealed class VoxelCharacterMover
                 pz = sz;
                 py = feet;
                 hitWall |= steppedCount > 0;
+                if (steppedCount > 0)
+                {
+                    wallNormal = steppedNormals[steppedCount - 1];
+                }
+
                 Clip(ref vx, ref vz, steppedNormals[..steppedCount]);
                 continue;
             }
@@ -569,7 +584,8 @@ public sealed class VoxelCharacterMover
                     if (Headroom(fx, py, fz, r, h, ground - py) < ground - py - _edge)
                     {
                         hitWall = true;
-                        Clip(ref vx, ref vz, [new Vector2((float)(-partX / wanted), (float)(-partZ / wanted))]);
+                        wallNormal = new Vector2((float)(-partX / wanted), (float)(-partZ / wanted));
+                        Clip(ref vx, ref vz, [wallNormal]);
                         continue;
                     }
 
@@ -585,6 +601,11 @@ public sealed class VoxelCharacterMover
             px = fx;
             pz = fz;
             hitWall |= flatCount > 0;
+            if (flatCount > 0)
+            {
+                wallNormal = normals[flatCount - 1];
+            }
+
             Clip(ref vx, ref vz, normals[..flatCount]);
         }
 

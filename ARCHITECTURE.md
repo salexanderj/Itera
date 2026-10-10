@@ -611,7 +611,9 @@ and `Alpha`, how far the frame lies between the last two steps). Components are 
   `VoxelCharacterMover`: steering faster on walkable ground than in the air, jumping, gravity, sliding on steep ground,
   pushes from loose bodies, crouching (the local player crouches while Crouch is held, to 0.77 of its height; it stands
   once the standing body fits), and backwards walking at 0.7 of its speed. The eye eases after a step or a change of eye
-  height (`EyeSmoothing`). `pos` and `tp` are its commands.
+  height (`EyeSmoothing`). A game's `IMovementMode` may take a walking player's step first (a climb), giving the
+  velocity and step height, with `MovementProbes` (a wall ahead by three rays of the shared ray, its ledge's top by a
+  ray down, room to stand by the mover) and the move's `WallNormal`. `pos` and `tp` are its commands.
 - `PlayerCameraSystem` (frame) puts the active camera at the eye between the last two steps, looking where the command
   looks plus the mouse since the step, or behind the right shoulder (`ThirdPersonCamera`, pulled in by the voxels); it
   makes the camera entity (`CameraRules.CreateCamera`). `DebugFlyCameraSystem` flies it while the player flies, kept to the

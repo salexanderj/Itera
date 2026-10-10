@@ -165,6 +165,12 @@ public struct CharacterContact
     /// <summary>On steep ground, the horizontal direction (x, z) the character slides.</summary>
     public Vector2 Downhill;
 
+    /// <summary>
+    /// When the last step's move met a wall, its normal across x and z (a unit length, out of the wall towards the
+    /// character); zero when it met none.
+    /// </summary>
+    public Vector2 WallNormal;
+
     /// <summary>Holding still because voxels around it are not loaded yet.</summary>
     public bool Waiting;
 

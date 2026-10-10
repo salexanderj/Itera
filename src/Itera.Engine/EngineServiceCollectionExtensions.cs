@@ -159,6 +159,8 @@ public static class EngineServiceCollectionExtensions
         // The character mover over the terrain when there is one and the colliders, or the colliders alone in cells of
         // Engine:Physics:CollisionCentimetres, the map's edge the play area's world edge; the loose bodies either way.
         services.TryAddScoped(CreateCharacterMover);
+        // What a game's movement mode asks of the world round a body: a wall ahead, a ledge's top, room to stand.
+        services.TryAddScoped<MovementProbes>();
         // What the engine's player, camera, and benchmark systems share (Systems/): the play area (round the terrain's
         // grid, or PlayArea.WithoutTerrain; a game without terrain may replace it), the input block a game sets, the
         // console's resets, and the movement keys, made when a game first asks for them (an IRunStartup, before its own

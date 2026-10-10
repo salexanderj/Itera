@@ -33,7 +33,12 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   pushes from loose bodies, the eye eased after a step (`EyeSmoothing.Offset`) and to a new eye height at 2 m/s
   (`EyeSmoothing.Height`). The local player crouches while Crouch is held (0.77 of its height and eye, 0.4 of its
   speed, no jump or sprint; it stands once the standing body fits) and moves backwards at 0.7 of its speed without
-  sprint. While flying, its feet follow the fly camera. `pos` and `tp` are its commands (`tp` takes x y z [yaw pitch],
+  sprint. While flying, its feet follow the fly camera. A game's `IMovementMode` (registered in the match's scope, given
+  to the system) is offered each walking player's step first, with the player's entity and world for a component of
+  its own (no structural changes in it): it may take the step with its own velocity and step height (0: no stepping
+  up), and the move, contact (`CharacterContact.WallNormal` among it), and eye then go on as for any step; the
+  engine's `MovementProbes` find a wall ahead, its ledge's top, and room to stand (`.claude/rules/physics.md`). `pos`
+  and `tp` are its commands (`tp` takes x y z [yaw pitch],
   the form `pos` prints, `CameraPoseText`, or a game's named places with their eye, yaw, and pitch: the starter's are its
   benchmark views).
 - `PlayerCameraSystem` (frame) puts the active camera at the eye between the last two steps, looking where the command
