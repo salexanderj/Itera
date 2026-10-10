@@ -487,6 +487,16 @@ public sealed class VoxelModels : IDisposable
         _retired.Add(new RetiredModel(handle, level, corner, turn, tint));
     }
 
+    /// <summary>Moves the retired models' corners with the match's origin, each less <paramref name="metres"/>.</summary>
+    internal void ShiftRetired(Vector3 metres)
+    {
+        var retired = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_retired);
+        for (var i = 0; i < retired.Length; i++)
+        {
+            retired[i] = retired[i] with { Corner = retired[i].Corner - metres };
+        }
+    }
+
     /// <summary>Models retired and still drawn at their last place.</summary>
     public ReadOnlySpan<RetiredModel> Retired => System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_retired);
 

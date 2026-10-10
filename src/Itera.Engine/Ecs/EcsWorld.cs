@@ -18,6 +18,7 @@ public sealed partial class EcsWorld : IDisposable
     private readonly Group<FixedStepTime> _fixedSystems = new("Fixed");
     private readonly Group<FrameTime> _frameSystems = new("Frame");
     private readonly List<(IFixedUpdateSystem System, int Timing)> _fixed = [];
+    private bool _originMayMove = true;
     private bool _disposed;
 
     public EcsWorld(ILogger<EcsWorld> logger, SystemTimes times)
@@ -29,6 +30,13 @@ public sealed partial class EcsWorld : IDisposable
 
     /// <summary>The entity world. Systems query it; everything else goes through systems.</summary>
     public World World { get; }
+
+    /// <summary>
+    /// True while neither group runs, or during the first fixed system's update (before any other system's update and
+    /// after none's): where the match's origin may move (<c>OriginShifts</c>), so every system of a step or a frame sees
+    /// one origin.
+    /// </summary>
+    internal bool OriginMayMove => _originMayMove;
 
     /// <summary>Adds systems and initialises them.</summary>
     public void Initialize(IEnumerable<IFixedUpdateSystem> fixedSystems, IEnumerable<IFrameUpdateSystem> frameSystems)
@@ -56,30 +64,49 @@ public sealed partial class EcsWorld : IDisposable
     /// <summary>Runs the fixed group once: every system's before-update, update (each timed), and after-update, in order.</summary>
     public void FixedUpdate(in FixedStepTime step)
     {
-        foreach (var (system, _) in _fixed)
+        _originMayMove = false;
+        try
         {
-            system.BeforeUpdate(in step);
-        }
+            foreach (var (system, _) in _fixed)
+            {
+                system.BeforeUpdate(in step);
+            }
 
-        foreach (var (system, timing) in _fixed)
-        {
-            var start = Stopwatch.GetTimestamp();
-            system.Update(in step);
-            _times.Record(timing, Stopwatch.GetTimestamp() - start);
-        }
+            for (var i = 0; i < _fixed.Count; i++)
+            {
+                var (system, timing) = _fixed[i];
+                var start = Stopwatch.GetTimestamp();
+                _originMayMove = i == 0;
+                system.Update(in step);
+                _originMayMove = false;
+                _times.Record(timing, Stopwatch.GetTimestamp() - start);
+            }
 
-        foreach (var (system, _) in _fixed)
+            foreach (var (system, _) in _fixed)
+            {
+                system.AfterUpdate(in step);
+            }
+        }
+        finally
         {
-            system.AfterUpdate(in step);
+            _originMayMove = true;
         }
     }
 
     /// <summary>Runs the frame group once.</summary>
     public void Update(in FrameTime frame)
     {
-        _frameSystems.BeforeUpdate(in frame);
-        _frameSystems.Update(in frame);
-        _frameSystems.AfterUpdate(in frame);
+        _originMayMove = false;
+        try
+        {
+            _frameSystems.BeforeUpdate(in frame);
+            _frameSystems.Update(in frame);
+            _frameSystems.AfterUpdate(in frame);
+        }
+        finally
+        {
+            _originMayMove = true;
+        }
     }
 
     public void Dispose()

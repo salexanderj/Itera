@@ -7,6 +7,7 @@ using Itera.Engine.Assets;
 using Itera.Engine.Commands;
 using Itera.Engine.Components;
 using Itera.Engine.Matches;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.DependencyInjection;
@@ -177,6 +178,82 @@ public sealed class ScenarioTests
         // Their models went too: nothing draws them until the world's meshes hold their voxels.
         Assert.Equal(models, match.Match.Models.Count);
     }
+
+    /// <summary>
+    /// The origin following the player (moved to its feet's whole metres every 100 steps, as the engine will move it with
+    /// the camera) changes nothing in the world: the fox on its circle and four balls that rest and are settled across
+    /// the shifts come out where they do in a match whose origin never moves, and the player's walk within a millimetre
+    /// (that match rounds the feet to floats 30 to 40 m from its origin, about a micrometre a step, which the followed
+    /// one, its feet near its origin, does not: 0.3 mm over the walk when measured).
+    /// </summary>
+    [Fact]
+    public void A_walk_with_the_origin_following_the_player_keeps_to_one_without_a_shift()
+    {
+        var still = WalkWithBalls(follow: false);
+        var followed = WalkWithBalls(follow: true);
+
+        Assert.Equal(0, still.Shifts);
+        Assert.True(followed.Shifts >= 4, $"The origin moved {followed.Shifts} times.");
+        for (var i = 0; i < still.Feet.Count; i++)
+        {
+            Assert.True(
+                still.Feet[i].DistanceTo(followed.Feet[i]) < 1e-3,
+                $"Block {i}: the feet at {followed.Feet[i]}, without shifts at {still.Feet[i]}."
+            );
+            Assert.True(
+                still.Fox[i].DistanceTo(followed.Fox[i]) < 1e-4,
+                $"Block {i}: the fox at {followed.Fox[i]}, without shifts at {still.Fox[i]}."
+            );
+        }
+
+        Assert.Equal(4, still.Settled.Count);
+        Assert.Equal(still.Settled, followed.Settled);
+    }
+
+    /// <summary>
+    /// Drops four balls and lets them come to rest (a ball rolling across a shift goes its own way by centimetres, as
+    /// any small change sends it), then walks forward for 600 steps, reading the feet and the fox (absolute) every 100
+    /// steps and, when <paramref name="follow"/>, moving the origin to the feet, while the balls settle.
+    /// </summary>
+    private static Walked WalkWithBalls(bool follow)
+    {
+        using var provider = GameComposition.Build(s_options);
+        using var match = new HeadlessRun(provider).Play(seed: 1);
+        Assert.True(match.WaitUntilLoaded());
+        var origin = match.Services.GetRequiredService<WorldOrigin>();
+        var shifts = match.Services.GetRequiredService<OriginShifts>();
+        var output = new Output();
+        match.Step(30);
+        var edits = match.Match.Voxels.EditCount;
+        provider.GetRequiredService<ConsoleCommands>().Execute("balls 4", output);
+        match.Step(150);
+
+        var walked = new Walked([], [], [], 0);
+        match.Input.InjectKey(Key.W, true);
+        for (var block = 0; block < 6; block++)
+        {
+            match.Step(100);
+            var feet = origin.ToWorld(Player(match.World).Position.Feet);
+            walked.Feet.Add(feet);
+            walked.Fox.Add(origin.ToWorld(Fox(match.World).Placement.Position));
+            if (follow && shifts.ShiftTo(feet))
+            {
+                walked = walked with { Shifts = walked.Shifts + 1 };
+            }
+        }
+
+        match.Input.InjectKey(Key.W, false);
+        match.Step(60 * 5);
+        for (var sequence = edits + 1; sequence <= match.Match.Voxels.EditCount; sequence++)
+        {
+            walked.Settled.Add(match.Match.Voxels.GetEdit(sequence).Origin);
+        }
+
+        Assert.Empty(output.Failures);
+        return walked;
+    }
+
+    private sealed record Walked(List<WorldPoint> Feet, List<WorldPoint> Fox, List<VoxelCoord> Settled, int Shifts);
 
     /// <summary>
     /// The boulder nearest the start (seed 1): the player

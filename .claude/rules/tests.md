@@ -42,6 +42,10 @@ paths:
   repeat: the starter's `tests/Game.Tests/ScenarioTests` (standing, walking a second, balls that rest and go back into
   the world) and the engine's `Matches/HeadlessMatchTests`. Write a game feature's test this way when it needs the real
   world and systems.
+- The origin's moves: `Matches/OriginShiftsTests` (what moves and what does not, the components' vectors each moved or
+  listed as no position, only between steps or in the first fixed system's update, no allocation); the game's `ChecklistTests`
+  checks its own components' vectors against its handlers, and its `ScenarioTests` a walk with the origin following
+  the player against one without.
 - Composition: `tests/Itera.Engine.Tests/Matches/EngineComposition.cs` builds the engine's real services with the least
   a game adds; over it `CompositionTests` (the run and a match resolve, systems keep their registration order),
   `MatchFlowTests` (starting, joining, leaving, a host that quits, an exception in a match), and `MatchLifetimeTests`
@@ -103,7 +107,9 @@ Where tests live:
   loose bodies (`MoverWithBodiesTests`), and solid models (`SolidModelVoxelsTests`); far from the middle
   (`FarFromTheMiddleTests`: a world moved 150 km out by `Voxels/TranslatedGenerator`, the origin there; the density
   ground's tests on its voxels and on mesh colliders placed there, `DensityMoverFarTests` and
-  `MeshDensityGroundFarTests`; rays, a ball, and mesh rays against the middle's bit for bit, a walk within 0.1 mm).
+  `MeshDensityGroundFarTests`; rays, a ball, and mesh rays against the middle's bit for bit, a walk within 0.1 mm);
+  the origin moved under Bepu (`PhysicsShiftTests`: sleeping, kinematic, and moving bodies and statics) and under loose
+  bodies on voxels (`ShiftedBodiesTests`: a resting ball, and a move's cost with 384 bodies, logged).
 - `Itera.Engine.Tests/Rendering/`: `Materials/MaterialTextureSetsTests` (DDS files read back, sets loaded and left out,
   a material packed with its set), `RenderLookTests` (the engine's look pinned to the shaders' former constants, every
   value copied and tunable), `SunPathTests` (daylight and night round the horizon, the test day, compass angles),

@@ -748,8 +748,16 @@ and compares runs from the log lines, which keep their form.
   moved there, `TranslatedGenerator`), the origin there. `VoxelCoord.FromMetres` and `ToMetres` went for that reason.
   Mesh colliders keep an absolute anchor each (whole metres) with their triangles from it; the mover's cells, the voxel
   colliders' statics, and the loose bodies' pivots are worked out in absolute doubles and posed locally. The origin
-  stays at the middle until it moves with the camera (open work), so the local floats themselves are as precise as a
-  map's middle allows: about 0.1 mm at 707 m.
+  moves only when asked (`OriginShifts.ShiftTo`, to whole metres): every body and static in Bepu, the engine's
+  components that keep positions (current and previous together, so the blend between steps holds), the world's
+  streaming centres, retired models, light flashes, and queued particles move the other way, then the game's
+  `IOriginShiftHandler`s; it happens between steps and frames or in the first fixed system's update, so a step sees
+  one origin.
+  A walk with the origin following the player every 100 steps matches one without within a millimetre over 45 m (the
+  one without rounds its feet to floats 30 to 40 m out, losing about a micrometre a step), and balls at rest settle
+  into the same voxels. Moving it with 384 balls and their voxel statics took 0.6 ms in a Debug test on a busy machine
+  (12 ms the first time, mostly compiling). Until the origin follows the camera on its own (open work), the local
+  floats are as precise as a map's middle allows: about 0.1 mm at 707 m.
 - **Positions in metres use `System.Numerics`** (`Vector3`, `Matrix4x4`, `Quaternion`), which Bepu takes directly.
   `Silk.NET.Maths` stays at the edges of Silk.NET APIs (window and swapchain sizes).
 - **Anything every peer must compute alike** uses `DeterministicMath` (below), never `System.Random` or platform maths.
@@ -1448,9 +1456,10 @@ Engine work that is known and not done:
   maps cost more (the starter's start view at 2560x1440: 0.15 ms at the engine's sun, 0.19 ms at 30 degrees, 0.36 ms at
   15, 0.40 ms at 5; their longer reach adds 0.01 to 0.03 ms of that); at night they cost 0.015 ms.
 - **Large maps** (under way): built, a map's size set in its generator's grid (up to ±160 km and 128 layers), voxels of
-  1 cm to 1 m, and positions kept local to a match's origin with absolute types (`WorldPoint`, `VoxelCoord`) wherever
-  they cross it. Not built: the origin following the camera (moving the bodies, statics, components, and services that
-  keep local positions, then the renderer's, the particles', and the sound's), views past 2 km, a nav grid that moves
+  1 cm to 1 m, positions kept local to a match's origin with absolute types (`WorldPoint`, `VoxelCoord`) wherever
+  they cross it, and moves of the origin on the CPU (`OriginShifts`). Not built: the renderer, the particles' GPU pool,
+  and the sound under a moved origin, the origin following the camera on its own (with a warm-up of its first move),
+  views past 2 km, a nav grid that moves
   with the players (it covers a game's area and keeps heights within ±327.67 m), and columns that hold only the layers
   with ground or edits, so a map's height costs memory only where something is.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no

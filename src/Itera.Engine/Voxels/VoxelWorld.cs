@@ -497,6 +497,19 @@ public sealed partial class VoxelWorld : IDisposable
         }
     }
 
+    /// <summary>
+    /// Moves the streaming centres' local positions with the match's origin, each less <paramref name="metres"/>; their
+    /// absolute centimetres, which streaming reads, stay.
+    /// </summary>
+    internal void ShiftCentres(Vector3 metres)
+    {
+        for (var i = 0; i < _centreCount; i++)
+        {
+            _centrePositions[i] -= metres;
+            _centres[i] = _centres[i] with { Position = _centres[i].Position - metres };
+        }
+    }
+
     private void EnsureCentreRoom(int count)
     {
         if (count > _centres.Length)

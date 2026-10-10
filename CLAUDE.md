@@ -55,6 +55,9 @@ used as references.
     game's `appsettings.json` (`ShippedSettingsTests`).
   - A console command added or removed: the list in the `run-game` skill.
   - Code that reads the edit log: handle `VoxelEditOperation.Reset`, an empty box after which no earlier edit counts.
+  - A local position a component or service keeps across steps moves when the origin does (`OriginShifts` and its
+    `ShiftedComponents`; the game's `IOriginShiftHandler`s). A component's vector field left out fails `OriginShiftsTests`
+    or the game's `ChecklistTests`.
   - A game's render pass, image view, camera lens, or on/off setting: the `scaffold` skill's steps (no checklist test
     catches a missed one).
 - Builds, tests, and game runs:
@@ -195,9 +198,9 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
   `VoxelWorld.Grid.Edge(k)` cm across (`VoxelGrid`, its generator's), a model's voxel its own unit (`VoxelModels`; 1 cm
   by default): code where the two meet uses those, never a level's 2^k. Positions kept in metres (`System.Numerics`'
   `Vector3`, `Matrix4x4`; `Silk.NET.Maths` only at Silk.NET API edges) are local, from the match's origin
-  (`WorldOrigin`, whole metres); a point that crosses it (a start pose, `tp`, the play area, a generator's or an
-  atmosphere's place) is an absolute `WorldPoint` (doubles). They meet only through `WorldOrigin`, in doubles: a local
-  float becomes centimetres or cells only as floor((local + origin) * scale). What every peer must
+  (`WorldOrigin`, whole metres); a point that crosses it (a start pose, `tp`, the play area) is an absolute
+  `WorldPoint` (doubles). They meet only through `WorldOrigin`, in doubles: a local float becomes centimetres or cells
+  only as floor((local + origin) * scale). What every peer must
   compute alike from a seed (world generation, posed bodies) uses `DeterministicMath` and `Rotation`, never
   `Math.Sin` or `System.Numerics` helpers.
 - Code that must not allocate (per frame, per tick, per edit) follows these rules, each learned from a measured

@@ -65,6 +65,13 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
    `ChecklistTests.Every_system_has_a_test_class_with_an_allocation_test` (engine and game) fails without them.
 5. Docs: an engine system in `.claude/rules/systems.md` (or its area's rules file); a game's in `GAME.md`. Commands it
    registers go in the `run-game` skill's console list.
+6. A position it keeps across steps (in a component of the game's, or a field) is local to the match's origin and
+   moves when the origin does: a game's component field goes in an `IOriginShiftHandler` the game registers in the
+   match's scope (`services.AddScoped<IOriginShiftHandler, NameShift>()`; the starter's `FoxRouteShift` moves
+   `FoxRoute.Centre`) and in the positions listed in the game's `ChecklistTests`, which fails for a vector field in
+   neither of its lists; an engine component's goes in `OriginShifts`' moves and `ShiftedComponents`
+   (`OriginShiftsTests`). A place the system knows in absolute terms is a `WorldPoint`, made local through the match's
+   `WorldOrigin`.
 
 ## An option
 

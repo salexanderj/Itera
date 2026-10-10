@@ -133,6 +133,43 @@ public sealed partial class PhysicsWorld : IDisposable
     }
 
     /// <summary>
+    /// Moves every body (awake, asleep, or kinematic) and every static by -<paramref name="metres"/>, for an origin that
+    /// moved by <paramref name="metres"/> (whole metres): what was at a local place is then at that place less them.
+    /// Nothing wakes or changes but the poses and the broad phase's bounds; velocities, joints, and contacts are relative,
+    /// and keep. Main thread, between steps. Returns how many bodies and statics moved.
+    /// </summary>
+    public (int Bodies, int Statics) Shift(Vector3 metres)
+    {
+        var bodies = Simulation.Bodies;
+        var moved = 0;
+        for (var index = 0; index < bodies.Sets.Length; index++)
+        {
+            ref var set = ref bodies.Sets[index];
+            if (!set.Allocated)
+            {
+                continue;
+            }
+
+            for (var i = 0; i < set.Count; i++)
+            {
+                set.DynamicsState[i].Motion.Pose.Position -= metres;
+                bodies.UpdateBounds(set.IndexToHandle[i]);
+            }
+
+            moved += set.Count;
+        }
+
+        var statics = Simulation.Statics;
+        for (var i = 0; i < statics.Count; i++)
+        {
+            statics[i].Pose.Position -= metres;
+            statics.UpdateBounds(statics.IndexToHandle[i]);
+        }
+
+        return (moved, statics.Count);
+    }
+
+    /// <summary>
     /// Adds a character's stand-in: an upright Bepu cylinder of the character's size and mass that never tips or sleeps,
     /// with its bottom at <paramref name="feet"/>. It touches thrown balls and lifted pieces only, not bodies cut off
     /// characters (<see cref="BodyKind.StandIn"/>): it pushes them and they push it. Place it every step with

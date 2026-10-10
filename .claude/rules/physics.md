@@ -32,6 +32,9 @@ the thaw (`VoxelColliders.GroupThawed`). Cut bodies go 30 s after they rest (als
 after they were made (`LooseBodySystem.CutRestSeconds`, `CutMostSeconds`). A ragdoll is made from a model's parts with
 joints from its skeleton (`LooseBodies.TryCreateRagdoll`); no engine code calls it today. `PhysicsReadSystem` reads each
 body's pose and each stand-in's push after a step; `LooseBodyModelSystem` hands the bodies' models to the renderer.
+When the match's origin moves, `PhysicsWorld.Shift` moves every body (awake, asleep, kinematic) and every static by the
+whole metres it moved, writing their poses and the broad phase's bounds alone: nothing wakes, and velocities, joints,
+and contacts, which are relative, keep (`OriginShifts`, `.claude/rules/engine.md`).
 Solid models that are not loose bodies (`SolidModelVoxels`, `SolidColumns`) are solid to the mover alone, placed each
 step at an absolute point (`SetPose` takes a `WorldPoint`: a local position with the match's origin).
 

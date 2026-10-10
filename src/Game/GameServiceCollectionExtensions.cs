@@ -143,6 +143,8 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<ILogger<PlayerSpawnSystem>>(),
             sp.GetRequiredService<WorldOrigin>()
         ));
+        // The fox's circle moves with the match's origin (the engine moves the engine's components).
+        services.AddScoped<IOriginShiftHandler, FoxRouteShift>();
         // The fox chooses its clip before the clips move on (MeshAnimatorSystem).
         services.AddScoped<IFixedUpdateSystem>(sp => new FoxSystem(
             sp.GetRequiredService<EcsWorld>().World,

@@ -15,6 +15,8 @@ paths:
 (`MeshPlacement` with `At`, `DrawnMesh` with `Of`, `MeshAnimator` with `Playing`, `ConsoleMesh`), physics
 (`LooseBody`, `BodyPose` (a loose body's pose, not `Animation.BodyPose`), `BodyBox`, `CutPiece`, `RemoteBody`,
 `CharacterStandIn`), and networking (`NetEntity`).
+The components' positions are local to the match's origin and move with it (`OriginShifts.ShiftedComponents`;
+`.claude/rules/engine.md`); velocities, directions, and boxes about a pivot do not.
 `src/Itera.Engine/Systems/` holds the systems (namespace `Itera.Engine.Systems`). The engine registers no system: a game
 registers those it wants, in run order, in its composition (the starter's `GameServiceCollectionExtensions`), and the
 engine registers what they share (`PlayArea` round the match's grid, or `PlayArea.WithoutTerrain` with no terrain,

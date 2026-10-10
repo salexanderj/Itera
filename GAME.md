@@ -17,7 +17,8 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
   Survey, Walk, and Run; its texture compressed in `Models/Fox/Fox.textures/`), declared at the run's start (`GameRunStartup`). `FoxSystem` puts it on the ground 4 m in front
   of the start pose, side on, then over and over: it looks about (Survey) for 6 s, walks (1.1 m/s) for 8 s and runs
   (4 m/s) for 6 s round a 3 m circle beyond where it started, on the voxel ground (`FoxRoute`), each clip fading into
-  the next over 0.3 s (`FoxSystem.FadeSeconds`).
+  the next over 0.3 s (`FoxSystem.FadeSeconds`). Its circle's centre moves with the match's origin (`FoxRouteShift`,
+  the game's `IOriginShiftHandler`).
 - The player starts at the world's middle, its eye a person's height over the ground or a boulder there
   (`GameGenerator.SurfaceHeight`), looking along -z (`StartPose`; `Game:World:CameraPose` sets another, which must lie in
   the play area). `PlayerSpawnSystem` makes it with the engine's components and a `Climber`; the engine's systems
@@ -64,13 +65,15 @@ goes in this order where its comments say why, with a behaviour test and a zero-
   world: its generator and the engine's voxel terrain, `AddIteraVoxels`; systems), `GameOptions.cs`, `StartPose.cs`, `BenchmarkViews.cs`, `GameRunStartup.cs` (the movement keys first,
   then the game's, the models, and the minimap's view, key, and switch), `GameModels.cs`, `GameSurfaceTags.cs`,
   `Minimap.cs` (with its options), `MinimapLayer.cs`, `Systems/PlayerSpawnSystem.cs`, `Systems/MinimapSystem.cs`,
-  `Systems/FoxSystem.cs`, `Components/FoxRoute.cs`, `WorldGeneration/`, `Textures/`,
+  `Systems/FoxSystem.cs`, `Systems/FoxRouteShift.cs`, `Components/FoxRoute.cs`, `WorldGeneration/`, `Textures/`,
   `Models/`, `appsettings.json`.
 - `tests/Game.Tests`: `SystemOrderTests`, `ShippedSettingsTests`, `GameOptionsTests`, `WorldTests`,
   `PlayerSpawnSystemTests`, `FoxSystemTests`, `MinimapSystemTests` (the view asked round the eye, M, the benchmark, the
   HUD's square), `MinimapLayerTests` (inside its bounds, hidden while not shown or loading, below the stats line, the
   arrow's redraw, no allocation), `ChecklistTests` (every console command in the run-game skill's list, every numeric
-  option validated, every game system with an allocation test), `FoxModelTests` (the fox's rig and clips against
+  option validated, every game system with an allocation test, every vector of the game's components moved with the
+  origin or listed as no position), `FoxModelTests` (the fox's rig and clips against
   SharpGLTF's own world matrices; its compressed textures made from its image), `BenchmarkViewsTests`, and
   `ScenarioTests` (the starter played without a window through `HeadlessMatch`; the fox read, drawn posed, its clip
-  moving with the steps, walking its circle; the boulder nearest the start climbed onto).
+  moving with the steps, walking its circle; the boulder nearest the start climbed onto; a walk with the origin
+  following the player against one without).

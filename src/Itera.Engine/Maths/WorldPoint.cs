@@ -42,6 +42,15 @@ public readonly record struct WorldPoint(double X, double Y, double Z)
     /// <summary>The point moved by (<paramref name="x"/>, <paramref name="y"/>, <paramref name="z"/>) metres.</summary>
     public WorldPoint Plus(double x, double y, double z) => new(X + x, Y + y, Z + z);
 
+    /// <summary>The distance to <paramref name="other"/>, in metres.</summary>
+    public double DistanceTo(in WorldPoint other)
+    {
+        double dx = other.X - X,
+            dy = other.Y - Y,
+            dz = other.Z - Z;
+        return Math.Sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
     /// <summary>The horizontal distance to <paramref name="other"/>, in metres.</summary>
     public double HorizontalDistanceTo(in WorldPoint other)
     {

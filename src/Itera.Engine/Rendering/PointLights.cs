@@ -75,6 +75,19 @@ public sealed class PointLights
         _flashes[_flashCount++] = new Flaring(new PointLight(position, colour, power), _now, _now + seconds);
     }
 
+    /// <summary>
+    /// Moves the flashes still alive with the match's origin: each one's place less <paramref name="metres"/>
+    /// (<c>OriginShifts</c>). The lights a frame adds are made again each frame.
+    /// </summary>
+    public void Shift(Vector3 metres)
+    {
+        for (var i = 0; i < _flashCount; i++)
+        {
+            var flash = _flashes[i];
+            _flashes[i] = flash with { Light = flash.Light with { Position = flash.Light.Position - metres } };
+        }
+    }
+
     /// <summary>The frame's lights: those added, then the flashes alive at <paramref name="nowSeconds"/>, faded.</summary>
     public ReadOnlySpan<PointLight> Frame(double nowSeconds)
     {

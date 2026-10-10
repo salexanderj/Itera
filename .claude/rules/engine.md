@@ -28,7 +28,8 @@ paths:
   - `Components/` and `Systems/`: the components and systems a game registers (`.claude/rules/systems.md`).
   - `Maths/`: the two frames of positions (`WorldPoint`, an absolute point in double metres; `WorldOrigin`, the match's
     origin on whole metres, a scoped service the world, the mover, the bodies, and the mesh colliders share, through
-    which every conversion between local floats and absolute points or centimetres goes; CLAUDE.md's Units), and
+    which every conversion between local floats and absolute points or centimetres goes; CLAUDE.md's Units; a move of it,
+    `OriginShift`, and `IOriginShiftHandler`, the game's part of one, below), and
     `DeterministicMath`, `Rotation`, `RigidTransform`, which with `Animation/` (skeletons, poses, clips, foot IK) are in
     `.claude/rules/animation.md`.
 
@@ -45,5 +46,17 @@ in its `IRunStartup` (`RenderViews`, "Image views" there), as are its own on/off
 least a game adds (a floor generator with the terrain, which `terrain: false` leaves out, and one fixed and one frame
 system), over which `MatchFlowTests`, `MatchLifetimeTests`, `CompositionTests`, and `HeadlessMatchTests` run, with and
 without terrain.
+
+The match's origin moves through `OriginShifts` (`Matches/`, scoped): `ShiftTo(point)` puts it on the whole metres
+nearest the point (within the edit format's ±167.77 km) and moves everything kept in local positions the other way, so
+nothing moves in the world: Bepu's bodies and statics (`PhysicsWorld.Shift`), the engine's components
+(`OriginShifts.ShiftedComponents`: the camera's, the characters' feet now and before, a climber's target, mesh
+placements and loose bodies' poses now and before), the world's streaming centres, the retired models, the point
+lights' flashes, the particles' queued bursts, attractors, and stress place, and then the game's
+`IOriginShiftHandler`s in their registration order (the starter's `FoxRouteShift`). It moves only between steps and
+frames, or in the first fixed system's update (`EcsWorld.OriginMayMove`; a move asked anywhere else throws, and asking
+for the place it is at returns false wherever it is asked), so every system of a step or a frame sees one origin; it allocates nothing but its Debug line. A position far from the new origin rounds to its
+floats there. Mods are not told. Nothing moves it on its own and no command does yet: only tests call it, and the
+renderer, the particles' GPU pool, and the sound do not follow it yet (ARCHITECTURE.md's open work).
 
 The other folders are in their areas' files in `.claude/rules/`.

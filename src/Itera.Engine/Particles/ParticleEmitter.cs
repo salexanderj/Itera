@@ -153,6 +153,30 @@ public sealed partial class ParticleEmitter
     }
 
     /// <summary>
+    /// Moves what the emitter keeps in local positions with the match's origin (<c>OriginShifts</c>): the bursts queued
+    /// for the next frame, the attractors set, and the stress test's place, each less <paramref name="metres"/>. The
+    /// particles already made are the GPU pool's.
+    /// </summary>
+    public void Shift(Vector3 metres)
+    {
+        for (var i = 0; i < _queued; i++)
+        {
+            _queue[i].Origin -= metres;
+            _queue[i].End -= metres;
+        }
+
+        for (var i = 0; i < _attractors.Length; i++)
+        {
+            if (_attractors[i].W != 0)
+            {
+                _attractors[i] -= new Vector4(metres, 0);
+            }
+        }
+
+        StressOrigin -= metres;
+    }
+
+    /// <summary>
     /// Ends every particle (the console's <c>cleanup</c>): the bursts queued so far are dropped, the stress test stops,
     /// and the next frame (<see cref="Drain"/>, <see cref="ParticleFrame.Clear"/>) empties the pool before it makes the
     /// bursts queued after this call.

@@ -154,6 +154,8 @@ public static class EngineServiceCollectionExtensions
         // The match's origin, which every local position of the match (the ECS's, the physics', the renderer's) is measured
         // from: one for the world, the colliders, and the mover.
         services.TryAddScoped<WorldOrigin>();
+        // What moves the origin and everything kept in local positions with it (the game's IOriginShiftHandlers last).
+        services.TryAddScoped<OriginShifts>();
         services.TryAddScoped<PhysicsWorld>();
         // The match's colliders a game registers, and the sources rays and the character mover meet: those and the terrain.
         services.TryAddScoped<MeshColliders>();
