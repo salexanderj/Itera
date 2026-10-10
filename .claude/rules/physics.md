@@ -51,8 +51,8 @@ the ground), the voxels' surface holds the body.
 `MeshColumns` (internal): a column's spans, one for each triangle over the column's square: the lowest and highest
 cell it blocks, its plane's height at the square's centre (a wall's highest point over the square), and its tags. Only the cells a triangle
 passes through block: a closed mesh has no inside, so a body inside one is blocked only where a face lies in its height.
-A triangle on a cell's boundary blocks the cell behind its front (a wall is moved 0.01 cell behind its front before it
-is cut, any other triangle 0.01 cell down or up), so a floor at y = k blocks the cell under it, a ceiling there the cell over
+A triangle on a cell's boundary blocks the cell behind its front (before it is cut it moves 0.01 cell behind its front
+along each axis it reaches less than that along), so a floor at y = k blocks the cell under it, a ceiling there the cell over
 it, and a closed mesh of a voxel box the box's outer voxels; a triangle that only touches a column's corner leaves it
 alone. A column's surface is the plane at its centre, anywhere in its top cell or under it on a slope (the voxels' lies
 within half a cell of their top; the mover reads surfaces for both). Chunks of 32 by 32 columns are made at their first

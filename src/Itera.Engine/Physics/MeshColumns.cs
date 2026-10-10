@@ -35,8 +35,9 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
 
     /// <summary>
     /// How far a triangle is moved behind its front before it is cut into columns, in cells: one on a cell's boundary
-    /// then lies in the cell behind it. A wall moves across, any other triangle up or down, so a slope's edge on a
-    /// column's boundary stays out of the column past it. At 1 cm cells a float's step in metres reaches about a third
+    /// then lies in the cell behind it. It moves only along an axis it reaches less than this along (it lies flat at a
+    /// cell's boundary or near one: a floor, a ceiling, or a wall along x or z), so a slope's, an overhang's, or a
+    /// diagonal wall's edge on a boundary stays out of the cell past it. At 1 cm cells a float's step in metres reaches about a third
     /// of this 500 m from the middle, where a face on a boundary may block the cell in front of it instead.
     /// </summary>
     private const float BehindCells = 1e-2f;
@@ -331,7 +332,13 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
 
             normal /= length;
             var wall = MathF.Abs(normal.Y) < WallNormalY;
-            var back = wall ? normal * BehindCells : new Vector3(0, MathF.Sign(normal.Y) * BehindCells, 0);
+            var size = Vector3.Max(a, Vector3.Max(b, c)) - Vector3.Min(a, Vector3.Min(b, c));
+            var back =
+                new Vector3(
+                    size.X < BehindCells ? MathF.Sign(normal.X) : 0,
+                    size.Y < BehindCells ? MathF.Sign(normal.Y) : 0,
+                    size.Z < BehindCells ? MathF.Sign(normal.Z) : 0
+                ) * BehindCells;
             Vector3 sa = a - back,
                 sb = b - back,
                 sc = c - back;

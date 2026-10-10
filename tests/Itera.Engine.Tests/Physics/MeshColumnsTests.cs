@@ -83,6 +83,54 @@ public sealed class MeshColumnsTests : IDisposable
         Assert.Equal(10, _columns.SurfaceOver(column, 10, 5), 1e-4);
     }
 
+    [Theory]
+    [InlineData(1, 9)]
+    [InlineData(-1, 10)]
+    public void A_steep_face_within_a_hundredth_of_a_cell_of_a_boundary_blocks_the_column_behind_it(
+        int front,
+        int column
+    )
+    {
+        // Not a wall (its normal's y is 0.009): it leans 0.0009 cells across in its one cell of height, from x = 1 m.
+        new TestTriangles()
+            .Quad(new Vector3(front, 0, 0), new(1, 1, 0), new(1.00009f, 1.1f, 0), new(1.00009f, 1.1f, 1), new(1, 1, 1))
+            .AddTo(_colliders);
+
+        Assert.Equal(11, Top(column, 5, 0, 40));
+        Assert.Equal(int.MinValue, Top(column == 9 ? 10 : 9, 5, 0, 40));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(-1)]
+    public void A_steep_face_that_leans_into_a_column_blocks_it_whichever_way_it_faces(int front)
+    {
+        // 88 degrees: from x = 1 m at its foot to 1.035 m at its top, 1 m up; all of it over column 10.
+        new TestTriangles()
+            .Quad(new Vector3(front, 0, 0), new(1, 0, 0), new(1.035f, 1, 0), new(1.035f, 1, 1), new(1, 0, 1))
+            .AddTo(_colliders);
+
+        // Its top edge lies on the line at 1 m: the cell over it is not blocked, whichever way the face looks.
+        Assert.Equal(10, Top(10, 5, 0, 40));
+        Assert.Equal(int.MinValue, Top(9, 5, 0, 40));
+    }
+
+    [Fact]
+    public void A_diagonal_walls_end_on_a_boundary_stays_out_of_the_column_past_it()
+    {
+        // A wall along x = z from (0, 0) to (1, 1) m: it ends on the corners of columns (0, 0) and (9, 9).
+        new TestTriangles()
+            .Quad(Vector3.Normalize(new Vector3(1, 0, -1)), new(0, 0, 0), new(0, 1, 0), new(1, 1, 1), new(1, 0, 1))
+            .AddTo(_colliders);
+
+        Assert.NotEqual(int.MinValue, Top(0, 0, 0, 40));
+        Assert.NotEqual(int.MinValue, Top(9, 9, 0, 40));
+        Assert.Equal(int.MinValue, Top(-1, 0, 0, 40));
+        Assert.Equal(int.MinValue, Top(0, -1, 0, 40));
+        Assert.Equal(int.MinValue, Top(10, 9, 0, 40));
+        Assert.Equal(int.MinValue, Top(9, 10, 0, 40));
+    }
+
     [Fact]
     public void A_thin_wall_inside_a_cell_blocks_it_and_no_other()
     {
