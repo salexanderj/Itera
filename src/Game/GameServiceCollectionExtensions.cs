@@ -90,9 +90,12 @@ public static class GameServiceCollectionExtensions
         services.AddIteraVoxels();
         services.AddSingleton<IVoxelPalette, GamePalette>();
         services.AddSingleton<IAtmosphereSource, GameAtmosphere>();
-        // Stone (the boulders) is climbable, and the player climbs it (Space at a boulder; ClimbMode).
+        // Stone (the boulders) is climbable, and the player climbs it (Space at a boulder; the engine's ClimbingMode).
         services.AddSingleton<IVoxelSurfaceTags, GameSurfaceTags>();
-        services.AddScoped<IMovementMode, ClimbMode>();
+        services.AddScoped<IMovementMode>(sp => new ClimbingMode(
+            sp.GetRequiredService<MovementProbes>(),
+            GameSurfaceTags.Climbable
+        ));
         services.AddScoped(sp =>
             StartPose.For(
                 sp.GetRequiredService<IOptions<WorldOptions>>().Value,

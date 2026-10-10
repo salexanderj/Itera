@@ -233,3 +233,35 @@ public struct MovementStats
             MaxSlopeDegrees = 45,
         };
 }
+
+/// <summary>Where a player is in a climb (<c>ClimbingMode</c>).</summary>
+public enum ClimbState : byte
+{
+    /// <summary>Not climbing: the engine walks it.</summary>
+    Free = 0,
+
+    /// <summary>On a wall.</summary>
+    Climbing = 1,
+
+    /// <summary>Rising past a wall's top to stand on it.</summary>
+    PullingUp = 2,
+
+    /// <summary>Moving over a wall's top edge onto it.</summary>
+    PullingOver = 3,
+}
+
+/// <summary>
+/// A player's climb (<c>ClimbingMode</c>): its state, the wall's normal across x and z (eased from step to step), the
+/// feet's place on the ledge while pulling up, how long the pull has gone on, how long before it may grab again, and
+/// whether Jump was held at the last step (a grab or a jump off needs a fresh press). A game gives one to each player
+/// that climbs.
+/// </summary>
+public struct Climber
+{
+    public ClimbState State;
+    public Vector2 Normal;
+    public Vector3 Target;
+    public float Seconds;
+    public float Regrab;
+    public bool JumpHeld;
+}

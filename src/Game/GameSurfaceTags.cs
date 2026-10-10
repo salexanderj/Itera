@@ -5,7 +5,7 @@ namespace Game;
 
 /// <summary>
 /// The starter's surface tags, bits the engine passes on and the game reads (<see cref="IVoxelSurfaceTags"/> for the
-/// voxels' materials): stone, the boulders, is <see cref="Climbable"/> (<see cref="ClimbMode"/>).
+/// voxels' materials): stone, the boulders, is <see cref="Climbable"/> (the engine's <c>ClimbingMode</c>).
 /// </summary>
 public sealed class GameSurfaceTags : IVoxelSurfaceTags
 {

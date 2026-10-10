@@ -1,23 +1,25 @@
 using System.Numerics;
-using Game.Components;
 using Itera.Engine.Components;
 using Itera.Engine.Physics;
-using Itera.Engine.Systems;
 
-namespace Game;
+namespace Itera.Engine.Systems;
 
 /// <summary>
-/// The starter's climbing (its <see cref="IMovementMode"/>, offered each walking player's step by the engine's
-/// <see cref="PlayerMovementSystem"/>). Space, pressed with a climbable wall (<see cref="GameSurfaceTags.Climbable"/>:
-/// the stone boulders) within <see cref="GrabReachMetres"/> ahead of where the player looks, grabs it instead of jumping.
+/// A ready-made climbing mode (an <see cref="IMovementMode"/>, offered each walking player's step by
+/// <see cref="PlayerMovementSystem"/>), which a game registers with the surface tags it climbs (its voxels' through its
+/// <c>IVoxelSurfaceTags</c>, its meshes' at their registration); a game may write its own instead. Space, pressed with a
+/// wall that has any of those tags within <see cref="GrabReachMetres"/> ahead of where the player looks, grabs it
+/// instead of jumping.
 /// On the wall, W and S climb up and down at <see cref="ClimbSpeed"/>, A and D move along it at <see cref="SideSpeed"/>,
 /// nothing held hangs; Space jumps off it, away and up (<see cref="WallJumpOut"/>, <see cref="WallJumpUp"/>), and Ctrl
 /// lets go, either for <see cref="RegrabSeconds"/> before the next grab. Climbing up past the wall's top pulls the player
 /// up onto it where it has room to stand: up past the top, then over the edge. A wall that ends beside or below lets go.
-/// The probes are the engine's (<see cref="MovementProbes"/>); the state per player is its <see cref="Climber"/>. Main
-/// thread; allocates nothing.
+/// The probes are <see cref="MovementProbes"/>; the state per player is its <see cref="Climber"/>, which a game gives the
+/// players that climb (one without moves as ever). Main thread; allocates nothing.
 /// </summary>
-public sealed class ClimbMode(MovementProbes probes) : IMovementMode
+/// <param name="probes">The match's probes.</param>
+/// <param name="climbable">The surface tags a wall needs any of to be climbed.</param>
+public sealed class ClimbingMode(MovementProbes probes, uint climbable) : IMovementMode
 {
     /// <summary>How far past the body's side a wall may lie to be grabbed, in metres.</summary>
     public const float GrabReachMetres = 0.3f;
@@ -99,7 +101,7 @@ public sealed class ClimbMode(MovementProbes probes) : IMovementMode
             !pressed
             || climber.Regrab > 0
             || !probes.TryWallAhead(input.Feet, in shape, Forward(input.Command.Yaw), GrabReachMetres, out var wall)
-            || (wall.Tags & GameSurfaceTags.Climbable) == 0
+            || (wall.Tags & climbable) == 0
         )
         {
             return false;
@@ -136,7 +138,7 @@ public sealed class ClimbMode(MovementProbes probes) : IMovementMode
 
         if (
             !probes.TryWallAhead(input.Feet, in shape, -normal, HoldReachMetres, out var wall)
-            || (wall.Tags & GameSurfaceTags.Climbable) == 0
+            || (wall.Tags & climbable) == 0
         )
         {
             LetGo(ref climber);

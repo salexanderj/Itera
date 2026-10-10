@@ -1,6 +1,5 @@
 using System.Numerics;
 using Arch.Core;
-using Game.Components;
 using Itera.Engine.Components;
 using Itera.Engine.Physics;
 using Itera.Engine.Systems;
@@ -8,17 +7,20 @@ using Itera.Engine.Voxels;
 using Itera.Modding;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Game.Tests;
+namespace Itera.Engine.Tests.Systems;
 
 /// <summary>
-/// <see cref="ClimbMode"/> through the engine's <see cref="PlayerMovementSystem"/>, over mesh ground with climbable
+/// <see cref="ClimbingMode"/> through <see cref="PlayerMovementSystem"/>, over mesh ground with climbable
 /// walls (a 4 m one, a 2 m one) and a plain one: Space at a climbable wall grabs it instead of jumping; W climbs at 1.5
 /// m/s and nothing held hangs; climbing past a wall's top pulls up onto it; Space on the wall jumps off away and up; Ctrl
 /// lets go; Space at a plain wall jumps as ever; and climbing allocates nothing.
 /// </summary>
-public sealed class ClimbModeTests : IDisposable
+public sealed class ClimbingModeTests : IDisposable
 {
     private static readonly FixedStepTime Step = new(1f / 60, 1);
+
+    // The walls' tag that the mode climbs.
+    private const uint Climbable = 1;
 
     // Looking along +x (forward is (-sin, -cos) of the yaw), and along -x.
     private const float East = -MathF.PI / 2;
@@ -30,17 +32,17 @@ public sealed class ClimbModeTests : IDisposable
     private readonly MovementProbes _probes;
     private Entity _player = Entity.Null;
 
-    public ClimbModeTests()
+    public ClimbingModeTests()
     {
         _physics.Initialize();
         _colliders = new MeshColliders(_physics, NullLogger<MeshColliders>.Instance);
         Box(new Vector3(-10, -1, -10), new Vector3(10, 0, 10), 0);
         // The tall climbable wall's face at x = 1 m round z = 0, the short one's round z = 4, a plain one's at x = -1.
-        Box(new Vector3(1, 0, -1), new Vector3(2, 4, 1), GameSurfaceTags.Climbable);
-        Box(new Vector3(1, 0, 3), new Vector3(2, 2, 5), GameSurfaceTags.Climbable);
+        Box(new Vector3(1, 0, -1), new Vector3(2, 4, 1), Climbable);
+        Box(new Vector3(1, 0, 3), new Vector3(2, 2, 5), Climbable);
         Box(new Vector3(-2, 0, -1), new Vector3(-1, 4, 1), 0);
         _mover = new VoxelCharacterMover(new NothingPassable(), _colliders, cellCentimetres: 10);
-        _probes = new MovementProbes(new CollisionSources(_colliders, new GameSurfaceTags()), _mover);
+        _probes = new MovementProbes(new CollisionSources(_colliders, new NoVoxelSurfaceTags()), _mover);
     }
 
     public void Dispose()
@@ -73,7 +75,7 @@ public sealed class ClimbModeTests : IDisposable
         var climbed = Feet(world).Y;
         Run(world, system, 30, new PlayerCommand { Yaw = East });
 
-        Assert.Equal(ClimbMode.ClimbSpeed * 0.5f, climbed, 0.03f);
+        Assert.Equal(ClimbingMode.ClimbSpeed * 0.5f, climbed, 0.03f);
         Assert.Equal(climbed, Feet(world).Y, 0.01f);
         Assert.Equal(ClimbState.Climbing, Climber(world).State);
     }
@@ -226,7 +228,7 @@ public sealed class ClimbModeTests : IDisposable
             _mover,
             PlayArea.WithoutTerrain,
             NullLogger<PlayerMovementSystem>.Instance,
-            mode: new ClimbMode(_probes)
+            mode: new ClimbingMode(_probes, Climbable)
         );
         system.Initialize();
         _player = world.Create(

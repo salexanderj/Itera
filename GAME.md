@@ -21,7 +21,8 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
   (`GameGenerator.SurfaceHeight`), looking along -z (`StartPose`; `Game:World:CameraPose` sets another, which must lie in
   the play area). `PlayerSpawnSystem` makes it with the engine's components and a `Climber`; the engine's systems
   move it (W A S D, Shift, Space, Ctrl to crouch, Tab for third person; the console's `fly` for the fly camera).
-- Climbing (`ClimbMode`, the game's `IMovementMode`; stone, the boulders, tagged climbable by `GameSurfaceTags`):
+- Climbing (the engine's `ClimbingMode`, registered as the game's `IMovementMode` with the tag it climbs; stone, the
+  boulders, tagged climbable by `GameSurfaceTags`):
   Space with a boulder within 0.3 m ahead grabs it instead of jumping; on it W and S climb at 1.5 m/s, A and D move
   along it at 2 m/s, nothing held hangs, Space jumps off it (4 m/s away, 5 m/s up), and Ctrl lets go; climbing past
   its top pulls the player up onto it where there is room to stand. Its state per player is `Climber`.
@@ -51,10 +52,10 @@ goes in this order where its comments say why, with a behaviour test and a zero-
 
 - `src/Game`: `Program.cs` (the host, then `GameLoop.Run()`), `GameServiceCollectionExtensions` (`AddGame`: options,
   world: its generator and the engine's voxel terrain, `AddIteraVoxels`; systems), `GameOptions.cs`, `StartPose.cs`, `BenchmarkViews.cs`, `GameRunStartup.cs` (the movement keys first,
-  then the game's, and the models), `GameModels.cs`, `GameSurfaceTags.cs`, `ClimbMode.cs`, `Systems/PlayerSpawnSystem.cs`,
-  `Systems/FoxSystem.cs`, `Components/FoxRoute.cs`, `Components/Climber.cs`, `WorldGeneration/`, `Textures/`,
+  then the game's, and the models), `GameModels.cs`, `GameSurfaceTags.cs`, `Systems/PlayerSpawnSystem.cs`,
+  `Systems/FoxSystem.cs`, `Components/FoxRoute.cs`, `WorldGeneration/`, `Textures/`,
   `Models/`, `appsettings.json`.
 - `tests/Game.Tests`: `SystemOrderTests`, `ShippedSettingsTests`, `GameOptionsTests`, `WorldTests`, `PlayerSpawnSystemTests`,
-  `ClimbModeTests` (climbing over mesh walls through the engine's movement), `FoxSystemTests`, `FoxModelTests` (the fox's rig and clips against SharpGLTF's own world matrices), `BenchmarkViewsTests`,
+  `FoxSystemTests`, `FoxModelTests` (the fox's rig and clips against SharpGLTF's own world matrices), `BenchmarkViewsTests`,
   and `ScenarioTests` (the starter played without a window through `HeadlessMatch`; the fox read, drawn posed, its clip
   moving with the steps, walking its circle; the boulder nearest the start climbed onto).

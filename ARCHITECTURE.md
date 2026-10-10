@@ -613,7 +613,9 @@ and `Alpha`, how far the frame lies between the last two steps). Components are 
   once the standing body fits), and backwards walking at 0.7 of its speed. The eye eases after a step or a change of eye
   height (`EyeSmoothing`). A game's `IMovementMode` may take a walking player's step first (a climb), giving the
   velocity and step height, with `MovementProbes` (a wall ahead by three rays of the shared ray, its ledge's top by a
-  ray down, room to stand by the mover) and the move's `WallNormal`. `pos` and `tp` are its commands.
+  ray down, room to stand by the mover) and the move's `WallNormal`; `ClimbingMode` is the engine's ready-made one
+  (grab, climb, hang, jump off, let go, pull up), which the starter registers for its boulders. `pos` and `tp` are its
+  commands.
 - `PlayerCameraSystem` (frame) puts the active camera at the eye between the last two steps, looking where the command
   looks plus the mouse since the step, or behind the right shoulder (`ThirdPersonCamera`, pulled in by the voxels); it
   makes the camera entity (`CameraRules.CreateCamera`). `DebugFlyCameraSystem` flies it while the player flies, kept to the

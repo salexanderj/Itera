@@ -72,7 +72,7 @@ Where tests live:
 - `Itera.Engine.Tests/Systems/`: each engine system's behaviour and allocation, over `PhysicsTestHarness`,
   `FlatGenerator`, `FlatTestGenerator`, `RampGenerator`, `FakeTickInput`, and `FakeFrameInput`; the play area
   (`PlayAreaTests`); `LooseBodySystem` without voxel terrain, with a game's rest handler (`LooseBodyRestTests`, over
-  `MeshGroundHarness`).
+  `MeshGroundHarness`); `ClimbingMode` over mesh walls through `PlayerMovementSystem` (`ClimbingModeTests`).
 - `Itera.Engine.Tests/Voxels/Generation/`: the shapes' row spans against point tests, fractal noise, the jittered grid,
   the scalar field, the field tint map with `VoxelTintSampler`, and the heightfield generator (every description against
   its filled voxels, fills against a voxel-by-voxel reference, `HillsGenerator`).

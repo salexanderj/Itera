@@ -37,8 +37,12 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   to the system) is offered each walking player's step first, with the player's entity and world for a component of
   its own (no structural changes in it): it may take the step with its own velocity and step height (0: no stepping
   up), and the move, contact (`CharacterContact.WallNormal` among it), and eye then go on as for any step; the
-  engine's `MovementProbes` find a wall ahead, its ledge's top, and room to stand (`.claude/rules/physics.md`). `pos`
-  and `tp` are its commands (`tp` takes x y z [yaw pitch],
+  engine's `MovementProbes` find a wall ahead, its ledge's top, and room to stand (`.claude/rules/physics.md`). The
+  engine's `ClimbingMode` is a ready-made one, registered with the surface tags it climbs, for players with a `Climber`:
+  Space with such a wall within 0.3 m ahead grabs it instead of jumping; on it W and S climb at 1.5 m/s, A and D move
+  along it at 2 m/s, nothing held hangs, Space jumps off (4 m/s away, 5 up), Ctrl lets go (0.3 s before a new grab);
+  climbing past its top pulls up onto it where the body has room (up, then over the edge, through the mover); a wall
+  that ends lets go. `pos` and `tp` are its commands (`tp` takes x y z [yaw pitch],
   the form `pos` prints, `CameraPoseText`, or a game's named places with their eye, yaw, and pitch: the starter's are its
   benchmark views).
 - `PlayerCameraSystem` (frame) puts the active camera at the eye between the last two steps, looking where the command
