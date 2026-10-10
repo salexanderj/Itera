@@ -1,6 +1,7 @@
 using System.Numerics;
 using Arch.Core;
 using Itera.Engine.Components;
+using Itera.Engine.Maths;
 using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Systems;
@@ -143,7 +144,7 @@ public static class ToolAim
                 return true;
             }
 
-            var past = Exit(from, direction, in hit) + TouchingMetres / 2;
+            var past = Exit(voxels.Origin, from, direction, in hit) + TouchingMetres / 2;
             from += direction * past;
             travelled += past;
             if (travelled >= reachMetres)
@@ -154,23 +155,24 @@ public static class ToolAim
     }
 
     /// <summary>
-    /// How far along <paramref name="direction"/> (unit) from <paramref name="from"/> the ray leaves the voxel
-    /// <paramref name="hit"/> met (its box: corner and edge in centimetres), in metres.
+    /// How far along <paramref name="direction"/> (unit) from <paramref name="from"/> (local to
+    /// <paramref name="origin"/>) the ray leaves the voxel <paramref name="hit"/> met (its box: corner and edge in
+    /// absolute centimetres), in metres.
     /// </summary>
-    private static float Exit(Vector3 from, Vector3 direction, in VoxelHit hit)
+    private static float Exit(WorldOrigin origin, Vector3 from, Vector3 direction, in VoxelHit hit)
     {
-        const float perMetre = VoxelConstants.CentimetresPerMetre;
+        const double perMetre = VoxelConstants.CentimetresPerMetre;
         var size = hit.BoxCentimetres;
-        var exit = float.PositiveInfinity;
-        exit = MathF.Min(exit, Axis(from.X * perMetre, direction.X, hit.BoxMin.X, size));
-        exit = MathF.Min(exit, Axis(from.Y * perMetre, direction.Y, hit.BoxMin.Y, size));
-        exit = MathF.Min(exit, Axis(from.Z * perMetre, direction.Z, hit.BoxMin.Z, size));
-        return MathF.Max(0, exit) / perMetre;
+        var exit = double.PositiveInfinity;
+        exit = Math.Min(exit, Axis(origin.WorldX(from.X) * perMetre, direction.X, hit.BoxMin.X, size));
+        exit = Math.Min(exit, Axis(origin.WorldY(from.Y) * perMetre, direction.Y, hit.BoxMin.Y, size));
+        exit = Math.Min(exit, Axis(origin.WorldZ(from.Z) * perMetre, direction.Z, hit.BoxMin.Z, size));
+        return (float)(Math.Max(0, exit) / perMetre);
 
-        static float Axis(float at, float along, int min, int size) =>
+        static double Axis(double at, float along, int min, int size) =>
             along > 0 ? (min + size - at) / along
             : along < 0 ? (min - at) / along
-            : float.PositiveInfinity;
+            : double.PositiveInfinity;
     }
 
     private struct FindTool : IForEach<PlayerCommand, PlayerMode, CharacterPosition, CharacterSize>

@@ -7,6 +7,7 @@ using Itera.Engine.Components;
 using Itera.Engine.Ecs;
 using Itera.Engine.Input;
 using Itera.Engine.Matches;
+using Itera.Engine.Maths;
 using Itera.Engine.Networking;
 using Itera.Engine.Particles;
 using Itera.Engine.Physics;
@@ -139,7 +140,8 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<IOptions<PlayerOptions>>().Value,
             sp.GetRequiredService<StartPose>(),
-            sp.GetRequiredService<ILogger<PlayerSpawnSystem>>()
+            sp.GetRequiredService<ILogger<PlayerSpawnSystem>>(),
+            sp.GetRequiredService<WorldOrigin>()
         ));
         // The fox chooses its clip before the clips move on (MeshAnimatorSystem).
         services.AddScoped<IFixedUpdateSystem>(sp => new FoxSystem(
@@ -148,7 +150,8 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<StartPose>(),
             sp.GetRequiredService<SessionService>().Match.Seed,
             sp.GetRequiredService<ILogger<FoxSystem>>(),
-            sp.GetRequiredService<VoxelWorld>()
+            sp.GetRequiredService<VoxelWorld>(),
+            sp.GetRequiredService<WorldOrigin>()
         ));
         services.AddScoped<IFixedUpdateSystem>(sp => new MapResetSystem(
             sp.GetRequiredService<EcsWorld>().World,
@@ -239,24 +242,26 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<VoxelWorld>(),
             sp.GetRequiredService<PlayerInputBlock>(),
             sp.GetRequiredService<PlayerSettings>(),
-            sp.GetRequiredService<StartPose>().Pose
+            sp.GetRequiredService<StartPose>().PoseIn(sp.GetRequiredService<WorldOrigin>())
         ));
         services.AddScoped<IFrameUpdateSystem>(sp =>
         {
             var start = sp.GetRequiredService<StartPose>();
+            var origin = sp.GetRequiredService<WorldOrigin>();
             return new DebugFlyCameraSystem(
                 sp.GetRequiredService<EcsWorld>().World,
                 sp.GetRequiredService<IFrameInput>(),
                 sp.GetRequiredService<IOptions<EngineOptions>>(),
                 sp.GetRequiredService<PlayArea>(),
-                start.Eye,
+                origin.ToLocal(start.Eye),
                 start.Yaw,
                 sp.GetRequiredService<ILogger<DebugFlyCameraSystem>>(),
                 start.Pitch,
                 sp.GetRequiredService<ConsoleCommands>(),
                 sp.GetRequiredService<PlayerSettings>(),
                 sp.GetRequiredService<MovementKeys>(),
-                sp.GetRequiredService<PlayerInputBlock>()
+                sp.GetRequiredService<PlayerInputBlock>(),
+                origin
             );
         });
         // The benchmark, when enabled, overrides the fly camera's pose, so it runs after it.
@@ -271,7 +276,8 @@ public static class GameServiceCollectionExtensions
                     sp.GetRequiredService<SessionService>().Match.Seed
                 ),
                 sp.GetRequiredService<ILogger<BenchmarkSystem>>(),
-                (float)sp.GetRequiredService<IOptions<EngineOptions>>().Value.Camera.CircleHeightMetres
+                (float)sp.GetRequiredService<IOptions<EngineOptions>>().Value.Camera.CircleHeightMetres,
+                sp.GetRequiredService<WorldOrigin>()
             ));
         }
 
@@ -312,7 +318,8 @@ public static class GameServiceCollectionExtensions
         services.AddScoped<IFrameUpdateSystem>(sp => new AtmosphereSystem(
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<RenderView>(),
-            sp.GetRequiredService<IAtmosphereSource>()
+            sp.GetRequiredService<IAtmosphereSource>(),
+            sp.GetRequiredService<WorldOrigin>()
         ));
     }
 

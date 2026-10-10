@@ -1,4 +1,6 @@
 using System.Numerics;
+using Itera.Engine.Maths;
+using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Navigation;
 
@@ -97,25 +99,34 @@ public sealed class NavGrid
         return true;
     }
 
-    /// <summary>The cell under a position in metres; false outside the grid.</summary>
-    public bool TryCell(Vector3 metres, out int cell) =>
-        TryCell((int)MathF.Floor(metres.X * 100), (int)MathF.Floor(metres.Z * 100), out cell);
+    /// <summary>The cell under the local position <paramref name="metres"/>; false outside the grid.</summary>
+    public bool TryCell(WorldOrigin origin, Vector3 metres, out int cell)
+    {
+        ArgumentNullException.ThrowIfNull(origin);
+        var at = origin.ToCentimetres(metres);
+        return TryCell(at.X, at.Z, out cell);
+    }
 
-    /// <summary>The centre of cell <paramref name="cell"/> in metres, at its floor.</summary>
-    public Vector3 CentreMetres(int cell) =>
-        new(CentreX(Column(cell)) / 100f, Floor[cell] / 100f, CentreZ(Row(cell)) / 100f);
+    /// <summary>The centre of cell <paramref name="cell"/> at its floor, local to <paramref name="origin"/>.</summary>
+    public Vector3 CentreMetres(WorldOrigin origin, int cell)
+    {
+        ArgumentNullException.ThrowIfNull(origin);
+        return origin.ToLocal(new VoxelCoord(CentreX(Column(cell)), Floor[cell], CentreZ(Row(cell))));
+    }
 
     /// <summary>
-    /// The floor under (<paramref name="xMetres"/>, <paramref name="zMetres"/>) in metres, blended between the four
-    /// nearest cell centres, so a walker's feet rise and fall smoothly instead of stepping at cell edges. Outside the grid
-    /// the nearest edge cells are used.
+    /// The floor's local height under the local point (<paramref name="xMetres"/>, <paramref name="zMetres"/>), blended
+    /// between the four nearest cell centres, so a walker's feet rise and fall smoothly instead of stepping at cell
+    /// edges. Outside the grid the nearest edge cells are used.
     /// </summary>
-    public float FloorMetres(float xMetres, float zMetres)
+    public float FloorMetres(WorldOrigin origin, float xMetres, float zMetres)
     {
-        var u = (xMetres * 100 - OriginX) / CellCentimetres - 0.5f;
-        var v = (zMetres * 100 - OriginZ) / CellCentimetres - 0.5f;
-        var column = (int)MathF.Floor(u);
-        var row = (int)MathF.Floor(v);
+        ArgumentNullException.ThrowIfNull(origin);
+        const double perMetre = VoxelConstants.CentimetresPerMetre;
+        var u = (origin.WorldX(xMetres) * perMetre - OriginX) / CellCentimetres - 0.5;
+        var v = (origin.WorldZ(zMetres) * perMetre - OriginZ) / CellCentimetres - 0.5;
+        var column = (int)Math.Floor(u);
+        var row = (int)Math.Floor(v);
         var fu = u - column;
         var fv = v - row;
         var c0 = Math.Clamp(column, 0, Width - 1);
@@ -124,7 +135,7 @@ public sealed class NavGrid
         var r1 = Math.Clamp(row + 1, 0, Depth - 1);
         var south = Floor[Index(c0, r0)] + (Floor[Index(c1, r0)] - Floor[Index(c0, r0)]) * fu;
         var north = Floor[Index(c0, r1)] + (Floor[Index(c1, r1)] - Floor[Index(c0, r1)]) * fu;
-        return (south + (north - south) * fv) / 100f;
+        return (float)((south + (north - south) * fv - origin.Centimetres.Y) / perMetre);
     }
 
     /// <summary>Copies rows <paramref name="firstRow"/> to <paramref name="lastRow"/> of <paramref name="source"/>.</summary>

@@ -32,8 +32,8 @@ sets of CC0 photographs). The art direction (`docs/rendering-redesign.md`): a st
 textures a few steps up from flat colours, no outlines, cracks, or scattered features unless the material is made of
 them; its light and grade are data a game sets (the look, below). A material without a set and without a
 pattern is drawn plain (`surfacePlain`: its colour with the patches); the models keep flat colours. Colours blend from a
-material's colour to its tint colour by a game's tint map (`IVoxelTintMap`; none by default, `FieldTintMap` from any
-field).
+material's colour to its tint colour by a game's tint map (`IVoxelTintMap`, its corner and texels in absolute
+centimetres; none by default, `FieldTintMap` from any field; the CPU reads it at an absolute point, `VoxelTintSampler`).
 
 A material whose look names a texture set (`VoxelLook.Texture`) is drawn from it (the materials plan in
 `docs/rendering-redesign.md`: the recipes baked, or CC0 photographs). The console's run-only
@@ -62,8 +62,8 @@ strength; the console's run-only `materials tune` for trying them), moved to the
 (`ViewSwitches.Materials*`) draws materials from their sets (`textures`, the default) or flat, and with `all` every
 world material without a set from the first small set, 3 m wide (for timings); `materials set ID SET|none [MATCH]` draws
 one material from another loaded set (`WorldMeshes.SetTexture`, the materials staged again), for comparing candidates
-in the game. The sky, sunlight, haze, and colour grade come from a game's `IAtmosphereSource` at the camera
-(`AtmosphereSystem`), or the `Engine:Renderer` sky options without one.
+in the game. The sky, sunlight, haze, and colour grade come from a game's `IAtmosphereSource` at the camera's
+absolute place (`AtmosphereSystem`), or the `Engine:Renderer` sky options without one.
 
 The look (`RenderLook`, a record struct whose new value, `RenderLook.Default`, is the engine's and the starter's) holds
 the art direction's values that were shader constants: the world's own surfaces' saturation, value, and side and top

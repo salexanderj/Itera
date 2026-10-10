@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using Itera.Engine.Matches;
+using Itera.Engine.Maths;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -95,6 +96,9 @@ public sealed partial class VoxelWorld : IDisposable
     private StreamingCentre[] _centres = new StreamingCentre[4];
     private StreamingCentre[] _scratchCentres = new StreamingCentre[4];
     private Vector3[] _centrePositions = new Vector3[4];
+
+    // Each centre's absolute centimetres, from its local position when it was set, so a move of the origin moves none.
+    private VoxelCoord[] _centreCentimetres = new VoxelCoord[4];
     private int _centreCount;
     private bool _unloadScanPending;
     private bool _memoryFull;
@@ -123,23 +127,27 @@ public sealed partial class VoxelWorld : IDisposable
         IOptions<EngineOptions> options,
         IChunkGenerator generator,
         ILogger<VoxelWorld> logger,
-        WarmUps? warmUps = null
+        WarmUps? warmUps = null,
+        WorldOrigin? origin = null
     )
-        : this(options.Value.Voxels, options.Value.Logging.StatsIntervalSeconds, generator, logger, warmUps) { }
+        : this(options.Value.Voxels, options.Value.Logging.StatsIntervalSeconds, generator, logger, warmUps, origin) { }
 
     /// <param name="settings">Streaming radius, memory budget, worker threads, and seed.</param>
     /// <param name="statsIntervalSeconds">Seconds between stats lines; zero or less disables them.</param>
     /// <param name="generator">Builds chunks from the seed.</param>
     /// <param name="logger">Logger.</param>
     /// <param name="warmUps">What the run has warmed up already; null to warm up the edit code every time.</param>
+    /// <param name="origin">The match's origin, which local positions are measured from; null for the map's middle.</param>
     internal VoxelWorld(
         VoxelSettings settings,
         double statsIntervalSeconds,
         IChunkGenerator generator,
         ILogger<VoxelWorld> logger,
-        WarmUps? warmUps = null
+        WarmUps? warmUps = null,
+        WorldOrigin? origin = null
     )
     {
+        Origin = origin ?? new WorldOrigin();
         _warmUps = warmUps;
         _settings = settings;
         _levels = LevelsFor(settings);
@@ -287,6 +295,12 @@ public sealed partial class VoxelWorld : IDisposable
     /// (<see cref="VoxelModels.VoxelMetres"/>), which code that meets both must not take for this.
     /// </summary>
     public VoxelGrid Grid { get; }
+
+    /// <summary>
+    /// The match's origin: what the local positions in metres this world is given and gives (centres, rays, surfaces)
+    /// are measured from. Voxels, edits, and hits are in absolute centimetres.
+    /// </summary>
+    public WorldOrigin Origin { get; }
 
     /// <summary>Resident columns at <paramref name="level"/>.</summary>
     public int ResidentColumnsAt(int level) => _residentByLevel[level];
@@ -467,6 +481,7 @@ public sealed partial class VoxelWorld : IDisposable
         for (var i = 0; i < centres.Length; i++)
         {
             _centrePositions[i] = centres[i].Position;
+            _centreCentimetres[i] = Origin.ToCentimetres(centres[i].Position);
         }
 
         _centreCount = centres.Length;
@@ -489,6 +504,7 @@ public sealed partial class VoxelWorld : IDisposable
             var size = Math.Max(count, _centres.Length * 2);
             Array.Resize(ref _centres, size);
             Array.Resize(ref _centrePositions, size);
+            Array.Resize(ref _centreCentimetres, size);
             Array.Resize(ref _scratchCentres, size);
         }
     }
@@ -787,7 +803,7 @@ public sealed partial class VoxelWorld : IDisposable
         wanted.Clear(_centreCount);
         for (var i = 0; i < _centreCount; i++)
         {
-            var centre = VoxelCoord.FromMetres(_centres[i].Position);
+            var centre = _centreCentimetres[i];
             wanted.RebuiltAt[i] = centre;
             var radius = CentreRadiusCentimetres(i, level);
             if (radius > 0)
@@ -874,7 +890,7 @@ public sealed partial class VoxelWorld : IDisposable
             }
 
             var reach = Math.Max(0, radius - Grid.ReachMarginCentimetres(key.Level));
-            var distance = Math.Sqrt(HorizontalDistanceSquared(key, VoxelCoord.FromMetres(_centres[i].Position)));
+            var distance = Math.Sqrt(HorizontalDistanceSquared(key, _centreCentimetres[i]));
             best = Math.Min(best, Priority(Grid, distance, key.Level, reach, coarsest));
         }
 
@@ -887,7 +903,7 @@ public sealed partial class VoxelWorld : IDisposable
         var half = Grid.ColumnCentimetres(level) / 2;
         for (var i = 0; i < _centreCount; i++)
         {
-            var centre = VoxelCoord.FromMetres(_centres[i].Position);
+            var centre = _centreCentimetres[i];
             long dx = centre.X - wanted.RebuiltAt[i].X;
             long dz = centre.Z - wanted.RebuiltAt[i].Z;
             if (dx * dx + dz * dz >= half * half)
@@ -1137,7 +1153,7 @@ public sealed partial class VoxelWorld : IDisposable
             }
 
             var keep = radius + Grid.ColumnCentimetres(key.Level);
-            if (NearestSquared(key, VoxelCoord.FromMetres(_centres[i].Position)) <= keep * keep)
+            if (NearestSquared(key, _centreCentimetres[i]) <= keep * keep)
             {
                 return true;
             }

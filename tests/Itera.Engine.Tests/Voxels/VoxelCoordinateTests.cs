@@ -1,4 +1,3 @@
-using System.Numerics;
 using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Tests.Voxels;
@@ -120,13 +119,6 @@ public sealed class VoxelCoordinateTests
             Assert.Equal(level <= topLevels, end == grid.EndVoxelY);
             Assert.True(end >= grid.EndVoxelY);
         }
-    }
-
-    [Fact]
-    public void Metres_convert_to_the_containing_voxel()
-    {
-        Assert.Equal(new VoxelCoord(150, -1, -250), VoxelCoord.FromMetres(new Vector3(1.505f, -0.004f, -2.5f)));
-        Assert.Equal(new Vector3(1.5f, 0f, -2.5f), new VoxelCoord(150, 0, -250).ToMetres());
     }
 
     [Theory]

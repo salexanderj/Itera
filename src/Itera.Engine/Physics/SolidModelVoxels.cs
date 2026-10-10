@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Physics;
@@ -8,7 +9,7 @@ namespace Itera.Engine.Physics;
 /// level-0 voxels by the rule loose bodies are (<see cref="LooseBodyVoxels"/>): a world voxel blocks when its centre,
 /// taken into the model, lands on one of the model's voxels. A solid is its columns (<see cref="SolidColumns"/>), the
 /// level of its voxels, and the point it turns about (in its own voxels), placed each step by
-/// <see cref="SetPose"/>: that point in the world and a turn about the vertical axis only. With the turn about y alone,
+/// <see cref="SetPose"/>: that point in the world (absolute) and a turn about the vertical axis only. With the turn about y alone,
 /// a world column lands in one column of the model and a world voxel's height in one of its heights, so each query reads
 /// one column of spans per world cell instead of sampling bricks. <see cref="LooseBodyVoxels"/> holds these and adds
 /// them to its queries, so the mover reads both. Main thread; allocates nothing once a solid is added.
@@ -24,9 +25,6 @@ public sealed class SolidModelVoxels
         ArgumentOutOfRangeException.ThrowIfLessThan(worldVoxelCentimetres, 1);
         _worldVoxelCentimetres = worldVoxelCentimetres;
     }
-
-    /// <summary>The world's level-0 voxels per metre, the unit <see cref="SetPose"/> takes its pivot in.</summary>
-    public float CellsPerMetre => VoxelConstants.CentimetresPerMetre / (float)_worldVoxelCentimetres;
 
     /// <summary>Solids added and not removed.</summary>
     public int Count { get; private set; }
@@ -71,14 +69,25 @@ public sealed class SolidModelVoxels
     }
 
     /// <summary>
-    /// Places solid <paramref name="id"/>: its pivot at <paramref name="pivot"/> (world level-0 voxels) and turned by
-    /// <paramref name="yaw"/> radians about the vertical axis (as <see cref="Quaternion.CreateFromAxisAngle"/> about +y
-    /// turns it). Call before the step's moves.
+    /// Places solid <paramref name="id"/>: its pivot at the absolute point <paramref name="pivot"/> (a local position
+    /// with the match's origin, <c>WorldOrigin.ToWorld</c>) and turned by <paramref name="yaw"/> radians about the
+    /// vertical axis (as <see cref="Quaternion.CreateFromAxisAngle"/> about +y turns it). Call before the step's moves.
     /// </summary>
-    public void SetPose(int id, Vector3 pivot, float yaw)
+    public void SetPose(int id, in WorldPoint pivot, float yaw)
+    {
+        var perMetre = VoxelConstants.CentimetresPerMetre / (double)_worldVoxelCentimetres;
+        SetPoseInCells(id, pivot.X * perMetre, pivot.Y * perMetre, pivot.Z * perMetre, yaw);
+    }
+
+    /// <summary>
+    /// Places solid <paramref name="id"/> with its pivot at (<paramref name="x"/>, <paramref name="y"/>,
+    /// <paramref name="z"/>) in absolute world level-0 voxels, in doubles (a float holds only whole voxels 150 km out at
+    /// 1 cm).
+    /// </summary>
+    internal void SetPoseInCells(int id, double x, double y, double z, float yaw)
     {
         var solid = _solids[id] ?? throw new ArgumentException("No such solid.", nameof(id));
-        solid.Place(pivot, yaw);
+        solid.Place(x, y, z, yaw);
     }
 
     /// <summary>True when some placed solid's bounds reach the box from (x0, y0, z0) to (x1, y1, z1).</summary>
@@ -228,13 +237,18 @@ public sealed class SolidModelVoxels
         /// <inheritdoc cref="Min"/>
         public VoxelCoord Max { get; private set; }
 
-        private Vector3 _pivotWorld;
+        // The pivot in absolute world voxels; a cell's offset from it is exact in doubles, then small enough for floats.
+        private double _pivotX;
+        private double _pivotY;
+        private double _pivotZ;
         private float _cos = 1;
         private float _sin;
 
-        public void Place(Vector3 world, float yaw)
+        public void Place(double x, double y, double z, float yaw)
         {
-            _pivotWorld = world;
+            _pivotX = x;
+            _pivotY = y;
+            _pivotZ = z;
             _cos = MathF.Cos(yaw);
             _sin = MathF.Sin(yaw);
             // The box's corners turned into the world, and a voxel more for rounding.
@@ -250,13 +264,20 @@ public sealed class SolidModelVoxels
                         (corner & 4) != 0 ? size.Z : 0
                     ) - pivot;
                 var turned = new Vector3(local.X * _cos + local.Z * _sin, local.Y, -local.X * _sin + local.Z * _cos);
-                var at = world + turned * scale;
-                min = Vector3.Min(min, at);
-                max = Vector3.Max(max, at);
+                min = Vector3.Min(min, turned * scale);
+                max = Vector3.Max(max, turned * scale);
             }
 
-            Min = new VoxelCoord((int)MathF.Floor(min.X) - 1, (int)MathF.Floor(min.Y) - 1, (int)MathF.Floor(min.Z) - 1);
-            Max = new VoxelCoord((int)MathF.Floor(max.X) + 1, (int)MathF.Floor(max.Y) + 1, (int)MathF.Floor(max.Z) + 1);
+            Min = new VoxelCoord(
+                (int)Math.Floor(x + min.X) - 1,
+                (int)Math.Floor(y + min.Y) - 1,
+                (int)Math.Floor(z + min.Z) - 1
+            );
+            Max = new VoxelCoord(
+                (int)Math.Floor(x + max.X) + 1,
+                (int)Math.Floor(y + max.Y) + 1,
+                (int)Math.Floor(z + max.Z) + 1
+            );
             Placed = true;
         }
 
@@ -266,8 +287,8 @@ public sealed class SolidModelVoxels
         /// <summary>The model's column world cell (x, z)'s centre lands in; false outside its box.</summary>
         public bool Column(int x, int z, out int lx, out int lz)
         {
-            float dx = x + 0.5f - _pivotWorld.X,
-                dz = z + 0.5f - _pivotWorld.Z;
+            float dx = (float)(x + 0.5 - _pivotX),
+                dz = (float)(z + 0.5 - _pivotZ);
             // The turn undone: the inverse of (x cos + z sin, -x sin + z cos).
             var localX = (dx * _cos - dz * _sin) / scale + pivot.X;
             var localZ = (dx * _sin + dz * _cos) / scale + pivot.Z;
@@ -277,12 +298,12 @@ public sealed class SolidModelVoxels
         }
 
         /// <summary>The model's height world voxel height <paramref name="y"/>'s centre lands in (may lie outside its box).</summary>
-        public int LocalY(int y) => (int)MathF.Floor((y + 0.5f - _pivotWorld.Y) / scale + pivot.Y);
+        public int LocalY(int y) => (int)MathF.Floor((float)(y + 0.5 - _pivotY) / scale + pivot.Y);
 
         /// <summary>The lowest world voxel height whose centre lands in the model's height <paramref name="local"/>.</summary>
         public int LowestWorldY(int local)
         {
-            var y = (int)MathF.Ceiling((local - pivot.Y) * scale + _pivotWorld.Y - 0.5f);
+            var y = (int)Math.Ceiling((local - pivot.Y) * scale + _pivotY - 0.5);
             while (LocalY(y) >= local)
             {
                 y--;

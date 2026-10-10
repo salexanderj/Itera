@@ -480,7 +480,7 @@ public sealed class VoxelWorldTests : IDisposable
         UpdateUntil(world, 0, () => world.PendingColumns == 0);
         var failed = world.FailedJobCount - failedWhenFull;
         Assert.True(failed <= 10, $"{failed} jobs failed while walking at the cap.");
-        Assert.True(world.IsResident(ColumnKey.Containing(VoxelCoord.FromMetres(centre[0]), 0)));
+        Assert.True(world.IsResident(ColumnKey.Containing(world.Origin.ToCentimetres(centre[0]), 0)));
     }
 
     [Fact]

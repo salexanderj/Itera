@@ -1,4 +1,4 @@
-using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Physics;
 using Itera.Engine.Systems;
 using Itera.Engine.Voxels;
@@ -20,10 +20,10 @@ public sealed class PlayAreaTests
         Assert.Equal((200f, 300f), (area.WorldEdgeMetres, area.EdgeMetres));
         Assert.Equal((-20f, -120f, 160f), (area.WorldFloorMetres, area.FloorMetres, area.TopMetres));
         Assert.Equal(-30, area.FallLimitMetres);
-        Assert.True(area.Contains(new Vector3(-300, 160, 299)));
-        Assert.False(area.Contains(new Vector3(0, -121, 0)));
-        Assert.True(area.HoldsEye(new Vector3(295, 0, 0)));
-        Assert.False(area.HoldsEye(new Vector3(296, 0, 0)));
+        Assert.True(area.Contains(new WorldPoint(-300, 160, 299)));
+        Assert.False(area.Contains(new WorldPoint(0, -121, 0)));
+        Assert.True(area.HoldsEye(new WorldPoint(295, 0, 0)));
+        Assert.False(area.HoldsEye(new WorldPoint(296, 0, 0)));
     }
 
     [Fact]

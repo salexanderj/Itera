@@ -111,7 +111,7 @@ public sealed class LooseBodyModelSystem : BaseSystem<World, FrameTime>, IFrameU
                 !cut || distance <= LevelZeroReach ? 0
                 : distance <= LevelOneReach ? 1
                 : CoarsestLevel;
-            var tint = cut ? Bodies.TintOf(body.Body) : Tint.At(position);
+            var tint = cut ? Bodies.TintOf(body.Body) : Tint.At(Bodies.Origin.ToWorld(position));
 
             // Each model's box corner is its voxel (0, 0, 0), placed from the pivot in the body's axes.
             foreach (ref readonly var model in Bodies.PartsOf(body.Body))

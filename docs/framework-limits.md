@@ -27,8 +27,9 @@ Ordered by how many game types each blocks.
    `PhysicsWorld`, and the voxel colliders, and every match needed an `IChunkGenerator`. Now a match runs without a
    voxel world, its characters and loose bodies over the game's mesh colliders; the box remains, now sized by the game
    in its generator's grid (`VoxelGrid.Sized`: up to ±160 km across and 128 layers of chunks, by default ±512 m and -51
-   to +102 m at 10 cm voxels, 2026-10-10); the view reaches 2 km at most; nothing shifts the origin. Blocks open worlds,
-   flight, space, and long race tracks.
+   to +102 m at 10 cm voxels, 2026-10-10); the view reaches 2 km at most; positions are measured from a match's origin
+   (`WorldOrigin`, with absolute `WorldPoint`s where they cross it), but nothing moves it from the map's middle yet.
+   Blocks open worlds, flight, space, and long race tracks.
 3. **Rendering is open to a game, except for split screen, HDR, and some lights.** When this was written the pass list
    was fixed in `FrameRenderer.Record`, `IFrameRenderer` and `PipelineFactory` were internal, only particles blended,
    the look was constants in the shaders, the sun's direction was fixed, and there was one perspective camera. Since

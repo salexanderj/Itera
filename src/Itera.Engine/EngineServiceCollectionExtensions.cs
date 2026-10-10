@@ -7,6 +7,7 @@ using Itera.Engine.Ecs;
 using Itera.Engine.Input;
 using Itera.Engine.Loading;
 using Itera.Engine.Matches;
+using Itera.Engine.Maths;
 using Itera.Engine.Modding;
 using Itera.Engine.Networking;
 using Itera.Engine.Particles;
@@ -150,6 +151,9 @@ public static class EngineServiceCollectionExtensions
                 : new ApplicationMatchIdentity(sp.GetRequiredService<IOptions<EngineOptions>>())
         );
         services.TryAddScoped<EcsWorld>();
+        // The match's origin, which every local position of the match (the ECS's, the physics', the renderer's) is measured
+        // from: one for the world, the colliders, and the mover.
+        services.TryAddScoped<WorldOrigin>();
         services.TryAddScoped<PhysicsWorld>();
         // The match's colliders a game registers, and the sources rays and the character mover meet: those and the terrain.
         services.TryAddScoped<MeshColliders>();
@@ -264,7 +268,8 @@ public static class EngineServiceCollectionExtensions
             passability,
             options,
             logger,
-            () => services.GetRequiredService<PlayArea>().FallLimitMetres
+            () => services.GetRequiredService<PlayArea>().FallLimitMetres,
+            services.GetRequiredService<WorldOrigin>()
         );
     }
 

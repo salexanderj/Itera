@@ -25,7 +25,7 @@ public sealed class VoxelHitEntryTests : IDisposable
         Assert.True(_world.Raycast(origin, -Vector3.UnitY, 5, out var hit));
 
         Assert.Equal(new VoxelCoord(50, 140, 40), hit.Voxel);
-        Assert.Equal(new VoxelCoord(53, 149, 46), hit.Entry(origin, -Vector3.UnitY));
+        Assert.Equal(new VoxelCoord(53, 149, 46), hit.Entry(_world.Origin, origin, -Vector3.UnitY));
     }
 
     [Fact]
@@ -35,9 +35,9 @@ public sealed class VoxelHitEntryTests : IDisposable
         var direction = new Vector3(0.6f, -0.7f, 0.2f);
         Assert.True(_world.Raycast(origin, direction, 5, out var hit));
 
-        var entry = hit.Entry(origin, direction);
+        var entry = hit.Entry(_world.Origin, origin, direction);
         var expected = origin + Vector3.Normalize(direction) * (hit.DistanceMetres + 0.005f);
-        Assert.Equal(VoxelCoord.FromMetres(expected), entry);
+        Assert.Equal(_world.Origin.ToCentimetres(expected), entry);
         // Inside the struck voxel, where the material is read.
         Assert.Equal(hit.Voxel.X, entry.X / 10 * 10);
         Assert.Equal(hit.Voxel.Y, entry.Y / 10 * 10);

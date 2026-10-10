@@ -2,6 +2,7 @@ using System.Numerics;
 using Arch.Core;
 using Itera.Engine.Commands;
 using Itera.Engine.Components;
+using Itera.Engine.Maths;
 using Itera.Engine.Networking;
 using Itera.Engine.Physics;
 using Itera.Engine.Systems;
@@ -663,8 +664,8 @@ public sealed class PlayerMovementSystemTests : IDisposable
         }
     }
 
-    private static (Vector3 Eye, float Yaw, float Pitch)? Places(string name) =>
-        name == "home" ? (new Vector3(-30, 2, 40), 0.5f, -0.25f) : null;
+    private static (WorldPoint Eye, float Yaw, float Pitch)? Places(string name) =>
+        name == "home" ? (new WorldPoint(-30, 2, 40), 0.5f, -0.25f) : null;
 
     private static ConsoleCommands NewCommands() =>
         new(() => SessionRole.Offline, NullLogger<ConsoleCommands>.Instance);
@@ -701,7 +702,7 @@ public sealed class PlayerMovementSystemTests : IDisposable
         bool flying = false,
         VoxelCharacterMover? mover = null,
         ConsoleCommands? commands = null,
-        Func<string, (Vector3 Eye, float Yaw, float Pitch)?>? places = null,
+        Func<string, (WorldPoint Eye, float Yaw, float Pitch)?>? places = null,
         IMovementMode? mode = null
     )
     {

@@ -129,7 +129,9 @@ surface layer, small stones) vanish.
    (`metresPerUnit`: 1 for metres, 0.01 for centimetres). `GameRunStartup` declares them at the run's start; a mod
    declares its own at its startup.
 3. A system that places it: `World.Create(MeshPlacement.At(position, orientation, scale), DrawnMesh.Of(index))`, with
-   the index from `MeshAssets.Find(name)` looked up once (`FoxSystem`); a fixed system that moves it copies the pose
+   the index from `MeshAssets.Find(name)` looked up once (`FoxSystem`); the position is local, so a place the game
+   knows in absolute terms (a `WorldPoint`, as its start pose is) goes through the match's `WorldOrigin`
+   (`origin.ToLocal(point)`; CLAUDE.md's Units); a fixed system that moves it copies the pose
    into the previous one first. `MeshDrawSystem` draws it. A glTF model's front is +z.
 4. A model that things stand on or bump into gets a collider where it is placed: `MeshColliders.Add(asset, transform,
    tagsOf)` from a system's `Initialize` (or later), `tagsOf` giving each material's surface tags (game-defined bits;
@@ -146,7 +148,7 @@ surface layer, small stones) vanish.
 ## The game's look
 
 1. The game's `IAtmosphereSource` (the starter's `GameAtmosphere`; `AtmosphereSystem` in the frame systems asks it at
-   the camera each frame) gives the sky (`At`) and the look (`LookAt`): start from `RenderLook.Default` and change values
+   the camera's absolute place, a `WorldPoint`, each frame) gives the sky (`At`) and the look (`LookAt`): start from `RenderLook.Default` and change values
    with `with` (`RenderLook.Default with { Exposure = 0.9f, WorldSaturation = 1 }`). A place or a time of day may blend
    two looks (`RenderLook.Lerp`); it runs every frame, so it allocates nothing.
 2. Try values live with the console's run-only `look NAME VALUE` (`look NAME R G B` for a colour; `look` lists them,

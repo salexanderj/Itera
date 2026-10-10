@@ -1,4 +1,4 @@
-using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering.Voxels;
 using Itera.Engine.Voxels.Generation;
 
@@ -96,7 +96,7 @@ public sealed class FieldTintMapTests
             for (var x = 0; x < Size; x += 3)
             {
                 var (centreX, centreZ) = Centre(x, z);
-                var metres = new Vector3(centreX / 100f, 0, centreZ / 100f);
+                var metres = new WorldPoint(centreX / 100.0, 0, centreZ / 100.0);
                 Assert.Equal(Quantised(Field(centreX, centreZ)) / 255.0, sampler.At(metres), 0.001);
             }
         }
@@ -110,15 +110,15 @@ public sealed class FieldTintMapTests
         // Halfway between two neighbouring centres is the mean of their texels.
         var (ax, az) = Centre(100, 80);
         var (bx, _) = Centre(101, 80);
-        var middle = new Vector3((ax + bx) / 2f / 100f, 0, az / 100f);
+        var middle = new WorldPoint((ax + bx) / 2.0 / 100.0, 0, az / 100.0);
         var mean = (Quantised(Field(ax, az)) + Quantised(Field(bx, az))) / 2.0 / 255.0;
         Assert.Equal(mean, sampler.At(middle), 0.001);
 
         // Past the map's edge the nearest edge texel repeats, however far.
         var (cornerX, cornerZ) = Centre(0, 0);
-        Assert.Equal(Quantised(Field(cornerX, cornerZ)) / 255.0, sampler.At(new Vector3(-9000, 0, -9000)), 0.001);
+        Assert.Equal(Quantised(Field(cornerX, cornerZ)) / 255.0, sampler.At(new WorldPoint(-9000, 0, -9000)), 0.001);
         var (farX, farZ) = Centre(Size - 1, Size - 1);
-        Assert.Equal(Quantised(Field(farX, farZ)) / 255.0, sampler.At(new Vector3(9000, 5, 9000)), 0.001);
+        Assert.Equal(Quantised(Field(farX, farZ)) / 255.0, sampler.At(new WorldPoint(9000, 5, 9000)), 0.001);
     }
 
     [Fact]
@@ -127,13 +127,13 @@ public sealed class FieldTintMapTests
         var value = 0.2;
         var sampler = new VoxelTintSampler(new FieldTintMap((_, _) => value, OriginX, OriginZ));
         value = 0.9;
-        Assert.Equal(Quantised(0.2) / 255.0, sampler.At(new Vector3(0, 0, 0)), 0.001);
+        Assert.Equal(Quantised(0.2) / 255.0, sampler.At(WorldPoint.Zero), 0.001);
     }
 
     [Fact]
     public void The_default_map_tints_nothing()
     {
         var sampler = new VoxelTintSampler(new NoVoxelTintMap());
-        Assert.Equal(0, sampler.At(new Vector3(12, 3, -40)));
+        Assert.Equal(0, sampler.At(new WorldPoint(12, 3, -40)));
     }
 }

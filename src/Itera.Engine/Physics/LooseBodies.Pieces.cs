@@ -237,10 +237,15 @@ public sealed partial class LooseBodies
         }
 
         var pose = _physics.Simulation.Bodies[body].Pose;
-        var pivot =
-            (pose.Position + Vector3.Transform(loose.PivotOffset, pose.Orientation))
-            * VoxelConstants.CentimetresPerMetre;
-        var corner = new VoxelCoord((int)MathF.Round(pivot.X), (int)MathF.Round(pivot.Y), (int)MathF.Round(pivot.Z));
+        var local = pose.Position + Vector3.Transform(loose.PivotOffset, pose.Orientation);
+        // The absolute centimetre nearest the pivot.
+        var pivot = _origin.ToWorld(local);
+        const double perMetre = VoxelConstants.CentimetresPerMetre;
+        var corner = new VoxelCoord(
+            (int)Math.Round(pivot.X * perMetre),
+            (int)Math.Round(pivot.Y * perMetre),
+            (int)Math.Round(pivot.Z * perMetre)
+        );
         long sequence;
         if (loose.BallRadius > 0)
         {
@@ -257,7 +262,7 @@ public sealed partial class LooseBodies
             LogSettled(body.Value, loose.Piece, corner.X, corner.Y, corner.Z, sequence);
         }
 
-        _models.Retire(loose.Model, 0, ModelCorner(in loose, pivot * Metres, pose.Orientation), pose.Orientation, tint);
+        _models.Retire(loose.Model, 0, ModelCorner(in loose, local, pose.Orientation), pose.Orientation, tint);
         RemoveBody(body, removeModel: false);
         return sequence;
     }

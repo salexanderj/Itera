@@ -1,4 +1,4 @@
-using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Rendering.Voxels;
@@ -26,20 +26,23 @@ public sealed class VoxelTintSampler
         _originZ = map.OriginZ;
     }
 
-    /// <summary>The tint, 0 to 1, at the point at <paramref name="metres"/> (its x and z).</summary>
-    public float At(Vector3 metres)
+    /// <summary>
+    /// The tint, 0 to 1, at the absolute point <paramref name="point"/> (its x and z; a local position with the match's
+    /// origin, <c>WorldOrigin.ToWorld</c>).
+    /// </summary>
+    public float At(in WorldPoint point)
     {
-        // Far enough outside the map that every point converts to an int of level-0 voxels; the edge repeats there.
-        const float most = 100_000;
-        var x = Math.Clamp(metres.X, -most, most) * VoxelConstants.CentimetresPerMetre;
-        var z = Math.Clamp(metres.Z, -most, most) * VoxelConstants.CentimetresPerMetre;
-        var texel = (float)(1 << _shift);
-        var px = (x - _originX) / texel - 0.5f;
-        var pz = (z - _originZ) / texel - 0.5f;
-        int tx = (int)MathF.Floor(px),
-            tz = (int)MathF.Floor(pz);
-        float fx = px - tx,
-            fz = pz - tz;
+        // Far enough outside any map that every point converts to an int of texels; the edge repeats there.
+        const double most = 1e6;
+        var x = Math.Clamp(point.X, -most, most) * VoxelConstants.CentimetresPerMetre;
+        var z = Math.Clamp(point.Z, -most, most) * VoxelConstants.CentimetresPerMetre;
+        var texel = (double)(1 << _shift);
+        var px = (x - _originX) / texel - 0.5;
+        var pz = (z - _originZ) / texel - 0.5;
+        int tx = (int)Math.Floor(px),
+            tz = (int)Math.Floor(pz);
+        float fx = (float)(px - tx),
+            fz = (float)(pz - tz);
         var near = Lerp(Texel(tx, tz), Texel(tx + 1, tz), fx);
         var far = Lerp(Texel(tx, tz + 1), Texel(tx + 1, tz + 1), fx);
         return Lerp(near, far, fz);

@@ -78,6 +78,18 @@ public sealed class CommandContext
             && float.IsFinite(value);
     }
 
+    /// <summary>
+    /// Reads argument <paramref name="index"/> as a number with '.' for the decimal point, in double precision: for an
+    /// absolute position, which a float holds only to about a centimetre 150 km out.
+    /// </summary>
+    public bool TryGetDouble(int index, out double value)
+    {
+        value = 0;
+        return index < Count
+            && double.TryParse(this[index], NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+            && double.IsFinite(value);
+    }
+
     /// <summary>Reads argument <paramref name="index"/> as a whole number.</summary>
     public bool TryGetInt(int index, out int value)
     {

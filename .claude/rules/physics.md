@@ -32,7 +32,8 @@ the thaw (`VoxelColliders.GroupThawed`). Cut bodies go 30 s after they rest (als
 after they were made (`LooseBodySystem.CutRestSeconds`, `CutMostSeconds`). A ragdoll is made from a model's parts with
 joints from its skeleton (`LooseBodies.TryCreateRagdoll`); no engine code calls it today. `PhysicsReadSystem` reads each
 body's pose and each stand-in's push after a step; `LooseBodyModelSystem` hands the bodies' models to the renderer.
-Solid models that are not loose bodies (`SolidModelVoxels`, `SolidColumns`) are solid to the mover alone.
+Solid models that are not loose bodies (`SolidModelVoxels`, `SolidColumns`) are solid to the mover alone, placed each
+step at an absolute point (`SetPose` takes a `WorldPoint`: a local position with the match's origin).
 
 Without voxel terrain (the core registers `VoxelModels`, `LooseBodies`, and `LooseBodyVoxels` either way): the models
 keep their trees in their own memory (with terrain, the world's, where a lifted piece lies), freed when the match
@@ -59,7 +60,9 @@ time (30 cm voxels at 50 degrees, for a person). On coarse cells it reads the re
 solid model blocks a cell only where it holds the cell's centre, so a ball smaller than a 1 m cell may not block it (its
 stand-in still pushes the ball), and a thin mesh wall blocks the whole cell it passes through. The map's edge is a wall
 at every height (`AddMapEdge`). It waits while the voxels round it are not loaded. Its widest body is 2 m in radius
-(`MaxRadiusMetres`). It also reads the match's mesh colliders in the same cells (`MeshColumns`), combined with the
+(`MaxRadiusMetres`). It takes and gives local positions and reads absolute cells: a local float plus the match's origin
+(`VoxelCharacterMover.Origin`, the world's or the colliders'), in doubles, times its cells a metre, so a move 150 km
+out reads the cells a move at the middle does. It also reads the match's mesh colliders in the same cells (`MeshColumns`), combined with the
 voxels by the higher top, the lower bottom, and either cell; without terrain it reads them and the loose bodies in cells
 of `Engine:Physics:CollisionCentimetres` (10 by default), with no column to wait for, and its map edge at the play
 area's world edge. The core makes it (`AddIteraEngine`: the world's constructor with terrain,
@@ -95,11 +98,14 @@ mask at a time; the figures are in ARCHITECTURE.md).
 ## Mesh colliders and the shared ray
 
 A game's static triangle colliders (`MeshColliders`, scoped to the match): `Add(asset, transform, tagsOf)` registers a
-mesh asset placed by a transform, each triangle tagged by its material's name through `tagsOf`, or `Add(positions,
-indices, transform, tags)` triangles built in code; `Remove` takes one away. Only registered colliders collide; drawing
-stays apart. Add them once the match's physics exists (from a system's `Initialize` on). The triangles are kept in the
-world's space with a grid of 4 m buckets over x and z (made again at the first query after a change, which allocates;
-other queries allocate nothing), and each collider is also a Bepu `Mesh` static, its triangles wound clockwise seen
+mesh asset placed by a local transform, each triangle tagged by its material's name through `tagsOf`, or `Add(positions,
+indices, transform, tags)` triangles built in code; `Add(asset, at, transform, tagsOf)` and `Add(positions, indices, at,
+transform, tags)` place them from an absolute point (`WorldPoint`), which keeps a large or far mesh precise; `Remove`
+takes one away. Only registered colliders collide; drawing
+stays apart. Add them once the match's physics exists (from a system's `Initialize` on). Each collider keeps an anchor (the absolute
+whole metres nearest its point) and its triangles from it, with a grid of 4 m buckets over absolute x and z (made again
+at the first query after a change, which allocates; other queries allocate nothing), and each collider is also a Bepu
+`Mesh` static posed at its anchor's local place, its triangles wound clockwise seen
 from the front as Bepu asks (glTF's are counter-clockwise), one-sided in Bepu, at `BodyKinds.AnyLevel`: every loose body
 touches it whatever its voxel level (`SetGameStatic`; `ClearStatic` on removal). Surface tags are up to 32 bits a game
 defines: voxel materials through its `IVoxelSurfaceTags` (none by default), mesh materials by name at registration.

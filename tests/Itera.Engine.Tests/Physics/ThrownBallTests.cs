@@ -136,7 +136,7 @@ public sealed class ThrownBallTests : IDisposable
             edit.Origin
         );
         // The 10 cm voxel round the ball's middle is stone now.
-        _world.TryGetMaterial(VoxelCoord.FromMetres(pivot), out var middle);
+        _world.TryGetMaterial(_world.Origin.ToCentimetres(pivot), out var middle);
         Assert.Equal(DensityTerrainGenerator.Stone, middle);
     }
 }

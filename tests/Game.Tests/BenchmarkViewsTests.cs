@@ -1,4 +1,4 @@
-using System.Numerics;
+using Itera.Engine.Maths;
 
 namespace Game.Tests;
 
@@ -8,7 +8,7 @@ public sealed class BenchmarkViewsTests
     [Fact]
     public void Each_view_is_a_place_by_its_name_in_any_case()
     {
-        var start = new StartPose(new Vector3(0, 8, 0), 0.25f, 0);
+        var start = new StartPose(new WorldPoint(0, 8, 0), 0.25f, 0);
         var views = BenchmarkViews.For(start, 1);
 
         foreach (var view in views)

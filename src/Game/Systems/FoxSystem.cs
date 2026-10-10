@@ -6,6 +6,7 @@ using Game.WorldGeneration;
 using Itera.Engine.Assets;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
+using Itera.Engine.Maths;
 using Itera.Engine.Systems;
 using Itera.Engine.Voxels;
 using Itera.Modding;
@@ -29,7 +30,8 @@ public sealed partial class FoxSystem(
     StartPose start,
     ulong seed,
     ILogger<FoxSystem> logger,
-    VoxelWorld? voxels = null
+    VoxelWorld? voxels = null,
+    WorldOrigin? origin = null
 ) : BaseSystem<World, FixedStepTime>(world), IFixedUpdateSystem
 {
     /// <summary>How far in front of the start pose's eye the fox starts, in metres.</summary>
@@ -58,6 +60,9 @@ public sealed partial class FoxSystem(
         MeshAnimator
     >();
 
+    // The match's origin: the start and the generator's ground are absolute, the fox's place local to it.
+    private readonly WorldOrigin _origin = origin ?? voxels?.Origin ?? new WorldOrigin();
+
     private int _survey = -1;
     private int _walk = -1;
     private int _run = -1;
@@ -77,13 +82,13 @@ public sealed partial class FoxSystem(
         }
 
         var forward = ThirdPersonCamera.Forward(start.Yaw, 0);
-        var at = start.Eye + forward * AheadMetres;
+        var ahead = start.Eye.Plus(forward.X * AheadMetres, 0, forward.Z * AheadMetres);
         var ground = GameGenerator.SurfaceHeight(
-            (int)MathF.Round(at.X * VoxelConstants.CentimetresPerMetre),
-            (int)MathF.Round(at.Z * VoxelConstants.CentimetresPerMetre),
+            (int)Math.Round(ahead.X * VoxelConstants.CentimetresPerMetre),
+            (int)Math.Round(ahead.Z * VoxelConstants.CentimetresPerMetre),
             seed
         );
-        at.Y = (float)ground / VoxelConstants.CentimetresPerMetre;
+        var at = _origin.ToLocal(ahead with { Y = ground / (double)VoxelConstants.CentimetresPerMetre });
         // The circle lies beyond it: going round towards the start's right takes it away from the start and back.
         var centre = at + forward * CircleMetres;
         var angle = MathF.Atan2(at.Z - centre.Z, at.X - centre.X);
@@ -103,6 +108,7 @@ public sealed partial class FoxSystem(
         {
             StepSeconds = step.StepSeconds,
             Voxels = voxels,
+            Origin = _origin,
             Seed = seed,
             Survey = _survey,
             Walk = _walk,
@@ -119,7 +125,7 @@ public sealed partial class FoxSystem(
     /// The top of the ground under (x, z), in metres: the voxels' (a ray down from 16 m over its last height, above any
     /// boulder on its way), or the generator's hills where none is loaded.
     /// </summary>
-    private static float GroundAt(VoxelWorld? voxels, float x, float z, float near, ulong seed)
+    private static float GroundAt(VoxelWorld? voxels, WorldOrigin origin, float x, float z, float near, ulong seed)
     {
         const float Above = 16;
         if (
@@ -132,17 +138,18 @@ public sealed partial class FoxSystem(
         }
 
         var height = GameGenerator.Height(
-            (int)MathF.Round(x * VoxelConstants.CentimetresPerMetre),
-            (int)MathF.Round(z * VoxelConstants.CentimetresPerMetre),
+            (int)Math.Round(origin.WorldX(x) * VoxelConstants.CentimetresPerMetre),
+            (int)Math.Round(origin.WorldZ(z) * VoxelConstants.CentimetresPerMetre),
             seed
         );
-        return (float)height / VoxelConstants.CentimetresPerMetre;
+        return (float)(height / (double)VoxelConstants.CentimetresPerMetre - origin.WorldY(0));
     }
 
     private struct Roam : IForEach<FoxRoute, MeshPlacement, MeshAnimator>
     {
         public float StepSeconds;
         public VoxelWorld? Voxels;
+        public WorldOrigin Origin;
         public ulong Seed;
         public int Survey;
         public int Walk;
@@ -172,7 +179,7 @@ public sealed partial class FoxSystem(
             var (sin, cos) = MathF.SinCos(route.Angle);
             var x = route.Centre.X + CircleMetres * cos;
             var z = route.Centre.Z + CircleMetres * sin;
-            var y = GroundAt(Voxels, x, z, placement.Position.Y, Seed);
+            var y = GroundAt(Voxels, Origin, x, z, placement.Position.Y, Seed);
             placement.Position = new Vector3(x, y, z);
             placement.Orientation = Facing(new Vector3(sin, 0, -cos));
         }

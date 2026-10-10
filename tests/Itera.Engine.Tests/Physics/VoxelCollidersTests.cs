@@ -155,6 +155,9 @@ public sealed class VoxelCollidersTests : IDisposable
         // freed: the static read another cell's boxes or freed memory (a crash in the sweep of a thrown ball, 2026-09-25).
         AddSphere(new Vector3(0.5f, 2.3f, 0.5f), 0.1f);
         Run(120);
+        // Every changed cell rebuilt in the update, however many the body's bounds need (a step's cap would leave some
+        // for the next), so each static is read right after its rebuild.
+        _colliders.RebuildLimit = int.MaxValue;
 
         // The pit spans several cells, so one update rebuilds several.
         _world.Apply(VoxelEdit.Box(new VoxelCoord(30, 160, 30), new VoxelCoord(40, 40, 40), VoxelEditOperation.Clear));

@@ -1,6 +1,7 @@
 using System.Numerics;
 using Arch.Core;
 using Itera.Engine.Components;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.Voxels;
 using Itera.Engine.Systems;
@@ -53,7 +54,7 @@ public sealed class LooseBodyModelSystemTests : IDisposable
         Assert.Equal(expected.Y, draw.Corner.Y, 1e-5f);
         Assert.Equal(expected.Z, draw.Corner.Z, 1e-5f);
         Assert.Equal(turn, draw.Turn);
-        Assert.Equal(new VoxelTintSampler(new SlopedTint()).At(new Vector3(3, 0, 0)), draw.Tint);
+        Assert.Equal(new VoxelTintSampler(new SlopedTint()).At(new WorldPoint(3, 0, 0)), draw.Tint);
         Assert.True(draw.Tint > 0);
         Assert.Equal(ModelShadow.Casts, draw.Shadow);
     }

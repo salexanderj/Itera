@@ -2,6 +2,7 @@ using System.Numerics;
 using Arch.Core;
 using Itera.Engine.Components;
 using Itera.Engine.Input;
+using Itera.Engine.Maths;
 using Itera.Engine.Systems;
 using Itera.Engine.Voxels;
 using Itera.Modding;
@@ -119,7 +120,7 @@ public sealed class DebugFlyCameraSystemTests
 
         var position = ReadCamera(world).Pose.Position;
         Assert.Equal(-(_area.EdgeMetres - PlayArea.EyeInsetMetres), position.Z, 1e-3f);
-        Assert.True(_area.HoldsEye(position));
+        Assert.True(_area.HoldsEye(new WorldPoint(position.X, position.Y, position.Z)));
     }
 
     [Fact]
@@ -228,7 +229,7 @@ public sealed class DebugFlyCameraSystemTests
     {
         foreach (var seconds in new[] { 0d, 17.3, 400, 12_345.6 })
         {
-            var pose = DebugFlyCameraSystem.CirclePose(5, seconds, 20);
+            var pose = DebugFlyCameraSystem.CirclePose(new WorldOrigin(), 5, seconds, 20);
             var flat = new Vector2(pose.Position.X, pose.Position.Z);
             Assert.Equal(100f, flat.Length(), 2);
             Assert.InRange(pose.Yaw, -MathF.PI, MathF.PI);

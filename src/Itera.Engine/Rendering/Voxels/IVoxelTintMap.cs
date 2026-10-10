@@ -11,13 +11,15 @@ public interface IVoxelTintMap
     /// <summary>Texels along each side of the map.</summary>
     const int Size = 256;
 
-    /// <summary>A texel's edge in level-0 voxels, as a shift: 9 gives 512 voxels (5.12 m).</summary>
+    /// <summary>A texel's edge in centimetres, as a shift: 9 gives 512 cm (5.12 m).</summary>
     int TexelShift { get; }
 
-    /// <summary>The level-0 x of the map's corner at texel column 0; the texel's centre is half a texel further.</summary>
+    /// <summary>
+    /// The absolute x, in centimetres, of the map's corner at texel column 0; the texel's centre is half a texel further.
+    /// </summary>
     int OriginX { get; }
 
-    /// <summary>The level-0 z of the map's corner at texel row 0.</summary>
+    /// <summary>The absolute z, in centimetres, of the map's corner at texel row 0.</summary>
     int OriginZ { get; }
 
     /// <summary>Writes the texels, <see cref="Size"/> rows of <see cref="Size"/>: texel (x, z) at <c>z * Size + x</c>.</summary>

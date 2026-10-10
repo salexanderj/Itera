@@ -26,7 +26,10 @@ paths:
     `EcsChecks`, `CheckedWorldExtensions`, and `EcsInspector` (archetypes, entities, and components read by reflection
     for the console's `ecs` and the control port's `query`; it allocates, so commands only).
   - `Components/` and `Systems/`: the components and systems a game registers (`.claude/rules/systems.md`).
-  - `Maths/` (`DeterministicMath`, `Rotation`, `RigidTransform`) and `Animation/` (skeletons, poses, clips, foot IK):
+  - `Maths/`: the two frames of positions (`WorldPoint`, an absolute point in double metres; `WorldOrigin`, the match's
+    origin on whole metres, a scoped service the world, the mover, the bodies, and the mesh colliders share, through
+    which every conversion between local floats and absolute points or centimetres goes; CLAUDE.md's Units), and
+    `DeterministicMath`, `Rotation`, `RigidTransform`, which with `Animation/` (skeletons, poses, clips, foot IK) are in
     `.claude/rules/animation.md`.
 
 A game composes the engine in its `Program.cs`: `AddIteraEngine`, then its own (the starter's `AddGame`, which registers

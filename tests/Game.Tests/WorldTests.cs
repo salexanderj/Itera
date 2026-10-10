@@ -1,4 +1,5 @@
 using Game.WorldGeneration;
+using Itera.Engine.Maths;
 using Itera.Engine.Voxels;
 
 namespace Game.Tests;
@@ -78,7 +79,7 @@ public sealed class WorldTests
     {
         var start = StartPose.For(new WorldOptions { CameraPose = "1,20,3,90,-10" }, 1, 1.56f);
 
-        Assert.Equal(new System.Numerics.Vector3(1, 20, 3), start.Eye);
+        Assert.Equal(new WorldPoint(1, 20, 3), start.Eye);
         Assert.Equal(MathF.PI / 2, start.Yaw, 4);
         Assert.Equal(-10 * MathF.PI / 180, start.Pitch, 4);
     }

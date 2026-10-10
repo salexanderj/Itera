@@ -5,6 +5,7 @@ using Itera.Engine.Commands;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
 using Itera.Engine.Input;
+using Itera.Engine.Maths;
 using Itera.Engine.Settings;
 using Itera.Modding;
 using Microsoft.Extensions.Logging;
@@ -56,6 +57,9 @@ public sealed partial class DebugFlyCameraSystem : BaseSystem<World, FrameTime>,
     private readonly PlayerInputBlock? _block;
     private readonly float _circleHeight;
     private readonly PlayArea _area;
+
+    // The match's origin: the camera's pose is local to it, the play area absolute.
+    private readonly WorldOrigin _origin;
     private readonly ILogger<DebugFlyCameraSystem> _logger;
     private readonly Vector3 _start;
     private readonly float _startYaw;
@@ -80,6 +84,7 @@ public sealed partial class DebugFlyCameraSystem : BaseSystem<World, FrameTime>,
     /// <param name="settings">The player's settings, whose mouse sensitivity is read each frame; the options' without them.</param>
     /// <param name="keys">The movement keybindings; the defaults without them.</param>
     /// <param name="block">The match's input block: while it is set, the camera reads a frame with nothing pressed; none in tests.</param>
+    /// <param name="origin">The match's origin, which the camera's pose is local to; the map's middle in tests.</param>
     public DebugFlyCameraSystem(
         World world,
         IFrameInput input,
@@ -92,11 +97,13 @@ public sealed partial class DebugFlyCameraSystem : BaseSystem<World, FrameTime>,
         ConsoleCommands? commands = null,
         PlayerSettings? settings = null,
         MovementKeys? keys = null,
-        PlayerInputBlock? block = null
+        PlayerInputBlock? block = null,
+        WorldOrigin? origin = null
     )
         : base(world)
     {
         _block = block;
+        _origin = origin ?? new WorldOrigin();
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(area);
         _keys = keys ?? MovementKeys.Defaults();
@@ -155,17 +162,19 @@ public sealed partial class DebugFlyCameraSystem : BaseSystem<World, FrameTime>,
         World.InlineQuery<Fly, CameraPose, FlyCamera>(in s_query, ref job);
     }
 
-    /// <summary>The pose on the automatic flight path after <paramref name="seconds"/>.</summary>
-    public static CameraPose CirclePose(double speed, double seconds, float heightMetres)
+    /// <summary>
+    /// The pose on the automatic flight path after <paramref name="seconds"/>: a circle round the map's middle,
+    /// <paramref name="heightMetres"/> up, local to <paramref name="origin"/>.
+    /// </summary>
+    public static CameraPose CirclePose(WorldOrigin origin, double speed, double seconds, float heightMetres)
     {
+        ArgumentNullException.ThrowIfNull(origin);
         // Sin and Cos are fine here: this is a debug aid, not generation, so peers need not agree on it.
         var angle = speed * seconds / CircleRadiusMetres;
         return new CameraPose
         {
-            Position = new Vector3(
-                (float)(CircleRadiusMetres * Math.Cos(angle)),
-                heightMetres,
-                (float)(CircleRadiusMetres * Math.Sin(angle))
+            Position = origin.ToLocal(
+                new WorldPoint(CircleRadiusMetres * Math.Cos(angle), heightMetres, CircleRadiusMetres * Math.Sin(angle))
             ),
             // Forward at yaw y is (-sin y, 0, -cos y); the path's direction is (-sin a, 0, cos a), so y = pi - a.
             Yaw = (float)Math.IEEERemainder(Math.PI - angle, 2 * Math.PI),
@@ -174,13 +183,14 @@ public sealed partial class DebugFlyCameraSystem : BaseSystem<World, FrameTime>,
     }
 
     private Fly FollowCircle(double seconds) =>
-        new() { FollowPath = true, Path = CirclePose(_walkSpeed, seconds, _circleHeight) };
+        new() { FollowPath = true, Path = CirclePose(_origin, _walkSpeed, seconds, _circleHeight) };
 
     private Fly Steer(in InputSnapshot input, float deltaSeconds)
     {
         var job = new Fly
         {
             Area = _area,
+            Origin = _origin,
             DeltaSeconds = deltaSeconds,
             SpeedScale = input.Scroll == 0 ? 1 : MathF.Pow(WheelFactor, input.Scroll),
             Boost = _keys.IsDown(in input, _keys.Sprint) ? FastFactor : 1,
@@ -267,6 +277,7 @@ public sealed partial class DebugFlyCameraSystem : BaseSystem<World, FrameTime>,
     private struct Fly : IForEach<CameraPose, FlyCamera>
     {
         public PlayArea? Area;
+        public WorldOrigin? Origin;
         public bool FollowPath;
         public CameraPose Path;
         public float DeltaSeconds;
@@ -302,9 +313,9 @@ public sealed partial class DebugFlyCameraSystem : BaseSystem<World, FrameTime>,
             if (direction != Vector3.Zero)
             {
                 // It keeps to the play area: a camera flown far out makes column walks and edits very large.
-                pose.Position = Area!.ClampEye(
-                    pose.Position + Vector3.Normalize(direction) * (fly.SpeedMetresPerSecond * Boost * DeltaSeconds)
-                );
+                var moved =
+                    pose.Position + Vector3.Normalize(direction) * (fly.SpeedMetresPerSecond * Boost * DeltaSeconds);
+                pose.Position = Origin!.ToLocal(Area!.ClampEye(Origin.ToWorld(moved)));
             }
         }
     }

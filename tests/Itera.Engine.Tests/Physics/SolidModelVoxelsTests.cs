@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Physics;
 using Itera.Engine.Tests.Voxels;
 using Itera.Engine.Voxels;
@@ -18,6 +19,9 @@ namespace Itera.Engine.Tests.Physics;
 public sealed class SolidModelVoxelsTests : IDisposable
 {
     private const int Floor = 200;
+
+    /// <summary>The floor in metres, on the 1 cm world the mover's tests walk.</summary>
+    private const double FloorMetres = Floor / 100.0;
     private const float Step = 1f / 60;
     private const int Edge = VoxelConstants.ChunkSize;
 
@@ -86,7 +90,7 @@ public sealed class SolidModelVoxelsTests : IDisposable
         var pivot = new Vector3(size.X * 0.4f, 1.3f, size.Z * 0.55f);
         var id = solids.Add(SolidColumns.Build(chunk, size), level, pivot);
         var at = new Vector3(37.3f, 251.6f, -12.8f) / worldCentimetres;
-        solids.SetPose(id, at, yaw);
+        solids.SetPoseInCells(id, at.X, at.Y, at.Z, yaw);
         var scale = (1 << level) / (float)worldCentimetres;
         var reach = Math.Max(4, (int)(size.X * scale * 1.5f));
         int windowX = (int)at.X - 64,
@@ -129,7 +133,7 @@ public sealed class SolidModelVoxelsTests : IDisposable
         var chunk = Lopsided(out var size);
         var solids = new SolidModelVoxels();
         var id = solids.Add(SolidColumns.Build(chunk, size), 2, Vector3.Zero);
-        solids.SetPose(id, new Vector3(0, 400, 0), 0.7f);
+        solids.SetPose(id, new WorldPoint(0, 4, 0), 0.7f);
 
         Assert.False(solids.Reaches(-100, 0, -100, 100, 350, 100));
         Assert.False(solids.Reaches(1000, 400, 1000, 1100, 500, 1100));
@@ -146,7 +150,7 @@ public sealed class SolidModelVoxelsTests : IDisposable
         var solids = new SolidModelVoxels();
         var columns = SolidColumns.Build(chunk, size);
         var first = solids.Add(columns, 0, Vector3.Zero);
-        solids.SetPose(first, Vector3.Zero, 0);
+        solids.SetPose(first, WorldPoint.Zero, 0);
         solids.Remove(first);
 
         Assert.Equal(0, solids.Count);
@@ -160,7 +164,7 @@ public sealed class SolidModelVoxelsTests : IDisposable
         var (mover, bodyVoxels) = MoverWorld();
         // A post 40 cm square and 60 cm tall (of 4 cm voxels), taller than a step, standing on the floor from x = 0.6 m.
         var id = bodyVoxels.Solids.Add(Block(10, 15, 10), 2, Vector3.Zero);
-        bodyVoxels.Solids.SetPose(id, new Vector3(60, Floor, -20), 0);
+        bodyVoxels.Solids.SetPose(id, new WorldPoint(0.6, FloorMetres, -0.2), 0);
         var feet = new Vector3(0, 2, 0);
         var velocity = Vector3.Zero;
 
@@ -180,7 +184,7 @@ public sealed class SolidModelVoxelsTests : IDisposable
         var (mover, bodyVoxels) = MoverWorld();
         // A slab 1.2 m square and 20 cm thick, 1 m above the floor, turned a little.
         var id = bodyVoxels.Solids.Add(Block(30, 5, 30), 2, new Vector3(15, 0, 15));
-        bodyVoxels.Solids.SetPose(id, new Vector3(0, Floor + 100, 0), 0.2f);
+        bodyVoxels.Solids.SetPose(id, new WorldPoint(0, FloorMetres + 1, 0), 0.2f);
         var feet = new Vector3(0, 4, 0);
         var velocity = Vector3.Zero;
 
@@ -200,13 +204,13 @@ public sealed class SolidModelVoxelsTests : IDisposable
     {
         var (mover, bodyVoxels) = MoverWorld();
         var id = bodyVoxels.Solids.Add(Block(30, 5, 30), 2, new Vector3(15, 0, 15));
-        bodyVoxels.Solids.SetPose(id, new Vector3(0, Floor + 100, 0), 0);
+        bodyVoxels.Solids.SetPose(id, new WorldPoint(0, FloorMetres + 1, 0), 0);
         var feet = new Vector3(0, 3.2f, 0);
         var velocity = Vector3.Zero;
         mover.Move(ref feet, ref velocity, in s_shape, Step);
 
         // Up by 3 cm in a step, as a bobbing head never moves so fast.
-        bodyVoxels.Solids.SetPose(id, new Vector3(0, Floor + 103, 0), 0);
+        bodyVoxels.Solids.SetPose(id, new WorldPoint(0, FloorMetres + 1.03, 0), 0);
         velocity = new Vector3(0, -0.3f, 0);
         var result = mover.Move(ref feet, ref velocity, in s_shape, Step);
 
@@ -228,7 +232,7 @@ public sealed class SolidModelVoxelsTests : IDisposable
         {
             for (var i = 0; i < steps; i++)
             {
-                bodyVoxels.Solids.SetPose(id, new Vector3(0, Floor + 300, 0), i * 0.01f);
+                bodyVoxels.Solids.SetPose(id, new WorldPoint(0, FloorMetres + 3, 0), i * 0.01f);
                 velocity = new Vector3(i % 200 < 100 ? 1.5f : -1.5f, velocity.Y - 0.3f, 0.4f * MathF.Sin(i * 0.05f));
                 var start = Stopwatch.GetTimestamp();
                 mover.Move(ref feet, ref velocity, in s_wide, Step);

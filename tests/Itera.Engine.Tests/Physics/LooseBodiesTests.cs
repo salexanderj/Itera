@@ -97,7 +97,7 @@ public sealed class LooseBodiesTests : IDisposable
             )
         );
 
-        _world.TryGetMaterial(VoxelCoord.FromMetres(pivot), out var there);
+        _world.TryGetMaterial(_world.Origin.ToCentimetres(pivot), out var there);
         _world.TryGetMaterial(new VoxelCoord(-100, 188, 0), out var hole);
         Assert.Equal(0, _bodies.Count);
         Assert.False(_physics.Simulation.Bodies.BodyExists(body));
@@ -233,7 +233,7 @@ public sealed class LooseBodiesTests : IDisposable
         Assert.Equal(2, settled);
         Assert.Equal(0, _bodies.Count);
         Assert.Equal(edits + 2, _world.EditCount);
-        _world.TryGetMaterial(VoxelCoord.FromMetres(pivot), out var there);
+        _world.TryGetMaterial(_world.Origin.ToCentimetres(pivot), out var there);
         Assert.Equal(BoxesGenerator.Dirt, there);
     }
 

@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering.Voxels;
 
 namespace Itera.Engine.Particles;
@@ -28,8 +29,11 @@ public sealed class ParticleColours
     /// <summary>The match's tint map, set while a match exists; null without one.</summary>
     public VoxelTintSampler? Tint { get; set; }
 
-    /// <summary>The colour of <paramref name="material"/> at <paramref name="at"/> (world metres), with alpha 1.</summary>
-    public Vector4 OfMaterial(byte material, Vector3 at)
+    /// <summary>
+    /// The colour of <paramref name="material"/> at the absolute point <paramref name="at"/> (a local position with the
+    /// match's origin, <c>WorldOrigin.ToWorld</c>), with alpha 1.
+    /// </summary>
+    public Vector4 OfMaterial(byte material, in WorldPoint at)
     {
         var look = _palette.Look(material);
         var share = Tint?.At(at) ?? 0;

@@ -1,6 +1,7 @@
 using System.Numerics;
 using BepuPhysics;
 using BepuPhysics.Collidables;
+using Itera.Engine.Maths;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -105,6 +106,12 @@ public sealed partial class LooseBodies
     /// <summary>Bodies made since the start: the last one's <see cref="BornOf"/>.</summary>
     private long _births;
 
+    /// <summary>The match's origin: bodies' poses are local to it, pieces and edits absolute.</summary>
+    private readonly WorldOrigin _origin;
+
+    /// <summary>The match's origin, which the bodies' poses and pivots are local to.</summary>
+    public WorldOrigin Origin => _origin;
+
     /// <summary>Loose bodies in a match with voxel terrain: they meet it through its colliders and go back into it.</summary>
     public LooseBodies(
         PhysicsWorld physics,
@@ -115,7 +122,7 @@ public sealed partial class LooseBodies
         IOptions<EngineOptions> options,
         ILogger<LooseBodies> logger
     )
-        : this(physics, voxels, colliders, models, passability, options, logger, null)
+        : this(physics, voxels, colliders, models, passability, options, logger, null, voxels.Origin)
     {
         if (!models.Follows(voxels))
         {
@@ -129,7 +136,7 @@ public sealed partial class LooseBodies
     /// <summary>
     /// Loose bodies in a match without voxel terrain: balls and cut bodies only, which meet the game's mesh colliders;
     /// below <paramref name="fallLimitMetres"/>'s height (the play area's fall limit, read at the first need) a body has
-    /// fallen out of the world.
+    /// fallen out of the world. Positions are local to <paramref name="origin"/> (the map's middle when null).
     /// </summary>
     public LooseBodies(
         PhysicsWorld physics,
@@ -137,9 +144,10 @@ public sealed partial class LooseBodies
         IVoxelPassability passability,
         IOptions<EngineOptions> options,
         ILogger<LooseBodies> logger,
-        Func<float> fallLimitMetres
+        Func<float> fallLimitMetres,
+        WorldOrigin? origin = null
     )
-        : this(physics, null, null, models, passability, options, logger, fallLimitMetres) { }
+        : this(physics, null, null, models, passability, options, logger, fallLimitMetres, origin) { }
 
     private LooseBodies(
         PhysicsWorld physics,
@@ -149,9 +157,11 @@ public sealed partial class LooseBodies
         IVoxelPassability passability,
         IOptions<EngineOptions> options,
         ILogger<LooseBodies> logger,
-        Func<float>? fallLimitMetres
+        Func<float>? fallLimitMetres,
+        WorldOrigin? origin
     )
     {
+        _origin = origin ?? new WorldOrigin();
         _physics = physics;
         _voxels = voxels;
         _colliders = colliders;
@@ -230,12 +240,17 @@ public sealed partial class LooseBodies
                 continue;
             }
 
-            // In centimetres, as its piece's voxels are (a lift reads its piece a centimetre at a time).
+            // In absolute centimetres, as its piece's voxels are (a lift reads its piece a centimetre at a time).
             var pose = bodies[handle].Pose;
-            var pivot =
-                (pose.Position + Vector3.Transform(loose.PivotOffset, pose.Orientation))
-                * VoxelConstants.CentimetresPerMetre;
-            poses[count++] = new LoosePose(loose.Voxels, pivot, pose.Orientation);
+            var pivot = _origin.ToWorld(pose.Position + Vector3.Transform(loose.PivotOffset, pose.Orientation));
+            const double perMetre = VoxelConstants.CentimetresPerMetre;
+            poses[count++] = new LoosePose(
+                loose.Voxels,
+                pivot.X * perMetre,
+                pivot.Y * perMetre,
+                pivot.Z * perMetre,
+                pose.Orientation
+            );
         }
 
         return count;
@@ -449,7 +464,7 @@ public sealed partial class LooseBodies
     /// limit without terrain.
     /// </summary>
     public bool HasFallenOut(BodyHandle body) =>
-        _physics.Simulation.Bodies[body].Pose.Position.Y < (_fallLimitMetres ??= _fallLimitSource!());
+        _origin.WorldY(_physics.Simulation.Bodies[body].Pose.Position.Y) < (_fallLimitMetres ??= _fallLimitSource!());
 
     /// <summary>Removes a loose body without putting it back (a lifted piece stays in the log, unused).</summary>
     public void Remove(BodyHandle body) => RemoveBody(body, removeModel: true);
@@ -567,7 +582,13 @@ public readonly record struct LoosePart(
 public readonly record struct LooseModel(int Model, Vector3 Corner, Quaternion Turn);
 
 /// <summary>Where a loose body's piece is: its pivot in level-0 voxels and its turn since it was lifted.</summary>
-internal readonly record struct LoosePose(VoxelPiece Piece, Vector3 Pivot, Quaternion Orientation);
+internal readonly record struct LoosePose(
+    VoxelPiece Piece,
+    double PivotX,
+    double PivotY,
+    double PivotZ,
+    Quaternion Orientation
+);
 
 /// <summary>
 /// A joint of a ragdoll (<see cref="LooseBodies.TryCreateRagdoll"/>): bodies <paramref name="BodyA"/> and

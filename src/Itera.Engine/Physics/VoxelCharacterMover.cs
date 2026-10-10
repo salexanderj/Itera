@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Physics;
@@ -161,6 +162,13 @@ public sealed class VoxelCharacterMover
 
     private readonly VoxelWorld? _world;
 
+    // The match's origin: feet in metres are local to it, cells absolute (whole metres, so a local float plus it is exact
+    // in doubles and a move reads the same cells from any origin).
+    private readonly WorldOrigin _origin;
+
+    /// <summary>The match's origin, which the positions this mover is given and gives are local to.</summary>
+    public WorldOrigin Origin => _origin;
+
     // The mesh colliders as columns of the mover's cells; null for none.
     private readonly MeshColumns? _meshes;
 
@@ -274,6 +282,7 @@ public sealed class VoxelCharacterMover
         }
 
         _world = world;
+        _origin = world?.Origin ?? meshes?.Origin ?? new WorldOrigin();
         _edgeFirst = edgeFirst;
         _edgeEnd = edgeEnd;
         _cellsPerMetre = VoxelConstants.CentimetresPerMetre / (double)cellCentimetres;
@@ -380,9 +389,9 @@ public sealed class VoxelCharacterMover
         _ramp = slope;
         ForgetSurfaces();
 
-        double px = feetMetres.X * _cellsPerMetre,
-            py = feetMetres.Y * _cellsPerMetre,
-            pz = feetMetres.Z * _cellsPerMetre;
+        double px = CellX(feetMetres.X),
+            py = CellY(feetMetres.Y),
+            pz = CellZ(feetMetres.Z);
         var scale = seconds * _cellsPerMetre;
         double dx = velocity.X * scale,
             dy = velocity.Y * scale,
@@ -476,11 +485,7 @@ public sealed class VoxelCharacterMover
             vy = 0;
         }
 
-        feetMetres = new Vector3(
-            (float)(px / _cellsPerMetre),
-            (float)(py / _cellsPerMetre),
-            (float)(pz / _cellsPerMetre)
-        );
+        feetMetres = Local(px, py, pz);
         velocity = new Vector3((float)vx, vy, (float)vz);
         return new CharacterMoveResult(
             status,
@@ -787,14 +792,14 @@ public sealed class VoxelCharacterMover
     {
         CheckRadius(radiusMetres);
         var perMetre = _cellsPerMetre;
-        var footprint = new CircleFootprint(atMetres.X * perMetre, atMetres.Z * perMetre, radiusMetres * perMetre);
+        var footprint = new CircleFootprint(CellX(atMetres.X), CellZ(atMetres.Z), radiusMetres * perMetre);
         if (!Resident(footprint.MinX, footprint.MinZ, footprint.MaxX, footprint.MaxZ))
         {
             topMetres = float.NaN;
             return false;
         }
 
-        var y = atMetres.Y * perMetre;
+        var y = CellY(atMetres.Y);
         int y0 = (int)Math.Floor(y - downMetres * perMetre),
             y1 = (int)Math.Ceiling(y + upMetres * perMetre) - 1;
         if (_density)
@@ -803,12 +808,12 @@ public sealed class VoxelCharacterMover
             _ramp = DefaultRamp;
             ForgetSurfaces();
             var surface = Math.Min(Surface(in footprint, y0, y1), y + upMetres * perMetre);
-            topMetres = double.IsNegativeInfinity(surface) ? 0 : (float)(surface / perMetre);
+            topMetres = double.IsNegativeInfinity(surface) ? 0 : LocalY(surface);
             return !double.IsNegativeInfinity(surface);
         }
 
         var top = TerrainTop(in footprint, y0, y1);
-        topMetres = top == int.MinValue ? 0 : (float)(top / perMetre);
+        topMetres = top == int.MinValue ? 0 : LocalY(top);
         return top != int.MinValue;
     }
 
@@ -819,10 +824,9 @@ public sealed class VoxelCharacterMover
     /// </summary>
     public bool IsResident(Vector3 feetMetres, float radiusMetres)
     {
-        var perMetre = _cellsPerMetre;
-        double x = feetMetres.X * perMetre,
-            z = feetMetres.Z * perMetre,
-            r = radiusMetres * perMetre;
+        double x = CellX(feetMetres.X),
+            z = CellZ(feetMetres.Z),
+            r = radiusMetres * _cellsPerMetre;
         return Resident((int)Math.Floor(x - r), (int)Math.Floor(z - r), (int)Math.Floor(x + r), (int)Math.Floor(z + r));
     }
 
@@ -830,9 +834,9 @@ public sealed class VoxelCharacterMover
     public bool Overlaps(Vector3 feetMetres, in CharacterShape shape)
     {
         BeginQuery(in shape);
-        double px = feetMetres.X * _cellsPerMetre,
-            py = feetMetres.Y * _cellsPerMetre,
-            pz = feetMetres.Z * _cellsPerMetre;
+        double px = CellX(feetMetres.X),
+            py = CellY(feetMetres.Y),
+            pz = CellZ(feetMetres.Z);
         var footprint = new CircleFootprint(px, pz, shape.RadiusMetres * _cellsPerMetre);
         var h = shape.HeightMetres * _cellsPerMetre;
         return !double.IsNegativeInfinity(OverlapTop(in footprint, py, h, bodies: false));
@@ -846,13 +850,33 @@ public sealed class VoxelCharacterMover
     public bool OverlapsAnything(Vector3 feetMetres, in CharacterShape shape)
     {
         BeginQuery(in shape);
-        double px = feetMetres.X * _cellsPerMetre,
-            py = feetMetres.Y * _cellsPerMetre,
-            pz = feetMetres.Z * _cellsPerMetre;
+        double px = CellX(feetMetres.X),
+            py = CellY(feetMetres.Y),
+            pz = CellZ(feetMetres.Z);
         var footprint = new CircleFootprint(px, pz, shape.RadiusMetres * _cellsPerMetre);
         var h = shape.HeightMetres * _cellsPerMetre;
         return !double.IsNegativeInfinity(OverlapTop(in footprint, py, h, bodies: true));
     }
+
+    /// <summary>A local x in metres, in absolute cells: the local float plus the origin's whole metres, in doubles.</summary>
+    private double CellX(float metres) => _origin.WorldX(metres) * _cellsPerMetre;
+
+    /// <summary>A local y in metres, in absolute cells.</summary>
+    private double CellY(float metres) => _origin.WorldY(metres) * _cellsPerMetre;
+
+    /// <summary>A local z in metres, in absolute cells.</summary>
+    private double CellZ(float metres) => _origin.WorldZ(metres) * _cellsPerMetre;
+
+    /// <summary>A y in absolute cells, as a local height in metres.</summary>
+    private float LocalY(double cells) => (float)(cells / _cellsPerMetre - _origin.WorldY(0));
+
+    /// <summary>A point in absolute cells, as a local position in metres.</summary>
+    private Vector3 Local(double x, double y, double z) =>
+        new(
+            (float)(x / _cellsPerMetre - _origin.WorldX(0)),
+            (float)(y / _cellsPerMetre - _origin.WorldY(0)),
+            (float)(z / _cellsPerMetre - _origin.WorldZ(0))
+        );
 
     /// <summary>The ramp of a body of the default slope limit (45 degrees): one cell over one cell.</summary>
     private const double DefaultRamp = 1;

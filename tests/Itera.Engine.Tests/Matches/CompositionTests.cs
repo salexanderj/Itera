@@ -1,8 +1,10 @@
 using System.Numerics;
 using Itera.Engine.Ecs;
 using Itera.Engine.Matches;
+using Itera.Engine.Maths;
 using Itera.Engine.Physics;
 using Itera.Engine.Systems;
+using Itera.Engine.Voxels;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Itera.Engine.Tests.Matches;
@@ -11,7 +13,8 @@ namespace Itera.Engine.Tests.Matches;
 /// The engine's composition with the least a game adds (<see cref="EngineComposition"/>): it builds with every
 /// registration checked, the run's services (the loop among them) resolve from the root without a match's (scoped)
 /// service, a match's scope resolves its services (without terrain, a character mover over the mesh colliders alone,
-/// which never waits, the engine's default play area, and voxel models that make balls' pieces with no world), and a game's fixed and frame systems come out in the order it
+/// which never waits, the engine's default play area, voxel models that make balls' pieces with no world, and one origin
+/// that the world, the mover, the bodies, and the mesh colliders share), and a game's fixed and frame systems come out in the order it
 /// registered them, which is the order they run in.
 /// </summary>
 public sealed class CompositionTests
@@ -36,6 +39,16 @@ public sealed class CompositionTests
         var bodies = scope.ServiceProvider.GetRequiredService<LooseBodies>();
         Assert.Equal(terrain, bodies.CanSettle);
         Assert.Same(scope.ServiceProvider.GetRequiredService<LooseBodyVoxels>(), match.BodyVoxels);
+        // One origin for the match: every service that keeps local positions measures from it.
+        var origin = scope.ServiceProvider.GetRequiredService<WorldOrigin>();
+        Assert.Same(origin, mover.Origin);
+        Assert.Same(origin, bodies.Origin);
+        Assert.Same(origin, scope.ServiceProvider.GetRequiredService<MeshColliders>().Origin);
+        if (terrain)
+        {
+            Assert.Same(origin, scope.ServiceProvider.GetRequiredService<VoxelWorld>().Origin);
+        }
+
         if (!terrain)
         {
             Assert.True(mover.IsResident(new Vector3(300, 2, -300), 1));

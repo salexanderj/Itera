@@ -252,9 +252,10 @@ public sealed partial class VoxelColliders : IDisposable
         {
             if (cell.HasStatic)
             {
-                var edge = CellSize * _voxels.Grid.EdgeMetres(key.Level);
-                var corner = new Vector3(key.X, key.Y, key.Z) * edge;
-                lines.AddBox(corner, Quaternion.Identity, Vector3.Zero, new Vector3(edge), colour);
+                var edge = CellSize * _voxels.Grid.Edge(key.Level);
+                var corner = _voxels.Origin.ToLocal(new VoxelCoord(key.X * edge, key.Y * edge, key.Z * edge));
+                var size = edge / (float)VoxelConstants.CentimetresPerMetre;
+                lines.AddBox(corner, Quaternion.Identity, Vector3.Zero, new Vector3(size), colour);
             }
         }
     }
@@ -320,16 +321,15 @@ public sealed partial class VoxelColliders : IDisposable
             z1 = 0;
         for (var candidate = own; candidate <= coarsest; candidate++)
         {
-            // In voxels of the level.
-            var perMetre = (float)VoxelConstants.CentimetresPerMetre / _voxels.Grid.Edge(candidate);
-            var min = (bounds.Min - reach) * perMetre;
-            var max = (bounds.Max + reach) * perMetre;
-            x0 = (int)MathF.Floor(min.X);
-            y0 = (int)MathF.Floor(min.Y);
-            z0 = (int)MathF.Floor(min.Z);
-            x1 = (int)MathF.Floor(max.X);
-            y1 = (int)MathF.Floor(max.Y);
-            z1 = (int)MathF.Floor(max.Z);
+            // In absolute voxels of the level, from the body's local bounds through the origin.
+            var perMetre = (double)VoxelConstants.CentimetresPerMetre / _voxels.Grid.Edge(candidate);
+            var origin = _voxels.Origin;
+            x0 = (int)Math.Floor(origin.WorldX(bounds.Min.X - reach.X) * perMetre);
+            y0 = (int)Math.Floor(origin.WorldY(bounds.Min.Y - reach.Y) * perMetre);
+            z0 = (int)Math.Floor(origin.WorldZ(bounds.Min.Z - reach.Z) * perMetre);
+            x1 = (int)Math.Floor(origin.WorldX(bounds.Max.X + reach.X) * perMetre);
+            y1 = (int)Math.Floor(origin.WorldY(bounds.Max.Y + reach.Y) * perMetre);
+            z1 = (int)Math.Floor(origin.WorldZ(bounds.Max.Z + reach.Z) * perMetre);
             var extra = frozen || candidate < now ? CellSize : 0;
             if (_voxels.ColumnsResident(candidate, x0 - extra, z0 - extra, x1 + extra, z1 + extra))
             {
@@ -699,9 +699,10 @@ public sealed partial class VoxelColliders : IDisposable
         }
         else
         {
-            cell.Static = simulation.Statics.Add(
-                new StaticDescription(new Vector3(x0, y0, z0) * metres, Quaternion.Identity, shape)
-            );
+            // The cell's corner, absolute, posed at its local place; its boxes are from the corner.
+            var edge = _voxels.Grid.Edge(key.Level);
+            var corner = _voxels.Origin.ToLocal(new VoxelCoord(x0 * edge, y0 * edge, z0 * edge));
+            cell.Static = simulation.Statics.Add(new StaticDescription(corner, Quaternion.Identity, shape));
             _physics.Kinds.SetStatic(cell.Static, key.Level);
             cell.HasStatic = true;
             StaticCount++;

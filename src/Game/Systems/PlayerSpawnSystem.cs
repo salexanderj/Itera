@@ -3,6 +3,7 @@ using Arch.Core;
 using Arch.System;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
+using Itera.Engine.Maths;
 using Itera.Engine.Systems;
 using Itera.Modding;
 using Microsoft.Extensions.Logging;
@@ -19,13 +20,15 @@ public sealed partial class PlayerSpawnSystem(
     World world,
     PlayerOptions options,
     StartPose start,
-    ILogger<PlayerSpawnSystem> logger
+    ILogger<PlayerSpawnSystem> logger,
+    WorldOrigin? origin = null
 ) : BaseSystem<World, FixedStepTime>(world), IFixedUpdateSystem
 {
     public override void Initialize()
     {
         var size = CharacterSize.ForHeight((float)options.HeightMetres);
-        var feet = start.Eye - new Vector3(0, size.EyeMetres, 0);
+        // The start is absolute; the player's feet are local to the match's origin.
+        var feet = (origin ?? new WorldOrigin()).ToLocal(start.Eye) - new Vector3(0, size.EyeMetres, 0);
         World.Create(
             new LocalPlayer(),
             new PlayerCommand { Yaw = start.Yaw, Pitch = start.Pitch },

@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 
 namespace Itera.Engine.Voxels;
 
@@ -33,13 +34,17 @@ public readonly record struct VoxelHit(
 
     /// <summary>
     /// The centimetre a small edit struck along this ray centres on: the ray's entry point into the voxel it met
-    /// (<paramref name="originMetres"/> and <paramref name="direction"/> are the ray's), moved
-    /// <see cref="EntryDepthMetres"/> further along the ray so it lies inside that voxel, where the material is read,
-    /// rounded down. Where the voxels are larger than a centimetre this is where the ray met the struck face, not the
-    /// voxel's corner up to a voxel away; at a grid of 1 cm, a level-0 hit's <see cref="Voxel"/> or its neighbour.
+    /// (<paramref name="originMetres"/> and <paramref name="direction"/> are the ray's, local to
+    /// <paramref name="origin"/>), moved <see cref="EntryDepthMetres"/> further along the ray so it lies inside that
+    /// voxel, where the material is read, rounded down. Where the voxels are larger than a centimetre this is where the
+    /// ray met the struck face, not the voxel's corner up to a voxel away; at a grid of 1 cm, a level-0 hit's
+    /// <see cref="Voxel"/> or its neighbour.
     /// </summary>
-    public VoxelCoord Entry(Vector3 originMetres, Vector3 direction) =>
-        VoxelCoord.FromMetres(originMetres + Vector3.Normalize(direction) * (DistanceMetres + EntryDepthMetres));
+    public VoxelCoord Entry(WorldOrigin origin, Vector3 originMetres, Vector3 direction)
+    {
+        ArgumentNullException.ThrowIfNull(origin);
+        return origin.ToCentimetres(originMetres + Vector3.Normalize(direction) * (DistanceMetres + EntryDepthMetres));
+    }
 
     /// <summary>How far past the entry point <see cref="Entry"/> looks, in metres: half a centimetre.</summary>
     public const float EntryDepthMetres = 0.005f;
@@ -59,7 +64,7 @@ public sealed partial class VoxelWorld
     /// open air. Main thread;
     /// allocates nothing.
     /// </summary>
-    /// <param name="originMetres">Start of the ray, in metres.</param>
+    /// <param name="originMetres">Start of the ray, in local metres (<see cref="Origin"/>).</param>
     /// <param name="direction">Direction of the ray; need not be unit length, must not be zero.</param>
     /// <param name="maxMetres">Longest distance to look.</param>
     /// <param name="hit">The hit, when there is one.</param>
@@ -74,12 +79,12 @@ public sealed partial class VoxelWorld
         }
 
         var memory = Memory;
-        // Metres to level-0 voxels of the grid; the walk itself is in double precision.
+        // Local metres to absolute level-0 voxels of the grid, and the walk itself, in double precision.
         var perVoxel = (double)Grid.BaseCentimetres;
-        var origin = originMetres * (VoxelConstants.CentimetresPerMetre / (float)perVoxel);
-        double ox = origin.X,
-            oy = origin.Y,
-            oz = origin.Z;
+        var voxelsPerMetre = VoxelConstants.CentimetresPerMetre / perVoxel;
+        double ox = Origin.WorldX(originMetres.X) * voxelsPerMetre,
+            oy = Origin.WorldY(originMetres.Y) * voxelsPerMetre,
+            oz = Origin.WorldZ(originMetres.Z) * voxelsPerMetre;
         double dx = direction.X / (double)length,
             dy = direction.Y / (double)length,
             dz = direction.Z / (double)length;

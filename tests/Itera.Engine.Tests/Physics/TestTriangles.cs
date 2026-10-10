@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Physics;
 
 namespace Itera.Engine.Tests.Physics;
@@ -72,4 +73,8 @@ internal sealed class TestTriangles
     /// <summary>Adds the triangles as one collider with <paramref name="tags"/>; its handle.</summary>
     public int AddTo(MeshColliders colliders, uint tags = 0) =>
         colliders.Add([.. _positions], [.. _indices], Matrix4x4.Identity, tags);
+
+    /// <summary>Adds the triangles as one collider placed at the absolute point <paramref name="at"/>; its handle.</summary>
+    public int AddTo(MeshColliders colliders, in WorldPoint at, uint tags = 0) =>
+        colliders.Add([.. _positions], [.. _indices], in at, Matrix4x4.Identity, tags);
 }

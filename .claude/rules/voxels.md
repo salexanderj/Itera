@@ -31,7 +31,9 @@ a voxel changes nothing, and a small ball settling into coarse voxels leaves no 
 and its bounds in whole level-0 chunks: `VoxelGrid.Sized(base, halfWidthMetres, floorMetres, topMetres)` rounds each
 bound out to whole chunks, up to ±160 km each way (`VoxelGrid.MostReachCentimetres`) and 128 layers
 (`VoxelGrid.MostLayers`), and a grid of a base alone has the default bounds (±512 m and -51.2 to 102.4 m at 10 cm).
-Streaming, edits, rays, collision, the mover's edge wall, the fall limit, and the play area follow the grid's bounds;
+Streaming, edits, rays, collision, the mover's edge wall, the fall limit, and the play area follow the grid's bounds
+(absolute; streaming centres and rays come in local metres and are read through the world's origin,
+`VoxelWorld.Origin`, a hit's voxels absolute and `VoxelHit.Entry` taking the origin);
 the grid is part of what the generator's id and version stand for, so a change of size raises the `Version`. The
 engine's toolkit is in `Voxels/Generation/`:
 

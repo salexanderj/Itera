@@ -1,5 +1,5 @@
-using System.Numerics;
 using Game.WorldGeneration;
+using Itera.Engine.Maths;
 using Itera.Engine.Systems;
 using Itera.Engine.Voxels;
 
@@ -26,7 +26,7 @@ public static class BenchmarkViews
     /// The view named <paramref name="name"/> (any case) among <paramref name="views"/>, as <c>tp</c> takes a place: eye,
     /// yaw, and pitch; null for a name none has.
     /// </summary>
-    public static (Vector3 Eye, float Yaw, float Pitch)? Place(BenchmarkView[] views, string name)
+    public static (WorldPoint Eye, float Yaw, float Pitch)? Place(BenchmarkView[] views, string name)
     {
         ArgumentNullException.ThrowIfNull(views);
         foreach (var view in views)
@@ -47,16 +47,15 @@ public static class BenchmarkViews
             new("start-low", start.Eye, start.Yaw, -0.12f),
             new("down", start.Eye, start.Yaw, -0.6f),
             new("up", start.Eye, start.Yaw, 0.45f),
-            new("high", new Vector3(0, Ground(0, 0, seed) + HighMetres, 0), start.Yaw, -0.3f),
+            new("high", new WorldPoint(0, Ground(0, 0, seed) + HighMetres, 0), start.Yaw, -0.3f),
             // Yaw +pi/2 looks along -x, back towards the middle.
-            new("far", new Vector3(FarMetres, Ground(FarMetres, 0, seed) + EyeMetres, 0), MathF.PI / 2, -0.05f),
+            new("far", new WorldPoint(FarMetres, Ground(FarMetres, 0, seed) + EyeMetres, 0), MathF.PI / 2, -0.05f),
         ];
 
-    private static float Ground(float x, float z, ulong seed) =>
-        (float)
-            GameGenerator.SurfaceHeight(
-                (int)(x * VoxelConstants.CentimetresPerMetre),
-                (int)(z * VoxelConstants.CentimetresPerMetre),
-                seed
-            ) / VoxelConstants.CentimetresPerMetre;
+    private static double Ground(double x, double z, ulong seed) =>
+        GameGenerator.SurfaceHeight(
+            (int)(x * VoxelConstants.CentimetresPerMetre),
+            (int)(z * VoxelConstants.CentimetresPerMetre),
+            seed
+        ) / (double)VoxelConstants.CentimetresPerMetre;
 }

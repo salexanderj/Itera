@@ -637,13 +637,14 @@ public sealed partial class VoxelWorld
 
         private double Distance(ColumnKey key)
         {
+            // In absolute centimetres, the column's middle and the centres' alike.
             var size = (double)world.Grid.ColumnCentimetres(key.Level);
-            var x = (key.X + 0.5) * size / VoxelConstants.CentimetresPerMetre;
-            var z = (key.Z + 0.5) * size / VoxelConstants.CentimetresPerMetre;
+            var x = (key.X + 0.5) * size;
+            var z = (key.Z + 0.5) * size;
             var nearest = double.MaxValue;
             for (var i = 0; i < world._centreCount; i++)
             {
-                var centre = world._centrePositions[i];
+                var centre = world._centreCentimetres[i];
                 double dx = x - centre.X,
                     dz = z - centre.Z;
                 nearest = Math.Min(nearest, dx * dx + dz * dz);

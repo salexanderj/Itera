@@ -397,7 +397,8 @@ loaded through Silk.NET are not unloaded; unloading them at exit crashed the pro
 the library was unmapped.
 
 **Units.** Metres and seconds everywhere in simulation and physics. Voxel coordinates (`VoxelCoord`, edits, rays) are
-integers in centimetres, with the origin at the map centre.
+absolute integers in centimetres from the map's middle. Positions kept in metres are local, from the match's origin
+(`WorldOrigin`); points that cross it are absolute `WorldPoint`s (Units and numbers, below).
 
 **Diagnostics.** Every run writes one log file, `<data folder in lower case>-<date>-<time>-<pid>.log`, under
 `LocalApplicationData/<DataFolder>/Logs` (`~/.local/share/<DataFolder>/Logs` on Linux; the folder comes from
@@ -732,8 +733,23 @@ and compares runs from the log lines, which keep their form.
 
 ### Units and numbers
 
-- **Metres and seconds** are the simulation units, with the map origin at the map centre so the worst-case coordinate is
-  about 707 m, where float precision is around 0.1 mm. Voxel coordinates are integers in centimetres.
+- **Metres and seconds** are the simulation units. Voxel coordinates are absolute integers in centimetres from the
+  map's middle (`VoxelCoord`): voxels, edits, saves, and what peers send.
+- **Two frames for positions.** What the simulation and the renderer keep in metres (`Vector3`: the ECS components, Bepu
+  bodies and statics, rays, the mover's feet, the camera) is local: measured from the match's origin (`WorldOrigin`, a
+  scoped service every match service shares, always on whole metres). A point that crosses the origin (a start pose,
+  the console's `tp` and `pos`, a benchmark view, the play area, a call into a generator or an atmosphere source, a
+  solid model's pose, the tint map's read) is an absolute `WorldPoint`, three doubles in metres, which hold a
+  centimetre exactly past the edit format's 167 km. The two meet only through `WorldOrigin`, in doubles: a local float
+  becomes absolute as origin + local (exact, since the origin is whole metres), and centimetres or cells only as
+  floor((local + origin) * scale); a centimetre written in metres reads back as itself (`WorldPoint.ToCentimetres`
+  counts a point within 10 nm under a centimetre's edge as on it). So the voxels a move, a ray, a collider, or a
+  settling ball reads 150 km out are those it reads at the middle, bit for bit (`FarFromTheMiddleTests`, on a world
+  moved there, `TranslatedGenerator`), the origin there. `VoxelCoord.FromMetres` and `ToMetres` went for that reason.
+  Mesh colliders keep an absolute anchor each (whole metres) with their triangles from it; the mover's cells, the voxel
+  colliders' statics, and the loose bodies' pivots are worked out in absolute doubles and posed locally. The origin
+  stays at the middle until it moves with the camera (open work), so the local floats themselves are as precise as a
+  map's middle allows: about 0.1 mm at 707 m.
 - **Positions in metres use `System.Numerics`** (`Vector3`, `Matrix4x4`, `Quaternion`), which Bepu takes directly.
   `Silk.NET.Maths` stays at the edges of Silk.NET APIs (window and swapchain sizes).
 - **Anything every peer must compute alike** uses `DeterministicMath` (below), never `System.Random` or platform maths.
@@ -781,9 +797,9 @@ it was 4 x 10^13 (5 TB at one bit each).
   at its coarse levels; a shape under about a voxel shows only as a soft dip in the voxels' densities (and one under
   about a tenth of a voxel, which meets none of the 10 sub-rows an edit measures a voxel on each way, changes nothing),
   walls and caves come in voxel steps, and a piece lifted from the ground, read a centimetre at a time, keeps the
-  voxels' steps. The limit is one of storage and streaming: positions in metres are floats about the map's middle, which
-  step coarser far from it (about 1 mm at 8 km, 1.6 cm at 160 km) until an origin that moves with the camera keeps them
-  near zero (open work), and navigation keeps heights within ±327.67 m. Code where the world and a model meet uses the
+  voxels' steps. The limit is one of storage and streaming: positions in metres are floats from the match's origin, which
+  stays at the map's middle, so they step coarser far from it (about 1 mm at 8 km, 1.6 cm at 160 km) until the origin
+  moves with the camera (open work), and navigation keeps heights within ±327.67 m. Code where the world and a model meet uses the
   grid's and the model's units, never a level's 2^k.
 - A column (the chunks at one x, z) is the unit of streaming. Level k (voxels of `Edge(k)` cm, chunks of 128 of them)
   loads the columns whose nearest point is within the level-0 streaming radius * 2^k of a streaming centre
@@ -1431,6 +1447,12 @@ Engine work that is known and not done:
   lights, and shadowed point lights (each with the choices offered in `docs/rendering-extension.md`). A low sun's shadow
   maps cost more (the starter's start view at 2560x1440: 0.15 ms at the engine's sun, 0.19 ms at 30 degrees, 0.36 ms at
   15, 0.40 ms at 5; their longer reach adds 0.01 to 0.03 ms of that); at night they cost 0.015 ms.
+- **Large maps** (under way): built, a map's size set in its generator's grid (up to ±160 km and 128 layers), voxels of
+  1 cm to 1 m, and positions kept local to a match's origin with absolute types (`WorldPoint`, `VoxelCoord`) wherever
+  they cross it. Not built: the origin following the camera (moving the bodies, statics, components, and services that
+  keep local positions, then the renderer's, the particles', and the sound's), views past 2 km, a nav grid that moves
+  with the players (it covers a game's area and keeps heights within ±327.67 m), and columns that hold only the layers
+  with ground or edits, so a map's height costs memory only where something is.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no
   engine system replicates players, thrown bodies, or characters; the Zorf TD archive has a working design (a player's
   state every step with the host's checks and corrections, bodies as kinematic mirrors played back a few ticks behind,

@@ -109,12 +109,9 @@ public sealed class DebugBallSystem : BaseSystem<World, FixedStepTime>, IFixedUp
         for (var i = 0; i < count; i++)
         {
             var start = first + right * (spacing * i);
+            // The ball's room, in the world's absolute centimetres (only a world with terrain reads it).
             var space = VoxelEdit.Sphere(
-                new VoxelCoord(
-                    (int)MathF.Floor(start.X * VoxelConstants.CentimetresPerMetre),
-                    (int)MathF.Floor(start.Y * VoxelConstants.CentimetresPerMetre),
-                    (int)MathF.Floor(start.Z * VoxelConstants.CentimetresPerMetre)
-                ),
+                _voxels is null ? default : _voxels.Origin.ToCentimetres(start),
                 _radius,
                 VoxelEditOperation.Fill,
                 _material

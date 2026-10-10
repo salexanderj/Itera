@@ -190,7 +190,7 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
                 continue;
             }
 
-            var height = Math.Min(span.Surface, top);
+            var height = Math.Min(span.Lo + (double)span.Surface, top);
             surface = double.IsNaN(surface) ? height : Math.Max(surface, height);
         }
 
@@ -305,24 +305,20 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
         int x0 = cx << ChunkBits,
             z0 = cz << ChunkBits;
         var metres = 1 / cellsPerMetre;
-        colliders.Triangles(
-            (float)(x0 * metres),
-            (float)(z0 * metres),
-            (float)((x0 + ChunkSide) * metres),
-            (float)((z0 + ChunkSide) * metres),
-            _triangles
-        );
+        colliders.Triangles(x0 * metres, z0 * metres, (x0 + ChunkSide) * metres, (z0 + ChunkSide) * metres, _triangles);
         _built.Clear();
         // A triangle cut by four sides has at most 7 corners; room for more where rounding makes a corner cross twice.
         Span<Vector3> polygon = stackalloc Vector3[16];
         Span<Vector3> scratch = stackalloc Vector3[16];
         foreach (var triangle in _triangles)
         {
-            // In cells from the chunk's corner across, so the small shift behind the front is not lost to rounding.
-            colliders.Triangle(triangle, out var ma, out var mb, out var mc, out var tags);
-            var a = Local(ma, x0, z0);
-            var b = Local(mb, x0, z0);
-            var c = Local(mc, x0, z0);
+            // In cells from the chunk's corner across and from a whole cell at the collider's anchor up, so the small
+            // shift behind the front is not lost to rounding at any place or height.
+            colliders.Triangle(triangle, out var ma, out var mb, out var mc, out var anchor, out var tags);
+            var y0 = (int)Math.Floor(anchor.Y / (double)VoxelConstants.CentimetresPerMetre * cellsPerMetre);
+            var a = Local(ma, anchor, x0, y0, z0);
+            var b = Local(mb, anchor, x0, y0, z0);
+            var c = Local(mc, anchor, x0, y0, z0);
             var normal = Vector3.Cross(b - a, c - a);
             var length = normal.Length();
             if (!(length > 0))
@@ -372,7 +368,9 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
 
                     var cellLo = (int)MathF.Floor(lo + Epsilon);
                     var cellHi = Math.Max(cellLo, (int)MathF.Ceiling(hi - Epsilon) - 1);
-                    _built.Add((x | (z << ChunkBits), new ColumnSpan(cellLo, cellHi, surface, tags)));
+                    _built.Add(
+                        (x | (z << ChunkBits), new ColumnSpan(y0 + cellLo, y0 + cellHi, surface - cellLo, tags))
+                    );
                 }
             }
         }
@@ -403,13 +401,19 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
         return chunk;
     }
 
-    /// <summary>A point given in metres, in cells, and across from the corner (x0, z0) of a chunk.</summary>
-    private Vector3 Local(Vector3 metres, int x0, int z0) =>
-        new(
-            (float)(metres.X * cellsPerMetre - x0),
-            (float)(metres.Y * cellsPerMetre),
-            (float)(metres.Z * cellsPerMetre - z0)
+    /// <summary>
+    /// A point given in metres from <paramref name="anchor"/> (absolute centimetres), in cells from the absolute cell
+    /// (x0, y0, z0): a chunk's corner across and a whole cell near the anchor up.
+    /// </summary>
+    private Vector3 Local(Vector3 metres, VoxelCoord anchor, int x0, int y0, int z0)
+    {
+        const double perMetre = VoxelConstants.CentimetresPerMetre;
+        return new(
+            (float)((anchor.X / perMetre + metres.X) * cellsPerMetre - x0),
+            (float)((anchor.Y / perMetre + metres.Y) * cellsPerMetre - y0),
+            (float)((anchor.Z / perMetre + metres.Z) * cellsPerMetre - z0)
         );
+    }
 
     /// <summary>
     /// The part of triangle a, b, c over the square of column (x, z) (Sutherland and Hodgman's clip against its four
@@ -489,8 +493,9 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     }
 
     /// <summary>
-    /// One triangle's part over a column: the lowest and highest cell it blocks, its height at the centre in cells (a
-    /// wall's highest point), and its tags.
+    /// One triangle's part over a column: the lowest and highest cell it blocks, its height at the centre in cells over
+    /// the lowest (a wall's highest point; kept from it, so a float holds it to a ten-thousandth of a cell at any height),
+    /// and its tags.
     /// </summary>
     private readonly record struct ColumnSpan(int Lo, int Hi, float Surface, uint Tags);
 

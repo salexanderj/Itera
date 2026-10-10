@@ -1,12 +1,12 @@
 using System.Globalization;
-using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Physics;
 using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Systems;
 
 /// <summary>
-/// The box a player, its eye, and what it aims at stay in: the match's world columns (its <see cref="VoxelGrid"/>'s
+/// The box a player, its eye, and what it aims at stay in, in absolute metres (<see cref="WorldPoint"/>): the match's world columns (its <see cref="VoxelGrid"/>'s
 /// bounds, or bounds a game gives without voxel terrain, <see cref="WithoutTerrain"/> by default) and
 /// <see cref="MarginMetres"/> round them on every side, from below the world's floor to above its top. The
 /// fly camera and <c>tp</c> keep to it, and a host can drop a peer's state or request that lies outside it: a position
@@ -124,12 +124,12 @@ public sealed class PlayArea
     /// <summary>The box an eye may be put in, for messages.</summary>
     public string EyeBounds { get; }
 
-    /// <summary>True when <paramref name="metres"/> lies inside the box; false for NaN.</summary>
-    public bool Contains(Vector3 metres) =>
-        MathF.Abs(metres.X) <= EdgeMetres
-        && MathF.Abs(metres.Z) <= EdgeMetres
-        && metres.Y >= FloorMetres
-        && metres.Y <= TopMetres;
+    /// <summary>True when the absolute point <paramref name="point"/> lies inside the box; false for NaN.</summary>
+    public bool Contains(in WorldPoint point) =>
+        Math.Abs(point.X) <= EdgeMetres
+        && Math.Abs(point.Z) <= EdgeMetres
+        && point.Y >= FloorMetres
+        && point.Y <= TopMetres;
 
     /// <summary>True when the point <paramref name="centimetres"/> (world coordinates) lies inside the box.</summary>
     public bool Contains(VoxelCoord centimetres)
@@ -145,19 +145,22 @@ public sealed class PlayArea
             && centimetres.Y <= top;
     }
 
-    /// <summary>True when an eye may be put at <paramref name="metres"/>: inside the box by <see cref="EyeInsetMetres"/>.</summary>
-    public bool HoldsEye(Vector3 metres) =>
-        MathF.Abs(metres.X) <= EdgeMetres - EyeInsetMetres
-        && MathF.Abs(metres.Z) <= EdgeMetres - EyeInsetMetres
-        && metres.Y >= FloorMetres + EyeInsetMetres
-        && metres.Y <= TopMetres - EyeInsetMetres;
+    /// <summary>
+    /// True when an eye may be put at the absolute point <paramref name="point"/>: inside the box by
+    /// <see cref="EyeInsetMetres"/>.
+    /// </summary>
+    public bool HoldsEye(in WorldPoint point) =>
+        Math.Abs(point.X) <= EdgeMetres - EyeInsetMetres
+        && Math.Abs(point.Z) <= EdgeMetres - EyeInsetMetres
+        && point.Y >= FloorMetres + EyeInsetMetres
+        && point.Y <= TopMetres - EyeInsetMetres;
 
-    /// <summary>The nearest point to <paramref name="metres"/> that <see cref="HoldsEye"/> allows. Finite numbers only.</summary>
-    public Vector3 ClampEye(Vector3 metres) =>
+    /// <summary>The nearest point to <paramref name="point"/> that <see cref="HoldsEye"/> allows. Finite numbers only.</summary>
+    public WorldPoint ClampEye(in WorldPoint point) =>
         new(
-            Math.Clamp(metres.X, -EdgeMetres + EyeInsetMetres, EdgeMetres - EyeInsetMetres),
-            Math.Clamp(metres.Y, FloorMetres + EyeInsetMetres, TopMetres - EyeInsetMetres),
-            Math.Clamp(metres.Z, -EdgeMetres + EyeInsetMetres, EdgeMetres - EyeInsetMetres)
+            Math.Clamp(point.X, -EdgeMetres + EyeInsetMetres, EdgeMetres - EyeInsetMetres),
+            Math.Clamp(point.Y, FloorMetres + EyeInsetMetres, TopMetres - EyeInsetMetres),
+            Math.Clamp(point.Z, -EdgeMetres + EyeInsetMetres, EdgeMetres - EyeInsetMetres)
         );
 
     private static float Metres(VoxelGrid grid, int voxel) =>

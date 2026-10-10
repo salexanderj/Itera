@@ -1,9 +1,9 @@
-using System.Numerics;
 using Arch.Core;
 using Arch.System;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
 using Itera.Engine.Loading;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering;
 using Itera.Engine.Voxels;
 using Itera.Engine.Windowing;
@@ -43,6 +43,9 @@ public sealed partial class BenchmarkSystem : BaseSystem<World, FrameTime>, IFra
     private readonly BenchmarkSettings _options;
     private readonly ILogger<BenchmarkSystem> _logger;
     private readonly BenchmarkView[] _views;
+
+    // The match's origin: the views are absolute, the camera's pose local to it.
+    private readonly WorldOrigin _origin;
     private int _view;
     private Phase _phase = Phase.Loading;
     private double _phaseStart = double.NaN;
@@ -54,10 +57,12 @@ public sealed partial class BenchmarkSystem : BaseSystem<World, FrameTime>, IFra
         BenchmarkSettings options,
         IReadOnlyList<BenchmarkView> views,
         ILogger<BenchmarkSystem> logger,
-        float circleHeightMetres = 20
+        float circleHeightMetres = 20,
+        WorldOrigin? origin = null
     )
         : base(world)
     {
+        _origin = origin ?? new WorldOrigin();
         _circleHeight = circleHeightMetres;
         _host = host;
         _options = options;
@@ -121,8 +126,9 @@ public sealed partial class BenchmarkSystem : BaseSystem<World, FrameTime>, IFra
         {
             Pose =
                 _view < _views.Length
-                    ? _views[_view].Pose
+                    ? _views[_view].PoseIn(_origin)
                     : DebugFlyCameraSystem.CirclePose(
+                        _origin,
                         FlightSpeed,
                         _phase == Phase.Flying ? now - _phaseStart : 0,
                         _circleHeight
@@ -221,7 +227,7 @@ public sealed partial class BenchmarkSystem : BaseSystem<World, FrameTime>, IFra
         Level = LogLevel.Debug,
         Message = "Benchmark view {Name} at ({X:F2}, {Y:F2}, {Z:F2}) m, yaw {Yaw:F3}, pitch {Pitch:F3}"
     )]
-    private partial void LogView(string name, float x, float y, float z, float yaw, float pitch);
+    private partial void LogView(string name, double x, double y, double z, float yaw, float pitch);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Benchmark view {Index} {Name} loaded after {Seconds:F1} s")]
     private partial void LogLoaded(int index, string name, double seconds);
@@ -272,16 +278,23 @@ public interface IBenchmarkHost
 }
 
 /// <summary>One benchmark view: a name for the log and the camera pose.</summary>
-public readonly record struct BenchmarkView(string Name, Vector3 Position, float Yaw, float Pitch)
+/// <param name="Name">The view's name in the log.</param>
+/// <param name="Position">The eye, an absolute point.</param>
+/// <param name="Yaw">The yaw, in radians.</param>
+/// <param name="Pitch">The pitch, in radians.</param>
+public readonly record struct BenchmarkView(string Name, WorldPoint Position, float Yaw, float Pitch)
 {
-    /// <summary>The view as a camera pose.</summary>
-    public CameraPose Pose =>
-        new()
+    /// <summary>The view as a camera pose local to <paramref name="origin"/>.</summary>
+    public CameraPose PoseIn(WorldOrigin origin)
+    {
+        ArgumentNullException.ThrowIfNull(origin);
+        return new()
         {
-            Position = Position,
+            Position = origin.ToLocal(Position),
             Yaw = Yaw,
             Pitch = Pitch,
         };
+    }
 }
 
 /// <summary>

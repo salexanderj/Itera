@@ -226,7 +226,8 @@ lists the commands (`ConsoleCommands`):
   all into `Sounds/`).
 - The engine's systems, where a game registers them (the starter does): `fly` (the debug fly camera, or walk again where
   it is), `flyspeed`, `camera` (first or third), `pos` (the player's eye and look, the fly camera's while it flies, as
-  `Game:World:CameraPose` takes it), `tp` (x y z [yaw pitch], a pasted pose, or a place the game names: the starter's
+  `Game:World:CameraPose` takes it: absolute metres from the map's middle, whatever the match's origin), `tp` (x y z
+  [yaw pitch], absolute too, a pasted pose, or a place the game names: the starter's
   benchmark views, `start`, `start-low`, `down`, `up`, `high`, and `far`), `settle` (how long a ball rests before it
   goes back into the grid), `cleanup` (removes every loose body and clears the particles), `reset` (the world as the
   seed made it, every edit undone, then `cleanup`; the loading screen covers the picture while the view is generated

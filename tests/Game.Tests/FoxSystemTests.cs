@@ -5,6 +5,7 @@ using Game.Systems;
 using Game.WorldGeneration;
 using Itera.Engine.Assets;
 using Itera.Engine.Components;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Modding;
@@ -36,7 +37,7 @@ public sealed class FoxSystemTests
     {
         using var world = World.Create();
         // Looking along -x (yaw a quarter turn), from 20 m up.
-        var start = new StartPose(new Vector3(3, 20, -4), MathF.PI / 2, -0.2f);
+        var start = new StartPose(new WorldPoint(3, 20, -4), MathF.PI / 2, -0.2f);
         using var system = Create(world, start);
 
         system.Initialize();
@@ -64,7 +65,7 @@ public sealed class FoxSystemTests
     public void After_looking_about_it_walks_then_runs_round_its_circle_facing_the_way_it_goes()
     {
         using var world = World.Create();
-        using var system = Create(world, new StartPose(new Vector3(0, 8, 0), 0, 0));
+        using var system = Create(world, new StartPose(new WorldPoint(0, 8, 0), 0, 0));
         system.Initialize();
         var start = Fox(world).Placement.Position;
 
@@ -103,7 +104,7 @@ public sealed class FoxSystemTests
         using var system = new FoxSystem(
             world,
             assets,
-            new StartPose(new Vector3(0, 8, 0), 0, 0),
+            new StartPose(new WorldPoint(0, 8, 0), 0, 0),
             Seed,
             NullLogger<FoxSystem>.Instance
         );
@@ -132,7 +133,7 @@ public sealed class FoxSystemTests
         using var system = new FoxSystem(
             world,
             assets,
-            new StartPose(new Vector3(0, 8, 0), 0, 0),
+            new StartPose(new WorldPoint(0, 8, 0), 0, 0),
             Seed,
             NullLogger<FoxSystem>.Instance
         );
@@ -152,7 +153,7 @@ public sealed class FoxSystemTests
         using var system = new FoxSystem(
             world,
             new MeshAssets(NullLogger<MeshAssets>.Instance),
-            new StartPose(Vector3.Zero, 0, 0),
+            new StartPose(WorldPoint.Zero, 0, 0),
             Seed,
             NullLogger<FoxSystem>.Instance
         );
@@ -164,7 +165,7 @@ public sealed class FoxSystemTests
     public void A_step_allocates_nothing()
     {
         using var world = World.Create();
-        using var system = Create(world, new StartPose(new Vector3(0, 8, 0), 0, 0));
+        using var system = Create(world, new StartPose(new WorldPoint(0, 8, 0), 0, 0));
         system.Initialize();
 
         // Through looking about, walking, and running.

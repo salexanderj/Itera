@@ -1,6 +1,7 @@
 using System.Numerics;
 using Arch.Core;
 using Itera.Engine.Components;
+using Itera.Engine.Maths;
 using Itera.Engine.Systems;
 using Itera.Modding;
 using Microsoft.Extensions.Logging;
@@ -14,8 +15,8 @@ public sealed class BenchmarkSystemTests
     private static readonly QueryDescription s_camera = new QueryDescription().WithAll<CameraPose, ActiveCamera>();
     private static readonly BenchmarkView[] TwoViews =
     [
-        new("a", new Vector3(1, 2, 3), 0.5f, 0.1f),
-        new("b", new Vector3(4, 5, 6), 1f, -0.2f),
+        new("a", new WorldPoint(1, 2, 3), 0.5f, 0.1f),
+        new("b", new WorldPoint(4, 5, 6), 1f, -0.2f),
     ];
 
     private readonly FakeHost _host = new();
@@ -30,7 +31,7 @@ public sealed class BenchmarkSystemTests
         for (var i = 0; i < 300; i++)
         {
             system.Update(new FrameTime((float)Frame, i * Frame, (ulong)i, 0));
-            Assert.Equal(TwoViews[0].Position, ReadPose(world).Position);
+            Assert.Equal(new Vector3(1, 2, 3), ReadPose(world).Position);
         }
 
         Assert.Empty(_host.Exits);
@@ -66,9 +67,12 @@ public sealed class BenchmarkSystemTests
         // loads (1.5 s) and is flown for 3 s: 13.5 s, and a frame later for each wait that rounding ends a frame late.
         Assert.InRange(exitedAt, 13.5 - 1e-9, 13.5 + 7 * Frame);
         Assert.Equal(["benchmark finished"], _host.Exits);
-        Assert.Equal(TwoViews[0].Position, visited[0]);
-        Assert.Equal(TwoViews[1].Position, visited[1]);
-        Assert.Equal(DebugFlyCameraSystem.CirclePose(BenchmarkSystem.FlightSpeed, 0, 20).Position, visited[2]);
+        Assert.Equal(new Vector3(1, 2, 3), visited[0]);
+        Assert.Equal(new Vector3(4, 5, 6), visited[1]);
+        Assert.Equal(
+            DebugFlyCameraSystem.CirclePose(new WorldOrigin(), BenchmarkSystem.FlightSpeed, 0, 20).Position,
+            visited[2]
+        );
         Assert.True(visited.Count > 10, "The camera should move along the circle.");
     }
 

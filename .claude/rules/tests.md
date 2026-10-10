@@ -80,8 +80,9 @@ Where tests live:
 - `Itera.Engine.Tests/Voxels/Generation/`: the shapes' row spans against point tests, fractal noise, the jittered grid,
   the scalar field, the field tint map with `VoxelTintSampler`, and the heightfield generator (every description against
   its filled voxels, fills against a voxel-by-voxel reference, `HillsGenerator`).
-- `Itera.Engine.Tests/Maths/` and `Animation/`: the deterministic maths and rotations, the octahedral encoding, and
-  skeletons, clips, aiming, and foot IK over a humanoid test skeleton (`HumanoidTestSkeleton`).
+- `Itera.Engine.Tests/Maths/` and `Animation/`: the deterministic maths and rotations, the octahedral encoding, the
+  origin's conversions at up to ±160 km (`WorldOriginTests`), and skeletons, clips, aiming, and foot IK over a humanoid
+  test skeleton (`HumanoidTestSkeleton`).
 - `Itera.Engine.Tests/Assets/`: glTF files written in the test (`GltfBuilder`: accessors over a data-URI buffer or a
   .glb's BIN chunk, PNG images, skins, joints, and animations) read by `GltfImportTests` and `RigImportTests` (a rig
   posed against SharpGLTF's own world matrices); `RigClipTests` (step, linear, and cubic sampling); `MeshAssetsTests`,
@@ -99,7 +100,10 @@ Where tests live:
   in their own memory, the mover reading the bodies); the movement modes' probes over meshes and voxels
   (`MovementProbesTests`, `MovementProbesVoxelTests`); wide bodies (`WideBodyMoverTests`); statics of voxel boxes,
   coarse colliders (`CoarseCollidersTests`), ragdolls (`RagdollTests`), thrown and settled pieces, the mover among
-  loose bodies (`MoverWithBodiesTests`), and solid models (`SolidModelVoxelsTests`).
+  loose bodies (`MoverWithBodiesTests`), and solid models (`SolidModelVoxelsTests`); far from the middle
+  (`FarFromTheMiddleTests`: a world moved 150 km out by `Voxels/TranslatedGenerator`, the origin there; the density
+  ground's tests on its voxels and on mesh colliders placed there, `DensityMoverFarTests` and
+  `MeshDensityGroundFarTests`; rays, a ball, and mesh rays against the middle's bit for bit, a walk within 0.1 mm).
 - `Itera.Engine.Tests/Rendering/`: `Materials/MaterialTextureSetsTests` (DDS files read back, sets loaded and left out,
   a material packed with its set), `RenderLookTests` (the engine's look pinned to the shaders' former constants, every
   value copied and tunable), `SunPathTests` (daylight and night round the horizon, the test day, compass angles),

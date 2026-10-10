@@ -27,7 +27,7 @@ public sealed class LooseBodyVoxels
     // The edge of the mover's cells (the world's level-0 voxels, or Engine:Physics:CollisionCentimetres without terrain)
     // in centimetres, the unit of a piece's voxels and of the poses' pivots.
     private readonly float _cell;
-    private readonly long[] _keys = new long[CacheSize];
+    private readonly BrickKey[] _keys = new BrickKey[CacheSize];
     private readonly int[] _stamps = new int[CacheSize];
     private readonly ulong[] _masks = new ulong[CacheSize * VoxelConstants.BrickMaskWords];
     private int _count;
@@ -201,14 +201,14 @@ public sealed class LooseBodyVoxels
         var pose = _poses[index];
         var reach = pose.Piece.Radius + 1;
         min = new VoxelCoord(
-            (int)MathF.Floor((MathF.Floor(pose.Pivot.X) - reach) / _cell),
-            (int)MathF.Floor((MathF.Floor(pose.Pivot.Y) - reach) / _cell),
-            (int)MathF.Floor((MathF.Floor(pose.Pivot.Z) - reach) / _cell)
+            (int)Math.Floor((Math.Floor(pose.PivotX) - reach) / _cell),
+            (int)Math.Floor((Math.Floor(pose.PivotY) - reach) / _cell),
+            (int)Math.Floor((Math.Floor(pose.PivotZ) - reach) / _cell)
         );
         max = new VoxelCoord(
-            (int)MathF.Floor((MathF.Floor(pose.Pivot.X) + reach) / _cell),
-            (int)MathF.Floor((MathF.Floor(pose.Pivot.Y) + reach) / _cell),
-            (int)MathF.Floor((MathF.Floor(pose.Pivot.Z) + reach) / _cell)
+            (int)Math.Floor((Math.Floor(pose.PivotX) + reach) / _cell),
+            (int)Math.Floor((Math.Floor(pose.PivotY) + reach) / _cell),
+            (int)Math.Floor((Math.Floor(pose.PivotZ) + reach) / _cell)
         );
         return pose.Piece.SolidVoxels > 0;
     }
@@ -219,9 +219,14 @@ public sealed class LooseBodyVoxels
     /// <summary>Writes body <paramref name="index"/>'s voxels in world brick (bx, by, bz) to <paramref name="mask"/>; false when none.</summary>
     private bool Mask(int index, int bx, int by, int bz, Span<ulong> mask)
     {
-        // Body 10 bits, brick x and z 14 bits each, brick y 11 bits.
-        var key = ((long)index << 39) | ((long)(bx + 8192) << 25) | ((long)(by + 1024) << 14) | (long)(bz + 8192);
-        var slot = (int)((ulong)key * 0x9E3779B97F4A7C15UL >> (64 - CacheBits));
+        // The whole brick, whatever the map's size (a key packed into 64 bits held ±8,192 bricks, ±655 m at 1 cm).
+        var key = new BrickKey(index, bx, by, bz);
+        var hash =
+            (ulong)(uint)index * 0x9E3779B97F4A7C15UL
+            ^ (ulong)(uint)bx * 0xC2B2AE3D27D4EB4FUL
+            ^ (ulong)(uint)by * 0x165667B19E3779F9UL
+            ^ (ulong)(uint)bz * 0xD6E8FEB86659FD93UL;
+        var slot = (int)((hash ^ (hash >> 29)) * 0x9E3779B97F4A7C15UL >> (64 - CacheBits));
         var free = -1;
         for (var probe = 0; probe < Probes; probe++)
         {
@@ -257,9 +262,12 @@ public sealed class LooseBodyVoxels
         mask.Clear();
         var pose = _poses[index];
         var piece = pose.Piece;
-        // Far from the piece: nothing. The brick's centre to its corner is under 7 cells; all in centimetres.
-        var centre = new Vector3((bx << 3) + 4, (by << 3) + 4, (bz << 3) + 4) * _cell;
-        if (Vector3.Distance(centre, pose.Pivot) > piece.Radius + 7 * _cell)
+        // Far from the piece: nothing. The brick's centre to its corner is under 7 cells; all in absolute centimetres,
+        // and from the pivot in floats.
+        double fromX = ((bx << 3) + 4.0) * _cell - pose.PivotX,
+            fromY = ((by << 3) + 4.0) * _cell - pose.PivotY,
+            fromZ = ((bz << 3) + 4.0) * _cell - pose.PivotZ;
+        if (Math.Sqrt(fromX * fromX + fromY * fromY + fromZ * fromZ) > piece.Radius + 7 * _cell)
         {
             return;
         }
@@ -275,8 +283,11 @@ public sealed class LooseBodyVoxels
             for (var y = 0; y < 8; y++)
             {
                 // The row's first cell centre, in the piece's voxels; each cell along x adds the x axis a cell long.
-                var offset =
-                    new Vector3((bx << 3) + 0.5f, (by << 3) + y + 0.5f, (bz << 3) + z + 0.5f) * _cell - pose.Pivot;
+                var offset = new Vector3(
+                    (float)(((bx << 3) + 0.5) * _cell - pose.PivotX),
+                    (float)(((by << 3) + y + 0.5) * _cell - pose.PivotY),
+                    (float)(((bz << 3) + z + 0.5) * _cell - pose.PivotZ)
+                );
                 var local = axisX * offset.X + axisY * offset.Y + axisZ * offset.Z + pivot;
                 var along = axisX * _cell;
                 for (var x = 0; x < 8; x++, local += along)
@@ -308,4 +319,7 @@ public sealed class LooseBodyVoxels
 
         return any != 0;
     }
+
+    /// <summary>A body's brick in the cache: the body and the brick's absolute coordinates.</summary>
+    private readonly record struct BrickKey(int Body, int X, int Y, int Z);
 }

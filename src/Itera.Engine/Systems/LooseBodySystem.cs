@@ -190,7 +190,7 @@ public sealed class LooseBodySystem : BaseSystem<World, FixedStepTime>, IFixedUp
                     continue;
                 }
 
-                _bodies.Settle(body.Body, _tint?.At(_bodies.PivotOf(body.Body)) ?? 0);
+                _bodies.Settle(body.Body, _tint?.At(_bodies.Origin.ToWorld(_bodies.PivotOf(body.Body))) ?? 0);
                 _commands.Destroy(chunk.Entity(index));
             }
         }

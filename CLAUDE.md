@@ -190,11 +190,14 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
   Vulkan call except one on the memory of the frame slot it builds: `vkFlushMappedMemoryRanges` after
   writing staging (`StagingBuffer.Flush`). It has no externally synchronized parameter, and does nothing on
   coherent memory. It hands data to the render thread only through `FrameExchange`.
-- Units are metres and seconds. Voxel coordinates (`VoxelCoord`, edits, rays) are integers in centimetres
-  (`VoxelConstants.CentimetresPerMetre`), origin at the map centre. A world voxel at level k is
+- Units are metres and seconds. Voxel coordinates (`VoxelCoord`: voxels, edits, rays, saves) are absolute integers in
+  centimetres (`VoxelConstants.CentimetresPerMetre`) from the map's middle. A world voxel at level k is
   `VoxelWorld.Grid.Edge(k)` cm across (`VoxelGrid`, its generator's), a model's voxel its own unit (`VoxelModels`; 1 cm
-  by default): code where the two meet uses those, never a level's 2^k. Positions in metres use
-  `System.Numerics` (`Vector3`, `Matrix4x4`); `Silk.NET.Maths` only at Silk.NET API edges. What every peer must
+  by default): code where the two meet uses those, never a level's 2^k. Positions kept in metres (`System.Numerics`'
+  `Vector3`, `Matrix4x4`; `Silk.NET.Maths` only at Silk.NET API edges) are local, from the match's origin
+  (`WorldOrigin`, whole metres); a point that crosses it (a start pose, `tp`, the play area, a generator's or an
+  atmosphere's place) is an absolute `WorldPoint` (doubles). They meet only through `WorldOrigin`, in doubles: a local
+  float becomes centimetres or cells only as floor((local + origin) * scale). What every peer must
   compute alike from a seed (world generation, posed bodies) uses `DeterministicMath` and `Rotation`, never
   `Math.Sin` or `System.Numerics` helpers.
 - Code that must not allocate (per frame, per tick, per edit) follows these rules, each learned from a measured

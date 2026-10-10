@@ -1,5 +1,7 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering;
+using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Navigation;
 
@@ -23,13 +25,15 @@ public static class NavigationDebugLines
 
     /// <summary>
     /// Adds the lines of every cell of <paramref name="field"/> whose centre lies within
-    /// <paramref name="radiusMetres"/> of <paramref name="around"/> (across x and z). Returns how many cells were drawn.
+    /// <paramref name="radiusMetres"/> of <paramref name="around"/> (across x and z), local to <paramref name="origin"/>
+    /// as the lines are. Returns how many cells were drawn.
     /// </summary>
     public static int Add(
         DebugLines lines,
         NavGrid grid,
         NavFieldSpec spec,
         FlowField field,
+        WorldOrigin origin,
         Vector3 around,
         float radiusMetres
     )
@@ -38,21 +42,25 @@ public static class NavigationDebugLines
         ArgumentNullException.ThrowIfNull(grid);
         ArgumentNullException.ThrowIfNull(spec);
         ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(origin);
+        const double perMetre = VoxelConstants.CentimetresPerMetre;
+        double x = origin.WorldX(around.X),
+            z = origin.WorldZ(around.Z);
         var firstColumn = Math.Max(
             0,
-            (int)MathF.Floor(((around.X - radiusMetres) * 100 - grid.OriginX) / NavGrid.CellCentimetres)
+            (int)Math.Floor(((x - radiusMetres) * perMetre - grid.OriginX) / NavGrid.CellCentimetres)
         );
         var lastColumn = Math.Min(
             grid.Width - 1,
-            (int)MathF.Floor(((around.X + radiusMetres) * 100 - grid.OriginX) / NavGrid.CellCentimetres)
+            (int)Math.Floor(((x + radiusMetres) * perMetre - grid.OriginX) / NavGrid.CellCentimetres)
         );
         var firstRow = Math.Max(
             0,
-            (int)MathF.Floor(((around.Z - radiusMetres) * 100 - grid.OriginZ) / NavGrid.CellCentimetres)
+            (int)Math.Floor(((z - radiusMetres) * perMetre - grid.OriginZ) / NavGrid.CellCentimetres)
         );
         var lastRow = Math.Min(
             grid.Depth - 1,
-            (int)MathF.Floor(((around.Z + radiusMetres) * 100 - grid.OriginZ) / NavGrid.CellCentimetres)
+            (int)Math.Floor(((z + radiusMetres) * perMetre - grid.OriginZ) / NavGrid.CellCentimetres)
         );
         var radiusSquared = radiusMetres * radiusMetres;
         var drawn = 0;
@@ -61,7 +69,7 @@ public static class NavigationDebugLines
             for (var column = firstColumn; column <= lastColumn; column++)
             {
                 var cell = grid.Index(column, row);
-                var centre = grid.CentreMetres(cell);
+                var centre = grid.CentreMetres(origin, cell);
                 var dx = centre.X - around.X;
                 var dz = centre.Z - around.Z;
                 if (dx * dx + dz * dz > radiusSquared)
@@ -97,7 +105,7 @@ public static class NavigationDebugLines
                     continue;
                 }
 
-                var next = grid.CentreMetres(field.Next(cell)) + new Vector3(0, LiftMetres, 0);
+                var next = grid.CentreMetres(origin, field.Next(cell)) + new Vector3(0, LiftMetres, 0);
                 var towards = next - at;
                 var length = towards.Length();
                 if (length > 0)

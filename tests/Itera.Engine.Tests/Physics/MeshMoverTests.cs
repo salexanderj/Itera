@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Physics;
 using Itera.Engine.Tests.Voxels;
 using Itera.Engine.Voxels;
@@ -134,9 +135,13 @@ public sealed class MeshDensityGroundFixture : IDensityGround, IDisposable
     private readonly PhysicsWorld _physics = new(NullLogger<PhysicsWorld>.Instance);
 
     public MeshDensityGroundFixture()
+        : this(new WorldOrigin(), WorldPoint.Zero) { }
+
+    /// <summary>The same ground with its triangles placed at <paramref name="at"/>, read from <paramref name="origin"/>.</summary>
+    internal MeshDensityGroundFixture(WorldOrigin origin, WorldPoint at)
     {
         _physics.Initialize();
-        Colliders = new MeshColliders(_physics, NullLogger<MeshColliders>.Instance);
+        Colliders = new MeshColliders(_physics, NullLogger<MeshColliders>.Instance, origin);
         var triangles = new TestTriangles();
         float width = DensityTerrainGenerator.StripWidth / 100f,
             start = DensityTerrainGenerator.Start / 100f;
@@ -202,7 +207,7 @@ public sealed class MeshDensityGroundFixture : IDensityGround, IDisposable
             .Box(new(3, 1.5f, step), new(4, 2, step + width))
             .Box(new(3, 1.5f, wall), new(3.3f, 4.5f, wall + width))
             .Box(new(3, 3.8f, ceiling), new(6, 4.2f, ceiling + width));
-        triangles.AddTo(Colliders);
+        triangles.AddTo(Colliders, in at);
         Mover = new VoxelCharacterMover(new NothingPassable(), Colliders, cellCentimetres: 10);
     }
 

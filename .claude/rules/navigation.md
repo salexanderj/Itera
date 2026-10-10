@@ -19,7 +19,9 @@ fields again while their users keep the old ones. A read or a stamp judges solid
 (`INavGridSource.IsGround`). After `reset` the thread fills the grid again first (`NavigationService.Refilling`). A game
 without an `INavGridSource` has no navigation (its loading task is done at once). The grid keeps floors in 16-bit
 centimetres, so navigation starts only on a world whose floor and top lie within ±327.67 m (`NavGridScanner` refuses a
-taller one). `NavigationDebugLines` draws a field's arrows round the camera for a game's debug view.
+taller one). `NavigationDebugLines` draws a field's arrows round the camera for a game's debug view. The grid is absolute (its corner
+and floors in centimetres); its helpers in metres (`TryCell`, `CentreMetres`, `FloorMetres`) and the debug lines take
+the match's origin and local positions.
 
 ### Files in `src/Itera.Engine`
 

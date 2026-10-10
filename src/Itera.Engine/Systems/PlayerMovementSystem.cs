@@ -5,6 +5,7 @@ using Arch.System;
 using Itera.Engine.Commands;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
+using Itera.Engine.Maths;
 using Itera.Engine.Physics;
 using Itera.Modding;
 using Microsoft.Extensions.Logging;
@@ -120,7 +121,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     private readonly PlayArea _area;
     private readonly ILogger<PlayerMovementSystem> _logger;
     private readonly ConsoleCommands? _commands;
-    private readonly Func<string, (Vector3 Eye, float Yaw, float Pitch)?>? _places;
+    private readonly Func<string, (WorldPoint Eye, float Yaw, float Pitch)?>? _places;
     private readonly IMovementMode? _mode;
     private bool _localWaiting;
     private Request _request;
@@ -141,7 +142,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         PlayArea area,
         ILogger<PlayerMovementSystem> logger,
         ConsoleCommands? commands = null,
-        Func<string, (Vector3 Eye, float Yaw, float Pitch)?>? places = null,
+        Func<string, (WorldPoint Eye, float Yaw, float Pitch)?>? places = null,
         IMovementMode? mode = null
     )
         : base(world)
@@ -360,7 +361,8 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     /// <summary>Moves the local player (and the fly camera) as the console asked.</summary>
     private void ApplyRequest()
     {
-        var job = new Apply { Request = _request };
+        // Local to the origin at the step, not at the command, in case it moved between them.
+        var job = new Apply { Request = _request, Eye = _mover.Origin.ToLocal(_request.Eye) };
         World.InlineQuery<
             Apply,
             PlayerCommand,
@@ -425,19 +427,14 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             return;
         }
 
+        // Absolute, whatever the match's origin, so tp and a start pose take it as it is.
         var pose = camera.Pose;
-        const float degrees = 180 / MathF.PI;
-        context.Print(
-            string.Create(
-                CultureInfo.InvariantCulture,
-                $"{pose.Position.X:F2},{pose.Position.Y:F2},{pose.Position.Z:F2},{pose.Yaw * degrees:F0},{pose.Pitch * degrees:F0}"
-            )
-        );
+        context.Print(CameraPoseText.Format(_mover.Origin.ToWorld(pose.Position), pose.Yaw, pose.Pitch));
     }
 
     private void Teleport(CommandContext context)
     {
-        Vector3 eye;
+        WorldPoint eye;
         float yaw = 0,
             pitch = 0;
         var angles = false;
@@ -452,12 +449,12 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         }
         else if (
             (context.Count == 3 || context.Count == 5)
-            && context.TryGetFloat(0, out var x)
-            && context.TryGetFloat(1, out var y)
-            && context.TryGetFloat(2, out var z)
+            && context.TryGetDouble(0, out var x)
+            && context.TryGetDouble(1, out var y)
+            && context.TryGetDouble(2, out var z)
         )
         {
-            eye = new Vector3(x, y, z);
+            eye = new WorldPoint(x, y, z);
             if (context.Count == 5)
             {
                 if (!context.TryGetFloat(3, out var yawDegrees) || !context.TryGetFloat(4, out var pitchDegrees))
@@ -524,7 +521,9 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     private struct Request
     {
         public bool Teleport;
-        public Vector3 Eye;
+
+        /// <summary>The eye, absolute.</summary>
+        public WorldPoint Eye;
         public bool Angles;
         public float Yaw;
         public float Pitch;
@@ -536,6 +535,9 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             IForEach<CameraPose>
     {
         public Request Request;
+
+        /// <summary>The request's eye, local.</summary>
+        public Vector3 Eye;
 
         public readonly void Update(
             ref PlayerCommand command,
@@ -552,7 +554,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             }
 
             // The mover waits where the voxels are not loaded yet, as at the start.
-            position.Feet = Request.Eye - new Vector3(0, size.EyeMetres, 0);
+            position.Feet = Eye - new Vector3(0, size.EyeMetres, 0);
             position.PreviousFeet = position.Feet;
             velocity = default;
             contact = default;
@@ -566,7 +568,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
 
         public readonly void Update(ref CameraPose pose)
         {
-            pose.Position = Request.Eye;
+            pose.Position = Eye;
             if (Request.Angles)
             {
                 pose.Yaw = Request.Yaw;

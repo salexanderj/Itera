@@ -2,6 +2,7 @@ using System.Numerics;
 using Arch.Core;
 using Game.Systems;
 using Itera.Engine.Components;
+using Itera.Engine.Maths;
 using Itera.Engine.Systems;
 using Itera.Modding;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -33,7 +34,7 @@ public sealed class PlayerSpawnSystemTests
     public void The_start_makes_one_player_under_the_start_eye_with_every_component_the_engine_reads()
     {
         using var world = World.Create();
-        var start = new StartPose(new Vector3(3, 20, -4), 0.5f, -0.2f);
+        var start = new StartPose(new WorldPoint(3, 20, -4), 0.5f, -0.2f);
         using var system = new PlayerSpawnSystem(
             world,
             new PlayerOptions { HeightMetres = 2, ThirdPerson = true },
@@ -56,7 +57,7 @@ public sealed class PlayerSpawnSystemTests
             ) =>
             {
                 Assert.Equal(CharacterSize.ForHeight(2).EyeMetres, size.EyeMetres, 5);
-                Assert.Equal(start.Eye - new Vector3(0, size.EyeMetres, 0), position.Feet);
+                Assert.Equal(new Vector3(3, 20 - size.EyeMetres, -4), position.Feet);
                 Assert.Equal(position.Feet, position.PreviousFeet);
                 Assert.Equal((0.5f, -0.2f), (command.Yaw, command.Pitch));
                 Assert.False(mode.Flying);
@@ -74,7 +75,7 @@ public sealed class PlayerSpawnSystemTests
         using var system = new PlayerSpawnSystem(
             world,
             new PlayerOptions(),
-            new StartPose(new Vector3(0, 8, 0), 0, 0),
+            new StartPose(new WorldPoint(0, 8, 0), 0, 0),
             NullLogger<PlayerSpawnSystem>.Instance
         );
         system.Initialize();

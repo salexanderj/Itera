@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering;
 using Itera.Engine.Systems;
 
@@ -19,5 +20,5 @@ public sealed class GameAtmosphere : IAtmosphereSource
         Grade: 0.12f
     );
 
-    public Atmosphere At(Vector3 positionMetres) => Day;
+    public Atmosphere At(in WorldPoint position) => Day;
 }

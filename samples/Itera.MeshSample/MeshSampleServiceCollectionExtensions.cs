@@ -4,6 +4,7 @@ using Itera.Engine.Commands;
 using Itera.Engine.Ecs;
 using Itera.Engine.Input;
 using Itera.Engine.Matches;
+using Itera.Engine.Maths;
 using Itera.Engine.Particles;
 using Itera.Engine.Physics;
 using Itera.Engine.Rendering;
@@ -159,7 +160,8 @@ public static class MeshSampleServiceCollectionExtensions
                 sp.GetRequiredService<ConsoleCommands>(),
                 sp.GetRequiredService<PlayerSettings>(),
                 sp.GetRequiredService<MovementKeys>(),
-                sp.GetRequiredService<PlayerInputBlock>()
+                sp.GetRequiredService<PlayerInputBlock>(),
+                sp.GetRequiredService<WorldOrigin>()
             );
         });
         services.AddScoped<IFrameUpdateSystem>(sp => new DebugOutlineSystem(

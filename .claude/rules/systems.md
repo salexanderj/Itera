@@ -44,16 +44,17 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   climbing past its top pulls up onto it where the body has room (up, then over the edge, through the mover); a wall
   that ends lets go. `pos` and `tp` are its commands (`tp` takes x y z [yaw pitch],
   the form `pos` prints, `CameraPoseText`, or a game's named places with their eye, yaw, and pitch: the starter's are its
-  benchmark views).
+  benchmark views; all absolute, metres from the map's middle whatever the match's origin, `WorldPoint`).
 - `PlayerCameraSystem` (frame) puts the active camera at the eye between the last two steps, looking where the command
   looks plus the mouse since the step, or behind the right shoulder (`ThirdPersonCamera`: 2.5 m back, 1.5 to 5 m by the
   wheel, pulled in by voxels); it makes the camera entity from a start pose (`CameraRules.CreateCamera`).
   `DebugFlyCameraSystem` flies it while the player flies (`flyspeed`; with `Engine:Voxels:DebugWalkSpeed` above 0 it
-  flies a 100 m circle `Engine:Camera:CircleHeightMetres` up, which must clear the game's hills), kept to the play
-  area (`PlayArea`: the world and 1 km round it); it too reads nothing while `PlayerInputBlock.Blocked`. `CameraExtractSystem` hands
+  flies a 100 m circle round the map's middle `Engine:Camera:CircleHeightMetres` up, which must clear the game's hills),
+  kept to the play area (`PlayArea`: the world and 1 km round it, absolute: `Contains`, `HoldsEye`, and `ClampEye` take
+  `WorldPoint`s); it too reads nothing while `PlayerInputBlock.Blocked`. `CameraExtractSystem` hands
   the camera to the renderer with its lens (`CameraLens`: perspective, drawn at the player's field of view, or
   orthographic, `CameraLens.Orthographic`, drawn as it is; `.claude/rules/rendering.md`), `AtmosphereSystem` the sky and the look (`RenderLook`) from a game's
-  `IAtmosphereSource`.
+  `IAtmosphereSource`, asked at the camera's absolute place (`WorldPoint`).
 - `ToolAim` (static) gives where the local player aims from and along, and the first voxel a tool's ray meets past
   passable voxels.
 
@@ -81,6 +82,6 @@ SECONDS of it; `test COUNT [NAME [CLIP]]` in rows, each from another time of the
 (`ConsoleMesh`). A game places its own (the starter's `FoxSystem`).
 
 The benchmark (`BenchmarkSystem`, frame, after the fly camera; a game registers it when `Engine:Benchmark:Enabled`,
-with its own views, `BenchmarkView`): it puts the camera at each view, waits until it has loaded
+with its own views, `BenchmarkView`, absolute points): it puts the camera at each view, waits until it has loaded
 (`EngineBenchmarkHost`), settles, measures, flies the circle, and exits; `tools/benchmark` reads its log lines, which
 stay as they are.
