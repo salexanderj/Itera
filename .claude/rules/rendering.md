@@ -197,7 +197,8 @@ of air from the decoded level (`ReadModelBlock`), meshed on the same workers bef
 mesh heap a range per block. A model counts as uploaded once all its blocks are in (`VoxelModels.SetUploaded`; cuts,
 loose bodies, and loading tasks wait for that); a replaced model (a wound) draws its old meshes until the new ones are
 all in (`VoxelModels.Revision` tells a new revision from the one being meshed); a removed model's ranges go the next
-frame; retired models stay drawn until no world block is pending. Each frame `GameLoop` hands `ModelInstances` to
+frame; retired models stay drawn until no world block is pending (a frame without graphics, `GameLoop`'s or `HeadlessMatch`'s,
+removes them after it). Each frame `GameLoop` hands `ModelInstances` to
 `WorldMeshes.Upload`: the draws (and the retired models) whose bounding sphere is in view, or casts into a cascade as
 the world's blocks do, as each draw's `ModelShadow` allows (`Casts`; `None` for a model drawn for the viewer alone, such as first-person arms and what they
 hold, drawn but casting nothing; `Only` for the local player's own body in first person, casting its shadow without

@@ -478,7 +478,8 @@ public sealed class VoxelModels : IDisposable
     /// Retires a model whose voxels an edit has just put into the world (a loose body going back into the grid): it
     /// stays drawn at level <paramref name="level"/> with its box's corner at <paramref name="corner"/> (world metres),
     /// turned by <paramref name="turn"/> and blended <paramref name="tint"/> towards its tint colour, until the world's GPU
-    /// copy holds every edit made so far, and is removed then. So no frame shows neither the model nor its voxels.
+    /// copy holds every edit made so far, and is removed then. So no frame shows neither the model nor its voxels. In a
+    /// run without graphics it is removed after the next frame.
     /// </summary>
     public void Retire(int handle, int level, Vector3 corner, Quaternion turn, float tint)
     {
@@ -491,7 +492,7 @@ public sealed class VoxelModels : IDisposable
 
     /// <summary>
     /// Removes the retired models: the world's GPU copy now holds the edits made before they were retired. For the
-    /// uploader.
+    /// uploader, and after a frame without graphics (no GPU copy to wait for).
     /// </summary>
     internal void RemoveRetired()
     {

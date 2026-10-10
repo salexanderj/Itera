@@ -150,6 +150,7 @@ public sealed class HeadlessMatch : IDisposable
     /// <summary>
     /// Runs the frame group once, as the main loop's frame does before it draws: the frame's input, then the systems,
     /// which hand the camera, the models, the lights, and the lines to the renderer's CPU-side objects; nothing is drawn.
+    /// Models retired before it go after it, as an upload would remove them.
     /// </summary>
     public void Frame()
     {
@@ -162,6 +163,8 @@ public sealed class HeadlessMatch : IDisposable
         // Just before the next step: the frame shows the last step's state.
         var frame = new FrameTime(_stepSeconds, Seconds, _frame++, 0.999999f);
         Match.Ecs.Update(in frame);
+        // No uploader waits to draw a retired model until the world's meshes hold its voxels.
+        Match.Models.RemoveRetired();
     }
 
     /// <summary>Ends the match, as leaving it does.</summary>

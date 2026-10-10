@@ -869,7 +869,7 @@ public sealed partial class GameLoop
     /// <summary>
     /// A frame without graphics (<c>Engine:Window:Mode=None</c>): the frame group and the mods run, writing only the
     /// renderer's CPU-side objects, and nothing is drawn or uploaded; the loading screen counts it as an upload
-    /// (<see cref="NoGpuWorld"/>).
+    /// (<see cref="NoGpuWorld"/>). Models retired this frame go after it, as an upload would remove them.
     /// </summary>
     private void BuildFrameWithoutGraphics(MatchServices match)
     {
@@ -885,6 +885,8 @@ public sealed partial class GameLoop
         _pointLights.BeginFrame(now);
         match.Ecs.Update(in frame);
         _mods.Update(in frame);
+        // No uploader waits to draw a retired model until the world's meshes hold its voxels.
+        match.Models.RemoveRetired();
         _noGpuWorld.FrameBuilt();
         _frameIndex++;
         _stats.RecordFrame(frameSeconds);

@@ -1,13 +1,15 @@
+using System.Numerics;
 using Itera.Engine.Ecs;
 using Itera.Engine.Matches;
+using Itera.Engine.Physics;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Itera.Engine.Tests.Matches;
 
 /// <summary>
 /// <see cref="HeadlessRun"/> and <see cref="HeadlessMatch"/> over the engine's real services and a test game: a match
-/// played with no window or GPU, its fixed steps each followed by a frame, the run's view of it kept up, and the match
-/// ended when disposed.
+/// played with no window or GPU, its fixed steps each followed by a frame, the run's view of it kept up, a retired
+/// model removed after a frame, and the match ended when disposed.
 /// </summary>
 public sealed class HeadlessMatchTests
 {
@@ -46,6 +48,31 @@ public sealed class HeadlessMatchTests
 
         Assert.Null(matches.Current);
         Assert.Equal(MatchPhase.Menu, matches.Phase);
+    }
+
+    [Fact]
+    public void A_model_retired_without_graphics_goes_after_the_next_frame()
+    {
+        using var provider = EngineComposition.Build();
+        var run = new HeadlessRun(provider);
+        using var match = run.Play(seed: 5);
+        match.Match.Voxels.SetCenters([Vector3.Zero]);
+        Assert.True(match.WaitUntilLoaded());
+        var bodies = match.Services.GetRequiredService<LooseBodies>();
+        var models = match.Match.Models;
+        var before = models.Count;
+
+        // A ball filled back into the grid retires its model, which an uploader would draw until the world's meshes
+        // hold its voxels; with no uploader, the next frame removes it.
+        Assert.True(bodies.TryCreateBall(12, 1, new Vector3(0, 2, 0), Vector3.Zero, out var ball));
+        bodies.Settle(ball);
+        Assert.Equal(1, models.Retired.Length);
+        Assert.Equal(before + 1, models.Count);
+
+        match.Frame();
+
+        Assert.True(models.Retired.IsEmpty);
+        Assert.Equal(before, models.Count);
     }
 
     [Fact]

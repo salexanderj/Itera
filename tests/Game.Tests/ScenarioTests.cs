@@ -160,6 +160,7 @@ public sealed class ScenarioTests
         Assert.True(match.WaitUntilLoaded());
         match.Step(10);
         var edits = match.Match.Voxels.EditCount;
+        var models = match.Match.Models.Count;
         var commands = provider.GetRequiredService<ConsoleCommands>();
         var output = new Output();
 
@@ -173,6 +174,8 @@ public sealed class ScenarioTests
         Assert.Equal(4, dropped);
         Assert.Equal(0, match.World.CountEntities(in s_balls));
         Assert.Equal(edits + 4, match.Match.Voxels.EditCount);
+        // Their models went too: nothing draws them until the world's meshes hold their voxels.
+        Assert.Equal(models, match.Match.Models.Count);
     }
 
     /// <summary>
