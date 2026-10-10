@@ -57,4 +57,4 @@ goes in this order where its comments say why, with a behaviour test and a zero-
 - `tests/Game.Tests`: `SystemOrderTests`, `ShippedSettingsTests`, `GameOptionsTests`, `WorldTests`, `PlayerSpawnSystemTests`,
   `ClimbModeTests` (climbing over mesh walls through the engine's movement), `FoxSystemTests`, `FoxModelTests` (the fox's rig and clips against SharpGLTF's own world matrices), `BenchmarkViewsTests`,
   and `ScenarioTests` (the starter played without a window through `HeadlessMatch`; the fox read, drawn posed, its clip
-  moving with the steps, walking its circle).
+  moving with the steps, walking its circle; the boulder nearest the start climbed onto).

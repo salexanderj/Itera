@@ -175,6 +175,121 @@ public sealed class ScenarioTests
         Assert.Equal(edits + 4, match.Match.Voxels.EditCount);
     }
 
+    /// <summary>
+    /// The boulder nearest the start (seed 1): the player
+    /// stands at its foot on its -x side looking at it, presses Space, and holds W until the climb ends, which leaves it
+    /// standing on the boulder well over the ground.
+    /// </summary>
+    [Fact]
+    public void Space_at_a_boulder_and_forward_climb_onto_it()
+    {
+        var (middle, foot, ground) = FindBoulder();
+        using var provider = GameComposition.Build(s_options);
+        using var match = new HeadlessRun(provider).Play(seed: 1);
+        Assert.True(match.WaitUntilLoaded());
+        var commands = provider.GetRequiredService<ConsoleCommands>();
+        var output = new Output();
+        var eye = foot + new Vector3(0, CharacterSize.ForHeight(1.7f).EyeMetres, 0);
+        // Looking along +x: a yaw of -90 degrees.
+        commands.Execute(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"tp {eye.X} {eye.Y} {eye.Z} -90 0"),
+            output
+        );
+        match.Step(1);
+        Assert.True(match.WaitUntilLoaded());
+        match.Step(60);
+
+        match.Input.InjectKey(Key.Space, true);
+        match.Step(1);
+        match.Input.InjectKey(Key.Space, false);
+        var grabbed = Climb(match.World).State == ClimbState.Climbing;
+        match.Input.InjectKey(Key.W, true);
+        var highest = 0f;
+        for (var step = 0; step < 600 && Climb(match.World).State != ClimbState.Free; step++)
+        {
+            match.Step(1);
+            highest = Math.Max(highest, Player(match.World).Position.Feet.Y);
+        }
+
+        match.Input.InjectKey(Key.W, false);
+        match.Step(60);
+        var (position, contact) = Player(match.World);
+
+        Assert.Empty(output.Failures);
+        Assert.True(grabbed, $"No grab at {foot} by the boulder at {middle}.");
+        Assert.True(highest - ground > 1, $"Climbed to {highest:F2} m from ground at {ground:F2} m.");
+        Assert.True(contact.Grounded);
+        Assert.True(position.Feet.Y - ground > 1, $"Stands at {position.Feet} by the boulder at {middle}.");
+    }
+
+    /// <summary>
+    /// The boulder of seed 1 nearest the middle, out to 40 m (a point more than 1.5 m over the ground): its highest point,
+    /// where its -x foot meets the ground along the row through it (a little out from it), and the ground's height there,
+    /// in metres.
+    /// </summary>
+    private static (Vector3 Middle, Vector3 Foot, float Ground) FindBoulder()
+    {
+        for (var reach = 100; reach <= 4000; reach += 100)
+        {
+            for (var x = -reach; x <= reach; x += 100)
+            {
+                for (var z = -reach; z <= reach; z += 100)
+                {
+                    if (
+                        Math.Max(Math.Abs(x), Math.Abs(z)) != reach
+                        || GameGenerator.SurfaceHeight(x, z, 1) - GameGenerator.Height(x, z, 1) < 150
+                    )
+                    {
+                        continue;
+                    }
+
+                    // Up to its highest point, then out along -x to where it meets the ground.
+                    var (topX, topZ) = (x, z);
+                    var climbing = true;
+                    while (climbing)
+                    {
+                        climbing = false;
+                        foreach (var (dx, dz) in new[] { (10, 0), (-10, 0), (0, 10), (0, -10) })
+                        {
+                            if (
+                                GameGenerator.SurfaceHeight(topX + dx, topZ + dz, 1)
+                                > GameGenerator.SurfaceHeight(topX, topZ, 1)
+                            )
+                            {
+                                (topX, topZ) = (topX + dx, topZ + dz);
+                                climbing = true;
+                            }
+                        }
+                    }
+
+                    var edge = topX;
+                    while (GameGenerator.SurfaceHeight(edge, topZ, 1) - GameGenerator.Height(edge, topZ, 1) > 1)
+                    {
+                        edge -= 5;
+                    }
+
+                    var footX = edge - 30;
+                    var ground = (float)GameGenerator.SurfaceHeight(footX, topZ, 1) / 100;
+                    var middle = new Vector3(
+                        topX / 100f,
+                        (float)GameGenerator.SurfaceHeight(topX, topZ, 1) / 100,
+                        topZ / 100f
+                    );
+                    return (middle, new Vector3(footX / 100f, ground, topZ / 100f), ground);
+                }
+            }
+        }
+
+        throw new InvalidOperationException("No boulder near the start.");
+    }
+
+    private static Climber Climb(World world)
+    {
+        var found = default(Climber);
+        world.Query(new QueryDescription().WithAll<Climber, LocalPlayer>(), (ref Climber climber) => found = climber);
+        return found;
+    }
+
     private static (FoxRoute Route, MeshPlacement Placement, MeshAnimator Animator) Fox(World world)
     {
         var found = default((FoxRoute, MeshPlacement, MeshAnimator));
