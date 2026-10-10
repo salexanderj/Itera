@@ -143,10 +143,12 @@ those left), draws the blocks of a column along a side or corner past which a co
 their stitched meshes (`WorldMeshes.Stitches.cs`, below), culls blocks to the frustum, and writes a `MeshDraw` and an indexed indirect command per
 block (`firstInstance` names the draw); the camera's commands are sorted nearest first by the distance to each block's
 centre (`WriteCameraNearestFirst`), so the depth test rejects hidden leaves before they are shaded, and runs repeat (in
-load order they did not; the shadow lists stay unsorted). With the view's shadows on it also fits two sun shadow cascades
-(`ShadowCascades.Fit`: a square round the bounding sphere of the view's slice from 0 to 30 m and from 30 m to 200 m or
-the view distance, its centre snapped to whole texels, reaching 100 m further towards the sun) and lists the blocks that
-cast into each: those whose bounding sphere meets the cascade's box and lies inside each plane of its slice that faces
+load order they did not; the shadow lists stay unsorted). The frame's view (`MeshView`, which `GameLoop` starts before
+`WorldMeshes.Upload` and ends after it, and whose frustum, cascades, and lights every list drawn in `MeshPass` shares)
+fits two sun shadow cascades (`ShadowCascades.Fit`: a square round the bounding sphere of the view's slice from 0 to 30 m
+and from 30 m to 200 m or the view distance, its centre snapped to whole texels, reaching 100 m further towards the sun)
+and writes the slot's `MeshLighting`; with the view's shadows on, `WorldMeshes` lists the blocks that cast into each
+(`CascadeBounds`): those whose bounding sphere meets the cascade's box and lies inside each plane of its slice that faces
 the sun (a block shades the slice only from the sun's side). The near cascade takes the camera's levels; the far one
 is chosen in a second pass one level coarser (`FarShadowCutShare`). A full list warns once a match. The seams between
 levels are stitched (`SurfaceNets.MeshTransition`): the block meshed from its own voxels and the coarser level's block
@@ -166,7 +168,9 @@ depth; timed as `ShadowMaps`, part of the `Voxels` time), then the world with `E
 default) samples a pixel into images of its own, resolved as rendering ends into the target (the mean) and the depth
 image (sample 0, which particles and lines test against; the depth image's frame-start barrier covers the resolve,
 which Vulkan counts as a colour attachment write). Every block in view is one `vkCmdDrawIndexedIndirect` (`mesh.vert`
-pulls the vertices from the heap; `mesh.frag` shades with the material's colour and tint, the sun through the cascade
+pulls the vertices from the heap, projected by `view.glsl`'s `viewClip` as every pass that draws into the view's depth
+does; `mesh.frag` shades with the material's colour and tint, then `mesh-shade.glsl`'s `shadeSurface` (shared by every
+surface the pass draws) with the sun through the cascade
 that covers the point by view depth with a 1.5-texel normal offset (`mesh-light.glsl`'s `sunShadow`: in the near
 cascade contact-hardening shadows, a 2 degree sun whose blur grows with the gap between caster and surface, found by an
 8-tap blocker search of the maps read as depths (binding 9, no comparison) and filtered by 16 comparison taps of a
@@ -174,8 +178,8 @@ Poisson disc, 1 to 16 texels; in the far cascade 3x3 comparison lookups; the nea
 the 5 m before its end, `MeshLighting.NearBlendStart`, the far cascade's slice starting there too, and the far shadows
 fade over the last tenth of theirs, `FarFadeStart`), sky and ground light
 dimmed by openness and scaled by the sky field, the point lights, glow, fog, the tone curve, and the grade; the art
-direction's light and grade, as mesh.frag's constants: the world's surfaces less saturated, darker, and darker on their
-sides than on their tops, warm sunlight and cool sky light, and dark tones towards teal and light ones towards orange
+direction's light and grade, as the shaders' constants: the world's surfaces less saturated, darker, and darker on their
+sides than on their tops (`mesh.frag`'s, the world's own), warm sunlight and cool sky light (`mesh-shade.glsl`'s), and dark tones towards teal and light ones towards orange
 after the grade, less as the fog thickens, so the far ground meets the sky, which takes none; a glowing surface keeps its
 colour, takes no grade or split tone, and adds its glow's own brightness through the tone curve after them), then the
 sky where the depth is still 0
@@ -217,14 +221,14 @@ front of the surface, never below 0.02. Point lights: each world block's glowing
 light at their glow-weighted middle when its mesh is uploaded, and events give others through `PointLights` (a run-wide
 service the frame systems fill: `Add` for a light that shines while something happens, `Flash` for one that fades as the
 square of its time left; `GameLoop` starts it each frame before the frame group and clears it at a match's end; a game
-lights its flashes, fires, and glows there). Each frame the
-drawn blocks' lights and the events' within 48 m whose reach (power over 0.02, square-rooted, at most 16 m) meets the
+lights its flashes, fires, and glows there). Each frame the drawn blocks' lights (offered by `WorldMeshes` as it lists
+them) and the events' (at `MeshView.End`) within 48 m whose reach (power over 0.02, square-rooted, at most 16 m) meets the
 frustum are ranked by power over distance squared, and the light budget's brightest (`Engine:Renderer:MostLights`, 128
 by default, at most `MeshPass.MostLights`, 256) go into the slot's list, brightest first (binding 7, `MeshLight`). The
 mesh pass's cluster pass (`mesh-clusters.comp`, before the cascades) sorts them into the view's clusters, 16 x 9 tiles
 of the drawn image by 24 slices of depth (the first to 1 m, the last from 48 m, between them a fixed ratio;
 `mesh-data.glsl`'s `meshClusterSlice`), each keeping up to 32 of those that reach it, those that matter most to it (power over the squared distance to its box; binding 10, one region a slot), and
-`mesh.frag` loops over its pixel's cluster's (Lambert, inverse square, to nothing at the reach). The console's `lights
+`mesh-shade.glsl`'s `pointLight` loops over its pixel's cluster's (Lambert, inverse square, to nothing at the reach). The console's `lights
 test N` scatters test lights for the run. The per-slot record is `MeshLighting` (the cascades, the field's corner and cell, the light
 count).
 
@@ -238,7 +242,7 @@ count).
     `Memory/` (with `GpuRangeHeap`, the mesh heap's ranges); `Pipelines/`; structs that shaders read in `GpuData/`; the
     palette and its looks (`IVoxelPalette`, `VoxelLook`), the tint map (`IVoxelTintMap`) and the CPU's read of it
     (`VoxelTintSampler`), and `StagingWriter` in `Voxels/`; the sun shadow cascades' fit (`ShadowCascades`);
-    `WorldMeshes` and `MeshPass` in `Meshes/` (with `MeshColumn`, `MeshWorkers`, `SkyField`, `LevelBalance`, and the
+    `WorldMeshes`, `MeshPass`, and the frame's view `MeshView` (with `CascadeBounds`) in `Meshes/` (with `MeshColumn`, `MeshWorkers`, `SkyField`, `LevelBalance`, and the
     test's interfaces `IMeshDrawTarget` and `IStagingRegions`, in `IMeshTargets.cs`), and `IWorldOnGpu`, which `WorldMeshes` answers; the CPU mesher (`SurfaceNets`, `MeshBuffers`) in `src/Itera.Engine/Meshing/`;
     GLSL files, the shader compiler, and reloads (`ShaderReloads`, `IReloadsShaders`, which every pass implements) in
     `Shaders/`.

@@ -66,9 +66,7 @@ void main()
     point += toward / max(away, 1e-4) * min(radius, 0.5 * away);
     vec3 offset = point - view.position;
     float depth = dot(offset, view.forward);
-    float x = dot(offset, view.right) / dot(view.right, view.right);
-    float y = dot(offset, view.up) / dot(view.up, view.up);
-    gl_Position = vec4(x, y, NearMetres, depth);
+    gl_Position = viewClip(offset);
     outLocal = vec2(corner.x * (halfLength + radius) / radius, corner.y);
     outHalfLength = halfLength / radius;
 

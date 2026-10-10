@@ -56,6 +56,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     /// <summary>The materials' texture sets (<see cref="MeshPass.TextureSets"/>); none in tests that give none.</summary>
     private readonly MaterialTextureSets? _textures;
     private readonly IMeshDrawTarget _pass;
+    private readonly MeshView _view;
     private readonly IStagingRegions _staging;
     private readonly ILogger<WorldMeshes> _logger;
     private LevelDistances _distances;
@@ -65,8 +66,6 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     private readonly int _finestLevel;
     private readonly int _coarsestLevel;
     private readonly double _reachShare;
-    private readonly int _shadowMapTexels;
-    private readonly int _lightBudget;
     private readonly double _statsIntervalSeconds;
     private readonly StagingWriter _writer = new();
     private readonly BufferCopy[][] _regions = new BufferCopy[FrameSync.FramesInFlight][];
@@ -118,16 +117,18 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     public WorldMeshes(
         IVoxelPalette palette,
         MeshPass pass,
+        MeshView view,
         StagingBuffer staging,
         IOptions<EngineOptions> options,
         ILogger<WorldMeshes> logger
     )
-        : this(palette, (IMeshDrawTarget)pass, (IStagingRegions)staging, options, logger, pass.TextureSets) { }
+        : this(palette, (IMeshDrawTarget)pass, view, (IStagingRegions)staging, options, logger, pass.TextureSets) { }
 
-    /// <summary>The world meshes over a draw target and staging of a test's own.</summary>
+    /// <summary>The world meshes over a draw target, view, and staging of a test's own.</summary>
     internal WorldMeshes(
         IVoxelPalette palette,
         IMeshDrawTarget pass,
+        MeshView view,
         IStagingRegions staging,
         IOptions<EngineOptions> options,
         ILogger<WorldMeshes> logger,
@@ -137,6 +138,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         _palette = palette;
         _textures = textures;
         _pass = pass;
+        _view = view;
         _staging = staging;
         _logger = logger;
         var engine = options.Value;
@@ -144,8 +146,6 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         _coarsestLevel = VoxelWorld.LevelsFor(engine.Voxels) - 1;
         _finestLevel = Math.Min(engine.Renderer.MeshFinestLevel, _coarsestLevel);
         _reachShare = engine.Renderer.MeshReachShare;
-        _shadowMapTexels = engine.Renderer.ShadowMapTexels;
-        _lightBudget = Math.Clamp(engine.Renderer.MostLights, 1, MeshPass.MostLights);
         _statsIntervalSeconds = engine.Logging.StatsIntervalSeconds;
         for (var i = 0; i < _byLevel.Length; i++)
         {
@@ -162,6 +162,9 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
 
     /// <summary>Blocks the last <see cref="Upload"/> wrote draws for in the camera's list.</summary>
     public int DrawCount => Frame.Draws;
+
+    /// <summary>The frame's view the world's draws are culled by. For tests.</summary>
+    internal MeshView View => _view;
 
     /// <summary>Bytes of the mesh heap in use. For tests.</summary>
     internal long HeapUsedBytes => _heap?.UsedBytes ?? 0;
@@ -347,16 +350,12 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     /// <summary>
     /// The frame's upload and draws: follows the world's changes, takes the finished meshes and stages them in the
     /// staging region of <paramref name="slot"/>, starts new jobs, and writes the frame's draws for
-    /// <paramref name="view"/> into <see cref="MeshPass"/>'s regions of the slot. Returns the copy regions staged
-    /// (<see cref="Regions"/>). Main thread, between taking the frame request and publishing the frame.
+    /// <paramref name="view"/> into <see cref="MeshPass"/>'s regions of the slot, culled by the frame's
+    /// <see cref="MeshView"/> (after its <see cref="MeshView.Begin"/>; the blocks' lights are offered to it before its
+    /// <see cref="MeshView.End"/>). Returns the copy regions staged (<see cref="Regions"/>). Main thread, between taking
+    /// the frame request and publishing the frame.
     /// </summary>
-    public int Upload(
-        int slot,
-        double nowSeconds,
-        in ViewConstants view,
-        ReadOnlySpan<ModelDraw> models = default,
-        ReadOnlySpan<PointLight> lights = default
-    )
+    public int Upload(int slot, double nowSeconds, in ViewConstants view, ReadOnlySpan<ModelDraw> models = default)
     {
         var world = _world ?? throw new InvalidOperationException("The world meshes follow no match's world.");
         var start = Stopwatch.GetTimestamp();
@@ -384,7 +383,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         // After the jobs start: a block they find empty or unreadable is done with this frame.
         ReportEditMeshed();
         _staging.Flush(slot, _writer.Used);
-        Frame = WriteDraws(slot, in view, models, lights);
+        Frame = WriteDraws(slot, in view, models);
         IsUpToDate = _pendingBlocks == 0 && _waiting.Count == 0 && _worldDataStaged;
         Uploads++;
         ReportFault();
@@ -1493,8 +1492,8 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
             _stats.EvictedBytes / (1024.0 * 1024.0),
             _stats.UnmeshedFrames,
             _stats.MostUnmeshed,
-            _stats.LastLights,
-            _stats.LastEventLights,
+            _view.LastLights,
+            _view.LastEventLights,
             averageMs,
             maxMs
         );
@@ -1502,9 +1501,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         var shadowTriangles = _stats.LastShadowTriangles;
         var modelTriangles = _stats.LastModelTriangles;
         var unbalanced = _stats.LastUnbalanced;
-        var lights = (_stats.LastLights, _stats.LastEventLights);
         _stats = default;
-        (_stats.LastLights, _stats.LastEventLights) = lights;
         _stats.LastUnbalanced = unbalanced;
         _stats.LastTriangles = triangles;
         _stats.LastShadowTriangles = shadowTriangles;
@@ -1544,8 +1541,6 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         public long EvictedBytes;
         public int UnmeshedFrames;
         public int MostUnmeshed;
-        public int LastLights;
-        public int LastEventLights;
     }
 
     [LoggerMessage(

@@ -42,6 +42,17 @@ bool viewSwitch(uint which)
 // evenly across a face on screen, so the early depth test can drop hidden faces. Passes compare GREATER.
 const float NearMetres = 0.01;
 
+// The clip position of a point at offset from the camera, as every pass that draws into the view's depth puts it: x and
+// y over the view's axes (right and up reach the image's edges at unit forward), z NearMetres, w the depth along the
+// view direction.
+vec4 viewClip(vec3 offset)
+{
+    float depth = dot(offset, view.forward);
+    float x = dot(offset, view.right) / dot(view.right, view.right);
+    float y = dot(offset, view.up) / dot(view.up, view.up);
+    return vec4(x, y, NearMetres, depth);
+}
+
 // The world-space direction of the ray through a point of the image; ndc is in [-1, 1] with +y up.
 vec3 viewRay(vec2 ndc)
 {

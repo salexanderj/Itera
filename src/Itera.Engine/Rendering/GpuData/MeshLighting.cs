@@ -7,8 +7,8 @@ namespace Itera.Engine.Rendering.GpuData;
 /// <c>mesh.frag</c> and <c>mesh-shadow.vert</c>): the sun's two shadow cascades (each one's view-projection from the
 /// world, uploaded unchanged and used as <c>M * v</c>, the view depth where each ends, and each texel's width for the
 /// normal offset), where the sky field's cells lie (how much of the sky each cell of air round the camera sees, a 3D
-/// texture), and how many point lights the slot's list holds (<see cref="MeshLight"/>). Written by
-/// <c>WorldMeshes</c>.
+/// texture), and how many point lights the slot's list holds (<see cref="MeshLight"/>). Written by <c>MeshView</c>
+/// (the cascades and the lights) and <c>WorldMeshes</c> (the sky field's part).
 /// </summary>
 public struct MeshLighting
 {
@@ -54,7 +54,7 @@ public struct MeshLighting
 
 /// <summary>
 /// A point light of a frame (<c>mesh-data.glsl</c>'s <c>MeshLight</c>, in the slot's list that <c>mesh.frag</c> loops
-/// over): glowing surfaces of the world, gathered per block. Written by <c>WorldMeshes</c>.
+/// over): glowing surfaces of the world, gathered per block, and events' lights. Written by <c>MeshView</c>.
 /// </summary>
 public struct MeshLight
 {

@@ -8,23 +8,6 @@ namespace Itera.Engine.Rendering.Meshes;
 
 public sealed unsafe partial class WorldMeshes
 {
-    /// <summary>The near shadow cascade covers view depths from 0 to this; the far one from here on.</summary>
-    internal const float NearShadowMetres = 30;
-
-    /// <summary>The far cascade ends at this view depth, or at the view's distance when that is less.</summary>
-    internal const float FarShadowMetres = 200;
-
-    /// <summary>
-    /// The band before <see cref="NearShadowMetres"/> where the near cascade blends into the far one, which covers it too.
-    /// </summary>
-    internal const float NearBlendMetres = 5;
-
-    /// <summary>The share of the far cascade's end over which its shadows fade out.</summary>
-    internal const float FarFadeShare = 0.1f;
-
-    /// <summary>How far towards the sun beyond a cascade's slice a block still casts into it.</summary>
-    private const float CasterMetres = 100;
-
     /// <summary>
     /// The far cascade's blocks are chosen with the reaches times this, on top of <c>MeshReachShare</c>: one level
     /// coarser than the camera's at the same distance, as its texels are about a level-4 voxel (16 cm) wide.
@@ -34,8 +17,6 @@ public sealed unsafe partial class WorldMeshes
     // Half a cube's diagonal over half its side: a block's bounding sphere.
     private static readonly float s_sphereOverHalfSide = MathF.Sqrt(3);
 
-    // The planes of the view's frustum, through the camera, facing in: left, right, bottom, top.
-    private readonly Vector3[] _planes = new Vector3[4];
     private int _drawSlot;
     private int _records;
     private int _drawn;
@@ -43,18 +24,12 @@ public sealed unsafe partial class WorldMeshes
     private int _farShadows;
     private long _triangles;
     private long _shadowTriangles;
-    private bool _shadows;
     private bool _farPass;
     private bool _listFull;
     private bool _listFullReported;
     private int _stitchedDraws;
     private bool _stitching;
     private double _cutShare;
-    private Vector3 _viewPosition;
-    private Vector3 _viewForward;
-    private float _viewDistance;
-    private readonly CascadeBounds _nearCascade = new();
-    private readonly CascadeBounds _farCascade = new();
 
     // The columns each pass draws, kept within one level of their neighbours for the seams' stitching.
     private readonly LevelBalance _balance = new();
@@ -79,12 +54,7 @@ public sealed unsafe partial class WorldMeshes
     /// asks for it where not (WorldMeshes.Stitches.cs). The camera's list is written nearest first
     /// (<see cref="WriteCameraNearestFirst"/>).
     /// </summary>
-    private MeshFrame WriteDraws(
-        int slot,
-        in ViewConstants view,
-        ReadOnlySpan<ModelDraw> models,
-        ReadOnlySpan<PointLight> lights
-    )
+    private MeshFrame WriteDraws(int slot, in ViewConstants view, ReadOnlySpan<ModelDraw> models)
     {
         _drawSlot = slot;
         _records = 0;
@@ -93,13 +63,8 @@ public sealed unsafe partial class WorldMeshes
         _farShadows = 0;
         _triangles = 0;
         _shadowTriangles = 0;
-        _viewPosition = view.Position;
-        _viewForward = view.Forward;
-        _viewDistance = view.MaxDistance;
-        _shadows = view.Has(ViewSwitches.Shadows);
         _stitching = !view.Has(ViewSwitches.Plain);
-        SetPlanes(view.Forward, view.Right, view.Up);
-        WriteCascades(slot, in view);
+        WriteSky(ref _pass.LightingOf(slot));
         var lists = new DrawLists(
             _pass.DrawsOf(slot),
             _pass.CommandsOf(slot, 0),
@@ -113,9 +78,7 @@ public sealed unsafe partial class WorldMeshes
         SelectAll(in lists);
         StitchedDraws = _stitchedDraws;
         WriteCameraNearestFirst(lists.Camera);
-        OfferEventLights(lights);
-        _pass.LightingOf(slot).LightCount = WriteLights(slot);
-        if (_shadows)
+        if (_view.Shadows)
         {
             _farPass = true;
             _cutShare = _reachShare * FarShadowCutShare;
@@ -136,78 +99,13 @@ public sealed unsafe partial class WorldMeshes
             _drawn,
             _nearShadows,
             _farShadows,
-            _shadows,
+            _view.Shadows,
             camera,
             near,
             far,
             _skyUploaded,
             _skyUploadOffset
         );
-    }
-
-    /// <summary>
-    /// Fits the two cascades to the view (<see cref="ShadowCascades.Fit"/>) and writes their record for
-    /// <c>mesh.frag</c> and <c>mesh-shadow.vert</c>.
-    /// </summary>
-    private void WriteCascades(int slot, in ViewConstants view)
-    {
-        var farEnd = Math.Max(Math.Min(FarShadowMetres, view.MaxDistance), 2 * NearShadowMetres);
-        var near = ShadowCascades.Fit(
-            view.Position,
-            view.Forward,
-            view.Right,
-            view.Up,
-            0,
-            NearShadowMetres,
-            view.SunDirection,
-            _shadowMapTexels,
-            CasterMetres
-        );
-        var farStart = NearShadowMetres - NearBlendMetres;
-        var far = ShadowCascades.Fit(
-            view.Position,
-            view.Forward,
-            view.Right,
-            view.Up,
-            farStart,
-            farEnd,
-            view.SunDirection,
-            _shadowMapTexels,
-            CasterMetres
-        );
-        _nearCascade.Set(
-            in near,
-            _shadowMapTexels,
-            view.Position,
-            view.Forward,
-            _planes,
-            0,
-            NearShadowMetres,
-            view.SunDirection
-        );
-        _farCascade.Set(
-            in far,
-            _shadowMapTexels,
-            view.Position,
-            view.Forward,
-            _planes,
-            farStart,
-            farEnd,
-            view.SunDirection
-        );
-        _pass.LightingOf(slot) = new MeshLighting
-        {
-            Near = near.ViewProjection,
-            Far = far.ViewProjection,
-            NearEnd = NearShadowMetres,
-            FarEnd = farEnd,
-            NearTexelMetres = near.TexelMetres,
-            FarTexelMetres = far.TexelMetres,
-            Shadows = _shadows ? 1u : 0u,
-            NearBlendStart = farStart,
-            FarFadeStart = farEnd * (1 - FarFadeShare),
-        };
-        WriteSky(ref _pass.LightingOf(slot));
     }
 
     /// <summary>
@@ -327,7 +225,7 @@ public sealed unsafe partial class WorldMeshes
     private bool IsNear(ColumnKey key)
     {
         var reach = _distances.ReachCentimetres(key.Level - 1) * _cutShare;
-        return NearestSquared(key, _viewPosition) < reach * reach;
+        return NearestSquared(key, _view.Position) < reach * reach;
     }
 
     /// <summary>
@@ -404,9 +302,9 @@ public sealed unsafe partial class WorldMeshes
             var extent = 0.5f * blockMetres + voxelMetres;
             var radius = extent * s_sphereOverHalfSide;
             // Room is asked last, so a full list is noted only when a block it should take goes without.
-            var seen = !_farPass && InView(centre, extent) && Room(_drawn);
-            var near = !_farPass && _shadows && _nearCascade.Holds(centre, radius) && Room(_nearShadows);
-            var far = _farPass && _farCascade.Holds(centre, radius) && Room(_farShadows);
+            var seen = !_farPass && _view.InView(centre, extent) && Room(_drawn);
+            var near = !_farPass && _view.Shadows && _view.NearCascade.Holds(centre, radius) && Room(_nearShadows);
+            var far = _farPass && _view.FarCascade.Holds(centre, radius) && Room(_farShadows);
             if (!seen && !near && !far)
             {
                 continue;
@@ -421,7 +319,7 @@ public sealed unsafe partial class WorldMeshes
             var vertexBase = block.VertexBase;
             var firstIndex = block.FirstIndex;
             var indexCount = block.IndexCount;
-            var distanceSquared = Vector3.DistanceSquared(centre, _viewPosition);
+            var distanceSquared = Vector3.DistanceSquared(centre, _view.Position);
             var stitched = false;
             // The far cascade, and the debug view of plain meshes, draw the plain meshes and keep the stitched ones.
             if (_stitching && !_farPass)
@@ -519,44 +417,6 @@ public sealed unsafe partial class WorldMeshes
         return false;
     }
 
-    /// <summary>The frustum's side planes from the view's axes (right and up reach the image's edges at unit forward).</summary>
-    private void SetPlanes(Vector3 forward, Vector3 right, Vector3 up)
-    {
-        _planes[0] = InwardNormal(Vector3.Cross(forward - right, up), forward);
-        _planes[1] = InwardNormal(Vector3.Cross(forward + right, up), forward);
-        _planes[2] = InwardNormal(Vector3.Cross(forward - up, right), forward);
-        _planes[3] = InwardNormal(Vector3.Cross(forward + up, right), forward);
-    }
-
-    private static Vector3 InwardNormal(Vector3 normal, Vector3 forward)
-    {
-        normal = Vector3.Normalize(normal);
-        return Vector3.Dot(normal, forward) < 0 ? -normal : normal;
-    }
-
-    /// <summary>True when the cube of half-size <paramref name="extent"/> at <paramref name="centre"/> may be seen.</summary>
-    private bool InView(Vector3 centre, float extent)
-    {
-        var offset = centre - _viewPosition;
-        var ahead = Vector3.Dot(offset, _viewForward);
-        var reach = extent * (MathF.Abs(_viewForward.X) + MathF.Abs(_viewForward.Y) + MathF.Abs(_viewForward.Z));
-        if (ahead + reach < 0 || ahead - reach > _viewDistance)
-        {
-            return false;
-        }
-
-        foreach (var plane in _planes)
-        {
-            var spread = extent * (MathF.Abs(plane.X) + MathF.Abs(plane.Y) + MathF.Abs(plane.Z));
-            if (Vector3.Dot(plane, offset) + spread < 0)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     /// <summary>
     /// A frame slot's draws and its three command lists, written by <see cref="Draw"/> (the camera's by
     /// <see cref="WriteCameraNearestFirst"/>).
@@ -572,89 +432,5 @@ public sealed unsafe partial class WorldMeshes
         public readonly Span<DrawIndexedIndirectCommand> Camera = camera;
         public readonly Span<DrawIndexedIndirectCommand> Near = near;
         public readonly Span<DrawIndexedIndirectCommand> Far = far;
-    }
-
-    /// <summary>
-    /// Which blocks cast into a cascade: those whose bounding sphere meets the cascade's box, and lies on the inner side
-    /// of each plane of the cascade's slice of the view (its side planes and its near and far depths) that faces the sun.
-    /// A block shades a point of the slice only if it lies towards the sun from it, and moving towards the sun never
-    /// leaves the inner side of a plane that faces the sun; the planes that face away are dropped, so the test keeps a
-    /// little more than it must, never less.
-    /// </summary>
-    private sealed class CascadeBounds
-    {
-        private const int MostPlanes = 6;
-
-        // Inward normals (xyz) and the dot product a point on the plane has with them (w), relative to the camera.
-        private readonly Vector4[] _planes = new Vector4[MostPlanes];
-        private Matrix4x4 _viewProjection;
-        private Vector3 _origin;
-        private float _acrossPerMetre;
-        private float _alongPerMetre;
-        private int _planeCount;
-
-        /// <summary>
-        /// Takes the cascade's fit, <paramref name="mapTexels"/> wide, and its slice of the view, between
-        /// <paramref name="nearMetres"/> and <paramref name="farMetres"/> of view depth, bounded by the frustum's
-        /// <paramref name="sidePlanes"/> through <paramref name="position"/>.
-        /// </summary>
-        public void Set(
-            in CascadeFit fit,
-            int mapTexels,
-            Vector3 position,
-            Vector3 forward,
-            ReadOnlySpan<Vector3> sidePlanes,
-            float nearMetres,
-            float farMetres,
-            Vector3 sun
-        )
-        {
-            _viewProjection = fit.ViewProjection;
-            _origin = position;
-            // The square is mapTexels texels wide, 2 in clip units; z's scale is the length of its column.
-            _acrossPerMetre = 2 / (fit.TexelMetres * mapTexels);
-            var m = fit.ViewProjection;
-            _alongPerMetre = new Vector3(m.M13, m.M23, m.M33).Length();
-            _planeCount = 0;
-            foreach (var plane in sidePlanes)
-            {
-                Keep(plane, 0, sun);
-            }
-
-            Keep(forward, nearMetres, sun);
-            Keep(-forward, -farMetres, sun);
-        }
-
-        /// <summary>True when a block's sphere of <paramref name="radius"/> at <paramref name="centre"/> may cast into the cascade.</summary>
-        public bool Holds(Vector3 centre, float radius)
-        {
-            var clip = Vector3.Transform(centre, _viewProjection);
-            var across = 1 + radius * _acrossPerMetre;
-            var along = radius * _alongPerMetre;
-            if (MathF.Abs(clip.X) > across || MathF.Abs(clip.Y) > across || clip.Z < -along || clip.Z > 1 + along)
-            {
-                return false;
-            }
-
-            var offset = centre - _origin;
-            for (var i = 0; i < _planeCount; i++)
-            {
-                var plane = _planes[i];
-                if (Vector3.Dot(new Vector3(plane.X, plane.Y, plane.Z), offset) - plane.W < -radius)
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        private void Keep(Vector3 normal, float distance, Vector3 sun)
-        {
-            if (Vector3.Dot(normal, sun) >= 0)
-            {
-                _planes[_planeCount++] = new Vector4(normal, distance);
-            }
-        }
     }
 }

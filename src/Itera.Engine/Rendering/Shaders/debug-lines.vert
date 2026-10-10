@@ -24,9 +24,6 @@ void main()
 {
     DebugLineVertex vertex = vertices[gl_VertexIndex];
     vec3 offset = vertex.position - view.position;
-    float depth = dot(offset, view.forward);
-    float x = dot(offset, view.right) / dot(view.right, view.right);
-    float y = dot(offset, view.up) / dot(view.up, view.up);
-    gl_Position = vec4(x, y, NearMetres, depth);
+    gl_Position = viewClip(offset);
     outColour = unpackUnorm4x8(vertex.colour);
 }

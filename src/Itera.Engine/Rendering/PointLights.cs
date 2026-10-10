@@ -9,8 +9,8 @@ public readonly record struct PointLight(Vector3 Position, Vector3 Colour, float
 /// The lights of events in the frame being built (docs/rendering-redesign.md, phase 3, lights): frame systems
 /// <see cref="Add"/> a light that shines while something happens (a beam firing: added each frame it fires) and
 /// <see cref="Flash"/> one that fades by itself (a muzzle flash, a blast: its power falls to nothing over its seconds).
-/// <see cref="Frame"/> gives the frame's lights to <c>WorldMeshes.Upload</c>, which ranks them with the glowing blocks'
-/// under the light budget; <c>GameLoop</c> starts each frame (<see cref="BeginFrame"/>) before the frame's systems run and
+/// <see cref="Frame"/> gives the frame's lights to <c>MeshView.End</c>, which ranks them with the glowing blocks' under
+/// the light budget; <c>GameLoop</c> starts each frame (<see cref="BeginFrame"/>) before the frame's systems run and
 /// clears the flashes when a match ends. Main thread; allocates nothing.
 /// </summary>
 public sealed class PointLights

@@ -2,7 +2,7 @@
 
 // The world's meshes (MeshPass): one indexed draw per block, whose MeshDraw is draws[gl_InstanceIndex] (the indirect
 // command's first instance). The vertex is read from the mesh heap (meshWorld, meshNormal), placed in the world by the
-// block's origin and voxel size, and projected with the view as debug-lines.vert projects (reverse depth, view.glsl).
+// block's origin and voxel size, and projected with the view (viewClip: reverse depth, view.glsl).
 // Compiled with MESH_MODEL for the models: one indirect command per block of a model level, each instance a
 // MeshModelDraw (modelDraws[gl_InstanceIndex]) that places and turns the model and gives its tint; the world's blocks
 // take their tint from the tint map instead (tint -1). Three outputs: the offset from the camera with the openness, the
@@ -43,10 +43,7 @@ void main()
     outPalette = meshPalette(draw.vertexBase);
 #endif
 
-    float depth = dot(offset, view.forward);
-    float x = dot(offset, view.right) / dot(view.right, view.right);
-    float y = dot(offset, view.up) / dot(view.up, view.up);
-    gl_Position = vec4(x, y, NearMetres, depth);
+    gl_Position = viewClip(offset);
 
     uint zm = meshMaterialWord(draw.vertexBase, index);
     uint level = uint(clamp(round(log2(draw.voxelMetres * CentimetresPerMetre)), 0.0, 15.0));

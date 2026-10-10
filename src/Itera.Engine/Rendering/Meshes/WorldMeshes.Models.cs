@@ -416,10 +416,10 @@ public sealed unsafe partial class WorldMeshes
         var extent = new Vector3(size.X, size.Y, size.Z) * voxelMetres;
         var centre = corner + Vector3.Transform(extent * 0.5f, turn);
         var radius = extent.Length() * 0.5f;
-        var seen = shadow != ModelShadow.Only && InView(centre, radius);
-        var casts = shadow != ModelShadow.None && _shadows;
-        var near = casts && _nearCascade.Holds(centre, radius);
-        var far = casts && _farCascade.Holds(centre, radius);
+        var seen = shadow != ModelShadow.Only && _view.InView(centre, radius);
+        var casts = shadow != ModelShadow.None && _view.Shadows;
+        var near = casts && _view.NearCascade.Holds(centre, radius);
+        var far = casts && _view.FarCascade.Holds(centre, radius);
         if (!seen && !near && !far)
         {
             return;

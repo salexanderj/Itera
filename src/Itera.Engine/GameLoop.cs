@@ -54,6 +54,7 @@ public sealed partial class GameLoop
     private readonly VulkanSwapchain _swapchain;
     private readonly FrameSync _frameSync;
     private readonly WorldMeshes _worldMeshes;
+    private readonly MeshView _meshView;
     private readonly MeshPass _meshPass;
     private readonly DebugLinePass _linePass;
     private readonly UiPass _uiPass;
@@ -129,6 +130,7 @@ public sealed partial class GameLoop
         VulkanSwapchain swapchain,
         FrameSync frameSync,
         WorldMeshes worldMeshes,
+        MeshView meshView,
         MeshPass meshPass,
         DebugLinePass linePass,
         UiPass uiPass,
@@ -187,6 +189,7 @@ public sealed partial class GameLoop
         _swapchain = swapchain;
         _frameSync = frameSync;
         _worldMeshes = worldMeshes;
+        _meshView = meshView;
         _meshPass = meshPass;
         _linePass = linePass;
         _uiPass = uiPass;
@@ -791,8 +794,11 @@ public sealed partial class GameLoop
         _dynamicScale.Update(now);
         var view = CreateView(in request);
         var loading = _loading.Drawn ? new LoadingDraw(_loading.Alpha, _loading.Seconds) : default;
-        // The models are drawn with the world.
-        var copies = _worldMeshes.Upload(request.Slot, now, in view, _modelInstances.Draws, _pointLights.Frame(now));
+        // The models are drawn with the world, in the frame's view, whose point lights the world's glowing blocks and the
+        // events give.
+        _meshView.Begin(request.Slot, in view);
+        var copies = _worldMeshes.Upload(request.Slot, now, in view, _modelInstances.Draws);
+        _meshView.End(request.Slot, _pointLights.Frame(now));
         if (_debugLines.Enabled)
         {
             match.Colliders.AddOutlines(_debugLines);

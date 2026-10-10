@@ -52,12 +52,32 @@ public sealed class WorldMeshesTests : IDisposable
         var meshes = new WorldMeshes(
             _palette,
             targets,
+            new MeshView(targets, Options.Create(options)),
             targets,
             Options.Create(options),
             NullLogger<WorldMeshes>.Instance
         );
         meshes.Initialize();
         return meshes;
+    }
+
+    /// <summary>
+    /// A frame as GameLoop builds it: the view's start, the world's upload and draws, then the view's end with the
+    /// events' <paramref name="lights"/>. Returns the copy regions staged.
+    /// </summary>
+    private static int Frame(
+        WorldMeshes meshes,
+        int slot,
+        double nowSeconds,
+        in ViewConstants view,
+        ReadOnlySpan<ModelDraw> models = default,
+        ReadOnlySpan<PointLight> lights = default
+    )
+    {
+        meshes.View.Begin(slot, in view);
+        var regions = meshes.Upload(slot, nowSeconds, in view, models);
+        meshes.View.End(slot, lights);
+        return regions;
     }
 
     public void Dispose()
@@ -309,7 +329,7 @@ public sealed class WorldMeshesTests : IDisposable
         view.SunDirection = Vector3.Normalize(new Vector3(2, 1, 0));
         view.Switches = ViewSwitches.Shadows;
         _frame++;
-        _targets.Apply(_meshes.Regions(slot, _meshes.Upload(slot, _frame / 60.0, in view)));
+        _targets.Apply(_meshes.Regions(slot, Frame(_meshes, slot, _frame / 60.0, in view)));
 
         var frame = _meshes.Frame;
         Assert.True(frame.Shadows);
@@ -349,7 +369,7 @@ public sealed class WorldMeshesTests : IDisposable
         Assert.True(nearOnly > 0);
         ref readonly var shadows = ref _targets.LightingOf(slot);
         Assert.Equal(1u, shadows.Shadows);
-        Assert.Equal(WorldMeshes.NearShadowMetres, shadows.NearEnd);
+        Assert.Equal(MeshView.NearShadowMetres, shadows.NearEnd);
         // The view reaches 100 m, short of the far cascade's 200 m.
         Assert.Equal(100, shadows.FarEnd);
         Assert.True(shadows.NearTexelMetres > 0 && shadows.NearTexelMetres < shadows.FarTexelMetres);
@@ -606,6 +626,7 @@ public sealed class WorldMeshesTests : IDisposable
         using var meshes = new WorldMeshes(
             _palette,
             targets,
+            new MeshView(targets, Options.Create(options)),
             targets,
             Options.Create(options),
             NullLogger<WorldMeshes>.Instance
@@ -619,7 +640,7 @@ public sealed class WorldMeshesTests : IDisposable
         {
             Assert.True(DateTime.UtcNow < deadline, "No sky field was built.");
             var at = frame++ % FrameSync.FramesInFlight;
-            targets.Apply(meshes.Regions(at, meshes.Upload(at, frame / 60.0, in view)));
+            targets.Apply(meshes.Regions(at, Frame(meshes, at, frame / 60.0, in view)));
             Thread.Sleep(1);
         }
 
@@ -627,7 +648,7 @@ public sealed class WorldMeshesTests : IDisposable
         var firstUpload = meshes.Frame.SkyUploadOffset;
 
         var slot = frame++ % FrameSync.FramesInFlight;
-        targets.Apply(meshes.Regions(slot, meshes.Upload(slot, frame / 60.0, in view)));
+        targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
         var lighting = targets.LightingOf(slot);
         Assert.Equal(SkyField.CellMetresFor(VoxelGrid.Unit), lighting.SkyCellMetres);
         Assert.False(meshes.Frame.SkyUploaded);
@@ -656,6 +677,7 @@ public sealed class WorldMeshesTests : IDisposable
         using var meshes = new WorldMeshes(
             _palette,
             targets,
+            new MeshView(targets, Options.Create(options)),
             targets,
             Options.Create(options),
             NullLogger<WorldMeshes>.Instance
@@ -685,7 +707,7 @@ public sealed class WorldMeshesTests : IDisposable
         for (var i = 0; i < frames; i++)
         {
             var slot = frame++ % FrameSync.FramesInFlight;
-            targets.Apply(meshes.Regions(slot, meshes.Upload(slot, frame / 60.0, in view)));
+            targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
             if (meshes.Frame.SkyUploaded)
             {
                 return true;
@@ -714,6 +736,7 @@ public sealed class WorldMeshesTests : IDisposable
         using var meshes = new WorldMeshes(
             new GlowingPalette(),
             targets,
+            new MeshView(targets, Options.Create(options)),
             targets,
             Options.Create(options),
             NullLogger<WorldMeshes>.Instance
@@ -729,12 +752,12 @@ public sealed class WorldMeshesTests : IDisposable
             Assert.True(DateTime.UtcNow < deadline, "The meshes did not catch up.");
             _world.Update(0);
             slot = frame++ % FrameSync.FramesInFlight;
-            targets.Apply(meshes.Regions(slot, meshes.Upload(slot, frame / 60.0, in view)));
+            targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
             Thread.Sleep(1);
         } while (!meshes.IsUpToDate);
 
         slot = frame++ % FrameSync.FramesInFlight;
-        meshes.Upload(slot, frame / 60.0, in view);
+        Frame(meshes, slot, frame / 60.0, in view);
 
         var count = (int)targets.LightingOf(slot).LightCount;
         Assert.InRange(count, 1, MeshPass.MostLights);
@@ -756,7 +779,7 @@ public sealed class WorldMeshesTests : IDisposable
             new(Centre + new Vector3(0, 40, 0), Vector3.UnitX, 1),
         ];
         slot = frame++ % FrameSync.FramesInFlight;
-        meshes.Upload(slot, frame / 60.0, in view, default, events);
+        Frame(meshes, slot, frame / 60.0, in view, default, events);
         // The glowing ground may fill the budget (128 by default): the event's light then takes the dimmest one's place.
         Assert.Equal(Math.Min(count + 1, new RendererSettings().MostLights), (int)targets.LightingOf(slot).LightCount);
         Assert.Equal(Vector3.UnitX, targets.LightsOf(slot)[0].Colour);
@@ -776,6 +799,7 @@ public sealed class WorldMeshesTests : IDisposable
         using var meshes = new WorldMeshes(
             _palette,
             targets,
+            new MeshView(targets, Options.Create(options)),
             targets,
             Options.Create(options),
             NullLogger<WorldMeshes>.Instance
@@ -789,7 +813,7 @@ public sealed class WorldMeshesTests : IDisposable
             new(Centre + new Vector3(0, -1, 1), new Vector3(0, 0, 1), 20),
         ];
         var view = LookingDown(Centre);
-        meshes.Upload(0, 0, in view, default, events);
+        Frame(meshes, 0, 0, in view, default, events);
 
         Assert.Equal(2u, targets.LightingOf(0).LightCount);
         Assert.Equal(30, targets.LightsOf(0)[0].Power);
@@ -925,7 +949,7 @@ public sealed class WorldMeshesTests : IDisposable
         void Step()
         {
             var slot = frame++ % FrameSync.FramesInFlight;
-            targets.Apply(meshes.Regions(slot, meshes.Upload(slot, frame / 60.0, in view)));
+            targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
         }
 
         var deadline = DateTime.UtcNow.AddSeconds(30);
@@ -980,7 +1004,7 @@ public sealed class WorldMeshesTests : IDisposable
             var view = LookingDown(at);
             view.SunDirection = ViewConstants.DefaultSunDirection;
             view.Switches = ViewSwitches.Shadows;
-            targets.Apply(meshes.Regions(slot, meshes.Upload(slot, frame / 60.0, in view)));
+            targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
         }
 
         void Settle(WorldMeshes meshes, FakeTargets targets, Vector3 at)
@@ -1112,7 +1136,7 @@ public sealed class WorldMeshesTests : IDisposable
             view.Switches |= ViewSwitches.Plain;
         }
 
-        var count = _meshes.Upload(slot, _frame / 60.0, in view, draws);
+        var count = Frame(_meshes, slot, _frame / 60.0, in view, draws);
         _targets.Apply(_meshes.Regions(slot, count));
         return slot;
     }

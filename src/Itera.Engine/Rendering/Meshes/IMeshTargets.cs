@@ -4,8 +4,8 @@ using Silk.NET.Vulkan;
 namespace Itera.Engine.Rendering.Meshes;
 
 /// <summary>
-/// Where <see cref="WorldMeshes"/> writes a frame's draws, and how large the heap it fills is: <see cref="MeshPass"/>,
-/// or memory of a test's own.
+/// Where <see cref="WorldMeshes"/> writes a frame's draws and <see cref="MeshView"/> its lighting record and lights, and
+/// how large the heap they fill is: <see cref="MeshPass"/>, or memory of a test's own.
 /// </summary>
 internal interface IMeshDrawTarget
 {

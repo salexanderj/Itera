@@ -40,10 +40,7 @@ void main()
     uint corner = BoxCorners[gl_VertexIndex];
     vec3 unit = vec3(corner & 1u, (corner >> 1) & 1u, (corner >> 2) & 1u) - 0.5;
     vec3 offset = particle.position - view.position + turnBy(turn, unit * size);
-    float depth = dot(offset, view.forward);
-    float x = dot(offset, view.right) / dot(view.right, view.right);
-    float y = dot(offset, view.up) / dot(view.up, view.up);
-    gl_Position = vec4(x, y, NearMetres, depth);
+    gl_Position = viewClip(offset);
 
     vec3 colour = mix(unpackUnorm4x8(recipe.colourStart).rgb, unpackUnorm4x8(recipe.colourEnd).rgb, life);
     outColour = colour * unpackUnorm4x8(particle.colour).rgb;
