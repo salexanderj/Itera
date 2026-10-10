@@ -99,7 +99,8 @@ lists the game's). Commonly used:
 A successful run logs the run's steps first: `Network: ready; no socket until a session starts`, `Steam: off ...` (the
 starter has no App ID; a game with one logs `Steam: signed in as ...` or a Warning), window, Vulkan instance, one line
 per physical device, the selected device, swapchain, input devices, shader compiler and its smoke test, audio device,
-`UI: Skia CPU surface ...`, `Loaded mod itera.samplemod`, `Audio: thread started ...`, `Render thread started`, `Engine
+`UI: Skia CPU surface ...`, `Loaded mod itera.samplemod`, `Mesh assets: N model(s), ... read in N ms` (the models the game declared; a file that
+cannot be read stops the run with exit code 1), `Audio: thread started ...`, `Render thread started`, `Engine
 ready ... entering main loop`. Then the match's: `Match 1: offline, seed N` (or `host, seed N`, `host through Steam,
 ...`, or `join ADDRESS`), `Session: offline, seed N` (or `hosting on UDP port ...`, `hosting through Steam ...`, or
 `joined ADDRESS in slot N, seed N; downloaded ...`; with a save name, a `Save: starting from NAME ...` or `Save: NAME

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Arch.Core;
+using Itera.Engine.Assets;
 using Itera.Engine.Diagnostics;
 using Itera.Engine.Input;
 using Itera.Engine.Rendering;
@@ -13,7 +14,8 @@ namespace Itera.Engine.Matches;
 /// <summary>
 /// The run's side of matches played without a window or GPU, for tests and tools: from a game's composed services
 /// (<c>AddIteraEngine</c> and the game's own), it makes the game's run-wide registries once (<see cref="IRunStartup"/>),
-/// as the run's game step does, and plays offline matches (<see cref="Play"/>). Nothing is drawn, heard, or loaded from
+/// as the run's game step does, reads the mesh assets they declared without their textures, as the run's mesh assets
+/// step does without graphics, and plays offline matches (<see cref="Play"/>). Nothing is drawn, heard, or loaded from
 /// mods. Main thread.
 /// </summary>
 public sealed class HeadlessRun
@@ -29,6 +31,8 @@ public sealed class HeadlessRun
         {
             startup.Start();
         }
+
+        services.GetRequiredService<MeshAssets>().LoadAll(textures: false);
     }
 
     /// <summary>Starts an offline match of <paramref name="seed"/>: its session and world steps run now.</summary>

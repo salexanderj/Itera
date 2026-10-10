@@ -1,0 +1,535 @@
+using System.Buffers.Binary;
+using System.Numerics;
+using System.Text.Json;
+using Itera.Engine.Rendering.GpuData;
+using SharpGLTF.Schema2;
+using SharpGLTF.Validation;
+
+namespace Itera.Engine.Assets;
+
+/// <summary>
+/// Reads a glTF 2.0 file (.gltf with its buffers and images, or .glb) into a <see cref="MeshAsset"/>: the only code that
+/// uses SharpGLTF, which it runs at load alone; the asset holds the engine's own arrays. What it does:
+/// <list type="bullet">
+/// <item>Refuses a file that requires an extension it cannot read (compressed geometry, Basis textures, any other not
+/// listed in <see cref="s_handled"/>), with a message naming the file and the extension.</item>
+/// <item>Walks the default scene's nodes: each mesh's triangles (strips and fans too; points and lines are left out)
+/// with the node's world transform and the unit scale baked into its vertices, the winding flipped where the transform
+/// mirrors. A skinned mesh is kept in the space its file stores it in, as glTF asks (its node's own transform does not
+/// apply).</item>
+/// <item>Gives triangles without normals flat ones (each its own three vertices, as glTF asks), and normal-mapped
+/// materials' vertices without tangents generated ones (<see cref="MeshTangents"/>).</item>
+/// <item>Reads each material's factors and textures; decodes each image a material uses (<see cref="TextureDecode"/>)
+/// and makes its mip levels in the role's format (<see cref="MipChain"/>). An image it cannot decode leaves the
+/// material's factor alone, with a warning.</item>
+/// </list>
+/// Warnings go into the list given, for the caller to log. Allocates freely: load time only.
+/// </summary>
+internal static class GltfImport
+{
+    /// <summary>Extensions a file may require that the importer reads: quantised accessors, and an emission strength.</summary>
+    private static readonly string[] s_handled = ["KHR_mesh_quantization", "KHR_materials_emissive_strength"];
+
+    /// <summary>The 'glTF' magic number at the start of a .glb file, and its JSON chunk's type.</summary>
+    private const uint GlbMagic = 0x46546C67;
+    private const uint GlbJsonChunk = 0x4E4F534A;
+
+    /// <summary>
+    /// Reads the file at <paramref name="path"/>; with <paramref name="textures"/> false (a run without graphics) its
+    /// images are not decoded and its materials name none. Throws <see cref="InvalidDataException"/> for a file it
+    /// cannot read, naming it.
+    /// </summary>
+    public static MeshAsset Load(string name, string path, float metresPerUnit, bool textures, List<string> warnings)
+    {
+        RefuseUnhandled(path, ReadRequiredExtensions(path));
+        ModelRoot model;
+        try
+        {
+            model = ModelRoot.Load(path, new ReadSettings { Validation = ValidationMode.TryFix });
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            throw new InvalidDataException($"{path}: not a glTF 2.0 file the importer can read: {ex.Message}", ex);
+        }
+
+        return Import(name, path, model, metresPerUnit, textures, warnings);
+    }
+
+    /// <summary>
+    /// The extensions the file lists as required, read from its JSON before SharpGLTF reads it (which fails on some
+    /// without saying which).
+    /// </summary>
+    internal static string[] ReadRequiredExtensions(string path)
+    {
+        var bytes = File.ReadAllBytes(path);
+        var json = bytes.AsMemory();
+        if (bytes.Length >= 20 && BinaryPrimitives.ReadUInt32LittleEndian(bytes) == GlbMagic)
+        {
+            var length = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12));
+            if (
+                BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(16)) != GlbJsonChunk
+                || length < 0
+                || length > bytes.Length - 20
+            )
+            {
+                throw new InvalidDataException($"{path}: a .glb file whose first chunk is not its JSON");
+            }
+
+            json = bytes.AsMemory(20, length);
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (
+                document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("extensionsRequired", out var required)
+                || required.ValueKind != JsonValueKind.Array
+            )
+            {
+                return [];
+            }
+
+            return [.. required.EnumerateArray().Select(element => element.GetString() ?? "")];
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException($"{path}: its JSON does not parse: {ex.Message}", ex);
+        }
+    }
+
+    private static void RefuseUnhandled(string path, string[] required)
+    {
+        foreach (var extension in required)
+        {
+            if (s_handled.Contains(extension, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            var what = extension switch
+            {
+                "KHR_draco_mesh_compression" or "EXT_meshopt_compression" or "KHR_meshopt_compression" =>
+                    " (compressed geometry)",
+                "KHR_texture_basisu" => " (Basis Universal textures)",
+                _ => "",
+            };
+            throw new InvalidDataException(
+                $"{path} requires the glTF extension {extension}{what}, which Itera does not read: export the model without it"
+            );
+        }
+    }
+
+    private static MeshAsset Import(
+        string name,
+        string path,
+        ModelRoot model,
+        float metresPerUnit,
+        bool textures,
+        List<string> warnings
+    )
+    {
+        var context = new ImportContext(path, textures, warnings);
+        if (model.ExtensionsUsed.Contains("KHR_texture_transform", StringComparer.Ordinal))
+        {
+            context.Warn("uses KHR_texture_transform, which is not applied: textures may sit wrongly");
+        }
+
+        foreach (var material in model.LogicalMaterials)
+        {
+            context.Materials.Add(ReadMaterial(material, context));
+        }
+
+        var scene = model.DefaultScene ?? (model.LogicalScenes.Count > 0 ? model.LogicalScenes[0] : null);
+        if (scene is null)
+        {
+            context.Warn("has no scene: no triangles");
+        }
+        else
+        {
+            var scale = Matrix4x4.CreateScale(metresPerUnit);
+            foreach (var node in scene.VisualChildren)
+            {
+                AddNode(node, scale, context);
+            }
+        }
+
+        return new MeshAsset(
+            name,
+            [.. context.Vertices],
+            [.. context.Indices],
+            [.. context.Primitives],
+            [.. context.Materials],
+            [.. context.Textures]
+        );
+    }
+
+    private static void AddNode(Node node, Matrix4x4 scale, ImportContext context)
+    {
+        if (node.Mesh is { } mesh)
+        {
+            // glTF: a skinned mesh's node transform does not apply; its joints place it.
+            var transform = (node.Skin is null ? node.WorldMatrix : Matrix4x4.Identity) * scale;
+            foreach (var primitive in mesh.Primitives)
+            {
+                AddPrimitive(primitive, transform, context);
+            }
+        }
+
+        foreach (var child in node.VisualChildren)
+        {
+            AddNode(child, scale, context);
+        }
+    }
+
+    private static void AddPrimitive(
+        SharpGLTF.Schema2.MeshPrimitive primitive,
+        Matrix4x4 transform,
+        ImportContext context
+    )
+    {
+        if (
+            primitive.DrawPrimitiveType
+            is not (PrimitiveType.TRIANGLES or PrimitiveType.TRIANGLE_STRIP or PrimitiveType.TRIANGLE_FAN)
+        )
+        {
+            context.Warn($"has {primitive.DrawPrimitiveType} primitives, which are not drawn");
+            return;
+        }
+
+        if (primitive.GetVertexAccessor("POSITION") is not { } positionAccessor)
+        {
+            context.Warn("has a primitive without positions, which is not drawn");
+            return;
+        }
+
+        if (primitive.MorphTargetsCount > 0)
+        {
+            context.Warn("has morph targets, which are not drawn: the base shape is");
+        }
+
+        var materialIndex = primitive.Material?.LogicalIndex ?? context.DefaultMaterial();
+        var material = context.Materials[materialIndex];
+        var sourcePositions = positionAccessor.AsVector3Array();
+        var sourceNormals = primitive.GetVertexAccessor("NORMAL")?.AsVector3Array();
+        var sourceTangents = primitive.GetVertexAccessor("TANGENT")?.AsVector4Array();
+        var sourceUv0 = primitive.GetVertexAccessor("TEXCOORD_0")?.AsVector2Array();
+        var sourceUv1 = primitive.GetVertexAccessor("TEXCOORD_1")?.AsVector2Array();
+        var sourceColours = primitive.GetVertexAccessor("COLOR_0")?.AsColorArray(1f);
+        var mirrored = transform.GetDeterminant() < 0;
+        if (!Matrix4x4.Invert(transform, out var inverse))
+        {
+            context.Warn("has a mesh whose node transform cannot be inverted (a zero scale), which is not drawn");
+            return;
+        }
+
+        var normalTransform = Matrix4x4.Transpose(inverse);
+
+        // The primitive's vertices in their final form, and its triangles over them (each primitive's own, from 0).
+        var positions = new List<Vector3>();
+        var normals = new List<Vector3>();
+        var tangents = new List<Vector4>();
+        var uv0 = new List<Vector2>();
+        var uv1 = new List<Vector2>();
+        var colours = new List<Vector4>();
+        var triangles = new List<uint>();
+        void Add(int source, Vector3 normal)
+        {
+            positions.Add(Vector3.Transform(sourcePositions[source], transform));
+            normals.Add(normal);
+            uv0.Add(sourceUv0 is null ? Vector2.Zero : sourceUv0[source]);
+            uv1.Add(sourceUv1 is null ? Vector2.Zero : sourceUv1[source]);
+            colours.Add(sourceColours is null ? Vector4.One : sourceColours[source]);
+            if (sourceTangents is not null)
+            {
+                var t = sourceTangents[source];
+                var turned = SafeNormalize(
+                    Vector3.TransformNormal(new Vector3(t.X, t.Y, t.Z), transform),
+                    Vector3.UnitX
+                );
+                // A mirroring transform turns the bitangent the other way round its normal and tangent.
+                tangents.Add(new Vector4(turned, (t.W < 0 ? -1 : 1) * (mirrored ? -1 : 1)));
+            }
+            else
+            {
+                tangents.Add(new Vector4(1, 0, 0, 1));
+            }
+        }
+
+        if (sourceNormals is null)
+        {
+            // glTF: without normals, flat ones; each triangle its own vertices.
+            foreach (var (a, b, c) in primitive.GetTriangleIndices())
+            {
+                var (first, second) = mirrored ? (c, b) : (b, c);
+                var pa = Vector3.Transform(sourcePositions[a], transform);
+                var pb = Vector3.Transform(sourcePositions[first], transform);
+                var pc = Vector3.Transform(sourcePositions[second], transform);
+                var normal = SafeNormalize(Vector3.Cross(pb - pa, pc - pa), Vector3.UnitY);
+                var start = (uint)positions.Count;
+                Add(a, normal);
+                Add(first, normal);
+                Add(second, normal);
+                triangles.Add(start);
+                triangles.Add(start + 1);
+                triangles.Add(start + 2);
+            }
+        }
+        else
+        {
+            for (var i = 0; i < sourcePositions.Count; i++)
+            {
+                Add(i, SafeNormalize(Vector3.TransformNormal(sourceNormals[i], normalTransform), Vector3.UnitY));
+            }
+
+            foreach (var (a, b, c) in primitive.GetTriangleIndices())
+            {
+                triangles.Add((uint)a);
+                triangles.Add((uint)(mirrored ? c : b));
+                triangles.Add((uint)(mirrored ? b : c));
+            }
+        }
+
+        if (sourceTangents is null && !material.NormalTexture.IsNone)
+        {
+            var tangentArray = new Vector4[positions.Count];
+            var uvs = material.NormalTexture.UvSet == 1 ? uv1 : uv0;
+            MeshTangents.Generate([.. positions], [.. normals], [.. uvs], [.. triangles], tangentArray);
+            tangents.Clear();
+            tangents.AddRange(tangentArray);
+        }
+
+        var vertexBase = (uint)context.Vertices.Count;
+        for (var i = 0; i < positions.Count; i++)
+        {
+            context.Vertices.Add(
+                MeshAssetVertex.Pack(positions[i], normals[i], tangents[i], uv0[i], uv1[i], colours[i])
+            );
+        }
+
+        context.Primitives.Add(new MeshPrimitive(context.Indices.Count, triangles.Count, materialIndex));
+        foreach (var index in triangles)
+        {
+            context.Indices.Add(vertexBase + index);
+        }
+    }
+
+    private static MeshMaterialData ReadMaterial(Material material, ImportContext context)
+    {
+        var data = new MeshMaterialData
+        {
+            Name = material.Name ?? "",
+            AlphaMode = material.Alpha switch
+            {
+                AlphaMode.MASK => MeshAlphaMode.Mask,
+                AlphaMode.BLEND => MeshAlphaMode.Blend,
+                _ => MeshAlphaMode.Opaque,
+            },
+            AlphaCutoff = material.AlphaCutoff,
+            DoubleSided = material.DoubleSided,
+        };
+        if (material.Unlit)
+        {
+            context.Warn($"material '{material.Name}' is unlit (KHR_materials_unlit), which is drawn lit");
+        }
+
+        if (material.FindChannel("BaseColor") is { } baseColour)
+        {
+            data = data with
+            {
+                BaseColour = Parameter(baseColour, "RGBA", Vector4.One),
+                BaseColourTexture = ReadTexture(baseColour, MeshTextureRole.Colour, context),
+            };
+        }
+
+        if (material.FindChannel("MetallicRoughness") is { } metalRough)
+        {
+            data = data with
+            {
+                Metallic = Parameter(metalRough, "MetallicFactor", 1f),
+                Roughness = Parameter(metalRough, "RoughnessFactor", 1f),
+                MetalRoughTexture = ReadTexture(metalRough, MeshTextureRole.Linear, context),
+            };
+        }
+
+        if (material.FindChannel("Normal") is { } normal)
+        {
+            data = data with
+            {
+                NormalScale = Parameter(normal, "NormalScale", 1f),
+                NormalTexture = ReadTexture(normal, MeshTextureRole.Normal, context),
+            };
+        }
+
+        if (material.FindChannel("Occlusion") is { } occlusion)
+        {
+            data = data with
+            {
+                OcclusionStrength = Parameter(occlusion, "OcclusionStrength", 1f),
+                OcclusionTexture = ReadTexture(occlusion, MeshTextureRole.Linear, context),
+            };
+        }
+
+        if (material.FindChannel("Emissive") is { } emissive)
+        {
+            data = data with
+            {
+                Emission = Parameter(emissive, "RGB", Vector3.Zero) * Parameter(emissive, "EmissiveStrength", 1f),
+                EmissionTexture = ReadTexture(emissive, MeshTextureRole.Colour, context),
+            };
+        }
+
+        return data;
+    }
+
+    /// <summary>The channel's parameter of that name, or <paramref name="fallback"/>.</summary>
+    private static T Parameter<T>(MaterialChannel channel, string name, T fallback)
+    {
+        foreach (var parameter in channel.Parameters)
+        {
+            if (string.Equals(parameter.Name, name, StringComparison.Ordinal) && parameter.Value is T value)
+            {
+                return value;
+            }
+        }
+
+        return fallback;
+    }
+
+    /// <summary>
+    /// The channel's texture, decoded and mipped in <paramref name="role"/>'s format the first time an image is used in
+    /// that role; none when the channel has none, the run decodes no textures, or the image cannot be decoded.
+    /// </summary>
+    private static MeshTextureRef ReadTexture(MaterialChannel channel, MeshTextureRole role, ImportContext context)
+    {
+        if (channel.Texture is not { } texture || !context.DecodesTextures)
+        {
+            return MeshTextureRef.None;
+        }
+
+        var uvSet = channel.TextureCoordinate;
+        if (uvSet is not (0 or 1))
+        {
+            context.Warn($"a texture reads texture coordinates {uvSet}; the first are used");
+            uvSet = 0;
+        }
+
+        var sampler = SamplerOf(texture.Sampler, context);
+        if ((texture.PrimaryImage ?? texture.FallbackImage) is not { } image)
+        {
+            context.Warn($"texture {texture.LogicalIndex} has no image: drawn without it");
+            return MeshTextureRef.None;
+        }
+
+        var key = (image.LogicalIndex, role);
+        if (context.TextureIndices.TryGetValue(key, out var existing))
+        {
+            return existing < 0 ? MeshTextureRef.None : new MeshTextureRef(existing, sampler, uvSet);
+        }
+
+        var index = Decode(image, role, context);
+        context.TextureIndices[key] = index;
+        return index < 0 ? MeshTextureRef.None : new MeshTextureRef(index, sampler, uvSet);
+    }
+
+    /// <summary>Decodes the image (once for every role) and makes its mip chain in the role's format; -1 when it cannot.</summary>
+    private static int Decode(Image image, MeshTextureRole role, ImportContext context)
+    {
+        if (!context.Decoded.TryGetValue(image.LogicalIndex, out var decoded))
+        {
+            var content = image.Content;
+            decoded =
+                !content.IsEmpty
+                && TextureDecode.TryDecode(content.Content.Span, out var width, out var height, out var rgba)
+                    ? (width, height, rgba)
+                    : null;
+            context.Decoded[image.LogicalIndex] = decoded;
+            if (decoded is null)
+            {
+                var kind = content.IsEmpty ? "missing" : content.MimeType;
+                context.Warn(
+                    $"image {image.LogicalIndex} ({kind}) cannot be decoded: its materials are drawn without it"
+                );
+            }
+        }
+
+        if (decoded is not var (w, h, texels))
+        {
+            return -1;
+        }
+
+        var chain = MipChain.Build(texels, w, h, role, out var format, out var levels);
+        var name = $"{Path.GetFileName(context.Path)} image {image.LogicalIndex} ({role})";
+        context.Textures.Add(new MeshTextureData(name, w, h, levels, role, format, chain));
+        return context.Textures.Count - 1;
+    }
+
+    /// <summary>glTF's sampler as the engine's: nearest when its magnification filter is, its wrap along s for both directions.</summary>
+    private static MeshSampler SamplerOf(TextureSampler? sampler, ImportContext context)
+    {
+        if (sampler is null)
+        {
+            return MeshSampler.LinearRepeat;
+        }
+
+        if (sampler.WrapS != sampler.WrapT && !context.WrapWarned)
+        {
+            context.WrapWarned = true;
+            context.Warn("a sampler wraps differently along t than along s; both wrap as along s");
+        }
+
+        var nearest = sampler.MagFilter == TextureInterpolationFilter.NEAREST;
+        return sampler.WrapS switch
+        {
+            TextureWrapMode.CLAMP_TO_EDGE => nearest ? MeshSampler.NearestClamp : MeshSampler.LinearClamp,
+            TextureWrapMode.MIRRORED_REPEAT => nearest ? MeshSampler.NearestMirror : MeshSampler.LinearMirror,
+            _ => nearest ? MeshSampler.NearestRepeat : MeshSampler.LinearRepeat,
+        };
+    }
+
+    private static Vector3 SafeNormalize(Vector3 value, Vector3 fallback)
+    {
+        var length = value.Length();
+        return length > 1e-12f && float.IsFinite(length) ? value / length : fallback;
+    }
+
+    /// <summary>What an import gathers: the asset's arrays as they grow, its decoded images, and its warnings.</summary>
+    private sealed class ImportContext(string path, bool decodesTextures, List<string> warnings)
+    {
+        private int _defaultMaterial = -1;
+
+        public string Path { get; } = path;
+
+        public bool DecodesTextures { get; } = decodesTextures;
+
+        public List<MeshAssetVertex> Vertices { get; } = [];
+
+        public List<uint> Indices { get; } = [];
+
+        public List<MeshPrimitive> Primitives { get; } = [];
+
+        public List<MeshMaterialData> Materials { get; } = [];
+
+        public List<MeshTextureData> Textures { get; } = [];
+
+        public Dictionary<(int Image, MeshTextureRole Role), int> TextureIndices { get; } = [];
+
+        public Dictionary<int, (int Width, int Height, byte[] Rgba)?> Decoded { get; } = [];
+
+        public bool WrapWarned { get; set; }
+
+        public void Warn(string message) => warnings.Add($"{System.IO.Path.GetFileName(Path)} {message}");
+
+        /// <summary>The index of glTF's default material, added the first time a primitive names none.</summary>
+        public int DefaultMaterial()
+        {
+            if (_defaultMaterial < 0)
+            {
+                Materials.Add(MeshMaterialData.Default);
+                _defaultMaterial = Materials.Count - 1;
+            }
+
+            return _defaultMaterial;
+        }
+    }
+}

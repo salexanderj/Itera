@@ -39,6 +39,11 @@
     <PackageVersion Include="BCnEncoder.Net" Version="2.3.0" />
   </ItemGroup>
 
+  <ItemGroup Label="Models">
+    <!-- glTF 2.0 files read at load (MIT); the engine copies what it needs into its own arrays (Assets/GltfImport). -->
+    <PackageVersion Include="SharpGLTF.Core" Version="1.0.7" />
+  </ItemGroup>
+
   <ItemGroup Label="Networking">
     <PackageVersion Include="LiteNetLib" Version="2.1.4" />
     <!-- Steam's natives for this version are in src/Itera.Engine/Native/Steam; change them together. -->

@@ -59,6 +59,7 @@ Versions are pinned in `Directory.Packages.props` (central package management).
 | BepuPhysics + BepuUtilities | 2.5.0-beta.29 | Rigid body physics: loose bodies against the voxels (characters move with Itera's own mover) | Fast, SIMD-based, actively maintained. The 2.4 stable line only targets net6.0 and is old. |
 | SkiaSharp + SkiaSharp.NativeAssets.Linux | 4.152.1 | 2D UI drawing | Solid text and vector rendering. Linux needs the explicit native package; Windows and macOS natives come with the main package. |
 | BCnEncoder.Net | 2.3.0 | Block-compressed texture encoding, in `tools/Textures` | Pure managed BC1 to BC7 encoder. |
+| SharpGLTF.Core | 1.0.7 | Reads glTF 2.0 models (`Assets/GltfImport`), at load only | MIT, no dependencies, reads .gltf and .glb with skins and animations; the engine copies what it needs into its own arrays. It cannot read Draco or meshopt compression, which the importer refuses by name. |
 | LiteNetLib | 2.1.4 | UDP transport and reliability for sessions over LAN and direct addresses | Small, dependency free, widely used for .NET games. |
 | Steamworks.NET | 2024.8.0 (Steamworks SDK 1.60) | Internet play: Steam's networking sockets and relays (no port to open), friends-only lobbies, rich presence for joining from the friends list | A thin, faithful wrapper of the C++ API (MIT). The package has no native libraries: Valve's `steam_api` for Linux x64, macOS (universal), and Windows x64 from the same release are in `src/Itera.Engine/Native/Steam/` and copied next to the game. |
 | Microsoft.Extensions.Hosting / DependencyInjection / Logging / Options | 10.0.12 | Configuration, DI, logging | Standard .NET application plumbing. |
@@ -151,7 +152,8 @@ Rules:
 | `Ecs/` | `EcsWorld` (Arch world plus fixed and frame system groups), `IFixedUpdateSystem`, `IFrameUpdateSystem`, `EcsChecks` and `CheckedWorldExtensions` (Debug-only precondition checks for Arch calls) |
 | `Components/` | The ECS components the engine's systems share: cameras, characters and players, loose bodies, and `NetEntity` |
 | `Systems/` | The systems a game registers: the player, the cameras, physics glue, streaming centres, the benchmark, and debug aids (see "The engine's components and systems") |
-| `Maths/` | `DeterministicMath`, `Rotation`, and `RigidTransform` |
+| `Maths/` | `DeterministicMath`, `Rotation`, `RigidTransform`, and `Octahedral` (the packed normals and tangents of mesh vertices) |
+| `Assets/` | Mesh assets (`MeshAsset`, `MeshAssets`): models read from glTF files at the run's "mesh assets" step (`GltfImport`, `TextureDecode`, `MipChain`, `MeshTangents`) and meshes a game builds |
 | `Animation/` | Skeletons, poses, clips, aim, and foot placement |
 | `Physics/` | `PhysicsWorld` (Bepu simulation, pool, thread dispatcher, shared voxel box shapes, characters' stand-ins), callbacks, `BodyKinds`, `VoxelColliders`, `LooseBodies`, `LooseBodyVoxels`, `SolidModelVoxels` and `SolidColumns`, `VoxelCharacterMover` |
 | `Voxels/` | `VoxelWorld` (streaming, edits, change list, stats, `Raycast`, collision queries, block reads), `VoxelGrid` and `GridLevel`, `VoxelDensity`, `IVoxelPassability`, `VoxelBoxes`, `VoxelMemory` (native block pools), `BrickCodec`, `ChunkTree`, `Column`, `VoxelEditing` and `VoxelEdit`, `VoxelPiece` and `PieceRuns`, `VoxelModels` (small voxel volumes drawn at any position and turn), `EditLog` and `EditLogSerializer`, `VoxelChangeLog`, `IChunkGenerator`, `VoxelWorkers` and `ColumnJob`, `LevelDistances`, `StreamingCentre`, `VoxelConstants` |

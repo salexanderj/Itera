@@ -74,8 +74,11 @@ Where tests live:
 - `Itera.Engine.Tests/Voxels/Generation/`: the shapes' row spans against point tests, fractal noise, the jittered grid,
   the scalar field, the field tint map with `VoxelTintSampler`, and the heightfield generator (every description against
   its filled voxels, fills against a voxel-by-voxel reference, `HillsGenerator`).
-- `Itera.Engine.Tests/Maths/` and `Animation/`: the deterministic maths and rotations, and skeletons, clips, aiming, and
-  foot IK over a humanoid test skeleton (`HumanoidTestSkeleton`).
+- `Itera.Engine.Tests/Maths/` and `Animation/`: the deterministic maths and rotations, the octahedral encoding, and
+  skeletons, clips, aiming, and foot IK over a humanoid test skeleton (`HumanoidTestSkeleton`).
+- `Itera.Engine.Tests/Assets/`: glTF files written in the test (`GltfBuilder`: accessors over a data-URI buffer or a
+  .glb's BIN chunk, PNG images) read by `GltfImportTests`; `MeshAssetsTests`, `TextureDecodeTests`, `MipChainTests`,
+  `MeshTangentsTests`.
 - `Itera.Engine.Tests/Physics/`: the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves) and
   10,000 random moves that never leave it inside a voxel; wide bodies (`WideBodyMoverTests`); statics of voxel boxes,
   coarse colliders (`CoarseCollidersTests`), ragdolls (`RagdollTests`), thrown and settled pieces, the mover among

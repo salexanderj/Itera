@@ -45,6 +45,10 @@
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
   </ItemGroup>
 
+  <ItemGroup Label="Models">
+    <PackageReference Include="SharpGLTF.Core" />
+  </ItemGroup>
+
   <ItemGroup Label="Networking">
     <PackageReference Include="LiteNetLib" />
     <PackageReference Include="Steamworks.NET" />

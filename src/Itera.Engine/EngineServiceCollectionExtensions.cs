@@ -1,3 +1,4 @@
+using Itera.Engine.Assets;
 using Itera.Engine.Audio;
 using Itera.Engine.Commands;
 using Itera.Engine.Control;
@@ -81,6 +82,7 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<WorldMeshes>();
         services.TryAddSingleton<MeshPass>();
         services.TryAddSingleton<MeshView>();
+        services.TryAddSingleton<MeshAssets>();
         services.TryAddSingleton<NoGpuWorld>();
         // Without graphics nothing is uploaded: the loading screen waits on the stand-in.
         services.TryAddSingleton<IWorldOnGpu>(sp =>

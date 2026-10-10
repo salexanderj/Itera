@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Itera.Engine.Assets;
 using Itera.Engine.Audio;
 using Itera.Engine.Commands;
 using Itera.Engine.Control;
@@ -93,6 +94,7 @@ public sealed partial class GameLoop
     private readonly EngineCommands _engineCommands;
     private readonly ParticleCommands _particleCommands;
     private readonly ModLoader _mods;
+    private readonly MeshAssets _meshAssets;
     private readonly EngineSteps _steps;
     private readonly float _maxViewDistance;
     private readonly AudioService _audio;
@@ -160,6 +162,7 @@ public sealed partial class GameLoop
         AudioService audio,
         SoundCommands soundCommands,
         ModLoader mods,
+        MeshAssets meshAssets,
         ControlService control,
         Screenshots screenshots,
         ScreenshotPass screenshotPass,
@@ -219,6 +222,7 @@ public sealed partial class GameLoop
         _audio = audio;
         _soundCommands = soundCommands;
         _mods = mods;
+        _meshAssets = meshAssets;
         _control = control;
         _screenshots = screenshots;
         _screenshotPass = screenshotPass;
@@ -372,6 +376,8 @@ public sealed partial class GameLoop
             new("ui", InitializeUi, ShutdownUi),
             new("game", StartGame, () => { }),
             new("mods", () => _mods.LoadAll(), ShutdownMods),
+            // After the game's and the mods' startups, which declare their models; textures only with graphics.
+            new("mesh assets", () => _meshAssets.LoadAll(_window.Graphics), () => { }),
             new("audio thread", _audio.Start, () => _audio.Stop()),
             new("render thread", () => _renderThread.Start(_window.FramebufferSize), StopRenderThread),
             new("control", _control.Initialize, _control.Dispose),

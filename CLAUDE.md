@@ -66,6 +66,7 @@ used as references.
     data folder's `settings.json`, so in any other folder they change the player's.
 - Where the details are (read the area's file before changing it):
   - Rendering, shaders, shadows, render scale, the window: `.claude/rules/rendering.md`.
+  - Mesh assets (models read from glTF files, their materials and textures): `.claude/rules/mesh-assets.md`.
   - The voxel world, edits, streaming, and world generation: `.claude/rules/voxels.md`.
   - Loose bodies, ragdolls, the character mover, and Bepu: `.claude/rules/physics.md`.
   - The engine's components and systems (the player, cameras, streaming, the benchmark): `.claude/rules/systems.md`.
