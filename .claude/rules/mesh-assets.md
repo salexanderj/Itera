@@ -10,7 +10,8 @@ paths:
 ## Mesh assets: models from glTF files
 
 A mesh asset (`MeshAsset`, `src/Itera.Engine/Assets/`, namespace `Itera.Engine.Assets`) is a mesh drawn as triangles with
-texture coordinates, not voxels: a model read from a glTF 2.0 file, or one a game builds in code. Its vertices
+texture coordinates, not voxels: a model read from a glTF 2.0 file, or one a game builds in code (its textures from
+RGBA8 texels with `MeshTextureData.FromRgba`, which makes the mips; `samples/Itera.MeshSample`'s `Yard`). Its vertices
 (`MeshAssetVertex`, 36 bytes, upload-ready: a float position in the asset's space in metres, the normal and the tangent
 in `Octahedral` encodings with the bitangent's sign in the tangent word's top bit, two sets of texture coordinates, and
 a linear RGBA colour) and its 32-bit indices (three a triangle, counter-clockwise from the front, into its own vertices)

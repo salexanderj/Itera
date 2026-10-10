@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- As Game.Tests: every method compiled optimised at its first call, for the zero-allocation tests. -->
+    <TieredCompilation>false</TieredCompilation>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup Label="Helpers shared by the test projects that use Arch">
+    <Compile Include="..\Shared\*.cs" Exclude="..\Shared\WireFingerprint.cs" LinkBase="Shared" />
+    <None Include="..\Shared\xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <Using Include="Itera.TestSupport" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\samples\Itera.MeshSample\Itera.MeshSample.csproj" />
+  </ItemGroup>
+</Project>

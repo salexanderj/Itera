@@ -88,6 +88,7 @@ src/Itera.Modding            the mod contract: IGameMod, IModContext, ModManifes
 src/Itera.Engine             everything that is not specific to one game
 src/Game                     the starter game: the executable, its composition, a generator, a palette, a start pose
 samples/Itera.SampleMod      reference mod, copied into the game's Mods/ folder on build
+samples/Itera.MeshSample     a game without voxel terrain: mesh ground and blocks with colliders, the fox, climbing, balls
 tools/benchmark              scripts that run the GPU benchmark (Engine:Benchmark) and compare runs
 tools/control                game.py: starts a game from a copy of the build and drives it through the control port
 tools/steam                  upload.sh: tests, publishes, and uploads a build to a Steam branch
@@ -95,6 +96,7 @@ tools/Textures               makes the world materials' texture sets (compressed
 tests/Itera.Modding.Tests    manifest parsing and validation
 tests/Itera.Engine.Tests     the engine: see below
 tests/Game.Tests             the starter: its composition and system order, shipped settings, options, and generator
+tests/Itera.MeshSample.Tests the mesh sample played without a window, its yard's meshes, and its fox
 tests/Shared                 helpers compiled into the test projects that use them (SystemAllocation, ArchStartup,
                              SerialCollectionDefinition, RunsLongAttribute and LongFirstCollectionOrderer, VoxelLoading,
                              FakeTransport, HostileValues and Watchdog, WireFingerprint, LayerInk)
@@ -1303,8 +1305,8 @@ of buffers.
 Engine work that is known and not done:
 
 - **Voxels optional, the rest.** A match runs without voxel terrain (no generator, no `AddIteraVoxels`), its characters
-  and loose bodies moving over mesh colliders and its voxel models drawn. A sample game without voxel terrain is planned
-  (the mesh path's phase 5).
+  and loose bodies moving over mesh colliders and its voxel models drawn (`samples/Itera.MeshSample` is such a game).
+  Offline compressed textures for mesh assets are planned (the mesh path's phase 6).
 - **Per-game look data in the shaders.** The art direction's constants (saturation and darkening of the world, the side
   shading, the warm and cool light, the split tone, the occlusion floor, the fog and sky light terms) sit in `mesh.frag` and
   `lighting.glsl`. They should be data a game sets, with today's values as the starter's defaults.

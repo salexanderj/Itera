@@ -27,7 +27,8 @@ in step 5.
    longer duration, e.g. `validate.sh 35`). `validate.sh --offscreen [seconds] [arguments]` runs without a window
    (`Engine:Window:Mode=Offscreen`), which checks every pass but the window's own presentation. The default run is 25 s: a Debug build shows the loading screen for about
    3.5 s, and the world, models, fade, and upscale are drawn only after it; a run shorter than about 10 s checks only the
-   loading pass.
+   loading pass. `validate.sh --binary PATH` validates another program on the engine instead of the starter (such as
+   `samples/Itera.MeshSample`'s Debug build, which has no voxel terrain).
 6. In the summary to the user, state which validation checks ran and what they reported.
 
 ## Rules

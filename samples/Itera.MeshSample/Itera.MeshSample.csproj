@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    A sample game without voxel terrain: mesh ground and blocks built in code, with mesh colliders, the starter's fox,
+    a player who walks and climbs, and loose bodies (the console's balls). It shows what a game on Itera needs when it
+    calls no AddIteraVoxels. README.md says how to run it.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>Itera.MeshSample</AssemblyName>
+    <RootNamespace>Itera.MeshSample</RootNamespace>
+    <RuntimeIdentifiers>$(IteraSupportedRids)</RuntimeIdentifiers>
+    <ApplicationIcon />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Itera.Engine\Itera.Engine.csproj" />
+    <ProjectReference Include="..\..\src\Itera.Modding\Itera.Modding.csproj" />
+  </ItemGroup>
+
+  <!-- The starter's fox (credits in src/Game/Models/SOURCES.md), copied to Models/Fox/ next to the executable. -->
+  <ItemGroup>
+    <None
+      Include="..\..\src\Game\Models\Fox\*"
+      Link="Models\Fox\%(Filename)%(Extension)"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

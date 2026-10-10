@@ -57,8 +57,8 @@ of players and bodies, and saving the game's own state.
    shadows, skinned models posed by their clips on the GPU (`.claude/rules/rendering.md`, "Mesh assets"); matches,
    sessions, and saves without voxel terrain; mesh colliders that rays, loose bodies, and the character mover meet;
    voxel models and loose bodies without terrain, drawn there too; clip cross-fades; movement building blocks (wall
-   normals, probes, a movement mode hook) and the starter's climbing. Next: a sample game without voxel terrain, then
-   compressed textures made offline.
+   normals, probes, a movement mode hook) and climbing (`ClimbingMode`); a sample game without voxel terrain
+   (`samples/Itera.MeshSample`). Next: compressed textures made offline.
 2. Rendering a game can extend: its own passes, transparency, look data, a moving sun, other cameras and views.
 3. A map size the game sets, with origin shifting.
 4. Gamepads, typed text, sound files and music, a menu a game can replace.

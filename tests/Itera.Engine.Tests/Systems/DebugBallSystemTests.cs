@@ -7,8 +7,8 @@ using Itera.Modding;
 namespace Itera.Engine.Tests.Systems;
 
 /// <summary>
-/// The console's <c>balls</c>: the next step drops the asked number of balls in a row 3 m in front of the camera, each a
-/// loose body with its entity, they fall, and a step without a request does nothing and allocates nothing.
+/// The console's <c>balls</c>: the next step with a camera drops the asked number of balls in a row 3 m in front of it,
+/// each a loose body with its entity, they fall, and a step without a request does nothing and allocates nothing.
 /// </summary>
 public sealed class DebugBallSystemTests
 {
@@ -40,6 +40,24 @@ public sealed class DebugBallSystemTests
             in s_bodies,
             (ref LooseBody body) => Assert.True(harness.Bodies.PivotOf(body.Body).Y < 0.9f, "A ball did not fall.")
         );
+    }
+
+    [Fact]
+    public void A_request_waits_for_a_camera()
+    {
+        using var harness = new PhysicsTestHarness();
+        using var world = World.Create();
+        using var system = new DebugBallSystem(world, harness.Bodies, harness.Voxels);
+        system.Initialize();
+
+        system.Request(2);
+        system.Update(new FixedStepTime(PhysicsTestHarness.Step, 0));
+        var before = world.CountEntities(in s_bodies);
+        world.Create(new CameraPose { Position = new Vector3(0, 1, 0) }, new ActiveCamera());
+        system.Update(new FixedStepTime(PhysicsTestHarness.Step, 1));
+
+        Assert.Equal(0, before);
+        Assert.Equal(2, world.CountEntities(in s_bodies));
     }
 
     [Fact]

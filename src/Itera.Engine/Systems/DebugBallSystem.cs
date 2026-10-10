@@ -11,14 +11,14 @@ using Itera.Modding;
 namespace Itera.Engine.Systems;
 
 /// <summary>
-/// The console's <c>balls</c> (fixed group, before <see cref="PhysicsReadSystem"/>; <see cref="CommandScope.Match"/>): a
-/// debug aid that drops balls of one material, made from nothing, in a row across the view 3 m in front of the
-/// <see cref="ActiveCamera"/>, at the next step. Each is a loose body (<see cref="LooseBodies.TryCreateBall"/>) that
-/// falls, rolls, and goes back into the grid when it rests (<see cref="LooseBodySystem"/>; without voxel terrain, what the
-/// game decides), so a test run draws models and moves bodies (<c>--Engine:Console:Run=settle 60; balls 8</c>: the
-/// settle keeps them bodies past the loading screen). A ball whose space holds any solid voxel is left out (without
-/// terrain its space is not checked); when as many
-/// bodies as allowed exist, the oldest go first (<see cref="LooseBodyRoom"/>). Reads <see cref="CameraPose"/>; creates
+/// The console's <c>balls</c> (fixed group, before <see cref="PhysicsReadSystem"/>; <see cref="CommandScope.Match"/>):
+/// a debug aid that drops balls of one material, made from nothing, in a row across the view 3 m in front of the
+/// <see cref="ActiveCamera"/>, at the next step with one. Each is a loose body
+/// (<see cref="LooseBodies.TryCreateBall"/>) that falls, rolls, and goes back into the grid when it rests
+/// (<see cref="LooseBodySystem"/>; without voxel terrain, what the game decides), so a test run draws models and moves
+/// bodies (<c>--Engine:Console:Run=settle 60; balls 8</c>: the settle keeps them bodies past the loading screen). A
+/// ball whose space holds any solid voxel is left out (without terrain its space is not checked); when as many bodies
+/// as allowed exist, the oldest go first (<see cref="LooseBodyRoom"/>). Reads <see cref="CameraPose"/>; creates
 /// <see cref="LooseBody"/> entities.
 /// </summary>
 public sealed class DebugBallSystem : BaseSystem<World, FixedStepTime>, IFixedUpdateSystem
@@ -62,8 +62,8 @@ public sealed class DebugBallSystem : BaseSystem<World, FixedStepTime>, IFixedUp
     }
 
     /// <summary>
-    /// Asks the next step to drop <paramref name="count"/> balls of <paramref name="radius"/> centimetres, of
-    /// <paramref name="material"/> (air, the default, is the game's default material).
+    /// Asks the next step with a camera to drop <paramref name="count"/> balls of <paramref name="radius"/>
+    /// centimetres, of <paramref name="material"/> (air, the default, is the game's default material).
     /// </summary>
     public void Request(int count, int radius = 12, byte material = VoxelConstants.Air)
     {
@@ -91,14 +91,16 @@ public sealed class DebugBallSystem : BaseSystem<World, FixedStepTime>, IFixedUp
             return;
         }
 
+        // The request waits for a camera: a console line run as the match starts may come before one exists.
         var camera = new FindCamera();
         World.InlineQuery<FindCamera, CameraPose>(in s_camera, ref camera);
-        var count = _count;
-        _count = 0;
         if (!camera.Found)
         {
             return;
         }
+
+        var count = _count;
+        _count = 0;
 
         var forward = ThirdPersonCamera.Forward(camera.Pose.Yaw, 0);
         var right = new Vector3(-forward.Z, 0, forward.X);

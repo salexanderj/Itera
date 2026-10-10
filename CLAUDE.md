@@ -115,7 +115,7 @@ used as references.
 
 ```bash
 dotnet build                       # zero warnings expected; warnings are errors
-dotnet test                        # tests/Itera.Modding.Tests, Itera.Engine.Tests, Game.Tests; some checks run only in Debug
+dotnet test                        # tests/Itera.Modding.Tests, Itera.Engine.Tests, Game.Tests, Itera.MeshSample.Tests; some checks run only in Debug
 dotnet run --project src/Game [-- OPTIONS]                       # opens at the menu without --Engine:Session:Mode
 DOTNET_ENVIRONMENT=Development dotnet run --project src/Game     # Debug lines on the console too
 dotnet build -c Release && src/Game/bin/Release/net10.0/Game     # voxel numbers: Debug generates about 5 times slower
@@ -155,6 +155,8 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
 - `tests/`: xUnit, one project per `src/` project (`.claude/rules/tests.md`).
 - `samples/Itera.SampleMod`: the reference mod. Its build copies the output into
   `src/Game/bin/<Config>/net10.0/Mods/SampleMod/` and into the engine tests' `TestMods/`.
+- `samples/Itera.MeshSample`: a game without voxel terrain (mesh ground and blocks built in code with their colliders,
+  the starter's fox, climbing, balls); README there; its tests in `tests/Itera.MeshSample.Tests`.
 - `tools/control/`, `tools/benchmark/`, `tools/steam/`: READMEs there. They run the game in `src/Game` and read its data
   folder from its `appsettings.json` (`tools/benchmark/data_folder.py`).
 - `tools/Textures`: makes the world materials' texture sets (compressed DDS files and `set.json`) in

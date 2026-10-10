@@ -5,6 +5,20 @@ namespace Itera.Engine.Tests.Assets;
 public sealed class MipChainTests
 {
     [Fact]
+    public void A_texture_made_in_code_has_every_mip_of_its_role()
+    {
+        var rgba = new byte[64 * 32 * 4];
+        Array.Fill(rgba, (byte)200);
+
+        var texture = MeshTextureData.FromRgba("made", 64, 32, MeshTextureRole.Colour, rgba);
+
+        Assert.Equal((64, 32, 7), (texture.Width, texture.Height, texture.Levels));
+        Assert.Equal(MeshTextureFormat.Rgba8Srgb, texture.Format);
+        Assert.Equal(MipChain.LevelOffset(64, 32, 7, MeshTextureFormat.Rgba8Srgb), texture.Texels.Length);
+        Assert.Equal((byte)200, texture.Texels[^1]);
+    }
+
+    [Fact]
     public void Level_counts_run_down_to_one_texel()
     {
         Assert.Equal(1, MipChain.LevelCount(1, 1));

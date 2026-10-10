@@ -2,7 +2,9 @@
 # Builds the game (src/Game, Debug), runs it for a few seconds, then lists every [Vulkan] Warning or Error line from
 # the new log. Debug builds turn on core, synchronization, and best-practices validation in code
 # (VulkanContext, through VK_EXT_layer_settings); this script checks the log says so.
-# Exit code 0 means a clean run. Usage: validate.sh [--offscreen] [seconds] [game arguments...]   (--offscreen: no window,
+# Exit code 0 means a clean run. Usage: validate.sh [--offscreen] [--binary PATH] [seconds] [game arguments...]
+# (--binary: another program on the engine instead of the starter, such as samples/Itera.MeshSample's Debug build, its
+# data folder read from the appsettings.json beside it; --offscreen: no window,
 # Engine:Window:Mode=Offscreen, so the run draws into a headless surface; default 25 s: the Debug loading
 # screen takes about 5 s, and only after it are the world, the models, the fade, and the upscale drawn). The starter
 # game draws no models until something makes a loose body or the game adds models; pass
@@ -23,10 +25,16 @@ set -euo pipefail
 VERIFIED_LAYER_VERSION="1.4.341"
 
 offscreen=0
-if [[ "${1:-}" == "--offscreen" ]]; then
-    offscreen=1
-    shift
-fi
+binary=""
+while [[ "${1:-}" == --offscreen || "${1:-}" == --binary ]]; do
+    if [[ "$1" == --offscreen ]]; then
+        offscreen=1
+        shift
+    else
+        binary="$(realpath "$2")"
+        shift 2
+    fi
+done
 seconds="${1:-25}"
 shift || true
 mode_args=()
@@ -34,9 +42,14 @@ if ((offscreen)); then
     mode_args=(--Engine:Window:Mode=Offscreen)
 fi
 repo="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
-data_folder_name="$(python3 "$repo/tools/benchmark/data_folder.py" --agent --name)"
-logs="$(python3 "$repo/tools/benchmark/data_folder.py" --agent)/Logs"
-binary="$repo/src/Game/bin/Debug/net10.0/Game"
+settings=()
+if [[ -n "$binary" ]]; then
+    settings=(--settings "$(dirname "$binary")/appsettings.json")
+else
+    binary="$repo/src/Game/bin/Debug/net10.0/Game"
+fi
+data_folder_name="$(python3 "$repo/tools/benchmark/data_folder.py" --agent --name "${settings[@]}")"
+logs="$(python3 "$repo/tools/benchmark/data_folder.py" --agent "${settings[@]}")/Logs"
 
 layer_version="$(vulkaninfo --summary 2>/dev/null | awk '$1 == "VK_LAYER_KHRONOS_validation" { print $(NF-2) }')"
 if [[ -z "$layer_version" ]]; then
