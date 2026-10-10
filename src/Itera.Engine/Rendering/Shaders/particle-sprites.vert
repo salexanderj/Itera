@@ -95,6 +95,6 @@ void main()
     float fog = fogAt(distance, view.maxDistance);
     // Faded right in front of the camera, where a sprite would fill the screen.
     opacity *= (1.0 - fog) * smoothstep(0.1, 0.5, depth + radius);
-    outColour = vec4(gradeColour(toneMap(colour.rgb * light * Exposure)), opacity);
+    outColour = vec4(gradeColour(toneMap(colour.rgb * light * LOOK.exposure)), opacity);
     outCover = recipe.cover;
 }

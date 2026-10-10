@@ -10,7 +10,7 @@ namespace Itera.Engine.Rendering;
 /// <param name="SkyHorizon">Linear colour of the sky at the horizon; fog fades into it, and the sky light is a share of it.</param>
 /// <param name="SunColour">Linear colour and strength of direct sunlight, and of the sun's disc.</param>
 /// <param name="Haze">0 to 1: fog that thickens with distance on top of the fog at the view distance. At 1, half of a
-/// surface 60 m away is lost in it.</param>
+/// surface the look's haze half distance away (<see cref="RenderLook.HazeHalfMetres"/>, 60 m) is lost in it.</param>
 /// <param name="Overcast">0 to 1: flattens the sky towards its horizon colour and hides the sun's disc.</param>
 /// <param name="Grade">0 to 1: how far the picture is desaturated, darkened, and shifted towards the sky's hue. 0 leaves
 /// it as the tone curve gives it.</param>

@@ -16,7 +16,8 @@ namespace Itera.Engine.Rendering.Meshes;
 /// 16-bit indices in a range of its own; the heap is also the index buffer. It owns the frame's draws too, one region per
 /// frame slot in host-visible buffers that the main thread writes: a <see cref="MeshDraw"/> per block drawn, three lists
 /// of indexed indirect commands (the camera's and the near and far shadow cascades'; a command's first instance names
-/// its draw), and the cascades' record (<see cref="MeshLighting"/>); and the models' too, in the same three lists: a
+/// its draw), the cascades' record (<see cref="MeshLighting"/>), and the frame's look (<see cref="LookConstants"/>);
+/// and the models' too, in the same three lists: a
 /// <see cref="MeshModelDraw"/> per block of each model drawn, the draws of one block together, and one command per
 /// block whose instances are those draws.
 /// <para>
@@ -76,12 +77,15 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
 
     /// <summary>The wireframe's depth bias as a share of the face's depth slope: more for faces seen edge-on.</summary>
     private const float WireBiasSlope = 1.5f;
-    private const int Bindings = 17;
+    private const int Bindings = 18;
     private const int ShadowMapBinding = 5;
     private const int SkyFieldBinding = 8;
 
     /// <summary>The cascades' maps again, read as depths (the blocker search of contact-hardening shadows).</summary>
     private const int ShadowDepthBinding = 9;
+
+    /// <summary>The frame's look, one <see cref="LookConstants"/> per slot (<c>look.glsl</c>), after the texture arrays.</summary>
+    private const int LookBinding = 17;
 
     /// <summary>
     /// The view's clusters of lights (<c>mesh-data.glsl</c>'s MESH_CLUSTER_*): 16 x 9 tiles by 24 slices, each a count and
@@ -138,6 +142,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     private GpuBuffer? _modelCommands;
     private GpuBuffer? _lights;
     private GpuBuffer? _clusters;
+    private GpuBuffer? _look;
     private GpuImage? _shadowMap;
     private GpuImage? _skyImage;
     private Sampler _skySampler;
@@ -282,6 +287,12 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             MemoryUsage.DeviceLocal,
             "mesh light clusters"
         );
+        _look = _allocator.CreateBuffer(
+            slots * (ulong)sizeof(LookConstants),
+            BufferUsageFlags.StorageBufferBit,
+            MemoryUsage.Upload,
+            "look"
+        );
         _shadowMap = _allocator.CreateImage(
             DeviceRequirements.DepthFormat,
             new Extent2D(ShadowMapTexels, ShadowMapTexels),
@@ -410,6 +421,13 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     /// <summary>The cascades' record of <paramref name="slot"/>, written as <see cref="DrawsOf"/> is.</summary>
     public ref MeshLighting LightingOf(int slot) =>
         ref *(MeshLighting*)(Lighting.Mapped + (ulong)slot * (ulong)sizeof(MeshLighting));
+
+    /// <summary>The look of <paramref name="slot"/> (<see cref="RenderLook"/>), written as <see cref="DrawsOf"/> is.</summary>
+    public ref LookConstants LookOf(int slot) =>
+        ref *(LookConstants*)(Look.Mapped + (ulong)slot * (ulong)sizeof(LookConstants));
+
+    /// <summary>The looks of every slot, which the particles' draws bind too (<see cref="ParticlePass"/>).</summary>
+    internal GpuBuffer LookBuffer => Look;
 
     /// <summary>
     /// Records the frame's copies from the staging region of the slot into the heap, between two barriers: the first
@@ -755,6 +773,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         _modelCommands?.Dispose();
         _lights?.Dispose();
         _clusters?.Dispose();
+        _look?.Dispose();
         _commands?.Dispose();
         _draws?.Dispose();
         _heap?.Dispose();
@@ -764,6 +783,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         _modelCommands = null;
         _lights = null;
         _clusters = null;
+        _look = null;
         _commands = null;
         _draws = null;
         _heap = null;
@@ -810,6 +830,8 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
 
     private GpuBuffer Clusters => _clusters ?? throw NotInitialised();
 
+    private GpuBuffer Look => _look ?? throw NotInitialised();
+
     private GpuImage ShadowMap => _shadowMap ?? throw NotInitialised();
 
     private GpuImage SkyImage => _skyImage ?? throw NotInitialised();
@@ -844,6 +866,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         FlushCommands(slot, 1, frame.NearShadows);
         FlushCommands(slot, 2, frame.FarShadows);
         Lighting.Flush((ulong)slot * (ulong)sizeof(MeshLighting), (ulong)sizeof(MeshLighting));
+        Look.Flush((ulong)slot * (ulong)sizeof(LookConstants), (ulong)sizeof(LookConstants));
         Lights.Flush((ulong)slot * MostLights * (ulong)sizeof(MeshLight), MostLights * (ulong)sizeof(MeshLight));
         for (var list = 0; list < Lists; list++)
         {
@@ -1396,8 +1419,8 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         // In binding order (mesh-data.glsl): the whole heap as words, the draws of every slot, the heap's materials and
         // tint map at their fixed places (multiples of 256 bytes, and so of any storage buffer alignment), the cascades'
         // records of every slot, the cascades' maps (an image), the model draws of every slot, the point lights of every
-        // slot, the sky field (an image), the cascades' maps again, read as depths, the light clusters of every slot, and
-        // the six arrays of the materials' texture sets (images).
+        // slot, the sky field (an image), the cascades' maps again, read as depths, the light clusters of every slot, the
+        // six arrays of the materials' texture sets (images), and the looks of every slot.
         var infos = stackalloc DescriptorBufferInfo[FirstTextureBinding]
         {
             new(Heap.Buffer, 0, Vk.WholeSize),
@@ -1412,6 +1435,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             default,
             new(Clusters.Buffer, 0, Vk.WholeSize),
         };
+        var look = new DescriptorBufferInfo(Look.Buffer, 0, Vk.WholeSize);
         var images = stackalloc DescriptorImageInfo[3 + TextureArrays];
         images[0] = new(_shadowSampler, ShadowMap.View, ImageLayout.ShaderReadOnlyOptimal);
         images[1] = new(_skySampler, SkyImage.View, ImageLayout.ShaderReadOnlyOptimal);
@@ -1431,12 +1455,15 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
                 DstBinding = (uint)i,
                 DescriptorCount = 1,
                 DescriptorType = TypeOf(i),
-                PBufferInfo = TypeOf(i) == DescriptorType.StorageBuffer ? &infos[i] : null,
+                PBufferInfo =
+                    i == LookBinding ? &look
+                    : TypeOf(i) == DescriptorType.StorageBuffer ? &infos[i]
+                    : null,
                 PImageInfo =
                     i == ShadowMapBinding ? &images[0]
                     : i == SkyFieldBinding ? &images[1]
                     : i == ShadowDepthBinding ? &images[2]
-                    : i >= FirstTextureBinding ? &images[3 + i - FirstTextureBinding]
+                    : TypeOf(i) == DescriptorType.CombinedImageSampler ? &images[3 + i - FirstTextureBinding]
                     : null,
             };
         }
@@ -1446,7 +1473,8 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     }
 
     private static DescriptorType TypeOf(int binding) =>
-        binding is ShadowMapBinding or SkyFieldBinding or ShadowDepthBinding || binding >= FirstTextureBinding
+        binding is ShadowMapBinding or SkyFieldBinding or ShadowDepthBinding
+        || (binding >= FirstTextureBinding && binding < FirstTextureBinding + TextureArrays)
             ? DescriptorType.CombinedImageSampler
             : DescriptorType.StorageBuffer;
 

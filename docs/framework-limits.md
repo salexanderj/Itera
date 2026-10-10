@@ -27,8 +27,8 @@ Ordered by how many game types each blocks.
    world, its characters and loose bodies over the game's mesh colliders; the box remains. The box is set by constants (`VoxelGrid`: ±512 m across, -51 to +102 m at 10 cm voxels); the view
    reaches 2 km at most; nothing shifts the origin. Blocks open worlds, flight, space, and long race tracks.
 3. **Rendering is closed to a game.** The pass list is fixed in `FrameRenderer.Record`, and `IFrameRenderer` and
-   `PipelineFactory` are internal; no transparent pass (only particles blend); the look is constants in `mesh.frag` and
-   `lighting.glsl`; the sun's direction is fixed (`ViewConstants.DefaultSunDirection`); no spot lights or shadowed point
+   `PipelineFactory` are internal; no transparent pass (only particles blend); the look was constants in the shaders
+   (now data a game sets, `RenderLook`, 2026-10-10); the sun's direction is fixed (`ViewConstants.DefaultSunDirection`); no spot lights or shadowed point
    lights; one perspective camera (`mesh.vert` always divides by depth; `RenderView` holds one camera), so no
    orthographic view, split screen, minimap, or render to texture.
 4. **Sessions are one host with clients.** At most 16 slots (`SessionProtocol.MaxSlots`); clients reach each other only

@@ -304,6 +304,39 @@ public sealed class EngineCommandsTests : IDisposable
         Assert.Equal(0.75f, _view.RenderScale);
     }
 
+    /// <summary>
+    /// <c>look</c> lists the look's values, sets a number or a colour over every frame's look for the run (starred), and
+    /// gives the game's back with reset; a wrong name or count of numbers changes nothing.
+    /// </summary>
+    [Fact]
+    public void Look_sets_values_over_every_frames_look_and_reset_gives_the_games_back()
+    {
+        Run("look");
+        Assert.Equal("LightsAbove 0.6", Last());
+
+        Run("look exposure 0.9; look SunWarmth 1 0.5 0.25");
+        Assert.Equal("SunWarmth 1 0.5 0.25 *", Last());
+        _view.SetLook(RenderLook.Default with { Exposure = 0.5f, GlowStrength = 2 });
+        Assert.Equal(0.9f, _view.DrawnLook.Exposure);
+        Assert.Equal(new System.Numerics.Vector3(1, 0.5f, 0.25f), _view.DrawnLook.SunWarmth);
+        Assert.Equal(2f, _view.DrawnLook.GlowStrength);
+
+        Run("look Fog 1");
+        Assert.Equal("look: no value Fog (look lists them).", Last());
+        Run("look Exposure 1 2");
+        Assert.StartsWith("usage: ", Last(), StringComparison.Ordinal);
+        Run("look SunWarmth 1");
+        Assert.StartsWith("usage: ", Last(), StringComparison.Ordinal);
+        Run("look exposure nan");
+        Assert.StartsWith("usage: ", Last(), StringComparison.Ordinal);
+        Assert.Equal(0.9f, _view.DrawnLook.Exposure);
+
+        Run("look reset");
+        Assert.Equal(0.5f, _view.DrawnLook.Exposure);
+        Run("look exposure");
+        Assert.Equal("Exposure 0.5", Last());
+    }
+
     [Theory]
     [InlineData("shadows maybe")]
     [InlineData("scale 1.5")]

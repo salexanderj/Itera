@@ -190,7 +190,9 @@ lists the commands (`ConsoleCommands`):
   `set ID SET|none [MATCH]` draws material ID from a set, colour matched 0 to 1, or plain; `tune ID DETAIL RELIEF BLUR`
   keeps part of its set's colour variation and relief (0 to 1) and softens it by mip levels (0 to 4);
   `bake ID top|side [NAME]` writes material ID's recipe as images for `tools/Textures` into the data folder's `Bakes/`;
-  the run's only), `stats`, `screenshot` [SCALE] [noui] [PATH.png] (a PNG at PATH.png or in the data folder's
+  the run's only), `look` (every value of the look, `RenderLook`, with `*` on those set here; NAME prints one; NAME VALUE,
+  or NAME R G B for a colour, sets it over every frame's look; reset gives the game's back; the run's only), `stats`,
+  `screenshot` [SCALE] [noui] [PATH.png] (a PNG at PATH.png or in the data folder's
   `Screenshots/`), `wait` (loaded, view (the view's world loaded and on the GPU, as the loading screen waits for), ticks
   N, frames N, or seconds N of real time, then an optional timeout in seconds), `shaders` [reload] (the folder shaders
   compile from; reload compiles them again), `quit` [CODE] (the exit code, 0 to 255), `ecs` (counts, list COMPONENT [N],

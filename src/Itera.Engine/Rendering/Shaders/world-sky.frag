@@ -11,7 +11,7 @@ layout(location = 0) out vec4 outColor;
 
 void main()
 {
-    vec3 colour = gradeColour(toneMap(skyColour(viewRay(inNdc)) * Exposure));
+    vec3 colour = gradeColour(toneMap(skyColour(viewRay(inNdc)) * LOOK.exposure));
 
     outColor = vec4(colour, 1.0);
 }

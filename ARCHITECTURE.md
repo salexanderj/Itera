@@ -626,7 +626,7 @@ and `Alpha`, how far the frame lies between the last two steps). Components are 
   looks plus the mouse since the step, or behind the right shoulder (`ThirdPersonCamera`, pulled in by the voxels); it
   makes the camera entity (`CameraRules.CreateCamera`). `DebugFlyCameraSystem` flies it while the player flies, kept to the
   `PlayArea` (the world and 1 km round it). `CameraExtractSystem` hands the camera to the renderer. `AtmosphereSystem` sets
-  the frame's sky, sun, haze, and grade from a game's `IAtmosphereSource` at the camera.
+  the frame's sky, sun, haze, and grade, and its look, from a game's `IAtmosphereSource` at the camera.
 - `ToolAim` gives where the local player aims from and along, and the first voxel a tool's ray meets past passable voxels.
 
 **The world and bodies.**
@@ -883,9 +883,17 @@ holds the decisions, the measurements, and the history of how it replaced a raym
   field, point lights, fog, the tone curve (a filmic fit of ACES after an exposure), and the grade (`lighting.glsl`, shared
   with the particles). A glowing surface keeps its colour, leaves the grade, and adds its glow after it. `world-sky.frag`
   draws the sky where the depth is still 0. The depth is the reverse form of `view.glsl`: 0.01 m divided by the distance
-  along the view direction, so 0 is the sky and nearer is greater. The art direction the shaders' constants hold today (a
-  stylized look, less saturated and darker, darker on the sides, warm sunlight and cool sky light, dark tones towards teal
-  and light ones towards orange) is the starter's; making it per-game data is open work.
+  along the view direction, so 0 is the sky and nearer is greater. The art direction (a stylized look, less saturated and
+  darker, darker on the sides, warm sunlight and cool sky light, dark tones towards teal and light ones towards orange)
+  is the engine's look, `RenderLook.Default`, which the starter keeps.
+- **The look** (`RenderLook`, in a per-slot storage buffer the shaders read as `LOOK`): the art direction's values, which
+  were shader constants (the world's saturation and side shading, the light's tints, sky and ground light, the occlusion
+  floor, fog, the sky's shares and sun disc, exposure, the grade's strength, the split tone, and glow), from a game's
+  `IAtmosphereSource.LookAt` at the camera each frame, and tuned live with the console's `look`. What the look gives with
+  the atmosphere (the sunlight, sky and ground light, the sky's colours, the grade's hue and amounts, the haze's density)
+  is worked out once a frame on the CPU: moving the constants into data left the starter's pictures as they were (within
+  1 level) and, with that, made the world pass 1.2 to 2.2 % faster (0.02 to 0.05 ms at 2560x1440 offscreen, 2026-10-10;
+  read from the buffer at every pixel instead, it was 1.4 to 2.1 % slower).
 - **Atmosphere** (`RenderView.SetAtmosphere`, in `ViewConstants`): the sky colour, the sun's colour, haze (fog that thickens
   with distance), overcast (a flatter sky, a hidden sun disc, more sky light), and grade, from a game's `IAtmosphereSource`
   at the camera, so a game can differ by place.
@@ -1313,9 +1321,8 @@ Engine work that is known and not done:
   (doors, platforms) for the mover, hands and feet placed on walls (IK on mesh rigs), walking on walls and ceilings,
   loading models during play, MikkTSpace tangents, clips from other files by joint name, a bridge from a mesh rig to
   `Skeleton` for foot IK and aim, `KHR_texture_transform`, transparency, morph targets, and GPU culling.
-- **Per-game look data in the shaders.** The art direction's constants (saturation and darkening of the world, the side
-  shading, the warm and cool light, the split tone, the occlusion floor, the fog and sky light terms) sit in `mesh.frag` and
-  `lighting.glsl`. They should be data a game sets, with today's values as the starter's defaults.
+- **Rendering a game can extend** (2026-10-10, in phases): the look is data (`RenderLook`); a moving sun and night,
+  transparency for mesh assets, passes a game adds, an orthographic lens, and rendering into an image come next.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no
   engine system replicates players, thrown bodies, or characters; the Zorf TD archive has a working design (a player's
   state every step with the host's checks and corrections, bodies as kinematic mirrors played back a few ticks behind,

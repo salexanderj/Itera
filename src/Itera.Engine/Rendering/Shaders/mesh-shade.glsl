@@ -1,13 +1,13 @@
 // The light a surface drawn in MeshPass's rendering takes and the colour it ends as (shadeSurface), shared by the
 // world's meshes and the models' (mesh.frag): the sun (Lambert) through the two shadow cascades (sunShadow), sky and
 // ground light dimmed by the vertex's openness and scaled by how much of the sky the air in front sees (the sky field),
-// the glowing surfaces' point lights, fog into the sky, the tone curve, the grade, and the glow after it. The look's light
-// and grade (below) are the art direction's (docs/rendering-redesign.md). Include after view.glsl, sky.glsl,
-// lighting.glsl, mesh-data.glsl, and mesh-light.glsl.
+// the glowing surfaces' point lights, fog into the sky, the tone curve, the grade, and the glow after it. The light and
+// the grade take the frame's look (look.glsl; the art direction's, docs/rendering-redesign.md). Include after view.glsl,
+// sky.glsl, lighting.glsl, mesh-data.glsl, and mesh-light.glsl.
 
 // Openness (the share of air round a vertex: each of its cell's corners' mean over the 3x3x3 voxels round it, blended
 // to the vertex's place; SurfaceNets) is a half on flat ground, a quarter along an inner edge, and an eighth in an inner
-// corner: flat ground keeps all its sky and ground light, an inner corner OcclusionFloor of it.
+// corner: flat ground keeps all its sky and ground light, an inner corner the look's occlusion floor of it.
 const float OpennessFlat = 0.5;
 const float OpennessCorner = 0.125;
 
@@ -40,19 +40,11 @@ vec3 pointLight(vec3 world, vec3 normal, float depth)
     return sum;
 }
 
-// The least share of the sky's and the ground's light a surface keeps however deep it is.
-const float SkyFloor = 0.02;
-
-// The look's light and grade, for a dark-fantasy art style (docs/rendering-redesign.md, the art direction):
-// - Sunlight is warmer (SunWarmth) and the sky and ground light cooler (ShadeCool), on everything drawn.
-// - After the grade, the picture's dark tones turn towards teal (GradeShadows) and its light tones towards orange
-//   (GradeLights), blending between luma ShadowsBelow and LightsAbove; less as the fog thickens, to none in the sky.
-const vec3 SunWarmth = vec3(1.08, 1.0, 0.88);
-const vec3 ShadeCool = vec3(0.85, 0.95, 1.15);
-const vec3 GradeShadows = vec3(0.9, 1.0, 1.08);
-const vec3 GradeLights = vec3(1.06, 1.0, 0.9);
-const float ShadowsBelow = 0.15;
-const float LightsAbove = 0.6;
+// The look's light and grade (RenderLook; the starter's are a dark-fantasy art style, docs/rendering-redesign.md):
+// - Sunlight is tinted by its sun warmth and the sky and ground light by its shade coolness, on everything drawn; a
+//   surface keeps at least its sky floor of the sky's and the ground's light however deep it is.
+// - After the grade, the picture's dark tones turn towards its shadow tint and its light tones towards its light tint,
+//   blending between luma shadowsBelow and lightsAbove; less as the fog thickens, to none in the sky.
 const vec3 LumaWeights = vec3(0.2126, 0.7152, 0.0722);
 
 // The colour a surface of colour ends as at offset from the camera: lit along lit (its normal as its relief tilts it)
@@ -71,18 +63,23 @@ vec3 shadeSurface(vec3 colour, vec3 normal, vec3 lit, vec3 offset, float opennes
     }
 
     float open = clamp((openness - OpennessCorner) / (OpennessFlat - OpennessCorner), 0.0, 1.0);
-    float sky = max(skyVisibility(view.slot, world, normal), SkyFloor);
-    vec3 light = view.sunColour * SunWarmth * sunlight
-        + ambientLight(lit, mix(OcclusionFloor, 1.0, open)) * ShadeCool * sky * cavity + pointLight(world, lit, depth);
+    float sky = max(skyVisibility(view.slot, world, normal), LOOK.skyFloor);
+    vec3 light = LOOK.sunLight * sunlight
+        + ambientLight(lit, mix(LOOK.occlusionFloor, 1.0, open)) * LOOK.shadeCool * sky * cavity
+        + pointLight(world, lit, depth);
     vec3 shaded = colour * light;
 
     float fog = fogAt(length(offset), view.maxDistance);
     shaded = mix(shaded, skyColour(normalize(offset)), fog);
-    vec3 toned = toneMap(shaded * Exposure);
+    vec3 toned = toneMap(shaded * LOOK.exposure);
     vec3 graded = gradeColour(toned);
     // Faded out with the fog: the sky (world-sky.frag) takes no split tone, so the fogged far ground must not either, or
     // the two would not meet at the horizon.
-    vec3 split = mix(GradeShadows, GradeLights, smoothstep(ShadowsBelow, LightsAbove, dot(graded, LumaWeights)));
+    vec3 split = mix(
+        LOOK.gradeShadows,
+        LOOK.gradeLights,
+        smoothstep(LOOK.shadowsBelow, LOOK.lightsAbove, dot(graded, LumaWeights))
+    );
     graded *= mix(split, vec3(1.0), fog);
     if (glow > 0.0)
     {
@@ -90,7 +87,7 @@ vec3 shadeSurface(vec3 colour, vec3 normal, vec3 lit, vec3 offset, float opennes
         // it, and its glow's own brightness, what the glow adds through the tone curve, added after them, so embers and
         // lava stay a vivid red where the grade greys the picture (in a dark place). The glow fades with the fog.
         vec3 glowing = glowColour * glow * (1.0 - fog);
-        graded = mix(graded, toned, 1.0 - fog) + toneMap((shaded + glowing) * Exposure) - toned;
+        graded = mix(graded, toned, 1.0 - fog) + toneMap((shaded + glowing) * LOOK.exposure) - toned;
     }
 
     return min(graded, vec3(1.0));

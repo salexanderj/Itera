@@ -23,9 +23,9 @@ ends the frame. The world's materials are drawn from texture sets, each patterne
 once (`mesh-surface.glsl`'s `surfacePattern`, the recipes `VoxelPattern` names: `Soil`, `Streaks`, `Mottle`, `Clumps`,
 `Plates` (baked on the plane of x and y), `Grain`, and others; the data in `VoxelLook` and the game's `IVoxelPalette`,
 packed into `MeshMaterial`'s look and amounts words); no recipe is worked out per pixel (`tools/Textures` can also make
-sets of CC0 photographs). The art direction the shaders' constants hold today (`docs/rendering-redesign.md`): a stylized
-look, less saturated and darker, textures a few steps up from flat colours, no outlines, cracks, or scattered features
-unless the material is made of them; making it per-game data is open work. A material without a set and without a
+sets of CC0 photographs). The art direction (`docs/rendering-redesign.md`): a stylized look, less saturated and darker,
+textures a few steps up from flat colours, no outlines, cracks, or scattered features unless the material is made of
+them; its light and grade are data a game sets (the look, below). A material without a set and without a
 pattern is drawn plain (`surfacePlain`: its colour with the patches); the models keep flat colours. Colours blend from a
 material's colour to its tint colour by a game's tint map (`IVoxelTintMap`; none by default, `FieldTintMap` from any
 field).
@@ -59,6 +59,21 @@ world material without a set from the first small set, 3 m wide (for timings); `
 one material from another loaded set (`WorldMeshes.SetTexture`, the materials staged again), for comparing candidates
 in the game. The sky, sunlight, haze, and colour grade come from a game's `IAtmosphereSource` at the camera
 (`AtmosphereSystem`), or the `Engine:Renderer` sky options without one.
+
+The look (`RenderLook`, a record struct whose new value, `RenderLook.Default`, is the engine's and the starter's) holds
+the art direction's values that were shader constants: the world's own surfaces' saturation, value, and side and top
+shade; the sunlight's warmth and the shade's coolness; the sky light's share of the horizon colour, the ground's light
+and bounce, the occlusion and sky floors, and full glow's strength; where the view's fog starts and the haze's half
+distance; the sky's zenith (clear and overcast) and below-horizon shares and the sun disc's sharpness, strength, and
+overcast hiding; the exposure; the grade's desaturation and darkening; and the split tone's tints and bounds. A game
+gives it per frame through its atmosphere source (`IAtmosphereSource.LookAt`, a default method returning the engine's;
+`AtmosphereSystem` sets `RenderView.Look`; `RenderLook.Lerp` blends two); the console's run-only `look` lays values
+over it (`LookTuning`, a table of every value without reflection; `RenderView.DrawnLook`). `GameLoop` writes the drawn
+look into the frame slot's record (`MeshPass.LookOf`, `LookConstants.From`: its values, and the light and colours it
+gives with the frame's atmosphere worked out once a frame instead of at every pixel: the sunlight, sky and ground light,
+the zenith and below-horizon colours, the sun's disc, the grade's hue and amounts, the haze's density; `look.glsl`: set
+0 binding 17, and binding 8 of the particles' draw set, compiled with `LOOK_BINDING 8`), which `lighting.glsl`,
+`sky.glsl`, `mesh-shade.glsl`, and `mesh.frag` read as `LOOK` (the slot's by `view.slot`).
 
 Without a window (`Engine:Window:Mode=Offscreen`, `WindowService.Offscreen`) the surface is headless
 (`HeadlessSurfaceSource`, `VK_EXT_headless_surface`; `WindowSurfaceSource` wraps GLFW's for a window: `ISurfaceSource`,
@@ -179,7 +194,7 @@ Poisson disc, 1 to 16 texels; in the far cascade 3x3 comparison lookups; the nea
 the 5 m before its end, `MeshLighting.NearBlendStart`, the far cascade's slice starting there too, and the far shadows
 fade over the last tenth of theirs, `FarFadeStart`), sky and ground light
 dimmed by openness and scaled by the sky field, the point lights, glow, fog, the tone curve, and the grade; the art
-direction's light and grade, as the shaders' constants: the world's surfaces less saturated, darker, and darker on their
+direction's light and grade, as the look gives them: the world's surfaces less saturated, darker, and darker on their
 sides than on their tops (`mesh.frag`'s, the world's own), warm sunlight and cool sky light (`mesh-shade.glsl`'s), and dark tones towards teal and light ones towards orange
 after the grade, less as the fog thickens, so the far ground meets the sky, which takes none; a glowing surface keeps its
 colour, takes no grade or split tone, and adds its glow's own brightness through the tone curve after them), then the
@@ -268,7 +283,7 @@ buffer (`RecordUploads`, before the mesh pass), freed `FrameSync.FramesInFlight`
 repeating, clamped, or mirrored; the textures, `MESH_TEXTURE_COUNT` of them, a white stand-in first, indexed with
 `nonuniformEXT`; the vertices; the materials; the draws; for the skinning, the skins, every slot's skin groups, and every
 slot's skinning matrices); set 0 is `MeshPass`'s. The device's room caps the textures (the lower of its per-stage and
-per-set sampled images less the mesh pass's nine, and its per-stage resources less the 24 other descriptors and
+per-set sampled images less the mesh pass's nine, and its per-stage resources less the 25 other descriptors and
 attachment a stage holds); those past it are left out with one Warning, and their
 materials drawn with their factors. Vertices past the device's storage buffer range stop the run at the step. When the
 run read a skinned asset, the vertex buffer also holds a region for each frame slot (`Engine:Renderer:SkinMegabytes`, 16
@@ -301,6 +316,7 @@ time.
     `RenderThread`, `FrameExchange`), the surface's source (`ISurfaceSource`: the window's or a headless one, in
     `SurfaceSource.cs`), `DepthTarget`, `ModelInstances`, `MeshInstances`, `DebugLines` and `DebugLinePass`, `UiPass`,
     `RenderScale` and `UpscalePass`, `SmaaPass`, `SmaaTextures`, `FrameImages`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`,
+    the look (`RenderLook`, `LookTuning`), `Atmosphere`,
     `ScreenshotEncoder`; the materials' texture sets (`MaterialTextureSets`, `DdsFile`) in `Materials/`; GPU memory (own block sub-allocator, `GpuBuffer`, `GpuImage`, per-slot `StagingBuffer`) in
     `Memory/` (with `GpuRangeHeap`, the mesh heap's ranges); `Pipelines/`; structs that shaders read in `GpuData/`; the
     palette and its looks (`IVoxelPalette`, `VoxelLook`), the tint map (`IVoxelTintMap`) and the CPU's read of it

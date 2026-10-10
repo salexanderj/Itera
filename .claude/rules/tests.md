@@ -98,7 +98,8 @@ Where tests live:
   coarse colliders (`CoarseCollidersTests`), ragdolls (`RagdollTests`), thrown and settled pieces, the mover among
   loose bodies (`MoverWithBodiesTests`), and solid models (`SolidModelVoxelsTests`).
 - `Itera.Engine.Tests/Rendering/`: `Materials/MaterialTextureSetsTests` (DDS files read back, sets loaded and left out,
-  a material packed with its set), `Meshes/` (`MeshPassTests`, `MeshViewTests` (the frame's frustum, cascades, and
+  a material packed with its set), `RenderLookTests` (the engine's look pinned to the shaders' former constants, every
+  value copied and tunable), `Meshes/` (`MeshPassTests`, `MeshViewTests` (the frame's frustum, cascades, and
   lights), `LevelBalanceTests`, `MeshColumnTests`,
   `WorldMeshesTests` over a draw target and staging in memory: the seams' stitched meshes, a full heap, the edits'
   latency), `Memory/GpuRangeHeapTests`, `GpuLayout` (also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`,

@@ -32,6 +32,21 @@ public sealed class AtmosphereSystemTests
     }
 
     [Fact]
+    public void The_frame_gets_the_sources_look_at_the_camera_or_the_engines()
+    {
+        using var world = World.Create();
+        using var withLook = new AtmosphereSystem(world, _view, new ByHeight());
+        _view.SetCamera(CameraView.Default with { Position = new Vector3(0, 100, 0) });
+
+        withLook.Update(in Time);
+        Assert.Equal(ByHeight.HighLook, _view.Look);
+
+        using var withoutLook = new AtmosphereSystem(world, _view, new Plain());
+        withoutLook.Update(in Time);
+        Assert.Equal(RenderLook.Default, _view.Look);
+    }
+
+    [Fact]
     public void A_camera_far_outside_the_map_is_asked_as_it_is()
     {
         using var world = World.Create();
@@ -52,6 +67,8 @@ public sealed class AtmosphereSystemTests
         using var system = new AtmosphereSystem(world, _view, new ByHeight());
 
         Assert.Equal(0, SystemAllocation.BytesAllocated(system, Time));
+        using var plain = new AtmosphereSystem(world, _view, new Plain());
+        Assert.Equal(0, SystemAllocation.BytesAllocated(plain, Time));
     }
 
     /// <summary>A source with one look below 50 m and another above.</summary>
@@ -72,12 +89,23 @@ public sealed class AtmosphereSystemTests
             0.6f
         );
 
+        /// <summary>A brighter look above 50 m.</summary>
+        public static readonly RenderLook HighLook = RenderLook.Default with { Exposure = 1.1f };
+
         public Vector3 LastAsked { get; private set; }
+
+        public RenderLook LookAt(Vector3 positionMetres) => positionMetres.Y < 50 ? RenderLook.Default : HighLook;
 
         public Atmosphere At(Vector3 positionMetres)
         {
             LastAsked = positionMetres;
             return positionMetres.Y < 50 ? Low : High;
         }
+    }
+
+    /// <summary>A source that gives no look of its own.</summary>
+    private sealed class Plain : IAtmosphereSource
+    {
+        public Atmosphere At(Vector3 positionMetres) => ByHeight.Low;
     }
 }

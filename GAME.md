@@ -10,7 +10,7 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
   lies below 2 m, 5 cm of surface over dirt down to 1 m, then stone, and stone boulders (2 to 6 m across) a third of their
   height buried, at most one a 16 m cell (`JitteredGrid`). The materials are `GameMaterials` (grass, dirt, stone, gravel), drawn by
   `GamePalette` from the texture sets `grass`, `dirt`, `stone`, and `gravel` in `Textures/`. The sky is one clear day
-  (`GameAtmosphere`). A change to what the generator makes raises its `Version` (`tests/Game.Tests/WorldTests` pins a
+  (`GameAtmosphere`), drawn with the engine's look (`RenderLook.Default`). A change to what the generator makes raises its `Version` (`tests/Game.Tests/WorldTests` pins a
   hash).
 - The fox (`GameModels.Fox`): Khronos's Fox sample (`Models/Fox/`, credits in `Models/SOURCES.md`; 24 joints, clips
   Survey, Walk, and Run; its texture compressed in `Models/Fox/Fox.textures/`), declared at the run's start (`GameRunStartup`). `FoxSystem` puts it on the ground 4 m in front

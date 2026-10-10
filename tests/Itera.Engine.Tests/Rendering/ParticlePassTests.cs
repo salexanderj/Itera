@@ -11,6 +11,10 @@ namespace Itera.Engine.Tests.Rendering;
 public sealed class ParticlePassTests : IDisposable
 {
     private readonly string _cache = Path.Combine(Path.GetTempPath(), "itera-tests", Guid.NewGuid().ToString("N"));
+
+    /// <summary>Where the draws find the look: the particles' set's binding 8 (ParticlePass compiles them so).</summary>
+    private const string Look = "LOOK_BINDING 8";
+
     private readonly ShaderCompiler _compiler;
 
     public ParticlePassTests()
@@ -50,14 +54,20 @@ public sealed class ParticlePassTests : IDisposable
     {
         foreach (var name in (string[])["particle-cubes.vert", "particle-sprites.vert"])
         {
-            var spirv = _compiler.Compile(name);
+            var spirv = _compiler.Compile(name, [Look]);
             Assert.Empty(GpuLayout.ArrayElementDifferences<GpuParticle>(spirv, 0, 0));
             Assert.Empty(GpuLayout.ArrayElementDifferences<GpuParticleRecipe>(spirv, 0, 3));
             Assert.Empty(GpuLayout.PushConstantDifferences<ViewConstants>(spirv));
         }
 
-        Assert.Empty(GpuLayout.PushConstantDifferences<ViewConstants>(_compiler.Compile("particle-cubes.frag")));
-        Assert.NotEmpty(_compiler.Compile("particle-sprites.frag"));
+        var cubes = _compiler.Compile("particle-cubes.frag", [Look]);
+        Assert.Empty(GpuLayout.PushConstantDifferences<ViewConstants>(cubes));
+        // The look, the mesh pass's buffer, at binding 8 of the particles' own set.
+        Assert.Empty(GpuLayout.ArrayElementDifferences<LookConstants>(cubes, 0, 8));
+        Assert.Empty(
+            GpuLayout.ArrayElementDifferences<LookConstants>(_compiler.Compile("particle-sprites.vert", [Look]), 0, 8)
+        );
+        Assert.NotEmpty(_compiler.Compile("particle-sprites.frag", [Look]));
     }
 
     /// <summary>
@@ -68,15 +78,16 @@ public sealed class ParticlePassTests : IDisposable
     public void The_simulate_pass_reads_the_mesh_set_as_set_1_and_the_draws_only_their_own()
     {
         var simulate = _compiler.Compile("particle-simulate.comp");
-        var cubes = _compiler.Compile("particle-cubes.frag");
+        var cubes = _compiler.Compile("particle-cubes.frag", [Look]);
 
         Assert.Equal([0u, 1u], GpuLayout.DescriptorSets(simulate).Order());
         Assert.Empty(GpuLayout.ArrayElementDifferences<MeshLighting>(simulate, 1, 4));
         Assert.Empty(GpuLayout.PushConstantDifferences<ParticleConstants>(simulate));
-        Assert.Empty(GpuLayout.DescriptorSets(cubes));
+        // The cubes' colour reads the look alone, in the particles' own set.
+        Assert.Equal([0u], GpuLayout.DescriptorSets(cubes));
         Assert.Empty(GpuLayout.PushConstantDifferences<ViewConstants>(cubes));
-        Assert.Equal([0u], GpuLayout.DescriptorSets(_compiler.Compile("particle-cubes.vert")));
-        Assert.Equal([0u], GpuLayout.DescriptorSets(_compiler.Compile("particle-sprites.vert")));
+        Assert.Equal([0u], GpuLayout.DescriptorSets(_compiler.Compile("particle-cubes.vert", [Look])));
+        Assert.Equal([0u], GpuLayout.DescriptorSets(_compiler.Compile("particle-sprites.vert", [Look])));
     }
 
     [Fact]

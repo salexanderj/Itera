@@ -16,10 +16,10 @@ public sealed unsafe partial class MeshAssetPass
     private const int MeshPassImageSamplers = 9;
 
     /// <summary>
-    /// What a stage holds beside the textures that counts against the device's per-stage resources: the mesh pass's 17
+    /// What a stage holds beside the textures that counts against the device's per-stage resources: the mesh pass's 18
     /// descriptors, this set's six storage buffers, and the colour attachment.
     /// </summary>
-    private const int OtherStageResources = 24;
+    private const int OtherStageResources = 25;
 
     /// <summary>Every level of a texture starts on 16 bytes in the upload buffer.</summary>
     private static ulong AlignLevel(ulong bytes) => (bytes + 15) & ~15UL;

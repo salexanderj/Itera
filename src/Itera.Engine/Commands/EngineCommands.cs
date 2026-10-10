@@ -13,7 +13,8 @@ namespace Itera.Engine.Commands;
 
 /// <summary>
 /// The engine's console commands, all <see cref="CommandScope.Local"/>: <c>help</c>, <c>clear</c>, <c>lines</c>,
-/// <c>shadows</c>, <c>scale</c> (the render scale), <c>aa</c>, <c>lights</c> (test lights), <c>view</c> (the debug views), <c>stats</c> (its key, F1 by default),
+/// <c>shadows</c>, <c>scale</c> (the render scale), <c>aa</c>, <c>lights</c> (test lights), <c>view</c> (the debug views),
+/// <c>materials</c>, <c>look</c> (the look's values), <c>stats</c> (its key, F1 by default),
 /// <c>screenshot</c>, <c>wait</c> (holds a script: <see cref="DevConsole.Hold"/>), <c>shaders</c>, and <c>quit</c>. A setting given no value prints what it is. <c>shadows</c>
 /// changes the player's settings (<see cref="PlayerSettings"/>), as the menu does, so the next change of another
 /// setting keeps it (otherwise it would put the file's back).
@@ -128,6 +129,13 @@ public sealed class EngineCommands
             "How the world's materials are drawn for this run (not saved): from their texture sets where they name one, or in flat colours; all draws every world material without a set from the first small set, for timings. sets lists the texture sets loaded; set draws material ID from a set (its colour matched to the material's by MATCH, 0 to 1) or plain; tune draws material ID's set keeping DETAIL of its colour's variation and RELIEF of its relief (0 to 1), BLUR mip levels softer (0 to 4); bake writes material ID's recipe, on the ground's plane or a wall's, as images for tools/Textures into the data folder's Bakes/.",
             CommandScope.Local,
             Materials
+        );
+        _commands.Register(
+            "look",
+            "[NAME [VALUE|R G B]] | reset",
+            "The look for this run (not saved; RenderLook): with no name lists every value (* marks one set here), NAME prints one, VALUE (or R G B for a colour) sets it over every frame's look, reset gives every value back to the game's.",
+            CommandScope.Local,
+            Look
         );
         _commands.Register(
             "stats",
@@ -440,6 +448,80 @@ public sealed class EngineCommands
                 + shown
                 + ((views & ViewSwitches.MaterialsAll) != 0 ? " on every material" : " where a set is named")
         );
+    }
+
+    /// <summary>
+    /// The look's values for the run (<see cref="LookTuning"/>): all of them, one, one set over every frame's look, or
+    /// none set (<c>reset</c>).
+    /// </summary>
+    private void Look(CommandContext context)
+    {
+        var tuning = _view.LookTuning;
+        if (context.Count == 1 && context.Is(0, "reset"))
+        {
+            tuning.Reset();
+            context.Print("look: the game's, every value");
+            return;
+        }
+
+        var look = _view.DrawnLook;
+        if (context.Count == 0)
+        {
+            for (var i = 0; i < LookTuning.Fields.Count; i++)
+            {
+                context.Print(DescribeLook(i, in look));
+            }
+
+            return;
+        }
+
+        var index = LookTuning.Find(context[0]);
+        if (index < 0)
+        {
+            context.PrintError($"look: no value {context[0]} (look lists them).");
+            return;
+        }
+
+        var field = LookTuning.Fields[index];
+        if (context.Count == 1)
+        {
+            context.Print(DescribeLook(index, in look));
+            return;
+        }
+
+        Span<float> parts = stackalloc float[3];
+        if (context.Count != 1 + field.Components)
+        {
+            context.PrintUsage();
+            return;
+        }
+
+        for (var i = 0; i < field.Components; i++)
+        {
+            if (!context.TryGetFloat(1 + i, out parts[i]) || !float.IsFinite(parts[i]))
+            {
+                context.PrintUsage();
+                return;
+            }
+        }
+
+        tuning.Set(index, new Vector3(parts[0], parts[1], parts[2]));
+        look = _view.DrawnLook;
+        context.Print(DescribeLook(index, in look));
+    }
+
+    /// <summary>A look value as <c>look</c> prints it: its name, its value, and a star when the console set it.</summary>
+    private string DescribeLook(int index, in RenderLook look)
+    {
+        var field = LookTuning.Fields[index];
+        var value = field.Get(look);
+        var text =
+            field.Components == 1
+                ? Number(value.X)
+                : string.Join(' ', Number(value.X), Number(value.Y), Number(value.Z));
+        return field.Name + " " + text + (_view.LookTuning.IsSet(index) ? " *" : "");
+
+        static string Number(float value) => value.ToString("0.####", CultureInfo.InvariantCulture);
     }
 
     /// <summary>

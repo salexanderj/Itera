@@ -23,9 +23,6 @@
 #define VOXEL_PATTERN_MOTTLE 11u
 #define VOXEL_LOOK_LIVING_ACCENT (1u << 15u)
 
-// Light a material gives off at full glow, as a multiple of its colour.
-const float GlowStrength = 4.0;
-
 // How far the large variation moves a colour at full strength.
 const float PatchContrast = 0.35;
 
@@ -39,6 +36,7 @@ struct Surface
     vec3 slope;
     // The share of sky and ground light that reaches the pattern's hollows, 1 on its crests.
     float cavity;
+    // The material's share of full glow, 0 to 1; mesh.frag scales it by the look's glow strength.
     float glow;
 };
 
@@ -139,7 +137,7 @@ Surface surfaceFinish(vec3 colour, vec3 slope, float cavity, ivec3 whole, vec3 p
     surface.colour = max(colour * (1.0 + PatchContrast * amount.z * patches), vec3(0.0));
     surface.slope = slope - dot(slope, normal) * normal;
     surface.cavity = cavity;
-    surface.glow = amount.w * GlowStrength;
+    surface.glow = amount.w;
     return surface;
 }
 
@@ -743,6 +741,6 @@ Surface surfaceFlat(uint index, float tint)
     surface.colour = baseColour(index, tint);
     surface.slope = vec3(0.0);
     surface.cavity = 1.0;
-    surface.glow = unpackUnorm4x8(materials[index].amounts).w * GlowStrength;
+    surface.glow = unpackUnorm4x8(materials[index].amounts).w;
     return surface;
 }

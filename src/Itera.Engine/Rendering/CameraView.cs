@@ -58,13 +58,14 @@ public sealed class RenderView
     }
 
     /// <summary>
-    /// A match ended: the camera, the sky, and the dim are as a run starts, so the menu and the next match do not begin
-    /// with the last match's view.
+    /// A match ended: the camera, the sky, the look, and the dim are as a run starts, so the menu and the next match do
+    /// not begin with the last match's view. The console's look tuning stays for the run.
     /// </summary>
     public void ResetAfterMatch()
     {
         Camera = CameraView.Default;
         Atmosphere = _clearSky;
+        Look = RenderLook.Default;
         ScreenDim = 0;
     }
 
@@ -93,6 +94,18 @@ public sealed class RenderView
     /// <c>Engine:Renderer</c> sky colour.
     /// </summary>
     public Atmosphere Atmosphere { get; private set; }
+
+    /// <summary>
+    /// The look the next frame is drawn with, as a frame system set it (<see cref="Systems.AtmosphereSystem"/>); the engine's
+    /// until one does. The frame is drawn with <see cref="DrawnLook"/>.
+    /// </summary>
+    public RenderLook Look { get; private set; } = RenderLook.Default;
+
+    /// <summary>The console's <c>look</c>: values set for the run over every frame's look.</summary>
+    public LookTuning LookTuning { get; } = new();
+
+    /// <summary>The look the next frame is drawn with: <see cref="Look"/> with <see cref="LookTuning"/>'s values over it. Allocates nothing.</summary>
+    public RenderLook DrawnLook => LookTuning.Apply(Look);
 
     /// <summary>Whether the sun casts shadows through the shadow maps (<c>Engine:Renderer:Shadows</c>).</summary>
     public bool Shadows { get; set; }
@@ -157,4 +170,7 @@ public sealed class RenderView
 
     /// <summary>Sets the sky, sunlight, and air for the frame being built; they stay until set again.</summary>
     public void SetAtmosphere(in Atmosphere atmosphere) => Atmosphere = atmosphere;
+
+    /// <summary>Sets the look for the frame being built; it stays until set again.</summary>
+    public void SetLook(in RenderLook look) => Look = look;
 }

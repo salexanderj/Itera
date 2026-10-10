@@ -30,12 +30,13 @@ public sealed class MeshPassTests : IDisposable
     }
 
     [Fact]
-    public void The_sky_reads_the_view_and_no_descriptor()
+    public void The_sky_reads_the_view_and_the_look_alone()
     {
         var spirv = _compiler.Compile("world-sky.frag");
 
         Assert.Empty(GpuLayout.PushConstantDifferences<ViewConstants>(spirv));
-        Assert.Empty(GpuLayout.DescriptorSets(spirv));
+        Assert.Equal([0u], GpuLayout.DescriptorSets(spirv));
+        Assert.Empty(GpuLayout.ArrayElementDifferences<LookConstants>(spirv, 0, 17));
     }
 
     [Fact]
@@ -61,6 +62,16 @@ public sealed class MeshPassTests : IDisposable
         Assert.Empty(GpuLayout.PushConstantDifferences<MeshShadowConstants>(shadow));
         Assert.Empty(GpuLayout.ArrayElementDifferences<MeshLighting>(fragment, 0, 4));
         Assert.Empty(GpuLayout.ArrayElementDifferences<MeshLight>(fragment, 0, 7));
+    }
+
+    /// <summary>The world, the sky, and the mesh assets read the frame's look as its record lays it out, at binding 17.</summary>
+    [Fact]
+    public void The_look_is_read_as_its_record_lays_it_out()
+    {
+        foreach (var name in (string[])["mesh.frag", "world-sky.frag", "mesh-asset.frag"])
+        {
+            Assert.Empty(GpuLayout.ArrayElementDifferences<LookConstants>(_compiler.Compile(name), 0, 17));
+        }
     }
 
     /// <summary>

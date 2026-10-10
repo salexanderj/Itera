@@ -22,17 +22,12 @@ layout(location = 4) in vec4 inWeightsHigh;
 layout(location = 5) flat in uvec2 inPalette;
 layout(location = 0) out vec4 outColor;
 
-// The world's own look, for a dark-fantasy art style (docs/rendering-redesign.md, the art direction; the light and the
-// grade every surface takes are mesh-shade.glsl's): the world's surfaces are WorldSaturation as saturated and WorldValue
-// as light as their materials, so the characters stand out against them; glowing ones keep their colour (and are left
-// out of the grade). Their sides are darker than their tops: WorldSideShade where the surface faces down at
-// SideShadeBelow or more, rising to WorldTopShade where it faces up at TopShadeAbove.
-const float WorldSaturation = 0.75;
-const float WorldValue = 0.85;
-const float WorldSideShade = 0.7;
-const float WorldTopShade = 1.1;
-const float SideShadeBelow = -0.3;
-const float TopShadeAbove = 0.9;
+// The world's own look (the frame's look's world values, look.glsl; the starter's for a dark-fantasy art style,
+// docs/rendering-redesign.md; the light and the grade every surface takes are mesh-shade.glsl's): the world's surfaces
+// are worldSaturation as saturated and worldValue as light as their materials, so the characters stand out against
+// them; glowing ones keep their colour (and are left out of the grade). Their sides are darker than their tops:
+// worldSideShade where the surface faces down at sideShadeBelow or more, rising to worldTopShade where it faces up at
+// topShadeAbove.
 
 // The levels debug view's colour for voxels of 2^level cm: 1 cm magenta, 2 violet, 4 blue, 8 cyan, 16 green, 32 yellow,
 // 64 orange, 128 red, and white past that.
@@ -134,7 +129,7 @@ void main()
         surface.colour = baseColour(index, tint);
         surface.slope = vec3(0.0);
         surface.cavity = 1.0;
-        surface.glow = materials[index].glow * GlowStrength;
+        surface.glow = materials[index].glow;
     }
     else
     {
@@ -190,8 +185,12 @@ void main()
     vec3 colour = surface.colour;
     if (tint < 0.0 && surface.glow <= 0.0)
     {
-        colour = mix(vec3(dot(colour, LumaWeights)), colour, WorldSaturation) * WorldValue;
-        colour *= mix(WorldSideShade, WorldTopShade, smoothstep(SideShadeBelow, TopShadeAbove, normal.y));
+        colour = mix(vec3(dot(colour, LumaWeights)), colour, LOOK.worldSaturation) * LOOK.worldValue;
+        colour *= mix(
+            LOOK.worldSideShade,
+            LOOK.worldTopShade,
+            smoothstep(LOOK.sideShadeBelow, LOOK.topShadeAbove, normal.y)
+        );
     }
 
     if (viewSwitch(ViewLevels))
@@ -202,6 +201,8 @@ void main()
     // The recipe's relief tilts the normal the light meets (lit); its hollows hide it from the sky. The shadow maps and
     // the sky field are read along the mesh's own normal.
     vec3 lit = normalize(normal - surface.slope);
-    vec3 shaded = shadeSurface(colour, normal, lit, offset, openness, surface.cavity, surface.colour, surface.glow);
+    // A material's glow is its share of full glow; the look says how bright full glow is.
+    float glow = surface.glow * LOOK.glowStrength;
+    vec3 shaded = shadeSurface(colour, normal, lit, offset, openness, surface.cavity, surface.colour, glow);
     outColor = vec4(shaded, 1.0);
 }

@@ -137,6 +137,16 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
    `ScenarioTests` row finds it in `MeshInstances`, and for a skinned model a test like `FoxModelTests` compares its
    clips with SharpGLTF's own world matrices.
 
+## The game's look
+
+1. The game's `IAtmosphereSource` (the starter's `GameAtmosphere`; `AtmosphereSystem` in the frame systems asks it at
+   the camera each frame) gives the sky (`At`) and the look (`LookAt`): start from `RenderLook.Default` and change values
+   with `with` (`RenderLook.Default with { Exposure = 0.9f, WorldSaturation = 1 }`). A place or a time of day may blend
+   two looks (`RenderLook.Lerp`); it runs every frame, so it allocates nothing.
+2. Try values live with the console's run-only `look NAME VALUE` (`look NAME R G B` for a colour; `look` lists them,
+   `look reset` drops them), then copy the ones chosen into code.
+3. Check it: `game.py shots ... --compare OLD` against a set taken before, and a look at the PNGs.
+
 ## A test that plays the real game
 
 For a feature that needs the real world and systems, play the game without a window (`HeadlessMatch`; see
@@ -166,7 +176,7 @@ match.Step(60);
    `PlayArea.WithoutTerrain` (±512 m) unless the game registers its own with its world's bounds
    (`services.Replace(...)`, as the sample does), whose edge is the mover's wall.
 4. Optional: `ClimbingMode` as its `IMovementMode` with the tags it climbs (and a `Climber` on its players), an
-   `ILooseBodyRest` for what a rested ball becomes, an `IAtmosphereSource` for its sky.
+   `ILooseBodyRest` for what a rested ball becomes, an `IAtmosphereSource` for its sky and look.
 5. Check it: tests that play it through `HeadlessMatch` (`tests/Itera.MeshSample.Tests`), and
    `validate.sh --binary PATH` (the vulkan skill) for its drawing.
 

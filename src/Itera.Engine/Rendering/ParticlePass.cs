@@ -34,7 +34,8 @@ public readonly record struct ParticleWrite(ParticleConstants Constants, bool Ac
 /// them after the slot's fence into <see cref="ParticleStats"/>). After the models it draws the cubes
 /// (<c>particle-cubes.vert</c> and <c>.frag</c>, writing depth) and then the sprites (<c>particle-sprites.vert</c> and
 /// <c>.frag</c>, premultiplied, testing depth only), each with one <c>vkCmdDrawIndirect</c> whose instance count the
-/// simulate pass wrote. Set 0 is the particles' (the buffers and the depth image, <see cref="DepthTarget"/>); the
+/// simulate pass wrote. Set 0 is the particles' (the buffers, the depth image, <see cref="DepthTarget"/>, and the mesh
+/// pass's look buffer for the draws); the
 /// compute passes also bind <see cref="Meshes.MeshPass"/>'s set as set 1, for the cascades, the lighting record, and the sky
 /// field. While the loading screen covers the picture the world is not drawn, and the particles wait. Created before
 /// the render thread starts; recorded by the render thread.
@@ -47,7 +48,16 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
     /// <summary>The depth image's binding (particle-simulate.comp's sceneDepth).</summary>
     private const int DepthBinding = 7;
 
-    private const int Bindings = 8;
+    /// <summary>
+    /// The frame's look, the mesh pass's buffer of every slot's (<see cref="Meshes.MeshPass.LookOf"/>), which the draws'
+    /// lighting, fog, tone curve, and grade read (<c>look.glsl</c> compiled with <see cref="LookDefine"/>).
+    /// </summary>
+    private const int LookBinding = 8;
+
+    private const int Bindings = 9;
+
+    /// <summary>Where the draw shaders find the look: this set's <see cref="LookBinding"/>.</summary>
+    private const string LookDefine = "LOOK_BINDING 8";
     private const ShaderStageFlags SetStages =
         ShaderStageFlags.ComputeBit | ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit;
     private const ShaderStageFlags DrawStages = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit;
@@ -646,10 +656,10 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
         {
             _shaders.Compile("particle-spawn.comp"),
             _shaders.Compile("particle-simulate.comp"),
-            _shaders.Compile("particle-cubes.vert"),
-            _shaders.Compile("particle-cubes.frag"),
-            _shaders.Compile("particle-sprites.vert"),
-            _shaders.Compile("particle-sprites.frag"),
+            _shaders.Compile("particle-cubes.vert", [LookDefine]),
+            _shaders.Compile("particle-cubes.frag", [LookDefine]),
+            _shaders.Compile("particle-sprites.vert", [LookDefine]),
+            _shaders.Compile("particle-sprites.frag", [LookDefine]),
         };
     }
 
@@ -767,6 +777,13 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
             DescriptorCount = 1,
             StageFlags = ShaderStageFlags.ComputeBit,
         };
+        bindings[LookBinding] = new DescriptorSetLayoutBinding
+        {
+            Binding = LookBinding,
+            DescriptorType = DescriptorType.StorageBuffer,
+            DescriptorCount = 1,
+            StageFlags = DrawStages,
+        };
 
         var layoutInfo = new DescriptorSetLayoutCreateInfo
         {
@@ -779,7 +796,7 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
 
         var poolSizes = stackalloc DescriptorPoolSize[2]
         {
-            new(DescriptorType.StorageBuffer, StorageBindings),
+            new(DescriptorType.StorageBuffer, StorageBindings + 1),
             new(DescriptorType.CombinedImageSampler, 1),
         };
         var poolInfo = new DescriptorPoolCreateInfo
@@ -837,6 +854,17 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
         }
 
         vk.UpdateDescriptorSets(device, StorageBindings, writes, 0, null);
+        var look = new DescriptorBufferInfo(_meshPass.LookBuffer.Buffer, 0, Vk.WholeSize);
+        var lookWrite = new WriteDescriptorSet
+        {
+            SType = StructureType.WriteDescriptorSet,
+            DstSet = _set,
+            DstBinding = LookBinding,
+            DescriptorCount = 1,
+            DescriptorType = DescriptorType.StorageBuffer,
+            PBufferInfo = &look,
+        };
+        vk.UpdateDescriptorSets(device, 1, &lookWrite, 0, null);
         _context.SetObjectName(ObjectType.DescriptorSet, _set.Handle, "particles");
     }
 
