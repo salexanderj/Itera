@@ -47,7 +47,7 @@ internal struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
             return false;
         }
 
-        // Statics are the voxels.
+        // Statics are the voxels' boxes and a game's mesh colliders.
         if (a.Mobility == CollidableMobility.Static)
         {
             return TouchesVoxels(b.BodyHandle, a.StaticHandle);
@@ -67,12 +67,20 @@ internal struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
     }
 
     /// <summary>
-    /// True when <paramref name="body"/> touches the voxel static <paramref name="ground"/>: it is no stand-in and the
-    /// static is of the level the body collides with (a giant's parts the coarse ones).
+    /// True when <paramref name="body"/> touches the static <paramref name="ground"/>: it is no stand-in, and the static is
+    /// of the voxel level the body collides with (a giant's parts the coarse ones) or a game's, which every level touches.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private readonly bool TouchesVoxels(BodyHandle body, StaticHandle ground) =>
-        _kinds[body.Value] != BodyKind.StandIn && _kinds.StaticLevel(ground.Value) == _kinds.Level(body.Value);
+    private readonly bool TouchesVoxels(BodyHandle body, StaticHandle ground)
+    {
+        if (_kinds[body.Value] == BodyKind.StandIn)
+        {
+            return false;
+        }
+
+        var level = _kinds.StaticLevel(ground.Value);
+        return level == BodyKinds.AnyLevel || level == _kinds.Level(body.Value);
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly bool AllowContactGeneration(int workerIndex, CollidablePair pair, int childIndexA, int childIndexB)

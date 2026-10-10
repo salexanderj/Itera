@@ -155,7 +155,7 @@ Rules:
 | `Maths/` | `DeterministicMath`, `Rotation`, `RigidTransform`, and `Octahedral` (the packed normals and tangents of mesh vertices) |
 | `Assets/` | Mesh assets (`MeshAsset`, `MeshAssets`): models read from glTF files at the run's "mesh assets" step (`GltfImport`, `TextureDecode`, `MipChain`, `MeshTangents`) and meshes a game builds; a skinned model's `Rig`, `RigClip` with `RigTrack`, and `JointTransform` |
 | `Animation/` | Skeletons, poses, clips, aim, and foot placement |
-| `Physics/` | `PhysicsWorld` (Bepu simulation, pool, thread dispatcher, shared voxel box shapes, characters' stand-ins), callbacks, `BodyKinds`, `VoxelColliders`, `LooseBodies`, `LooseBodyVoxels`, `SolidModelVoxels` and `SolidColumns`, `VoxelCharacterMover` |
+| `Physics/` | `PhysicsWorld` (Bepu simulation, pool, thread dispatcher, shared voxel box shapes, characters' stand-ins), callbacks, `BodyKinds`, `VoxelColliders`, `LooseBodies`, `LooseBodyVoxels`, `SolidModelVoxels` and `SolidColumns`, `VoxelCharacterMover`, `MeshColliders` (a game's static triangle colliders, also Bepu mesh statics), `CollisionSources` (the ray over the terrain and the colliders), `SurfaceHit` |
 | `Voxels/` | `VoxelWorld` (streaming, edits, change list, stats, `Raycast`, collision queries, block reads), `VoxelGrid` and `GridLevel`, `VoxelDensity`, `IVoxelPassability`, `VoxelBoxes`, `VoxelMemory` (native block pools), `BrickCodec`, `ChunkTree`, `Column`, `VoxelEditing` and `VoxelEdit`, `VoxelPiece` and `PieceRuns`, `VoxelModels` (small voxel volumes drawn at any position and turn), `EditLog` and `EditLogSerializer`, `VoxelChangeLog`, `IChunkGenerator`, `VoxelWorkers` and `ColumnJob`, `LevelDistances`, `StreamingCentre`, `VoxelConstants` |
 | `Voxels/Generation/` | The world generation toolkit (see "World generation") |
 | `Navigation/` | `NavigationService`, `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`, `INavGridSource` (the game's part), `FlowFieldBuilder` and `FlowField`, `NavGridScanner`, `NavigationDebugLines` |
@@ -915,9 +915,10 @@ A model is a small voxel volume drawn at any position and turn: a part of a char
 
 ### Characters move with Itera's own controller against the level-0 voxels; Bepu is for loose bodies
 
-Bepu makes no contacts between a kinematic body and a static one, so a Bepu character controller would need a dynamic body
-held upright by a custom constraint, or sweeps, and either needs collidables built from the voxels and rebuilt after every
-edit near a character. `VoxelCharacterMover` instead reads the chunk trees directly (`VoxelWorld.Collision.cs`), so a dig
+Itera's narrow-phase filter makes no contacts between two collidables that are not dynamic (`NarrowPhaseCallbacks`;
+Bepu itself would ask about them), so a Bepu character controller would need a dynamic body held upright by a custom
+constraint, or sweeps (which give no way out of a start inside a surface and may miss thin obstacles), and either needs
+collidables built from the voxels and rebuilt after every edit near a character. `VoxelCharacterMover` instead reads the chunk trees directly (`VoxelWorld.Collision.cs`), so a dig
 changes collision at once:
 
 - The body is an upright cylinder with flat ends, not a capsule: every trunk, boulder, and curved wall is a staircase of

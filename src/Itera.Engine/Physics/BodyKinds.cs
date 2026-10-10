@@ -23,7 +23,8 @@ public enum BodyKind : byte
 /// (<see cref="VoxelColliders"/>) and the one it was made for (its base level), and the ragdoll it belongs to; and the
 /// voxel level of each static, by static handle. A body touches only the statics of its own level. Set on the main thread
 /// between steps; read by Bepu's worker threads during a step. Bodies never set are <see cref="BodyKind.Loose"/>, at
-/// level 0, and in no ragdoll; statics never set are at level 0.
+/// level 0, and in no ragdoll; statics never set are at level 0. A game's static (a mesh collider,
+/// <see cref="SetGameStatic"/>) is at <see cref="AnyLevel"/>: every body that touches statics touches it.
 /// </summary>
 internal sealed class BodyKinds
 {
@@ -47,6 +48,9 @@ internal sealed class BodyKinds
 
     /// <summary>The ragdoll the body with handle value <paramref name="handle"/> belongs to; 0 for none.</summary>
     public int Group(int handle) => (uint)handle < (uint)_groups.Length ? _groups[handle] : 0;
+
+    /// <summary>The level of a game's static, which bodies of every level touch.</summary>
+    public const int AnyLevel = byte.MaxValue;
 
     /// <summary>The voxel level of the static with handle value <paramref name="handle"/>.</summary>
     public int StaticLevel(int handle) => (uint)handle < (uint)_staticLevels.Length ? _staticLevels[handle] : 0;
@@ -78,6 +82,18 @@ internal sealed class BodyKinds
         if ((uint)body.Value < (uint)_levels.Length)
         {
             _levels[body.Value] = (byte)level;
+        }
+    }
+
+    /// <summary>Records a game's static, which bodies of every level touch. Main thread, between steps.</summary>
+    public void SetGameStatic(StaticHandle handle) => SetStatic(handle, AnyLevel);
+
+    /// <summary>Forgets a removed static, so a static that takes its handle next starts at level 0. Main thread.</summary>
+    public void ClearStatic(StaticHandle handle)
+    {
+        if ((uint)handle.Value < (uint)_staticLevels.Length)
+        {
+            _staticLevels[handle.Value] = 0;
         }
     }
 

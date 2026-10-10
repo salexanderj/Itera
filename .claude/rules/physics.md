@@ -41,12 +41,30 @@ inside a voxel, where its density crosses one half (`VoxelWorld.SurfaceOver`), b
 that differ by less than the slope limit over a voxel. The map's edge is a wall at every height (`AddMapEdge`). It waits
 while the voxels round it are not loaded. Its widest body is 2 m in radius (`MaxRadiusMetres`).
 
+## Mesh colliders and the shared ray
+
+A game's static triangle colliders (`MeshColliders`, scoped to the match): `Add(asset, transform, tagsOf)` registers a
+mesh asset placed by a transform, each triangle tagged by its material's name through `tagsOf`, or `Add(positions,
+indices, transform, tags)` triangles built in code; `Remove` takes one away. Only registered colliders collide; drawing
+stays apart. Add them once the match's physics exists (from a system's `Initialize` on). The triangles are kept in the
+world's space with a grid of 4 m buckets over x and z (made again at the first query after a change, which allocates;
+other queries allocate nothing), and each collider is also a Bepu `Mesh` static, its triangles wound clockwise seen
+from the front as Bepu asks (glTF's are counter-clockwise), one-sided in Bepu, at `BodyKinds.AnyLevel`: every loose body
+touches it whatever its voxel level (`SetGameStatic`; `ClearStatic` on removal). Surface tags are up to 32 bits a game
+defines: voxel materials through its `IVoxelSurfaceTags` (none by default), mesh materials by name at registration.
+`CollisionSources` (scoped) is what rays meet: `Raycast` answers from the terrain (`VoxelWorld.Raycast`) and the
+colliders (two-sided, nearest first through the buckets), the nearer winning, as a `SurfaceHit` (point, normal turned
+towards the origin, distance, tags, source, and the voxel's material or the collider and triangle). The voxel tools'
+ray (`ToolAim`) stays the terrain's own.
+
 ### Files in `src/Itera.Engine`
 
   - `Physics/`: the Bepu simulation and stand-ins (`PhysicsWorld`), voxel box statics (`VoxelColliders`), loose bodies
     (`LooseBodies`: table, rest, and removal; `.Pieces.cs` balls and lifted pieces; `.Parts.cs` cut parts and ragdolls;
     `.Hulls.cs` large hulls), loose bodies and solid models as voxels (`LooseBodyVoxels`, `SolidModelVoxels`,
-    `SolidColumns`), the character mover (`VoxelCharacterMover`), and Bepu's callback structs.
+    `SolidColumns`), the character mover (`VoxelCharacterMover`), a game's mesh colliders (`MeshColliders`) and the ray
+    over them and the terrain (`CollisionSources`, `SurfaceHit`), and Bepu's callback structs. The voxels' surface tags
+    are `Voxels/IVoxelSurfaceTags`.
   - `Systems/`: `PhysicsReadSystem`, `LooseBodySystem`, `LooseBodyRoom`, `StandInSystem`, `DebugBallSystem`,
     `LooseBodyModelSystem` (`.claude/rules/systems.md`).
 

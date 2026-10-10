@@ -146,7 +146,11 @@ public static class EngineServiceCollectionExtensions
         );
         services.TryAddScoped<EcsWorld>();
         services.TryAddScoped<PhysicsWorld>();
+        // The match's colliders a game registers, and the sources rays and the character mover meet: those and the terrain.
+        services.TryAddScoped<MeshColliders>();
+        services.TryAddScoped<CollisionSources>();
         services.TryAddSingleton<IVoxelPassability, NothingPassable>();
+        services.TryAddSingleton<IVoxelSurfaceTags, NoVoxelSurfaceTags>();
         // What the engine's player, camera, and benchmark systems share (Systems/): the input block a game sets, the
         // console's resets, and the movement keys, made when a game first asks for them (an IRunStartup, before its own
         // keys). The play area and the benchmark's view of the engine come with the terrain (AddIteraVoxels).

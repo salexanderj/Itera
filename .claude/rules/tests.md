@@ -80,7 +80,9 @@ Where tests live:
   .glb's BIN chunk, PNG images, skins, joints, and animations) read by `GltfImportTests` and `RigImportTests` (a rig
   posed against SharpGLTF's own world matrices); `RigClipTests` (step, linear, and cubic sampling); `MeshAssetsTests`,
   `TextureDecodeTests`, `MipChainTests`, `MeshTangentsTests`.
-- `Itera.Engine.Tests/Physics/`: the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves) and
+- `Itera.Engine.Tests/Physics/`: mesh colliders (`MeshCollidersTests`: two-sided rays across buckets, tags, a ball that
+  lands on a collider's Bepu static at any voxel level) and the shared ray (`CollisionSourcesTests`); the mover through
+  test features (walls, 1 cm steps, a pit, a ceiling, leaves) and
   10,000 random moves that never leave it inside a voxel; wide bodies (`WideBodyMoverTests`); statics of voxel boxes,
   coarse colliders (`CoarseCollidersTests`), ragdolls (`RagdollTests`), thrown and settled pieces, the mover among
   loose bodies (`MoverWithBodiesTests`), and solid models (`SolidModelVoxelsTests`).

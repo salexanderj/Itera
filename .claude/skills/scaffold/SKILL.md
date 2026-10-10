@@ -122,10 +122,13 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 3. A system that places it: `World.Create(MeshPlacement.At(position, orientation, scale), DrawnMesh.Of(index))`, with
    the index from `MeshAssets.Find(name)` looked up once (`FoxSystem`); a fixed system that moves it copies the pose
    into the previous one first. `MeshDrawSystem` draws it. A glTF model's front is +z.
-4. A skinned model plays a clip with `MeshAnimator.Playing(rig.FindClip("Walk"))` added to it (the rig from
+4. A model that things stand on or bump into gets a collider where it is placed: `MeshColliders.Add(asset, transform,
+   tagsOf)` from a system's `Initialize` (or later), `tagsOf` giving each material's surface tags (game-defined bits;
+   voxel materials' through an `IVoxelSurfaceTags`). Loose bodies land on it; `CollisionSources.Raycast` meets it.
+5. A skinned model plays a clip with `MeshAnimator.Playing(rig.FindClip("Walk"))` added to it (the rig from
    `MeshAssets.TryGet`); a system that changes clips runs before the engine's `MeshAnimatorSystem`, which the game
    registers once, after every such system.
-5. Check it: `meshes` lists it (triangles, materials, textures, size, joints, clips), `meshes place NAME [CLIP
+6. Check it: `meshes` lists it (triangles, materials, textures, size, joints, clips), `meshes place NAME [CLIP
    [SECONDS]]` puts one in front of the camera, the log's `Mesh assets:` lines have no Warning about it, a
    `ScenarioTests` row finds it in `MeshInstances`, and for a skinned model a test like `FoxModelTests` compares its
    clips with SharpGLTF's own world matrices.
