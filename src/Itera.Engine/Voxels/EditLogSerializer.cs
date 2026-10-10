@@ -135,6 +135,41 @@ internal static class EditLogSerializer
         return log.Count - from;
     }
 
+    /// <summary>
+    /// Writes the header of a match without a voxel world (its identity, <c>IMatchIdentity</c>, where a world writes its
+    /// generator), with no edits and no pieces: a world-less save, or a world-less host's join payload. Read back as any
+    /// other stream.
+    /// </summary>
+    public static void WriteEmpty(
+        Stream stream,
+        string identity,
+        int identityVersion,
+        ulong seed,
+        int fixedStepHz,
+        ReadOnlySpan<byte> game
+    )
+    {
+        if (game.Length > MaxGameDataBytes)
+        {
+            throw new ArgumentException(
+                $"The game's match data is {game.Length} bytes; at most {MaxGameDataBytes} fit.",
+                nameof(game)
+            );
+        }
+
+        using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+        writer.Write(Magic);
+        writer.Write(FormatVersion);
+        writer.Write(identity);
+        writer.Write(identityVersion);
+        writer.Write(seed);
+        writer.Write(fixedStepHz);
+        writer.Write(game.Length);
+        writer.Write(game);
+        writer.Write(0L);
+        writer.Write(0);
+    }
+
     /// <summary>True when every put-back after the log's last reset puts back a piece lifted after it.</summary>
     private static bool OnlyLaterPieces(EditLog log)
     {

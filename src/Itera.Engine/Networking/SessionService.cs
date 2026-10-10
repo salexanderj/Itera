@@ -58,7 +58,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
     private readonly int _fixedStepHz;
     private readonly ulong _configuredSeed;
     private readonly double _statsIntervalSeconds;
-    private readonly VoxelWorld _voxels;
+    private readonly VoxelWorld? _voxels;
     private readonly IMatchIdentity _identity;
     private readonly ISessionTransport _transport;
     private readonly ILogger<SessionService> _logger;
@@ -90,14 +90,14 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
     public SessionService(
         IOptions<EngineOptions> options,
         MatchContext match,
-        VoxelWorld voxels,
         IMatchIdentity identity,
         ISessionTransports transports,
         SteamService steam,
         ILogger<SessionService> logger,
         IEnumerable<ISessionGameHandler> handlers,
         SaveService saves,
-        ISessionMatchData? matchData = null
+        ISessionMatchData? matchData = null,
+        VoxelWorld? voxels = null
     )
         : this(
             SettingsFor(options.Value.Session, match.Start),
@@ -120,7 +120,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
     /// <param name="fixedStepHz">This game's fixed step rate.</param>
     /// <param name="configuredSeed">The seed from the options: the match's on a host or offline.</param>
     /// <param name="statsIntervalSeconds">Seconds between stats lines; zero or less turns them off.</param>
-    /// <param name="voxels">The world whose edits the session carries.</param>
+    /// <param name="voxels">The world whose edits the session carries; null for a game without voxel terrain.</param>
     /// <param name="transport">Carries the messages.</param>
     /// <param name="logger">Logger.</param>
     /// <param name="clock">Seconds from any start, for timeouts and stats.</param>
@@ -135,7 +135,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         int fixedStepHz,
         ulong configuredSeed,
         double statsIntervalSeconds,
-        VoxelWorld voxels,
+        VoxelWorld? voxels,
         ISessionTransport transport,
         ILogger<SessionService> logger,
         Func<double> clock,
@@ -147,7 +147,16 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         IMatchIdentity? identity = null
     )
     {
-        _identity = identity ?? new GeneratorMatchIdentity(voxels.Generator);
+        _identity =
+            identity
+            ?? (
+                voxels is null
+                    ? throw new ArgumentNullException(
+                        nameof(identity),
+                        "A session without a world needs the match's identity."
+                    )
+                    : new GeneratorMatchIdentity(voxels.Generator)
+            );
         _settings = settings;
         _fixedStepHz = fixedStepHz;
         _configuredSeed = configuredSeed;

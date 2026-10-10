@@ -12,17 +12,20 @@ namespace Itera.Engine.Tests.Matches;
 /// </summary>
 public sealed class CompositionTests
 {
-    [Fact]
-    public void The_run_resolves_from_the_root_and_a_match_from_its_scope()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void The_run_resolves_from_the_root_and_a_match_from_its_scope(bool terrain)
     {
-        using var provider = EngineComposition.Build();
+        using var provider = EngineComposition.Build(terrain: terrain);
 
         Assert.NotNull(provider.GetRequiredService<GameLoop>());
         using var scope = provider.CreateScope();
         scope
             .ServiceProvider.GetRequiredService<MatchContext>()
             .Set(new MatchStart(SessionMode.Offline, SessionTransportKind.Direct, null, 1, null, false));
-        Assert.NotNull(scope.ServiceProvider.GetRequiredService<MatchServices>());
+        var match = scope.ServiceProvider.GetRequiredService<MatchServices>();
+        Assert.Equal(terrain, match.Terrain is not null);
     }
 
     [Fact]

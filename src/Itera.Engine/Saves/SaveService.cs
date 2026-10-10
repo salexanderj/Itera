@@ -16,13 +16,16 @@ namespace Itera.Engine.Saves;
 /// the session step) the save's seed and rules replace the options'; its edits load once the world exists
 /// (<see cref="LoadEdits"/>). At quit (<see cref="Save"/>), only after a loop that ended without an exception, every
 /// thrown ball still loose goes back into the grid where it is, then the log is written to a temporary file, the old
-/// save is kept as <c>NAME.save.bak</c>, and the new one takes its place. A client never saves. Main thread.
+/// save is kept as <c>NAME.save.bak</c>, and the new one takes its place. A client never saves. A game without voxel
+/// terrain saves the header alone, with its match identity (<see cref="IMatchIdentity"/>) where a world writes its
+/// generator, and no edits (<see cref="EditLogSerializer.WriteEmpty"/>). Main thread.
 /// </summary>
 public sealed partial class SaveService
 {
     private readonly string? _name;
     private readonly string _folder;
-    private readonly VoxelWorld _voxels;
+    private readonly VoxelWorld? _voxels;
+    private readonly IMatchIdentity _identity;
     private readonly LooseBodies? _bodies;
     private readonly ILogger<SaveService> _logger;
     private byte[]? _loaded;
@@ -30,28 +33,42 @@ public sealed partial class SaveService
     public SaveService(
         IOptions<EngineOptions> options,
         MatchContext match,
-        VoxelWorld voxels,
-        LooseBodies bodies,
-        ILogger<SaveService> logger
+        IMatchIdentity identity,
+        ILogger<SaveService> logger,
+        VoxelWorld? voxels = null,
+        LooseBodies? bodies = null
     )
-        : this(match.Start.SaveName, SaveSettings.Folder(options.Value.Application), voxels, bodies, logger) { }
+        : this(match.Start.SaveName, SaveSettings.Folder(options.Value.Application), voxels, bodies, logger, identity)
+    { }
 
     /// <param name="name">The save's name, or null for none.</param>
     /// <param name="folder">The folder that holds the saves.</param>
-    /// <param name="voxels">The world saved and loaded.</param>
+    /// <param name="voxels">The world saved and loaded; null for a game without voxel terrain.</param>
     /// <param name="bodies">The loose bodies put back before saving; null for none.</param>
     /// <param name="logger">Logger.</param>
+    /// <param name="identity">The match's identity, which a world-less save is written and read with; the world's generator's when null.</param>
     internal SaveService(
         string? name,
         string folder,
-        VoxelWorld voxels,
+        VoxelWorld? voxels,
         LooseBodies? bodies,
-        ILogger<SaveService> logger
+        ILogger<SaveService> logger,
+        IMatchIdentity? identity = null
     )
     {
         _name = name;
         _folder = folder;
         _voxels = voxels;
+        _identity =
+            identity
+            ?? (
+                voxels is null
+                    ? throw new ArgumentNullException(
+                        nameof(identity),
+                        "A save without a world needs the match's identity."
+                    )
+                    : new GeneratorMatchIdentity(voxels.Generator)
+            );
         _bodies = bodies;
         _logger = logger;
     }
@@ -88,7 +105,10 @@ public sealed partial class SaveService
         try
         {
             _loaded = File.ReadAllBytes(path);
-            header = _voxels.ReadSaveHeader(new MemoryStream(_loaded, writable: false));
+            var stream = new MemoryStream(_loaded, writable: false);
+            header =
+                _voxels?.ReadSaveHeader(stream)
+                ?? EditLogSerializer.ReadHeader(stream, _identity.Id, _identity.Version);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
@@ -139,7 +159,7 @@ public sealed partial class SaveService
         long count;
         try
         {
-            count = _voxels.LoadEdits(new MemoryStream(_loaded, writable: false));
+            count = _voxels?.LoadEdits(new MemoryStream(_loaded, writable: false)) ?? CheckNoEdits(_loaded);
         }
         catch (Exception ex) when (ex is InvalidDataException or InvalidOperationException)
         {
@@ -184,7 +204,23 @@ public sealed partial class SaveService
         {
             using var bytes = new MemoryStream();
             // Only the edits since the last reset: a lost game's restart leaves the earlier games' edits out.
-            var written = _voxels.SaveEdits(bytes, match.FixedStepHz, match.Game, afterLastReset: true);
+            long written = 0;
+            if (_voxels is null)
+            {
+                EditLogSerializer.WriteEmpty(
+                    bytes,
+                    _identity.Id,
+                    _identity.Version,
+                    match.Seed,
+                    match.FixedStepHz,
+                    match.Game
+                );
+            }
+            else
+            {
+                written = _voxels.SaveEdits(bytes, match.FixedStepHz, match.Game, afterLastReset: true);
+            }
+
             Directory.CreateDirectory(_folder);
             using (var file = File.Create(temporary))
             {
@@ -210,6 +246,16 @@ public sealed partial class SaveService
             Failure = $"The save {_name} could not be written: {ex.Message}";
             TryDelete(temporary);
         }
+    }
+
+    /// <summary>A world-less game's save: its header read again, and no edits in it. Returns 0.</summary>
+    private long CheckNoEdits(byte[] save)
+    {
+        var edits = new List<VoxelEdit>();
+        EditLogSerializer.Read(new MemoryStream(save, writable: false), _identity.Id, _identity.Version, edits, []);
+        return edits.Count == 0
+            ? 0
+            : throw new InvalidDataException($"It holds {edits.Count} voxel edit(s), and this game has no world.");
     }
 
     /// <summary>Why the last <see cref="Save"/> failed; null when it did not. The menu shows it.</summary>

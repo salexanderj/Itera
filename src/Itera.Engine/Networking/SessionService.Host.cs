@@ -88,19 +88,34 @@ public sealed partial class SessionService
     }
 
     /// <summary>
-    /// Starts a client's join: the welcome, then the join payload (the edit log, saved now) as the transport has room for
-    /// it (<see cref="SendDownload"/>), all on the reliable channel, in order. The client's slot is taken from now on;
-    /// it joins once the last of the payload is sent.
+    /// Starts a client's join: the welcome, then the join payload (the edit log, saved now; without a world, its header
+    /// alone, with no edits) as the transport has room for it (<see cref="SendDownload"/>), all on the reliable channel,
+    /// in order. The client's slot is taken from now on; it joins once the last of the payload is sent.
     /// </summary>
     private void SendWorld(int peer, HostPeer client)
     {
         client.JoinStarted = Stopwatch.GetTimestamp();
         var payload = new MemoryStream();
-        _voxels.SaveEdits(payload, Match.FixedStepHz, Match.Game);
+        if (_voxels is null)
+        {
+            EditLogSerializer.WriteEmpty(
+                payload,
+                _identity.Id,
+                _identity.Version,
+                Match.Seed,
+                Match.FixedStepHz,
+                Match.Game
+            );
+        }
+        else
+        {
+            _voxels.SaveEdits(payload, Match.FixedStepHz, Match.Game);
+        }
+
         client.SavedMilliseconds = Stopwatch.GetElapsedTime(client.JoinStarted).TotalMilliseconds;
         client.Download = payload;
         client.DownloadSent = 0;
-        client.SentThrough = _voxels.EditCount;
+        client.SentThrough = _voxels?.EditCount ?? 0;
 
         _writer.Reset();
         _writer.WriteByte((byte)MessageKind.Welcome);
@@ -258,6 +273,11 @@ public sealed partial class SessionService
     /// <summary>Sends each joined client the edits of the log it has not been sent, lifts with their pieces.</summary>
     private void SendNewEdits()
     {
+        if (_voxels is null)
+        {
+            return;
+        }
+
         var newest = _voxels.EditCount;
         foreach (var (id, peer) in _peers)
         {

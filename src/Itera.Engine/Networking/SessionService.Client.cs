@@ -207,7 +207,7 @@ public sealed partial class SessionService
                 var edit = SessionProtocol.ReadEdit(ref reader);
                 var maker = SessionProtocol.ReadMaker(ref reader);
                 reader.EnsureEnd();
-                _voxels.ApplySequenced(in edit, maker);
+                (_voxels ?? throw NoWorldForEdits()).ApplySequenced(in edit, maker);
                 break;
             case (JoinState.Loaded, MessageKind.EditWithPiece):
                 ReadLift(ref reader);
@@ -285,8 +285,21 @@ public sealed partial class SessionService
         }
 
         reader.EnsureEnd();
-        _voxels.ApplyHostLift(in edit, CollectionsMarshal.AsSpan(_runs), maker);
+        (_voxels ?? throw NoWorldForEdits()).ApplyHostLift(in edit, CollectionsMarshal.AsSpan(_runs), maker);
     }
+
+    /// <summary>A world-less host's payload: its header, for the match's identity, and no edits. Returns 0.</summary>
+    private long ReadEmptyPayload(Stream payload)
+    {
+        var edits = new List<VoxelEdit>();
+        EditLogSerializer.Read(payload, _identity.Id, _identity.Version, edits, []);
+        return edits.Count == 0
+            ? 0
+            : throw new InvalidDataException($"The host sent {edits.Count} voxel edit(s) to a game without a world.");
+    }
+
+    private static InvalidDataException NoWorldForEdits() =>
+        new("The host sent a voxel edit to a game without a world.");
 
     private void ReadRoster(ref MessageReader reader)
     {
@@ -315,7 +328,10 @@ public sealed partial class SessionService
         RosterVersion++;
     }
 
-    /// <summary>Loads the payload into the world, applies what came after it, and makes the world follow the host.</summary>
+    /// <summary>
+    /// Loads the payload into the world, applies what came after it, and makes the world follow the host. Without a world
+    /// the payload is read for its header alone, and it must hold no edits.
+    /// </summary>
     private void LoadDownload()
     {
         var start = Stopwatch.GetTimestamp();
@@ -323,7 +339,7 @@ public sealed partial class SessionService
         try
         {
             _payload!.Position = 0;
-            edits = _voxels.LoadEdits(_payload);
+            edits = _voxels?.LoadEdits(_payload) ?? ReadEmptyPayload(_payload);
         }
         catch (InvalidDataException ex)
         {
@@ -331,7 +347,7 @@ public sealed partial class SessionService
         }
 
         _payload = null;
-        _voxels.FollowHost();
+        _voxels?.FollowHost();
         _join = JoinState.Loaded;
         var loaded = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
         foreach (var message in _early)

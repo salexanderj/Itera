@@ -25,8 +25,9 @@ The engine streams a voxel world (`VoxelWorld`: columns at every level around st
 threads, with edits), draws it as triangle meshes through Vulkan, runs an Arch ECS world at 60 Hz, steps loose bodies in
 Bepu, plays procedural sound through OpenAL, draws its UI with Skia, carries sessions over LiteNetLib or Steam, saves a
 world as its seed plus its edit log, and loads mods from `Mods/`. Input events become one `InputSnapshot` per frame
-(`InputService.Frame`) and one per fixed step (`InputService.Tick`). Every match needs a world generator today; making
-voxels optional is open work.
+(`InputService.Frame`) and one per fixed step (`InputService.Tick`). Voxel terrain is optional: a game that registers
+no generator and does not call `AddIteraVoxels` plays matches without it; voxel models, loose bodies, and the
+character mover still need it today (the mesh path's phase 5 is making them independent).
 
 `ARCHITECTURE.md` holds the full description, the dependencies, the design decisions, and the open work. Read it before
 changing anything structural. `docs/` holds the write-ups behind decisions: `voxel-structures.md`, `edit-log-compaction.md`,

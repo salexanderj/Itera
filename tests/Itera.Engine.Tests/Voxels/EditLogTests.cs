@@ -153,6 +153,34 @@ public sealed class EditLogTests
     }
 
     [Fact]
+    public void A_match_without_a_world_is_written_as_a_worlds_log_of_no_edits()
+    {
+        using var memory = new VoxelMemory(1 << 20);
+        using var worlds = new MemoryStream();
+        EditLogSerializer.Write(
+            worlds,
+            "mesh.game",
+            2,
+            77UL,
+            30,
+            [5, 6],
+            new EditLog(1, VoxelGrid.Unit),
+            memory,
+            new byte[VoxelConstants.ChunkVoxels]
+        );
+        using var empty = new MemoryStream();
+
+        EditLogSerializer.WriteEmpty(empty, "mesh.game", 2, 77UL, 30, [5, 6]);
+
+        Assert.Equal(worlds.ToArray(), empty.ToArray());
+        empty.Position = 0;
+        var edits = new List<VoxelEdit>();
+        var header = EditLogSerializer.Read(empty, "mesh.game", 2, edits, []);
+        Assert.Equal((77UL, 0L, 30), (header.Seed, header.Count, header.FixedStepHz));
+        Assert.Empty(edits);
+    }
+
+    [Fact]
     public void The_header_reads_alone_with_the_match_settings()
     {
         var log = new EditLog(1, VoxelGrid.Unit);

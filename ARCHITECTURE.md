@@ -432,10 +432,14 @@ A game is an executable that registers the engine, then itself, and runs `GameLo
   `WorldResets`, and `MovementKeys`; and the match's identity (`IMatchIdentity`: the generator's id and version with
   voxel terrain, else the application's name at version 1; a game may register its own), which the hello, the welcome,
   and a lobby's match key carry.
-- `AddIteraVoxels()` (`VoxelServiceCollectionExtensions`) adds the voxel terrain: each match's `VoxelWorld`, its
-  `VoxelColliders`, `NavigationService`, `PlayArea` (from the match's grid), `IBenchmarkHost`, and the World, Navigation,
-  and Warm-up loading tasks, after the engine's Sounds and before the game's own. A game with terrain registers an
-  `IChunkGenerator` and calls it; until matches run without a world (the mesh path's phase 5), every game does.
+- `AddIteraVoxels()` (`VoxelServiceCollectionExtensions`) adds the voxel terrain: each match's `VoxelWorld` and
+  `MatchVoxels` (the match's terrain services together, `MatchServices.Terrain`), its `VoxelColliders`,
+  `NavigationService`, `PlayArea` (from the match's grid), `IBenchmarkHost`, and the World, Navigation, and Warm-up
+  loading tasks, after the engine's Sounds and before the game's own; and, while they keep their voxels in the world's
+  memory, the voxel models, the loose bodies, and the character mover. A game with terrain registers an
+  `IChunkGenerator` and calls it. A game without it plays matches with no voxel world: no voxels, navigation, or voxel
+  physics steps, nothing of a world on the GPU, a join payload and a save of the header alone (its match identity, seed,
+  step rate, and match data), and the session, physics, ECS, UI, audio, particles, mesh assets, and mods as usual.
 - These have engine defaults that a game may replace: `IVoxelPalette`
   (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable), `MenuStyle` (plain), and, for navigation,
   nothing (without an `INavGridSource` there is no navigation). A game adds an `IAtmosphereSource` for its sky, an
@@ -1274,10 +1278,10 @@ of buffers.
 
 Engine work that is known and not done:
 
-- **Making voxels optional.** The engine runs a match only with a voxel world and an `IChunkGenerator`, and several systems
-  (streaming centres, the player's mover, the sky field, the loading screen's World task) assume one. A game without voxels
-  should be able to register no generator and no voxel services, draw its own meshes, and still use the session, the UI,
-  the audio, the particles, the ECS, and the mods.
+- **Voxels optional, the rest.** A match runs without voxel terrain (no generator, no `AddIteraVoxels`), but voxel
+  models, loose bodies, and the character mover still keep their voxels in the world's memory and need terrain; colliders
+  of meshes, a character controller over them, and the movement building blocks for climbing are planned (the mesh
+  path's phase 5).
 - **Per-game look data in the shaders.** The art direction's constants (saturation and darkening of the world, the side
   shading, the warm and cool light, the split tone, the occlusion floor, the fog and sky light terms) sit in `mesh.frag` and
   `lighting.glsl`. They should be data a game sets, with today's values as the starter's defaults.

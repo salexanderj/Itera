@@ -118,14 +118,14 @@ public sealed class HeadlessMatch : IDisposable
     {
         Step(2);
         var deadline = Stopwatch.GetTimestamp() + (long)(mostSeconds * Stopwatch.Frequency);
-        while (!Match.Voxels.WantedColumnsResident)
+        while (Match.Terrain is { } terrain && !terrain.Voxels.WantedColumnsResident)
         {
             if (Stopwatch.GetTimestamp() > deadline)
             {
                 return false;
             }
 
-            Match.Voxels.Update(Seconds);
+            terrain.Voxels.Update(Seconds);
             Thread.Sleep(1);
         }
 
@@ -139,7 +139,7 @@ public sealed class HeadlessMatch : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         for (var i = 0; i < ticks; i++)
         {
-            Match.Voxels.Update(Seconds);
+            Match.Terrain?.Voxels.Update(Seconds);
             Input.BeginTick();
             Match.RunFixedStep(new FixedStepTime(_stepSeconds, Tick), _editColumns);
             Tick++;

@@ -29,8 +29,8 @@ public sealed record MatchGpu(Action<MatchServices> Begin, Action End);
 
 /// <summary>
 /// One match's engine services, made in the match's DI scope (every service that holds the match's state is Scoped):
-/// its session, world, physics, navigation, save, and ECS world, and the steps that start and stop them. The order is
-/// written here and in <c>GameLoop</c>'s run steps only. Layers, systems, and loading tasks of the scope are resolved
+/// its session, physics, save, and ECS world, its voxel terrain when the game has one (<see cref="Terrain"/>), and the
+/// steps that start and stop them. The order is written here and in <c>GameLoop</c>'s run steps only. Layers, systems, and loading tasks of the scope are resolved
 /// at their steps, never sooner: some read the match's seed, which the session settles. Main thread.
 /// </summary>
 public sealed partial class MatchServices
@@ -49,12 +49,7 @@ public sealed partial class MatchServices
         IServiceProvider scope,
         MatchContext context,
         SessionService session,
-        VoxelWorld voxels,
-        VoxelModels models,
         PhysicsWorld physics,
-        VoxelColliders colliders,
-        LooseBodyVoxels bodyVoxels,
-        NavigationService navigation,
         SaveService saves,
         EcsWorld ecs,
         UISurface ui,
@@ -63,19 +58,16 @@ public sealed partial class MatchServices
         FixedStepAccumulator accumulator,
         ParticleColours colours,
         ModLoader mods,
-        ILogger<MatchServices> logger
+        ILogger<MatchServices> logger,
+        MatchVoxels? terrain = null
     )
     {
         _mods = mods;
         _scope = scope;
         _context = context;
         Session = session;
-        Voxels = voxels;
-        Models = models;
+        Terrain = terrain;
         Physics = physics;
-        Colliders = colliders;
-        BodyVoxels = bodyVoxels;
-        Navigation = navigation;
         Saves = saves;
         Ecs = ecs;
         _ui = ui;
@@ -94,17 +86,25 @@ public sealed partial class MatchServices
 
     public SessionService Session { get; }
 
-    public VoxelWorld Voxels { get; }
+    /// <summary>The match's voxel terrain, or null for a game without one (no <c>AddIteraVoxels</c>).</summary>
+    public MatchVoxels? Terrain { get; }
 
-    public VoxelModels Models { get; }
+    /// <summary>The terrain's world. Throws in a match without terrain: code that may run there reads <see cref="Terrain"/>.</summary>
+    public VoxelWorld Voxels => (Terrain ?? throw NoTerrain()).Voxels;
+
+    /// <summary>The terrain's voxel models; throws in a match without terrain.</summary>
+    public VoxelModels Models => (Terrain ?? throw NoTerrain()).Models;
 
     public PhysicsWorld Physics { get; }
 
-    public VoxelColliders Colliders { get; }
+    /// <summary>The terrain's colliders; throws in a match without terrain.</summary>
+    public VoxelColliders Colliders => (Terrain ?? throw NoTerrain()).Colliders;
 
-    public LooseBodyVoxels BodyVoxels { get; }
+    /// <summary>The loose bodies as voxels; throws in a match without terrain.</summary>
+    public LooseBodyVoxels BodyVoxels => (Terrain ?? throw NoTerrain()).BodyVoxels;
 
-    public NavigationService Navigation { get; }
+    /// <summary>Navigation over the terrain; throws in a match without terrain.</summary>
+    public NavigationService Navigation => (Terrain ?? throw NoTerrain()).Navigation;
 
     public SaveService Saves { get; }
 
@@ -126,23 +126,25 @@ public sealed partial class MatchServices
     /// One fixed step of the match, in the order the game runs it (the main loop calls it; tests call it too, so they run
     /// what the game runs): the fixed group, the large edits' share (<paramref name="editColumns"/> columns), the voxel
     /// colliders, Bepu, the bodies as voxels, the mods (<paramref name="mods"/>), navigation's finished fields, and the
-    /// session's step. <paramref name="stats"/>, when given, takes the parts' timestamps.
+    /// session's step; the terrain's parts only with terrain. <paramref name="stats"/>, when given, takes the parts'
+    /// timestamps.
     /// </summary>
     public void RunFixedStep(in FixedStepTime step, int editColumns, FrameStats? stats = null, ModLoader? mods = null)
     {
+        var terrain = Terrain;
         var stepStart = Stopwatch.GetTimestamp();
         Ecs.FixedUpdate(in step);
         var editsStart = Stopwatch.GetTimestamp();
         // Large edits apply over steps, a share each step, before Bepu and the renderer read the change list.
-        Voxels.ApplyPendingEdits(editColumns);
+        terrain?.Voxels.ApplyPendingEdits(editColumns);
         var collidersStart = Stopwatch.GetTimestamp();
         // The fixed group's edits and the bodies' positions decide which voxels Bepu sees in this step.
-        Colliders.Update(step.StepSeconds);
+        terrain?.Colliders.Update(step.StepSeconds);
         var physicsStart = Stopwatch.GetTimestamp();
         Physics.Step(step.StepSeconds);
         var bodyVoxelsStart = Stopwatch.GetTimestamp();
         // The character mover reads loose bodies where this step left them.
-        BodyVoxels.Refresh();
+        terrain?.BodyVoxels.Refresh();
         stats?.RecordStepParts(
             stepStart,
             editsStart,
@@ -153,7 +155,7 @@ public sealed partial class MatchServices
         );
         mods?.FixedUpdate(in step);
         // Fields the navigation thread finished are taken in between steps, never while a system reads them.
-        Navigation.AfterFixedStep();
+        terrain?.Navigation.AfterFixedStep();
         // The step's edits, the tools' and the mods', go to the clients in the order they were made.
         Session.AfterFixedStep();
     }
@@ -161,37 +163,49 @@ public sealed partial class MatchServices
     /// <summary>
     /// The match's other steps, once the session has settled the match (at once offline or hosting; after the download
     /// when joining). The voxel world starts from the match's seed; the joined world step loads the host's edits (or the
-    /// named save's) into it; navigation starts with the seed and every edit so far; the save step writes the named save
-    /// when the match ends, while physics and the world still exist; the world goes to the GPU; the match's console
-    /// commands (registered as the HUD layers and systems are made) and HUD layers come before the systems; the mods
-    /// hear of the match once its systems exist; the loading screen waits for the match's tasks. ECS comes after physics and voxels so a system's <c>Initialize</c> can use
-    /// them, and its shutdown waits for character builds before the world's memory is freed.
+    /// named save's) into it, and without terrain only reads what the host sent; navigation starts with the seed and
+    /// every edit so far; the save step writes the named save when the match ends, while physics and the world still
+    /// exist; the world goes to the GPU; the match's console commands (registered as the HUD layers and systems are made)
+    /// and HUD layers come before the systems; the mods hear of the match once its systems exist; the loading screen
+    /// waits for the match's tasks. ECS comes after physics and voxels so a system's <c>Initialize</c> can use them, and
+    /// its shutdown waits for character builds before the world's memory is freed. Without terrain the voxels,
+    /// navigation, and voxel physics steps are left out, and no world goes to the GPU.
     /// </summary>
     internal IReadOnlyList<EngineStep> CreateWorldSteps(MatchGpu gpu, Func<double> now)
     {
-        return
-        [
-            new("physics", Physics.Initialize, Physics.Dispose),
-            new("voxels", InitializeVoxels, Voxels.Dispose),
-            new("joined world", Session.LoadJoinedWorld, () => { }),
-            new("navigation", Navigation.Initialize, Navigation.Dispose),
-            new("voxel physics", Colliders.Initialize, Colliders.Dispose),
-            new("save", () => { }, () => Saves.Save(EndedCleanly, Session.Role, Session.Match)),
-            new("tint", BeginTint, () => _colours.Tint = null),
-            new("world on the gpu", () => gpu.Begin(this), gpu.End),
-            new("match ui", BeginUi, EndUi),
-            new("ecs", InitializeEcs, Ecs.Dispose),
-            new("mods", () => _mods.MatchStarted(_scope), _mods.MatchEnded),
-            new("loading", () => BeginLoading(now()), _loading.End),
-        ];
+        var steps = new List<EngineStep> { new("physics", Physics.Initialize, Physics.Dispose) };
+        if (Terrain is { } terrain)
+        {
+            steps.Add(new("voxels", () => InitializeVoxels(terrain.Voxels), terrain.Voxels.Dispose));
+        }
+
+        steps.Add(new("joined world", Session.LoadJoinedWorld, () => { }));
+        if (Terrain is { } world)
+        {
+            steps.Add(new("navigation", world.Navigation.Initialize, world.Navigation.Dispose));
+            steps.Add(new("voxel physics", world.Colliders.Initialize, world.Colliders.Dispose));
+        }
+
+        steps.Add(new("save", () => { }, () => Saves.Save(EndedCleanly, Session.Role, Session.Match)));
+        steps.Add(new("tint", BeginTint, () => _colours.Tint = null));
+        steps.Add(new("world on the gpu", () => gpu.Begin(this), gpu.End));
+
+        steps.Add(new("match ui", BeginUi, EndUi));
+        steps.Add(new("ecs", InitializeEcs, Ecs.Dispose));
+        steps.Add(new("mods", () => _mods.MatchStarted(_scope), _mods.MatchEnded));
+        steps.Add(new("loading", () => BeginLoading(now()), _loading.End));
+        return steps;
     }
 
-    private void InitializeVoxels()
+    private void InitializeVoxels(VoxelWorld voxels)
     {
-        Voxels.Initialize(Session.Match.Seed);
+        voxels.Initialize(Session.Match.Seed);
         // Compiles the edit code in the background, so the first large edit in play does not stall.
-        Voxels.StartEditWarmUp();
+        voxels.StartEditWarmUp();
     }
+
+    private static InvalidOperationException NoTerrain() =>
+        new("This match has no voxel terrain: the game did not call AddIteraVoxels.");
 
     private void BeginTint()
     {

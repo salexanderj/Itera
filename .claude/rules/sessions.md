@@ -18,7 +18,9 @@ client says hello; the host answers with the match (seed, step rate, and identit
 and version with voxel terrain, else the application's name) and its edit log with the pieces, sent
 from its polls as the transport has room (`ISessionTransport.ReliableRoom`), and the client's world is built from the
 host's seed whatever its own options say; a game may send match data of its own in the welcome and refuse a client
-whose rules differ (`ISessionMatchData`: its hash). A client drops a game message that arrives before the download ends. After each fixed step the host sends
+whose rules differ (`ISessionMatchData`: its hash). A game without voxel terrain sends a payload of the edit log's
+header alone (its match identity where a world writes its generator, `EditLogSerializer.WriteEmpty`), and its client
+refuses any edit. A client drops a game message that arrives before the download ends. After each fixed step the host sends
 each client its new edits, and a client's world follows the host (`VoxelWorld.FollowHost`). The protocol version is
 `SessionProtocol.Version`; raise it with any change to the wire, and pin the new fingerprint in the engine's
 `WireFingerprintTests`. The roster gives each slot's player a join number (`SessionPlayer.Join`); per-slot systems keep a
@@ -58,7 +60,8 @@ Steam overlay joins from the menu, and asks first during a match.
 
 Named saves (`Engine:Save:Name`, `SaveService`): a host or offline game starts from `Saves/NAME.save` in the data
 folder when it exists (its seed and match settings, a game's match data among them, replace the options'; another step
-rate or generator version ends the run) and writes its world there when the match ends cleanly, after putting thrown
+rate or generator version ends the run; a game without terrain saves and reads the header alone, with its match
+identity, and refuses a save holding edits) and writes its world there when the match ends cleanly, after putting thrown
 balls still loose back into the grid: only the edits since the last reset, renumbered from 1 (a join payload keeps
 every edit). The old file is kept as `NAME.save.bak`; a failed write
 leaves the old save, deletes its temporary file, and is told at the menu. Save names refuse Windows device names (CON,

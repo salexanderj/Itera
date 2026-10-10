@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Matches;
 using Itera.Engine.Networking;
 using Itera.Engine.Saves;
 using Itera.Engine.Tests.Voxels;
@@ -222,6 +223,71 @@ public sealed class SaveServiceTests : IDisposable
 
         Assert.NotNull(game.Saves.Failure);
         Assert.False(File.Exists(game.Saves.FilePath + ".tmp"));
+    }
+
+    [Fact]
+    public void A_game_without_a_world_saves_its_match_and_starts_from_it()
+    {
+        var first = StartWithoutWorld(SavedSeed, game: [4, 5]);
+        first.Saves.Save(true, first.Session.Role, first.Session.Match);
+
+        var second = StartWithoutWorld(configuredSeed: 5, game: [9]);
+
+        Assert.True(second.Saves.StartedFromSave);
+        Assert.Equal(SavedSeed, second.Session.Match.Seed);
+        Assert.Equal([4, 5], second.Session.Match.Game);
+        Assert.Equal(("Mesh Game", 1), (second.Session.Match.Identity, second.Session.Match.IdentityVersion));
+    }
+
+    [Fact]
+    public void A_worlds_save_is_refused_by_a_game_without_a_world()
+    {
+        var world = Start(SessionMode.Offline, SavedSeed);
+        MakeEdits(world.World);
+        world.Saves.Save(true, world.Session.Role, world.Session.Match);
+        var bytes = File.ReadAllBytes(world.Saves.FilePath!);
+
+        // Another identity: refused by the header. The generator's own: refused for its edits.
+        Assert.Throws<SessionStartException>(() => StartWithoutWorld(5));
+        var same = new GeneratorMatchIdentity(s_generator);
+        Assert.Throws<SessionStartException>(() => StartWithoutWorld(5, identity: same));
+        Assert.Equal(bytes, File.ReadAllBytes(world.Saves.FilePath!));
+    }
+
+    /// <summary>A game without a world (match identity "Mesh Game" 1 unless given), offline, named save "test".</summary>
+    private (SessionService Session, SaveService Saves) StartWithoutWorld(
+        ulong configuredSeed,
+        byte[]? game = null,
+        IMatchIdentity? identity = null
+    )
+    {
+        identity ??= new FixedIdentity("Mesh Game", 1);
+        var saves = new SaveService("test", _folder, null, null, NullLogger<SaveService>.Instance, identity);
+        var session = new SessionService(
+            new SessionSettings { Mode = SessionMode.Offline },
+            60,
+            configuredSeed,
+            0,
+            null,
+            new FakeTransport(_network),
+            NullLogger<SessionService>.Instance,
+            () => 0,
+            () => { },
+            matchData: game is null ? null : new FixedMatchData(game),
+            saves: saves,
+            identity: identity
+        );
+        _owned.Add(session);
+        session.Initialize();
+        session.LoadJoinedWorld();
+        return (session, saves);
+    }
+
+    private sealed class FixedIdentity(string id, int version) : IMatchIdentity
+    {
+        public string Id => id;
+
+        public int Version => version;
     }
 
     /// <summary>A game that owns its world, named save "test", its world loaded around the block.</summary>

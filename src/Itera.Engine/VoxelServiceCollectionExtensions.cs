@@ -1,4 +1,5 @@
 using Itera.Engine.Loading;
+using Itera.Engine.Matches;
 using Itera.Engine.Navigation;
 using Itera.Engine.Physics;
 using Itera.Engine.Systems;
@@ -13,10 +14,12 @@ public static class VoxelServiceCollectionExtensions
 {
     /// <summary>
     /// Adds the voxel terrain to the engine (<see cref="EngineServiceCollectionExtensions.AddIteraEngine"/>), for a game
-    /// that registers an <see cref="IChunkGenerator"/>: each match's <see cref="VoxelWorld"/>, the colliders loose bodies
-    /// meet it through (<see cref="VoxelColliders"/>), navigation over it, the play area round its grid, the benchmark's
-    /// view of it, and its loading tasks (World, Navigation, and Warm-up, after the engine's Sounds and before the
-    /// game's own, so a game calls this before it adds those). A second call adds nothing.
+    /// that registers an <see cref="IChunkGenerator"/>: each match's <see cref="VoxelWorld"/> and <see cref="MatchVoxels"/>,
+    /// the colliders loose bodies meet it through (<see cref="VoxelColliders"/>), navigation over it, the play area round
+    /// its grid, the benchmark's view of it, and its loading tasks (World, Navigation, and Warm-up, after the engine's
+    /// Sounds and before the game's own, so a game calls this before it adds those). The voxel models, the loose bodies,
+    /// and the character mover come with it while they keep their voxels in the world's memory. A second call adds
+    /// nothing.
     /// </summary>
     public static IServiceCollection AddIteraVoxels(this IServiceCollection services)
     {
@@ -26,7 +29,12 @@ public static class VoxelServiceCollectionExtensions
         }
 
         services.TryAddScoped<VoxelWorld>();
+        services.TryAddScoped<MatchVoxels>();
         services.TryAddScoped<VoxelColliders>();
+        services.TryAddScoped<VoxelModels>();
+        services.TryAddScoped<LooseBodies>();
+        services.TryAddScoped<LooseBodyVoxels>();
+        services.TryAddScoped<VoxelCharacterMover>();
         services.TryAddScoped<NavigationService>();
         services.TryAddScoped(sp => new PlayArea(sp.GetRequiredService<VoxelWorld>().Grid));
         services.TryAddScoped<IBenchmarkHost, EngineBenchmarkHost>();

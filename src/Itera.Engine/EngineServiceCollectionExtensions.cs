@@ -146,11 +146,7 @@ public static class EngineServiceCollectionExtensions
         );
         services.TryAddScoped<EcsWorld>();
         services.TryAddScoped<PhysicsWorld>();
-        services.TryAddScoped<LooseBodies>();
-        services.TryAddScoped<LooseBodyVoxels>();
-        services.TryAddScoped<VoxelModels>();
         services.TryAddSingleton<IVoxelPassability, NothingPassable>();
-        services.TryAddScoped<VoxelCharacterMover>();
         // What the engine's player, camera, and benchmark systems share (Systems/): the input block a game sets, the
         // console's resets, and the movement keys, made when a game first asks for them (an IRunStartup, before its own
         // keys). The play area and the benchmark's view of the engine come with the terrain (AddIteraVoxels).

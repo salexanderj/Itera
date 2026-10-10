@@ -30,15 +30,17 @@ internal static class EngineComposition
     };
 
     /// <summary>
-    /// The engine's services and the test game's, from <see cref="Quiet"/> and <paramref name="options"/> over it.
-    /// <paramref name="configure"/> may replace registrations after the game's.
+    /// The engine's services and the test game's, from <see cref="Quiet"/> and <paramref name="options"/> over it, with
+    /// its floor of voxel terrain unless <paramref name="terrain"/> is false. <paramref name="configure"/> may replace
+    /// registrations after the game's.
     /// </summary>
     public static ServiceProvider Build(
         IReadOnlyDictionary<string, string?>? options = null,
-        Action<IServiceCollection>? configure = null
+        Action<IServiceCollection>? configure = null,
+        bool terrain = true
     )
     {
-        var services = Services(options);
+        var services = Services(options, terrain);
         configure?.Invoke(services);
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -46,7 +48,7 @@ internal static class EngineComposition
     }
 
     /// <summary>The service collection <see cref="Build"/> builds, before it is built.</summary>
-    public static ServiceCollection Services(IReadOnlyDictionary<string, string?>? options = null)
+    public static ServiceCollection Services(IReadOnlyDictionary<string, string?>? options = null, bool terrain = true)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(Quiet)
@@ -55,8 +57,12 @@ internal static class EngineComposition
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
         services.AddIteraEngine(configuration);
-        services.AddSingleton<IChunkGenerator, FloorGenerator>();
-        services.AddIteraVoxels();
+        if (terrain)
+        {
+            services.AddSingleton<IChunkGenerator, FloorGenerator>();
+            services.AddIteraVoxels();
+        }
+
         services.AddScoped<IFixedUpdateSystem>(sp => new StepCounter(sp.GetRequiredService<EcsWorld>().World));
         services.AddScoped<IFrameUpdateSystem>(sp => new FrameCounter(sp.GetRequiredService<EcsWorld>().World));
         // The host adds ILogger<T>; a null factory keeps Serilog from writing a log file.

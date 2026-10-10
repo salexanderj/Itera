@@ -178,6 +178,42 @@ public sealed class MatchFlowTests : IDisposable
         }
     }
 
+    [Fact]
+    public void Without_terrain_an_offline_match_starts_and_ends()
+    {
+        var game = NewGame(terrain: false);
+        game.Flow.Start(Offline(fromCommandLine: false), frame: 0);
+        game.Flow.StartWorldWhenShown(1);
+
+        Assert.NotNull(game.Flow.Playing);
+        Assert.Null(game.Flow.Playing!.Terrain);
+        Assert.Equal(1, game.WorldsStarted);
+        game.Flow.End(clean: true, "Left.");
+        Assert.Equal(MatchPhase.Menu, game.Matches.Phase);
+    }
+
+    [Fact]
+    public void Without_terrain_a_client_joins_a_host_and_starts()
+    {
+        var host = NewGame(terrain: false);
+        host.Flow.Start(new MatchStart(SessionMode.Host, SessionTransportKind.Direct, null, 3, null, false));
+        host.Flow.StartWorldWhenShown(1);
+        var client = NewGame(terrain: false);
+        client.Flow.Start(Join(fromCommandLine: false));
+
+        for (var poll = 0; poll < 200 && client.Matches.Phase == MatchPhase.Joining; poll++)
+        {
+            host.Flow.PollSession(1);
+            client.Flow.PollSession(1);
+        }
+
+        Assert.Equal(MatchPhase.Starting, client.Matches.Phase);
+        client.Flow.StartWorldWhenShown(2);
+        Assert.NotNull(client.Flow.Playing);
+        Assert.Equal(3UL, client.Flow.Playing!.Session.Match.Seed);
+        Assert.Equal(SessionRole.Client, client.Flow.Playing.Session.Role);
+    }
+
     private static MatchStart Offline(bool fromCommandLine) =>
         new(SessionMode.Offline, SessionTransportKind.Direct, null, 1, null, fromCommandLine);
 
@@ -185,10 +221,12 @@ public sealed class MatchFlowTests : IDisposable
         new(SessionMode.Join, SessionTransportKind.Direct, "127.0.0.1:47600", 0, null, fromCommandLine);
 
     /// <summary>A run's services and its match flow, its sessions on the shared in-memory network.</summary>
-    private Game NewGame()
+    private Game NewGame(bool terrain = true)
     {
-        var provider = EngineComposition.Build(configure: services =>
-            services.AddSingleton<ISessionTransports>(new Transports(new FakeTransport(_network)))
+        var provider = EngineComposition.Build(
+            configure: services =>
+                services.AddSingleton<ISessionTransports>(new Transports(new FakeTransport(_network))),
+            terrain: terrain
         );
         foreach (var startup in provider.GetServices<IRunStartup>())
         {

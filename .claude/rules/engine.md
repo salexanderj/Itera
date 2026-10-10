@@ -31,11 +31,13 @@ paths:
 
 A game composes the engine in its `Program.cs`: `AddIteraEngine`, then its own (the starter's `AddGame`, which registers
 its `IChunkGenerator` and calls `AddIteraVoxels()` before its own loading tasks), then the host with `ValidateScopes`
-and `ValidateOnBuild`, then `GameLoop.Run()`. Until matches run without a world (the mesh path's phase 5), a game must
-register an `IChunkGenerator` and call `AddIteraVoxels()`;
-`IVoxelPalette` (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable), and `MenuStyle` (plain) have
-engine defaults it may replace. `tests/Itera.Engine.Tests/Matches/EngineComposition.cs` is the least a game adds (a
-floor generator and one fixed and one frame system), over which `MatchFlowTests`, `MatchLifetimeTests`, and
-`CompositionTests` run.
+and `ValidateOnBuild`, then `GameLoop.Run()`. A game with voxel terrain registers an `IChunkGenerator` and calls
+`AddIteraVoxels()` (with it come the voxel models, loose bodies, and character mover, which still need the world's
+memory); a game without plays matches with no world (`MatchServices.Terrain` is null; its `Voxels` and the other terrain
+members throw). `IVoxelPalette` (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable), and
+`MenuStyle` (plain) have engine defaults it may replace. `tests/Itera.Engine.Tests/Matches/EngineComposition.cs` is the
+least a game adds (a floor generator with the terrain, which `terrain: false` leaves out, and one fixed and one frame
+system), over which `MatchFlowTests`, `MatchLifetimeTests`, `CompositionTests`, and `HeadlessMatchTests` run, with and
+without terrain.
 
 The other folders are in their areas' files in `.claude/rules/`.

@@ -47,4 +47,30 @@ public sealed class HeadlessMatchTests
         Assert.Null(matches.Current);
         Assert.Equal(MatchPhase.Menu, matches.Phase);
     }
+
+    [Fact]
+    public void A_match_without_terrain_loads_at_once_and_steps_its_groups()
+    {
+        using var provider = EngineComposition.Build(terrain: false);
+        var run = new HeadlessRun(provider);
+        var matches = provider.GetRequiredService<MatchControl>();
+
+        using (var match = run.Play(seed: 9))
+        {
+            Assert.Null(match.Match.Terrain);
+            Assert.Throws<InvalidOperationException>(() => match.Match.Voxels);
+            Assert.True(match.WaitUntilLoaded(mostSeconds: 1));
+
+            match.Step(30);
+
+            var steps = match
+                .Services.GetServices<IFixedUpdateSystem>()
+                .OfType<EngineComposition.StepCounter>()
+                .Single();
+            Assert.Equal(32, steps.Steps);
+            Assert.Equal(MatchPhase.Playing, matches.Phase);
+        }
+
+        Assert.Equal(MatchPhase.Menu, matches.Phase);
+    }
 }

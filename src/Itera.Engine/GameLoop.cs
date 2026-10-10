@@ -111,6 +111,7 @@ public sealed partial class GameLoop
     private bool _renderThreadFaultReported;
     private bool _modelsDroppedReported;
     private bool _meshesDroppedReported;
+    private bool _worldOnGpu;
     private readonly ExitSignalPolicy _exitSignals = new();
     private volatile bool _cancelRequested;
     private PosixSignal _signal;
@@ -252,7 +253,7 @@ public sealed partial class GameLoop
             new MatchFlowHooks(
                 // Without graphics no world goes to the GPU.
                 window.Graphics
-                    ? new MatchGpu(m => _worldMeshes.BeginMatch(m.Voxels, m.Models, m.TintMap), EndMatchGpu)
+                    ? new MatchGpu(BeginMatchGpu, EndMatchGpu)
                     : new MatchGpu(_ => { }, _pointLights.Clear),
                 OnWorldStarted,
                 OnMatchEnded
@@ -641,7 +642,7 @@ public sealed partial class GameLoop
         // Matches start and end here, between iterations' work, never during a step or a frame.
         _flow.HandleRequests(_frameIndex);
         var playing = _flow.Playing;
-        playing?.Voxels.Update(_clock.TotalSeconds);
+        playing?.Terrain?.Voxels.Update(_clock.TotalSeconds);
         // Console commands run here, between fixed steps and outside any query, also while no frames are drawn. Those
         // given at start wait for the match's world and systems, which most of them need.
         _console.HoldStartup = playing is null;
@@ -688,7 +689,7 @@ public sealed partial class GameLoop
     private void OnWorldStarted(MatchServices match)
     {
         // A save's or a host's reset, before the first column loaded, is covered by the first loading screen.
-        _resetSeen = match.Voxels.LastReset;
+        _resetSeen = match.Terrain?.Voxels.LastReset ?? _resetSeen;
         ApplyLoading();
     }
 
@@ -764,9 +765,9 @@ public sealed partial class GameLoop
         _stats.RecordSteps(fixedSteps, dropped);
         // A reset of the world (the console's, the host's, or a joined save's) unloaded every column: the loading screen
         // covers the picture until they are generated again.
-        if (_flow.Playing is { } match && match.Voxels.LastReset != _resetSeen)
+        if (_flow.Playing?.Terrain is { } terrain && terrain.Voxels.LastReset != _resetSeen)
         {
-            _resetSeen = match.Voxels.LastReset;
+            _resetSeen = terrain.Voxels.LastReset;
             _loading.BeginAgain(_clock.TotalSeconds);
         }
 
@@ -821,7 +822,8 @@ public sealed partial class GameLoop
         // The models are drawn with the world, in the frame's view, whose point lights the world's glowing blocks and the
         // events give.
         _meshView.Begin(request.Slot, in view);
-        var copies = _worldMeshes.Upload(request.Slot, now, in view, _modelInstances.Draws);
+        // Without terrain no world is followed: nothing to upload or draw of it.
+        var copies = _worldOnGpu ? _worldMeshes.Upload(request.Slot, now, in view, _modelInstances.Draws) : 0;
         var meshAssets = _meshAssetDraws.Write(
             request.Slot,
             _meshView,
@@ -831,7 +833,7 @@ public sealed partial class GameLoop
         _meshView.End(request.Slot, _pointLights.Frame(now));
         if (_debugLines.Enabled)
         {
-            match.Colliders.AddOutlines(_debugLines);
+            match.Terrain?.Colliders.AddOutlines(_debugLines);
         }
 
         var lines = _linePass.Write(request.Slot, _debugLines.Vertices);
@@ -856,7 +858,7 @@ public sealed partial class GameLoop
                 _renderView.ScreenDim,
                 _renderView.AntiAliasDrawn,
                 _renderView.AntiAliasPicture,
-                _worldMeshes.Frame,
+                _worldOnGpu ? _worldMeshes.Frame : default,
                 meshAssets
             )
         );
@@ -888,10 +890,25 @@ public sealed partial class GameLoop
         _stats.RecordFrame(frameSeconds);
     }
 
+    /// <summary>The match's world goes to the GPU: the meshes follow its voxel terrain, when it has one.</summary>
+    private void BeginMatchGpu(MatchServices match)
+    {
+        if (match.Terrain is { } terrain)
+        {
+            _worldMeshes.BeginMatch(terrain.Voxels, terrain.Models, match.TintMap);
+            _worldOnGpu = true;
+        }
+    }
+
     /// <summary>The match's world leaves the GPU: the meshes stop following it, and its lights' flashes go.</summary>
     private void EndMatchGpu()
     {
-        _worldMeshes.EndMatch();
+        if (_worldOnGpu)
+        {
+            _worldMeshes.EndMatch();
+            _worldOnGpu = false;
+        }
+
         _pointLights.Clear();
     }
 
