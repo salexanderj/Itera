@@ -60,7 +60,10 @@ public enum MeshAlphaMode
     /// <summary>A pixel whose alpha is below the cutoff is not drawn.</summary>
     Mask,
 
-    /// <summary>Blended with what is behind; drawn as <see cref="Mask"/> until the engine has a transparent pass.</summary>
+    /// <summary>
+    /// Blended with what is behind: drawn after the sky, each instance sorted back to front by its centre, casting no
+    /// shadow.
+    /// </summary>
     Blend,
 }
 

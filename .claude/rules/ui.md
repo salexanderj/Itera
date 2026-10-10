@@ -4,6 +4,7 @@ paths:
   - "src/Itera.Engine/Systems/MovementKeys.cs"
   - "tests/Itera.Engine.Tests/{UI,Input,Settings,Loading,Commands}/**"
   - "tests/Shared/LayerInk.cs"
+  - "src/Game/MinimapLayer.cs"
 ---
 
 ## UI
@@ -15,7 +16,9 @@ draws the image views a HUD layer shows this frame (`RenderViews.Show`, a rectan
 layer's `Bounds`: `.claude/rules/rendering.md`, "Image views"); the layer draws its frame and marks over them and leaves
 the inside clear (the starter's `MinimapLayer`, which keeps below the stats line while that shows).
 
-How the console works and the list of its commands are in the `run-game` skill; change that list when you add or remove a command.
+How the console works and the list of its commands are in the `run-game` skill; change that list when you add or remove a
+command. The run-only `look`, `sun`, `time`, and `lens` (`EngineCommands`) set values over the frame's view
+(`RenderView`'s look tuning, `SunOverride`, and `LensOverride`): `.claude/rules/rendering.md`.
 
 The aim dot (`AimDotLayer`, the first of a match's layers, which the engine adds before the game's): a white square in a
 black one at the screen's centre, 2 and 4 pixels across on an even side, 3 and 5 on an odd one, at the screen's own
@@ -70,7 +73,10 @@ that uses them writes its data folder's file (the player's, unless it runs with 
 `<DataFolder>-agent`); give render options on the command line instead. A game's own on/off settings are
 `GameSwitch`es its `IRunStartup` registers once a run (`PlayerSettings.RegisterSwitch(name, default)`, then `IsOn` and
 `SetSwitch`, which allocate nothing); `settings.json` keeps them in a `"Game"` object, with any entry this run did not
-register kept as it was. Bindings read from the file or
+register kept as it was. The Settings page has no row for them: the game sets one itself, as the starter's M key does
+(`MinimapSystem`: its own `KeyBindings` row, read with `PlayerSettings.Keys.WasPressed` while the match's
+`PlayerInputBlock` lets input through). `SetSwitch` marks the settings changed; the file is written when the player next
+leaves the Settings page, or at the run's end. Bindings read from the file or
 registered later that clash with another action keep the file's (`KeyBindings` unbinds the default).
 
 ### Files in `src/Itera.Engine`
@@ -78,14 +84,14 @@ registered later that clash with another action keep the file's (`KeyBindings` u
   - `UI/`: the surface and its layers (console, stats line, `LoadingLayer`), the font (`UiFonts`, from `UI/Fonts/`,
     copied to `Fonts/`), `TextBlobs`, `TextLine`, and the menu in `UI/Menu/` (`MenuLayer`, `MenuLayer.Settings.cs`,
     `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`), `CentredMessageLayer`, `Amounts`.
-  - `Input/`: snapshots per frame and per fixed step, `PointerCapture`, `IKeyboardFocus`, `IMenuInput` (`UiPointer`,
+  - `Input/`: snapshots per frame and per fixed step (`InputSnapshot`: `InputService.Frame` and `InputService.Tick`), `PointerCapture`, `IKeyboardFocus`, `IMenuInput` (`UiPointer`,
     `CapturingBinding`), `IFrameInput` and `InputService` (`SetDrawnPointer`, `SetPanel`), `IPanelInput`, `KeyBindings`,
     `InputBinding`.
   - `Commands/` (not `Console/`: that namespace would hide `System.Console`): `ConsoleCommands`, `CommandLine`,
     `EngineCommands`, `MatchCommands`, `SettingsCommands`, `ParticleCommands`, `SoundCommands`, `TimeCommands` (pause,
     step, timescale), `EcsCommands` (`ecs`, registered at a match's ECS step). The console's scripts:
     `UI/ConsoleScript`, run by `DevConsole` (`Hold`, `RunScript`). `Settings/`:
-    `PlayerSettings`, `CommandLineKeys`.
+    `PlayerSettings`, `CommandLineKeys`, `AntiAliasMode`, `GameSwitch`.
 
 ### Package notes
 

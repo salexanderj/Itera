@@ -16,7 +16,11 @@ its views starts a new series: runs of other views do not compare.
 
 The number that matters is the world pass's GPU time (`voxels` in the stats line: the shadow maps, the meshes, the
 models, and the sky), from the frame stats lines, one per second. `parse.py` also takes the shadow maps' part, the
-models' draws per frame, and from the meshes line the MB uploaded, the triangles drawn, and the mesh heap in use.
+models' draws per frame, and from the meshes line the MB uploaded, the triangles drawn, and the mesh heap in use. A
+game's own render passes count as their sum (`game_ms`); those at the `Compute`, `Opaque`, and `Transparent` stages are
+also inside `voxels`, those at `Scene` and `Screen` are not. Image views are in neither and `parse.py` leaves them out:
+a game's benchmark hides its views (the starter's minimap hides while `Engine:Benchmark:Enabled`), so its numbers
+stay comparable.
 
 ## Measuring
 

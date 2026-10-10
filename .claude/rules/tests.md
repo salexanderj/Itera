@@ -6,14 +6,16 @@ paths:
 ## Tests
 
 - `tests/Itera.Modding.Tests`, `tests/Itera.Engine.Tests`, `tests/Game.Tests` (the game's own), and
-  `tests/Itera.MeshSample.Tests` (the sample without voxels, played through `HeadlessMatch`), with subfolders
-  that mirror `src/`. `tests/Shared/` holds `SystemAllocation`, `ArchStartup`, `SerialCollectionDefinition`, `RunsLongAttribute` and
-  `LongFirstCollectionOrderer`, `xunit.runner.json`, `VoxelLoading` (load a test's voxel world), `FakeTransport` (an in-memory session transport: no sockets, no
-  clocks), `HostileValues` and `Watchdog` (hostile field values and damaged message bodies, and rows run on a worker thread that fail past 1 s of
-  wall time, times `ITERA_TEST_TIME_SCALE` on a slower machine),
-  `GpuLayout` (a C# struct against a compiled shader's block, so a game's tests check its own passes' structs too),
-  and `WireFingerprint` (the wire's bytes pinned with the protocol version; it reads the engine's internals, so the
-  game's tests leave it out), compiled into the projects that use them.
+  `tests/Itera.MeshSample.Tests` (the sample without voxels, played through `HeadlessMatch`), with subfolders that
+  mirror `src/`. `tests/Shared/` holds `SystemAllocation`, `ArchStartup`, `SerialCollectionDefinition`,
+  `RunsLongAttribute` and `LongFirstCollectionOrderer`, `xunit.runner.json`, `VoxelLoading` (load a test's voxel world),
+  `FakeTransport` (an in-memory session transport: no sockets, no clocks), `HostileValues` and `Watchdog` (hostile field
+  values and damaged message bodies, and rows run on a worker thread that fail past 1 s of wall time, times
+  `ITERA_TEST_TIME_SCALE` on a slower machine), `GpuLayout` (a C# struct against a compiled shader's block, so a game's
+  tests check its own passes' structs too), `LayerInk` (what a UI layer draws outside its `Bounds`: a HUD layer's tests
+  draw it at a few screen sizes and expect none, as `tests/Game.Tests/MinimapLayerTests` does, beside its hiding,
+  redraw, and zero-allocation tests), and `WireFingerprint` (the wire's bytes pinned with the protocol version; it reads
+  the engine's internals, so the game's tests leave it out), compiled into the projects that use them.
 - Every system has a zero-allocation test and a behaviour test. Every measured window starts with
   `SystemAllocation.StartMeasurement()`, which collects gen0 first so another thread's collection cannot add phantom
   bytes; a long window measures with `SystemAllocation.BytesAllocatedWithoutCollection`, which runs it again when a
@@ -100,14 +102,19 @@ Where tests live:
   loose bodies (`MoverWithBodiesTests`), and solid models (`SolidModelVoxelsTests`).
 - `Itera.Engine.Tests/Rendering/`: `Materials/MaterialTextureSetsTests` (DDS files read back, sets loaded and left out,
   a material packed with its set), `RenderLookTests` (the engine's look pinned to the shaders' former constants, every
-  value copied and tunable), `SunPathTests` (daylight and night round the horizon, the test day, compass angles), `Meshes/` (`MeshPassTests`, `MeshAssetDrawsTests` (the asset lists, posed
-  instances, and the blended list sorted back to front), `MeshViewTests` (the frame's frustum, cascades, and
-  lights), `LevelBalanceTests`, `MeshColumnTests`,
-  `WorldMeshesTests` over a draw target and staging in memory: the seams' stitched meshes, a full heap, the edits'
-  latency, an image view's lists over `FakeViewLists`), `RenderViewsTests` (declaring, the cadence, panels), `Memory/GpuRangeHeapTests`, `GpuLayoutTests` (of `tests/Shared/GpuLayout`, also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`,
-  `DeviceChoiceTests`, `RenderThreadTests` (a fake renderer), `RenderPassesTests` (a game's pass at every stage in
-  `EngineComposition`, none made or written without graphics; too many, or names empty or used twice, refused), the passes' shaders against their push constants
-  (`UiPassTests`, `UpscalePassTests`, `LoadingPassTests`, `ParticlePassTests`), `ScreenshotTests`, `ShaderReloadTests`.
+  value copied and tunable), `SunPathTests` (daylight and night round the horizon, the test day, compass angles),
+  `ViewConstantsTests` (the push constants against the shaders, the lens: a perspective near plane, an orthographic box
+  and its depth), `ShadowCascadesTests` (slices and orthographic boxes inside their cascades), `RenderViewTests` (the
+  frame's view: its atmosphere, and what a match's end puts back), `Meshes/` (`MeshPassTests`, `MeshAssetDrawsTests`
+  (the asset lists, posed instances, and the blended list sorted back to front), `MeshViewTests` (the frame's frustum,
+  cascades, and lights), `LevelBalanceTests`, `MeshColumnTests`, `WorldMeshesTests` over a draw target and staging in
+  memory: the seams' stitched meshes, a full heap, the edits' latency, an image view's lists over `FakeViewLists`),
+  `RenderViewsTests` (declaring, the cadence, panels), `Memory/GpuRangeHeapTests`, `GpuLayoutTests` (of
+  `tests/Shared/GpuLayout`, also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`, `DeviceChoiceTests`,
+  `RenderThreadTests` (a fake renderer), `RenderPassesTests` (a game's pass at every stage in `EngineComposition`, none
+  made or written without graphics; too many, or names empty or used twice, refused), the passes' shaders against their
+  push constants (`UiPassTests`, `UpscalePassTests`, `LoadingPassTests`, `ParticlePassTests`), `ScreenshotTests`,
+  `ShaderReloadTests`.
 - Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `LoopbackTests`, `SteamTransportTests`,
   `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests` (a temporary folder), `Navigation/`
   (flow fields on small grids, the scanner, the service), `Audio/` (`AudioMixerTests`, `AudioServiceTests`,

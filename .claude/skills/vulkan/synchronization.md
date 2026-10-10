@@ -34,18 +34,27 @@ it runs, except the flush of the staging region it wrote (`StagingBuffer.Flush`;
 7. `FrameRenderer.Present` calls `Record`, which records, in this order:
    - the reset of the slot's timestamp queries (outside rendering) and a first timestamp;
    - the mesh copies from the slot's staging region into the mesh heap between their two barriers (only for a frame
-     received fresh, and only when it has copies), then the sky field's copy into its image (also only for a fresh
-     frame, under the loading screen too);
+     received fresh, and only when it has copies), the mesh assets' uploads in the first frame
+     (`MeshAssetPass.RecordUploads`, under the loading screen too), the image views' shown images cleared in the first
+     frame (`RenderViewPass.RecordFirstFrame`), then the sky field's copy into its image (also only for a fresh frame,
+     under the loading screen too);
    - the acquire barrier;
    - unless the loading screen covers the picture, `RecordWorld`: the depth image's frame-start barrier, then
-     `MeshPass.Record`, which first flushes the slot's mapped draw regions (when memory is not coherent), draws the two
-     shadow cascades into a depth array, then the world (blocks, then models, then the sky) into the target, resolving
-     the multisampled images into it and the depth image when `Engine:Renderer:MsaaSamples` is above 1; then, while
-     particles can be alive and the frame is fresh, the particles' compute passes (counters reset, spawn, simulate
-     against the depth image handed to compute and back, the counters copied for the host); then the particles' cubes
-     and sprites, the debug lines, SMAA's edges, weights, and blend (only with one sample a pixel; the
-     first such frame also copies SMAA's lookup textures), and below render scale 1 the upscale. Each draws into the
-     swapchain image, SMAA's scene image, or the upscale's source image, as `RecordWorld` chooses;
+     `MeshPass.Record`, which first flushes the slot's mapped draw regions (when memory is not coherent), copies the
+     material texture sets in the first frame and records an asked-for bake (`RecordTextures`, `RecordBake`), sorts the
+     lights into clusters, skins the posed mesh assets (`MeshAssetPass.RecordSkinning`), records a game's `Compute`
+     passes (`RenderPasses`, which adds no barrier after them), draws the two shadow cascades into a depth array, then
+     in one rendering the world (blocks, models, mesh assets, a game's `Opaque` passes, the sky, the blended mesh
+     assets, a game's `Transparent` passes) into the target, resolving the multisampled images into it and the depth
+     image when `Engine:Renderer:MsaaSamples` is above 1; then, in a fresh frame with an image view due, each due view
+     (`RenderViewPass`: its clusters, its world, models, mesh assets, sky, and blended assets into its own colour and
+     depth, then a copy of the colour into its shown image between barriers that take that image from and back to the
+     shader-read layout); then, while particles can be alive and the frame is fresh, the particles' compute passes
+     (counters reset, spawn, simulate against the depth image handed to compute and back, the counters copied for the
+     host); then the particles' cubes and sprites, the debug lines, a game's `Scene` passes (after a barrier from the
+     earlier colour and depth writes), SMAA's edges, weights, and blend (only with one sample a pixel; the first such
+     frame also copies SMAA's lookup textures), below render scale 1 the upscale, and a game's `Screen` passes. Each
+     draws into the swapchain image, SMAA's scene image, or the upscale's source image, as `RecordWorld` chooses;
    - the loading screen's draw while it shows or fades;
    - a screenshot's copy when one is asked for without the UI, the UI (its changed rows copied, then the draw), the
      present barrier (a screenshot with the UI copies here), and a last timestamp.

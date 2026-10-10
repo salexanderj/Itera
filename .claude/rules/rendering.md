@@ -8,6 +8,11 @@ paths:
   - "tests/Itera.Engine.Tests/Meshing/**"
   - "tools/benchmark/**"
   - "src/Game/WorldGeneration/{GamePalette,GameMaterials,GameAtmosphere}.cs"
+  - "src/Game/{Minimap,MinimapLayer}.cs"
+  - "src/Game/Systems/MinimapSystem.cs"
+  - "samples/Itera.MeshSample/{Rendering,Shaders}/**"
+  - "samples/Itera.MeshSample/{AimHighlight,Yard,YardCamera}.cs"
+  - "samples/Itera.MeshSample/Systems/{AimHighlightSystem,YardCameraSystem}.cs"
 ---
 
 ## Rendering
@@ -67,22 +72,28 @@ and bounce, the occlusion and sky floors, and full glow's strength; where the vi
 distance; the sky's zenith (clear and overcast) and below-horizon shares and the sun disc's sharpness, strength, and
 overcast hiding; the exposure; the grade's desaturation and darkening; and the split tone's tints and bounds. A game
 gives it per frame through its atmosphere source (`IAtmosphereSource.LookAt`, a default method returning the engine's;
-`AtmosphereSystem` sets `RenderView.Look`; `RenderLook.Lerp` blends two); the console's run-only `look` lays values
-over it (`LookTuning`, a table of every value without reflection; `RenderView.DrawnLook`). `GameLoop` writes the drawn
-look into the frame slot's record (`MeshPass.LookOf`, `LookConstants.From`: its values, and the light and colours it
-gives with the frame's atmosphere worked out once a frame instead of at every pixel: the sunlight, sky and ground light,
-the zenith and below-horizon colours, the sun's disc, the grade's hue and amounts, the haze's density; `look.glsl`: set
-0 binding 17, and binding 8 of the particles' draw set, compiled with `LOOK_BINDING 8`), which `lighting.glsl`,
-`sky.glsl`, `mesh-shade.glsl`, and `mesh.frag` read as `LOOK` (the slot's by `view.slot`).
+`AtmosphereSystem` sets `RenderView.Look`; `RenderLook.Lerp` blends two); the console's run-only `look` lays values over
+it (`LookTuning`, a table of every value without reflection; `RenderView.DrawnLook`). `GameLoop` writes the drawn look
+into the frame slot's record (`MeshPass.LookOf`, `LookConstants.From`: its values, and the light and colours it gives
+with the frame's atmosphere worked out once a frame instead of at every pixel: the sunlight, sky and ground light, the
+zenith and below-horizon colours, the sun's disc, the grade's hue and amounts, the haze's density; `look.glsl`: set 0
+binding 17, and binding 8 of the particles' draw set, compiled with `LOOK_BINDING 8`), which `lighting.glsl`,
+`sky.glsl`, `mesh-shade.glsl`, and `mesh.frag` read as `LOOK` (the slot's by `view.slot`). A new look value takes a
+property in `RenderLook` (its default the old look), a row in `LookTuning`'s table (the `look` command;
+`RenderLookTests` fails without it), and, when a shader reads it, a field in `LookConstants` and `look.glsl` written in
+`LookConstants.From` (the `GpuLayout` tests at binding 17 and the particles' binding 8 check the two match); what a
+shader would work out from it and the frame's atmosphere at every pixel is worked out there once a frame instead
+(`docs/rendering-extension.md`).
 
 The sun moves as a game says: its direction is the atmosphere's (`Atmosphere.SunDirection`, from the game's source each
 frame; zero for the engine's, `ViewConstants.DefaultSunDirection`, high from +x and +z; `Atmosphere.TowardsSun`), or the
 console's run-only `sun AZIMUTH ELEVATION` and `time HH:MM` (a test day: sunrise at 06:00, the engine's sun at 12:00,
 sunset at 18:00; `RenderView.SunOverride`, `DrawnSun`). `SunPath` says how much light it gives: all from 2 degrees over
 the horizon, none from 2 degrees under, fading between (the look's sunlight and sun disc, `LookConstants.From`); from 2
-degrees under it is night: `ViewConstants.Create` leaves the shadows switch off, so no caster is listed and the maps
-are only cleared. A game's moon is this light at night, dim and cool, with its own disc (the look's sharpness and
-strength). While the sun moves, `MeshView` carries the maps' image axis from frame to frame
+degrees under it is night: `ViewConstants.Create` leaves the shadows switch off, so no caster is listed and the maps are
+only cleared. A game's moon is this light at night: the game points the sun's direction at the moon, above the horizon,
+with a dim, cool sun colour and the look's disc sharpness and strength for its disc (a direction more than 2 degrees
+under the horizon gives no light). While the sun moves, `MeshView` carries the maps' image axis from frame to frame
 (`ShadowCascades.ImageAxis`: the least turn that keeps it square to the sun, so it never jumps, also overhead); a sun
 that never moved keeps the fit's own axis, as before, and a match's end forgets the sun (`MeshView.ForgetSun`). The
 particles' sunlight fades with the daylight too (`LookConstants.Daylight`).
@@ -99,13 +110,17 @@ asks `view.glsl` for what else differs: the sky's ray (`viewRay`, the view's dir
 meets a point (`viewRayTo`: the fog's sky colour behind it, what faces the viewer), and the depth that chooses a shadow
 cascade (`viewCascadeDepth`). An orthographic view is measured from its middle as a perspective view is from its eye:
 its fog, the terrain's levels, the lights gathered and its light clusters (even slices across the 96 m round it), and
-its two shadow cascades, which lie round it both ways along the view, within its box, chosen by how far before or
-behind it a point lies (`MeshView`'s slices; `ShadowCascades.Fit` with a box's corners). `MeshView` culls to its box
-(parallel side planes) and sorts nearest first by depth (`NearFirstKey`: the world's camera commands, and the blended
-mesh assets back to front); the particles read its depth image and are culled to its box (`ParticleConstants`' near,
-far, and projection). The console's run-only `lens ortho HEIGHT [NEAR FAR]` draws the camera through an orthographic
-lens (`RenderView.LensOverride` and `DrawnCamera`; by default the view distance each way), and `lens off` through its
-own.
+its two shadow cascades, which lie round it both ways along the view, within its box, chosen by how far before or behind
+it a point lies (`MeshView`'s slices; `ShadowCascades.Fit` with a box's corners). `MeshView` culls to its box (parallel
+side planes) and sorts nearest first (`NearFirstKey`: the squared distance from the eye, or an orthographic view's depth
+past its near end; the world's camera commands, and the blended mesh assets back to front); the particles read its depth
+image and are culled to its box (`ParticleConstants`' near, far, and projection). The console's run-only `lens ortho
+HEIGHT [NEAR FAR]` draws the camera through an orthographic lens (`RenderView.LensOverride` and `DrawnCamera`; by
+default the view distance each way), and `lens off` through its own.
+
+`WindowService` calls `Window.PrioritizeGlfw()` before it makes the window, so Silk.NET picks GLFW where SDL is
+installed too. Compiled shaders are cached in the data folder's `ShaderCache` (`~/.local/share/<DataFolder>/` on Linux,
+`LocalApplicationData` elsewhere).
 
 Without a window (`Engine:Window:Mode=Offscreen`, `WindowService.Offscreen`) the surface is headless
 (`HeadlessSurfaceSource`, `VK_EXT_headless_surface`; `WindowSurfaceSource` wraps GLFW's for a window: `ISurfaceSource`,
@@ -194,7 +209,7 @@ centre (`WriteCameraNearestFirst`), so the depth test rejects hidden leaves befo
 load order they did not; the shadow lists stay unsorted). The frame's view (`MeshView`, which `GameLoop` starts before
 `WorldMeshes.Upload` and ends after it, and whose frustum, cascades, and lights every list drawn in `MeshPass` shares)
 fits two sun shadow cascades (`ShadowCascades.Fit`: a square round the bounding sphere of the view's slice from 0 to 30 m
-and from 30 m to 200 m or the view distance, its centre snapped to whole texels, reaching 100 m further towards the sun,
+and from 25 m to 200 m or the view distance, its centre snapped to whole texels, reaching 100 m further towards the sun,
 and further as the sun sinks: `MeshView.CasterReach`, up to 300 m)
 and writes the slot's `MeshLighting`; with the view's shadows on, `WorldMeshes` lists the blocks that cast into each
 (`CascadeBounds`): those whose bounding sphere meets the cascade's box and lies inside each plane of its slice that faces
@@ -340,21 +355,23 @@ space (a two-sided surface's back lit from its own side), the occlusion as the c
 `shadeSurface` with the openness of flat ground; metalness and roughness are read and kept, not drawn.
 
 Blended materials (glTF's `BLEND`; `MeshAssetRange.Blended` and `BlendedTwoSided`, after the four list ranges) are in no
-list's ranges and cast no shadow. `MeshAssetDraws` writes them into the slot's fourth list (`MeshAssetPass.BlendedList`):
-the seen instances sorted back to front by their sphere's centre (farthest first; an instance's primitives in its
-asset's order), each primitive one draw and one command of one instance, a two-sided one two (its back faces, then its
-front faces: `MeshAssetDraw.Sides`), at most `MaxCommands`, past which they are left out with one Warning a run.
-`MeshPass.Record` calls `RecordTransparent` after the sky (which would paint over a surface that writes no depth): one
-`vkCmdDrawIndexedIndirect` of every command, which the device draws in order, with one pipeline (`mesh-asset.vert` and
-`.frag` compiled with `MESH_ASSET_BLEND`: no culling, each draw dropping the faces it does not show; the depth tested,
-not written; premultiplied alpha over what is drawn, the colour shaded and fogged as an opaque surface's, then times its
-alpha). It blends on the frame's display colours (there is no HDR image), as the particles do, inside the multisampled
-rendering, so its edges are anti-aliased; it is timed with the world (`Voxels`), not `Meshes`. Objects that cross, or one
-inside another, can show in the wrong order from some sides (sorted per object, not per pixel). Its log lines: `Mesh assets on the
-GPU: N vertices, T triangles, M material(s), X texture(s) of Y MB; draws Z MB a frame slot`, and with skinned assets
-`Mesh assets on the GPU: N skinned vertices; posed instances skinned into V vertices (M MB) a frame slot`; the stats
-line's `mesh assets in N frames avg/max` and `skinning in N frames avg/max` are the `Meshes` and `Skinning` passes' GPU
-time.
+list's ranges and cast no shadow. `MeshAssetDraws` writes them into the slot's fourth list
+(`MeshAssetPass.BlendedList`): the seen instances sorted back to front by their sphere's centre (farthest first; an
+instance's primitives in its asset's order), each primitive one draw and one command of one instance, a two-sided one
+two (its back faces, then its front faces: `MeshAssetDraw.Sides`), at most `MaxCommands`, past which they are left out
+with one Warning a run. `MeshPass.Record` calls `RecordTransparent` after the sky (which would paint over a surface that
+writes no depth): one `vkCmdDrawIndexedIndirect` of every command, which the device draws in order, with one pipeline
+(`mesh-asset.vert` and `.frag` compiled with `MESH_ASSET_BLEND`: no culling, each draw dropping the faces it does not
+show; the depth tested, not written; premultiplied alpha over what is drawn, the colour shaded and fogged as an opaque
+surface's, then times its alpha). It blends on the frame's display colours (there is no HDR image), as the particles do,
+inside the multisampled rendering, so its edges are anti-aliased; it is timed with the world (`Voxels`), not `Meshes`.
+Objects that cross, or one inside another, can show in the wrong order from some sides (sorted per object, not per
+pixel). A blended surface writes no depth, so the particles and debug lines, drawn after the world and tested against
+its depth, draw over one in front of them, untinted. A draw's tint multiplies the base colour's alpha too, so a tint's
+alpha fades a blended instance. Its log lines: `Mesh assets on the GPU: N vertices, T triangles, M material(s), X
+texture(s) of Y MB; draws Z MB a frame slot`, and with skinned assets `Mesh assets on the GPU: N skinned vertices; posed
+instances skinned into V vertices (M MB) a frame slot`; the Debug line `GPU passes over ...`'s `mesh assets in N frames
+avg/max` and `skinning in N frames avg/max` are the `Meshes` and `Skinning` passes' GPU time.
 
 ### Passes a game adds
 
@@ -362,10 +379,11 @@ A game adds its own GPU work as render passes (`IRenderPass`, in `RenderPasses.c
 (`services.AddSingleton<IRenderPass, MyPass>()`): at most `GpuTimings.MostGamePasses` (8), each named apart, or the
 run's "render passes" step stops the run. Each records at one stage of the frame (`RenderStage`):
 
-- `Compute`: after the mesh pass's light clusters and skinning, before the shadow maps, outside any rendering.
+- `Compute`: after the mesh pass's light clusters and skinning, before the shadow maps, outside any rendering. No
+  barrier follows it: a pass whose results a later stage reads records its own.
 - `Opaque`: inside the world's multisampled rendering (`MeshPass`'s colour format and samples; its depth, reversed and
   compared Greater), after the engine's opaque draws (the world, the models, the mesh assets) and before the sky:
-  surfaces that write depth. The mesh pass binds its own set and constants again after them.
+  surfaces that write depth.
 - `Transparent`: inside that rendering, after the sky and the engine's blended mesh assets: surfaces that blend and
   write no depth, drawn after the engine's blended ones, not sorted among them.
 - `Scene`: after the resolve, the particles, and the debug lines, on the drawn image (one sample a pixel, at the render
@@ -376,46 +394,56 @@ For `Scene` and `Screen`, `RenderPasses` begins the rendering itself (after a ba
 and depth writes; the attachments loaded and stored) with the viewport (+y up) and scissor set; inside the world's
 rendering they are the mesh pass's. The engine calls `Initialize(RenderPassSetup)` once at the run's "render passes"
 step (after "mesh assets on the gpu", before the render thread; never in a run without graphics), `Write(slot,
-RenderPassFrame)` on the main thread each frame after the frame systems (the frame's time and view; the pass writes its
-slot's region of its host-visible memory, write only, and flushes it when it records), `Record(RenderPassContext)` on
-the render thread at its stage (the command buffer, the frame slot, whether the frame is fresh, the view constants with
-the stage's size, the extent, and `MeshPass`'s set), `OnTargetsChanged` when the swapchain is made again (the samples or
-format may differ; the device idle), the shader reloads (`IReloadsShaders`), and `Dispose` (perhaps twice, and perhaps
-without `Initialize`, so a pass's constructor makes no Vulkan object; after the engine gave up on a stuck device,
-`VulkanContext.IsAbandoned`, it destroys nothing). The mesh pass sets its viewport, scissor, set, and constants again
-after the `Opaque` stage.
-`RenderPassSetup` gives the device, the allocator, the shader compiler, the stage's colour and depth formats and samples,
-`MeshPass`'s set and its layout (a pipeline whose set 0 it is reads the look, the lighting, and the shadow maps), and
-helpers: `CreateLayout`, `CreateTriangles` (a pipeline for the stage's targets with no vertex input, depth compared
-Greater when tested, its colour blended as `ColorBlend` says: `None`, `Premultiplied`, `Alpha`, or `Additive`),
-`CreateCompute`, and `CreateBufferSet` (a descriptor set of storage buffers, `RenderPassBufferSet`); `PipelineFactory`
-and `VulkanResultExtensions` are public for more. A game's shaders are in its own `Shaders/` folder, copied to
-`Shaders/Game/` beside the engine's, named `Game/NAME` to the compiler, and include the engine's (`#include
-"../view.glsl"`: `viewClip` projects as every pass does); the compiler reads the `Game/` paths from
+RenderPassFrame)` on the main thread after the frame systems in each frame that has a match's world (the frame's time
+and view; the pass writes its slot's region of its host-visible memory, write only, and flushes it when it records; the
+menu's and a match's first frames have none), `Record(RenderPassContext)` on the render thread at its stage in each
+frame the loading screen does not cover (none is recorded under it, `Compute` included) (the command buffer, the frame
+slot, whether the frame is fresh, the view constants with the stage's size, the extent, and `MeshPass`'s set),
+`OnTargetsChanged` when the swapchain is made again (the samples or format may differ; the device idle), the shader
+reloads (`IReloadsShaders`), and `Dispose` (perhaps twice, and perhaps without `Initialize`, so a pass's constructor
+makes no Vulkan object; after the engine gave up on a stuck device, `VulkanContext.IsAbandoned`, it destroys nothing).
+The mesh pass sets its viewport, scissor, set, and constants again after the `Opaque` stage. A game's passes draw into
+the frame alone, not into image views (below). `RenderPassSetup` gives the device, the allocator, the shader compiler,
+the stage's colour and depth formats and samples, `MeshPass`'s set and its layout (a pipeline whose set 0 it is reads
+the look, the lighting, and the shadow maps), and helpers: `CreateLayout`, `CreateTriangles` (a pipeline for the stage's
+targets with no vertex input, depth compared Greater when tested, its colour blended as `ColorBlend` says: `None`,
+`Premultiplied`, `Alpha`, or `Additive`), `CreateCompute`, and `CreateBufferSet` (a descriptor set of storage buffers,
+`RenderPassBufferSet`); `PipelineFactory` and `VulkanResultExtensions` are public for more. A game's shaders are in its
+own `Shaders/` folder, copied to `Shaders/Game/` beside the engine's by an item in its project (the starter has none
+until it adds a shader; the mesh sample's `Itera.MeshSample.csproj` has it: `<None Include="Shaders\**"
+Link="Shaders\Game\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />`, after `<None
+Remove="Shaders\**" />`), named `Game/NAME` to the compiler, and include the engine's (`#include "../view.glsl"`:
+`viewClip` projects as every pass does); the compiler reads the `Game/` paths from
 `Engine:Renderer:GameShaderSourceDirectory` when it is set (the game's folder in the repository, for `shaders reload`;
 `game.py start` gives it), else from `Shaders/Game/` beside the executable, also while `ShaderSourceDirectory` points
-the engine's at the repository (`ShaderSource`, `ShaderRoots`). Each pass is timed with its own pair of queries: their sum is `GpuPass.Game` (the stats line's `game passes
-in N frames avg/max`; the `Compute`, `Opaque`, and `Transparent` stages' time is also part of the world's, `Voxels`), and each one has a Debug line (`GPU game pass NAME in N frames avg ... max ...`) and an entry in
-the control port's `gpu` reply (`Game NAME`). The mesh sample's `AimHighlightPass` is the example (its README).
+the engine's at the repository (`ShaderSource`, `ShaderRoots`). Each pass is timed with its own pair of queries: their
+sum is `GpuPass.Game` (the Debug line `GPU passes over ...`'s `game passes in N frames avg/max`; the `Compute`,
+`Opaque`, and `Transparent` stages' time is also part of the world's, `Voxels`), and each one has a Debug line (`GPU
+game pass NAME in N frames avg ... max ...`) and an entry in the control port's `gpu` reply (`Game NAME`). The mesh
+sample's `AimHighlightPass` is the example (its README).
 
 ### Image views
 
 A game draws views of the world into images of their own (`RenderViews`, run-wide). It declares each at its run's start
 (`IRunStartup.Start`: a name, a size in texels, 16 to 4096, and how often it is drawn, once in 1 to 60 frames; at most
 `RenderViews.MostViews`, 4); the run's "image views" step, after "mesh assets on the gpu", makes them and seals the
-declarations. Each frame it wants one drawn, a frame system asks for it with a camera (`RenderViews.Draw`, any lens: the
-starter's minimap is orthographic; `Asked` reads the ask back), and it is drawn on such a frame once its frames since
-the last update reach its cadence. A HUD layer shows one in a rectangle of screen pixels each frame (`RenderViews.Show`,
-from its `Bounds`, which the surface asks every frame it shows, at the screen's size); the UI pass draws it under the
-UI's pixels (`ui.frag`'s `views[4]`, binding 1, a 1x1 stand-in where there is none; the panels in `UiConstants`),
-dimmed with the picture. A view shows its last update until its next. A mesh material shows one too
-(`RenderViews.ShowOnMaterial(view, asset, material)`, by the run's asset and material names, at the run's start): each
-declared view has a slot of the asset pass's texture array after the asset textures (a white stand-in until the views
-are made, then its shown image, in the pass's set and every view's: `MeshAssetPass.SetViewImages`), and the material
-reads it for its colour, and for its emission when it glows, clamped, through the colour's texture coordinates
-(`MeshAssetMaterial.ShowingView`; a name no asset has is a Warning at "mesh assets on the gpu"); the mesh sample's
-screen. A view that sees a material showing itself shows its last update there. The picture was tone-mapped and graded
-when it was drawn, and the material shades it again (its colour lit, its glow added), as any texture.
+declarations. Each frame it wants one drawn, a frame system asks for it with a camera (`RenderViews.Draw`, any lens;
+`Asked` reads the ask back), and it is drawn on such a frame once its frames since the last update reach its cadence.
+The camera is a `CameraView`: the starter's minimap gives `new CameraView(eye, turn, 0, float.NaN,
+CameraProjection.Orthographic, metres, float.NaN)`, a near and far not finite meaning the view distance each way
+(`ViewConstants.Create`), and the mesh sample's yard camera a perspective one. A HUD layer shows one in one rectangle of
+screen pixels each frame (`RenderViews.Show`, from its `Bounds`, which the UI surface asks every frame the layer shows,
+at the screen's size; a view's later rectangle in a frame replaces its earlier one, and one whose position or size is
+not finite, or whose width or height is not above 0, is ignored); the UI pass draws it under the UI's pixels
+(`ui.frag`'s `views[4]`, binding 1, a 1x1 stand-in where there is none; the panels in `UiConstants`), dimmed with the
+picture. A view shows its last update until its next. A mesh material shows one too (`RenderViews.ShowOnMaterial(view,
+asset, material)`, by the run's asset and material names, at the run's start): each declared view has a slot of the
+asset pass's texture array after the asset textures (a white stand-in until the views are made, then its shown image, in
+the pass's set and every view's: `MeshAssetPass.SetViewImages`), and the material reads it for its colour, and for its
+emission when it glows, clamped, through the colour's texture coordinates (`MeshAssetMaterial.ShowingView`; a name no
+asset has is a Warning at "mesh assets on the gpu"); the mesh sample's screen. A view that sees a material showing
+itself shows its last update there. The picture was tone-mapped and graded when it was drawn, and the material shades it
+again (its colour lit, its glow added), as any texture.
 
 A view draws the world, the models, the mesh assets, the sky, and the point lights, without shadows (the sun lights it
 unshadowed) or particles, with one sample a pixel whatever the world's (`MeshPass` and `MeshAssetPass` make their
@@ -432,32 +460,38 @@ Each view (`RenderViewTarget`, `Rendering/Meshes/`) has its own frame records, a
 commands (at most 8,192 blocks), the models' (16,384 draws, 4,096 commands), its lighting record (no shadows, the sky
 field's place), its point lights and their clusters, and the mesh assets' seen list (4,096 draws, 1,024 commands) and
 blended list; its own sets of the mesh pass's and the asset pass's layouts name them, so it draws with their pipelines
-and shaders unchanged. `RenderViewPass` starts the due views after the frame systems (`BeginViews`: their constants
-from the asked camera at the view's size, the frame's sun and sky, no shadows; their `MeshView`s), ends them with the
-events' lights (`EndViews`; the HUD's panels go into the slot), and records each after the world's pass (timed as
-`GpuPass.ImageViews`, the stats log's `image views in N frames avg/max`, not part of `Voxels`): its clusters, then the
-world, the models, the mesh assets, the sky, and the blended assets into its colour and depth, then a copy of the colour
-into the image the shaders and the HUD read (`Shown`, cleared in the first frame, always in the shader-read layout but
-during that copy, so no rendering reads the image it draws into). Its log line: `Image view NAME: WxH texels, one sample
-a pixel, drawn at most every N frame(s)`.
+and shaders unchanged. `RenderViewPass` starts the due views after the frame systems (`BeginViews`: their constants from
+the asked camera at the view's size, the frame's sun and sky, no shadows; their `MeshView`s), ends them with the events'
+lights (`EndViews`; the HUD's panels go into the slot), and records each after the world's pass (timed as
+`GpuPass.ImageViews`, the Debug line `GPU passes over ...`'s `image views in N frames avg/max`, not part of `Voxels`;
+nothing under the loading screen): its clusters, then the world, the models, the mesh assets, the sky, and the blended
+assets into its colour and depth, then a copy of the colour into the image the shaders and the HUD read (`Shown`,
+cleared in the first frame, always in the shader-read layout but during that copy, so no rendering reads the image it
+draws into). Its log line: `Image view NAME: WxH texels, one sample a pixel, drawn at most every N frame(s)`. Without
+graphics (`Engine:Window:Mode=None`, `HeadlessMatch`) the "image views" and "render passes" steps do not run:
+declarations are not sealed, no view is drawn, and no pass is made. `Declare`, `Draw`, `Asked`, and `Show` still work,
+for a game's tests: with `Mode=None` the loop clears each frame's asks and panels as with graphics, but
+`HeadlessMatch.Frame` does not, so an ask stays once made, and no UI is drawn there to call `Show`.
 
 ### Files in `src/Itera.Engine`
 
-  - `Rendering/`: Vulkan bootstrap (`VulkanContext`, `DeviceRequirements`), the frame (`FrameRenderer`,
-    `RenderThread`, `FrameExchange`), a game's own passes (`RenderPasses`, `IRenderPass`), image views (`RenderViews`,
-    `RenderViewPass`; `RenderViewTarget` and `MeshPass.Views.cs` in `Meshes/`), the surface's source (`ISurfaceSource`: the window's or a headless one, in
-    `SurfaceSource.cs`), `DepthTarget`, `ModelInstances`, `MeshInstances`, `DebugLines` and `DebugLinePass`, `UiPass`,
-    `RenderScale` and `UpscalePass`, `SmaaPass`, `SmaaTextures`, `FrameImages`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`,
-    the look (`RenderLook`, `LookTuning`), `Atmosphere`,
-    `ScreenshotEncoder`; the materials' texture sets (`MaterialTextureSets`, `DdsFile`) in `Materials/`; GPU memory (own block sub-allocator, `GpuBuffer`, `GpuImage`, per-slot `StagingBuffer`) in
-    `Memory/` (with `GpuRangeHeap`, the mesh heap's ranges); `Pipelines/`; structs that shaders read in `GpuData/`; the
-    palette and its looks (`IVoxelPalette`, `VoxelLook`), the tint map (`IVoxelTintMap`) and the CPU's read of it
-    (`VoxelTintSampler`), and `StagingWriter` in `Voxels/`; the sun shadow cascades' fit (`ShadowCascades`);
-    `WorldMeshes`, `MeshPass`, the frame's view `MeshView` (with `CascadeBounds`), and the mesh assets' `MeshAssetPass`,
-    `MeshAssetDraws`, `MeshAssetLayout`, and `MeshAssetFrame` in `Meshes/` (with `MeshColumn`, `MeshWorkers`, `SkyField`, `LevelBalance`, and the
-    test's interfaces `IMeshDrawTarget` and `IStagingRegions`, in `IMeshTargets.cs`), and `IWorldOnGpu`, which `WorldMeshes` answers; the CPU mesher (`SurfaceNets`, `MeshBuffers`) in `src/Itera.Engine/Meshing/`;
-    GLSL files, the shader compiler, and reloads (`ShaderReloads`, `IReloadsShaders`, which every pass implements) in
-    `Shaders/`.
+  - `Rendering/`: Vulkan bootstrap (`VulkanContext`, `DeviceRequirements`), the frame (`FrameRenderer`, `RenderThread`,
+    `FrameExchange`), a game's own passes (`RenderPasses`, `IRenderPass`), image views (`RenderViews`, `RenderViewPass`;
+    `RenderViewTarget`, `MeshPass.Views.cs`, and `MeshAssetPass.Views.cs` in `Meshes/`), the surface's source
+    (`ISurfaceSource`: the window's or a headless one, in `SurfaceSource.cs`), `DepthTarget`, `ModelInstances`,
+    `MeshInstances`, `DebugLines` and `DebugLinePass`, `UiPass`, `RenderScale` and `UpscalePass`, `SmaaPass`,
+    `SmaaTextures`, `FrameImages`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`, the look
+    (`RenderLook`, `LookTuning`), `Atmosphere` and `SunPath`, `ScreenshotEncoder`; the materials' texture sets
+    (`MaterialTextureSets`, `DdsFile`) in `Materials/`; GPU memory (own block sub-allocator, `GpuBuffer`, `GpuImage`,
+    per-slot `StagingBuffer`) in `Memory/` (with `GpuRangeHeap`, the mesh heap's ranges); `Pipelines/`; structs that
+    shaders read in `GpuData/`; the palette and its looks (`IVoxelPalette`, `VoxelLook`), the tint map (`IVoxelTintMap`)
+    and the CPU's read of it (`VoxelTintSampler`), and `StagingWriter` in `Voxels/`; the sun shadow cascades' fit
+    (`ShadowCascades`); `WorldMeshes`, `MeshPass`, the frame's view `MeshView` (with `CascadeBounds`), and the mesh
+    assets' `MeshAssetPass`, `MeshAssetDraws`, `MeshAssetLayout`, and `MeshAssetFrame` in `Meshes/` (with `MeshColumn`,
+    `MeshWorkers`, `SkyField`, `LevelBalance`, and the interfaces tests replace, `IMeshDrawTarget`, `IStagingRegions`,
+    and `IRenderViewLists` (an image view's lists), in `IMeshTargets.cs`), and `IWorldOnGpu`, which `WorldMeshes`
+    answers; the CPU mesher (`SurfaceNets`, `MeshBuffers`) in `src/Itera.Engine/Meshing/`; GLSL files, the shader
+    compiler, and reloads (`ShaderReloads`, `IReloadsShaders`, which every pass implements) in `Shaders/`.
 
 ### Conventions
 

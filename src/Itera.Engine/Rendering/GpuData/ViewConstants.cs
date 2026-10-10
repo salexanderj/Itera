@@ -39,7 +39,10 @@ public struct ViewConstants
     /// <summary>Frame slot the frame is drawn in, for per-slot buffers.</summary>
     public uint Slot;
 
-    /// <summary>How far the world is drawn, in metres; beyond it is sky, and fog grows over the last 40 %.</summary>
+    /// <summary>
+    /// How far the world is drawn, in metres; beyond it is sky, and fog grows from the look's
+    /// <see cref="RenderLook.FogStart"/> share of it.
+    /// </summary>
     public float MaxDistance;
 
     /// <summary>The view's switches, a bit each (<c>switches</c> and <c>viewSwitch</c> in view.glsl).</summary>

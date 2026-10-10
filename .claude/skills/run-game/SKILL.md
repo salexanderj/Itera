@@ -62,7 +62,8 @@ lists the game's). Commonly used:
   `DebugWalkSpeed=5` (the debug camera flies a 100 m circle, `Engine:Camera:CircleHeightMetres` up, 20 by default), `Level0ReachMetres` (0: the radius less two columns) and
   `ReachGrowth` (2; 1.5 draws each level 1.5 times as far as the one before instead of twice; `LevelDistances`).
 - The starter: `--Game:World:CameraPose=x,y,z,yaw,pitch` (metres and degrees; `pos` prints it),
-  `--Game:Player:StartFlying=true`, `ThirdPerson=true`, `HeightMetres=2.5` (1.2 to 2.5).
+  `--Game:Player:StartFlying=true`, `ThirdPerson=true`, `HeightMetres=2.5` (1.2 to 2.5), `--Game:Minimap:Metres=128`
+  (16 to 256; 64 by default).
 - Renderer (the world and the models as meshes): `MeshFinestLevel` (0), `MeshReachShare` (0.5: each level drawn to
   half its reach, 10 cm voxels to 16.8 m), `ViewDistanceMetres` (256; 0 for the coarsest level's radius), `MsaaSamples`
   (4: 1, 2, 4, or 8), `MeshMegabytes` (512: 64 to 4096; full, it frees the meshes of columns the view does not draw),
@@ -104,10 +105,10 @@ per physical device, the selected device, swapchain, input devices, shader compi
 `UI: Skia CPU surface ...`, `Loaded mod itera.samplemod`, `Mesh assets: N model(s), ... read in N ms` (the models the game declared, with how many
 textures came from their compressed textures; a file that cannot be read stops the run with exit code 1; a Warning for
 compressed textures that do not match their image, an Information note for a model whose textures were all decoded), `Mesh assets on the GPU: N vertices, ... draws N MB a frame slot`
-(and with a skinned model `... N skinned vertices; posed instances skinned into V vertices ...`), for each pass a game
-registered `Render pass of the game's: NAME at the STAGE stage` (the starter has none; the mesh sample's is `aim
-highlight`), for each image view a game declared `Image view NAME: WxH texels, one sample a pixel, drawn at most every N
-frame(s)` (the starter's `minimap`), `Audio: thread started ...`, `Render thread started`, `Engine
+(and with a skinned model `... N skinned vertices; posed instances skinned into V vertices ...`), for each image
+view a game declared `Image view NAME: WxH texels, one sample a pixel, drawn at most every N frame(s)` (the starter's
+`minimap`; the mesh sample's `yard camera`), for each pass a game registered `Render pass of the game's: NAME at the
+STAGE stage` (the starter has none; the mesh sample's is `aim highlight`), `Audio: thread started ...`, `Render thread started`, `Engine
 ready ... entering main loop`. Then the match's: `Match 1: offline, seed N` (or `host, seed N`, `host through Steam,
 ...`, or `join ADDRESS`), `Session: offline, seed N` (or `hosting on UDP port ...`, `hosting through Steam ...`, or
 `joined ADDRESS in slot N, seed N; downloaded ...`; with a save name, a `Save: starting from NAME ...` or `Save: NAME
@@ -123,6 +124,16 @@ logged at Critical, shutdown still runs, and the exit code is 1 (in a menu match
 option (for example `--Engine:FixedStepHz=0`) or an unknown key under `Engine` or `Game` (for example
 `--Engine:Renderer:VSync`; `UnknownOptionKeys`) stops the game before the window opens, with exit code 1 and a message
 naming the key.
+
+Every run writes `~/.local/share/<DataFolder>/Logs/<datafolder>-<date>-<time>-<pid>.log` (`LocalApplicationData`
+elsewhere) with Debug detail; read the newest file there first when a run misbehaves. A log holds a session header, init
+timings, and every 10 s a frame stats line (frames, frame times with median, 95th, and 99th percentiles, fixed steps,
+bytes allocated per frame on the main and render threads, GCs, GPU time), Debug lines with each GPU pass (`GPU passes
+over ...`, a game's passes and the image views among them), the fixed steps' CPU time by part, and the eight slowest
+fixed systems (`SystemTimes`), a voxel stats line (columns, chunks, bricks, memory against the budget, loads, unloads,
+job times), a meshes line (blocks meshed and pending, uploads, the mesh heap, triangles drawn, the main thread's time),
+a `Particles:` line while any live, and the shutdown steps. The console shows Information and above. Log lines from the
+render thread carry its thread id (for example `[T21]`) instead of `[T1]`.
 
 ## Unattended runs
 
@@ -159,7 +170,7 @@ the game itself (`ScreenshotPass`), reload the shaders from the repository (`Eng
 `shaders reload`: every pass compiles, then the pipelines are made again; an error keeps the old ones), and send input
 (keys, buttons, look, the wheel, a capture of the pointer that needs no focus, and `point X Y` and `type TEXT` for the
 menu). It reads lines of at most 1 MiB and takes 16 tools at once; a wait-for-log pattern has 50 ms a line. Use it
-instead of restarts. `game.py shots VIEW... --out DIR [--compare DIR] [--size WxH] [--release]` starts the game
+instead of restarts; `game.py restart` takes the options `start` was given again. `game.py shots VIEW... --out DIR [--compare DIR] [--size WxH] [--release]` starts the game
 offscreen, takes a screenshot of each view once its world has loaded and its light settled (`fly on`, `tp VIEW`,
 `wait view`), stops it, and compares with an earlier set (`tools/benchmark/imgdiff.py`): four views take about 15 s in
 Debug, and sets of the same build agree to a few pixels (on a quiet machine, exactly). A view is a game's `tp` place

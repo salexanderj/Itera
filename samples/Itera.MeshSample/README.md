@@ -12,13 +12,13 @@ matches have no voxel world. It shows what such a game composes and how the engi
   `ClimbingMode` (Space at a block grabs it; W, S, A, D on it; Space jumps off; Ctrl lets go; the top pulls up).
 - The starter's fox (its files linked from `src/Game/Models/Fox/`) walks a circle (`SampleFoxSystem`).
 - The console's `balls` drops loose bodies that land on the mesh ground and stay where they rest (no `ILooseBodyRest`).
-- A render pass of its own (`Rendering/AimHighlightPass.cs`, an `IRenderPass` at the `Transparent` stage): the block
-  the player aims at within 1.5 m (`AimHighlightSystem`, the shared ray from where the player's tools aim, through
+- A render pass of its own (`Rendering/AimHighlightPass.cs`, an `IRenderPass` at the `Transparent` stage): the climbable
+  block the player aims at within 1.5 m (`AimHighlightSystem`, the shared ray from where the player's tools aim, through
   `YardColliders` to the piece) glows along its edges, pulsing. Its shaders are in `Shaders/`, copied to
-  `Shaders/Game/` beside the engine's, and include the engine's `view.glsl`; `AimHighlightPassTests` checks them against
+  `Shaders/Game/` beside the engine's by the item in `Itera.MeshSample.csproj`, and include the engine's `view.glsl`; `AimHighlightPassTests` checks them against
   `AimHighlightData`.
 - An image view on a screen (`YardCamera`, `YardCameraSystem`): a camera high over the yard's south-west corner, looking
-  at its middle, is drawn into a 384 by 216 image every other frame (`RenderViews`), shown on a screen 4 m up on a post
+  in among the blocks, is drawn into a 384 by 216 image every other frame (`RenderViews`), shown on a screen 4 m up on a post
   past the blocks, ahead of the start (the yard's `yard-screen`, its `screen` material: `RenderViews.ShowOnMaterial`),
   which glows with it; the camera sees the screen too, showing its own last picture there.
 - The sky is the engine's default (no `IAtmosphereSource`).
@@ -28,4 +28,6 @@ matches have no voxel world. It shows what such a game composes and how the engi
 Run it: `dotnet run --project samples/Itera.MeshSample -- --Engine:Session:Mode=Offline`. Its data folder is
 `IteraMeshSample`; runs an agent starts add `--Engine:Application:DataFolder=IteraMeshSample-agent`. Vulkan validation:
 `.claude/skills/vulkan/validate.sh --binary samples/Itera.MeshSample/bin/Debug/net10.0/Itera.MeshSample`. Its tests,
-played without a window, are in `tests/Itera.MeshSample.Tests`.
+played without a window, are in `tests/Itera.MeshSample.Tests`. Its systems' run order, with reasons where they matter, is in
+`MeshSampleServiceCollectionExtensions` (`AimHighlightSystem` after the camera's systems, since it aims from the camera's
+pose); unlike the starter, it has no `SystemOrderTests` pinning it.

@@ -20,8 +20,13 @@ slope from the neighbouring depths; off the image, behind something, or within 0
 view's: outside its box) it meets nothing, and a resting particle falls again where the image shows its support gone. A lit particle in
 view takes its sunlight from the shadow cascades and its sky light from the sky field (`mesh-light.glsl`, with
 `MeshPass`'s set bound as set 1), eased halfway each frame, into two bytes of its record. Lit cubes and soft sprites are
-drawn after the world, each by one indirect draw. The pool (262,144 by default) is a ring that overwrites
-the oldest. Nothing comes back to the game and nothing is sent: each game makes its own particles. The console's
+drawn after the world, each by one indirect draw, tested against its depth (a blended mesh asset writes none, so a
+particle behind one draws over it, untinted). Their light and colour follow the frame's look (`look.glsl`, binding 8 of
+their draw set, compiled with `LOOK_BINDING 8`; the look is in `.claude/rules/rendering.md`): the exposure, the tone curve,
+and the grade, and their sunlight scaled by `LOOK.daylight`, so it fades at dusk and is gone at night. Their constants
+(`ParticleConstants`) carry the view's near, far, and lens (`Orthographic`), so the depth read back, the collisions,
+the culling, and the sprites' facing work through an orthographic camera too. The pool (262,144 by default) is a ring
+that overwrites the oldest. Nothing comes back to the game and nothing is sent: each game makes its own particles. The console's
 `particles` tests recipes by name.
 
 ### Files in `src/Itera.Engine`

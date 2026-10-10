@@ -142,7 +142,7 @@ as usual.
 ## Timings
 
 `gpu` averages each GPU pass over the next frames it measures, so a before and after need no 10 s stats line; a game's
-own render passes come as `Game NAME` each and `Game` for their sum. For
+own render passes come as `Game NAME` each and `Game` for their sum, and the image views as `ImageViews`. For
 numbers to compare, start with `--release --fullscreen`. `tools/benchmark/run.sh` still takes its screenshots with
 grim; the in-game `shot` could replace that later.
 

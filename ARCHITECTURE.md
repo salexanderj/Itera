@@ -12,7 +12,11 @@ and mod support. A game is made by cloning the repository and growing the starte
 that a clone makes go back to Itera, and later engine changes come from Itera with a pull. The engine does not require
 voxels in the game's design, but it supports them well: the world can be a destructible volume of 10 cm voxels with a
 stored density, generated from a seed on worker threads, streamed in rings of detail around the players, edited with
-integer geometry that every peer replays alike, and drawn as smooth triangle meshes.
+integer geometry that every peer replays alike, and drawn as smooth triangle meshes. A game also draws models read from
+glTF files, and extends the renderer: it sets the look and the sun each frame, adds GPU passes of its own at five places
+in the frame, gives a camera an orthographic lens, and draws views of the world into images that its HUD or a mesh's
+material shows (section 5: the mesh assets, a game's own passes, a camera's lens, and image views; the look and the sun
+in section 8, "The raster pipeline draws the world as triangle meshes").
 
 Itera was built with a tower defence game, Zorf TD, which is shelved: its code, docs, and assets are kept in the archive
 repository `salexanderj/ZorfTD-archive` on GitHub (private; its `main` ends at the tag `zorftd-shelved`), and nothing of
@@ -37,6 +41,8 @@ engine so far). The research and decisions behind the engine are in `docs/`:
 - `docs/framework-plan.md`: how the framework was made from the game it grew with.
 - `docs/rendering-redesign-brief.md` and `docs/rendering-redesign.md`: the outside review that began the renderer's
   redesign, and the redesign's decisions, measurements, and plans (the renderer's history).
+- `docs/rendering-extension.md`: what a game can change in the renderer (the look, the sun, blended materials, its own
+  passes, lenses, image views), the choices offered for each, and why each was chosen.
 - `docs/voxel-structures.md`: 64-trees, OpenVDB, NanoVDB, and other voxel structures compared with Itera's.
 - `docs/edit-log-compaction.md`: what a long edit log costs and the methods compared.
 - `docs/anti-aliasing.md`: the research behind SMAA 1x before FSR 1.
@@ -97,8 +103,10 @@ tools/Textures               makes the world materials' texture sets (compressed
                              and models' compressed textures (model mode)
 tests/Itera.Modding.Tests    manifest parsing and validation
 tests/Itera.Engine.Tests     the engine: see below
-tests/Game.Tests             the starter: its composition and system order, shipped settings, options, and generator
-tests/Itera.MeshSample.Tests the mesh sample played without a window, its yard's meshes, and its fox
+tests/Game.Tests             the starter: its composition and system order, shipped settings, options, and generator,
+                             the fox, the minimap's system and HUD layer, and the starter played without a window
+tests/Itera.MeshSample.Tests the mesh sample played without a window, its yard's meshes, its fox, its render pass and
+                             the system that aims it, and its yard camera
 tests/Shared                 helpers compiled into the test projects that use them (SystemAllocation, ArchStartup,
                              SerialCollectionDefinition, RunsLongAttribute and LongFirstCollectionOrderer, VoxelLoading,
                              FakeTransport, HostileValues and Watchdog, WireFingerprint, LayerInk)
@@ -140,15 +148,15 @@ Rules:
 | `Time/` | `GameClock` (clamped frame delta), `FixedStepAccumulator` (60 Hz steps, capped per frame) |
 | `Windowing/` | `WindowService`: creates the GLFW window, pumps events, exposes framebuffer size, refresh rate, and exit request |
 | `Input/` | `InputService` (collects key, button, movement, and scroll events into one `InputSnapshot` per frame and one per fixed step), `InputAccumulator`, `PointerCapture` (a left click locks the pointer for mouse look; Escape goes to the menu at once and frees it), `IPanelInput` (a panel that takes the free pointer), `IKeyboardFocus` (the console takes the keys while open), `IMenuInput` and `UiPointer` (the menu), `KeyBindings`, `KeyAction`, and `InputBinding` (the actions a game registers and the Settings page's rebinding), `ITickInput` and `IFrameInput` (what fixed and frame systems read) |
-| `Rendering/` | `VulkanContext`, `DeviceRequirements`, `VulkanSwapchain`, `SwapchainState`, `FrameSync`, `FrameRenderer` (fence wait, acquire, barriers, recording the passes, submit, present, recreate), `GpuTimer`, `CameraView` (with its `CameraProjection`) and `RenderView` (the camera, its lens, and the atmosphere of the frame being built), `Atmosphere`, `RenderThread`, `FrameExchange` (hands each frame from the main thread to the render thread), `DebugLines` and `DebugLinePass`, `UiPass`, `RenderScale` and `UpscalePass`, `SmaaPass` and `SmaaTextures`, `FrameImages`, `DynamicRenderScale`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`, `ScreenshotEncoder`, `DepthTarget`, `ShadowCascades`, `IWorldOnGpu`, `ModelInstances` (the models frame systems ask to draw this frame, each with its `ModelShadow`), `MeshInstances` (the mesh assets they ask to draw, and the posed ones' skinning matrices), `PointLights` (event lights), `RenderPasses` (a game's own passes, `IRenderPass`, at five stages of the frame), `RenderViews` and `RenderViewPass` (image views: views a game draws into images, the HUD shows) |
+| `Rendering/` | `VulkanContext`, `DeviceRequirements`, `VulkanSwapchain`, `SwapchainState`, `FrameSync`, `FrameRenderer` (fence wait, acquire, barriers, recording the passes, submit, present, recreate), `GpuTimer`, `CameraView` (with its `CameraProjection`) and `RenderView` (the camera, its lens, and the atmosphere of the frame being built), `Atmosphere`, `RenderThread`, `FrameExchange` (hands each frame from the main thread to the render thread), `DebugLines` and `DebugLinePass`, `UiPass`, `RenderScale` and `UpscalePass`, `SmaaPass` and `SmaaTextures`, `FrameImages`, `DynamicRenderScale`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`, `ScreenshotEncoder`, `DepthTarget`, `ShadowCascades`, `IWorldOnGpu`, `ModelInstances` (the models frame systems ask to draw this frame, each with its `ModelShadow`), `MeshInstances` (the mesh assets they ask to draw, and the posed ones' skinning matrices), `PointLights` (event lights), `RenderPasses` (a game's own passes, `IRenderPass`, at five stages of the frame), `RenderViews` and `RenderViewPass` (image views: views a game draws into images, which the HUD and mesh materials show), `RenderLook` and `LookTuning` (the look a game sets each frame, and the console's `look` over it), `SunPath` (how much light the sun gives round the horizon) |
 | `Rendering/Memory/` | `GpuMemoryAllocator` (own block sub-allocator: 64 MB blocks, dedicated allocations for large resources, persistent mapping, flush and invalidate), `MemoryTypeSelector`, `BlockSuballocator`, `GpuBuffer`, `GpuImage`, `StagingBuffer` (one upload region per frame slot), `GpuRangeHeap` (first-fit ranges of 256-byte granules in one buffer, for the mesh heap) |
 | `Rendering/Pipelines/` | `PipelineFactory`: shader modules, pipeline layouts with push constants, full-screen, line, and triangle graphics pipelines without vertex input (the mesh shaders read their vertices from storage buffers) for dynamic rendering, and compute pipelines |
-| `Rendering/GpuData/` | Structs that shaders read, each with a `GpuLayout` test: `ViewConstants` (camera vectors, sun, sky, frame slot, view distance, image size, switches, near and far; push constants, 116 bytes), `MeshVertex`, `MeshDraw`, `MeshModelDraw`, `MeshMaterial`, `MeshLighting` and `MeshLight`, the mesh assets' `MeshAssetVertex`, `MeshAssetDraw`, `MeshAssetMaterial`, `MeshSkinVertex`, `MeshSkinGroup`, and `MeshSkinConstants`, the passes' constants (`SmaaConstants`, `UiConstants`, `UpscaleConstants`, `LoadingConstants`, `ParticleConstants`), the particles' records, and `DebugLineVertex` |
+| `Rendering/GpuData/` | Structs that shaders read, each with a `GpuLayout` test: `ViewConstants` (camera vectors, sun, sky, frame slot, view distance, image size, switches, near and far; push constants, 116 bytes), `MeshVertex`, `MeshDraw`, `MeshModelDraw`, `MeshMaterial`, `MeshLighting` and `MeshLight`, the mesh assets' `MeshAssetVertex`, `MeshAssetDraw`, `MeshAssetMaterial`, `MeshSkinVertex`, `MeshSkinGroup`, and `MeshSkinConstants`, the look a frame slot holds (`LookConstants`, `look.glsl`), the passes' constants (`SmaaConstants`, `UiConstants`, `UpscaleConstants`, `LoadingConstants`, `ParticleConstants`), the particles' records, and `DebugLineVertex` |
 | `Rendering/Voxels/` | `IVoxelPalette` and `VoxelLook` (how each material is drawn), `IVoxelTintMap` (a 256 x 256 map over the world that blends each material from its colour to its tint colour) and `VoxelTintSampler` (reads it on the CPU as the shader does), `StagingWriter` |
 | `Rendering/Materials/` | `MaterialTextureSets` and `DdsFile`: the materials' texture sets read at start into texture arrays |
-| `Rendering/Meshes/` | `WorldMeshes` (the world and the models as triangle meshes; partial files for the draws, the models, the point lights, the sky field, and the stitches between levels), `MeshWorkers` (the threads that mesh), `MeshColumn`, `LevelBalance`, `MeshPass` (the mesh heap, the frame's buffers, the shadow maps, the multisampled images, the recording), `MeshView` (the frame's frustum, the cascades' fit with `CascadeBounds`, and the point lights, shared by every list drawn in `MeshPass`), `MeshFrame`, `SkyField`, the mesh assets' `MeshAssetPass` (their buffers, textures, set 1, pipelines, and skinning), `MeshAssetLayout`, `MeshAssetDraws`, and `MeshAssetFrame`, and the interfaces that tests replace (`IMeshDrawTarget` and `IStagingRegions` (`IMeshTargets.cs`)) |
+| `Rendering/Meshes/` | `WorldMeshes` (the world and the models as triangle meshes; partial files for the draws, the models, the point lights, the sky field, and the stitches between levels), `MeshWorkers` (the threads that mesh), `MeshColumn`, `LevelBalance`, `MeshPass` (the mesh heap, the frame's buffers, the shadow maps, the multisampled images, the recording), `MeshView` (the frame's frustum, the cascades' fit with `CascadeBounds`, and the point lights, shared by every list drawn in `MeshPass`), `MeshFrame`, `SkyField`, the mesh assets' `MeshAssetPass` (their buffers, textures, set 1, pipelines, and skinning), `MeshAssetLayout`, `MeshAssetDraws`, and `MeshAssetFrame`, an image view's records and sets (`RenderViewTarget`; `MeshPass.Views.cs` and `MeshAssetPass.Views.cs` draw it), and the interfaces that tests replace (`IMeshDrawTarget`, `IStagingRegions`, and `IRenderViewLists` (`IMeshTargets.cs`)) |
 | `Meshing/` | `SurfaceNets` (the CPU mesher: a 32-voxel block of materials and densities with a 2-voxel apron into vertices and 16-bit indices, with a transition mode beside a coarser level) and `MeshBuffers` |
-| `Rendering/Shaders/` | GLSL files copied to `Shaders/` in the output: the full-screen, mesh, mesh asset, skinning, shadow, sky, FSR, SMAA, loading, UI, debug-line, particle, cluster, and material-bake shaders, and the include-only files (`view.glsl`, `mesh-asset-data.glsl`, `turns.glsl`, `mesh-data.glsl`, `mesh-light.glsl`, `mesh-surface.glsl`, `mesh-shade.glsl` (the light and grade every surface of the mesh pass takes), `surface-noise.glsl`, `lighting.glsl`, `sky.glsl`, `particle-data.glsl`, `particle-constants.glsl`); `ShaderCompiler` (GLSL to SPIR-V through Shaderc with a disk cache), `ShaderSource` (`#include` expansion), `ShaderReloads` and `IReloadsShaders` |
+| `Rendering/Shaders/` | GLSL files copied to `Shaders/` in the output: the full-screen, mesh, mesh asset, skinning, shadow, sky, FSR, SMAA, loading, UI, debug-line, particle, cluster, and material-bake shaders, and the include-only files (`view.glsl`, `mesh-asset-data.glsl`, `turns.glsl`, `mesh-data.glsl`, `mesh-light.glsl`, `mesh-surface.glsl`, `mesh-shade.glsl` (the light and grade every surface of the mesh pass takes), `surface-noise.glsl`, `lighting.glsl`, `sky.glsl`, `particle-data.glsl`, `particle-constants.glsl`, `look.glsl`); a game's own shaders are the tree's `Game/` folder (`Shaders/Game/` in the output); `ShaderCompiler` (GLSL to SPIR-V through Shaderc with a disk cache), `ShaderSource` (`#include` expansion) and `ShaderRoots` (where the engine's and the game's shaders are read from), `ShaderReloads` and `IReloadsShaders` |
 | `Particles/` | `ParticleEmitter` (bursts queued for the next frame, the pool's ring, attractors, the stress test), `ParticleBurst`, `ParticleRecipe` and `ParticleRecipes` (by name, at most 128), `ParticleStats`, `ParticleColours`, `StockEffects` (seven general recipes); the GPU side is `Rendering/ParticlePass` |
 | `Native/` | Valve's `steam_api` library for each platform (`Native/Steam/`, with a README naming the release), copied next to the game. |
 | `Audio/` | `AudioService` (where game code queues sounds), `AudioMixer` (the audio thread's work), `RecipeRenderer`, `AudioExchange`, `AudioStats`, `SoundRecipe` (`OneShotRecipe`, `StreamRecipe`, `SoundGenerator`) and `SoundRecipes` (by name, at most 128), `SoundEvent` and `SoundLoop`, `EngineSounds`, `SoundCache`, `WavWriter`; `Synthesis/` (`SoundRandom`, `Dsp`, `OnePole`, `StateVariableFilter`, `NoiseSource`, `ModalBank`); the device (`IAudioDevice`, `OpenAlAudioDevice`, `NullAudioDevice`, `AudioDeviceFactory`) |
@@ -229,31 +237,35 @@ scrollback, then `Engine:Console:Run` the first time a match's world exists, the
 the main thread between fixed steps, never inside a query, and also while no frames are drawn), then the control port's
 requests (`ControlService.RunPending`), then run the due fixed steps while a match's world exists (at most 8 per
 iteration; excess time is dropped; the match's start restarts the count at tick 0). Each fixed step takes the input
-since the last step (`InputService.BeginTick`, read by fixed systems through `ITickInput`), then runs the ECS fixed group
-(systems receive `FixedStepTime`), then applies the large edits that wait (`ApplyPendingEdits`), brings the Bepu statics
-near dynamic bodies up to date with the step's edits and the bodies' positions (`VoxelColliders.Update`), then the
-physics step, then takes the loose bodies' new poses for the character mover (`LooseBodyVoxels.Refresh`), then
-`IGameMod.OnFixedUpdate`, then the fields that the navigation thread finished are taken, then the session's send (a host sends each joined client the edits
-made since the last step, in order). The loop also ends when the session of a match the options started ends (the host
-quit, the connection was lost, or the host sent something it could not accept); any other match's end goes back to the
-menu. An exception in the iteration's work while a match the menu or the console started is on ends that match unsaved
-(`MatchFlow.EndAfterFault`, logged at Error), owes the render thread the frame it took the request for
-(`FrameExchange.RequestTaken`), and the run goes on at the menu with "The match ended because of an error"; a device's
-failure (`VulkanException`) and an exception in a match the options started still end the run. If the render thread has
-asked for a frame with no match's world (the menu, a join, a match's start), the iteration builds one of the loading
-screen's ring with the UI over it, uploading and drawing nothing of a world. Otherwise it builds one: the input snapshot
-of the events since the last frame (`InputService.Frame`), `DebugLines` and `ModelInstances` cleared, the event lights
-started (`PointLights`), the ECS frame group (systems receive `FrameTime`, including `Alpha`; one of them puts the active
-camera in `RenderView`), `IGameMod.OnUpdate`, the UI draw (`UISurface.Draw` at the request's size: each layer updates, and
-the surface is drawn again only when a layer changed, appeared, or went), and the world's meshes (`WorldMeshes.Upload`: it
-follows the voxel change list, reads blocks and starts their meshing nearest the view first and stops reading after 2 ms,
-stages the finished meshes, the models' too, into the slot's staging region, picks each column's level, and writes the
-frame's block draws, the models' draws from `ModelInstances`, the point lights, and the shadow cascades' lists into the
-slot's regions; it takes 0.12 to 0.35 ms a frame when nothing loads), the debug lines while `lines` has them on, the
-particles (`ParticlePass.Write` drains the bursts queued since the last frame, with their pool slots, and writes them,
-the recipes, and the attractors into the slot's regions), and hands it over, with the camera, the upload's copy count, the
-line count, and the mesh frame's counts, through `FrameExchange.Publish`. Between taking the request and publishing,
-frame systems may write the GPU memory of the request's frame slot.
+since the last step (`InputService.BeginTick`, read by fixed systems through `ITickInput`), then runs the ECS fixed
+group (systems receive `FixedStepTime`), then applies the large edits that wait (`ApplyPendingEdits`), brings the Bepu
+statics near dynamic bodies up to date with the step's edits and the bodies' positions (`VoxelColliders.Update`), then
+the physics step, then takes the loose bodies' new poses for the character mover (`LooseBodyVoxels.Refresh`), then
+`IGameMod.OnFixedUpdate`, then the fields that the navigation thread finished are taken, then the session's send (a host
+sends each joined client the edits made since the last step, in order). The loop also ends when the session of a match
+the options started ends (the host quit, the connection was lost, or the host sent something it could not accept); any
+other match's end goes back to the menu. An exception in the iteration's work while a match the menu or the console
+started is on ends that match unsaved (`MatchFlow.EndAfterFault`, logged at Error), owes the render thread the frame it
+took the request for (`FrameExchange.RequestTaken`), and the run goes on at the menu with "The match ended because of an
+error"; a device's failure (`VulkanException`) and an exception in a match the options started still end the run. If the
+render thread has asked for a frame with no match's world (the menu, a join, a match's start), the iteration builds one
+of the loading screen's ring with the UI over it, uploading and drawing nothing of a world. Otherwise it builds one: the
+input snapshot of the events since the last frame (`InputService.Frame`), `DebugLines` and `ModelInstances` cleared, the
+event lights started (`PointLights`), the ECS frame group (systems receive `FrameTime`, including `Alpha`; one of them
+puts the active camera in `RenderView`), `IGameMod.OnUpdate`, the UI draw (`UISurface.Draw` at the request's size: each
+layer updates, and the surface is drawn again only when a layer changed, appeared, or went), the image views due this
+frame started (`RenderViewPass.BeginViews`: each one's constants from the camera a frame system asked with, and its
+`MeshView`), and the world's meshes (`WorldMeshes.Upload`: it follows the voxel change list, reads blocks and starts
+their meshing nearest the view first and stops reading after 2 ms, stages the finished meshes, the models' too, into the
+slot's staging region, picks each column's level, and writes the frame's block draws, the models' draws from
+`ModelInstances`, the point lights, and the shadow cascades' lists into the slot's regions, and each due view's lists
+into its own; it takes 0.12 to 0.35 ms a frame when nothing loads), the mesh assets' lists (`MeshAssetDraws.Write`, the
+views' too), the views ended with the frame's lights and the HUD's panels (`RenderViewPass.EndViews`), the debug lines
+while `lines` has them on, the particles (`ParticlePass.Write` drains the bursts queued since the last frame, with their
+pool slots, and writes them, the recipes, and the attractors into the slot's regions), a game's render passes' slot
+memory (`RenderPasses.Write`), and hands it over, with the camera, the upload's copy count, the line count, and the mesh
+frame's counts, through `FrameExchange.Publish`. Between taking the request and publishing, frame systems may write the
+GPU memory of the request's frame slot.
 
 **Control port (`ControlService`, `Engine:Control`).** A development tool, so a check needs no restart: off unless
 `Engine:Control:Enabled` is true, it listens on TCP 127.0.0.1 (port 47650), and `tools/control/game.py` drives it. Any
@@ -310,29 +322,35 @@ meshes, the copies from the slot's staging region into the mesh heap (`MeshPass.
 between two barriers), and a new sky field copied into its 3D image, under the loading screen too; the lights sorted
 into the view's clusters; while particles can be alive, the particle passes (the counters reset, the spawn and simulate
 dispatches, and the counters copied to the slot's readback region); the swapchain image's transition; the world
-(`MeshPass.Record`: the two sun shadow cascades drawn into the layers of one depth map image, then the camera's blocks
-drawn nearest first, the models, and the sky where the depth is still 0, into multisampled colour and depth images that
-are resolved as rendering ends into the target and the depth image); the particle cubes and then sprites while particles
-can be alive (one indirect draw each, tested against the depth image); the debug lines when there are any (tested
-against the depth image and drawn over the picture, which is loaded, not cleared); SMAA's three passes when the world is
-drawn with one sample a pixel and anti-aliasing is on; FSR 1's upscale when the render scale is below 1; the loading
-screen while it covers the picture or fades out; the UI when it changed or shows anything (the changed rows copied from
-the slot's region of the UI upload buffer into the UI's storage buffer between two barriers, then a full-screen triangle
-whose fragment shader reads its pixel and blends it, premultiplied, over the picture); the transition for presenting; and
-timestamps (`GpuPass`) around the frame, the mesh copies, the particles' simulation and draws, the world (with its shadow
-maps and its models apart), the lines, SMAA, the upscale, the loading screen, and the UI (barriers are in the `vulkan`
-skill's `synchronization.md`). The render thread flushes the slot's regions of the line buffer and of the mesh passes'
-draw, command, and light buffers when their memory is not coherent, so the main thread makes no Vulkan call for them.
-After the fence wait it reads the slot's GPU timestamps from its last frame (`GpuTimer.Collect`). The frame's
-`ViewConstants`, built on the main thread from the camera and the image size, go to the passes as push constants. It
-recreates the swapchain when needed, by one set of rules with no Vulkan call (`SwapchainState`): a resize to a size the
-swapchain was not made for, a VSync change, an out-of-date acquire or present, or a suboptimal one once for each size; a
-resize repeating the size, or a suboptimal swapchain already made for its size, makes none. The device's values (limits,
-memory, queue families, timestamp bits, name) are read in `Initialize` or later, never in a constructor: they throw until
-`Initialize` has selected the device; its handles stay null until then. Because the request comes right after the render
-thread's blocking point (present and acquire under FIFO), frames are built at the display rate from freshly read input.
-When presentation blocks, for example while the window is hidden, only the render thread waits: no request comes, and the
-main loop keeps running every fixed step. It also sleeps instead of spinning when the window is minimised.
+(`MeshPass.Record`: the posed mesh assets skinned and a game's `Compute` passes, the two sun shadow cascades drawn into
+the layers of one depth map image, then the camera's blocks drawn nearest first, the models, the mesh assets, a game's
+`Opaque` passes, the sky where the depth is still 0, the blended mesh assets back to front, and a game's `Transparent`
+passes, into multisampled colour and depth images that are resolved as rendering ends into the target and the depth
+image); in a fresh frame, each image view due (`RenderViewPass.Record`: its own world pass at one sample, then a copy
+into the image the shaders and the HUD read); the particle cubes and then sprites while particles can be alive (one
+indirect draw each, tested against the depth image); the debug lines when there are any (tested against the depth image
+and drawn over the picture, which is loaded, not cleared); a game's `Scene` passes; SMAA's three passes when the world
+is drawn with one sample a pixel and anti-aliasing is on; FSR 1's upscale when the render scale is below 1; a game's
+`Screen` passes (the world, the views, and a game's passes are left out while the loading screen covers the picture);
+the loading screen while it covers the picture or fades out; the UI when it changed or shows anything (the changed rows
+copied from the slot's region of the UI upload buffer into the UI's storage buffer between two barriers, then a
+full-screen triangle whose fragment shader draws the image views the HUD shows, reads its pixel, and blends it,
+premultiplied, over the picture); the transition for presenting; and timestamps (`GpuPass`) around the frame, the mesh
+copies, the particles' simulation and draws, the world (with its shadow maps, its models, its mesh assets, and their
+skinning apart), the image views, a game's passes (each, and their sum), the lines, SMAA, the upscale, the loading
+screen, and the UI (barriers are in the `vulkan` skill's `synchronization.md`). The render thread flushes the slot's
+regions of the line buffer and of the mesh passes' draw, command, and light buffers when their memory is not coherent,
+so the main thread makes no Vulkan call for them. After the fence wait it reads the slot's GPU timestamps from its last
+frame (`GpuTimer.Collect`). The frame's `ViewConstants`, built on the main thread from the camera and the image size, go
+to the passes as push constants. It recreates the swapchain when needed, by one set of rules with no Vulkan call
+(`SwapchainState`): a resize to a size the swapchain was not made for, a VSync change, an out-of-date acquire or
+present, or a suboptimal one once for each size; a resize repeating the size, or a suboptimal swapchain already made for
+its size, makes none. The device's values (limits, memory, queue families, timestamp bits, name) are read in
+`Initialize` or later, never in a constructor: they throw until `Initialize` has selected the device; its handles stay
+null until then. Because the request comes right after the render thread's blocking point (present and acquire under
+FIFO), frames are built at the display rate from freshly read input. When presentation blocks, for example while the
+window is hidden, only the render thread waits: no request comes, and the main loop keeps running every fixed step. It
+also sleeps instead of spinning when the window is minimised.
 
 **Threads.** Besides those below: the navigation thread (the grid's fill, with a `Parallel.For`, and the fields' builds),
 the edit warm-up's thread, the sound render thread, builds a game starts on the thread pool, the screenshot writer, and
@@ -451,25 +469,26 @@ A game is an executable that registers the engine, then itself, and runs `GameLo
   mover over its mesh colliders, and loose bodies (balls and cut bodies, which a game's `ILooseBodyRest` decides about
   once they rest, as there is no grid to settle into) as usual, and `WorldMeshes` meshes and draws its voxel models
   alone.
-- These have engine defaults that a game may replace: `IVoxelPalette`
-  (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable), `MenuStyle` (plain), and, for navigation,
-  nothing (without an `INavGridSource` there is no navigation). A game adds an `IAtmosphereSource` for its sky, an
-  `INavGridSource` for walkers, `ILoadingTask`s, `IMatchUiLayer`s for its HUD, `ISessionGameHandler`s for its messages,
-  `IRenderPass`es for its own GPU work (section 6), and console commands.
-- The starter's `AddGame` (`GameServiceCollectionExtensions`) registers its options (`Game:Player`: the body's height and
-  whether to start flying or in third person; `Game:World:CameraPose`: where the player and the debug camera start),
-  checked by validators and `UnknownOptionKeys`; its world (`GameGenerator`, `GamePalette`, `GameAtmosphere`, and a
-  scoped `StartPose` from the match's seed, which the session settles first); `GameRunStartup`, an `IRunStartup` that
-  makes the movement keys first so the Keybindings tab lists them before a game's own; and the systems below.
-- Registration order is run order within a group, and the registration says why. The starter's fixed group, in order:
-  `PlayerSpawnSystem` (makes the local player once), `MapResetSystem` (the console's `cleanup` and `reset`), `DebugBallSystem`
-  (the console's `balls`), `PlayerInputSystem`, `PhysicsReadSystem` (what the last physics step did), `PlayerMovementSystem`,
-  `StandInSystem`, `LooseBodySystem`, and last `StreamingCentreSystem`. Its frame group: `PlayerCameraSystem`,
-  `DebugFlyCameraSystem`, `BenchmarkSystem` (only when `Engine:Benchmark:Enabled`, over the fly camera's pose),
-  `DebugOutlineSystem`, `CameraExtractSystem`, `LooseBodyModelSystem`, and `AtmosphereSystem`. A game puts its own systems
-  in this order where they belong: a system that reads the player's move goes after `PlayerMovementSystem`, and one that
-  adds models goes after `LooseBodyModelSystem`, so loose bodies are never the ones left out of a full frame.
-  `SystemOrderTests` in the game's tests pins the order.
+- These have engine defaults that a game may replace: `IVoxelPalette` (grey), `IVoxelTintMap` (none),
+  `IVoxelPassability` (nothing passable), `MenuStyle` (plain), and, for navigation, nothing (without an `INavGridSource`
+  there is no navigation). A game adds an `IAtmosphereSource` for its sky, an `INavGridSource` for walkers,
+  `ILoadingTask`s, `IMatchUiLayer`s for its HUD, `ISessionGameHandler`s for its messages, `IRenderPass`es for its own
+  GPU work ("A game adds passes of its own", below), and console commands; its `IRunStartup` declares its models, its
+  image views (`RenderViews`, "Image views", below), its keys, and its own on/off settings
+  (`PlayerSettings.RegisterSwitch`, kept in `settings.json`).
+- The starter's `AddGame` (`GameServiceCollectionExtensions`) registers its options (`Game:Player`: the body's height
+  and whether to start flying or in third person; `Game:World:CameraPose`: where the player and the debug camera start;
+  `Game:Minimap:Metres`: how much the minimap shows across), checked by validators and `UnknownOptionKeys`; its world
+  (`GameGenerator`, `GamePalette`, `GameAtmosphere`, and a scoped `StartPose` from the match's seed, which the session
+  settles first); `GameRunStartup`, an `IRunStartup` that makes the movement keys first so the Keybindings tab lists
+  them before a game's own, then declares the fox and the minimap (its image view, its key, and its switch); the
+  minimap's HUD layer; and its systems.
+- Registration order is run order within a group, and the registration says why. The starter's two groups, in order, are
+  in `GAME.md` ("Systems"): the engine's systems with its own (`PlayerSpawnSystem`, `FoxSystem`, `MinimapSystem`) among
+  them. A game puts its own systems in this order where they belong: a system that reads the player's move goes after
+  `PlayerMovementSystem`, one that reads the camera after `CameraExtractSystem`, and one that adds models goes after
+  `LooseBodyModelSystem`, so loose bodies are never the ones left out of a full frame. `SystemOrderTests` in the game's
+  tests pins the order.
 - `appsettings.json` holds the engine's defaults for the game under `Engine:` (the name and data folder, the window, the
   renderer, the voxels, the session) and the game's own under `Game:`. The shipped file is checked by
   `ShippedSettingsTests`. `Engine:Steam:AppId` is 0 until the game has one; at 0 Steam stays off.
@@ -482,6 +501,88 @@ A game is an executable that registers the engine, then itself, and runs `GameLo
 
 A new game keeps `src/Game`, `Game.csproj`, and `tests/Game.Tests` as its home, so the tools need no setting, and grows
 the generator, palette, systems, and options in place.
+
+### Mesh assets are drawn beside the world
+
+A mesh asset is a triangle mesh with texture coordinates and materials, read from a glTF 2.0 file at the run's start
+(`Assets/`, SharpGLTF at load only) or built by a game, and drawn in the world's pass with the world's light.
+
+- `MeshAssets` holds them for the run, by name and index; a game declares its files at its run startup. The run's step
+  "mesh assets on the gpu", before the render thread, puts every asset's vertices, indices, materials, and textures (one
+  image each, every mip) into device-local memory once (`MeshAssetPass`); nothing is loaded or freed during play. A
+  texture is decoded at load (RGBA8 or RG8, its mips made on the CPU), or read from the model's compressed textures (BC7
+  or BC5, a quarter of the size) that `tools/Textures` made offline from the same levels (`CompressedTextures`), when
+  their hash matches the model's image.
+- Frame systems add instances to `MeshInstances` (asset, transform, tint, `ModelShadow`; at most 16,384 a frame).
+  `MeshAssetDraws` culls them by bounding sphere against the view and both cascades (the `MeshView` the world's lists
+  share) and writes one indirect command per primitive with instances, in three lists and four pipeline ranges (opaque or
+  masked, one-sided or two-sided). `MeshPass.Record` draws them inside its own renderings (`IMeshPassDraws`): into each
+  cascade, and into the main view after the models, so they meet the world's depth, multisampling, and resolve.
+- The vertex shader pulls its vertices from a storage buffer, as the world's does, and projects with `viewClip`. The
+  fragment shader reads the material's textures from one array indexed per pixel (`nonuniformEXT`, needing descriptor
+  indexing of sampled images) and ends in `mesh-shade.glsl`'s `shadeSurface`, the light and grade every surface of the
+  pass takes. Blended materials draw after the sky, sorted back to front per object, casting no shadow (sorted per
+  object, not order-independent, and without shadows, for the reasons in `docs/rendering-extension.md`); objects that
+  cross, or one inside another, can show in the wrong order from some sides. Metalness and roughness are kept, not
+  drawn.
+- A skinned asset has a `Rig` (its glTF skin's joints, parents first, in metres, with its clips, `RigClip`), sampled on
+  the main thread in floats for drawing only (the deterministic skeletons of `Animation/` are separate). A frame system
+  poses an instance by writing its rig's skinning matrices (`MeshInstances.AddPosed`, `Rig.WritePalette`); before the
+  cascades, a compute pass (`mesh-skin.comp`) skins every posed instance once into its frame slot's region of the same
+  vertex buffer, and the camera's and both cascades' draws read that copy (`MeshAssetDraw.VertexDelta`), so skinning is
+  done once a frame however many lists draw it. A posed instance is culled by its joints' posed places grown by how far
+  their vertices reach. `MeshAnimator` and `MeshAnimatorSystem` keep clip clocks in game time, which stop while the
+  match is paused.
+- Cost, on the RX 5700 XT at 2560x1440 at the starter's views, offscreen with MSAA 4 unless said (Release, 2026-10-09):
+  the starter's one fox adds 0.015 to 0.019 ms to the world pass where it is drawn (0.7 to 1.1 %), and nothing where
+  it is not; 200 foxes (576 triangles each) in front of the `start` view add 0.20 ms standing and 0.28 ms running, of
+  which the skinning pass takes 0.05 ms and the camera's draws 0.085 ms (the rest is the cascades), 0.25 ms with one
+  sample and SMAA, 0.29 ms with eight samples, and 0.28 ms in a window. In views where they only cast shadows,
+  200 running foxes add 0.13 to 0.16 ms.
+
+### A game adds passes of its own
+
+A game's GPU work is an `IRenderPass` it registers (`Rendering/RenderPasses.cs`; at most eight, named apart). The run's
+"render passes" step, after the mesh assets reach the GPU and before the render thread, gives each a `RenderPassSetup`
+for its stage's targets (formats, samples, the mesh pass's set with the look and the light, the allocator, the shader
+compiler, and helpers for layouts, pipelines, and storage buffer sets); each frame the main thread asks it to write its
+frame slot's data after the frame systems, and the render thread asks it to record at its stage: `Compute` (before the
+shadow maps), `Opaque` (in the world's multisampled rendering, before the sky), `Transparent` (in it, after the sky and
+the engine's blended surfaces), `Scene` (on the resolved, drawn-size image and depth, after the particles and lines), or
+`Screen` (on the swapchain image after the upscale, before the UI). A game's shaders sit in `Shaders/Game/` beside the
+engine's and include its `view.glsl`. Each pass is timed apart (the `gpu` reply, a Debug line), and their sum is the
+`game passes` of the Debug line `GPU passes over ...`. Nothing records a game's passes while the loading screen covers
+the picture, and image views do not draw them. The mesh sample's aim highlight is the example: a frame system finds the
+block the player aims at, and its pass draws a glow round it at the `Transparent` stage. The stages chosen, the limit of
+eight, and the other choices offered are in `docs/rendering-extension.md`.
+
+### A camera's lens
+
+The active camera's `CameraLens` is perspective (a vertical field of view from a near plane on) or orthographic (an
+image a height in metres across, of parallel rays, between a near and a far along the view). An orthographic camera's
+position is the middle of what it shows, and its near may lie behind it, so everything measured from a perspective
+view's eye is measured from that middle: the fog, the terrain's levels, the lights and their clusters, and the two
+shadow cascades, which then lie round it both ways along the view. The shaders take what differs from `view.glsl` (the
+projection, the sky's and fog's rays, the cascade's depth); `MeshView` culls to the view's box and sorts by depth. A
+perspective view draws from its lens's near plane (5 cm for the engine's cameras). The console's `lens ortho HEIGHT`
+shows any view orthographically for a run.
+
+### Image views
+
+A game draws views of the world into images of their own (`RenderViews`): it declares them at its run's start (at most
+four, each a size and how often it is drawn), asks for one with a camera each frame it wants it, and shows one on the
+HUD in a rectangle. Each view keeps its own lists and records of a frame and draws with the mesh passes' pipelines and
+shaders through sets that name them, with one sample a pixel, without shadows or particles, after the world's pass; the
+terrain's levels stay the main camera's, and the world's, the models', and the mesh assets' lists take what each view's
+own frustum holds. Its colour is copied into an image only shaders read, which the UI pass draws under the HUD's pixels,
+and a mesh material may show it (one slot of the asset pass's texture array for each view; the mesh sample's screen
+shows a camera over its yard). Nothing draws a view while the loading screen covers the picture. The starter's minimap
+is the example: an orthographic camera at the player's eye looking down, 64 m across, every fourth frame, in the
+top-right corner; an update cost 0.74 ms of GPU time on the RX 5700 XT (1.59 ms at the world's 4x samples, which is why
+views draw with one). With no view drawn (the benchmark hides the minimap), the world pass took the same time as before
+image views on every benchmark view (-0.4 % to +0.0 %, two offscreen runs each at 2560x1440, 2026-10-10). Why views have
+no shadows or particles, draw at one sample, share the camera's terrain, and number at most four:
+`docs/rendering-extension.md`.
 
 ## 6. Modding
 
@@ -544,81 +645,6 @@ the reliable path.
 A narrower, versioned API surface for mods is open work. In a session only the host edits the world: a mod checks
 `SessionService.IsAuthority` before calling `VoxelWorld.Apply` or `TryLift`, which throw on a client; the host sends a
 mod's edits to the clients as it does a game's.
-
-### Mesh assets are drawn beside the world
-
-A mesh asset is a triangle mesh with texture coordinates and materials, read from a glTF 2.0 file at the run's start
-(`Assets/`, SharpGLTF at load only) or built by a game, and drawn in the world's pass with the world's light.
-
-- `MeshAssets` holds them for the run, by name and index; a game declares its files at its run startup. The run's step
-  "mesh assets on the gpu", before the render thread, puts every asset's vertices, indices, materials, and textures (one
-  image each, every mip) into device-local memory once (`MeshAssetPass`); nothing is loaded or freed during play. A
-  texture is decoded at load (RGBA8 or RG8, its mips made on the CPU), or read from the model's compressed textures (BC7
-  or BC5, a quarter of the size) that `tools/Textures` made offline from the same levels (`CompressedTextures`), when
-  their hash matches the model's image.
-- Frame systems add instances to `MeshInstances` (asset, transform, tint, `ModelShadow`; at most 16,384 a frame).
-  `MeshAssetDraws` culls them by bounding sphere against the view and both cascades (the `MeshView` the world's lists
-  share) and writes one indirect command per primitive with instances, in three lists and four pipeline ranges (opaque or
-  masked, one-sided or two-sided). `MeshPass.Record` draws them inside its own renderings (`IMeshPassDraws`): into each
-  cascade, and into the main view after the models, so they meet the world's depth, multisampling, and resolve.
-- The vertex shader pulls its vertices from a storage buffer, as the world's does, and projects with `viewClip`. The
-  fragment shader reads the material's textures from one array indexed per pixel (`nonuniformEXT`, needing descriptor
-  indexing of sampled images) and ends in `mesh-shade.glsl`'s `shadeSurface`, the light and grade every surface of the
-  pass takes. Blended materials draw after the sky, sorted back to front per object, casting no shadow; metalness and
-  roughness are kept, not drawn.
-- A skinned asset has a `Rig` (its glTF skin's joints, parents first, in metres, with its clips, `RigClip`), sampled on
-  the main thread in floats for drawing only (the deterministic skeletons of `Animation/` are separate). A frame system
-  poses an instance by writing its rig's skinning matrices (`MeshInstances.AddPosed`, `Rig.WritePalette`); before the
-  cascades, a compute pass (`mesh-skin.comp`) skins every posed instance once into its frame slot's region of the same
-  vertex buffer, and the camera's and both cascades' draws read that copy (`MeshAssetDraw.VertexDelta`), so skinning is
-  done once a frame however many lists draw it. A posed instance is culled by its joints' posed places grown by how far
-  their vertices reach. `MeshAnimator` and `MeshAnimatorSystem` keep clip clocks in game time, which stop while the
-  match is paused. Matches without voxels are the next phase (`docs/framework-limits.md`).
-- Cost, on the RX 5700 XT at 2560x1440 at the starter's views, offscreen with MSAA 4 unless said (Release, 2026-10-09):
-  the starter's one fox adds 0.015 to 0.019 ms to the world pass where it is drawn (0.7 to 1.1 %), and nothing where
-  it is not; 200 foxes (576 triangles each) in front of the `start` view add 0.20 ms standing and 0.28 ms running, of
-  which the skinning pass takes 0.05 ms and the camera's draws 0.085 ms (the rest is the cascades), 0.25 ms with one
-  sample and SMAA, 0.29 ms with eight samples, and 0.28 ms in a window. In views where they only cast shadows,
-  200 running foxes add 0.13 to 0.16 ms.
-
-### A game adds passes of its own
-
-A game's GPU work is an `IRenderPass` it registers (`Rendering/RenderPasses.cs`; at most eight, named apart). The run's
-"render passes" step, after the mesh assets reach the GPU and before the render thread, gives each a `RenderPassSetup`
-for its stage's targets (formats, samples, the mesh pass's set with the look and the light, the allocator, the shader
-compiler, and helpers for layouts, pipelines, and storage buffer sets); each frame the main thread asks it to write its
-frame slot's data after the frame systems, and the render thread asks it to record at its stage: `Compute` (before
-the shadow maps), `Opaque` (in the world's multisampled rendering, before the sky), `Transparent` (in it, after the sky
-and the engine's blended surfaces), `Scene` (on the resolved, drawn-size image and depth, after the particles and lines),
-or `Screen` (on the swapchain image after the upscale, before the UI). A game's shaders sit in `Shaders/Game/` beside the
-engine's and include its `view.glsl`. Each pass is timed apart (the `gpu` reply, a Debug line), and their sum is the
-stats line's `game passes`. The mesh sample's aim highlight is the example: a frame system finds the block the player
-aims at, and its pass draws a glow round it at the `Transparent` stage.
-
-### A camera's lens
-
-The active camera's `CameraLens` is perspective (a vertical field of view from a near plane on) or orthographic (an
-image a height in metres across, of parallel rays, between a near and a far along the view). An orthographic camera's
-position is the middle of what it shows, and its near may lie behind it, so everything measured from a perspective
-view's eye is measured from that middle: the fog, the terrain's levels, the lights and their clusters, and the two
-shadow cascades, which then lie round it both ways along the view. The shaders take what differs from `view.glsl`
-(the projection, the sky's and fog's rays, the cascade's depth); `MeshView` culls to the view's box and sorts by depth.
-The console's `lens ortho HEIGHT` shows any view orthographically for a run.
-
-### Image views
-
-A game draws views of the world into images of their own (`RenderViews`): it declares them at its run's start (at most
-four, each a size and how often it is drawn), asks for one with a camera each frame it wants it, and shows one on the
-HUD in a rectangle. Each view keeps its own lists and records of a frame and draws with the mesh passes' pipelines and
-shaders through sets that name them, with one sample a pixel, without shadows or particles, after the world's pass;
-the terrain's levels stay the main camera's, and the world's, the models', and the mesh assets' lists take what each
-view's own frustum holds. Its colour is copied into an image only shaders read, which the UI pass draws under the
-HUD's pixels, and a mesh material may show it (a slot of the asset pass's texture array a view: the mesh sample's
-screen shows a camera over its yard). The starter's minimap is the example: an orthographic camera at the player's eye looking down, 64 m
-across, every fourth frame, in the top-right corner; an update cost 0.74 ms of GPU time on the RX 5700 XT (1.59 ms at
-the world's 4x samples, which is why views draw with one). With no view drawn (the benchmark hides the minimap), the
-world pass took the same time as before image views on every benchmark view (-0.4 % to +0.0 %, two offscreen runs each
-at 2560x1440, 2026-10-10).
 
 ## 7. The engine's components and systems
 
@@ -904,41 +930,45 @@ holds the decisions, the measurements, and the history of how it replaced a raym
   squared distance to each block's centre, so the depth test rejects hidden blocks before they are shaded; there is no
   depth pre-pass, which measured slower. `mesh.vert` reads the vertices from the heap, with no vertex input.
 - **Shadows.** With `Engine:Renderer:Shadows` on, the sun has two cascades (`ShadowCascades.Fit`): squares round the
-  bounding spheres of the view's slices from 0 to 30 m and from 25 m to 200 m (or the view distance), each reaching 100 m
-  further towards the sun and snapped to whole texels, as depth maps of `Engine:Renderer:ShadowMapTexels` (2048) texels. They
-  are drawn from the blocks and models whose bounding spheres meet them, with only the faces turned away from the sun, so a
-  lit surface never meets its own depth. The near cascade blends into the far one over 5 m, and the far cascade's shadows
-  fade out over its last tenth. In the near cascade the shadows are contact-hardening: a blocker search (8 taps, the maps read
-  as depths) measures the gap between caster and surface, and 16 comparison taps over a Poisson disc blur by the gap for a
-  sun 2 degrees across, sharp where a caster meets the surface; the far cascade uses 3 x 3 lookups.
+  bounding spheres of the view's slices from 0 to 30 m and from 25 m to 200 m (or the view distance), each reaching 100
+  m further towards the sun (more as the sun sinks, up to 300 m at the horizon) and snapped to whole texels, as depth
+  maps of `Engine:Renderer:ShadowMapTexels` (2048) texels. They are drawn from the blocks and models whose bounding
+  spheres meet them, with only the faces turned away from the sun, so a lit surface never meets its own depth. The near
+  cascade blends into the far one over 5 m, and the far cascade's shadows fade out over its last tenth. In the near
+  cascade the shadows are contact-hardening: a blocker search (8 taps, the maps read as depths) measures the gap between
+  caster and surface, and 16 comparison taps over a Poisson disc blur by the gap for a sun 2 degrees across, sharp where
+  a caster meets the surface; the far cascade uses 3 x 3 lookups.
 - **Anti-aliasing.** `Engine:Renderer:MsaaSamples` (4 by default; 1, 2, 4, or 8, lowered to what the device offers) draws
   the world into multisampled colour and depth images of its own, resolved as rendering ends into the target (the mean) and
   the depth image (sample 0, which the particles and lines test against). SMAA 1x runs only when MSAA is off (below). The
   settings' Anti-aliasing is one choice of Off, SMAA, MSAA 2x, 4x, and 8x, applied at once.
 - **Look and light.** A material is a colour blended towards its tint colour by the tint map (a game's, from any field),
   with a glow. Its pattern comes from a texture set: a recipe (`mesh-surface.glsl`'s `surfacePattern`, the kinds
-  `VoxelPattern` names) baked once into colour, normal, height, and occlusion layers by the console's `materials bake` and
-  `tools/Textures`, or a photograph, stored as block-compressed DDS files (BC7, BC5, BC4) read three ways by the surface's
-  facing and filtered anisotropically. No recipe is worked out per pixel. `mesh.frag` lights each pixel with the sun through
-  the cascades, sky and ground light dimmed by the vertex's openness (never below 35 %) and scaled by a sky-visibility
-  field, point lights, fog, the tone curve (a filmic fit of ACES after an exposure), and the grade (`lighting.glsl`, shared
-  with the particles). A glowing surface keeps its colour, leaves the grade, and adds its glow after it. `world-sky.frag`
-  draws the sky where the depth is still 0. The depth is the reverse form of `view.glsl`: 0.01 m divided by the distance
-  along the view direction, so 0 is the sky and nearer is greater. The art direction (a stylized look, less saturated and
-  darker, darker on the sides, warm sunlight and cool sky light, dark tones towards teal and light ones towards orange)
-  is the engine's look, `RenderLook.Default`, which the starter keeps.
-- **The look** (`RenderLook`, in a per-slot storage buffer the shaders read as `LOOK`): the art direction's values, which
-  were shader constants (the world's saturation and side shading, the light's tints, sky and ground light, the occlusion
-  floor, fog, the sky's shares and sun disc, exposure, the grade's strength, the split tone, and glow), from a game's
-  `IAtmosphereSource.LookAt` at the camera each frame, and tuned live with the console's `look`. What the look gives with
-  the atmosphere (the sunlight, sky and ground light, the sky's colours, the grade's hue and amounts, the haze's density)
-  is worked out once a frame on the CPU: moving the constants into data left the starter's pictures as they were (within
-  1 level) and, with that, made the world pass 1.2 to 2.2 % faster (0.02 to 0.05 ms at 2560x1440 offscreen, 2026-10-10;
-  read from the buffer at every pixel instead, it was 1.4 to 2.1 % slower).
-- **Atmosphere** (`RenderView.SetAtmosphere`, in `ViewConstants`): the sun's direction (moving as the game says; under the
-  horizon it is night: no sunlight and no shadow maps, `SunPath`), the sky colour, the sun's colour, haze (fog that thickens
-  with distance), overcast (a flatter sky, a hidden sun disc, more sky light), and grade, from a game's `IAtmosphereSource`
-  at the camera, so a game can differ by place.
+  `VoxelPattern` names) baked once into colour, normal, height, and occlusion layers by the console's `materials bake`
+  and `tools/Textures`, or a photograph, stored as block-compressed DDS files (BC7, BC5, BC4) read three ways by the
+  surface's facing and filtered anisotropically. No recipe is worked out per pixel. `mesh.frag` lights each pixel with
+  the sun through the cascades, sky and ground light dimmed by the vertex's openness (never below 35 %) and scaled by a
+  sky-visibility field, point lights, fog, the tone curve (a filmic fit of ACES after an exposure), and the grade
+  (`lighting.glsl`, shared with the particles). A glowing surface keeps its colour, leaves the grade, and adds its glow
+  after it. `world-sky.frag` draws the sky where the depth is still 0. The depth is the reverse form of `view.glsl`: the
+  lens's near plane (5 cm) divided by the distance along the view direction, so 0 is the sky and nearer is greater (an
+  orthographic view's falls evenly from 1 at its near end to 0 at its far end). The art direction (a stylized look, less
+  saturated and darker, darker on the sides, warm sunlight and cool sky light, dark tones towards teal and light ones
+  towards orange) is the engine's look, `RenderLook.Default`, which the starter keeps.
+- **The look** (`RenderLook`, in a per-slot storage buffer the shaders read as `LOOK`): the art direction's values,
+  which were shader constants (the world's saturation and side shading, the light's tints, sky and ground light, the
+  occlusion floor, fog, the sky's shares and sun disc, exposure, the grade's strength, the split tone, and glow), from a
+  game's `IAtmosphereSource.LookAt` at the camera each frame, and tuned live with the console's `look` (in code, not in
+  the settings file: `docs/rendering-extension.md`). What the look gives with the atmosphere (the sunlight, sky and
+  ground light, the sky's colours, the grade's hue and amounts, the haze's density) is worked out once a frame on the
+  CPU: moving the constants into data left the starter's pictures as they were (within 1 level) and, with that, made the
+  world pass 1.2 to 2.2 % faster (0.02 to 0.05 ms at 2560x1440 offscreen, 2026-10-10; read from the buffer at every
+  pixel instead, it was 1.4 to 2.1 % slower).
+- **Atmosphere** (`RenderView.SetAtmosphere`, in `ViewConstants`): the sun's direction (moving as the game says; under
+  the horizon it is night: no sunlight and no shadow maps, `SunPath`; a game's moon is the same light, pointed at the
+  moon above the horizon with a dim colour), the sky colour, the sun's colour, haze (fog that thickens with distance),
+  overcast (a flatter sky, a hidden sun disc, more sky light), and grade, from a game's `IAtmosphereSource` at the
+  camera, so a game can differ by place.
 - **The sky field** (`SkyField`) holds how much of the open sky each cell of a box of 200 x 100 x 200 cells round the view
   sees, a cell being a voxel of the level nearest 64 cm. The main thread reads it from the resident columns, at most 1 ms a
   frame, a worker spreads it through the air, and it is built again when the view is 32 m from the box's middle or 16 m
@@ -1366,12 +1396,12 @@ Engine work that is known and not done:
   with the next item).
 - **Rendering a game can extend** (finished 2026-10-10): the look is data (`RenderLook`), the sun moves, with night,
   mesh assets' blended materials are drawn sorted per object, a game adds passes of its own at five stages
-  (`IRenderPass`), a camera's lens may be orthographic, and a game draws views into images (`RenderViews`, the
-  starter's minimap; a mesh material may show one, the mesh sample's screen). Not built: image views with shadows and
-  particles, split screen, HDR rendering, order-independent transparency, transparent voxel materials, a physically
-  based sky, spot lights, and shadowed point lights. A low
-  sun's shadow maps cost more (the starter's start view at 2560x1440: 0.15 ms at the engine's sun, 0.19 ms at 30
-  degrees, 0.36 ms at 15, 0.40 ms at 5; their longer reach adds 0.01 to 0.03 ms of that); at night they cost 0.015 ms.
+  (`IRenderPass`), a camera's lens may be orthographic, and a game draws views into images (`RenderViews`, the starter's
+  minimap; a mesh material may show one, the mesh sample's screen). Not built: image views with shadows and particles,
+  split screen, HDR rendering, order-independent transparency, transparent voxel materials, a physically based sky, spot
+  lights, and shadowed point lights (each with the choices offered in `docs/rendering-extension.md`). A low sun's shadow
+  maps cost more (the starter's start view at 2560x1440: 0.15 ms at the engine's sun, 0.19 ms at 30 degrees, 0.36 ms at
+  15, 0.40 ms at 5; their longer reach adds 0.01 to 0.03 ms of that); at night they cost 0.015 ms.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no
   engine system replicates players, thrown bodies, or characters; the Zorf TD archive has a working design (a player's
   state every step with the host's checks and corrections, bodies as kinematic mirrors played back a few ticks behind,

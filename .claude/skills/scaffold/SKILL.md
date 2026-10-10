@@ -1,6 +1,6 @@
 ---
 name: scaffold
-description: "Steps, file lists, and templates for adding to Itera or a game on it: a system (engine or game), an option, a console command, a game message, a generator change, a model from glTF, and a test that plays the real game. Use before adding any of these, so every place they touch changes together; the checklist tests (ChecklistTests, ShippedSettingsTests, SystemOrderTests, WorldTests) fail when one is missed."
+description: "Steps, file lists, and templates for adding to Itera or a game on it: a system (engine or game), an option, a console command, a game message, a generator change, a model from glTF, the game's look and sun, the main camera's lens, a render pass of the game's own, an image view (a minimap, a screen in the world), a game's own on/off setting, a test that plays the real game, and a game without voxel terrain. Use before adding any of these, so every place they touch changes together; the checklist tests (ChecklistTests, ShippedSettingsTests, SystemOrderTests, WorldTests) fail when one is missed."
 ---
 
 # Adding to Itera
@@ -146,10 +146,23 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 2. Try values live with the console's run-only `look NAME VALUE` (`look NAME R G B` for a colour; `look` lists them,
    `look reset` drops them), then copy the ones chosen into code.
 3. A moving sun: the source's `At` gives the `Atmosphere` with its `SunDirection` (a day's course, `SunPath.AtHour` the
-   test day's; under the horizon it is night, or a moon as the light with a dim, cool sun colour), and the sky's and the
-   look's colours for the hour.
+   test day's), and the sky's and the look's colours for the hour. From 2 degrees under the horizon the sun gives no
+   light and no shadow maps are drawn; for a moon, point `SunDirection` at the moon, above the horizon, with a dim, cool
+   `SunColour` (the look's disc sharpness and strength draw its disc).
 4. Check it: `game.py shots ... --compare OLD` against a set taken before, and a look at the PNGs (`time HH:MM` and
    `sun AZIMUTH ELEVATION` show other hours).
+
+## The main camera's lens
+
+The active camera (`CameraRules.CreateCamera`: `ActiveCamera`, `CameraPose`, `CameraLens`) keeps its lens until a system
+changes it; `CameraExtractSystem` hands both to the renderer (`.claude/rules/rendering.md`, the camera's lens).
+
+1. Try it first with the console's run-only `lens ortho HEIGHT [NEAR FAR]` (`lens off` gives the camera's own back).
+2. A frame system before `CameraExtractSystem` writes `CameraLens.Orthographic(heightMetres, near, far)` into the
+   camera entity (`float.NaN` for near and far: the view distance each way) and puts its `CameraPose` at the middle of
+   what it shows; the player's field of view does not apply to it. A game whose camera is not at the player's eye
+   (a top-down or strategy view) registers its own camera system in place of `PlayerCameraSystem` and `DebugFlyCameraSystem`, which makes the camera entity with `CameraRules.CreateCamera` as `PlayerCameraSystem` does. It goes in `SystemOrderTests` and `GAME.md`, with a behaviour test and a zero-allocation test.
+3. Check it: `game.py shots` of its views (`x,y,z,yaw,pitch`), and `validate.sh --offscreen`.
 
 ## A render pass of the game's own
 
@@ -172,7 +185,7 @@ mesh sample's `AimHighlightPass` (`samples/Itera.MeshSample/Rendering/`) is a sh
    in the game's tests (the sample's `AimHighlightPassTests`).
 4. Check it: the log's `Render pass of the game's: NAME at the STAGE stage`, `validate.sh` (with `--binary` for a game
    outside `src/Game`) windowed and `--offscreen`, a screenshot of it, and its time in `game.py gpu` (`Game NAME`) and
-   the stats line's `game passes`.
+   the Debug line `GPU passes over ...`'s `game passes`.
 
 ## An image view (a minimap, a camera's picture)
 
@@ -181,7 +194,7 @@ starter's minimap (`src/Game/Minimap.cs`, `MinimapLayer.cs`, `Systems/MinimapSys
 
 1. Declare it in the game's `IRunStartup.Start`: `views.Declare(name, width, height, everyFrames)` (keep the index),
    and its key (`KeyBindings.Register`) and a saved on/off (`PlayerSettings.RegisterSwitch`) if the player turns it on
-   and off.
+   and off ("A game's own on/off setting", below).
 2. A frame system (after `CameraExtractSystem`) asks for it each frame it should be drawn: `views.Draw(index, camera)`
    with a `CameraView` (an orthographic one: `CameraProjection.Orthographic`, a height in metres, NaN near and far for
    the view distance each way round its position). It goes in `SystemOrderTests` and `GAME.md`, with a behaviour test
@@ -196,6 +209,21 @@ starter's minimap (`src/Game/Minimap.cs`, `MinimapLayer.cs`, `Systems/MinimapSys
    yard's `yard-screen`.
 5. Check it: the log's `Image view NAME: ...` line, `validate.sh` windowed and `--offscreen`, a screenshot with the UI
    (`screenshot 1 PATH`, not `noui`), and its cost in `game.py gpu` (`ImageViews`, a time per update).
+
+## A game's own on/off setting
+
+A choice the player makes and the game keeps in `settings.json` (the starter's minimap shown or hidden;
+`.claude/rules/ui.md`).
+
+1. In the game's `IRunStartup.Start`: `settings.RegisterSwitch(name, defaultValue)` (keep the `GameSwitch`), and a key
+   for it if the player toggles it (`KeyBindings.Register(id, label, hint, InputBinding.Of(key))`; the Keybindings tab
+   lists it after the movement keys). The starter's `Minimap.Declare` does both.
+2. The Settings page has no row for it: a frame system toggles it (`settings.SetSwitch(which, !settings.IsOn(which))`
+   when `settings.Keys.WasPressed(in input.Frame, key)` and the match's `PlayerInputBlock` is not `Blocked`), and the
+   code it controls reads `IsOn` (both allocate nothing). The file is written when the player next leaves the Settings
+   page or at the run's end.
+3. Test it as the starter's `MinimapSystemTests` does (the key hides and shows it in the player's settings, and does
+   nothing while the input is blocked); the engine's `PlayerSettingsTests` cover the file.
 
 ## A test that plays the real game
 

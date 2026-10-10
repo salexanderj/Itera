@@ -31,8 +31,9 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
   drawn at most every 4 frames, one sample a pixel), an orthographic camera at the player's eye looking straight down,
   north (-z) up, `Game:Minimap:Metres` across (64), shown in the HUD's top-right corner a fifth of the screen's height
   square (below the stats line while that shows) with a thin dark frame and a white arrow at its middle turned to where
-  the player looks; on from the start, M (the Keybindings tab's Minimap) hides and shows it, kept in `settings.json` (its `Game` section's `Minimap`); the
-  benchmark hides it.
+  the player looks (`MinimapLayer`, a scoped `IMatchUiLayer` registered in `AddGame`); on from the start, M (the
+  Keybindings tab's Minimap) hides and shows it, kept in `settings.json` (its `Game` section's `Minimap`); the benchmark
+  hides it.
 - Options: `Game:Player` (`HeightMetres` 1.7, 1.2 to 2.5; `StartFlying`; `ThirdPerson`), `Game:World`
   (`CameraPose`), and `Game:Minimap` (`Metres` 64, 16 to 256), checked by `PlayerOptionsValidator`,
   `WorldOptionsValidator`, and `MinimapOptionsValidator`; a key under `Game` in no section of
@@ -65,7 +66,11 @@ goes in this order where its comments say why, with a behaviour test and a zero-
   `Minimap.cs` (with its options), `MinimapLayer.cs`, `Systems/PlayerSpawnSystem.cs`, `Systems/MinimapSystem.cs`,
   `Systems/FoxSystem.cs`, `Components/FoxRoute.cs`, `WorldGeneration/`, `Textures/`,
   `Models/`, `appsettings.json`.
-- `tests/Game.Tests`: `SystemOrderTests`, `ShippedSettingsTests`, `GameOptionsTests`, `WorldTests`, `PlayerSpawnSystemTests`,
-  `FoxSystemTests`, `MinimapSystemTests` (the view asked round the eye, M, the benchmark, the HUD's square), `FoxModelTests` (the fox's rig and clips against SharpGLTF's own world matrices; its compressed textures made from its image), `BenchmarkViewsTests`,
-  and `ScenarioTests` (the starter played without a window through `HeadlessMatch`; the fox read, drawn posed, its clip
+- `tests/Game.Tests`: `SystemOrderTests`, `ShippedSettingsTests`, `GameOptionsTests`, `WorldTests`,
+  `PlayerSpawnSystemTests`, `FoxSystemTests`, `MinimapSystemTests` (the view asked round the eye, M, the benchmark, the
+  HUD's square), `MinimapLayerTests` (inside its bounds, hidden while not shown or loading, below the stats line, the
+  arrow's redraw, no allocation), `ChecklistTests` (every console command in the run-game skill's list, every numeric
+  option validated, every game system with an allocation test), `FoxModelTests` (the fox's rig and clips against
+  SharpGLTF's own world matrices; its compressed textures made from its image), `BenchmarkViewsTests`, and
+  `ScenarioTests` (the starter played without a window through `HeadlessMatch`; the fox read, drawn posed, its clip
   moving with the steps, walking its circle; the boulder nearest the start climbed onto).

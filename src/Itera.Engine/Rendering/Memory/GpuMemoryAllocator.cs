@@ -5,9 +5,9 @@ using VkBuffer = Silk.NET.Vulkan.Buffer;
 namespace Itera.Engine.Rendering.Memory;
 
 /// <summary>
-/// Itera's GPU memory allocator (no VMA; ARCHITECTURE.md section 6). It takes memory from Vulkan in blocks of up to
-/// 64 MB per memory type and hands out ranges of them (<see cref="BlockSuballocator"/>), because a device may allow as
-/// few as 4096 <c>vkAllocateMemory</c> calls. Large resources, and resources the driver asks for, get a dedicated
+/// Itera's GPU memory allocator (no VMA; ARCHITECTURE.md section 8, "Vulkan, shaders, threads, and GPU memory"). It
+/// takes memory from Vulkan in blocks of up to 64 MB per memory type and hands out ranges of them
+/// (<see cref="BlockSuballocator"/>), because a device may allow as few as 4096 <c>vkAllocateMemory</c> calls. Large resources, and resources the driver asks for, get a dedicated
 /// allocation. Buffers and optimal-tiling images use separate blocks, so <c>bufferImageGranularity</c> never applies.
 /// Host-visible memory is mapped once, when it is allocated, and stays mapped. One thread at a time: the main thread
 /// before the render thread starts, the render thread while it runs (the lock guards the bookkeeping only), but for the

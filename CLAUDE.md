@@ -24,16 +24,16 @@ Itera with a pull from its remote, so:
 The engine streams a voxel world (`VoxelWorld`: columns at every level around streaming centres, generated on worker
 threads, with edits), draws it as triangle meshes through Vulkan, runs an Arch ECS world at 60 Hz, steps loose bodies in
 Bepu, plays procedural sound through OpenAL, draws its UI with Skia, carries sessions over LiteNetLib or Steam, saves a
-world as its seed plus its edit log, and loads mods from `Mods/`. Input events become one `InputSnapshot` per frame
-(`InputService.Frame`) and one per fixed step (`InputService.Tick`). Voxel terrain is optional: a game that registers
+world as its seed plus its edit log, and loads mods from `Mods/`. Voxel terrain is optional: a game that registers
 no generator and does not call `AddIteraVoxels` plays matches without it, its characters and loose bodies moving over
 the mesh colliders it registers.
 
 `ARCHITECTURE.md` holds the full description, the dependencies, the design decisions, and the open work. Read it before
 changing anything structural. `docs/` holds the write-ups behind decisions: `voxel-structures.md`, `edit-log-compaction.md`,
 `procedural-audio.md`, `anti-aliasing.md`, `rendering-redesign-brief.md` with `rendering-redesign.md` (the raster
-renderer's decisions and measurements), `framework-plan.md` (how Itera became a framework), and `framework-limits.md`
-(what kinds of game the engine blocks today, and the order of work). `docs/references/` holds notes on outside projects
+renderer's decisions and measurements), `rendering-extension.md` (what a game can change in the renderer, and why),
+`framework-plan.md` (how Itera became a framework), and `framework-limits.md` (what kinds of game the engine blocks
+today, and the order of work). `docs/references/` holds notes on outside projects
 used as references.
 
 # How to work
@@ -55,6 +55,8 @@ used as references.
     game's `appsettings.json` (`ShippedSettingsTests`).
   - A console command added or removed: the list in the `run-game` skill.
   - Code that reads the edit log: handle `VoxelEditOperation.Reset`, an empty box after which no earlier edit counts.
+  - A game's render pass, image view, camera lens, or on/off setting: the `scaffold` skill's steps (no checklist test
+    catches a missed one).
 - Builds, tests, and game runs:
   - Load the `run-game` skill before you start, drive, or check the game, and check a change the cheapest way that can
     see it (its "Checking a change": tests, `HeadlessMatch` scenarios, runs with no graphics, offscreen screenshot sets,
@@ -66,7 +68,8 @@ used as references.
     `--Engine:Application:DataFolder=IteraGame-agent`. The console's `settings`, `shadows`, and `sound volume` write the
     data folder's `settings.json`, so in any other folder they change the player's.
 - Where the details are (read the area's file before changing it):
-  - Rendering, shaders, shadows, render scale, the window: `.claude/rules/rendering.md`.
+  - Rendering (with the look and sun a game sets, its own passes, lenses, and image views), shaders, shadows, render
+    scale, the window: `.claude/rules/rendering.md`.
   - Mesh assets (models read from glTF files, their materials, textures, rigs, and clips): `.claude/rules/mesh-assets.md`.
   - The voxel world, edits, streaming, and world generation: `.claude/rules/voxels.md`.
   - Loose bodies, ragdolls, the character mover, and Bepu: `.claude/rules/physics.md`.
@@ -119,28 +122,20 @@ dotnet test                        # tests/Itera.Modding.Tests, Itera.Engine.Tes
 dotnet run --project src/Game [-- OPTIONS]                       # opens at the menu without --Engine:Session:Mode
 DOTNET_ENVIRONMENT=Development dotnet run --project src/Game     # Debug lines on the console too
 dotnet build -c Release && src/Game/bin/Release/net10.0/Game     # voxel numbers: Debug generates about 5 times slower
-tools/control/game.py start [--release] [--window|--fullscreen|--headless] [--no-wait] [--menu] [-- game args]   # the game from a copy of the build, control port on, offscreen (no window) unless --window or --fullscreen; --headless: no graphics; restart takes the same options
-tools/control/game.py shots start far high --out DIR [--compare DIR]   # screenshots of views with no window (four in about 15 s in Debug), compared with an earlier set
-tools/control/game.py run "balls 8; pos"   # console commands in the running game (-s: as a script, waits hold the rest); also query, shot, reload, gpu, input, wait, log, status, restart, stop
-DOTNET_WATCH_SUPPRESS_EMOJIS=1 dotnet watch --non-interactive --project src/Game run -- --Engine:Control:Enabled=true   # C# edits applied live
-tools/benchmark/run.sh <label> [--offscreen] [game arguments]   # GPU benchmark (Engine:Benchmark) over the game's views and the circle; README there
-tools/steam/upload.sh [--preview] [--no-live] [--branch NAME] [--no-test]   # test, publish win-x64 and linux-x64, upload to Steam's "testing" branch (or NAME); README there
-dotnet run -c Release --project tools/Textures [-- SET ...]   # the materials' texture sets from baked recipes (src/Game/Textures/sources.json); README there
-dotnet run -c Release --project tools/Textures -- model PATH.gltf   # a model's compressed textures (PATH.textures/ beside it, committed with it)
+tools/control/game.py start [--release] [--window|--fullscreen|--headless] [-- game args]   # a copy of the build, offscreen unless --window
+tools/control/game.py shots start far high --out DIR [--compare DIR]   # screenshots of views with no window, compared
+tools/control/game.py run "balls 8; pos"   # console commands in the running game (-s: as a script); also query, shot, gpu, input, stop
+DOTNET_WATCH_SUPPRESS_EMOJIS=1 dotnet watch --non-interactive --project src/Game run -- --Engine:Control:Enabled=true   # live edits
+tools/benchmark/run.sh <label> [--offscreen] [game arguments]   # GPU benchmark over the game's views; README there
+tools/steam/upload.sh [--preview] [--no-live] [--branch NAME] [--no-test]   # test, publish, upload to Steam; README there
+dotnet run -c Release --project tools/Textures [-- SET ...]   # the materials' texture sets; README there
+dotnet run -c Release --project tools/Textures -- model PATH.gltf   # a model's compressed textures, committed with it
 ```
 
-Game options, the start-up log lines, exit codes, unattended runs, the console and its commands, and the control port
-are in the `run-game` skill.
-
-Every run writes `~/.local/share/<DataFolder>/Logs/<datafolder>-<date>-<time>-<pid>.log` (`LocalApplicationData`
-elsewhere) with Debug detail; read the newest file there first when a run misbehaves (the runs you start write theirs
-in `~/.local/share/IteraGame-agent/Logs/`). A log holds a session header, init timings, and every 10 s a frame stats line (frames, frame times with median, 95th, and 99th percentiles, fixed steps,
-bytes allocated per frame on the main and render threads, GCs, GPU time), Debug lines with each GPU pass, the fixed
-steps' CPU time by part, and the eight slowest fixed systems (`SystemTimes`), a voxel stats line (columns, chunks,
-bricks, memory against the budget, loads, unloads, job times), a meshes line (blocks meshed and pending, uploads, the
-mesh heap, triangles drawn, the main thread's time), a `Particles:` line while any live, and the shutdown steps. The
-console shows Information and above. Log lines from the render thread carry its thread id (for example `[T21]`)
-instead of `[T1]`.
+Every run writes `~/.local/share/<DataFolder>/Logs/<datafolder>-<date>-<time>-<pid>.log` with Debug detail; read the
+newest file there first when a run misbehaves (the runs you start write theirs in `~/.local/share/IteraGame-agent/Logs/`).
+What a log holds, game options, the start-up log lines, exit codes, unattended runs, the console and its commands, and
+the control port are in the `run-game` skill.
 
 # Solution map
 
@@ -156,9 +151,8 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
 - `tests/`: xUnit, one project per `src/` project (`.claude/rules/tests.md`).
 - `samples/Itera.SampleMod`: the reference mod. Its build copies the output into
   `src/Game/bin/<Config>/net10.0/Mods/SampleMod/` and into the engine tests' `TestMods/`.
-- `samples/Itera.MeshSample`: a game without voxel terrain (mesh ground and blocks built in code with their colliders,
-  the starter's fox, climbing, balls, a render pass of its own, and a screen showing an image view); README there; its
-  tests in `tests/Itera.MeshSample.Tests`.
+- `samples/Itera.MeshSample`: a game without voxel terrain (mesh ground and blocks with colliders, the fox, climbing,
+  balls, its own render pass, a screen showing an image view); README there; tests in `tests/Itera.MeshSample.Tests`.
 - `tools/control/`, `tools/benchmark/`, `tools/steam/`: READMEs there. They run the game in `src/Game` and read its data
   folder from its `appsettings.json` (`tools/benchmark/data_folder.py`).
 - `tools/Textures`: makes the world materials' texture sets (compressed DDS files and `set.json`) in
@@ -179,10 +173,8 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
   bug report needs (file only by default); Information for lifecycle milestones; Warning when
   degraded but continuing; Error when an operation failed and the game continues; Critical when the
   game cannot continue. Per-frame logging must be Trace.
-- Sinks (console, file, retention, rolling) are configured in code in `AddIteraLogging` from
-  `Engine:Logging`; minimum levels and per-category overrides come from the `Serilog` section.
-  Code uses `Microsoft.Extensions.Logging` only; `Serilog` namespaces appear in `Diagnostics/` and
-  `Program.cs` alone.
+- Sinks are set in code (`AddIteraLogging`, from `Engine:Logging`), levels in the `Serilog` section. Code uses
+  `Microsoft.Extensions.Logging` only; `Serilog` namespaces appear in `Diagnostics/` and `Program.cs` alone.
 - Services have light constructors and an explicit `Initialize()`. The run's are singletons; a service that holds a
   match's state is Scoped (each match is a DI scope, `MatchServices`), and is resolved only from the match's steps on
   (some read the match's seed, which its session settles). A singleton never takes a scoped service in its constructor:
@@ -223,18 +215,15 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
     often collects the entities during its query and changes them after it.
 - Time values are `readonly record struct`s passed by `in`. Fixed systems receive `FixedStepTime`
   (step length and tick), frame systems `FrameTime` (delta, total, frame index, `Alpha`).
-- Engine options are checked at startup by `EngineOptionsValidator`. A new numeric option gets a
-  range there.
 - ECS components are plain structs with public fields (CA1051 is off for that reason).
 - Cross-platform: Linux, Windows, and macOS are all targets, only Linux is tested. Use
   `Path.Combine`, ordinal string comparisons, and `OperatingSystem.Is*()` guards for anything
   platform specific. No `XDG_*` variables, no shell commands, no `/` string concatenation.
 - Do not dispose Silk.NET API containers (`Vk`, `Shaderc`, `ALContext`, `AL`). Unloading those
   native libraries at exit crashes the process. Destroy the Vulkan and OpenAL objects only.
-- Format with csharpier; it reads indent and width from `.editorconfig`. It is a local dotnet tool
-  pinned in `dotnet-tools.json` at the repo root (`dotnet tool restore` after a fresh clone). Run
-  `dotnet csharpier check .` before a commit and `dotnet csharpier format .` to fix. LazyVim formats
-  with Mason's own copy at `~/.local/share/nvim/mason/bin/csharpier`; keep the two versions in step.
+- Format with csharpier, a local dotnet tool (`dotnet-tools.json`; `dotnet tool restore` after a clone): `dotnet
+  csharpier check .` before a commit, `dotnet csharpier format .` to fix. LazyVim formats with Mason's copy
+  (`~/.local/share/nvim/mason/bin/csharpier`); keep the two versions in step.
 - Commit messages in imperative mood. Git identity is repo-local.
 - Work and commit on `main`; no feature branches (one developer). A temporary local branch a tool needs (a writer's
   worktree) is fine: never pushed, deleted once its changes are on main.
@@ -248,31 +237,21 @@ Package notes are with their areas: Steamworks.NET in `.claude/rules/sessions.md
 - .NET SDK 10.0.112 pinned in `global.json` (`rollForward: latestPatch`).
 - Development machine: Ubuntu, Wayland, AMD RX 5700 XT plus an AMD iGPU on Mesa RADV. The device
   selector prefers discrete GPUs; override with `Engine:Renderer:PreferredDevice`.
-- libsdl2 is installed, so `WindowService` calls `Window.PrioritizeGlfw()` before creating the window.
-- `vulkan-validationlayers` and `vulkan-tools` are installed (apt, 1.4.341). Debug builds enable
-  `VK_LAYER_KHRONOS_validation` plus synchronization and best-practices checks (through `VK_EXT_layer_settings`;
-  `Engine:Renderer:SyncValidation` and `BestPracticesValidation` turn them off) and log `validation on (sync, best
-  practices)` in the instance line; validation errors reach the log at Error. Starting the Steam API loads Steam's
-  overlay and fossilize implicit Vulkan layers (`~/.local/share/vulkan/implicit_layer.d/`) into the game; the overlay's
-  own image draws one best-practices warning, so `validate.sh` runs with `--Engine:Steam:Enabled=false`. On a machine
-  without the layer, Debug builds warn and continue. `vulkaninfo --summary` lists the layers and devices.
+- Debug builds run Vulkan's validation layer with synchronization and best-practices checks (installed here; details in
+  the `vulkan` skill).
 - Any Vulkan work uses the project skill `.claude/skills/vulkan/` (rules, Silk.NET notes, and
-  `validate.sh`, which fails on any Vulkan validation warning or error; `validate.sh 30 "--Engine:Console:Run=settle 60; balls 8"`
-  draws models). Any ECS work uses
+  `validate.sh`, which fails on any Vulkan validation warning or error). Any ECS work uses
   `.claude/skills/ecs/` (rules, Arch notes, Itera ECS design, and `probe.sh`, which re-checks Arch
   behaviour after a version change). Code that moves ECS data to the GPU, or defines a struct that a
   shader reads, uses `.claude/skills/ecs-vulkan/` (rules, layout and device notes, design, and
-  `probe.sh`). A PreToolUse hook (`.claude/settings.json`, `.claude/hooks/skill_guard.py`) blocks file
-  writes, and Bash commands that name the guarded folders (but those that only read: `ls`, `cat`, `grep`, `git diff`,
-  and the like, with no redirection into a file), until the matching skill is loaded in the
-  session (a subagent must load it itself): `vulkan` for `src/Itera.Engine/Rendering/` and `.cs` files that use `Silk.NET.Vulkan`; `ecs`
-  for `src/Itera.Engine/Ecs/`, the `Systems/` and `Components/` folders of the engine and the game, and
-  `.cs` files that use Arch; `ecs-vulkan`
-  for `src/Itera.Engine/Rendering/GpuData/`, `.cs` files that use that namespace, and `.cs` files that
-  use both Arch and `Silk.NET.Vulkan`.
+  `probe.sh`). A PreToolUse hook (`.claude/hooks/skill_guard.py`) blocks file writes, and Bash commands that name the
+  guarded folders (read-only ones such as `ls`, `cat`, `grep`, and `git diff` pass), until the matching skill is loaded
+  in the session (a subagent loads its own): `vulkan` for `src/Itera.Engine/Rendering/` and `.cs` files that use
+  `Silk.NET.Vulkan`; `ecs` for `src/Itera.Engine/Ecs/`, the engine's and the game's `Systems/` and `Components/`, and
+  `.cs` files that use Arch; `ecs-vulkan` for `Rendering/GpuData/`, `.cs` files that use that namespace, and `.cs`
+  files that use both Arch and `Silk.NET.Vulkan`.
 - Editor: LazyVim with the `lang.dotnet` extra. The solution uses the classic `.sln` format because
   OmniSharp does not open `.slnx`.
-- Shader cache: `~/.local/share/<DataFolder>/ShaderCache` on Linux (`LocalApplicationData` elsewhere).
 
 # The game
 

@@ -184,6 +184,16 @@ in step 5.
 - Flag enums: combine with `|`; test with `(flags & X) != 0` in hot paths.
 - The project uses `ThrowIfFailed` from `VulkanResultExtensions.cs` and `VulkanException`.
 
+## Validation layers on this machine
+
+`vulkan-validationlayers` and `vulkan-tools` are installed (apt, 1.4.341); `vulkaninfo --summary` lists the layers and
+devices. Debug builds enable `VK_LAYER_KHRONOS_validation` with synchronization and best-practices checks (through
+`VK_EXT_layer_settings`; `Engine:Renderer:SyncValidation` and `BestPracticesValidation` turn them off), log `validation
+on (sync, best practices)` in the instance line, and log validation errors at Error; on a machine without the layer they
+warn and continue. Starting the Steam API loads Steam's overlay and fossilize implicit layers
+(`~/.local/share/vulkan/implicit_layer.d/`) into the game; the overlay's own image draws one best-practices warning, so
+`validate.sh` runs with `--Engine:Steam:Enabled=false`.
+
 ## Enforcement
 
 `.claude/hooks/skill_guard.py` runs before every Edit, Write, NotebookEdit, and Bash call. It

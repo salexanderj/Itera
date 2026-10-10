@@ -202,8 +202,7 @@ all made in `Initialize` before the render thread starts:
 - With `Engine:Renderer:MsaaSamples` above 1, and as many samples as the device offers for colour and depth together
   (`ChooseSamples`): multisampled colour and depth images of the swapchain's size, made again when its size or format
   changes. Rendering resolves them into the target (average) and the depth image (sample 0).
-- One descriptor set of nine bindings (seven storage buffers, the cascades, the sky field) visible to the vertex and
-  fragment stages; `ViewConstants` as push constants for the world draws and `MeshShadowConstants` for the cascades; and
+- One descriptor set (bindings 0 to 17: storage buffers, the cascades, the sky field, the material texture sets, the look at 17; `.claude/rules/rendering.md`) visible to the vertex and fragment stages; `ViewConstants` as push constants for the world draws and `MeshShadowConstants` for the cascades; and
   five pipelines (world meshes, sky, shadow cascades, model meshes, model shadow cascades). The sky draws with depth
   `Equal` to the cleared 0 of the reverse depth, the meshes with `Greater`, writing.
 

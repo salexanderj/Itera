@@ -130,8 +130,8 @@ public static class MeshSampleServiceCollectionExtensions
 
     /// <summary>
     /// The frame systems, in their run order: the camera at the player's eye, or the fly camera; the debug outlines;
-    /// the camera to the renderer; the block the player aims at, from the camera's pose; the loose bodies' models; and
-    /// the mesh assets placed (the yard, the fox).
+    /// the camera to the renderer; the block the player aims at, from the camera's pose; the yard camera's view asked
+    /// for; the loose bodies' models; and the mesh assets placed (the yard, the fox).
     /// </summary>
     private static void AddFrameSystems(IServiceCollection services)
     {

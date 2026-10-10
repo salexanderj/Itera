@@ -7,33 +7,35 @@ of any kind of 3D game, with voxels supported well but not required.
 
 ## Where it fits today
 
-Games whose world is voxel terrain in a map about 1 km across, seen through one perspective camera, offline or with up to
-16 players: voxel survival and building, co-op shooters, tower defence, physics sandboxes, puzzles and platformers in
-voxel rooms, and turn-based tactics. Their own code has the hooks it needs: its own systems and components, Bepu bodies
-(`PhysicsWorld.Simulation` is public), UI layers, game messages with the playback helpers, levels as matches
-(`MatchControl.RequestStart`), and save files of its own.
+Games whose world is voxel terrain in a map about 1 km across, seen through one camera (perspective or orthographic,
+with views drawn into images beside it), offline or with up to 16 players: voxel survival and building, co-op shooters,
+tower defence, physics sandboxes, puzzles and platformers in voxel rooms, and turn-based tactics. Their own code has the
+hooks it needs: its own systems and components, Bepu bodies (`PhysicsWorld.Simulation` is public), UI layers, game
+messages with the playback helpers, levels as matches (`MatchControl.RequestStart`), and save files of its own.
 
 ## Limits that need engine changes
 
 Ordered by how many game types each blocks.
 
-1. **Everything drawn is voxels.** `MeshVertex` has no texture coordinates; models are `VoxelModels` (at most 128 voxels a
-   side, three levels, flat colours); no glTF or OBJ loader; no skinning (the `Animation/` poses move rigid voxel parts,
-   one model per bone). Blocks most games with authored art: characters, vehicles, imported assets. Now models read from
-   glTF files are drawn as textured triangle meshes with the world's light, skinned and posed by their clips, their
-   textures compressed offline for shipping (`.claude/rules/mesh-assets.md`); no transparency yet (limit 3).
+1. **Everything drawn is voxels.** `MeshVertex` has no texture coordinates; models are `VoxelModels` (at most 128 voxels
+   a side, three levels, flat colours); no glTF or OBJ loader; no skinning (the `Animation/` poses move rigid voxel
+   parts, one model per bone). Blocks most games with authored art: characters, vehicles, imported assets. Now models
+   read from glTF files are drawn as textured triangle meshes with the world's light, skinned and posed by their clips,
+   their textures compressed offline for shipping (`.claude/rules/mesh-assets.md`), and blended materials drawn sorted
+   per object (limit 3).
 2. **A voxel world is required, in a fixed box.** When this was written, `MatchServices` took `VoxelWorld`,
    `PhysicsWorld`, and the voxel colliders, and every match needed an `IChunkGenerator`. Now a match runs without a voxel
    world, its characters and loose bodies over the game's mesh colliders; the box remains. The box is set by constants (`VoxelGrid`: ±512 m across, -51 to +102 m at 10 cm voxels); the view
    reaches 2 km at most; nothing shifts the origin. Blocks open worlds, flight, space, and long race tracks.
-3. **Rendering is closed to a game.** The pass list is fixed in `FrameRenderer.Record`, and `IFrameRenderer` and
-   `PipelineFactory` are internal (now a game adds its own passes at five stages, `IRenderPass`, and `PipelineFactory`
-   is public, 2026-10-10); no transparent pass (only particles blended; now mesh assets' blended materials do too, sorted per object,
-   2026-10-10); the look was constants in the shaders
-   (now data a game sets, `RenderLook`, 2026-10-10); the sun's direction was fixed (now a game sets it, with night, 2026-10-10); no spot lights or shadowed point
-   lights; one perspective camera (`mesh.vert` always divides by depth; `RenderView` holds one camera; now a camera's
-   lens may be orthographic, `CameraLens`, and a game draws views into images, `RenderViews`, which the HUD and mesh
-   materials show: the starter's minimap and the mesh sample's screen, 2026-10-10), so no split screen.
+3. **Rendering is open to a game, except for split screen, HDR, and some lights.** When this was written the pass list
+   was fixed in `FrameRenderer.Record`, `IFrameRenderer` and `PipelineFactory` were internal, only particles blended,
+   the look was constants in the shaders, the sun's direction was fixed, and there was one perspective camera. Since
+   2026-10-10 a game adds its own passes at five stages (`IRenderPass`; `PipelineFactory` is public), mesh assets'
+   blended materials are drawn sorted per object, the look is data a game sets (`RenderLook`), a game moves the sun,
+   with night, a camera's lens may be orthographic (`CameraLens`), and a game draws views into images (`RenderViews`)
+   that the HUD and mesh materials show (the starter's minimap, the mesh sample's screen; the choices and their reasons
+   are in `docs/rendering-extension.md`). Still missing: split screen (one camera drawn to the screen, and input for one
+   player), HDR rendering, spot lights, and shadowed point lights.
 4. **Sessions are one host with clients.** At most 16 slots (`SessionProtocol.MaxSlots`); clients reach each other only
    through the host; the match ends when the host quits (no host migration); Steam lobbies are friends-only; nothing
    helps lockstep or rollback (Bepu is not bit-identical across CPUs, and peers' step clocks run apart).
