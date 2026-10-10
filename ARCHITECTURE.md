@@ -550,6 +550,12 @@ A mesh asset is a triangle mesh with texture coordinates and materials, read fro
   done once a frame however many lists draw it. A posed instance is culled by its joints' posed places grown by how far
   their vertices reach. `MeshAnimator` and `MeshAnimatorSystem` keep clip clocks in game time, which stop while the
   match is paused. Matches without voxels are the next phase (`docs/framework-limits.md`).
+- Cost, on the RX 5700 XT at 2560x1440 at the starter's views, offscreen with MSAA 4 unless said (Release, 2026-10-09):
+  the starter's one fox adds 0.015 to 0.019 ms to the world pass where it is drawn (0.7 to 1.1 %), and nothing where
+  it is not; 200 foxes (576 triangles each) in front of the `start` view add 0.20 ms standing and 0.28 ms running, of
+  which the skinning pass takes 0.05 ms and the camera's draws 0.085 ms (the rest is the cascades), 0.25 ms with one
+  sample and SMAA, 0.29 ms with eight samples, and 0.28 ms in a window. In views where they only cast shadows,
+  200 running foxes add 0.13 to 0.16 ms.
 
 ## 7. The engine's components and systems
 
