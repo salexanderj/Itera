@@ -5,9 +5,10 @@ namespace Itera.Engine.Rendering.Meshes;
 
 /// <summary>
 /// What <see cref="MeshAssetDraws"/> wrote into a frame slot's regions for each of the mesh pass's three lists (the
-/// camera's, the near cascade's, the far cascade's): its commands per pipeline range and its draws; and the posed
-/// instances to skin (<see cref="MeshSkinGroup"/>), with the most vertices any has and the skinning matrices they take.
-/// Carried to the render thread in <c>RenderFrame</c>.
+/// camera's, the near cascade's, the far cascade's): its commands per pipeline range and its draws; the blended draws,
+/// sorted back to front, one command each (<see cref="MeshAssetPass.BlendedList"/>); and the posed instances to skin
+/// (<see cref="MeshSkinGroup"/>), with the most vertices any has and the skinning matrices they take. Carried to the
+/// render thread in <c>RenderFrame</c>.
 /// </summary>
 public readonly record struct MeshAssetFrame(
     MeshAssetList Camera,
@@ -15,7 +16,8 @@ public readonly record struct MeshAssetFrame(
     MeshAssetList Far,
     int SkinGroups = 0,
     int SkinVertices = 0,
-    int SkinJoints = 0
+    int SkinJoints = 0,
+    int Blended = 0
 )
 {
     /// <summary>List 0 (the camera's), 1 (the near cascade's), or 2 (the far cascade's).</summary>

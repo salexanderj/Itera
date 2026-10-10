@@ -20,7 +20,9 @@ namespace Itera.Engine.Rendering.Meshes;
 /// white stand-in first), all copied by the first frame from an upload buffer that goes once no frame in flight can read
 /// it. Set 1 of its pipelines holds those, six samplers, and every frame slot's draws (<see cref="MeshAssetDraw"/>),
 /// which <see cref="MeshAssetDraws"/> writes with the indirect commands, grouped into four pipeline ranges
-/// (<see cref="MeshAssetRange"/>). Skinned assets also have their joints and weights (<see cref="MeshSkinVertex"/>), and
+/// (<see cref="MeshAssetRange"/>); blended materials' draws come in a fourth list of the slot (<see cref="BlendedList"/>),
+/// sorted back to front, drawn after the sky (<see cref="RecordTransparent"/>) with one pipeline that culls nothing,
+/// tests depth without writing it, and blends by alpha, each draw showing the faces it names. Skinned assets also have their joints and weights (<see cref="MeshSkinVertex"/>), and
 /// each frame slot a region of the vertex buffer (<c>Engine:Renderer:SkinMegabytes</c>) that <c>mesh-skin.comp</c> fills
 /// with the frame's posed instances (<see cref="RecordSkinning"/>, before the cascades), from the slot's skin groups
 /// (<see cref="MeshSkinGroup"/>) and skinning matrices. Created before the render thread starts; recorded by the render
@@ -49,8 +51,15 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     /// </summary>
     public const int MostSkinnedVertices = 65_535 * SkinGroupSize;
 
+    /// <summary>The slot's list of blended draws, after the mesh pass's three (the camera's and the two cascades').</summary>
+    public const int BlendedList = MeshPass.Lists;
+
+    /// <summary>The lists of draws and commands a frame slot holds: the mesh pass's three and the blended.</summary>
+    private const int SlotLists = MeshPass.Lists + 1;
+
     private const int Bindings = 8;
     private const string MaskDefine = "MESH_ASSET_MASK";
+    private const string BlendDefine = "MESH_ASSET_BLEND";
 
     private readonly VulkanContext _context;
     private readonly ShaderCompiler _shaders;
@@ -61,8 +70,9 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     private readonly IOptions<EngineOptions> _options;
     private readonly ILogger<MeshAssetPass> _logger;
     private readonly Sampler[] _samplers = new Sampler[Samplers];
-    private readonly Pipeline[] _pipelines = new Pipeline[MeshAssetLayout.Ranges];
-    private readonly Pipeline[] _shadowPipelines = new Pipeline[MeshAssetLayout.Ranges];
+    private readonly Pipeline[] _pipelines = new Pipeline[MeshAssetLayout.ListRanges];
+    private readonly Pipeline[] _shadowPipelines = new Pipeline[MeshAssetLayout.ListRanges];
+    private Pipeline _blendPipeline;
     private MeshAssetLayout? _assetLayout;
     private GpuBuffer? _upload;
     private GpuBuffer? _vertices;
@@ -96,6 +106,8 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     private byte[] _vertexSpirv = [];
     private byte[] _fragmentSpirv = [];
     private byte[] _maskedFragmentSpirv = [];
+    private byte[] _blendVertexSpirv = [];
+    private byte[] _blendFragmentSpirv = [];
     private byte[] _shadowVertexSpirv = [];
     private byte[] _maskedShadowVertexSpirv = [];
     private byte[] _shadowFragmentSpirv = [];
@@ -167,7 +179,6 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
                 break;
             }
         }
-        WarnBlended();
     }
 
     /// <summary>Makes the camera's pipelines again when the mesh pass's colour format or samples changed. Render thread, device idle; after the mesh pass's.</summary>
@@ -186,8 +197,14 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     public Span<DrawIndexedIndirectCommand> CommandsOf(int slot, int list) =>
         new(Commands.Mapped + CommandsOffset(slot, list, 0), MaxCommands);
 
-    /// <summary>The index in the shaders' draws of list <paramref name="list"/> of <paramref name="slot"/>'s first.</summary>
-    public static int DrawBase(int slot, int list) => (slot * MeshPass.Lists + list) * MaxDraws;
+    /// <summary>
+    /// The index in the shaders' draws of list <paramref name="list"/> of <paramref name="slot"/>'s first (the camera's,
+    /// the cascades', or <see cref="BlendedList"/>).
+    /// </summary>
+    public static int DrawBase(int slot, int list) => (slot * SlotLists + list) * MaxDraws;
+
+    /// <summary>The index in the slot's command buffer of list <paramref name="list"/> of <paramref name="slot"/>'s first command.</summary>
+    public static int CommandBase(int slot, int list) => (slot * SlotLists + list) * MaxCommands;
 
     /// <summary>The index in the shaders' skin groups of <paramref name="slot"/>'s first.</summary>
     public static int GroupBase(int slot) => slot * MaxSkinGroups;
@@ -225,6 +242,19 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
             Palettes.Flush(
                 (ulong)PaletteBase(slot) * (ulong)sizeof(Matrix4x4),
                 (ulong)Math.Clamp(frame.SkinJoints, 0, MeshInstances.MaxPaletteJoints) * (ulong)sizeof(Matrix4x4)
+            );
+        }
+
+        var blended = Math.Clamp(frame.Blended, 0, MaxCommands);
+        if (blended > 0)
+        {
+            Draws.Flush(
+                (ulong)DrawBase(slot, BlendedList) * (ulong)sizeof(MeshAssetDraw),
+                (ulong)blended * (ulong)sizeof(MeshAssetDraw)
+            );
+            Commands.Flush(
+                CommandsOffset(slot, BlendedList, 0),
+                (ulong)blended * (ulong)sizeof(DrawIndexedIndirectCommand)
             );
         }
 
@@ -434,6 +464,40 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         _timer.End(commandBuffer, timerSlot, GpuPass.Meshes);
     }
 
+    /// <summary>
+    /// Draws the frame's blended draws, sorted back to front (<see cref="MeshAssetDraws"/>), in the mesh pass's main
+    /// rendering after the sky: both sets, the view's push constants, and one indirect draw of every command in order
+    /// (the device draws them in that order, each blended over the ones before). Timed with the mesh pass's world.
+    /// </summary>
+    public void RecordTransparent(CommandBuffer commandBuffer, int slot, in ViewConstants view)
+    {
+        var commands = Math.Clamp(_frame.Blended, 0, MaxCommands);
+        if (commands <= 0)
+        {
+            return;
+        }
+
+        var vk = _context.Vk;
+        BindSets(commandBuffer, _layout);
+        var constants = view;
+        vk.CmdPushConstants(
+            commandBuffer,
+            _layout,
+            ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
+            0,
+            (uint)sizeof(ViewConstants),
+            &constants
+        );
+        vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _blendPipeline);
+        vk.CmdDrawIndexedIndirect(
+            commandBuffer,
+            Commands.Buffer,
+            CommandsOffset(slot, BlendedList, 0),
+            (uint)commands,
+            (uint)sizeof(DrawIndexedIndirectCommand)
+        );
+    }
+
     public object CompileShaders()
     {
         var count = $"MESH_TEXTURE_COUNT {Math.Max(_textures?.Length ?? 1, 1)}";
@@ -442,6 +506,8 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
             _shaders.Compile("mesh-asset.vert", [count]),
             _shaders.Compile("mesh-asset.frag", [count]),
             _shaders.Compile("mesh-asset.frag", [count, MaskDefine]),
+            _shaders.Compile("mesh-asset.frag", [count, BlendDefine]),
+            _shaders.Compile("mesh-asset.vert", [count, BlendDefine]),
             _shaders.Compile("mesh-asset-shadow.vert", [count]),
             _shaders.Compile("mesh-asset-shadow.vert", [count, MaskDefine]),
             _shaders.Compile("mesh-asset-shadow.frag", [count]),
@@ -455,7 +521,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         DestroyPipelines();
         TakeShaders((byte[][])compiled);
         CreatePipelines(_format, _samples);
-        return 2 * MeshAssetLayout.Ranges + 1;
+        return (2 * MeshAssetLayout.ListRanges) + 2;
     }
 
     /// <summary>Destroys everything the pass made. The GPU must be done with it. Safe to call more than once.</summary>
@@ -555,7 +621,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     )
     {
         var vk = _context.Vk;
-        for (var range = 0; range < MeshAssetLayout.Ranges; range++)
+        for (var range = 0; range < MeshAssetLayout.ListRanges; range++)
         {
             var commands = Math.Clamp(counts.Of((MeshAssetRange)range), 0, MaxCommands);
             if (commands == 0)
@@ -621,37 +687,19 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         _vertexSpirv = compiled[0];
         _fragmentSpirv = compiled[1];
         _maskedFragmentSpirv = compiled[2];
-        _shadowVertexSpirv = compiled[3];
-        _maskedShadowVertexSpirv = compiled[4];
-        _shadowFragmentSpirv = compiled[5];
-        _depthOnlySpirv = compiled[6];
-        _skinSpirv = compiled[7];
+        _blendFragmentSpirv = compiled[3];
+        _blendVertexSpirv = compiled[4];
+        _shadowVertexSpirv = compiled[5];
+        _maskedShadowVertexSpirv = compiled[6];
+        _shadowFragmentSpirv = compiled[7];
+        _depthOnlySpirv = compiled[8];
+        _skinSpirv = compiled[9];
     }
 
     private static ulong CommandsOffset(int slot, int list, int first) =>
-        (((ulong)slot * MeshPass.Lists + (ulong)list) * MaxCommands + (ulong)first)
-        * (ulong)sizeof(DrawIndexedIndirectCommand);
+        ((ulong)CommandBase(slot, list) + (ulong)first) * (ulong)sizeof(DrawIndexedIndirectCommand);
 
     private GpuBuffer Upload => _upload ?? throw NotInitialised();
-
-    /// <summary>One warning for each asset with blended materials, which draw as masked until there is a transparent pass.</summary>
-    private void WarnBlended()
-    {
-        for (var i = 0; i < _assets.Count; i++)
-        {
-            var asset = _assets[i];
-            var blended = 0;
-            foreach (var material in asset.Materials)
-            {
-                blended += material.AlphaMode == MeshAlphaMode.Blend ? 1 : 0;
-            }
-
-            if (blended > 0)
-            {
-                LogBlendedAsMasked(asset.Name, blended);
-            }
-        }
-    }
 
     private GpuBuffer Vertices => _vertices ?? throw NotInitialised();
 
@@ -691,12 +739,6 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     private partial void LogTexturesLeftOut(int leftOut, int kept);
 
     [LoggerMessage(
-        Level = LogLevel.Warning,
-        Message = "Mesh assets on the GPU: {Name} has {Count} blended material(s), drawn cut at their alpha cutoff (as masked): the engine has no transparent pass yet"
-    )]
-    private partial void LogBlendedAsMasked(string name, int count);
-
-    [LoggerMessage(
         Level = LogLevel.Information,
         Message = "Mesh assets on the GPU: {SkinVertices} skinned vertices; posed instances skinned into {Capacity} vertices ({Megabytes:F1} MB) a frame slot"
     )]
@@ -711,8 +753,8 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
 
 /// <summary>
 /// What draws inside <see cref="MeshPass"/>'s renderings besides the world and the models (<see cref="MeshAssetPass"/>):
-/// its compute work before the cascades, its shadows into each cascade, and its surfaces in the main view after the
-/// models. Render thread.
+/// its compute work before the cascades, its shadows into each cascade, its surfaces in the main view after the models,
+/// and its blended surfaces after the sky. Render thread.
 /// </summary>
 public interface IMeshPassDraws
 {
@@ -724,4 +766,7 @@ public interface IMeshPassDraws
 
     /// <summary>Draws in the main view, inside its rendering, after the models; the viewport is set.</summary>
     void RecordCamera(CommandBuffer commandBuffer, int slot, in ViewConstants view, int timerSlot);
+
+    /// <summary>Draws blended surfaces in the main view, inside its rendering, after the sky; the viewport is set.</summary>
+    void RecordTransparent(CommandBuffer commandBuffer, int slot, in ViewConstants view);
 }

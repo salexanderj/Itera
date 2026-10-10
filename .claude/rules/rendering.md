@@ -306,9 +306,9 @@ an instance, each vertex moved by its four joints' matrices blended by its weigh
 blended matrix (right for turns and uniform scales; a joint scaled unevenly skews them) and packed again in `Octahedral`'s
 encoding (an unweighted vertex copied; an asset of more than `MostSkinnedVertices`, 4,194,240, or past the slot's room is
 drawn unposed, with one Warning), then a barrier from the compute writes to the
-vertex shaders' reads (timed as `Skinning`, part of `Voxels`). Eight pipelines and the skinning's: the camera's (`mesh-asset.vert`,
+vertex shaders' reads (timed as `Skinning`, part of `Voxels`). Nine pipelines and the skinning's: the camera's (`mesh-asset.vert`,
 `mesh-asset.frag`) and the cascades' (`mesh-asset-shadow.vert` with `depth-only.frag`, or `mesh-asset-shadow.frag` for
-masked materials), for each range; depth and culling as the world's (back faces culled unless two-sided; the cascades
+masked materials), for each of the four list ranges, and the blended one (below); depth and culling as the world's (back faces culled unless two-sided; the cascades
 drawn from the faces turned away from the sun, so an open single-sided mesh, such as one quad, casts no shadow when
 its front faces the sun). `MeshPass.Record` calls it through `IMeshPassDraws`: `RecordShadows`
 inside each cascade's rendering, and `RecordCamera` in the main view after the models and before the sky (timed as
@@ -316,8 +316,20 @@ inside each cascade's rendering, and `RecordCamera` in the main view after the m
 pipeline on a shader reload. `mesh-asset.frag` draws glTF's base colour (the factor times the texture, the vertex colour,
 and the draw's tint), cut at the alpha cutoff in the masked ranges, the normal map tilting the lit normal in tangent
 space (a two-sided surface's back lit from its own side), the occlusion as the cavity, and the emission as glow, then
-`shadeSurface` with the openness of flat ground; metalness and roughness are read and kept, not drawn. A blended material
-is drawn as masked, with one Warning an asset at the step (no transparent pass yet). Its log lines: `Mesh assets on the
+`shadeSurface` with the openness of flat ground; metalness and roughness are read and kept, not drawn.
+
+Blended materials (glTF's `BLEND`; `MeshAssetRange.Blended` and `BlendedTwoSided`, after the four list ranges) are in no
+list's ranges and cast no shadow. `MeshAssetDraws` writes them into the slot's fourth list (`MeshAssetPass.BlendedList`):
+the seen instances sorted back to front by their sphere's centre (farthest first; an instance's primitives in its
+asset's order), each primitive one draw and one command of one instance, a two-sided one two (its back faces, then its
+front faces: `MeshAssetDraw.Sides`), at most `MaxCommands`, past which they are left out with one Warning a run.
+`MeshPass.Record` calls `RecordTransparent` after the sky (which would paint over a surface that writes no depth): one
+`vkCmdDrawIndexedIndirect` of every command, which the device draws in order, with one pipeline (`mesh-asset.vert` and
+`.frag` compiled with `MESH_ASSET_BLEND`: no culling, each draw dropping the faces it does not show; the depth tested,
+not written; premultiplied alpha over what is drawn, the colour shaded and fogged as an opaque surface's, then times its
+alpha). It blends on the frame's display colours (there is no HDR image), as the particles do, inside the multisampled
+rendering, so its edges are anti-aliased; it is timed with the world (`Voxels`), not `Meshes`. Objects that cross, or one
+inside another, can show in the wrong order from some sides (sorted per object, not per pixel). Its log lines: `Mesh assets on the
 GPU: N vertices, T triangles, M material(s), X texture(s) of Y MB; draws Z MB a frame slot`, and with skinned assets
 `Mesh assets on the GPU: N skinned vertices; posed instances skinned into V vertices (M MB) a frame slot`; the stats
 line's `mesh assets in N frames avg/max` and `skinning in N frames avg/max` are the `Meshes` and `Skinning` passes' GPU

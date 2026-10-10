@@ -103,8 +103,7 @@ per physical device, the selected device, swapchain, input devices, shader compi
 `UI: Skia CPU surface ...`, `Loaded mod itera.samplemod`, `Mesh assets: N model(s), ... read in N ms` (the models the game declared, with how many
 textures came from their compressed textures; a file that cannot be read stops the run with exit code 1; a Warning for
 compressed textures that do not match their image, an Information note for a model whose textures were all decoded), `Mesh assets on the GPU: N vertices, ... draws N MB a frame slot`
-(and with a skinned model `... N skinned vertices; posed instances skinned into V vertices ...`; then a Warning for each
-model whose blended materials draw as masked), `Audio: thread started ...`, `Render thread started`, `Engine
+(and with a skinned model `... N skinned vertices; posed instances skinned into V vertices ...`), `Audio: thread started ...`, `Render thread started`, `Engine
 ready ... entering main loop`. Then the match's: `Match 1: offline, seed N` (or `host, seed N`, `host through Steam,
 ...`, or `join ADDRESS`), `Session: offline, seed N` (or `hosting on UDP port ...`, `hosting through Steam ...`, or
 `joined ADDRESS in slot N, seed N; downloaded ...`; with a save name, a `Save: starting from NAME ...` or `Save: NAME

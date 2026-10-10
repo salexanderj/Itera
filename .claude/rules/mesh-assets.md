@@ -73,8 +73,8 @@ models during play is not built.
   red, roughness in green, metalness in blue) as `Rgba8Unorm`, `Normal` as `Rg8Unorm` (x and y of the renormalised
   vector; z is rebuilt). An image in two roles makes two textures. A sampler maps to `MeshSampler` (nearest when its
   magnification filter is, its wrap along s for both directions, with a warning when t differs).
-- Alpha `BLEND` is kept as such in the material; there is no transparent pass yet, so the renderer draws it as `MASK`
-  with one Warning an asset.
+- Alpha `BLEND` is kept as such in the material, and the renderer draws it blended, sorted back to front per object,
+  casting no shadow (`.claude/rules/rendering.md`, "Mesh assets").
 
 ### Compressed textures
 

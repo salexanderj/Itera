@@ -311,6 +311,114 @@ public sealed class MeshAssetDrawsTests
         Assert.Equal(0, bytes);
     }
 
+    /// <summary>
+    /// Blended primitives are in no list's ranges and cast nothing: the blended list draws them, instances farthest
+    /// first, a two-sided one's back faces before its front faces, each one draw and command.
+    /// </summary>
+    [Fact]
+    public void Blended_primitives_are_drawn_apart_back_to_front_and_cast_no_shadow()
+    {
+        var glass = new MeshMaterialData { AlphaMode = MeshAlphaMode.Blend };
+        var targets = new FakeTargets(
+            MeshAssetLayout.From([
+                MeshAssetPassTests.Asset("opaque", MeshMaterialData.Default, vertices: 3),
+                MeshAssetPassTests.Asset("pane", glass, vertices: 3),
+                MeshAssetPassTests.Asset(
+                    "lantern",
+                    MeshMaterialData.Default,
+                    vertices: 4,
+                    second: glass with
+                    {
+                        DoubleSided = true,
+                    }
+                ),
+            ])
+        );
+        var view = new MeshView(targets, Options.Create(new EngineOptions()));
+        var draws = new MeshAssetDraws(targets, NullLogger<MeshAssetDraws>.Instance);
+        view.Begin(0, LookingAlongMinusZ(shadows: true));
+        MeshInstance[] instances =
+        [
+            new(1, Matrix4x4.CreateTranslation(0, 0, -5), MeshInstances.NoTint, ModelShadow.Casts),
+            new(2, Matrix4x4.CreateTranslation(0, 0, -20), 0x80FFFFFFu, ModelShadow.Casts),
+            new(1, Matrix4x4.CreateTranslation(1, 0, -12), MeshInstances.NoTint, ModelShadow.Casts),
+            new(0, Matrix4x4.CreateTranslation(0, 0, -8), MeshInstances.NoTint, ModelShadow.Casts),
+        ];
+
+        var frame = draws.Write(0, view, instances);
+
+        // The camera's lists hold the opaque primitives alone (the opaque asset's and the lantern's frame); the cascades
+        // the same, and no blended one.
+        Assert.Equal(new MeshAssetList(2, 0, 0, 0, 2), frame.Camera);
+        Assert.Equal(2, frame.Near.Draws);
+        // The lantern (20 m) first, its glass's back faces then front faces; the pane at 12 m; the one at 5 m last.
+        Assert.Equal(4, frame.Blended);
+        var blended = targets.Draws(0, MeshAssetPass.BlendedList);
+        var commands = targets.Commands(0, MeshAssetPass.BlendedList);
+        Assert.Equal(
+            [
+                (instances[1].Transform, MeshAssetDraw.BackOnly),
+                (instances[1].Transform, MeshAssetDraw.FrontOnly),
+                (instances[2].Transform, MeshAssetDraw.FrontOnly),
+                (instances[0].Transform, MeshAssetDraw.FrontOnly),
+            ],
+            blended.Take(4).Select(d => (d.Transform, d.Sides))
+        );
+        Assert.Equal(0x80FFFFFFu, blended[0].Tint);
+        var drawBase = (uint)MeshAssetPass.DrawBase(0, MeshAssetPass.BlendedList);
+        for (var i = 0; i < 4; i++)
+        {
+            Assert.Equal(1u, commands[i].InstanceCount);
+            Assert.Equal(drawBase + (uint)i, commands[i].FirstInstance);
+        }
+
+        // The lantern's glass is its second primitive: its indices after its frame's, its vertices after the pane's.
+        Assert.Equal(new DrawIndexedIndirectCommand(3, 1, 9, 6, drawBase), commands[0]);
+        Assert.Equal(new DrawIndexedIndirectCommand(3, 1, 3, 3, drawBase + 2), commands[2]);
+    }
+
+    [Fact]
+    public void A_frame_of_blended_instances_allocates_nothing()
+    {
+        var glass = new MeshMaterialData { AlphaMode = MeshAlphaMode.Blend, DoubleSided = true };
+        var targets = new FakeTargets(MeshAssetLayout.From([MeshAssetPassTests.Asset("glass", glass, vertices: 3)]));
+        var view = new MeshView(targets, Options.Create(new EngineOptions()));
+        var draws = new MeshAssetDraws(targets, NullLogger<MeshAssetDraws>.Instance);
+        var constants = LookingAlongMinusZ(shadows: true);
+        var instances = new MeshInstance[300];
+        for (var i = 0; i < instances.Length; i++)
+        {
+            instances[i] = new MeshInstance(
+                0,
+                Matrix4x4.CreateTranslation(i % 10, 0, -5 - (i * 7 % 40)),
+                MeshInstances.NoTint,
+                ModelShadow.Casts
+            );
+        }
+
+        void Frame()
+        {
+            view.Begin(0, in constants);
+            draws.Write(0, view, instances);
+            view.End(0, []);
+        }
+
+        for (var i = 0; i < 50; i++)
+        {
+            Frame();
+        }
+
+        var bytes = SystemAllocation.BytesAllocatedWithoutCollection(() =>
+        {
+            for (var i = 0; i < 200; i++)
+            {
+                Frame();
+            }
+        });
+
+        Assert.Equal(0, bytes);
+    }
+
     [Fact]
     public void A_frame_allocates_nothing()
     {
@@ -392,7 +500,7 @@ public sealed class MeshAssetDrawsTests
             MeshAssetPass.DrawBase(FrameSync.FramesInFlight, 0)
         ];
         private readonly DrawIndexedIndirectCommand[] _commands = new DrawIndexedIndirectCommand[
-            FrameSync.FramesInFlight * MeshPass.Lists * MeshAssetPass.MaxCommands
+            MeshAssetPass.CommandBase(FrameSync.FramesInFlight, 0)
         ];
         private readonly MeshLighting[] _lighting = new MeshLighting[FrameSync.FramesInFlight];
         private readonly MeshLight[] _lights = new MeshLight[FrameSync.FramesInFlight * MeshPass.MostLights];
@@ -405,7 +513,7 @@ public sealed class MeshAssetDrawsTests
             _draws.AsSpan(MeshAssetPass.DrawBase(slot, list), MeshAssetPass.MaxDraws);
 
         public Span<DrawIndexedIndirectCommand> CommandsOf(int slot, int list) =>
-            _commands.AsSpan((slot * MeshPass.Lists + list) * MeshAssetPass.MaxCommands, MeshAssetPass.MaxCommands);
+            _commands.AsSpan(MeshAssetPass.CommandBase(slot, list), MeshAssetPass.MaxCommands);
 
         public MeshAssetDraw[] Draws(int slot, int list) => DrawsOf(slot, list).ToArray();
 

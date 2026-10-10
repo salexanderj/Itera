@@ -144,13 +144,13 @@ public sealed unsafe partial class MeshAssetPass
             "mesh asset skinning matrices"
         );
         _draws = _allocator.CreateBuffer(
-            slots * MeshPass.Lists * MaxDraws * (ulong)sizeof(MeshAssetDraw),
+            slots * SlotLists * MaxDraws * (ulong)sizeof(MeshAssetDraw),
             BufferUsageFlags.StorageBufferBit,
             MemoryUsage.Upload,
             "mesh asset draws"
         );
         _commands = _allocator.CreateBuffer(
-            slots * MeshPass.Lists * MaxCommands * (ulong)sizeof(DrawIndexedIndirectCommand),
+            slots * SlotLists * MaxCommands * (ulong)sizeof(DrawIndexedIndirectCommand),
             BufferUsageFlags.IndirectBufferBit,
             MemoryUsage.Upload,
             "mesh asset commands"
@@ -515,18 +515,19 @@ public sealed unsafe partial class MeshAssetPass
     }
 
     /// <summary>
-    /// The eight pipelines: the camera's (<c>mesh-asset.vert</c>, <c>mesh-asset.frag</c>, at the mesh pass's samples and
+    /// The nine pipelines: the camera's (<c>mesh-asset.vert</c>, <c>mesh-asset.frag</c>, at the mesh pass's samples and
     /// colour format, reverse depth as the world's) and the cascades' (<c>mesh-asset-shadow.vert</c> with
     /// <c>depth-only.frag</c>, or <c>mesh-asset-shadow.frag</c> for masked materials), each for the four ranges: opaque
-    /// or masked, culling back faces or two-sided. A single-sided asset's shadow, as the world's, is drawn from its faces
-    /// turned away from the sun, so a lit surface never meets its own depth; an open single-sided mesh casts from those
-    /// faces only.
+    /// or masked, culling back faces or two-sided; and the blended surfaces' (<c>mesh-asset.frag</c> with
+    /// <c>MESH_ASSET_BLEND</c>: no culling, the depth tested and not written, premultiplied alpha). A single-sided asset's
+    /// shadow, as the world's, is drawn from its faces turned away from the sun, so a lit surface never meets its own
+    /// depth; an open single-sided mesh casts from those faces only.
     /// </summary>
     private void CreatePipelines(Format format, SampleCountFlags samples)
     {
         var depth = new DepthState(DeviceRequirements.DepthFormat, CompareOp.Greater, Write: true);
         var shadowDepth = new DepthState(DeviceRequirements.DepthFormat, CompareOp.Less, Write: true);
-        for (var range = 0; range < MeshAssetLayout.Ranges; range++)
+        for (var range = 0; range < MeshAssetLayout.ListRanges; range++)
         {
             var masked = range >= (int)MeshAssetRange.Masked;
             var cull = range is (int)MeshAssetRange.OpaqueTwoSided or (int)MeshAssetRange.MaskedTwoSided
@@ -556,6 +557,19 @@ public sealed unsafe partial class MeshAssetPass
             );
         }
 
+        var blendDepth = new DepthState(DeviceRequirements.DepthFormat, CompareOp.Greater, Write: false);
+        _blendPipeline = PipelineFactory.CreateTriangles(
+            _context,
+            _blendVertexSpirv,
+            _blendFragmentSpirv,
+            _layout,
+            format,
+            CullModeFlags.None,
+            in blendDepth,
+            "mesh assets blended",
+            ColorBlend.Premultiplied,
+            samples
+        );
         _skinPipeline = PipelineFactory.CreateCompute(_context, _skinSpirv, _skinLayout, "mesh asset skinning");
         _format = format;
         _samples = samples;
@@ -564,7 +578,8 @@ public sealed unsafe partial class MeshAssetPass
     private void DestroyPipelines()
     {
         DestroyPipeline(ref _skinPipeline);
-        for (var i = 0; i < MeshAssetLayout.Ranges; i++)
+        DestroyPipeline(ref _blendPipeline);
+        for (var i = 0; i < MeshAssetLayout.ListRanges; i++)
         {
             DestroyPipeline(ref _pipelines[i]);
             DestroyPipeline(ref _shadowPipelines[i]);

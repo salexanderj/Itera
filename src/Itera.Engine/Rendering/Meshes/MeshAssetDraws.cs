@@ -18,8 +18,12 @@ namespace Itera.Engine.Rendering.Meshes;
 /// Warning a run. A posed instance (<see cref="MeshInstance.Posed"/>) any list draws is bounded by its joints' posed places
 /// and reaches, gets a skin group (<see cref="MeshSkinGroup"/>) and its skinning matrices in the slot's regions, and its
 /// draws read its skinned copy (<see cref="MeshAssetDraw.VertexDelta"/>); past the slot's room it is drawn as its asset
-/// stores it, with one Warning a run. Main thread, after the
-/// frame group, between the view's start and end; allocates nothing once its arrays have grown to the run's assets.
+/// stores it, with one Warning a run. Blended primitives (<see cref="MeshAssetRange.Blended"/>) are in no list's ranges and
+/// cast no shadow: each seen instance's are drawn in the slot's blended list (<see cref="MeshAssetPass.BlendedList"/>),
+/// instances sorted back to front by their sphere's centre, each primitive one draw and command (a two-sided one two: its
+/// back faces, then its front faces, <see cref="MeshAssetDraw.Sides"/>), at most <see cref="MeshAssetPass.MaxCommands"/>
+/// commands, past which they are left out with one Warning a run. Main thread, after the frame group, between the view's
+/// start and end; allocates nothing once its arrays have grown to the run's assets.
 /// </summary>
 public sealed partial class MeshAssetDraws
 {
@@ -31,6 +35,19 @@ public sealed partial class MeshAssetDraws
     private readonly int[] _deltas = new int[MeshInstances.MaxInstances];
     private readonly MeshAssetDraw[] _draws = new MeshAssetDraw[MeshAssetPass.MaxDraws];
     private readonly DrawIndexedIndirectCommand[] _commands = new DrawIndexedIndirectCommand[MeshAssetPass.MaxCommands];
+
+    // Each instance's centre's squared distance from the camera, while it is seen; and the blended list's entries (an
+    // instance and a primitive each), their sort keys (farthest first), and the draws and commands they become.
+    private readonly float[] _distances = new float[MeshInstances.MaxInstances];
+    private readonly long[] _blendKeys = new long[MeshAssetPass.MaxCommands];
+    private readonly int[] _blendOrder = new int[MeshAssetPass.MaxCommands];
+    private readonly int[] _blendInstances = new int[MeshAssetPass.MaxCommands];
+    private readonly int[] _blendPrimitives = new int[MeshAssetPass.MaxCommands];
+    private readonly MeshAssetDraw[] _blendDraws = new MeshAssetDraw[MeshAssetPass.MaxCommands];
+    private readonly DrawIndexedIndirectCommand[] _blendCommands = new DrawIndexedIndirectCommand[
+        MeshAssetPass.MaxCommands
+    ];
+    private bool _blendFullReported;
     private int[] _counts = [];
     private int[] _starts = [];
     private int[] _filled = [];
@@ -75,7 +92,7 @@ public sealed partial class MeshAssetDraws
         var count = Math.Min(instances.Length, _lists.Length);
         for (var i = 0; i < count; i++)
         {
-            _lists[i] = ListsOf(in instances[i], layout, view, palettes);
+            _lists[i] = ListsOf(in instances[i], layout, view, palettes, out _distances[i]);
         }
 
         var groups = WriteSkins(slot, instances[..count], layout, palettes, out var mostVertices, out var joints);
@@ -85,7 +102,8 @@ public sealed partial class MeshAssetDraws
             WriteList(slot, 2, instances[..count], layout),
             groups,
             mostVertices,
-            joints
+            joints,
+            WriteBlended(slot, instances[..count], layout)
         );
     }
 
@@ -222,14 +240,19 @@ public sealed partial class MeshAssetDraws
         return min.X > max.X ? (place.Centre, place.Radius) : ((min + max) / 2, (max - min).Length() / 2);
     }
 
-    /// <summary>The lists an instance is drawn in: the camera's where its sphere may be seen, the cascades' where it may cast.</summary>
+    /// <summary>
+    /// The lists an instance is drawn in: the camera's where its sphere may be seen, the cascades' where it may cast; and
+    /// its sphere's centre's squared distance from the camera.
+    /// </summary>
     private byte ListsOf(
         in MeshInstance instance,
         MeshAssetLayout layout,
         MeshView view,
-        ReadOnlySpan<Matrix4x4> palettes
+        ReadOnlySpan<Matrix4x4> palettes,
+        out float distance
     )
     {
+        distance = 0;
         if ((uint)instance.Asset >= (uint)layout.Assets.Length)
         {
             if (!_unknownReported)
@@ -255,6 +278,7 @@ public sealed partial class MeshAssetDraws
         var centre = Vector3.Transform(localCentre, transform);
         var radius = localRadius * LargestScale(in transform);
         var seen = instance.Shadow != ModelShadow.Only && view.InView(centre, radius);
+        distance = Vector3.DistanceSquared(centre, view.Position);
         var casts = instance.Shadow != ModelShadow.None && view.Shadows;
         var near = casts && view.NearCascade.Holds(centre, radius);
         var far = casts && view.FarCascade.Holds(centre, radius);
@@ -293,7 +317,11 @@ public sealed partial class MeshAssetDraws
             total += place.PrimitiveCount;
             for (var p = 0; p < place.PrimitiveCount; p++)
             {
-                _counts[layout.AssetPrimitives[place.FirstPrimitive + p]]++;
+                var k = layout.AssetPrimitives[place.FirstPrimitive + p];
+                if (layout.Primitives[k].Range < MeshAssetRange.Blended)
+                {
+                    _counts[k]++;
+                }
             }
         }
 
@@ -317,6 +345,11 @@ public sealed partial class MeshAssetDraws
             for (var p = 0; p < place.PrimitiveCount; p++)
             {
                 var k = layout.AssetPrimitives[place.FirstPrimitive + p];
+                if (layout.Primitives[k].Range >= MeshAssetRange.Blended)
+                {
+                    continue;
+                }
+
                 _draws[_starts[k] + _filled[k]++] = new MeshAssetDraw
                 {
                     Transform = instance.Transform,
@@ -376,9 +409,114 @@ public sealed partial class MeshAssetDraws
             }
         }
 
-        _draws.AsSpan(0, total).CopyTo(_target.DrawsOf(slot, list));
+        _draws.AsSpan(0, next).CopyTo(_target.DrawsOf(slot, list));
         _commands.AsSpan(0, commands).CopyTo(_target.CommandsOf(slot, list));
-        return new MeshAssetList(opaque, opaqueTwoSided, masked, maskedTwoSided, total);
+        return new MeshAssetList(opaque, opaqueTwoSided, masked, maskedTwoSided, next);
+    }
+
+    /// <summary>
+    /// The blended list: each seen instance's blended primitives, instances sorted back to front (farthest first, then in
+    /// the order given) and each one's primitives in its asset's order, as draws and commands in the slot's blended
+    /// region. Returns its commands.
+    /// </summary>
+    private int WriteBlended(int slot, ReadOnlySpan<MeshInstance> instances, MeshAssetLayout layout)
+    {
+        var entries = 0;
+        var commands = 0;
+        for (var i = 0; i < instances.Length; i++)
+        {
+            if ((_lists[i] & 1) == 0)
+            {
+                continue;
+            }
+
+            ref readonly var place = ref layout.Assets[instances[i].Asset];
+            for (var p = 0; p < place.PrimitiveCount; p++)
+            {
+                var k = layout.AssetPrimitives[place.FirstPrimitive + p];
+                var range = layout.Primitives[k].Range;
+                if (range < MeshAssetRange.Blended)
+                {
+                    continue;
+                }
+
+                var need = range == MeshAssetRange.BlendedTwoSided ? 2 : 1;
+                if (commands + need > MeshAssetPass.MaxCommands)
+                {
+                    if (!_blendFullReported)
+                    {
+                        _blendFullReported = true;
+                        LogBlendedFull(MeshAssetPass.MaxCommands);
+                    }
+
+                    continue;
+                }
+
+                // Farther first: a squared distance's bits order as its value, and the entry's place keeps ties in order.
+                var bits = BitConverter.SingleToInt32Bits(MathF.Max(_distances[i], 0));
+                _blendKeys[entries] = ((long)(int.MaxValue - bits) << 16) | (uint)entries;
+                _blendOrder[entries] = entries;
+                _blendInstances[entries] = i;
+                _blendPrimitives[entries] = k;
+                entries++;
+                commands += need;
+            }
+        }
+
+        Array.Sort(_blendKeys, _blendOrder, 0, entries);
+        var drawBase = MeshAssetPass.DrawBase(slot, MeshAssetPass.BlendedList);
+        var written = 0;
+        for (var j = 0; j < entries; j++)
+        {
+            var entry = _blendOrder[j];
+            var i = _blendInstances[entry];
+            var k = _blendPrimitives[entry];
+            ref readonly var primitive = ref layout.Primitives[k];
+            if (primitive.Range == MeshAssetRange.BlendedTwoSided)
+            {
+                WriteBlendedDraw(
+                    in instances[i],
+                    in primitive,
+                    _deltas[i],
+                    MeshAssetDraw.BackOnly,
+                    drawBase,
+                    written++
+                );
+            }
+
+            WriteBlendedDraw(in instances[i], in primitive, _deltas[i], MeshAssetDraw.FrontOnly, drawBase, written++);
+        }
+
+        _blendDraws.AsSpan(0, written).CopyTo(_target.DrawsOf(slot, MeshAssetPass.BlendedList));
+        _blendCommands.AsSpan(0, written).CopyTo(_target.CommandsOf(slot, MeshAssetPass.BlendedList));
+        return written;
+    }
+
+    /// <summary>One blended draw of a primitive of an instance, showing <paramref name="sides"/>, and its command.</summary>
+    private void WriteBlendedDraw(
+        in MeshInstance instance,
+        in MeshAssetLayout.PrimitivePlace primitive,
+        int delta,
+        uint sides,
+        int drawBase,
+        int index
+    )
+    {
+        _blendDraws[index] = new MeshAssetDraw
+        {
+            Transform = instance.Transform,
+            Material = (uint)primitive.Material,
+            Tint = instance.Tint,
+            VertexDelta = delta,
+            Sides = sides,
+        };
+        _blendCommands[index] = new DrawIndexedIndirectCommand(
+            (uint)primitive.IndexCount,
+            1,
+            (uint)primitive.FirstIndex,
+            primitive.FirstVertex,
+            (uint)(drawBase + index)
+        );
     }
 
     /// <summary>The largest length an axis of the asset's space takes in the world's: the scale its bounding sphere grows by.</summary>
@@ -401,6 +539,12 @@ public sealed partial class MeshAssetDraws
         Message = "Mesh assets: a list of the frame's commands is full ({Commands} primitives); the primitives past it are not drawn"
     )]
     private partial void LogCommandsFull(int commands);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Mesh assets: the frame's blended list is full ({Commands} commands); the blended primitives past it are not drawn"
+    )]
+    private partial void LogBlendedFull(int commands);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

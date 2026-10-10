@@ -627,6 +627,8 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
 
         vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _skyPipeline);
         vk.CmdDraw(commandBuffer, 3, 1, 0, 0);
+        // Blended surfaces over everything drawn, the sky included, which would paint over them if it came after.
+        assets?.RecordTransparent(commandBuffer, slot, in constants);
         vk.CmdEndRendering(commandBuffer);
     }
 

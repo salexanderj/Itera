@@ -45,7 +45,12 @@ struct MeshAssetDraw
     uint material;
     uint tint;
     int vertexDelta;
+    uint sides;
 };
+
+// MeshAssetDraw.sides of a blended draw: the faces it shows (MeshAssetDraw.FrontOnly, BackOnly).
+#define MESH_ASSET_FRONT_ONLY 1u
+#define MESH_ASSET_BACK_ONLY 2u
 
 // A texture reference's index for none (MeshAssetMaterial.NoTexture), and its fields: the index in bits 0 to 15, the
 // sampler in bits 16 to 18, the texture coordinates in bit 19.

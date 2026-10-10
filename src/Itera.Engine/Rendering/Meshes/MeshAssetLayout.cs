@@ -15,8 +15,14 @@ namespace Itera.Engine.Rendering.Meshes;
 /// </summary>
 public sealed class MeshAssetLayout
 {
-    /// <summary>The pipelines' ranges a list's commands are grouped in.</summary>
-    public const int Ranges = 4;
+    /// <summary>Every range a primitive draws in (<see cref="MeshAssetRange"/>).</summary>
+    public const int Ranges = 6;
+
+    /// <summary>
+    /// The ranges a list's commands are grouped in, each with its pipeline: the opaque and masked ones. Blended
+    /// primitives are drawn apart, sorted back to front, and cast no shadow.
+    /// </summary>
+    public const int ListRanges = 4;
 
     private MeshAssetLayout(
         AssetPlace[] assets,
@@ -234,13 +240,14 @@ public sealed class MeshAssetLayout
     public static MeshAssetRange RangeOf(MeshMaterialData material)
     {
         ArgumentNullException.ThrowIfNull(material);
-        var masked = material.AlphaMode != MeshAlphaMode.Opaque;
-        return (masked, material.DoubleSided) switch
+        return (material.AlphaMode, material.DoubleSided) switch
         {
-            (false, false) => MeshAssetRange.Opaque,
-            (false, true) => MeshAssetRange.OpaqueTwoSided,
-            (true, false) => MeshAssetRange.Masked,
-            _ => MeshAssetRange.MaskedTwoSided,
+            (MeshAlphaMode.Opaque, false) => MeshAssetRange.Opaque,
+            (MeshAlphaMode.Opaque, true) => MeshAssetRange.OpaqueTwoSided,
+            (MeshAlphaMode.Mask, false) => MeshAssetRange.Masked,
+            (MeshAlphaMode.Mask, true) => MeshAssetRange.MaskedTwoSided,
+            (_, false) => MeshAssetRange.Blended,
+            _ => MeshAssetRange.BlendedTwoSided,
         };
     }
 
@@ -290,4 +297,10 @@ public enum MeshAssetRange
     OpaqueTwoSided,
     Masked,
     MaskedTwoSided,
+
+    /// <summary>Blended, its front faces: drawn after the sky, back to front, casting no shadow.</summary>
+    Blended,
+
+    /// <summary>Blended, both faces: its back faces drawn first, then its front faces.</summary>
+    BlendedTwoSided,
 }

@@ -103,7 +103,7 @@ public sealed class MeshAssetPassTests : IDisposable
         Assert.Equal(3, layout.MaterialCount);
         Assert.Equal(3, layout.Assets[1].FirstVertex);
         Assert.Equal(1, layout.Assets[1].FirstMaterial);
-        Assert.Equal([0, 1, 2, 3, 3], layout.RangeStarts);
+        Assert.Equal([0, 1, 2, 3, 3, 3, 3], layout.RangeStarts);
         Assert.Equal(MeshAssetRange.Opaque, layout.Primitives[0].Range);
         Assert.Equal(MeshAssetRange.OpaqueTwoSided, layout.Primitives[1].Range);
         Assert.Equal(MeshAssetRange.Masked, layout.Primitives[2].Range);

@@ -562,8 +562,8 @@ A mesh asset is a triangle mesh with texture coordinates and materials, read fro
 - The vertex shader pulls its vertices from a storage buffer, as the world's does, and projects with `viewClip`. The
   fragment shader reads the material's textures from one array indexed per pixel (`nonuniformEXT`, needing descriptor
   indexing of sampled images) and ends in `mesh-shade.glsl`'s `shadeSurface`, the light and grade every surface of the
-  pass takes. Blended materials draw as masked until a transparent pass exists; metalness and roughness are kept, not
-  drawn.
+  pass takes. Blended materials draw after the sky, sorted back to front per object, casting no shadow; metalness and
+  roughness are kept, not drawn.
 - A skinned asset has a `Rig` (its glTF skin's joints, parents first, in metres, with its clips, `RigClip`), sampled on
   the main thread in floats for drawing only (the deterministic skeletons of `Animation/` are separate). A frame system
   poses an instance by writing its rig's skinning matrices (`MeshInstances.AddPosed`, `Rig.WritePalette`); before the
@@ -1322,8 +1322,9 @@ Engine work that is known and not done:
   (doors, platforms) for the mover, hands and feet placed on walls (IK on mesh rigs), walking on walls and ceilings,
   loading models during play, MikkTSpace tangents, clips from other files by joint name, a bridge from a mesh rig to
   `Skeleton` for foot IK and aim, `KHR_texture_transform`, transparency, morph targets, and GPU culling.
-- **Rendering a game can extend** (2026-10-10, in phases): the look is data (`RenderLook`) and the sun moves, with night;
-  transparency for mesh assets, passes a game adds, an orthographic lens, and rendering into an image come next. A low
+- **Rendering a game can extend** (2026-10-10, in phases): the look is data (`RenderLook`), the sun moves, with night,
+  and mesh assets' blended materials are drawn sorted per object; passes a game adds, an orthographic lens, and
+  rendering into an image come next. A low
   sun's shadow maps cost more (the starter's start view at 2560x1440: 0.15 ms at the engine's sun, 0.19 ms at 30
   degrees, 0.36 ms at 15, 0.40 ms at 5; their longer reach adds 0.01 to 0.03 ms of that); at night they cost 0.015 ms.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no

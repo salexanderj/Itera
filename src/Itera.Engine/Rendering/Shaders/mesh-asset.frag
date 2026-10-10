@@ -2,7 +2,8 @@
 
 // The mesh assets' surfaces (MeshAssetPass): glTF's base colour (the material's factor times its texture, the vertex
 // colour, and the draw's tint), compiled with MESH_ASSET_MASK for materials whose pixels below the alpha cutoff are not
-// drawn; the normal map tilting the normal the light meets (tangent space: x and y from the map, z rebuilt; both faces
+// drawn, and with MESH_ASSET_BLEND for blended ones (drawn over what is behind by their alpha, premultiplied, the faces
+// their draw shows alone: a two-sided one's back faces in one draw, then its front faces); the normal map tilting the normal the light meets (tangent space: x and y from the map, z rebuilt; both faces
 // of a two-sided material lit from their own side); the occlusion as the hollows that hide a surface from the sky; the
 // emission as the glow; then the light and the grade every surface of MeshPass takes (mesh-shade.glsl) with the
 // openness of flat ground. Metalness and roughness are not drawn yet.
@@ -20,10 +21,21 @@ layout(location = 2) in vec4 inTangent;
 layout(location = 3) in vec4 inUv;
 layout(location = 4) in vec4 inColour;
 layout(location = 5) flat in uvec2 inMaterialTint;
+#ifdef MESH_ASSET_BLEND
+layout(location = 6) flat in uint inSides;
+#endif
 layout(location = 0) out vec4 outColor;
 
 void main()
 {
+#ifdef MESH_ASSET_BLEND
+    // The faces this draw does not show: the whole primitive faces one way, so its 2x2 groups go together.
+    if ((inSides == MESH_ASSET_FRONT_ONLY && !gl_FrontFacing) || (inSides == MESH_ASSET_BACK_ONLY && gl_FrontFacing))
+    {
+        discard;
+    }
+#endif
+
     MeshAssetMaterial material = assetMaterials[inMaterialTint.x];
     // Every texture is read first, where all of a 2x2 group of pixels run (the mip level comes from their differences);
     // a reference to none reads white, alike for the whole draw.
@@ -69,5 +81,10 @@ void main()
     vec3 emission = material.emission * emissionSample.rgb;
     float glow = max(emission.r, max(emission.g, emission.b)) > 0.0 ? 1.0 : 0.0;
     vec3 shaded = shadeSurface(base.rgb, normal, lit, inOffset, OpennessFlat, cavity, emission, glow);
+#ifdef MESH_ASSET_BLEND
+    float alpha = clamp(base.a, 0.0, 1.0);
+    outColor = vec4(shaded * alpha, alpha);
+#else
     outColor = vec4(shaded, 1.0);
+#endif
 }

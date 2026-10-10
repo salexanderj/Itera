@@ -13,8 +13,9 @@ public readonly record struct YardPiece(string Asset, Vector3 Position, float Sc
 /// <summary>
 /// The sample's world, all built in code: a 60 m square of flat ground (a grey-green checker of 1 m squares), cubes of
 /// stone 1, 2, 3, and 4 m tall that the player climbs (their material <see cref="StoneMaterial"/>, tagged
-/// <see cref="Climbable"/>), and two ramps, of 20 and 40 degrees. Each piece is drawn as a mesh asset and collides as
-/// the same triangles (<c>MeshColliders</c>).
+/// <see cref="Climbable"/>), two ramps, of 20 and 40 degrees, a pane of glass, and two amber see-through cubes behind it
+/// as the start sees them (blended, two-sided materials: drawn back to front, the far faces through the near). Each
+/// piece is drawn as a mesh asset and collides as the same triangles (<c>MeshColliders</c>).
 /// </summary>
 public static class Yard
 {
@@ -22,6 +23,8 @@ public static class Yard
     public const string Block = "yard-block";
     public const string GentleRamp = "yard-ramp-20";
     public const string SteepRamp = "yard-ramp-40";
+    public const string Glass = "yard-glass";
+    public const string Amber = "yard-amber";
 
     /// <summary>The material the player climbs.</summary>
     public const string StoneMaterial = "stone";
@@ -33,7 +36,8 @@ public static class Yard
     public const float GroundHalfMetres = 30;
 
     /// <summary>
-    /// Where the pieces stand: the ground, the four blocks along the north, and the ramps to the west and east.
+    /// Where the pieces stand: the ground, the four blocks along the north, the ramps to the west and east, and the glass
+    /// pane before the start with the amber cubes beyond it.
     /// </summary>
     public static IReadOnlyList<YardPiece> Pieces { get; } =
     [
@@ -44,6 +48,9 @@ public static class Yard
         new(Block, new Vector3(5, 0, -10), 4),
         new(GentleRamp, new Vector3(-16, 0, -2)),
         new(SteepRamp, new Vector3(10, 0, 0)),
+        new(Glass, new Vector3(2, 0, 1)),
+        new(Amber, new Vector3(6, 0, -3)),
+        new(Amber, new Vector3(7.5f, 0, -2.5f)),
     ];
 
     /// <summary>The surface tags of each of the yard's materials: the stone's climbable.</summary>
@@ -57,6 +64,29 @@ public static class Yard
         assets.Add(Block, BlockMesh());
         assets.Add(GentleRamp, RampMesh(GentleRamp, 6, 3, 20));
         assets.Add(SteepRamp, RampMesh(SteepRamp, 4, 3, 40));
+        assets.Add(
+            Glass,
+            SeeThroughBox(Glass, "glass", new Vector3(3, 2.5f, 0.1f), new Vector4(0.55f, 0.75f, 0.85f, 0.3f))
+        );
+        assets.Add(Amber, SeeThroughBox(Amber, "amber", Vector3.One, new Vector4(0.9f, 0.55f, 0.15f, 0.5f)));
+    }
+
+    /// <summary>
+    /// A box from the origin to <paramref name="size"/> of a blended, two-sided material of <paramref name="colour"/> (its
+    /// alpha how much it covers what is behind).
+    /// </summary>
+    private static MeshAsset SeeThroughBox(string name, string material, Vector3 size, Vector4 colour)
+    {
+        var builder = new Builder();
+        builder.Box(Vector3.Zero, size);
+        var data = MeshMaterialData.Default with
+        {
+            Name = material,
+            BaseColour = colour,
+            AlphaMode = MeshAlphaMode.Blend,
+            DoubleSided = true,
+        };
+        return builder.Build(name, data, []);
     }
 
     /// <summary>The ground: one square at y = 0, its texture repeated every 2 m (a check a metre).</summary>

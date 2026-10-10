@@ -5,7 +5,8 @@
 // vertex is read from every asset's vertices at gl_VertexIndex (the command's vertex offset is its asset's first
 // vertex) plus the draw's vertexDelta (a posed instance's skinned copy, mesh-skin.comp), placed by the draw's transform (M * v), its normal turned by the transform's cofactor (right under any
 // scale), and projected as the world is (viewClip). Outputs: the offset from the camera, the normal, the tangent with
-// its bitangent's sign, both texture coordinates, the vertex colour, and the material and tint.
+// its bitangent's sign, both texture coordinates, the vertex colour, the material and tint, and (compiled with
+// MESH_ASSET_BLEND, for the blended pipeline) the faces a blended draw shows.
 #include "view.glsl"
 #include "mesh-asset-data.glsl"
 
@@ -15,6 +16,9 @@ layout(location = 2) out vec4 outTangent;
 layout(location = 3) out vec4 outUv;
 layout(location = 4) out vec4 outColour;
 layout(location = 5) flat out uvec2 outMaterialTint;
+#ifdef MESH_ASSET_BLEND
+layout(location = 6) flat out uint outSides;
+#endif
 
 void main()
 {
@@ -31,5 +35,8 @@ void main()
     outUv = vec4(vertex.uv, unpackHalf2x16(vertex.uv1));
     outColour = unpackUnorm4x8(vertex.colour);
     outMaterialTint = uvec2(draw.material, draw.tint);
+#ifdef MESH_ASSET_BLEND
+    outSides = draw.sides;
+#endif
     gl_Position = viewClip(offset);
 }
