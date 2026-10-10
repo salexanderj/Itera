@@ -1,3 +1,4 @@
+using System.Numerics;
 using Itera.Engine.Commands;
 using Itera.Engine.Diagnostics;
 using Itera.Engine.Input;
@@ -367,6 +368,61 @@ public sealed class EngineCommandsTests : IDisposable
         Run("time off");
         Assert.Null(_view.SunOverride);
         Assert.Equal(ViewConstants.DefaultSunDirection, _view.DrawnSun);
+    }
+
+    /// <summary>
+    /// <c>lens ortho</c> draws the run's camera through an orthographic lens in place of its own (the view distance each way
+    /// unless given), and off gives the camera's own back; a size or depths that cannot be drawn change nothing.
+    /// </summary>
+    [Fact]
+    public void Lens_sets_an_orthographic_lens_for_the_run_and_off_gives_the_cameras_own_back()
+    {
+        var camera = CameraView.Default with
+        {
+            Position = new Vector3(3, 40, -7),
+            Orientation = Quaternion.CreateFromYawPitchRoll(0.3f, -1.2f, 0),
+        };
+        _view.SetCamera(in camera);
+        Run("lens");
+        Assert.Equal("lens perspective, 90 degrees high, near 0.05 m (the camera's)", Last());
+
+        Run("lens ortho 64");
+        Assert.Equal(
+            "lens orthographic, 64 m high, from the view distance behind to the view distance ahead along the view (set for this run)",
+            Last()
+        );
+        Assert.True(_view.DrawnCamera.Orthographic);
+        Assert.Equal(64, _view.DrawnCamera.HeightMetres);
+        Assert.Equal(camera.Position, _view.DrawnCamera.Position);
+        Assert.Equal(camera.Orientation, _view.DrawnCamera.Orientation);
+
+        Run("lens ortho 120 -50 75.5");
+        Assert.Equal("lens orthographic, 120 m high, from -50 m to 75.5 m along the view (set for this run)", Last());
+        Assert.Equal((-50f, 75.5f), (_view.DrawnCamera.NearMetres, _view.DrawnCamera.FarMetres));
+
+        foreach (
+            var line in (string[])
+                [
+                    "lens ortho",
+                    "lens ortho 0",
+                    "lens ortho -3",
+                    "lens ortho nan",
+                    "lens ortho 10 5 5",
+                    "lens ortho 10 1",
+                    "lens wide",
+                ]
+        )
+        {
+            Run(line);
+            Assert.StartsWith("usage: ", Last(), StringComparison.Ordinal);
+        }
+
+        Assert.Equal(120, _view.DrawnCamera.HeightMetres);
+        Run("lens off");
+        Assert.Equal("lens perspective, 90 degrees high, near 0.05 m (the camera's)", Last());
+        Assert.Null(_view.LensOverride);
+        Assert.Equal(camera, _view.DrawnCamera);
+        Assert.False(_view.DrawnCamera.Orthographic);
     }
 
     [Theory]

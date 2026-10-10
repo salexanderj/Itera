@@ -122,6 +122,155 @@ public sealed class ViewConstantsTests(CompiledShaders compiler) : IClassFixture
     }
 
     [Fact]
+    public void A_perspective_lens_draws_from_its_own_near_plane_with_no_far_one()
+    {
+        var camera = CameraView.Default with { NearMetres = 0.2f };
+
+        var view = ViewConstants.Create(
+            in camera,
+            1600,
+            900,
+            0,
+            Vector3.UnitY,
+            Atmosphere.Clear(Vector3.One),
+            256,
+            true
+        );
+
+        Assert.False(view.Orthographic);
+        Assert.Equal((0.2f, 0f), (view.Near, view.Far));
+        // view.glsl's viewClip and viewDepthOf: the near distance over the depth, and back.
+        var clip = view.Clip(new Vector3(1, 2, -8));
+        Assert.Equal(8f, clip.W, 5);
+        Assert.Equal(0.2f / 8, clip.Z / clip.W, 6);
+        Assert.Equal(8f, view.DepthOf(clip.Z / clip.W), 4);
+    }
+
+    [Fact]
+    public void An_orthographic_lens_gives_half_its_size_in_metres_and_depth_falling_evenly_from_near_to_far()
+    {
+        var camera = CameraView.Default with
+        {
+            Position = new Vector3(5, 20, -3),
+            Projection = CameraProjection.Orthographic,
+            HeightMetres = 64,
+            NearMetres = -100,
+            FarMetres = 150,
+        };
+
+        var view = ViewConstants.Create(
+            in camera,
+            1600,
+            900,
+            0,
+            Vector3.UnitY,
+            Atmosphere.Clear(Vector3.One),
+            256,
+            true
+        );
+
+        Assert.True(view.Orthographic);
+        Assert.Equal(ViewSwitches.Shadows | ViewSwitches.Orthographic, view.Switches);
+        AssertClose(Vector3.UnitY * 32, view.Up);
+        AssertClose(Vector3.UnitX * (32 * 1600f / 900f), view.Right);
+        Assert.Equal((-100f, 150f), (view.Near, view.Far));
+        // The image's top-right corner at any depth is (1, 1); the depth stored is 1 at the near end, 0 at the far one,
+        // and 0.8 at 50 m behind the middle.
+        var corner = view.Clip(view.Right + view.Up - 50 * view.Forward);
+        Assert.Equal(1f, corner.W);
+        Assert.Equal(1f, corner.X, 5);
+        Assert.Equal(1f, corner.Y, 5);
+        Assert.Equal(0.8f, corner.Z, 6);
+        Assert.Equal(-50f, view.DepthOf(corner.Z), 3);
+        Assert.Equal(1f, view.Clip(-100 * view.Forward).Z, 6);
+        Assert.Equal(0f, view.Clip(150 * view.Forward).Z, 6);
+    }
+
+    [Fact]
+    public void A_lens_that_cannot_be_drawn_gives_way()
+    {
+        var air = Atmosphere.Clear(Vector3.One);
+        var perspective = CameraView.Default with { NearMetres = 0 };
+        var orthographic = CameraView.Default with
+        {
+            Projection = CameraProjection.Orthographic,
+            HeightMetres = 0,
+            NearMetres = float.NaN,
+            FarMetres = float.NaN,
+        };
+        var inverted = orthographic with { HeightMetres = 10, NearMetres = 10, FarMetres = 5 };
+
+        var near = ViewConstants.Create(in perspective, 100, 100, 0, Vector3.UnitY, in air, 256, false);
+        var box = ViewConstants.Create(in orthographic, 100, 100, 0, Vector3.UnitY, in air, 256, false);
+        var turned = ViewConstants.Create(in inverted, 100, 100, 0, Vector3.UnitY, in air, 256, false);
+
+        Assert.Equal(ViewConstants.DefaultNearMetres, near.Near);
+        Assert.Equal(0.5f, box.Up.Length(), 5);
+        Assert.Equal((-256f, 256f), (box.Near, box.Far));
+        Assert.Equal((10f, 266f), (turned.Near, turned.Far));
+
+        // Too far or too large for a float's depths: kept within MostLensMetres, the far still past the near.
+        var huge = orthographic with
+        {
+            HeightMetres = 1e38f,
+            NearMetres = 3e9f,
+            FarMetres = float.NaN,
+        };
+        var bounded = ViewConstants.Create(in huge, 100, 100, 0, Vector3.UnitY, in air, 256, false);
+        Assert.Equal(ViewConstants.MostLensMetres / 2, bounded.Up.Length(), 0);
+        Assert.Equal((ViewConstants.MostLensMetres - 1, ViewConstants.MostLensMetres), (bounded.Near, bounded.Far));
+        Assert.True(float.IsFinite(bounded.Clip(Vector3.Zero).Z));
+
+        // A field of view that cannot be drawn is 90 degrees.
+        foreach (var field in (float[])[0, -1, MathF.PI, float.NaN])
+        {
+            var wide = ViewConstants.Create(
+                CameraView.Default with
+                {
+                    VerticalFovRadians = field,
+                },
+                100,
+                100,
+                0,
+                Vector3.UnitY,
+                in air,
+                256,
+                false
+            );
+            Assert.Equal(1f, wide.Up.Length(), 5);
+        }
+    }
+
+    /// <summary>
+    /// The shaders project and read depth back as <see cref="ViewConstants.Clip"/> and <see cref="ViewConstants.DepthOf"/>
+    /// do (view.glsl, and particle-simulate.comp's own copy over its push constants): the tests of those two stand for
+    /// the shaders only while their formulas are the same.
+    /// </summary>
+    [Fact]
+    public void The_shaders_project_and_read_depth_as_the_constants_do()
+    {
+        var view = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders", "view.glsl"));
+        var particles = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders", "particle-simulate.comp"));
+
+        Assert.Contains(
+            "return vec4(x, y, (view.far - depth) / (view.far - view.near), 1.0);",
+            view,
+            StringComparison.Ordinal
+        );
+        Assert.Contains("return vec4(x, y, view.near, depth);", view, StringComparison.Ordinal);
+        Assert.Contains(
+            "return viewOrthographic() ? view.far - stored * (view.far - view.near) : view.near / stored;",
+            view,
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "return orthographic() ? push.far - stored * (push.far - push.near) : push.near / stored;",
+            particles,
+            StringComparison.Ordinal
+        );
+    }
+
+    [Fact]
     public void The_shaders_name_the_same_switch_bits()
     {
         var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders", "view.glsl"));

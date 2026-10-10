@@ -1,26 +1,71 @@
 using System.Numerics;
+using Itera.Engine.Components;
 using Itera.Engine.Rendering.GpuData;
 using Microsoft.Extensions.Options;
 
 namespace Itera.Engine.Rendering;
 
+/// <summary>How a camera projects what it sees onto the image.</summary>
+public enum CameraProjection
+{
+    /// <summary>Rays from the eye through the image, spread by the field of view: nearer is larger.</summary>
+    Perspective,
+
+    /// <summary>
+    /// Parallel rays along the view, the image a fixed size in metres: the same size at any depth (a map, an
+    /// overhead view). The camera's position is the middle of what it shows.
+    /// </summary>
+    Orthographic,
+}
+
 /// <summary>
 /// Where a frame is seen from, in metres. The camera looks along -Z of <paramref name="Orientation"/> with +Y up and +X
 /// right (right-handed, as <see cref="Matrix4x4.CreateLookAt"/>).
 /// </summary>
-/// <param name="Position">Eye position in world metres.</param>
+/// <param name="Position">
+/// Eye position in world metres; for an orthographic view, the middle of what it shows, from which its fog, the
+/// terrain's levels, and its lights are measured as a perspective view's are from the eye.
+/// </param>
 /// <param name="Orientation">Rotation from camera space to world space.</param>
-/// <param name="VerticalFovRadians">Vertical field of view.</param>
-/// <param name="NearMetres">Distance to the near plane.</param>
+/// <param name="VerticalFovRadians">Vertical field of view (perspective).</param>
+/// <param name="NearMetres">
+/// Distance to the near plane along the view; nothing nearer is drawn. Perspective: above 0. Orthographic: where its box
+/// starts, behind the position when negative.
+/// </param>
+/// <param name="Projection">Perspective, or orthographic.</param>
+/// <param name="HeightMetres">The image's height in metres (orthographic); its width follows the aspect ratio.</param>
+/// <param name="FarMetres">
+/// Where an orthographic view's box ends along the view; nothing farther is drawn. A perspective view has no far plane:
+/// it reaches the view distance.
+/// </param>
 public readonly record struct CameraView(
     Vector3 Position,
     Quaternion Orientation,
     float VerticalFovRadians,
-    float NearMetres
+    float NearMetres,
+    CameraProjection Projection = CameraProjection.Perspective,
+    float HeightMetres = 0,
+    float FarMetres = 0
 )
 {
     /// <summary>At the origin, looking along -Z, 90 degrees, near plane at 5 cm. Used until a camera system sets one.</summary>
-    public static CameraView Default => new(Vector3.Zero, Quaternion.Identity, MathF.PI / 2, 0.05f);
+    public static CameraView Default =>
+        new(Vector3.Zero, Quaternion.Identity, MathF.PI / 2, ViewConstants.DefaultNearMetres);
+
+    /// <summary>True for an orthographic view.</summary>
+    public bool Orthographic => Projection == CameraProjection.Orthographic;
+
+    /// <summary>This view seen through <paramref name="lens"/> instead of its own lens: its place and turn kept.</summary>
+    public CameraView Through(in CameraLens lens) =>
+        new(
+            Position,
+            Orientation,
+            lens.VerticalFovRadians,
+            lens.NearMetres,
+            lens.Projection,
+            lens.HeightMetres,
+            lens.FarMetres
+        );
 
     /// <summary>The direction the camera looks.</summary>
     public Vector3 Forward => Vector3.Transform(-Vector3.UnitZ, Orientation);
@@ -69,8 +114,14 @@ public sealed class RenderView
         ScreenDim = 0;
     }
 
-    /// <summary>The camera the next frame is drawn from.</summary>
+    /// <summary>The camera the next frame is drawn from, as a frame system set it; it is drawn as <see cref="DrawnCamera"/>.</summary>
     public CameraView Camera { get; private set; } = CameraView.Default;
+
+    /// <summary>The console's <c>lens</c>: a lens for the run in place of the camera's own, or null.</summary>
+    public CameraLens? LensOverride { get; set; }
+
+    /// <summary>The camera the next frame is drawn from: <see cref="Camera"/>, through <see cref="LensOverride"/> when set.</summary>
+    public CameraView DrawnCamera => LensOverride is { } lens ? Camera.Through(in lens) : Camera;
 
     /// <summary>
     /// The debug views drawn for the rest of the run (the console's <c>view</c> and <c>materials</c>; not saved):

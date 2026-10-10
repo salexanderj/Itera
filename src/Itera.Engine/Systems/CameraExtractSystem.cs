@@ -12,8 +12,8 @@ namespace Itera.Engine.Systems;
 /// <summary>
 /// Hands the <see cref="ActiveCamera"/> to the renderer (<see cref="RenderView"/>) (frame group, registered after every
 /// system that moves the camera, so it sees the frame's final pose). Reads <see cref="CameraPose"/> and
-/// <see cref="CameraLens"/>; writes no components. With the player's settings it draws with their field of view instead
-/// of the lens's.
+/// <see cref="CameraLens"/>; writes no components. With the player's settings a perspective lens draws with their field of
+/// view instead of its own; an orthographic lens keeps its size.
 /// </summary>
 public sealed class CameraExtractSystem : BaseSystem<World, FrameTime>, IFrameUpdateSystem
 {
@@ -56,7 +56,10 @@ public sealed class CameraExtractSystem : BaseSystem<World, FrameTime>, IFrameUp
             pose.Position,
             Quaternion.CreateFromYawPitchRoll(pose.Yaw, pose.Pitch, 0),
             lens.VerticalFovRadians,
-            lens.NearMetres
+            lens.NearMetres,
+            lens.Projection,
+            lens.HeightMetres,
+            lens.FarMetres
         );
 
     private struct Extract : IForEach<CameraPose, CameraLens>
@@ -71,8 +74,11 @@ public sealed class CameraExtractSystem : BaseSystem<World, FrameTime>, IFrameUp
         {
             // There is one active camera; if a bug made several, the last one visited wins.
             View = ToView(in pose, in lens);
-            var field = FieldOfView > 0 ? FieldOfView : lens.VerticalFovRadians;
-            View = new CameraView(pose.Position, View.Orientation, field, lens.NearMetres);
+            if (FieldOfView > 0 && !View.Orthographic)
+            {
+                View = View with { VerticalFovRadians = FieldOfView };
+            }
+
             Found = true;
         }
     }

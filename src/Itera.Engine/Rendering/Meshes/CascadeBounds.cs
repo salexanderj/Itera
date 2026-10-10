@@ -24,14 +24,15 @@ public sealed class CascadeBounds
     /// <summary>
     /// Takes the cascade's fit, <paramref name="mapTexels"/> wide, and its slice of the view, between
     /// <paramref name="nearMetres"/> and <paramref name="farMetres"/> of view depth, bounded by the frustum's
-    /// <paramref name="sidePlanes"/> through <paramref name="position"/>.
+    /// <paramref name="sidePlanes"/> (inward normals, and the dot product a point on each has with it, relative to
+    /// <paramref name="position"/>).
     /// </summary>
     internal void Set(
         in CascadeFit fit,
         int mapTexels,
         Vector3 position,
         Vector3 forward,
-        ReadOnlySpan<Vector3> sidePlanes,
+        ReadOnlySpan<Vector4> sidePlanes,
         float nearMetres,
         float farMetres,
         Vector3 sun
@@ -46,7 +47,7 @@ public sealed class CascadeBounds
         _planeCount = 0;
         foreach (var plane in sidePlanes)
         {
-            Keep(plane, 0, sun);
+            Keep(new Vector3(plane.X, plane.Y, plane.Z), plane.W, sun);
         }
 
         Keep(forward, nearMetres, sun);

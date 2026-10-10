@@ -51,7 +51,8 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   `DebugFlyCameraSystem` flies it while the player flies (`flyspeed`; with `Engine:Voxels:DebugWalkSpeed` above 0 it
   flies a 100 m circle `Engine:Camera:CircleHeightMetres` up, which must clear the game's hills), kept to the play
   area (`PlayArea`: the world and 1 km round it); it too reads nothing while `PlayerInputBlock.Blocked`. `CameraExtractSystem` hands
-  the camera to the renderer, `AtmosphereSystem` the sky and the look (`RenderLook`) from a game's
+  the camera to the renderer with its lens (`CameraLens`: perspective, drawn at the player's field of view, or
+  orthographic, `CameraLens.Orthographic`, drawn as it is; `.claude/rules/rendering.md`), `AtmosphereSystem` the sky and the look (`RenderLook`) from a game's
   `IAtmosphereSource`.
 - `ToolAim` (static) gives where the local player aims from and along, and the first voxel a tool's ray meets past
   passable voxels.

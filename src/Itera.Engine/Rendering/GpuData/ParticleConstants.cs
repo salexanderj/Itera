@@ -4,7 +4,7 @@ namespace Itera.Engine.Rendering.GpuData;
 
 /// <summary>
 /// The push constants of the particle compute passes (<c>particle-spawn.comp</c> and <c>particle-simulate.comp</c>,
-/// <c>layout(push_constant, scalar)</c>). They do not push <see cref="ViewConstants"/>, which takes 108 of the
+/// <c>layout(push_constant, scalar)</c>). They do not push <see cref="ViewConstants"/>, which takes 116 of the
 /// 128 bytes every device must allow. Built by the main thread (<c>ParticlePass.Write</c>) and pushed by the render
 /// thread. Field order and types match the GLSL block; <c>ParticlePassTests</c> checks them.
 /// </summary>
@@ -57,4 +57,19 @@ public struct ParticleConstants
 
     /// <summary>Height of the drawn image, pixels.</summary>
     public uint Height;
+
+    /// <summary>
+    /// Where the view's drawn depth starts along it (<see cref="ViewConstants.Near"/>): the depth image's reverse depth is
+    /// it over the distance along the view, or orthographically falls evenly from it to <see cref="Far"/>.
+    /// </summary>
+    public float Near;
+
+    /// <summary>Where an orthographic view's box ends along the view (<see cref="ViewConstants.Far"/>); 0 for perspective.</summary>
+    public float Far;
+
+    /// <summary>
+    /// 1 for an orthographic view (<see cref="ViewSwitches.Orthographic"/>): <see cref="Right"/> and <see cref="Up"/> are
+    /// the image's half width and half height in metres, and its rays run along <see cref="Forward"/>.
+    /// </summary>
+    public uint Orthographic;
 }

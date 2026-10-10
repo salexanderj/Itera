@@ -87,6 +87,26 @@ strength). While the sun moves, `MeshView` carries the maps' image axis from fra
 that never moved keeps the fit's own axis, as before, and a match's end forgets the sun (`MeshView.ForgetSun`). The
 particles' sunlight fades with the daylight too (`LookConstants.Daylight`).
 
+The camera's lens (`CameraLens`, the active camera's component, which `CameraExtractSystem` passes on in `CameraView`)
+is perspective: its vertical field of view (the player's setting draws in its place) from its near plane on
+(`ViewConstants.Near`, 5 cm for the engine's cameras; no far plane: the world reaches the view distance); or
+orthographic (`CameraLens.Orthographic`, `ViewSwitches.Orthographic`): an image `HeightMetres` high (its width by the
+aspect ratio) of parallel rays along the view, round the camera's position, which is the middle of what it shows, from
+its near to its far along the view (`ViewConstants.Near` and `Far`; negative is behind the position). Every pass
+projects through `view.glsl`'s `viewClip` (orthographic: w 1 and the depth falling evenly from 1 at the near end to 0 at
+the far one; `viewDepthOf` reads a stored depth back; `ViewConstants.Clip` and `DepthOf` mirror them on the CPU), and
+asks `view.glsl` for what else differs: the sky's ray (`viewRay`, the view's direction at every pixel), the ray that
+meets a point (`viewRayTo`: the fog's sky colour behind it, what faces the viewer), and the depth that chooses a shadow
+cascade (`viewCascadeDepth`). An orthographic view is measured from its middle as a perspective view is from its eye:
+its fog, the terrain's levels, the lights gathered and its light clusters (even slices across the 96 m round it), and
+its two shadow cascades, which lie round it both ways along the view, within its box, chosen by how far before or
+behind it a point lies (`MeshView`'s slices; `ShadowCascades.Fit` with a box's corners). `MeshView` culls to its box
+(parallel side planes) and sorts nearest first by depth (`NearFirstKey`: the world's camera commands, and the blended
+mesh assets back to front); the particles read its depth image and are culled to its box (`ParticleConstants`' near,
+far, and projection). The console's run-only `lens ortho HEIGHT [NEAR FAR]` draws the camera through an orthographic
+lens (`RenderView.LensOverride` and `DrawnCamera`; by default the view distance each way), and `lens off` through its
+own.
+
 Without a window (`Engine:Window:Mode=Offscreen`, `WindowService.Offscreen`) the surface is headless
 (`HeadlessSurfaceSource`, `VK_EXT_headless_surface`; `WindowSurfaceSource` wraps GLFW's for a window: `ISurfaceSource`,
 `SurfaceSource.cs`). Mesa's headless surface offers only UNORM formats, so where the device has
@@ -401,7 +421,7 @@ the control port's `gpu` reply (`Game NAME`). The mesh sample's `AimHighlightPas
   `Game/` of the shader tree is the game's (`ShaderCompiler.GameFolder`); the engine's shaders use no folder of that name.
 
 - Structs that shaders read use GLSL `layout(scalar)` and have a `GpuLayout` test. Matrices go to
-  the GPU unchanged and are used as `M * v` in GLSL. The view's push constants (`ViewConstants`) are 108 of the 128 bytes
+  the GPU unchanged and are used as `M * v` in GLSL. The view's push constants (`ViewConstants`) are 116 of the 128 bytes
   the spec guarantees; its on/off switches share one word's bits (`ViewSwitches`, `viewSwitch` in view.glsl, which
   `ViewConstantsTests` checks), so a new switch takes a bit there. Details in the `ecs-vulkan` skill.
 

@@ -139,10 +139,10 @@ Rules:
 | `Time/` | `GameClock` (clamped frame delta), `FixedStepAccumulator` (60 Hz steps, capped per frame) |
 | `Windowing/` | `WindowService`: creates the GLFW window, pumps events, exposes framebuffer size, refresh rate, and exit request |
 | `Input/` | `InputService` (collects key, button, movement, and scroll events into one `InputSnapshot` per frame and one per fixed step), `InputAccumulator`, `PointerCapture` (a left click locks the pointer for mouse look; Escape goes to the menu at once and frees it), `IPanelInput` (a panel that takes the free pointer), `IKeyboardFocus` (the console takes the keys while open), `IMenuInput` and `UiPointer` (the menu), `KeyBindings`, `KeyAction`, and `InputBinding` (the actions a game registers and the Settings page's rebinding), `ITickInput` and `IFrameInput` (what fixed and frame systems read) |
-| `Rendering/` | `VulkanContext`, `DeviceRequirements`, `VulkanSwapchain`, `SwapchainState`, `FrameSync`, `FrameRenderer` (fence wait, acquire, barriers, recording the passes, submit, present, recreate), `GpuTimer`, `CameraView` and `RenderView` (the camera and atmosphere of the frame being built), `Atmosphere`, `RenderThread`, `FrameExchange` (hands each frame from the main thread to the render thread), `DebugLines` and `DebugLinePass`, `UiPass`, `RenderScale` and `UpscalePass`, `SmaaPass` and `SmaaTextures`, `FrameImages`, `DynamicRenderScale`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`, `ScreenshotEncoder`, `DepthTarget`, `ShadowCascades`, `IWorldOnGpu`, `ModelInstances` (the models frame systems ask to draw this frame, each with its `ModelShadow`), `MeshInstances` (the mesh assets they ask to draw, and the posed ones' skinning matrices), `PointLights` (event lights), `RenderPasses` (a game's own passes, `IRenderPass`, at five stages of the frame) |
+| `Rendering/` | `VulkanContext`, `DeviceRequirements`, `VulkanSwapchain`, `SwapchainState`, `FrameSync`, `FrameRenderer` (fence wait, acquire, barriers, recording the passes, submit, present, recreate), `GpuTimer`, `CameraView` (with its `CameraProjection`) and `RenderView` (the camera, its lens, and the atmosphere of the frame being built), `Atmosphere`, `RenderThread`, `FrameExchange` (hands each frame from the main thread to the render thread), `DebugLines` and `DebugLinePass`, `UiPass`, `RenderScale` and `UpscalePass`, `SmaaPass` and `SmaaTextures`, `FrameImages`, `DynamicRenderScale`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`, `ScreenshotEncoder`, `DepthTarget`, `ShadowCascades`, `IWorldOnGpu`, `ModelInstances` (the models frame systems ask to draw this frame, each with its `ModelShadow`), `MeshInstances` (the mesh assets they ask to draw, and the posed ones' skinning matrices), `PointLights` (event lights), `RenderPasses` (a game's own passes, `IRenderPass`, at five stages of the frame) |
 | `Rendering/Memory/` | `GpuMemoryAllocator` (own block sub-allocator: 64 MB blocks, dedicated allocations for large resources, persistent mapping, flush and invalidate), `MemoryTypeSelector`, `BlockSuballocator`, `GpuBuffer`, `GpuImage`, `StagingBuffer` (one upload region per frame slot), `GpuRangeHeap` (first-fit ranges of 256-byte granules in one buffer, for the mesh heap) |
 | `Rendering/Pipelines/` | `PipelineFactory`: shader modules, pipeline layouts with push constants, full-screen, line, and triangle graphics pipelines without vertex input (the mesh shaders read their vertices from storage buffers) for dynamic rendering, and compute pipelines |
-| `Rendering/GpuData/` | Structs that shaders read, each with a `GpuLayout` test: `ViewConstants` (camera vectors, sun, sky, frame slot, view distance, image size, switches; push constants, 108 bytes), `MeshVertex`, `MeshDraw`, `MeshModelDraw`, `MeshMaterial`, `MeshLighting` and `MeshLight`, the mesh assets' `MeshAssetVertex`, `MeshAssetDraw`, `MeshAssetMaterial`, `MeshSkinVertex`, `MeshSkinGroup`, and `MeshSkinConstants`, the passes' constants (`SmaaConstants`, `UiConstants`, `UpscaleConstants`, `LoadingConstants`, `ParticleConstants`), the particles' records, and `DebugLineVertex` |
+| `Rendering/GpuData/` | Structs that shaders read, each with a `GpuLayout` test: `ViewConstants` (camera vectors, sun, sky, frame slot, view distance, image size, switches, near and far; push constants, 116 bytes), `MeshVertex`, `MeshDraw`, `MeshModelDraw`, `MeshMaterial`, `MeshLighting` and `MeshLight`, the mesh assets' `MeshAssetVertex`, `MeshAssetDraw`, `MeshAssetMaterial`, `MeshSkinVertex`, `MeshSkinGroup`, and `MeshSkinConstants`, the passes' constants (`SmaaConstants`, `UiConstants`, `UpscaleConstants`, `LoadingConstants`, `ParticleConstants`), the particles' records, and `DebugLineVertex` |
 | `Rendering/Voxels/` | `IVoxelPalette` and `VoxelLook` (how each material is drawn), `IVoxelTintMap` (a 256 x 256 map over the world that blends each material from its colour to its tint colour) and `VoxelTintSampler` (reads it on the CPU as the shader does), `StagingWriter` |
 | `Rendering/Materials/` | `MaterialTextureSets` and `DdsFile`: the materials' texture sets read at start into texture arrays |
 | `Rendering/Meshes/` | `WorldMeshes` (the world and the models as triangle meshes; partial files for the draws, the models, the point lights, the sky field, and the stitches between levels), `MeshWorkers` (the threads that mesh), `MeshColumn`, `LevelBalance`, `MeshPass` (the mesh heap, the frame's buffers, the shadow maps, the multisampled images, the recording), `MeshView` (the frame's frustum, the cascades' fit with `CascadeBounds`, and the point lights, shared by every list drawn in `MeshPass`), `MeshFrame`, `SkyField`, the mesh assets' `MeshAssetPass` (their buffers, textures, set 1, pipelines, and skinning), `MeshAssetLayout`, `MeshAssetDraws`, and `MeshAssetFrame`, and the interfaces that tests replace (`IMeshDrawTarget` and `IStagingRegions` (`IMeshTargets.cs`)) |
@@ -593,6 +593,16 @@ engine's and include its `view.glsl`. Each pass is timed apart (the `gpu` reply,
 stats line's `game passes`. The mesh sample's aim highlight is the example: a frame system finds the block the player
 aims at, and its pass draws a glow round it at the `Transparent` stage.
 
+### A camera's lens
+
+The active camera's `CameraLens` is perspective (a vertical field of view from a near plane on) or orthographic (an
+image a height in metres across, of parallel rays, between a near and a far along the view). An orthographic camera's
+position is the middle of what it shows, and its near may lie behind it, so everything measured from a perspective
+view's eye is measured from that middle: the fog, the terrain's levels, the lights and their clusters, and the two
+shadow cascades, which then lie round it both ways along the view. The shaders take what differs from `view.glsl`
+(the projection, the sky's and fog's rays, the cascade's depth); `MeshView` culls to the view's box and sorts by depth.
+The console's `lens ortho HEIGHT` shows any view orthographically for a run.
+
 ## 7. The engine's components and systems
 
 `src/Itera.Engine/Components/` and `src/Itera.Engine/Systems/` hold what most games on a voxel world need. The engine
@@ -602,8 +612,8 @@ and `Alpha`, how far the frame lies between the last two steps). Components are 
 
 **Components.**
 
-- Cameras: `CameraPose` (position, yaw, pitch), `CameraLens`, `FlyCamera`, and the tag `ActiveCamera` (exactly one
-  entity has it).
+- Cameras: `CameraPose` (position, yaw, pitch), `CameraLens` (perspective or orthographic), `FlyCamera`, and the tag
+  `ActiveCamera` (exactly one entity has it).
 - Characters and players: the tags `LocalPlayer` (the player this machine's input controls), `RemotePlayer` (a peer's
   player, drawn from the states it sends), and `Bodiless` (no body for now: it does not move, push, or take a stand-in);
   `PlayerCommand` (movement, look, `PlayerButtons`, and `Actions`, the game's own button bits, which the engine never
@@ -1337,8 +1347,8 @@ Engine work that is known and not done:
   loading models during play, MikkTSpace tangents, clips from other files by joint name, a bridge from a mesh rig to
   `Skeleton` for foot IK and aim, `KHR_texture_transform`, transparency, morph targets, and GPU culling.
 - **Rendering a game can extend** (2026-10-10, in phases): the look is data (`RenderLook`), the sun moves, with night,
-  mesh assets' blended materials are drawn sorted per object, and a game adds passes of its own at five stages
-  (`IRenderPass`); an orthographic lens and rendering into an image come next. A low
+  mesh assets' blended materials are drawn sorted per object, a game adds passes of its own at five stages
+  (`IRenderPass`), and a camera's lens may be orthographic; rendering into an image comes next. A low
   sun's shadow maps cost more (the starter's start view at 2560x1440: 0.15 ms at the engine's sun, 0.19 ms at 30
   degrees, 0.36 ms at 15, 0.40 ms at 5; their longer reach adds 0.01 to 0.03 ms of that); at night they cost 0.015 ms.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no

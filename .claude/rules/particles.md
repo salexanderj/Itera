@@ -16,7 +16,8 @@ by name (`ParticleRecipes`, registered once a run; `StockEffects` registers seve
 the world's pass, in frames that draw the world (under the loading screen they wait). They meet the world through the
 camera's depth image (`DepthTarget`, handed to the compute pass and back): a particle that moves to just behind what
 the image shows (0.3 m and its step) bounces off that surface, sticks, or dies as its recipe says, with the surface's
-slope from the neighbouring depths; off the image, behind something, or within 0.6 m of the camera it meets nothing, and a resting particle falls again where the image shows its support gone. A lit particle in
+slope from the neighbouring depths; off the image, behind something, or within 0.6 m of the camera (an orthographic
+view's: outside its box) it meets nothing, and a resting particle falls again where the image shows its support gone. A lit particle in
 view takes its sunlight from the shadow cascades and its sky light from the sky field (`mesh-light.glsl`, with
 `MeshPass`'s set bound as set 1), eased halfway each frame, into two bytes of its record. Lit cubes and soft sprites are
 drawn after the world, each by one indirect draw. The pool (262,144 by default) is a ring that overwrites

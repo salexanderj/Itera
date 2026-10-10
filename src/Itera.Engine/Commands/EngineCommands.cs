@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using Itera.Engine.Components;
 using Itera.Engine.Matches;
 using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.GpuData;
@@ -14,7 +15,8 @@ namespace Itera.Engine.Commands;
 /// <summary>
 /// The engine's console commands, all <see cref="CommandScope.Local"/>: <c>help</c>, <c>clear</c>, <c>lines</c>,
 /// <c>shadows</c>, <c>scale</c> (the render scale), <c>aa</c>, <c>lights</c> (test lights), <c>view</c> (the debug views),
-/// <c>materials</c>, <c>look</c> (the look's values), <c>sun</c> and <c>time</c> (the run's sun), <c>stats</c> (its key,
+/// <c>materials</c>, <c>look</c> (the look's values), <c>sun</c> and <c>time</c> (the run's sun), <c>lens</c> (the run's
+/// camera lens), <c>stats</c> (its key,
 /// F1 by default),
 /// <c>screenshot</c>, <c>wait</c> (holds a script: <see cref="DevConsole.Hold"/>), <c>shaders</c>, and <c>quit</c>. A setting given no value prints what it is. <c>shadows</c>
 /// changes the player's settings (<see cref="PlayerSettings"/>), as the menu does, so the next change of another
@@ -151,6 +153,13 @@ public sealed class EngineCommands
             "The sun for this run at a time of a test day (not saved): sunrise at 06:00, the engine's sun at 12:00, sunset at 18:00, night between; off gives the game's back.",
             CommandScope.Local,
             Time
+        );
+        _commands.Register(
+            "lens",
+            "[ortho HEIGHT [NEAR FAR]|off]",
+            "The camera's lens for this run (not saved): orthographic, an image HEIGHT metres high round the camera (the middle of what it shows), from NEAR to FAR metres along the view (negative: behind it; by default the view distance each way), in place of the camera's own; off gives the camera's own back.",
+            CommandScope.Local,
+            Lens
         );
         _commands.Register(
             "stats",
@@ -588,6 +597,73 @@ public sealed class EngineCommands
         }
 
         context.Print(DescribeSun());
+    }
+
+    /// <summary>The camera's lens for the run (<see cref="RenderView.LensOverride"/>): orthographic, or the camera's own again.</summary>
+    private void Lens(CommandContext context)
+    {
+        if (context.Count == 1 && context.Is(0, "off"))
+        {
+            _view.LensOverride = null;
+        }
+        else if (context.Count is 2 or 4 && context.Is(0, "ortho"))
+        {
+            var near = float.NaN;
+            var far = float.NaN;
+            if (
+                !context.TryGetFloat(1, out var height)
+                || !float.IsFinite(height)
+                || height <= 0
+                || (
+                    context.Count == 4
+                    && (
+                        !context.TryGetFloat(2, out near)
+                        || !context.TryGetFloat(3, out far)
+                        || !float.IsFinite(near)
+                        || !float.IsFinite(far)
+                        || far <= near
+                    )
+                )
+            )
+            {
+                context.PrintUsage();
+                return;
+            }
+
+            _view.LensOverride = CameraLens.Orthographic(height, near, far);
+        }
+        else if (context.Count != 0)
+        {
+            context.PrintUsage();
+            return;
+        }
+
+        context.Print(DescribeLens());
+    }
+
+    /// <summary>The lens as <c>lens</c> prints it: its projection, its size, its depths, and whose it is.</summary>
+    private string DescribeLens()
+    {
+        var camera = _view.DrawnCamera;
+        var whose = _view.LensOverride is null ? "the camera's" : "set for this run";
+        if (!camera.Orthographic)
+        {
+            var degrees = camera.VerticalFovRadians * 180 / MathF.PI;
+            return FormattableString.Invariant(
+                $"lens perspective, {degrees:0.#} degrees high, near {camera.NearMetres:0.###} m ({whose})"
+            );
+        }
+
+        var near = float.IsFinite(camera.NearMetres)
+            ? FormattableString.Invariant($"{camera.NearMetres:0.##} m")
+            : "the view distance behind";
+        var far =
+            float.IsFinite(camera.FarMetres) && camera.FarMetres > camera.NearMetres
+                ? FormattableString.Invariant($"{camera.FarMetres:0.##} m")
+                : "the view distance ahead";
+        return FormattableString.Invariant(
+            $"lens orthographic, {camera.HeightMetres:0.##} m high, from {near} to {far} along the view ({whose})"
+        );
     }
 
     /// <summary>The sun as <c>sun</c> and <c>time</c> print it: its angles, whose it is, and night.</summary>

@@ -16,7 +16,7 @@ const float OpennessCorner = 0.125;
 vec3 pointLight(vec3 world, vec3 normal, float depth)
 {
     uint base = view.slot * MESH_CLUSTER_SLOT_WORDS;
-    uint cluster = meshCluster(gl_FragCoord.xy, vec2(view.width, view.height), depth);
+    uint cluster = meshCluster(gl_FragCoord.xy, vec2(view.width, view.height), depth, viewOrthographic());
     uint count = min(clusterWords[base + cluster], MESH_CLUSTER_LIGHTS);
     uint indices = base + MESH_CLUSTER_COUNT + cluster * MESH_CLUSTER_LIGHTS;
     uint first = view.slot * MESH_MOST_LIGHTS;
@@ -59,7 +59,8 @@ vec3 shadeSurface(vec3 colour, vec3 normal, vec3 lit, vec3 offset, float opennes
     float sunlight = 0.0;
     if (dot(normal, view.sunDirection) > 0.0)
     {
-        sunlight = max(dot(lit, view.sunDirection), 0.0) * sunShadow(view.slot, world, normal, depth);
+        sunlight = max(dot(lit, view.sunDirection), 0.0)
+            * sunShadow(view.slot, world, normal, viewCascadeDepth(depth));
     }
 
     float open = clamp((openness - OpennessCorner) / (OpennessFlat - OpennessCorner), 0.0, 1.0);
@@ -70,7 +71,7 @@ vec3 shadeSurface(vec3 colour, vec3 normal, vec3 lit, vec3 offset, float opennes
     vec3 shaded = colour * light;
 
     float fog = fogAt(length(offset), view.maxDistance);
-    shaded = mix(shaded, skyColour(normalize(offset)), fog);
+    shaded = mix(shaded, skyColour(viewRayTo(offset)), fog);
     vec3 toned = toneMap(shaded * LOOK.exposure);
     vec3 graded = gradeColour(toned);
     // Faded out with the fog: the sky (world-sky.frag) takes no split tone, so the fogged far ground must not either, or

@@ -2,8 +2,10 @@ using System.Numerics;
 using Arch.Core;
 using Itera.Engine.Components;
 using Itera.Engine.Rendering;
+using Itera.Engine.Settings;
 using Itera.Engine.Systems;
 using Itera.Modding;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Itera.Engine.Tests.Systems;
@@ -36,6 +38,41 @@ public sealed class CameraExtractSystemTests
         Assert.Equal(0.1f, view.NearMetres);
         var expected = Vector3.Transform(-Vector3.UnitZ, Quaternion.CreateFromYawPitchRoll(0.5f, -0.25f, 0));
         Assert.True(Vector3.Distance(expected, view.Forward) < 1e-5f);
+    }
+
+    [Fact]
+    public void An_orthographic_lens_keeps_its_size_and_depths_and_the_players_field_of_view_draws_only_perspective()
+    {
+        using var world = World.Create();
+        var settings = new PlayerSettings(
+            new EngineOptions(),
+            CommandLineKeys.None,
+            null,
+            NullLogger<PlayerSettings>.Instance
+        );
+        using var system = new CameraExtractSystem(world, _view, settings);
+        system.Initialize();
+        var camera = world.Create(
+            new CameraPose { Position = new Vector3(4, 60, -2), Pitch = -MathF.PI / 2 },
+            CameraLens.Orthographic(64, -100, 100),
+            new ActiveCamera()
+        );
+
+        system.Update(in Time);
+
+        var view = _view.Camera;
+        Assert.True(view.Orthographic);
+        Assert.Equal(new Vector3(4, 60, -2), view.Position);
+        Assert.Equal((64f, -100f, 100f), (view.HeightMetres, view.NearMetres, view.FarMetres));
+        // The player's field of view is not put on it.
+        Assert.Equal(0f, view.VerticalFovRadians);
+        Assert.True(Vector3.Distance(-Vector3.UnitY, view.Forward) < 1e-5f);
+
+        world.Set(camera, new CameraLens { VerticalFovRadians = 1.2f, NearMetres = 0.1f });
+        system.Update(in Time);
+
+        Assert.False(_view.Camera.Orthographic);
+        Assert.Equal(settings.VerticalFieldOfViewRadians, _view.Camera.VerticalFovRadians);
     }
 
     [Fact]

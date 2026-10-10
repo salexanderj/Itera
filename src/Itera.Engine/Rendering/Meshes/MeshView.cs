@@ -63,8 +63,10 @@ public sealed class MeshView
     private readonly int _shadowMapTexels;
     private readonly int _lightBudget;
 
-    // The planes of the view's frustum, through the camera, facing in: left, right, bottom, top.
-    private readonly Vector3[] _planes = new Vector3[4];
+    // The side planes of the view's frustum, facing in: left, right, bottom, top; each the inward normal (xyz) and the dot
+    // product a point on it has with that normal, relative to the camera (w: 0 through the camera, as a perspective view's
+    // are; an orthographic view's lie its half width or height out).
+    private readonly Vector4[] _planes = new Vector4[4];
     private readonly MeshLight[] _offered = new MeshLight[MostOffered];
     private readonly float[] _offeredRanks = new float[MostOffered];
     private int _offeredCount;
@@ -85,7 +87,7 @@ public sealed class MeshView
         _lightBudget = Math.Clamp(renderer.MostLights, 1, MeshPass.MostLights);
     }
 
-    /// <summary>The eye's position this frame, in world metres.</summary>
+    /// <summary>The eye's position this frame, in world metres; an orthographic view's middle.</summary>
     public Vector3 Position { get; private set; }
 
     /// <summary>The unit view direction this frame.</summary>
@@ -96,6 +98,15 @@ public sealed class MeshView
 
     /// <summary>True when the view's shadows are on this frame.</summary>
     public bool Shadows { get; private set; }
+
+    /// <summary>True when the view is orthographic this frame (<see cref="ViewSwitches.Orthographic"/>).</summary>
+    public bool Orthographic { get; private set; }
+
+    /// <summary>Where the drawn depth starts along the view this frame (<see cref="ViewConstants.Near"/>).</summary>
+    public float Near { get; private set; }
+
+    /// <summary>Where an orthographic view's box ends along the view this frame (<see cref="ViewConstants.Far"/>).</summary>
+    public float Far { get; private set; }
 
     /// <summary>The near cascade's casters this frame.</summary>
     public CascadeBounds NearCascade { get; } = new();
@@ -119,19 +130,26 @@ public sealed class MeshView
         Forward = view.Forward;
         Distance = view.MaxDistance;
         Shadows = view.Has(ViewSwitches.Shadows);
+        Orthographic = view.Orthographic;
+        Near = view.Near;
+        Far = view.Far;
         _offeredCount = 0;
         SetPlanes(view.Forward, view.Right, view.Up);
         WriteCascades(slot, in view);
     }
 
-    /// <summary>True when the cube of half-size <paramref name="extent"/> at <paramref name="centre"/> may be seen.</summary>
+    /// <summary>
+    /// True when the cube of half-size <paramref name="extent"/> at <paramref name="centre"/> may be seen: within the view
+    /// distance ahead (an orthographic view: between its near and far ends) and inside each side plane.
+    /// </summary>
     public bool InView(Vector3 centre, float extent)
     {
         var offset = centre - Position;
         var forward = Forward;
         var ahead = Vector3.Dot(offset, forward);
         var reach = extent * (MathF.Abs(forward.X) + MathF.Abs(forward.Y) + MathF.Abs(forward.Z));
-        if (ahead + reach < 0 || ahead - reach > Distance)
+        var (first, last) = Orthographic ? (Near, Far) : (0f, Distance);
+        if (ahead + reach < first || ahead - reach > last)
         {
             return false;
         }
@@ -139,7 +157,7 @@ public sealed class MeshView
         foreach (var plane in _planes)
         {
             var spread = extent * (MathF.Abs(plane.X) + MathF.Abs(plane.Y) + MathF.Abs(plane.Z));
-            if (Vector3.Dot(plane, offset) + spread < 0)
+            if (Vector3.Dot(new Vector3(plane.X, plane.Y, plane.Z), offset) - plane.W + spread < 0)
             {
                 return false;
             }
@@ -147,6 +165,15 @@ public sealed class MeshView
 
         return true;
     }
+
+    /// <summary>
+    /// A key that orders points nearest the viewer first, 0 or more: the squared distance from the eye, or how far past an
+    /// orthographic view's near end the point lies along it (no farther than 0). For sorting this frame's draws.
+    /// </summary>
+    public float NearFirstKey(Vector3 point) =>
+        Orthographic
+            ? Math.Max(Vector3.Dot(point - Position, Forward) - Near, 0)
+            : Vector3.DistanceSquared(point, Position);
 
     /// <summary>
     /// Offers a light of <paramref name="power"/> at <paramref name="position"/> for the frame's list: kept when it lies
@@ -227,30 +254,36 @@ public sealed class MeshView
         _lastSun = sun;
         var reach = CasterReach(sun);
         var farEnd = Math.Max(Math.Min(FarShadowMetres, view.MaxDistance), 2 * NearShadowMetres);
+        var farStart = NearShadowMetres - NearBlendMetres;
+        // Each cascade's slice of the view's depth. An orthographic view's cascades lie round its middle, chosen by how
+        // far before or behind it a point lies (view.glsl's viewCascadeDepth), so each reaches both ways, within the box.
+        var (nearFirst, nearLast) = Slice(0, NearShadowMetres);
+        var (farFirst, farLast) = Slice(farStart, farEnd);
         var near = ShadowCascades.Fit(
             view.Position,
             view.Forward,
             view.Right,
             view.Up,
-            0,
-            NearShadowMetres,
+            nearFirst,
+            nearLast,
             view.SunDirection,
             _shadowMapTexels,
             reach,
-            _imageAxis
+            _imageAxis,
+            Orthographic
         );
-        var farStart = NearShadowMetres - NearBlendMetres;
         var far = ShadowCascades.Fit(
             view.Position,
             view.Forward,
             view.Right,
             view.Up,
-            farStart,
-            farEnd,
+            farFirst,
+            farLast,
             view.SunDirection,
             _shadowMapTexels,
             reach,
-            _imageAxis
+            _imageAxis,
+            Orthographic
         );
         NearCascade.Set(
             in near,
@@ -258,8 +291,8 @@ public sealed class MeshView
             view.Position,
             view.Forward,
             _planes,
-            0,
-            NearShadowMetres,
+            nearFirst,
+            nearLast,
             view.SunDirection
         );
         FarCascade.Set(
@@ -268,8 +301,8 @@ public sealed class MeshView
             view.Position,
             view.Forward,
             _planes,
-            farStart,
-            farEnd,
+            farFirst,
+            farLast,
             view.SunDirection
         );
         _pass.LightingOf(slot) = new MeshLighting
@@ -284,6 +317,23 @@ public sealed class MeshView
             NearBlendStart = farStart,
             FarFadeStart = farEnd * (1 - FarFadeShare),
         };
+    }
+
+    /// <summary>
+    /// The slice of view depth a cascade covers from <paramref name="first"/> to <paramref name="last"/>: those depths, or
+    /// in an orthographic view the depths no farther than <paramref name="last"/> before or behind its middle within its
+    /// box (a metre deep where the box misses them, so the fit has a slice; no point is then shaded from it).
+    /// </summary>
+    private (float First, float Last) Slice(float first, float last)
+    {
+        if (!Orthographic)
+        {
+            return (first, last);
+        }
+
+        var low = Math.Max(-last, Near);
+        var high = Math.Min(last, Far);
+        return (low, Math.Max(high, low + 1));
     }
 
     /// <summary>
@@ -313,13 +363,27 @@ public sealed class MeshView
         return Math.Clamp(CasterMetres * s_casterTangent / tangent, CasterMetres, MostCasterMetres);
     }
 
-    /// <summary>The frustum's side planes from the view's axes (right and up reach the image's edges at unit forward).</summary>
+    /// <summary>
+    /// The frustum's side planes from the view's axes (right and up reach the image's edges at unit forward, or
+    /// orthographically at their length in metres from the middle).
+    /// </summary>
     private void SetPlanes(Vector3 forward, Vector3 right, Vector3 up)
     {
-        _planes[0] = InwardNormal(Vector3.Cross(forward - right, up), forward);
-        _planes[1] = InwardNormal(Vector3.Cross(forward + right, up), forward);
-        _planes[2] = InwardNormal(Vector3.Cross(forward - up, right), forward);
-        _planes[3] = InwardNormal(Vector3.Cross(forward + up, right), forward);
+        if (Orthographic)
+        {
+            var across = right.Length();
+            var high = up.Length();
+            _planes[0] = new Vector4(right / across, -across);
+            _planes[1] = new Vector4(-right / across, -across);
+            _planes[2] = new Vector4(up / high, -high);
+            _planes[3] = new Vector4(-up / high, -high);
+            return;
+        }
+
+        _planes[0] = new Vector4(InwardNormal(Vector3.Cross(forward - right, up), forward), 0);
+        _planes[1] = new Vector4(InwardNormal(Vector3.Cross(forward + right, up), forward), 0);
+        _planes[2] = new Vector4(InwardNormal(Vector3.Cross(forward - up, right), forward), 0);
+        _planes[3] = new Vector4(InwardNormal(Vector3.Cross(forward + up, right), forward), 0);
     }
 
     private static Vector3 InwardNormal(Vector3 normal, Vector3 forward)

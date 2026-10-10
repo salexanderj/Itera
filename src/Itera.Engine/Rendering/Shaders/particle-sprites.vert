@@ -41,7 +41,7 @@ void main()
     }
     else if (recipe.stretch == PARTICLE_STRETCH_VELOCITY)
     {
-        vec3 toward = normalize(particle.position - view.position);
+        vec3 toward = viewRayTo(particle.position - view.position);
         vec3 across = particle.velocity - dot(particle.velocity, toward) * toward;
         float length2 = dot(across, across);
         if (length2 > 1e-6)
@@ -53,19 +53,28 @@ void main()
         }
     }
 
-    vec3 side = cross(axis, centre - view.position);
+    vec3 side = cross(axis, viewOrthographic() ? view.forward : centre - view.position);
     float sideLength = length(side);
     side = sideLength > 1e-6 ? side / sideLength : normalize(view.up);
 
     vec2 corner = QuadCorners[gl_VertexIndex];
     vec3 point = centre + axis * (corner.x * (halfLength + radius)) + side * (corner.y * radius);
-    // Moved towards the camera by its radius (never past half the way), so a round sprite that sits on a surface or in a
-    // hole is not cut off by it along a hard line.
-    vec3 toward = view.position - point;
-    float away = length(toward);
-    point += toward / max(away, 1e-4) * min(radius, 0.5 * away);
+    // Moved towards the camera by its radius (never past half the way, or half the way to an orthographic view's near
+    // end), so a round sprite that sits on a surface or in a hole is not cut off by it along a hard line.
+    if (viewOrthographic())
+    {
+        point -= view.forward * clamp(0.5 * (dot(point - view.position, view.forward) - view.near), 0.0, radius);
+    }
+    else
+    {
+        vec3 toward = view.position - point;
+        float away = length(toward);
+        point += toward / max(away, 1e-4) * min(radius, 0.5 * away);
+    }
+
     vec3 offset = point - view.position;
-    float depth = dot(offset, view.forward);
+    // How far in front of the camera, or of an orthographic view's near end.
+    float depth = dot(offset, view.forward) - (viewOrthographic() ? view.near : 0.0);
     gl_Position = viewClip(offset);
     outLocal = vec2(corner.x * (halfLength + radius) / radius, corner.y);
     outHalfLength = halfLength / radius;

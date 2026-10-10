@@ -29,6 +29,59 @@ public sealed class MeshViewTests
         Assert.False(view.InView(new Vector3(0, -30, -10), 1));
     }
 
+    /// <summary>
+    /// An orthographic view from 50 m up, looking down with north up: it sees its box (64 m across, 36 m high, 100 m each
+    /// way along the view from its middle), and its cascades lie round its middle, both ways along the view.
+    /// </summary>
+    [Fact]
+    public void An_orthographic_view_sees_its_box_and_fits_its_cascades_round_its_middle()
+    {
+        var view = NewView();
+
+        view.Begin(0, LookingDown(ViewSwitches.Shadows));
+
+        Assert.True(view.Orthographic);
+        Assert.True(view.InView(new Vector3(30, 0, 0), 1));
+        Assert.True(view.InView(new Vector3(30, 50, 17), 1));
+        Assert.True(view.InView(new Vector3(0, 120, 0), 1));
+        Assert.False(view.InView(new Vector3(40, 0, 0), 1));
+        Assert.False(view.InView(new Vector3(0, 0, 25), 1));
+        Assert.False(view.InView(new Vector3(0, -60, 0), 1));
+        Assert.False(view.InView(new Vector3(0, 160, 0), 1));
+        ref readonly var lighting = ref _target.LightingOf(0);
+        Assert.Equal(1u, lighting.Shadows);
+        Assert.Equal(MeshView.NearShadowMetres, lighting.NearEnd);
+        Assert.True(view.NearCascade.Holds(new Vector3(20, 60, 0), 1));
+        Assert.True(view.NearCascade.Holds(new Vector3(20, 30, 0), 1));
+        Assert.True(view.FarCascade.Holds(new Vector3(20, -40, 0), 1));
+        // Behind the middle, where a slice from the middle on (as a perspective view's) would not reach.
+        Assert.True(view.NearCascade.Holds(new Vector3(-30, 78, -16), 1));
+        Assert.False(view.NearCascade.Holds(new Vector3(20, 10, 0), 1));
+        // Past the box's side towards the sun (the side planes lie the half width out).
+        Assert.False(view.NearCascade.Holds(new Vector3(-40, 60, 0), 1));
+        // Nearest first by the depth past the box's near end.
+        Assert.Equal(0f, view.NearFirstKey(new Vector3(0, 200, 0)));
+        Assert.Equal(150f, view.NearFirstKey(new Vector3(5, 0, 5)), 3);
+    }
+
+    /// <summary>
+    /// An orthographic box that misses a cascade's slice (it starts 40 m past its middle), or lies far along the view,
+    /// still fits both cascades; nothing off the box casts into them.
+    /// </summary>
+    [Theory]
+    [InlineData(40f, 100f)]
+    [InlineData(99_000f, 99_100f)]
+    public void An_orthographic_box_away_from_its_middle_still_fits_its_cascades(float near, float far)
+    {
+        var view = NewView();
+
+        view.Begin(0, LookingDown(ViewSwitches.Shadows) with { Near = near, Far = far });
+
+        Assert.False(view.NearCascade.Holds(new Vector3(0, 50 - near - 200, 0), 1));
+        Assert.True(view.InView(new Vector3(0, 50 - near - 10, 0), 1));
+        Assert.False(view.InView(new Vector3(0, 50, 0), 1));
+    }
+
     [Fact]
     public void Begin_fits_both_cascades_and_writes_the_slot_record_with_no_lights()
     {
@@ -167,11 +220,13 @@ public sealed class MeshViewTests
         Assert.Equal(_target.LightingOf(0).Near, forgotten);
     }
 
-    [Fact]
-    public void A_frame_allocates_nothing()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_frame_allocates_nothing(bool orthographic)
     {
         var view = NewView();
-        var constants = LookingAlongMinusZ(ViewSwitches.Shadows);
+        var constants = orthographic ? LookingDown(ViewSwitches.Shadows) : LookingAlongMinusZ(ViewSwitches.Shadows);
         PointLight[] events = [new(new Vector3(1, 0, -4), Vector3.One, 5)];
         for (var i = 0; i < 100; i++)
         {
@@ -195,6 +250,7 @@ public sealed class MeshViewTests
         view.Offer(new Vector3(0, 0, -5), Vector3.One, 10);
         view.InView(new Vector3(0, 0, -10), 1);
         view.NearCascade.Holds(new Vector3(0, 0, -10), 1);
+        view.NearFirstKey(new Vector3(0, 0, -10));
         view.End(1, events);
     }
 
@@ -211,6 +267,20 @@ public sealed class MeshViewTests
             SunDirection = ViewConstants.DefaultSunDirection,
             MaxDistance = 100,
             Switches = switches,
+        };
+
+    private static ViewConstants LookingDown(ViewSwitches switches = ViewSwitches.None) =>
+        new()
+        {
+            Position = new Vector3(0, 50, 0),
+            Forward = new Vector3(0, -1, 0),
+            Right = new Vector3(32, 0, 0),
+            Up = new Vector3(0, 0, -18),
+            SunDirection = ViewConstants.DefaultSunDirection,
+            MaxDistance = 100,
+            Switches = switches | ViewSwitches.Orthographic,
+            Near = -100,
+            Far = 100,
         };
 
     /// <summary>The lighting records and point lights of two slots; the view writes nothing else.</summary>

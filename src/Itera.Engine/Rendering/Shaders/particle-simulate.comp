@@ -19,12 +19,13 @@
 
 layout(local_size_x = 64) in;
 
-// The camera's depth image as the world's pass left it (DepthTarget): view.glsl's reverse depth, NearMetres over the
-// distance along the view, 0 for the sky. Only its top-left drawn part (push.width by push.height) is read.
+// The camera's depth image as the world's pass left it (DepthTarget): view.glsl's reverse depth, push.near over the
+// distance along the view (orthographically falling evenly from 1 at push.near to 0 at push.far), 0 for the sky. Only
+// its top-left drawn part (push.width by push.height) is read.
 layout(set = 0, binding = 7) uniform sampler2D sceneDepth;
 
-// view.glsl's NearMetres: the compute pass has the particles' push constants, not the view's.
-const float SceneNearMetres = 0.01;
+// What sceneAlong gives where the image shows the sky.
+const float SkyAlong = -1e30;
 
 // Nearer the camera than this, along the view, a particle meets nothing: the first-person arms are in the depth image.
 const float NearestMetres = 0.6;
@@ -38,20 +39,28 @@ const float RestSlackMetres = 0.1;
 // Below this speed, in metres per second, a particle that bounced off a floor rests there.
 const float RestSpeed = 0.4;
 
+// True for an orthographic view: parallel rays along push.forward, push.right and push.up the image's half width and
+// half height in metres, push.camera the middle of what it shows.
+bool orthographic()
+{
+    return push.orthographic != 0u;
+}
+
 // Where world point world lies on the drawn image (pixel, rows from the top) and its distance along the view; false off
-// the image or nearer than NearestMetres.
+// the image, nearer than NearestMetres (orthographically, outside the view's box).
 bool onImage(vec3 world, out ivec2 pixel, out float along)
 {
     vec3 offset = world - push.camera;
     along = dot(offset, push.forward);
     pixel = ivec2(0);
-    if (along < NearestMetres)
+    if (orthographic() ? along <= push.near || along >= push.far : along < NearestMetres)
     {
         return false;
     }
 
-    float x = dot(offset, push.right) / (dot(push.right, push.right) * along);
-    float y = dot(offset, push.up) / (dot(push.up, push.up) * along);
+    float spread = orthographic() ? 1.0 : along;
+    float x = dot(offset, push.right) / (dot(push.right, push.right) * spread);
+    float y = dot(offset, push.up) / (dot(push.up, push.up) * spread);
     if (abs(x) >= 1.0 || abs(y) >= 1.0)
     {
         return false;
@@ -62,11 +71,16 @@ bool onImage(vec3 world, out ivec2 pixel, out float along)
     return true;
 }
 
-// The distance along the view of what the image shows at pixel, metres; 0 for the sky.
+// The distance along the view of what the image shows at pixel, metres; SkyAlong for the sky.
 float sceneAlong(ivec2 pixel)
 {
     float stored = texelFetch(sceneDepth, pixel, 0).r;
-    return stored > 0.0 ? SceneNearMetres / stored : 0.0;
+    if (stored <= 0.0)
+    {
+        return SkyAlong;
+    }
+
+    return orthographic() ? push.far - stored * (push.far - push.near) : push.near / stored;
 }
 
 // The world point the image shows at pixel, along at its distance along the view.
@@ -75,6 +89,11 @@ vec3 scenePoint(ivec2 pixel, float along)
     vec2 ndc = vec2(
         (float(pixel.x) + 0.5) / float(push.width) * 2.0 - 1.0,
         1.0 - (float(pixel.y) + 0.5) / float(push.height) * 2.0);
+    if (orthographic())
+    {
+        return push.camera + ndc.x * push.right + ndc.y * push.up + push.forward * along;
+    }
+
     return push.camera + (push.forward + ndc.x * push.right + ndc.y * push.up) * along;
 }
 
@@ -87,20 +106,20 @@ vec3 sceneStep(ivec2 pixel, ivec2 step, vec3 point, float along)
     ivec2 b = clamp(pixel - step, ivec2(0), most);
     float alongA = sceneAlong(a);
     float alongB = sceneAlong(b);
-    bool useA = alongA > 0.0 && (alongB <= 0.0 || abs(alongA - along) <= abs(alongB - along));
+    bool useA = alongA > SkyAlong && (alongB <= SkyAlong || abs(alongA - along) <= abs(alongB - along));
     if (useA)
     {
         return scenePoint(a, alongA) - point;
     }
 
-    return alongB > 0.0 ? point - scenePoint(b, alongB) : vec3(0.0);
+    return alongB > SkyAlong ? point - scenePoint(b, alongB) : vec3(0.0);
 }
 
 // The surface's normal at pixel, facing the camera; the view ray back where the neighbours give none.
 vec3 sceneNormal(ivec2 pixel, vec3 point, float along)
 {
     vec3 normal = cross(sceneStep(pixel, ivec2(1, 0), point, along), sceneStep(pixel, ivec2(0, 1), point, along));
-    vec3 back = push.camera - point;
+    vec3 back = orthographic() ? -push.forward : push.camera - point;
     if (dot(normal, normal) < 1e-12)
     {
         return normalize(back);
@@ -168,7 +187,7 @@ void main()
         {
             float surface = sceneAlong(pixel);
             float behind = along - surface;
-            if (surface > 0.0 && behind > 0.0 && behind < SurfaceMetres + length(move))
+            if (surface > SkyAlong && behind > 0.0 && behind < SurfaceMetres + length(move))
             {
                 if (recipe.collision == PARTICLE_COLLISION_DIE)
                 {
@@ -212,7 +231,7 @@ void main()
         if (onImage(position, pixel, along))
         {
             float surface = sceneAlong(pixel);
-            if (surface <= 0.0 || surface > along + RestSlackMetres)
+            if (surface <= SkyAlong || surface > along + RestSlackMetres)
             {
                 packed &= ~PARTICLE_RESTING;
             }
@@ -236,7 +255,16 @@ void main()
     float distance = length(fromCamera);
     float reach = max(recipe.sizeStart, recipe.sizeEnd) * particle.size
         + (recipe.stretch == PARTICLE_STRETCH_SEGMENT ? length(particle.end - position) : 0.0);
-    bool inView = distance <= reach + 0.5 || dot(fromCamera, push.forward) >= push.viewCosine * distance - reach;
+    float ahead = dot(fromCamera, push.forward);
+    bool inView = distance <= reach + 0.5 || ahead >= push.viewCosine * distance - reach;
+    if (orthographic())
+    {
+        // Within the view's box, grown by the particle's reach.
+        inView = abs(dot(fromCamera, push.right)) <= dot(push.right, push.right) + reach * length(push.right)
+            && abs(dot(fromCamera, push.up)) <= dot(push.up, push.up) + reach * length(push.up)
+            && ahead >= push.near - reach && ahead <= push.far + reach;
+    }
+
     if (!inView || distance > push.maxDistance + reach)
     {
         return;
@@ -244,7 +272,8 @@ void main()
 
     if ((recipe.flags & PARTICLE_FLAG_LIT) != 0u)
     {
-        float sun = sunShadow(push.slot, position, push.sunDirection, dot(fromCamera, push.forward));
+        // The cascades lie round an orthographic view's middle (view.glsl's viewCascadeDepth).
+        float sun = sunShadow(push.slot, position, push.sunDirection, orthographic() ? abs(ahead) : ahead);
         float sky = skyVisibility(push.slot, position, vec3(0.0, 1.0, 0.0));
         uint oldSun = packed >> PARTICLE_SUN_SHIFT;
         uint oldSky = (packed >> PARTICLE_SKY_SHIFT) & 255u;

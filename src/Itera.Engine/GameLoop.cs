@@ -967,7 +967,7 @@ public sealed partial class GameLoop
 
     private ViewConstants CreateView(in RenderFrameRequest request)
     {
-        var camera = _renderView.Camera;
+        var camera = _renderView.DrawnCamera;
         var atmosphere = _renderView.Atmosphere;
         return ViewConstants.Create(
             in camera,

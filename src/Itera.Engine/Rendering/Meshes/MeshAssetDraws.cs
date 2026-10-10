@@ -36,7 +36,7 @@ public sealed partial class MeshAssetDraws
     private readonly MeshAssetDraw[] _draws = new MeshAssetDraw[MeshAssetPass.MaxDraws];
     private readonly DrawIndexedIndirectCommand[] _commands = new DrawIndexedIndirectCommand[MeshAssetPass.MaxCommands];
 
-    // Each instance's centre's squared distance from the camera, while it is seen; and the blended list's entries (an
+    // Each instance's centre's key nearest first (MeshView.NearFirstKey), while it is seen; and the blended list's entries (an
     // instance and a primitive each), their sort keys (farthest first), and the draws and commands they become.
     private readonly float[] _distances = new float[MeshInstances.MaxInstances];
     private readonly long[] _blendKeys = new long[MeshAssetPass.MaxCommands];
@@ -274,7 +274,8 @@ public sealed partial class MeshAssetDraws
 
     /// <summary>
     /// The lists an instance is drawn in: the camera's where its sphere may be seen, the cascades' where it may cast; and
-    /// its sphere's centre's squared distance from the camera.
+    /// its sphere's centre's key for the blended sort (<see cref="MeshView.NearFirstKey"/>: the squared distance from the
+    /// camera, or an orthographic view's depth).
     /// </summary>
     private byte ListsOf(
         in MeshInstance instance,
@@ -310,7 +311,7 @@ public sealed partial class MeshAssetDraws
         var centre = Vector3.Transform(localCentre, transform);
         var radius = localRadius * LargestScale(in transform);
         var seen = instance.Shadow != ModelShadow.Only && view.InView(centre, radius);
-        distance = Vector3.DistanceSquared(centre, view.Position);
+        distance = view.NearFirstKey(centre);
         var casts = instance.Shadow != ModelShadow.None && view.Shadows;
         var near = casts && view.NearCascade.Holds(centre, radius);
         var far = casts && view.FarCascade.Holds(centre, radius);
@@ -484,7 +485,7 @@ public sealed partial class MeshAssetDraws
                     continue;
                 }
 
-                // Farther first: a squared distance's bits order as its value, and the entry's place keeps ties in order.
+                // Farther first: a key's bits (never below 0) order as its value, and the entry's place keeps ties in order.
                 var bits = BitConverter.SingleToInt32Bits(MathF.Max(_distances[i], 0));
                 _blendKeys[entries] = ((long)(int.MaxValue - bits) << 16) | (uint)entries;
                 _blendOrder[entries] = entries;

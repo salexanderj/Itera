@@ -23,22 +23,28 @@ void main()
     uint z = cluster / (MESH_CLUSTERS_X * MESH_CLUSTERS_Y);
 
     // The view's axes (right and up reach the image's edges at unit depth, so their lengths are the half-angles'
-    // tangents) and the tile's edges across the image, -1 to 1; the image's top is up.
+    // tangents; orthographically, the image's half width and half height in metres) and the tile's edges across the
+    // image, -1 to 1; the image's top is up.
+    bool orthographic = viewOrthographic();
     float tanX = length(view.right);
     float tanY = length(view.up);
     vec3 right = view.right / tanX;
     vec3 up = view.up / tanY;
     vec2 low = vec2(-1.0 + 2.0 * float(x) / float(MESH_CLUSTERS_X), 1.0 - 2.0 * float(y + 1u) / float(MESH_CLUSTERS_Y));
     vec2 high = vec2(low.x + 2.0 / float(MESH_CLUSTERS_X), low.y + 2.0 / float(MESH_CLUSTERS_Y));
-    float near = meshClusterSliceStart(z);
-    float far = z + 1u < MESH_CLUSTERS_Z ? meshClusterSliceStart(z + 1u) : max(view.maxDistance, near);
+    float near = meshClusterSliceStart(z, orthographic);
+    bool last = z + 1u == MESH_CLUSTERS_Z;
+    float far = !last ? meshClusterSliceStart(z + 1u, orthographic)
+        : orthographic ? max(view.far, near) : max(view.maxDistance, near);
+    near = orthographic && z == 0u ? min(view.near, near) : near;
 
-    // The box round the tile's frustum between the two depths, in view space (right, up, depth).
+    // The box round the tile's frustum between the two depths, in view space (right, up, depth); an orthographic tile
+    // is as wide at every depth.
     vec2 scale = vec2(tanX, tanY);
-    vec2 a = low * scale * near;
-    vec2 b = low * scale * far;
-    vec2 c = high * scale * near;
-    vec2 d = high * scale * far;
+    vec2 a = low * scale * (orthographic ? 1.0 : near);
+    vec2 b = low * scale * (orthographic ? 1.0 : far);
+    vec2 c = high * scale * (orthographic ? 1.0 : near);
+    vec2 d = high * scale * (orthographic ? 1.0 : far);
     vec3 boxLow = vec3(min(min(a, b), min(c, d)), near);
     vec3 boxHigh = vec3(max(max(a, b), max(c, d)), far);
 

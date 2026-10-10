@@ -122,6 +122,42 @@ public sealed class ShadowCascadesTests
         AssertCornersInside(new Vector3(120.3f, 14.7f, -80.1f), yaw, pitch, Sun(50, 30));
     }
 
+    /// <summary>
+    /// An orthographic view's slice is a box, its sides as far apart at every depth, and its depths may lie behind the
+    /// position (the view's middle).
+    /// </summary>
+    [Theory]
+    [InlineData(0f, -89f)]
+    [InlineData(45f, -35f)]
+    [InlineData(200f, 10f)]
+    public void Every_corner_of_an_orthographic_box_maps_inside_the_cascade(float yaw, float pitch)
+    {
+        Camera(yaw, pitch, out var f, out var r, out var u);
+        var right = Vector3.Normalize(r) * 40;
+        var up = Vector3.Normalize(u) * 22.5f;
+        var position = new Vector3(10.3f, 30.1f, -5.7f);
+
+        var fit = ShadowCascades.Fit(position, f, right, up, -30, 30, Sun(50, 30), Map, Caster, default, true);
+
+        foreach (var d in (float[])[-30, 30])
+        {
+            foreach (var sr in (float[])[-1, 1])
+            {
+                foreach (var su in (float[])[-1, 1])
+                {
+                    var n = Ndc(in fit, position + d * f + sr * right + su * up);
+                    Assert.InRange(n.X, -1 - Epsilon, 1 + Epsilon);
+                    Assert.InRange(n.Y, -1 - Epsilon, 1 + Epsilon);
+                    Assert.InRange(n.Z, -Epsilon, 1 + Epsilon);
+                }
+            }
+        }
+
+        // The square is the box's bounding sphere (radius 54.83 m, grown by a texel's share and rounded up to a sixteenth),
+        // not a frustum's at those depths.
+        Assert.Equal(54.875f, fit.TexelMetres * Map / 2, 4);
+    }
+
     [Fact]
     public void Casters_towards_the_sun_and_the_far_side_stay_in_the_depth_range()
     {
@@ -256,6 +292,13 @@ public sealed class ShadowCascadesTests
         Assert.Throws<ArgumentOutOfRangeException>(() => ShadowCascades.Fit(default, f, r, u, -1, 10, sun, Map, 10));
         Assert.Throws<ArgumentOutOfRangeException>(() => ShadowCascades.Fit(default, f, r, u, 10, 10, sun, Map, 10));
         Assert.Throws<ArgumentOutOfRangeException>(() => ShadowCascades.Fit(default, f, r, u, 10, 5, sun, Map, 10));
+        // An orthographic box may start behind its position, but must still end past where it starts.
+        Assert.True(
+            float.IsFinite(ShadowCascades.Fit(default, f, r, u, -1, 10, sun, Map, 10, default, true).TexelMetres)
+        );
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ShadowCascades.Fit(default, f, r, u, 10, -1, sun, Map, 10, default, true)
+        );
     }
 
     /// <summary>

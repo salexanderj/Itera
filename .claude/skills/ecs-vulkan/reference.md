@@ -87,7 +87,7 @@ and where the extract step runs (`design.md`, choice 2) is undecided.
 
 - `src/Itera.Engine/Rendering/GpuData/` exists: `ViewConstants` is the push constant block of `view.glsl`
   (`layout(push_constant, scalar)`). It began as six `Vector3` and a `uint` (76 bytes) and has changed with the
-  renderer since: it is 108 bytes now, and its on/off switches share one word (`ViewSwitches`). `ViewConstantsTests`
+  renderer since: it is 116 bytes now, and its on/off switches share one word (`ViewSwitches`). `ViewConstantsTests`
   compiles every shader that reads it (`mesh.vert`, `mesh.frag`, `world-sky.frag`, `debug-lines.vert`, the particle
   cubes and sprites) and checks each with `GpuLayout.PushConstantDifferences` (no differences).
 - It is built on the main thread for each frame (`ViewConstants.Create` in `GameLoop`, from `RenderView` and

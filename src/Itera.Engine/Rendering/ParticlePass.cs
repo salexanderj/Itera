@@ -294,6 +294,9 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
             Up = view.Up,
             Width = view.Width,
             Height = view.Height,
+            Near = view.Near,
+            Far = view.Far,
+            Orthographic = view.Orthographic ? 1u : 0u,
         };
         return new ParticleWrite(constants, true, frame.Clear);
     }

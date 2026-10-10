@@ -506,6 +506,49 @@ public sealed class MeshAssetDrawsTests
         );
     }
 
+    /// <summary>
+    /// An orthographic view sorts its blended instances by depth along the view, not by distance from its middle: from 50 m
+    /// up looking down, the pane 30 m down comes before the one 10 m down at the image's edge (farther from the middle),
+    /// and the one 20 m above the middle comes last.
+    /// </summary>
+    [Fact]
+    public void An_orthographic_view_draws_blended_instances_deepest_first()
+    {
+        var glass = new MeshMaterialData { AlphaMode = MeshAlphaMode.Blend };
+        var targets = new FakeTargets(MeshAssetLayout.From([MeshAssetPassTests.Asset("pane", glass, vertices: 3)]));
+        var view = new MeshView(targets, Options.Create(new EngineOptions()));
+        var draws = new MeshAssetDraws(targets, NullLogger<MeshAssetDraws>.Instance);
+        view.Begin(
+            0,
+            new ViewConstants
+            {
+                Position = new Vector3(0, 50, 0),
+                Forward = new Vector3(0, -1, 0),
+                Right = new Vector3(32, 0, 0),
+                Up = new Vector3(0, 0, -18),
+                SunDirection = ViewConstants.DefaultSunDirection,
+                MaxDistance = 200,
+                Switches = ViewSwitches.Orthographic,
+                Near = -100,
+                Far = 100,
+            }
+        );
+        MeshInstance[] instances =
+        [
+            new(0, Matrix4x4.CreateTranslation(30, 40, 0), MeshInstances.NoTint, ModelShadow.Casts),
+            new(0, Matrix4x4.CreateTranslation(0, 70, 0), MeshInstances.NoTint, ModelShadow.Casts),
+            new(0, Matrix4x4.CreateTranslation(0, 20, 0), MeshInstances.NoTint, ModelShadow.Casts),
+        ];
+
+        var frame = draws.Write(0, view, instances);
+
+        Assert.Equal(3, frame.Blended);
+        Assert.Equal(
+            [instances[2].Transform, instances[0].Transform, instances[1].Transform],
+            targets.Draws(0, MeshAssetPass.BlendedList).Take(3).Select(d => d.Transform)
+        );
+    }
+
     private static ViewConstants LookingAlongMinusZ(bool shadows) =>
         new()
         {

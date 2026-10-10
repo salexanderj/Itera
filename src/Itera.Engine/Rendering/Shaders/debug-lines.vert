@@ -1,10 +1,9 @@
 #version 460
 
 // Debug lines (DebugLinePass): two vertices a line, read from a storage buffer by gl_VertexIndex (the draw's first
-// vertex picks the frame slot's region). A point is placed with the frame's view (view.glsl): the camera's right and
-// up are scaled so a point along forward + x * right + y * up shows at (x, y) in [-1, 1], so clip-space w is the depth
-// along forward, and z is the near distance, which gives the reverse depth the world pass writes and keeps points
-// nearer than 1 cm out.
+// vertex picks the frame slot's region). A point is placed with the frame's view as every pass places it (view.glsl's
+// viewClip), so it gets the reverse depth the world pass writes and points nearer than the view's near plane are left
+// out.
 #include "view.glsl"
 
 struct DebugLineVertex

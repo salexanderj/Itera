@@ -35,7 +35,7 @@ public sealed unsafe partial class WorldMeshes
     private readonly LevelBalance _balance = new();
     private Func<ColumnKey, bool>? _canSplit;
 
-    // The camera's commands and their blocks' squared distances from the camera, gathered here and sorted nearest
+    // The camera's commands and their blocks' keys (squared distances from the camera, MeshView.NearFirstKey), sorted nearest
     // first before they go into the slot's list, which is mapped memory and slow to read back.
     private readonly DrawIndexedIndirectCommand[] _cameraCommands = new DrawIndexedIndirectCommand[MeshPass.MaxDraws];
     private readonly float[] _cameraDistances = new float[MeshPass.MaxDraws];
@@ -372,7 +372,7 @@ public sealed unsafe partial class WorldMeshes
             _records++;
             if (seen)
             {
-                _cameraDistances[_drawn] = distanceSquared;
+                _cameraDistances[_drawn] = _view.Orthographic ? _view.NearFirstKey(centre) : distanceSquared;
                 _cameraCommands[_drawn++] = command;
                 _triangles += indexCount / 3;
                 _stitchedDraws += stitched ? 1 : 0;
@@ -394,7 +394,7 @@ public sealed unsafe partial class WorldMeshes
 
     /// <summary>
     /// Writes the camera's commands into <paramref name="camera"/> nearest first, by the distance to each block's
-    /// centre. They are gathered in the order the columns loaded and their blocks' meshes arrived, which changes from
+    /// centre (an orthographic view's by its depth, <see cref="MeshView.NearFirstKey"/>). They are gathered in the order the columns loaded and their blocks' meshes arrived, which changes from
     /// run to run; drawn in that order, the leaves behind were often shaded before the leaves in front covered them, a
     /// third of the integrated GPU's time in the leafy views and different in each run (docs/rendering-redesign.md,
     /// stage 1.7). Nearest first, the depth test rejects most hidden surfaces before they are shaded.

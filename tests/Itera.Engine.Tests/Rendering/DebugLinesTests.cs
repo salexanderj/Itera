@@ -109,34 +109,18 @@ public sealed class DebugLinesTests : IDisposable
         var ray = Vector3.Normalize(view.Forward + 0.3f * view.Right - 0.6f * view.Up);
         var point = view.Position + ray * 7;
 
-        // debug-lines.vert, line for line.
-        var offset = point - view.Position;
-        var depth = Vector3.Dot(offset, view.Forward);
-        var x = Vector3.Dot(offset, view.Right) / Vector3.Dot(view.Right, view.Right);
-        var y = Vector3.Dot(offset, view.Up) / Vector3.Dot(view.Up, view.Up);
+        // debug-lines.vert projects as every pass does (view.glsl's viewClip, which ViewConstants.Clip mirrors).
+        var clip = view.Clip(point - view.Position);
 
-        Assert.Equal(0.3f, x / depth, 4);
-        Assert.Equal(-0.6f, y / depth, 4);
-        // Its depth (clip z NearMetres over w) is the world's reverse depth for a surface 7 m along that ray (mesh.vert):
-        // the near distance over its distance along the view direction (the old check held for any depth of
-        // a centimetre or more).
-        var lineDepth = ViewConstants.NearMetres / depth;
-        var worldDepth = ViewConstants.NearMetres / (7 * Vector3.Dot(ray, view.Forward));
+        Assert.Equal(0.3f, clip.X / clip.W, 4);
+        Assert.Equal(-0.6f, clip.Y / clip.W, 4);
+        // Its depth (clip z over w) is the world's reverse depth for a surface 7 m along that ray (mesh.vert): the lens's
+        // near distance over its distance along the view direction.
+        var lineDepth = clip.Z / clip.W;
+        var worldDepth = view.Near / (7 * Vector3.Dot(ray, view.Forward));
         Assert.Equal(worldDepth, lineDepth, 6);
-        Assert.InRange(lineDepth, 0.0005f, 0.01f);
-    }
-
-    /// <summary>The C# near distance is view.glsl's.</summary>
-    [Fact]
-    public void The_near_distance_is_the_shaders()
-    {
-        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders", "view.glsl"));
-
-        Assert.Contains(
-            $"const float NearMetres = {ViewConstants.NearMetres.ToString(System.Globalization.CultureInfo.InvariantCulture)};",
-            source,
-            StringComparison.Ordinal
-        );
+        Assert.Equal(camera.NearMetres, view.Near);
+        Assert.InRange(lineDepth, 0.0025f, 0.05f);
     }
 
     [Fact]

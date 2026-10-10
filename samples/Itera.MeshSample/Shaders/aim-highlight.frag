@@ -20,7 +20,7 @@ void main()
     vec3 toEdges = min(inLocal, 1.0 - inLocal) * scale + inAcross * 1e3;
     float edge = min(toEdges.x, min(toEdges.y, toEdges.z));
     float glow = exp(-edge / max(data.edgeMetres, 1e-4));
-    float facing = abs(dot(normalize(-inOffset), inNormal));
+    float facing = abs(dot(viewRayTo(inOffset), inNormal));
     float sheen = 0.15 * (1.0 - facing) * (1.0 - facing);
     float pulse = 0.8 + 0.2 * sin(data.seconds * 4.0);
     outColor = vec4(data.colour.rgb * (data.colour.a * (glow + sheen) * pulse), 0.0);

@@ -23,7 +23,8 @@ public static class ShadowCascades
     private static readonly double NearVerticalDot = Math.Cos(Math.PI / 180.0);
 
     /// <summary>
-    /// Fits one cascade around the slice of the view frustum between two view depths. The square is the slice's
+    /// Fits one cascade around the slice of the view frustum (an orthographic view's box) between two view depths. The
+    /// square is the slice's
     /// bounding sphere, so its size does not change when the camera only turns. Its centre snaps to whole texels on the
     /// light's two image axes (which depend on the sun, and while it moves on the last frame's axes), so a fixed world
     /// point keeps its place within its texel
@@ -32,7 +33,9 @@ public static class ShadowCascades
     /// <param name="position">The camera's position.</param>
     /// <param name="forward">The view direction, a unit vector.</param>
     /// <param name="right">
-    /// Scaled so that <c>forward ± right ± up</c> point at the image's four corners at a distance of 1 along forward.
+    /// Scaled so that <c>forward ± right ± up</c> point at the image's four corners at a distance of 1 along forward; for
+    /// an orthographic view, the image's half width in metres, its corners <c>position ± right ± up</c> plus the depth
+    /// along forward.
     /// </param>
     /// <param name="up">Scaled like <paramref name="right"/>.</param>
     /// <param name="nearMetres">The slice's near view depth.</param>
@@ -43,6 +46,9 @@ public static class ShadowCascades
     /// <param name="imageAxis">
     /// The image's x axis, square to the sun (<see cref="ImageAxis"/>, for a sun that moves); zero, the default, takes world
     /// up's (or, within a degree of straight up or down, +z's) cross with the sun.
+    /// </param>
+    /// <param name="orthographic">
+    /// True for an orthographic view, whose slice is a box (its depths may be negative: behind the position).
     /// </param>
     /// <remarks>
     /// The radius is the farthest corner's distance from the slice's centre, grown by one part in
@@ -59,11 +65,16 @@ public static class ShadowCascades
         Vector3 sunDirection,
         int mapTexels,
         float casterMetres,
-        Vector3 imageAxis = default
+        Vector3 imageAxis = default,
+        bool orthographic = false
     )
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(mapTexels, 0);
-        ArgumentOutOfRangeException.ThrowIfNegative(nearMetres);
+        if (!orthographic)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(nearMetres);
+        }
+
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(farMetres, nearMetres);
 
         // The slice's 8 corners. Doubles keep large world positions exact enough for the texel fractions.
@@ -72,7 +83,19 @@ public static class ShadowCascades
         double cz = 0;
         for (var i = 0; i < 8; i++)
         {
-            Corner(i, in position, in forward, in right, in up, nearMetres, farMetres, out var x, out var y, out var z);
+            Corner(
+                i,
+                in position,
+                in forward,
+                in right,
+                in up,
+                nearMetres,
+                farMetres,
+                orthographic,
+                out var x,
+                out var y,
+                out var z
+            );
             cx += x;
             cy += y;
             cz += z;
@@ -85,7 +108,19 @@ public static class ShadowCascades
         var radiusSquared = 0.0;
         for (var i = 0; i < 8; i++)
         {
-            Corner(i, in position, in forward, in right, in up, nearMetres, farMetres, out var x, out var y, out var z);
+            Corner(
+                i,
+                in position,
+                in forward,
+                in right,
+                in up,
+                nearMetres,
+                farMetres,
+                orthographic,
+                out var x,
+                out var y,
+                out var z
+            );
             var dx = x - cx;
             var dy = y - cy;
             var dz = z - cz;
@@ -214,7 +249,10 @@ public static class ShadowCascades
         az /= length;
     }
 
-    /// <summary>Corner <paramref name="index"/> of the slice: bit 0 is right, bit 1 is up, bit 2 is near or far.</summary>
+    /// <summary>
+    /// Corner <paramref name="index"/> of the slice: bit 0 is right, bit 1 is up, bit 2 is near or far. An orthographic
+    /// view's sides do not spread with depth.
+    /// </summary>
     private static void Corner(
         int index,
         in Vector3 position,
@@ -223,6 +261,7 @@ public static class ShadowCascades
         in Vector3 up,
         float nearMetres,
         float farMetres,
+        bool orthographic,
         out double x,
         out double y,
         out double z
@@ -231,6 +270,14 @@ public static class ShadowCascades
         double d = (index & 4) == 0 ? nearMetres : farMetres;
         double sr = (index & 1) == 0 ? -1 : 1;
         double su = (index & 2) == 0 ? -1 : 1;
+        if (orthographic)
+        {
+            x = position.X + (d * forward.X) + (sr * right.X) + (su * up.X);
+            y = position.Y + (d * forward.Y) + (sr * right.Y) + (su * up.Y);
+            z = position.Z + (d * forward.Z) + (sr * right.Z) + (su * up.Z);
+            return;
+        }
+
         x = position.X + (d * (forward.X + (sr * right.X) + (su * up.X)));
         y = position.Y + (d * (forward.Y + (sr * right.Y) + (su * up.Y)));
         z = position.Z + (d * (forward.Z + (sr * right.Z) + (su * up.Z)));

@@ -155,13 +155,20 @@ layout(set = MESH_SET, binding = 15) uniform sampler2DArray smallNormals;
 layout(set = MESH_SET, binding = 16) uniform sampler2DArray smallHeights;
 
 // The slices: the first to 1 m, the last from 48 m on (the lights are gathered within 48 m), and between them 22 slices
-// each the same ratio deeper.
+// each the same ratio deeper. An orthographic view's are even, across the 96 m round its middle (where its lights are
+// gathered), the first and last reaching on to its box's ends.
 const float MeshClusterNearMetres = 1.0;
 const float MeshClusterFarMetres = 48.0;
 
 // The slice a point at view depth depth lies in.
-uint meshClusterSlice(float depth)
+uint meshClusterSlice(float depth, bool orthographic)
 {
+    if (orthographic)
+    {
+        float even = (depth + MeshClusterFarMetres) / (2.0 * MeshClusterFarMetres) * float(MESH_CLUSTERS_Z);
+        return uint(clamp(even, 0.0, float(MESH_CLUSTERS_Z - 1u)));
+    }
+
     if (depth < MeshClusterNearMetres)
     {
         return 0u;
@@ -176,9 +183,15 @@ uint meshClusterSlice(float depth)
     return min(1u + uint(share * float(MESH_CLUSTERS_Z - 2u)), MESH_CLUSTERS_Z - 2u);
 }
 
-// The view depth where slice slice starts (its end is the next one's start; the last one's has none).
-float meshClusterSliceStart(uint slice)
+// The view depth where slice slice starts (its end is the next one's start; the last one's has none, and an orthographic
+// view's first one reaches back past it).
+float meshClusterSliceStart(uint slice, bool orthographic)
 {
+    if (orthographic)
+    {
+        return MeshClusterFarMetres * (2.0 * float(slice) / float(MESH_CLUSTERS_Z) - 1.0);
+    }
+
     if (slice == 0u)
     {
         return 0.0;
@@ -190,10 +203,10 @@ float meshClusterSliceStart(uint slice)
 
 // The cluster of the drawn image's pixel pixel (in pixels from its top-left, of an image width x height) at view depth
 // depth.
-uint meshCluster(vec2 pixel, vec2 size, float depth)
+uint meshCluster(vec2 pixel, vec2 size, float depth, bool orthographic)
 {
     uvec2 tile = min(uvec2(pixel / size * vec2(MESH_CLUSTERS_X, MESH_CLUSTERS_Y)), uvec2(MESH_CLUSTERS_X - 1u, MESH_CLUSTERS_Y - 1u));
-    return tile.x + MESH_CLUSTERS_X * (tile.y + MESH_CLUSTERS_Y * meshClusterSlice(depth));
+    return tile.x + MESH_CLUSTERS_X * (tile.y + MESH_CLUSTERS_Y * meshClusterSlice(depth, orthographic));
 }
 
 // signNotZero of the octahedral encoding: +1 for 0.
