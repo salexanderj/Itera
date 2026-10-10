@@ -19,7 +19,7 @@ namespace Game.Systems;
 /// <see cref="AheadMetres"/> in front of the start pose, side on to it, facing its right. Then, over and over: it looks
 /// about (its Survey clip) for <see cref="SurveySeconds"/>, walks for <see cref="WalkSeconds"/> and runs for
 /// <see cref="RunSeconds"/> round a circle of <see cref="CircleMetres"/> beyond where it started, which takes it away
-/// from the start and back. Each step it stands on the voxel ground under it (a ray down; the generator's hills where none
+/// from the start and back, each clip fading into the next over <see cref="FadeSeconds"/>. Each step it stands on the voxel ground under it (a ray down; the generator's hills where none
 /// is loaded) and faces the way it goes. Its route is <see cref="FoxRoute"/>. The engine's <c>MeshDrawSystem</c> draws
 /// it. A game's own animated models move the same way.
 /// </summary>
@@ -48,6 +48,9 @@ public sealed partial class FoxSystem(
 
     /// <summary>The length of one round of looking about, walking, and running.</summary>
     public const float CycleSeconds = SurveySeconds + WalkSeconds + RunSeconds;
+
+    /// <summary>How long it takes to fade from one clip to the next, in seconds.</summary>
+    public const float FadeSeconds = 0.3f;
 
     private static readonly QueryDescription s_fox = new QueryDescription().WithAll<
         FoxRoute,
@@ -156,7 +159,7 @@ public sealed partial class FoxSystem(
                 : (Run, RunSpeed);
             if (animator.Clip != clip)
             {
-                animator = MeshAnimator.Playing(clip);
+                animator.FadeTo(clip, FadeSeconds);
             }
 
             if (speed == 0)

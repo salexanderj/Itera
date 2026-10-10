@@ -126,8 +126,9 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
    tagsOf)` from a system's `Initialize` (or later), `tagsOf` giving each material's surface tags (game-defined bits;
    voxel materials' through an `IVoxelSurfaceTags`). Loose bodies land on it; `CollisionSources.Raycast` meets it.
 5. A skinned model plays a clip with `MeshAnimator.Playing(rig.FindClip("Walk"))` added to it (the rig from
-   `MeshAssets.TryGet`); a system that changes clips runs before the engine's `MeshAnimatorSystem`, which the game
-   registers once, after every such system.
+   `MeshAssets.TryGet`), and changes clip with `animator.FadeTo(clip, 0.3f)` (a fade) or a new `Playing`; a system that
+   changes clips runs before the engine's `MeshAnimatorSystem`, which the game registers once, after every such
+   system.
 6. Check it: `meshes` lists it (triangles, materials, textures, size, joints, clips), `meshes place NAME [CLIP
    [SECONDS]]` puts one in front of the camera, the log's `Mesh assets:` lines have no Warning about it, a
    `ScenarioTests` row finds it in `MeshInstances`, and for a skinned model a test like `FoxModelTests` compares its

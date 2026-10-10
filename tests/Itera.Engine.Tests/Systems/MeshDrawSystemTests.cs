@@ -14,7 +14,8 @@ namespace Itera.Engine.Tests.Systems;
 
 /// <summary>
 /// <see cref="MeshDrawSystem"/>: each placed mesh is drawn at its pose between the last two fixed steps, scaled, with its
-/// tint and shadow, a posed one with its clip's skinning matrices at the blend of its last two times; the console's
+/// tint and shadow, a posed one with its clip's skinning matrices at the blend of its last two times, and while it fades
+/// with each joint blended between its two clips; the console's
 /// <c>meshes</c> lists the assets and their clips, places one or many in front of the camera facing it, playing a clip or
 /// held at a time of it, and clears only those it placed; and drawing allocates nothing.
 /// </summary>
@@ -63,6 +64,46 @@ public sealed class MeshDrawSystemTests
                 ) < 1e-5f
             );
         }
+    }
+
+    [Fact]
+    public void A_fading_mesh_blends_each_joint_between_its_two_clips()
+    {
+        using var world = World.Create();
+        using var system = Create(world);
+        // Half way from the bend at 0.4 s to the rest pose.
+        var animator = MeshAnimator.Playing(0, seconds: 0.4f, speed: 0);
+        animator.FadeTo(-1, 1);
+        animator.Faded = 0.5f;
+        animator.PreviousFaded = 0.5f;
+        world.Create(MeshPlacement.At(Vector3.Zero, Quaternion.Identity), DrawnMesh.Of(2), animator);
+
+        system.Update(new FrameTime(1f / 240, 1, 1, 0.5f));
+
+        var instance = Assert.Single(_instances.Instances.ToArray());
+        var rig = _assets[2].Rig!;
+        var bent = new JointTransform[2];
+        var rest = new JointTransform[2];
+        rig.Pose(0, 0.4f, bent);
+        rig.Pose(-1, 0, rest);
+        var blended = new JointTransform[2];
+        for (var j = 0; j < 2; j++)
+        {
+            blended[j] = new JointTransform(
+                Vector3.Lerp(bent[j].Translation, rest[j].Translation, 0.5f),
+                Quaternion.Slerp(bent[j].Rotation, rest[j].Rotation, 0.5f),
+                Vector3.Lerp(bent[j].Scale, rest[j].Scale, 0.5f)
+            );
+        }
+
+        var expected = new Matrix4x4[2];
+        rig.WritePalette(blended, expected);
+        var tip = Vector3.Transform(new Vector3(2, 0, 0), _instances.Palettes[instance.FirstJoint + 1]);
+        Assert.True(Vector3.Distance(Vector3.Transform(new Vector3(2, 0, 0), expected[1]), tip) < 1e-4f);
+        // And not the bend's alone: the fade moved the tip.
+        var bentPalette = new Matrix4x4[2];
+        rig.WritePalette(bent, bentPalette);
+        Assert.True(Vector3.Distance(Vector3.Transform(new Vector3(2, 0, 0), bentPalette[1]), tip) > 1e-3f);
     }
 
     [Fact]

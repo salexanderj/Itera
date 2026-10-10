@@ -15,7 +15,8 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
 - The fox (`GameModels.Fox`): Khronos's Fox sample (`Models/Fox/`, credits in `Models/SOURCES.md`; 24 joints, clips
   Survey, Walk, and Run), declared at the run's start (`GameRunStartup`). `FoxSystem` puts it on the ground 4 m in front
   of the start pose, side on, then over and over: it looks about (Survey) for 6 s, walks (1.1 m/s) for 8 s and runs
-  (4 m/s) for 6 s round a 3 m circle beyond where it started, on the voxel ground (`FoxRoute`).
+  (4 m/s) for 6 s round a 3 m circle beyond where it started, on the voxel ground (`FoxRoute`), each clip fading into
+  the next over 0.3 s (`FoxSystem.FadeSeconds`).
 - The player starts at the world's middle, its eye a person's height over the ground or a boulder there
   (`GameGenerator.SurfaceHeight`), looking along -z (`StartPose`; `Game:World:CameraPose` sets another, which must lie in
   the play area). `PlayerSpawnSystem` makes it with the engine's components; the engine's systems

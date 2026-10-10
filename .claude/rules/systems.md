@@ -58,9 +58,12 @@ pose at the last two fixed steps and a uniform scale; a fixed system that moves 
 one first) and a `DrawnMesh` (the asset's index from `MeshAssets.Find`, a tint, a `ModelShadow`) to `MeshInstances`, its
 pose blended by the frame's `Alpha`; one with a `MeshAnimator` (a clip of the asset's rig by index, `Rig.FindClip`, -1
 for the rest pose; its time at the last two steps; a speed, 0 to hold; `Once` to stop at the end) is posed by the clip
-at the blend of its two times, wrapped by a looping clip's length (`MeshInstances.AddPosed`, `Rig.WritePalette`).
+at the blend of its two times, wrapped by a looping clip's length (`MeshInstances.AddPosed`, `Rig.WritePalette`). A
+change of clip may fade (`MeshAnimator.FadeTo(clip, seconds)`: the old clip goes on at its own speed, and each joint
+blends from it to the new one, rotations along the shorter way, by `FadeWeight` at the frame's `Alpha`).
 `MeshAnimatorSystem` (fixed, after every system that chooses a clip) moves each clip's time on by its speed, so clips
-follow the match's time and stop while it is paused; at a looping clip's end it wraps both times together. `meshes` is
+follow the match's time and stop while it is paused; at a looping clip's end it wraps both times together; during a
+fade it moves the old clip and the fade on too, and ends the fade a step after it is whole. `meshes` is
 `MeshDrawSystem`'s command: the run's assets with their rigs' joints and clips; `place NAME [SCALE] [CLIP [SECONDS]]` 4 m
 in front of the camera, facing it, dropped to the voxel ground by a ray where there is one, playing CLIP or held at
 SECONDS of it; `test COUNT [NAME [CLIP]]` in rows, each from another time of the clip; `clear` removes those it placed

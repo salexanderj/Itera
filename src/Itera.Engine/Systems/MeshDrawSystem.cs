@@ -17,7 +17,8 @@ namespace Itera.Engine.Systems;
 /// <c>CameraExtractSystem</c> and <see cref="LooseBodyModelSystem"/>, before <c>AtmosphereSystem</c>): each entity with a
 /// <see cref="MeshPlacement"/> and a <see cref="DrawnMesh"/> is drawn where it is between the last two fixed steps, its
 /// pose blended by <see cref="FrameTime.Alpha"/> and scaled; one that also has a <see cref="MeshAnimator"/> is posed by
-/// its clip at the blend of its last two times (its rig's skinning matrices, <c>Rig.WritePalette</c>). Reads those three;
+/// its clip at the blend of its last two times (its rig's skinning matrices, <c>Rig.WritePalette</c>), and while it fades
+/// from another clip by both, each joint blended by the fade (rotations along the shorter way). Reads those three;
 /// writes no components. Registers the console's <c>meshes</c> (the run's assets and their clips; placing one or many in
 /// front of the camera, on the ground where a voxel world is, playing a clip or held at a time of it, tagged
 /// <see cref="ConsoleMesh"/>; removing those).
@@ -46,6 +47,7 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     private readonly VoxelWorld? _voxels;
     private readonly ConsoleCommands? _commands;
     private JointTransform[] _locals = [];
+    private JointTransform[] _fromLocals = [];
 
     /// <param name="world">The ECS world.</param>
     /// <param name="instances">The frame's mesh instances.</param>
@@ -81,6 +83,7 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
         }
 
         _locals = new JointTransform[most];
+        _fromLocals = new JointTransform[most];
         _commands?.Register(
             "meshes",
             "[place NAME [SCALE] [CLIP [SECONDS]] | test COUNT [NAME [CLIP]] | clear]",
@@ -99,6 +102,7 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
             Instances = _instances,
             Assets = _assets,
             Locals = _locals,
+            FromLocals = _fromLocals,
             Alpha = time.Alpha,
         };
         World.InlineQuery<AddPosed, MeshPlacement, DrawnMesh, MeshAnimator>(in s_posed, ref posed);
@@ -383,6 +387,7 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
         public MeshInstances Instances;
         public MeshAssets Assets;
         public JointTransform[] Locals;
+        public JointTransform[] FromLocals;
         public float Alpha;
 
         public readonly void Update(ref MeshPlacement placement, ref DrawnMesh mesh, ref MeshAnimator animator)
@@ -394,20 +399,49 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
                 return;
             }
 
-            var seconds = animator.PreviousSeconds + (animator.Seconds - animator.PreviousSeconds) * Alpha;
-            var duration = MeshAnimatorSystem.DurationOf(Assets, mesh.Asset, animator.Clip);
-            if (duration > 0 && !animator.Once)
+            var locals = Locals.AsSpan(0, rig.JointCount);
+            var seconds = Between(animator.PreviousSeconds, animator.Seconds, animator.Clip, animator.Once, mesh.Asset);
+            rig.Pose(animator.Clip, seconds, locals);
+            var weight = animator.FadeWeight(Alpha);
+            if (weight < 1)
             {
-                seconds -= MathF.Floor(seconds / duration) * duration;
+                var from = FromLocals.AsSpan(0, rig.JointCount);
+                var fromSeconds = Between(
+                    animator.FromPreviousSeconds,
+                    animator.FromSeconds,
+                    animator.FromClip,
+                    animator.FromOnce,
+                    mesh.Asset
+                );
+                rig.Pose(animator.FromClip, fromSeconds, from);
+                for (var j = 0; j < locals.Length; j++)
+                {
+                    locals[j] = new JointTransform(
+                        Vector3.Lerp(from[j].Translation, locals[j].Translation, weight),
+                        Quaternion.Slerp(from[j].Rotation, locals[j].Rotation, weight),
+                        Vector3.Lerp(from[j].Scale, locals[j].Scale, weight)
+                    );
+                }
             }
 
-            var locals = Locals.AsSpan(0, rig.JointCount);
-            rig.Pose(animator.Clip, seconds, locals);
             var palette = Instances.AddPosed(mesh.Asset, in transform, rig.JointCount, mesh.Tint, mesh.Shadow);
             if (!palette.IsEmpty)
             {
                 rig.WritePalette(locals, palette);
             }
+        }
+
+        /// <summary>A clip's time between its last two steps, wrapped by a looping clip's length.</summary>
+        private readonly float Between(float previous, float seconds, int clip, bool once, int asset)
+        {
+            var between = previous + (seconds - previous) * Alpha;
+            var duration = MeshAnimatorSystem.DurationOf(Assets, asset, clip);
+            if (duration > 0 && !once)
+            {
+                between -= MathF.Floor(between / duration) * duration;
+            }
+
+            return between;
         }
     }
 }

@@ -124,6 +124,28 @@ public sealed class FoxSystemTests
     }
 
     [Fact]
+    public void Each_clip_fades_into_the_next()
+    {
+        var assets = new MeshAssets(NullLogger<MeshAssets>.Instance);
+        assets.Add(GameModels.Fox, RiggedFox());
+        using var world = World.Create();
+        using var system = new FoxSystem(
+            world,
+            assets,
+            new StartPose(new Vector3(0, 8, 0), 0, 0),
+            Seed,
+            NullLogger<FoxSystem>.Instance
+        );
+        system.Initialize();
+
+        // Just past the start of its walk.
+        Run(system, FoxSystem.SurveySeconds + 0.5f);
+        var animator = Fox(world).Animator;
+
+        Assert.Equal((1, 0, FoxSystem.FadeSeconds), (animator.Clip, animator.FromClip, animator.FadeSeconds));
+    }
+
+    [Fact]
     public void Without_the_model_declared_the_start_stops()
     {
         using var world = World.Create();

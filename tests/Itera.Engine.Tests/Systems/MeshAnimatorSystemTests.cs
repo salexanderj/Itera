@@ -11,7 +11,7 @@ namespace Itera.Engine.Tests.Systems;
 /// <summary>
 /// <see cref="MeshAnimatorSystem"/>: each step moves a clip's time on by its speed, keeping the time before; a looping clip
 /// wraps both times at its end; one played once stops there; a speed of 0 holds it; a clip the asset does not have only
-/// moves on; and a step allocates nothing.
+/// moves on; a fade moves both clips on and ends a step after it is whole; and a step allocates nothing.
 /// </summary>
 public sealed class MeshAnimatorSystemTests
 {
@@ -81,6 +81,35 @@ public sealed class MeshAnimatorSystemTests
         system.Update(new FixedStepTime(Step, 0));
 
         Assert.Equal(1.15f, Single(world).Seconds, 1e-5f);
+    }
+
+    [Fact]
+    public void A_fade_moves_both_clips_on_and_ends_a_step_after_it_is_whole()
+    {
+        using var world = World.Create();
+        using var system = Create(world);
+        var animator = MeshAnimator.Playing(0, seconds: 0.2f);
+        // To the rest pose over half a second (two steps); the bend goes on meanwhile.
+        animator.FadeTo(-1, 0.5f);
+        world.Create(DrawnMesh.Of(0), animator);
+
+        system.Update(new FixedStepTime(Step, 0));
+        var first = Single(world);
+        system.Update(new FixedStepTime(Step, 1));
+        var whole = Single(world);
+        system.Update(new FixedStepTime(Step, 2));
+        var held = Single(world);
+        system.Update(new FixedStepTime(Step, 3));
+        var ended = Single(world);
+
+        Assert.Equal((0f, 0.25f), (first.PreviousFaded, first.Faded));
+        Assert.Equal((0.2f, 0.45f), (first.FromPreviousSeconds, first.FromSeconds));
+        Assert.Equal(0.25f, first.FadeWeight(0.5f), 1e-6f);
+        Assert.Equal(0.5f, whole.Faded);
+        Assert.Equal(0.75f, whole.FadeWeight(0.5f), 1e-6f);
+        Assert.Equal(1, held.FadeWeight(0));
+        Assert.Equal(0, ended.FadeSeconds);
+        Assert.Equal(1, ended.FadeWeight(0.5f));
     }
 
     [Fact]
