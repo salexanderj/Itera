@@ -64,7 +64,8 @@ refuses); add `-- --Engine:FreeRun=true` to run the steps back to back.
 flies the camera to each view (a game's `tp` place, or `x,y,z,yaw,pitch`), waits until the view's world is loaded and
 on the GPU and its light has settled, writes `DIR/<view>.png` without the UI, stops the game, and with `--compare` runs
 `tools/benchmark/imgdiff.py` against an earlier set (exit code 1 when a picture differs). It refuses while another game
-started by `start` runs.
+started by `start` runs. An orthographic set: `--game "--Engine:Console:Run=lens ortho 120"` (120 m from the image's
+top to its bottom, for the whole run); a view straight down is `X,40,Z,0,-89`.
 
 ## Replies
 
