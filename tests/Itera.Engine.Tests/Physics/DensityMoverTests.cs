@@ -7,8 +7,20 @@ using Xunit.Abstractions;
 
 namespace Itera.Engine.Tests.Physics;
 
+/// <summary>The mover over the ground of <see cref="DensityTerrainGenerator"/>, of voxels or of triangles, in 10 cm cells.</summary>
+public interface IDensityGround
+{
+    VoxelCharacterMover Mover { get; }
+
+    /// <summary>True when the 10 cm cell (x, y, z) is not air.</summary>
+    bool Solid(int x, int y, int z);
+
+    /// <summary>True when a move's first read of a place may allocate (mesh colliders' columns are made then).</summary>
+    bool FirstReadsAllocate { get; }
+}
+
 /// <summary>A world of 10 cm voxels with densities (<see cref="DensityTerrainGenerator"/>), loaded once for the tests.</summary>
-public sealed class DensityMoverFixture : IDisposable
+public sealed class DensityMoverFixture : IDensityGround, IDisposable
 {
     public DensityMoverFixture()
     {
@@ -24,23 +36,36 @@ public sealed class DensityMoverFixture : IDisposable
 
     public VoxelCharacterMover Mover { get; }
 
+    public bool FirstReadsAllocate => false;
+
+    public bool Solid(int x, int y, int z)
+    {
+        World.TryGetMaterial(new VoxelCoord(x * 10, y * 10, z * 10), out var material);
+        return material != VoxelConstants.Air;
+    }
+
     public void Dispose() => World.Dispose();
 }
 
-/// <summary>
-/// The mover on 10 cm voxels, reading their densities (phase 5 step 4): a body stands on the surface the mesher draws,
-/// walks up slopes under the limit as ramps (the feet rise as the slope does, not a voxel at a time) and not up steeper
-/// ones, climbs stairs and steps as before, and random moves never leave it in the ground.
-/// </summary>
+/// <summary>The mover on 10 cm voxels, reading their densities (<see cref="DensityMoverFixture"/>).</summary>
 public sealed class DensityMoverTests(DensityMoverFixture fixture, ITestOutputHelper output)
-    : IClassFixture<DensityMoverFixture>
+    : DensityGroundTests(fixture, output),
+        IClassFixture<DensityMoverFixture>;
+
+/// <summary>
+/// The mover in 10 cm cells over the ground of <see cref="DensityTerrainGenerator"/>, of voxels with densities or of
+/// triangles: a body stands on the ground's surface inside its cell, walks up slopes under the limit as ramps (the feet
+/// rise as the slope does, not a cell at a time) and not up steeper ones, climbs stairs and steps, stops at walls and
+/// under a ceiling, and random moves never leave it in the ground.
+/// </summary>
+public abstract class DensityGroundTests(IDensityGround ground, ITestOutputHelper output)
 {
     private const float Step = 1f / 60;
     private const float Gravity = 20;
     private const float Walk = 4.5f;
     private static readonly CharacterShape s_shape = new(1.7f, 0.26f, 0.41f);
 
-    private readonly VoxelCharacterMover _mover = fixture.Mover;
+    private readonly VoxelCharacterMover _mover = ground.Mover;
 
     [Fact]
     public void A_body_stands_on_the_floor_inside_its_voxel()
@@ -302,15 +327,29 @@ public sealed class DensityMoverTests(DensityMoverFixture fixture, ITestOutputHe
         var feet = new Vector3(4, 2.5f, DensityTerrainGenerator.Middle(0) / 100f);
         var velocity = Vector3.Zero;
         Run(ref feet, ref velocity, new Vector2(1, 0.5f), 50);
+        var start = feet;
+        long first = 0,
+            second = 0;
 
-        var before = SystemAllocation.StartMeasurement();
-        for (var i = 0; i < 500; i++)
+        // The same moves twice, each measured: the first reads every column they reach, where mesh colliders' columns
+        // are made (FirstReadsAllocate).
+        for (var pass = 0; pass < 2; pass++)
         {
-            velocity = new Vector3(i % 100 < 50 ? 1 : -1, velocity.Y - Gravity * Step, 0.5f * (i % 100 < 50 ? 1 : -1));
-            _mover.Move(ref feet, ref velocity, in s_shape, Step);
+            feet = start;
+            velocity = Vector3.Zero;
+            var before = SystemAllocation.StartMeasurement();
+            for (var i = 0; i < 500; i++)
+            {
+                var way = i % 100 < 50 ? 1 : -1;
+                velocity = new Vector3(way, velocity.Y - Gravity * Step, 0.5f * way);
+                _mover.Move(ref feet, ref velocity, in s_shape, Step);
+            }
+
+            (pass == 0 ? ref first : ref second) = GC.GetAllocatedBytesForCurrentThread() - before;
         }
 
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal(0, second);
+        Assert.True(ground.FirstReadsAllocate || first == 0, $"The first pass allocated {first} bytes.");
     }
 
     [Fact]
@@ -334,9 +373,9 @@ public sealed class DensityMoverTests(DensityMoverFixture fixture, ITestOutputHe
     }
 
     /// <summary>
-    /// No solid voxel lies in the body above the half-voxel band its feet stand in (the ground's surface lies anywhere in
-    /// its voxel), read voxel by voxel; and the ground's surface (<see cref="DensityTerrainGenerator.Height"/>) lies under
-    /// the feet at the body's centre.
+    /// No solid cell (<see cref="IDensityGround.Solid"/>) lies in the body above the half-cell band its feet stand in (the
+    /// ground's surface lies anywhere in its cell), read cell by cell; and the ground's surface
+    /// (<see cref="DensityTerrainGenerator.Height"/>) lies under the feet at the body's centre.
     /// </summary>
     private void AssertClearAboveTheGround(Vector3 feet, int move)
     {
@@ -357,19 +396,16 @@ public sealed class DensityMoverTests(DensityMoverFixture fixture, ITestOutputHe
             {
                 for (var y = y0; y <= y1; y++)
                 {
-                    fixture.World.TryGetMaterial(new VoxelCoord(x * 10, y * 10, z * 10), out var material);
-                    if (material != VoxelConstants.Air)
+                    if (ground.Solid(x, y, z))
                     {
-                        Assert.Fail(
-                            $"Move {move}: voxel ({x}, {y}, {z}) of material {material} is in the body at {feet}."
-                        );
+                        Assert.Fail($"Move {move}: cell ({x}, {y}, {z}) is in the body at {feet}.");
                     }
                 }
             }
         }
 
-        var ground = DensityTerrainGenerator.Height(feet.X * 100, feet.Z * 100) / 100;
-        Assert.True(feet.Y > ground - 0.02f, $"Move {move}: the feet at {feet} lie under the ground at {ground:F3} m.");
+        var height = DensityTerrainGenerator.Height(feet.X * 100, feet.Z * 100) / 100;
+        Assert.True(feet.Y > height - 0.02f, $"Move {move}: the feet at {feet} lie under the ground at {height:F3} m.");
     }
 
     private CharacterMoveResult Run(

@@ -7,7 +7,8 @@ namespace Itera.Engine.Systems;
 
 /// <summary>
 /// The box a player, its eye, and what it aims at stay in: the match's world columns (its <see cref="VoxelGrid"/>'s
-/// bounds) and <see cref="MarginMetres"/> round them on every side, from below the world's floor to above its top. The
+/// bounds, or bounds a game gives without voxel terrain, <see cref="WithoutTerrain"/> by default) and
+/// <see cref="MarginMetres"/> round them on every side, from below the world's floor to above its top. The
 /// fly camera and <c>tp</c> keep to it, and a host can drop a peer's state or request that lies outside it: a position
 /// far outside the world makes column walks and edits very large. The margin leaves room to fly out and look at the
 /// whole world. Immutable; any thread.
@@ -26,19 +27,78 @@ public sealed class PlayArea
     /// <param name="grid">The match's grid, whose bounds the box holds.</param>
     /// <param name="marginMetres">How far past the world the box reaches, in metres.</param>
     public PlayArea(VoxelGrid grid, float marginMetres = DefaultMarginMetres)
+        : this(
+            -Metres(grid, grid.MinVoxelXZ),
+            Metres(grid, grid.EndVoxelXZ),
+            Metres(grid, grid.MinVoxelY),
+            Metres(grid, grid.EndVoxelY),
+            LooseBodies.FallLimitMetres(grid),
+            marginMetres
+        ) { }
+
+    /// <summary>The box round a world of the given bounds, for a match without voxel terrain.</summary>
+    /// <param name="worldEdgeMetres">How far the world reaches from the middle on x and z, in metres.</param>
+    /// <param name="worldFloorMetres">The world's floor, in metres; a body 10 m below it has fallen out.</param>
+    /// <param name="worldTopMetres">The world's top, in metres.</param>
+    /// <param name="marginMetres">How far past the world the box reaches, in metres.</param>
+    public PlayArea(
+        float worldEdgeMetres,
+        float worldFloorMetres,
+        float worldTopMetres,
+        float marginMetres = DefaultMarginMetres
+    )
+        : this(
+            worldEdgeMetres,
+            worldEdgeMetres,
+            worldFloorMetres,
+            worldTopMetres,
+            worldFloorMetres - LooseBodies.FallMarginMetres,
+            marginMetres
+        )
+    {
+        if (
+            !float.IsFinite(worldEdgeMetres)
+            || worldEdgeMetres <= 0
+            || !float.IsFinite(worldFloorMetres)
+            || !float.IsFinite(worldTopMetres)
+            || worldTopMetres <= worldFloorMetres
+            || !float.IsFinite(marginMetres)
+            || marginMetres < 0
+        )
+        {
+            throw new ArgumentException(
+                $"A play area needs an edge over 0, a top over its floor, and a margin of 0 or more, all finite (edge {worldEdgeMetres}, floor {worldFloorMetres}, top {worldTopMetres}, margin {marginMetres})."
+            );
+        }
+    }
+
+    private PlayArea(
+        float worldEdgeMetres,
+        float endMetres,
+        float worldFloorMetres,
+        float worldTopMetres,
+        float fallLimitMetres,
+        float marginMetres
+    )
     {
         MarginMetres = marginMetres;
-        WorldEdgeMetres = -Metres(grid, grid.MinVoxelXZ);
-        WorldFloorMetres = Metres(grid, grid.MinVoxelY);
-        EdgeMetres = Metres(grid, grid.EndVoxelXZ) + marginMetres;
+        WorldEdgeMetres = worldEdgeMetres;
+        WorldFloorMetres = worldFloorMetres;
+        EdgeMetres = endMetres + marginMetres;
         FloorMetres = WorldFloorMetres - marginMetres;
-        TopMetres = Metres(grid, grid.EndVoxelY) + marginMetres;
-        FallLimitMetres = LooseBodies.FallLimitMetres(grid);
+        TopMetres = worldTopMetres + marginMetres;
+        FallLimitMetres = fallLimitMetres;
         EyeBounds = string.Create(
             CultureInfo.InvariantCulture,
             $"x and z within {EdgeMetres - EyeInsetMetres:F0} m of the middle, y from {FloorMetres + EyeInsetMetres:F0} to {TopMetres - EyeInsetMetres:F0} m"
         );
     }
+
+    /// <summary>
+    /// The engine's play area in a match without voxel terrain: the bounds a 10 cm voxel grid would have (±512 m across,
+    /// from -51.2 m to 102.4 m) and the default margin. A game whose meshes reach past them registers its own.
+    /// </summary>
+    public static PlayArea WithoutTerrain { get; } = new(new VoxelGrid(VoxelGrid.MostBaseCentimetres));
 
     /// <summary>How far past the world's edge, floor, and top the box reaches, in metres.</summary>
     public float MarginMetres { get; }

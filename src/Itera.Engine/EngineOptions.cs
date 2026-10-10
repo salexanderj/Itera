@@ -500,6 +500,13 @@ public sealed class PhysicsSettings
     /// steps repeat on one machine (tests, fast-forward runs).
     /// </summary>
     public int Threads { get; set; }
+
+    /// <summary>
+    /// The edge of the character mover's cells in a match without voxel terrain, in centimetres, 1 to 10: it reads the
+    /// mesh colliders as columns of these cells, and on cells coarser than 1 cm walks their slopes as ramps. With
+    /// terrain the cells are the world's level-0 voxels.
+    /// </summary>
+    public int CollisionCentimetres { get; set; } = 10;
 }
 
 /// <summary>What this game does in a session.</summary>

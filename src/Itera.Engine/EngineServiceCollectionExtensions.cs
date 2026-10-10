@@ -151,9 +151,16 @@ public static class EngineServiceCollectionExtensions
         services.TryAddScoped<CollisionSources>();
         services.TryAddSingleton<IVoxelPassability, NothingPassable>();
         services.TryAddSingleton<IVoxelSurfaceTags, NoVoxelSurfaceTags>();
-        // What the engine's player, camera, and benchmark systems share (Systems/): the input block a game sets, the
+        // The character mover over the terrain when there is one (with the loose bodies as voxels) and the colliders, or
+        // the colliders alone in cells of Engine:Physics:CollisionCentimetres, the map's edge the play area's world edge.
+        services.TryAddScoped(CreateCharacterMover);
+        // What the engine's player, camera, and benchmark systems share (Systems/): the play area (round the terrain's
+        // grid, or PlayArea.WithoutTerrain; a game without terrain may replace it), the input block a game sets, the
         // console's resets, and the movement keys, made when a game first asks for them (an IRunStartup, before its own
-        // keys). The play area and the benchmark's view of the engine come with the terrain (AddIteraVoxels).
+        // keys). The benchmark's view of the engine comes with the terrain (AddIteraVoxels).
+        services.TryAddScoped(sp =>
+            sp.GetService<VoxelWorld>() is { } world ? new PlayArea(world.Grid) : PlayArea.WithoutTerrain
+        );
         services.TryAddScoped<PlayerInputBlock>();
         services.TryAddScoped<WorldResets>();
         services.TryAddSingleton<MovementKeys>();
@@ -198,5 +205,19 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<GameLoop>();
 
         return services;
+    }
+
+    private static VoxelCharacterMover CreateCharacterMover(IServiceProvider services)
+    {
+        var passability = services.GetRequiredService<IVoxelPassability>();
+        var colliders = services.GetRequiredService<MeshColliders>();
+        if (services.GetService<VoxelWorld>() is { } world)
+        {
+            return new VoxelCharacterMover(world, passability, services.GetService<LooseBodyVoxels>(), colliders);
+        }
+
+        var cell = services.GetRequiredService<IOptions<EngineOptions>>().Value.Physics.CollisionCentimetres;
+        var edge = services.GetRequiredService<PlayArea>().WorldEdgeMetres;
+        return new VoxelCharacterMover(passability, colliders, cell, edge);
     }
 }

@@ -17,8 +17,8 @@ paths:
 `CharacterStandIn`), and networking (`NetEntity`).
 `src/Itera.Engine/Systems/` holds the systems (namespace `Itera.Engine.Systems`). The engine registers no system: a game
 registers those it wants, in run order, in its composition (the starter's `GameServiceCollectionExtensions`), and the
-engine registers what they share (`PlayArea` from the match's grid, `PlayerInputBlock`, `WorldResets`,
-`IBenchmarkHost`, `MovementKeys`).
+engine registers what they share (`PlayArea` round the match's grid, or `PlayArea.WithoutTerrain` with no terrain,
+`PlayerInputBlock`, `WorldResets`, `IBenchmarkHost` with terrain, `MovementKeys`).
 
 The player (the starter's `PlayerSpawnSystem` makes it with these components):
 

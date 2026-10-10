@@ -39,7 +39,28 @@ step height, walks up no slope past its max slope (steeper ground slides it down
 walks through passable materials (`IVoxelPassability`). On voxels coarser than 1 cm it stands on the ground's surface
 inside a voxel, where its density crosses one half (`VoxelWorld.SurfaceOver`), blended between neighbouring columns
 that differ by less than the slope limit over a voxel. The map's edge is a wall at every height (`AddMapEdge`). It waits
-while the voxels round it are not loaded. Its widest body is 2 m in radius (`MaxRadiusMetres`).
+while the voxels round it are not loaded. Its widest body is 2 m in radius (`MaxRadiusMetres`). It also reads the
+match's mesh colliders in the same cells (`MeshColumns`), combined with the voxels by the higher top, the lower bottom,
+and either cell; without terrain it reads them alone in cells of `Engine:Physics:CollisionCentimetres` (10 by default),
+with no column to wait for, and its map edge at the play area's world edge. The core makes it (`AddIteraEngine`: the
+world's constructor with terrain, `VoxelCharacterMover(passability, colliders, cell, edge)` without), and the play area
+(`PlayArea`, round the grid, or `PlayArea.WithoutTerrain`, a 10 cm grid's bounds, with a bounds constructor for a game
+to register its own). Where a mesh's top is over the voxels' but its surface lies under theirs (a steep triangle half in
+the ground), the voxels' surface holds the body.
+
+`MeshColumns` (internal): a column's spans, one for each triangle over the column's square: the lowest and highest
+cell it blocks, its plane's height at the square's centre (a wall's highest point over the square), and its tags. Only the cells a triangle
+passes through block: a closed mesh has no inside, so a body inside one is blocked only where a face lies in its height.
+A triangle on a cell's boundary blocks the cell behind its front (a wall is moved 0.01 cell behind its front before it
+is cut, any other triangle 0.01 cell down or up), so a floor at y = k blocks the cell under it, a ceiling there the cell over
+it, and a closed mesh of a voxel box the box's outer voxels; a triangle that only touches a column's corner leaves it
+alone. A column's surface is the plane at its centre, anywhere in its top cell or under it on a slope (the voxels' lies
+within half a cell of their top; the mover reads surfaces for both). Chunks of 32 by 32 columns are made at their first
+read and kept until the colliders change (`MeshColliders.Version`), at most 256 (`MostChunks`; past that, the chunk read
+longest ago is dropped and its memory used for the new one, so bodies far apart that need more at once make chunks
+again at every read); making one allocates until the cache is full. A move over triangles alone costs about 1.5
+times one over voxels in 10 cm cells, and about 6.5 times in 1 cm cells (columns are read one by one, voxels a brick's
+mask at a time).
 
 ## Mesh colliders and the shared ray
 
@@ -62,7 +83,8 @@ ray (`ToolAim`) stays the terrain's own.
   - `Physics/`: the Bepu simulation and stand-ins (`PhysicsWorld`), voxel box statics (`VoxelColliders`), loose bodies
     (`LooseBodies`: table, rest, and removal; `.Pieces.cs` balls and lifted pieces; `.Parts.cs` cut parts and ragdolls;
     `.Hulls.cs` large hulls), loose bodies and solid models as voxels (`LooseBodyVoxels`, `SolidModelVoxels`,
-    `SolidColumns`), the character mover (`VoxelCharacterMover`), a game's mesh colliders (`MeshColliders`) and the ray
+    `SolidColumns`), the character mover (`VoxelCharacterMover`) and the mesh colliders as its cells (`MeshColumns`), a
+    game's mesh colliders (`MeshColliders`) and the ray
     over them and the terrain (`CollisionSources`, `SurfaceHit`), and Bepu's callback structs. The voxels' surface tags
     are `Voxels/IVoxelSurfaceTags`.
   - `Systems/`: `PhysicsReadSystem`, `LooseBodySystem`, `LooseBodyRoom`, `StandInSystem`, `DebugBallSystem`,

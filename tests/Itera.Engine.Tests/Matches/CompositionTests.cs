@@ -1,5 +1,8 @@
+using System.Numerics;
 using Itera.Engine.Ecs;
 using Itera.Engine.Matches;
+using Itera.Engine.Physics;
+using Itera.Engine.Systems;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Itera.Engine.Tests.Matches;
@@ -7,7 +10,8 @@ namespace Itera.Engine.Tests.Matches;
 /// <summary>
 /// The engine's composition with the least a game adds (<see cref="EngineComposition"/>): it builds with every
 /// registration checked, the run's services (the loop among them) resolve from the root without a match's (scoped)
-/// service, a match's scope resolves its services, and a game's fixed and frame systems come out in the order it
+/// service, a match's scope resolves its services (without terrain, a character mover over the mesh colliders alone,
+/// which never waits, and the engine's default play area), and a game's fixed and frame systems come out in the order it
 /// registered them, which is the order they run in.
 /// </summary>
 public sealed class CompositionTests
@@ -25,7 +29,14 @@ public sealed class CompositionTests
             .ServiceProvider.GetRequiredService<MatchContext>()
             .Set(new MatchStart(SessionMode.Offline, SessionTransportKind.Direct, null, 1, null, false));
         var match = scope.ServiceProvider.GetRequiredService<MatchServices>();
+        var mover = scope.ServiceProvider.GetRequiredService<VoxelCharacterMover>();
+        var area = scope.ServiceProvider.GetRequiredService<PlayArea>();
         Assert.Equal(terrain, match.Terrain is not null);
+        Assert.Equal(!terrain, ReferenceEquals(PlayArea.WithoutTerrain, area));
+        if (!terrain)
+        {
+            Assert.True(mover.IsResident(new Vector3(300, 2, -300), 1));
+        }
     }
 
     [Fact]

@@ -26,8 +26,9 @@ threads, with edits), draws it as triangle meshes through Vulkan, runs an Arch E
 Bepu, plays procedural sound through OpenAL, draws its UI with Skia, carries sessions over LiteNetLib or Steam, saves a
 world as its seed plus its edit log, and loads mods from `Mods/`. Input events become one `InputSnapshot` per frame
 (`InputService.Frame`) and one per fixed step (`InputService.Tick`). Voxel terrain is optional: a game that registers
-no generator and does not call `AddIteraVoxels` plays matches without it; voxel models, loose bodies, and the
-character mover still need it today (the mesh path's phase 5 is making them independent).
+no generator and does not call `AddIteraVoxels` plays matches without it, its characters moving over the mesh colliders
+it registers; voxel models and loose bodies still need terrain today (the mesh path's phase 5 is making them
+independent).
 
 `ARCHITECTURE.md` holds the full description, the dependencies, the design decisions, and the open work. Read it before
 changing anything structural. `docs/` holds the write-ups behind decisions: `voxel-structures.md`, `edit-log-compaction.md`,

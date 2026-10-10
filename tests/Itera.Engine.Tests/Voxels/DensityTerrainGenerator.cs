@@ -86,6 +86,20 @@ internal sealed class DensityTerrainGenerator(VoxelGrid grid) : IChunkGenerator
     public static bool Ceiling(int x, int y, int z) =>
         z >= Strips[6] && z < Strips[6] + StripWidth && x >= 300 && x < 600 && y >= 380 && y < 420;
 
+    /// <summary>
+    /// True when the 10 cm voxel (x, y, z) is not air: its sample point lies under the ground, in a feature, or in the
+    /// ceiling (what the generator fills at level 0 on a 10 cm grid).
+    /// </summary>
+    public static bool Solid(int x, int y, int z)
+    {
+        int sampleX = x * 10 + 5,
+            sampleY = y * 10 + 5,
+            sampleZ = z * 10 + 5;
+        return sampleY < FeatureTop(sampleX, sampleZ)
+            || Ceiling(sampleX, sampleY, sampleZ)
+            || sampleY < Height(sampleX, sampleZ);
+    }
+
     public void DescribeColumn(ColumnKey column, ulong seed, Span<ChunkFill> layers) => layers.Fill(ChunkFill.Mixed);
 
     public void Fill(ChunkKey chunk, ulong seed, Span<byte> voxels) => Fill(chunk, seed, voxels, default);

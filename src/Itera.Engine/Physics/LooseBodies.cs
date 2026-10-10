@@ -118,11 +118,15 @@ public sealed partial class LooseBodies
         colliders.GroupThawed = Rejoin;
     }
 
+    /// <summary>How far under a world's floor a body has fallen out of it, in metres.</summary>
+    public const float FallMarginMetres = 10;
+
     /// <summary>
-    /// Below this height, in metres, a body has fallen out of a world of <paramref name="grid"/>: 10 m under its lowest
-    /// voxel.
+    /// Below this height, in metres, a body has fallen out of a world of <paramref name="grid"/>:
+    /// <see cref="FallMarginMetres"/> under its lowest voxel.
     /// </summary>
-    public static float FallLimitMetres(VoxelGrid grid) => grid.ToCentimetres(grid.MinVoxelY) * Metres - 10;
+    public static float FallLimitMetres(VoxelGrid grid) =>
+        grid.ToCentimetres(grid.MinVoxelY) * Metres - FallMarginMetres;
 
     /// <summary>Loose bodies now.</summary>
     public int Count => _bodies.Count;

@@ -83,7 +83,8 @@ lists the game's). Commonly used:
   under 1 s in Release. A host and a client both without graphics play a session on 127.0.0.1 (`--Engine:Session:Port`
   to keep off a running game's). `game.py start --headless` adds it. `--Engine:Physics:Threads=1` (1 to 16; 0, the
   default, a quarter of the processors) makes physics repeat run to run.
-- Other systems: `--Engine:Physics:SettleSeconds` (0.5 to 60), `MaxLooseBodies` (1 to 1024);
+- Other systems: `--Engine:Physics:SettleSeconds` (0.5 to 60), `MaxLooseBodies` (1 to 1024), `CollisionCentimetres`
+  (the character mover's cells without voxel terrain, 1 to 10, default 10);
   `--Engine:Particles:Enabled=false` (`Capacity` 16,384 to 1,048,576); `--Engine:Audio:Enabled=false` (`Volume` 0 to
   1, default 0.1; `MaxVoices` 8 to 255), `--Engine:Audio:Cache=false`; `--Engine:Loading:Enabled=false`;
   `--Engine:Control:Enabled=true` (127.0.0.1:47650, `Port`); `--Engine:Benchmark:Enabled=true` (`tools/benchmark`);

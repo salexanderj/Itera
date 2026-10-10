@@ -70,7 +70,8 @@ Where tests live:
   spread over steps (`DeferredEditTests`); resets (`VoxelResetTests`); pieces and save formats (`VoxelPieceTests`);
   models (`ModelEditingTests`); `EditLogTests`.
 - `Itera.Engine.Tests/Systems/`: each engine system's behaviour and allocation, over `PhysicsTestHarness`,
-  `FlatGenerator`, `FlatTestGenerator`, `RampGenerator`, `FakeTickInput`, and `FakeFrameInput`.
+  `FlatGenerator`, `FlatTestGenerator`, `RampGenerator`, `FakeTickInput`, and `FakeFrameInput`; the play area
+  (`PlayAreaTests`).
 - `Itera.Engine.Tests/Voxels/Generation/`: the shapes' row spans against point tests, fractal noise, the jittered grid,
   the scalar field, the field tint map with `VoxelTintSampler`, and the heightfield generator (every description against
   its filled voxels, fills against a voxel-by-voxel reference, `HillsGenerator`).
@@ -81,9 +82,13 @@ Where tests live:
   posed against SharpGLTF's own world matrices); `RigClipTests` (step, linear, and cubic sampling); `MeshAssetsTests`,
   `TextureDecodeTests`, `MipChainTests`, `MeshTangentsTests`.
 - `Itera.Engine.Tests/Physics/`: mesh colliders (`MeshCollidersTests`: two-sided rays across buckets, tags, a ball that
-  lands on a collider's Bepu static at any voxel level) and the shared ray (`CollisionSourcesTests`); the mover through
-  test features (walls, 1 cm steps, a pit, a ceiling, leaves) and
-  10,000 random moves that never leave it inside a voxel; wide bodies (`WideBodyMoverTests`); statics of voxel boxes,
+  lands on a collider's Bepu static at any voxel level) and the shared ray (`CollisionSourcesTests`); the colliders as
+  the mover's cells (`MeshColumnsTests`); the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves)
+  and 10,000 random moves that never leave it inside a voxel, the same test bodies run on voxels and on triangles built
+  from the same features (`MoverFeatureTests`: `VoxelCharacterMoverTests` and `MeshMoverFeatureTests` over a world of
+  air; `DensityGroundTests` at 10 cm: `DensityMoverTests` and `MeshDensityGroundTests` with no world, both from
+  `TestTriangles`), the mover over colliders alone (`MeshMoverTests`: a thin wall, a slope along no axis, a collider
+  added and removed, the map's edge), and over voxels and colliders in the same cells (`MixedGroundMoverTests`); wide bodies (`WideBodyMoverTests`); statics of voxel boxes,
   coarse colliders (`CoarseCollidersTests`), ragdolls (`RagdollTests`), thrown and settled pieces, the mover among
   loose bodies (`MoverWithBodiesTests`), and solid models (`SolidModelVoxelsTests`).
 - `Itera.Engine.Tests/Rendering/`: `Materials/MaterialTextureSetsTests` (DDS files read back, sets loaded and left out,

@@ -387,6 +387,25 @@ public sealed class EngineOptionsValidatorTests
         Assert.True(_validator.Validate(null, headless).Succeeded);
     }
 
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(10, true)]
+    [InlineData(11, false)]
+    public void The_collision_cell_without_terrain_is_1_to_10_cm(int centimetres, bool valid)
+    {
+        var options = new EngineOptions { Physics = new PhysicsSettings { CollisionCentimetres = centimetres } };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.Equal(valid, result.Succeeded);
+        Assert.Equal(
+            !valid,
+            result.Failures?.Any(f => f.StartsWith("Engine:Physics:CollisionCentimetres", StringComparison.Ordinal))
+                ?? false
+        );
+    }
+
     [Fact]
     public void A_console_run_file_must_exist_and_an_empty_one_means_none()
     {

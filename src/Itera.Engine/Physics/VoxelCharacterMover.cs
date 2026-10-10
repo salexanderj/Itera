@@ -58,14 +58,17 @@ public readonly record struct CharacterMoveResult(
 );
 
 /// <summary>
-/// Moves upright bodies (vertical cylinders with flat ends) through the level-0 voxels: slides them along walls, steps
+/// Moves upright bodies (vertical cylinders with flat ends) through the level-0 voxels and a game's mesh colliders
+/// (<see cref="MeshColliders"/>, read as columns of the same cells, <c>MeshColumns</c>): slides them along walls, steps
 /// them up onto ledges no higher than their step, keeps them on the ground when walking down steps and slopes, lands
 /// falls, stops jumps at ceilings, and lifts bodies out of voxels placed into them. Solid voxels block unless their
 /// material is passable (<see cref="IVoxelPassability"/>). A body never moves while a column its body and move cover is
-/// not resident (the slope rules' look-ahead may read a column past those).
+/// not resident (the slope rules' look-ahead may read a column past those). Without voxel terrain it reads the mesh
+/// colliders alone, in cells of <c>Engine:Physics:CollisionCentimetres</c>, always resident, the map's edge the play
+/// area's world edge.
 /// Seen from above, the body is a circle, so it slides around trunks and along curved walls that are built of 1 cm
 /// steps; its flat bottom stands on the highest voxel under it. Works in level-0 voxels in double precision. Main
-/// thread; allocates nothing.
+/// thread; allocates nothing once the mesh colliders' columns it reads are made (<c>MeshColumns</c>).
 /// <para>
 /// At 1 cm a slope is a staircase of small ledges, so two rules keep bodies off slopes steeper than
 /// <see cref="CharacterShape.MaxSlopeDegrees"/> while they still step onto stones, logs, and stairs. A step up is kept
@@ -148,7 +151,14 @@ public sealed class VoxelCharacterMover
     private readonly double _overlap;
     private readonly double _centreCells;
 
-    private readonly VoxelWorld _world;
+    private readonly VoxelWorld? _world;
+
+    // The mesh colliders as columns of the mover's cells; null for none.
+    private readonly MeshColumns? _meshes;
+
+    // The map's edge: the first column across inside it and the first past it, on x and z.
+    private readonly int _edgeFirst;
+    private readonly int _edgeEnd;
 
     // The world's level-0 voxels (the mover's cells) per metre: 100 on a grid of 1 cm.
     private readonly double _cellsPerMetre;
@@ -170,6 +180,7 @@ public sealed class VoxelCharacterMover
 
     // The columns' tops and surfaces of a window the ground and the walls read (density only), and the ramp of the move.
     private readonly int[] _columnTops;
+    private readonly int[] _meshTops;
     private readonly double[] _surfaces;
 
     // The columns' surfaces read within one move or query (VoxelWorld.SurfaceOver), by column and top: a move reads
@@ -196,13 +207,70 @@ public sealed class VoxelCharacterMover
     /// <param name="world">The voxels.</param>
     /// <param name="passability">Which materials bodies walk through.</param>
     /// <param name="bodies">Loose bodies, read as voxels too; null for none.</param>
-    public VoxelCharacterMover(VoxelWorld world, IVoxelPassability passability, LooseBodyVoxels? bodies = null)
+    /// <param name="meshes">The match's mesh colliders, read in the world's cells too; null for none.</param>
+    public VoxelCharacterMover(
+        VoxelWorld world,
+        IVoxelPassability passability,
+        LooseBodyVoxels? bodies = null,
+        MeshColliders? meshes = null
+    )
+        : this(
+            world,
+            world.Grid.BaseCentimetres,
+            world.Grid.MinVoxelXZ,
+            world.Grid.EndVoxelXZ,
+            passability,
+            bodies,
+            meshes
+        ) { }
+
+    /// <summary>
+    /// A mover for a match without voxel terrain: the mesh colliders alone, in cells of <paramref name="cellCentimetres"/>,
+    /// with the map's edge <paramref name="edgeMetres"/> from the middle on x and z (the play area's world edge).
+    /// </summary>
+    /// <param name="passability">Which voxel materials bodies walk through (none are read without terrain).</param>
+    /// <param name="meshes">The match's mesh colliders.</param>
+    /// <param name="cellCentimetres">The cells' edge, in centimetres (<c>Engine:Physics:CollisionCentimetres</c>).</param>
+    /// <param name="edgeMetres">How far the map reaches from the middle, in metres; infinity (the default) for no edge.</param>
+    public VoxelCharacterMover(
+        IVoxelPassability passability,
+        MeshColliders meshes,
+        int cellCentimetres,
+        float edgeMetres = float.PositiveInfinity
+    )
+        : this(
+            null,
+            cellCentimetres,
+            -EdgeCells(edgeMetres, cellCentimetres),
+            EdgeCells(edgeMetres, cellCentimetres),
+            passability,
+            null,
+            meshes
+        ) { }
+
+    private VoxelCharacterMover(
+        VoxelWorld? world,
+        int cellCentimetres,
+        int edgeFirst,
+        int edgeEnd,
+        IVoxelPassability passability,
+        LooseBodyVoxels? bodies,
+        MeshColliders? meshes
+    )
     {
+        if (cellCentimetres < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(cellCentimetres), cellCentimetres, "A cell is 1 cm or more.");
+        }
+
         _world = world;
-        _cellsPerMetre = VoxelConstants.CentimetresPerMetre / (double)world.Grid.BaseCentimetres;
+        _edgeFirst = edgeFirst;
+        _edgeEnd = edgeEnd;
+        _cellsPerMetre = VoxelConstants.CentimetresPerMetre / (double)cellCentimetres;
+        _meshes = meshes is null ? null : new MeshColumns(meshes, _cellsPerMetre);
         _passable = MaterialSet.Passable(passability);
         _bodies = bodies;
-        double cell = world.Grid.BaseCentimetres;
+        double cell = cellCentimetres;
         _skin = SkinCentimetres / cell;
         _edge = EdgeCentimetres / cell;
         _liftMargin = LiftMarginCentimetres / cell;
@@ -213,10 +281,11 @@ public sealed class VoxelCharacterMover
         _oneStep = StepCentimetres / cell;
         _overlap = OverlapCentimetres / cell;
         _centreCells = CentreCentimetres / cell;
-        _density = world.Grid.BaseCentimetres > 1;
+        _density = cellCentimetres > 1;
         // A slide's window: the widest body and the longest part on each side, and a margin.
         var side = _density ? (int)Math.Ceiling(2 * (MaxRadiusMetres * _cellsPerMetre + MaxPart + 2)) + 4 : 0;
         _columnTops = new int[side * side];
+        _meshTops = new int[side * side];
         _surfaces = new double[side * side];
     }
 
@@ -225,6 +294,22 @@ public sealed class VoxelCharacterMover
     /// radius is 1.5 m.
     /// </summary>
     public static float MaxRadiusMetres => 2f;
+
+    /// <summary>The cells from the middle to an edge <paramref name="edgeMetres"/> away, at most <see cref="CircleFootprint.Far"/>.</summary>
+    private static int EdgeCells(float edgeMetres, int cellCentimetres)
+    {
+        if (float.IsNaN(edgeMetres) || edgeMetres <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(edgeMetres),
+                edgeMetres,
+                "The map's edge lies past the middle."
+            );
+        }
+
+        var cells = Math.Floor(edgeMetres * (double)VoxelConstants.CentimetresPerMetre / cellCentimetres);
+        return (int)Math.Min(cells, CircleFootprint.Far);
+    }
 
     /// <summary>
     /// The farthest one call moves a body, in metres: 4 m, or 240 m/s at 60 Hz, well past the fastest fall
@@ -295,7 +380,7 @@ public sealed class VoxelCharacterMover
 
         var reach = r + horizontal + 2;
         if (
-            !_world.ColumnsResident(
+            !Resident(
                 (int)Math.Floor(px - reach),
                 (int)Math.Floor(pz - reach),
                 (int)Math.Floor(px + reach),
@@ -664,8 +749,8 @@ public sealed class VoxelCharacterMover
     }
 
     /// <summary>
-    /// The top of the highest blocking voxel under an upright circle of <paramref name="radiusMetres"/> about
-    /// <paramref name="atMetres"/>, from <paramref name="downMetres"/> below its height to <paramref name="upMetres"/>
+    /// The top of the highest blocking voxel or mesh collider under an upright circle of <paramref name="radiusMetres"/>
+    /// about <paramref name="atMetres"/>, from <paramref name="downMetres"/> below its height to <paramref name="upMetres"/>
     /// above, in metres: where a foot there would stand. Materials bodies walk through (foliage) and loose bodies are not
     /// ground. False when nothing blocks in that range (<paramref name="topMetres"/> 0), or when the level-0 voxels there
     /// are not loaded (<paramref name="topMetres"/> NaN: the ground is not known, as far from the camera, where only
@@ -676,7 +761,7 @@ public sealed class VoxelCharacterMover
         CheckRadius(radiusMetres);
         var perMetre = _cellsPerMetre;
         var footprint = new CircleFootprint(atMetres.X * perMetre, atMetres.Z * perMetre, radiusMetres * perMetre);
-        if (!_world.ColumnsResident(footprint.MinX, footprint.MinZ, footprint.MaxX, footprint.MaxZ))
+        if (!Resident(footprint.MinX, footprint.MinZ, footprint.MaxX, footprint.MaxZ))
         {
             topMetres = float.NaN;
             return false;
@@ -695,7 +780,7 @@ public sealed class VoxelCharacterMover
             return !double.IsNegativeInfinity(surface);
         }
 
-        var top = _world.HighestTop(in footprint, y0, y1, in _passable);
+        var top = TerrainTop(in footprint, y0, y1);
         topMetres = top == int.MinValue ? 0 : (float)(top / perMetre);
         return top != int.MinValue;
     }
@@ -711,12 +796,7 @@ public sealed class VoxelCharacterMover
         double x = feetMetres.X * perMetre,
             z = feetMetres.Z * perMetre,
             r = radiusMetres * perMetre;
-        return _world.ColumnsResident(
-            (int)Math.Floor(x - r),
-            (int)Math.Floor(z - r),
-            (int)Math.Floor(x + r),
-            (int)Math.Floor(z + r)
-        );
+        return Resident((int)Math.Floor(x - r), (int)Math.Floor(z - r), (int)Math.Floor(x + r), (int)Math.Floor(z + r));
     }
 
     /// <summary>True when a body at <paramref name="feetMetres"/> overlaps a blocking voxel.</summary>
@@ -812,7 +892,7 @@ public sealed class VoxelCharacterMover
             y1 = (int)Math.Ceiling(feet + h - _edge) - 1;
         if (!_density)
         {
-            var top = bodies ? Top(in footprint, y0, y1) : _world.HighestTop(in footprint, y0, y1, in _passable);
+            var top = bodies ? Top(in footprint, y0, y1) : TerrainTop(in footprint, y0, y1);
             return top == int.MinValue ? double.NegativeInfinity : top;
         }
 
@@ -942,30 +1022,71 @@ public sealed class VoxelCharacterMover
         _surfaceWidth = width;
         _surfaceDepth = depth;
         var tops = _columnTops.AsSpan(0, width * depth);
-        _world.ColumnTops(windowX, windowZ, width, depth, y0, y1, in _passable, tops);
+        if (_world is null)
+        {
+            tops.Fill(int.MinValue);
+        }
+        else
+        {
+            _world.ColumnTops(windowX, windowZ, width, depth, y0, y1, in _passable, tops);
+        }
+
+        var meshTops = _meshTops.AsSpan(0, width * depth);
+        var meshes = _meshes is not null && !_meshes.Empty;
+        if (meshes)
+        {
+            _meshes!.ColumnTops(windowX, windowZ, width, depth, y0, y1, meshTops);
+        }
+
         for (var i = 0; i < tops.Length; i++)
         {
-            var top = tops[i];
-            var surface = top == int.MinValue ? double.NaN : SurfaceOver(windowX + i % width, top, windowZ + i / width);
+            // The higher of the two sources' tops, its surface read from whichever has it (both when they meet).
+            var worldTop = tops[i];
+            var meshTop = meshes ? meshTops[i] : int.MinValue;
+            var top = Math.Max(worldTop, meshTop);
+            int x = windowX + i % width,
+                z = windowZ + i / width;
+            var surface = top == int.MinValue ? double.NaN : SurfaceOver(x, top, z, worldTop == top, meshTop == top);
+            // A mesh's surface may lie more than a cell under its top (a steep triangle); where it lies within half a
+            // cell over the voxels' top or under it, the voxels' ground may be the higher (a mesh rock half buried).
+            if (meshTop > worldTop && worldTop != int.MinValue && !(surface >= worldTop + 0.5))
+            {
+                var ground = _world!.SurfaceOver(x, worldTop, z, in _passable);
+                surface = double.IsNaN(surface) ? ground : Math.Max(surface, ground);
+            }
+
             _surfaces[i] = surface <= limit ? surface : double.NaN;
         }
     }
 
     /// <summary>
-    /// <see cref="VoxelWorld.SurfaceOver"/>, read once for each column and top within a move or query
-    /// (<see cref="ForgetSurfaces"/>).
+    /// The surface over column (x, z)'s ground whose top is <paramref name="top"/>: <see cref="VoxelWorld.SurfaceOver"/>
+    /// where the voxels' top is it (<paramref name="voxels"/>), the mesh colliders' (<c>MeshColumns.SurfaceOver</c>)
+    /// where theirs is (<paramref name="meshes"/>), the higher of the two where both are; read once for each column and
+    /// top within a move or query (<see cref="ForgetSurfaces"/>).
     /// </summary>
-    private double SurfaceOver(int x, int top, int z)
+    private double SurfaceOver(int x, int top, int z, bool voxels, bool meshes)
     {
-        // Column x and z 21 bits each, the top 22.
-        var key = (((long)x & 0x1FFFFF) << 43) | (((long)z & 0x1FFFFF) << 22) | ((long)top & 0x3FFFFF);
+        // Column x and z 21 bits each, the top 20, and which sources have it.
+        var key =
+            (((long)x & 0x1FFFFF) << 43)
+            | (((long)z & 0x1FFFFF) << 22)
+            | (((long)top & 0xFFFFF) << 2)
+            | (voxels ? 1L : 0)
+            | (meshes ? 2L : 0);
         var slot = (x & (SurfaceCacheSide - 1)) | ((z & (SurfaceCacheSide - 1)) << SurfaceCacheSideBits);
         if (_cachedStamps[slot] == _cacheStamp && _cachedKeys[slot] == key)
         {
             return _cachedSurfaces[slot];
         }
 
-        var surface = _world.SurfaceOver(x, top, z, in _passable);
+        var surface = voxels && _world is not null ? _world.SurfaceOver(x, top, z, in _passable) : double.NaN;
+        if (meshes && _meshes is not null)
+        {
+            var mesh = _meshes.SurfaceOver(x, top, z);
+            surface = double.IsNaN(surface) ? mesh : Math.Max(surface, mesh);
+        }
+
         _cachedStamps[slot] = _cacheStamp;
         _cachedKeys[slot] = key;
         _cachedSurfaces[slot] = surface;
@@ -1043,20 +1164,53 @@ public sealed class VoxelCharacterMover
         return Math.Abs(surface - own) < _ramp ? surface : own;
     }
 
-    /// <summary>The highest top from y0 to y1 under a footprint, of the voxels and the loose bodies.</summary>
+    /// <summary>The highest top from y0 to y1 under a footprint, of the voxels, the mesh colliders, and the loose bodies.</summary>
     private int Top(in CircleFootprint footprint, int y0, int y1)
     {
-        var top = _world.HighestTop(in footprint, y0, y1, in _passable);
+        var top = TerrainTop(in footprint, y0, y1);
         return _bodies is null || _bodies.Count == 0 ? top : Math.Max(top, _bodies.HighestTop(in footprint, y0, y1));
     }
 
-    /// <summary>The lowest bottom from y0 to y1 over a footprint, of the voxels and the loose bodies.</summary>
+    /// <summary>The lowest bottom from y0 to y1 over a footprint, of the voxels, the mesh colliders, and the loose bodies.</summary>
     private int Bottom(in CircleFootprint footprint, int y0, int y1)
     {
-        var bottom = _world.LowestBottom(in footprint, y0, y1, in _passable);
+        var bottom = _world?.LowestBottom(in footprint, y0, y1, in _passable) ?? int.MaxValue;
+        if (_meshes is not null)
+        {
+            bottom = Math.Min(bottom, _meshes.LowestBottom(in footprint, y0, y1));
+        }
+
         return _bodies is null || _bodies.Count == 0
             ? bottom
             : Math.Min(bottom, _bodies.LowestBottom(in footprint, y0, y1));
+    }
+
+    /// <summary>The highest top from y0 to y1 under a footprint, of the voxels and the mesh colliders.</summary>
+    private int TerrainTop(in CircleFootprint footprint, int y0, int y1)
+    {
+        var top = _world?.HighestTop(in footprint, y0, y1, in _passable) ?? int.MinValue;
+        return _meshes is null ? top : Math.Max(top, _meshes.HighestTop(in footprint, y0, y1));
+    }
+
+    /// <summary>True when the voxel columns of the box are loaded; always without voxel terrain.</summary>
+    private bool Resident(int x0, int z0, int x1, int z1) => _world?.ColumnsResident(x0, z0, x1, z1) ?? true;
+
+    /// <summary>
+    /// The cells of a strip of a window (at most 128 wide) that hold a blocking voxel or a mesh collider's cell from y0
+    /// to y1, written into <paramref name="rows"/>.
+    /// </summary>
+    private void TerrainCells(int windowX, int windowZ, int width, int y0, int y1, Span<UInt128> rows)
+    {
+        if (_world is null)
+        {
+            rows.Clear();
+        }
+        else
+        {
+            _world.BlockedCells(windowX, windowZ, width, y0, y1, in _passable, rows);
+        }
+
+        _meshes?.BlockedCells(windowX, windowZ, width, y0, y1, rows);
     }
 
     /// <summary>The strips of 128 cells a window <paramref name="width"/> cells wide needs.</summary>
@@ -1090,13 +1244,12 @@ public sealed class VoxelCharacterMover
         var strips = Strips(width);
         for (var strip = 0; strip < strips; strip++)
         {
-            _world.BlockedCells(
+            TerrainCells(
                 windowX + strip * StripCells,
                 windowZ,
                 Math.Min(StripCells, width - strip * StripCells),
                 y0,
                 y1,
-                in _passable,
                 window.Slice(strip * depth, depth)
             );
         }
@@ -1168,13 +1321,12 @@ public sealed class VoxelCharacterMover
         {
             for (var strip = 0; strip < strips; strip++)
             {
-                _world.BlockedCells(
+                TerrainCells(
                     windowX + strip * StripCells,
                     windowZ,
                     Math.Min(StripCells, width - strip * StripCells),
                     (int)Math.Ceiling(head - _edge),
                     (int)Math.Ceiling(head + allowance - _edge) - 1,
-                    in _passable,
                     ceilings.Slice(strip * depth, depth)
                 );
             }
@@ -1226,7 +1378,8 @@ public sealed class VoxelCharacterMover
     /// outside the map (put there by <c>tp</c>) is not stuck and walks back in.
     /// </summary>
     private static void AddMapEdge(
-        VoxelGrid grid,
+        int first,
+        int end,
         int windowX,
         int windowZ,
         int width,
@@ -1235,8 +1388,6 @@ public sealed class VoxelCharacterMover
         Span<UInt128> window
     )
     {
-        var first = grid.MinVoxelXZ;
-        var end = grid.EndVoxelXZ;
         if (windowX >= first && windowZ >= first && (long)windowX + width <= end && (long)windowZ + depth <= end)
         {
             return;
@@ -1711,7 +1862,7 @@ public sealed class VoxelCharacterMover
             ramps ? _ramp : _edge,
             feet + h
         );
-        AddMapEdge(_world.Grid, windowX, windowZ, width, depth, strips, window);
+        AddMapEdge(_edgeFirst, _edgeEnd, windowX, windowZ, width, depth, strips, window);
 
         var count = 0;
         for (var iteration = 0; iteration < SlideIterations; iteration++)

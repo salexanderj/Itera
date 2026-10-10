@@ -155,7 +155,7 @@ Rules:
 | `Maths/` | `DeterministicMath`, `Rotation`, `RigidTransform`, and `Octahedral` (the packed normals and tangents of mesh vertices) |
 | `Assets/` | Mesh assets (`MeshAsset`, `MeshAssets`): models read from glTF files at the run's "mesh assets" step (`GltfImport`, `TextureDecode`, `MipChain`, `MeshTangents`) and meshes a game builds; a skinned model's `Rig`, `RigClip` with `RigTrack`, and `JointTransform` |
 | `Animation/` | Skeletons, poses, clips, aim, and foot placement |
-| `Physics/` | `PhysicsWorld` (Bepu simulation, pool, thread dispatcher, shared voxel box shapes, characters' stand-ins), callbacks, `BodyKinds`, `VoxelColliders`, `LooseBodies`, `LooseBodyVoxels`, `SolidModelVoxels` and `SolidColumns`, `VoxelCharacterMover`, `MeshColliders` (a game's static triangle colliders, also Bepu mesh statics), `CollisionSources` (the ray over the terrain and the colliders), `SurfaceHit` |
+| `Physics/` | `PhysicsWorld` (Bepu simulation, pool, thread dispatcher, shared voxel box shapes, characters' stand-ins), callbacks, `BodyKinds`, `VoxelColliders`, `LooseBodies`, `LooseBodyVoxels`, `SolidModelVoxels` and `SolidColumns`, `VoxelCharacterMover`, `MeshColliders` (a game's static triangle colliders, also Bepu mesh statics), `MeshColumns` (the colliders as the mover's cells), `CollisionSources` (the ray over the terrain and the colliders), `SurfaceHit` |
 | `Voxels/` | `VoxelWorld` (streaming, edits, change list, stats, `Raycast`, collision queries, block reads), `VoxelGrid` and `GridLevel`, `VoxelDensity`, `IVoxelPassability`, `VoxelBoxes`, `VoxelMemory` (native block pools), `BrickCodec`, `ChunkTree`, `Column`, `VoxelEditing` and `VoxelEdit`, `VoxelPiece` and `PieceRuns`, `VoxelModels` (small voxel volumes drawn at any position and turn), `EditLog` and `EditLogSerializer`, `VoxelChangeLog`, `IChunkGenerator`, `VoxelWorkers` and `ColumnJob`, `LevelDistances`, `StreamingCentre`, `VoxelConstants` |
 | `Voxels/Generation/` | The world generation toolkit (see "World generation") |
 | `Navigation/` | `NavigationService`, `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`, `INavGridSource` (the game's part), `FlowFieldBuilder` and `FlowField`, `NavGridScanner`, `NavigationDebugLines` |
@@ -428,18 +428,21 @@ A game is an executable that registers the engine, then itself, and runs `GameLo
   option sections are read and checked before the window opens, and a key under `Game` that no section holds is named),
   installs the crash handlers, and returns `GameLoop.Run()` as the exit code.
 - `AddIteraEngine` registers the engine's services with `TryAdd`, so a game's later registration of the same service
-  type wins (the loading tasks and UI layers are lists a game adds to). The engine registers no ECS system. It also registers what systems share: `PlayerInputBlock`,
-  `WorldResets`, and `MovementKeys`; and the match's identity (`IMatchIdentity`: the generator's id and version with
+  type wins (the loading tasks and UI layers are lists a game adds to). The engine registers no ECS system. It also registers what systems share: `PlayArea`
+  (round the match's grid with terrain, else `PlayArea.WithoutTerrain`, the bounds of a 10 cm grid, which a game whose
+  meshes reach farther replaces), `PlayerInputBlock`, `WorldResets`, and `MovementKeys`; the character mover (over the
+  terrain and the loose bodies when there is terrain, and the mesh colliders always); and the match's identity (`IMatchIdentity`: the generator's id and version with
   voxel terrain, else the application's name at version 1; a game may register its own), which the hello, the welcome,
   and a lobby's match key carry.
 - `AddIteraVoxels()` (`VoxelServiceCollectionExtensions`) adds the voxel terrain: each match's `VoxelWorld` and
   `MatchVoxels` (the match's terrain services together, `MatchServices.Terrain`), its `VoxelColliders`,
-  `NavigationService`, `PlayArea` (from the match's grid), `IBenchmarkHost`, and the World, Navigation, and Warm-up
-  loading tasks, after the engine's Sounds and before the game's own; and, while they keep their voxels in the world's
-  memory, the voxel models, the loose bodies, and the character mover. A game with terrain registers an
+  `NavigationService`, `IBenchmarkHost`, and the World, Navigation, and Warm-up loading tasks, after the engine's Sounds
+  and before the game's own; and, while they keep their voxels in the world's memory, the voxel models and the loose
+  bodies. A game with terrain registers an
   `IChunkGenerator` and calls it. A game without it plays matches with no voxel world: no voxels, navigation, or voxel
   physics steps, nothing of a world on the GPU, a join payload and a save of the header alone (its match identity, seed,
-  step rate, and match data), and the session, physics, ECS, UI, audio, particles, mesh assets, and mods as usual.
+  step rate, and match data), and the session, physics, ECS, UI, audio, particles, mesh assets, mods, and the character
+  mover over its mesh colliders as usual.
 - These have engine defaults that a game may replace: `IVoxelPalette`
   (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable), `MenuStyle` (plain), and, for navigation,
   nothing (without an `INavGridSource` there is no navigation). A game adds an `IAtmosphereSource` for its sky, an
@@ -931,6 +934,17 @@ changes collision at once:
   higher than its step, keeps to the ground walking down, lands falls, stops jumps at ceilings, and lifts a body out of
   voxels placed into it. It never moves a body while a column its body and move cover is not resident. The map's edge is a
   wall at every height. Passable materials (`IVoxelPassability`: foliage) let it through.
+- It reads a game's mesh colliders (`MeshColliders`) as the same cells (`MeshColumns`: the spans each triangle makes in
+  each column, made 32 by 32 columns at a time at their first read, at most 256 such chunks kept), taking the higher top,
+  the lower bottom, or either cell of the two, without virtual calls. Only the cells a triangle passes through block (a
+  closed mesh has no inside), one on a cell's boundary the cell behind its front, so a closed mesh of a voxel box blocks
+  the box's outer voxels, and a column's surface is the triangle's plane at the column's centre, so a mesh slope is
+  walked as a ramp. Without terrain it reads the colliders alone in cells of `Engine:Physics:CollisionCentimetres` (10 by
+  default), with no column to wait for, and its map edge at the play area's world edge (`PlayArea.WorldEdgeMetres`). Its
+  tests run the same bodies on voxels and on triangles built from the same features (`MoverFeatureTests`,
+  `DensityGroundTests`). A move over triangles alone in 10 cm cells costs about 1.5
+  times one over 10 cm voxels in the tests' walks (30 against 20 microseconds); in 1 cm cells, about 6.5 times (130
+  microseconds), as each column is read one by one where the voxels are read a brick's mask at a time.
 - Moves split into parts of at most 24 voxels, each slid through a 2D grid of the cells that block anywhere in the body's
   height: strips of 128 cells side by side, up to four, so a body is at most 2 m in radius (`MaxRadiusMetres`). The queries
   stop early where they can, and a move remembers each column's surface. A player's move costs about 8 microseconds on flat
@@ -1279,10 +1293,9 @@ of buffers.
 
 Engine work that is known and not done:
 
-- **Voxels optional, the rest.** A match runs without voxel terrain (no generator, no `AddIteraVoxels`), but voxel
-  models, loose bodies, and the character mover still keep their voxels in the world's memory and need terrain; colliders
-  of meshes, a character controller over them, and the movement building blocks for climbing are planned (the mesh
-  path's phase 5).
+- **Voxels optional, the rest.** A match runs without voxel terrain (no generator, no `AddIteraVoxels`), and its
+  characters move over mesh colliders, but voxel models and loose bodies still keep their voxels in the world's memory and
+  need terrain; that, and the movement building blocks for climbing, are planned (the mesh path's phase 5).
 - **Per-game look data in the shaders.** The art direction's constants (saturation and darkening of the world, the side
   shading, the warm and cool light, the split tone, the occlusion floor, the fog and sky light terms) sit in `mesh.frag` and
   `lighting.glsl`. They should be data a game sets, with today's values as the starter's defaults.

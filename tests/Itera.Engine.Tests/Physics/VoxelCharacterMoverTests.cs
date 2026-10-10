@@ -7,15 +7,36 @@ using Xunit.Abstractions;
 
 namespace Itera.Engine.Tests.Physics;
 
+/// <summary>The mover over the test features of <see cref="MoverWorldFixture"/>, of voxels or of triangles.</summary>
+public interface IMoverFeatures
+{
+    VoxelCharacterMover Mover { get; }
+
+    /// <summary>True when the 1 cm cell (x, y, z) of the features blocks a body.</summary>
+    bool Blocks(int x, int y, int z);
+
+    /// <summary>True when a move's first read of a place may allocate (mesh colliders' columns are made then).</summary>
+    bool FirstReadsAllocate { get; }
+}
+
 /// <summary>
 /// A world of test features laid out on lots 1.6 m apart (lot centres at -2.4, -0.8, 0.8, and 2.4 m on each axis), one
 /// feature per lot, floor top at 2 m. Loaded once for all the mover tests.
 /// </summary>
-public sealed class MoverWorldFixture : IDisposable
+public sealed class MoverWorldFixture : IMoverFeatures, IDisposable
 {
     public const int Floor = 200;
 
     public MoverWorldFixture()
+    {
+        World = TestWorlds.Load(new BoxesGenerator(Floor, Boxes()), new Vector3(0, 2, 0), radiusMetres: 5);
+        Mover = new VoxelCharacterMover(World, new LeavesPass());
+    }
+
+    public VoxelWorld World { get; }
+
+    /// <summary>The features, laid over the dirt below <see cref="Floor"/> in order.</summary>
+    internal static VoxelBox[] Boxes()
     {
         var boxes = new List<VoxelBox>
         {
@@ -56,12 +77,8 @@ public sealed class MoverWorldFixture : IDisposable
         // from x = 200 to a top at 2.46 m (lot 240, 240), each of 1 cm steps.
         AddSlope(boxes, 80, 60, 1.7320508);
         AddSlope(boxes, 200, 80, 0.57735027);
-
-        World = TestWorlds.Load(new BoxesGenerator(Floor, [.. boxes]), new Vector3(0, 2, 0), radiusMetres: 5);
-        Mover = new VoxelCharacterMover(World, new LeavesPass());
+        return [.. boxes];
     }
-
-    public VoxelWorld World { get; }
 
     /// <summary>The top of a slope rising along +x from <paramref name="x0"/>, <paramref name="rise"/> per voxel.</summary>
     public static int SlopeTop(int x0, double rise, int x) => Floor + (int)Math.Floor((x - x0) * rise);
@@ -84,6 +101,14 @@ public sealed class MoverWorldFixture : IDisposable
 
     public VoxelCharacterMover Mover { get; }
 
+    public bool FirstReadsAllocate => false;
+
+    public bool Blocks(int x, int y, int z)
+    {
+        World.TryGetMaterial(new VoxelCoord(x, y, z), out var material);
+        return material != VoxelConstants.Air && material != BoxesGenerator.Leaves;
+    }
+
     public void Dispose() => World.Dispose();
 
     /// <summary>Characters pass through leaves only.</summary>
@@ -93,23 +118,68 @@ public sealed class MoverWorldFixture : IDisposable
     }
 }
 
-public sealed class VoxelCharacterMoverTests : IClassFixture<MoverWorldFixture>
+/// <summary>The mover through the test features of voxels (<see cref="MoverWorldFixture"/>).</summary>
+public sealed class VoxelCharacterMoverTests(MoverWorldFixture fixture, ITestOutputHelper output)
+    : MoverFeatureTests(fixture, output),
+        IClassFixture<MoverWorldFixture>
 {
-    private const float Step = 1f / 60;
-    private const float Gravity = 20;
-    private const float Walk = 4.5f;
+    [Fact]
+    public void Leaves_let_the_body_through()
+    {
+        var feet = Metres(180, 200, -80);
+        var velocity = Vector3.Zero;
+
+        var hitWall = false;
+        Run(ref feet, ref velocity, new Vector2(Walk, 0), 16, r => hitWall |= r.HitWall);
+
+        Assert.False(hitWall);
+        Assert.True(feet.X * 100 > 270, $"Only reached x = {feet.X * 100:F1}.");
+    }
+
+    [Fact]
+    public void A_body_inside_placed_stone_is_lifted_onto_it()
+    {
+        var feet = Metres(-240, 200, 240);
+        fixture.World.Apply(
+            VoxelEdit.Sphere(new VoxelCoord(-240, 220, 240), 30, VoxelEditOperation.Set, BoxesGenerator.Stone)
+        );
+        Assert.True(Mover.Overlaps(feet, in Shape));
+        var velocity = Vector3.Zero;
+
+        var result = Mover.Move(ref feet, ref velocity, in Shape, Step);
+
+        Assert.Equal(CharacterMoveStatus.Lifted, result.Status);
+        Assert.True(feet.Y * 100 >= 250, $"Feet at {feet.Y * 100:F1}.");
+        Assert.False(Mover.Overlaps(feet, in Shape));
+        Assert.True(result.Grounded);
+    }
+}
+
+/// <summary>
+/// The mover through the test features (walls, 1 cm steps, a pit, ceilings, slopes, and stairs), whatever they are made
+/// of: each rule must answer alike for voxels and for triangles.
+/// </summary>
+public abstract class MoverFeatureTests
+{
+    protected const float Step = 1f / 60;
+    protected const float Gravity = 20;
+    protected const float Walk = 4.5f;
     private static readonly CharacterShape s_shape = new(1.7f, 0.26f, 0.41f);
 
-    private readonly MoverWorldFixture _fixture;
+    private readonly IMoverFeatures _features;
     private readonly VoxelCharacterMover _mover;
     private readonly ITestOutputHelper _output;
 
-    public VoxelCharacterMoverTests(MoverWorldFixture fixture, ITestOutputHelper output)
+    protected MoverFeatureTests(IMoverFeatures features, ITestOutputHelper output)
     {
-        _fixture = fixture;
-        _mover = fixture.Mover;
+        _features = features;
+        _mover = features.Mover;
         _output = output;
     }
+
+    protected static ref readonly CharacterShape Shape => ref s_shape;
+
+    protected VoxelCharacterMover Mover => _mover;
 
     [Fact]
     public void A_velocity_that_is_not_a_number_is_refused()
@@ -272,7 +342,7 @@ public sealed class VoxelCharacterMoverTests : IClassFixture<MoverWorldFixture>
         Assert.True(_mover.GroundTop(Metres(290, 210, -240), 0.03f, 0.4f, 0.4f, out var platform));
         Assert.True(_mover.GroundTop(Metres(200, 210, -240), 0.03f, 0.4f, 0.4f, out var floor));
         Assert.True(_mover.GroundTop(Metres(260, 210, -240), 0.03f, 0.4f, 0.4f, out var edge));
-        // Leaves are not ground: the floor under them is.
+        // Leaves are not ground: the floor under them is (triangles have no leaves: the floor alone is there).
         Assert.True(_mover.GroundTop(Metres(240, 240, -80), 0.03f, 0.1f, 0.5f, out var underLeaves));
         // Nothing from 10 cm below to 10 cm above a point 50 cm over the floor.
         var none = _mover.GroundTop(Metres(0, 250, 0), 0.03f, 0.1f, 0.1f, out _);
@@ -379,19 +449,6 @@ public sealed class VoxelCharacterMoverTests : IClassFixture<MoverWorldFixture>
     }
 
     [Fact]
-    public void Leaves_let_the_body_through()
-    {
-        var feet = Metres(180, 200, -80);
-        var velocity = Vector3.Zero;
-
-        var hitWall = false;
-        Run(ref feet, ref velocity, new Vector2(Walk, 0), 16, r => hitWall |= r.HitWall);
-
-        Assert.False(hitWall);
-        Assert.True(feet.X * 100 > 270, $"Only reached x = {feet.X * 100:F1}.");
-    }
-
-    [Fact]
     public void A_mushroom_stem_blocks()
     {
         var feet = Metres(-280, 200, 80);
@@ -446,24 +503,6 @@ public sealed class VoxelCharacterMoverTests : IClassFixture<MoverWorldFixture>
         Assert.Equal(CharacterMoveStatus.Waiting, result.Status);
         Assert.Equal(new Vector3(20, 2, 0), feet);
         Assert.Equal(Vector3.Zero, velocity);
-    }
-
-    [Fact]
-    public void A_body_inside_placed_stone_is_lifted_onto_it()
-    {
-        var feet = Metres(-240, 200, 240);
-        _fixture.World.Apply(
-            VoxelEdit.Sphere(new VoxelCoord(-240, 220, 240), 30, VoxelEditOperation.Set, BoxesGenerator.Stone)
-        );
-        Assert.True(_mover.Overlaps(feet, in s_shape));
-        var velocity = Vector3.Zero;
-
-        var result = _mover.Move(ref feet, ref velocity, in s_shape, Step);
-
-        Assert.Equal(CharacterMoveStatus.Lifted, result.Status);
-        Assert.True(feet.Y * 100 >= 250, $"Feet at {feet.Y * 100:F1}.");
-        Assert.False(_mover.Overlaps(feet, in s_shape));
-        Assert.True(result.Grounded);
     }
 
     [Fact]
@@ -622,15 +661,28 @@ public sealed class VoxelCharacterMoverTests : IClassFixture<MoverWorldFixture>
         var velocity = Vector3.Zero;
         Run(ref feet, ref velocity, new Vector2(1, 0.5f), 50);
         var start = feet;
+        long first = 0,
+            second = 0;
 
-        var before = SystemAllocation.StartMeasurement();
-        for (var i = 0; i < 500; i++)
+        // The same moves twice, each measured: the first reads every column they reach, where mesh colliders' columns
+        // are made (FirstReadsAllocate).
+        for (var pass = 0; pass < 2; pass++)
         {
-            velocity = new Vector3(i % 100 < 50 ? 1 : -1, velocity.Y - Gravity * Step, 0.5f * (i % 100 < 50 ? 1 : -1));
-            _mover.Move(ref feet, ref velocity, in s_shape, Step);
+            feet = start;
+            velocity = Vector3.Zero;
+            var before = SystemAllocation.StartMeasurement();
+            for (var i = 0; i < 500; i++)
+            {
+                var way = i % 100 < 50 ? 1 : -1;
+                velocity = new Vector3(way, velocity.Y - Gravity * Step, 0.5f * way);
+                _mover.Move(ref feet, ref velocity, in s_shape, Step);
+            }
+
+            (pass == 0 ? ref first : ref second) = GC.GetAllocatedBytesForCurrentThread() - before;
         }
 
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal(0, second);
+        Assert.True(_features.FirstReadsAllocate || first == 0, $"The first pass allocated {first} bytes.");
         Assert.True(Vector3.Distance(start, feet) < 1);
     }
 
@@ -656,7 +708,7 @@ public sealed class VoxelCharacterMoverTests : IClassFixture<MoverWorldFixture>
     }
 
     /// <summary>A body's feet at level-0 voxel (x, y, z), in metres.</summary>
-    private static Vector3 Metres(float x, float y, float z) => new(x / 100, y / 100, z / 100);
+    protected static Vector3 Metres(float x, float y, float z) => new(x / 100, y / 100, z / 100);
 
     private static float JumpSpeed(float height) => MathF.Sqrt(2 * Gravity * height);
 
@@ -664,7 +716,7 @@ public sealed class VoxelCharacterMoverTests : IClassFixture<MoverWorldFixture>
     /// Runs ticks that set the horizontal velocity to <paramref name="wanted"/> and add gravity, as a movement system
     /// would. With <paramref name="jumpFirst"/>, the first tick keeps the vertical velocity it was given.
     /// </summary>
-    private CharacterMoveResult Run(
+    protected CharacterMoveResult Run(
         ref Vector3 feet,
         ref Vector3 velocity,
         Vector2 wanted,
@@ -692,7 +744,7 @@ public sealed class VoxelCharacterMoverTests : IClassFixture<MoverWorldFixture>
         return result;
     }
 
-    /// <summary>Checks every voxel the body covers with <see cref="VoxelWorld.TryGetMaterial(VoxelCoord, out byte)"/>.</summary>
+    /// <summary>Checks every 1 cm cell the body covers with <see cref="IMoverFeatures.Blocks"/>.</summary>
     private void AssertClearVoxelByVoxel(Vector3 feet)
     {
         double px = feet.X * 100.0,
@@ -712,11 +764,7 @@ public sealed class VoxelCharacterMoverTests : IClassFixture<MoverWorldFixture>
             {
                 for (var y = y0; y <= y1; y++)
                 {
-                    _fixture.World.TryGetMaterial(new VoxelCoord(x, y, z), out var material);
-                    Assert.True(
-                        material == VoxelConstants.Air || material == BoxesGenerator.Leaves,
-                        $"Voxel ({x}, {y}, {z}) of material {material} is inside the body at {feet}."
-                    );
+                    Assert.False(_features.Blocks(x, y, z), $"Cell ({x}, {y}, {z}) is inside the body at {feet}.");
                 }
             }
         }

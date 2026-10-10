@@ -43,6 +43,9 @@ public sealed partial class MeshColliders(PhysicsWorld physics, ILogger<MeshColl
     /// <summary>The colliders registered and not removed.</summary>
     public int Count { get; private set; }
 
+    /// <summary>Counts the changes to the colliders, so what is built from their triangles knows when to build again.</summary>
+    internal int Version { get; private set; }
+
     /// <summary>The triangles of every collider.</summary>
     public int TriangleCount
     {
@@ -103,6 +106,7 @@ public sealed partial class MeshColliders(PhysicsWorld physics, ILogger<MeshColl
         RemoveStatic(removed);
         _colliders[collider] = null;
         Count--;
+        Version++;
         _dirty = true;
     }
 
@@ -210,6 +214,51 @@ public sealed partial class MeshColliders(PhysicsWorld physics, ILogger<MeshColl
         return true;
     }
 
+    /// <summary>
+    /// The triangles whose buckets meet the box from (<paramref name="minX"/>, <paramref name="minZ"/>) to
+    /// (<paramref name="maxX"/>, <paramref name="maxZ"/>) over x and z, in metres, each once, into
+    /// <paramref name="into"/> (cleared first). Allocates nothing once the buckets and the list have grown.
+    /// </summary>
+    internal void Triangles(float minX, float minZ, float maxX, float maxZ, List<int> into)
+    {
+        into.Clear();
+        Rebuild();
+        if (_triangles == 0)
+        {
+            return;
+        }
+
+        var stamp = NextStamp();
+        for (var x = Bucket(minX); x <= Bucket(maxX); x++)
+        {
+            for (var z = Bucket(minZ); z <= Bucket(maxZ); z++)
+            {
+                if (!_buckets.TryGetValue(Key(x, z), out var bucket))
+                {
+                    continue;
+                }
+
+                foreach (var triangle in bucket)
+                {
+                    if (_stamps[triangle] != stamp)
+                    {
+                        _stamps[triangle] = stamp;
+                        into.Add(triangle);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>Triangle <paramref name="triangle"/> (from <see cref="Triangles"/>) in metres, and its tags.</summary>
+    internal void Triangle(int triangle, out Vector3 a, out Vector3 b, out Vector3 c, out uint tags)
+    {
+        a = _a[triangle];
+        b = _b[triangle];
+        c = _c[triangle];
+        tags = _tags[triangle];
+    }
+
     /// <summary>Removes every collider's static from the physics, while it still exists. Safe to call more than once.</summary>
     public void Dispose()
     {
@@ -252,6 +301,7 @@ public sealed partial class MeshColliders(PhysicsWorld physics, ILogger<MeshColl
         AddStatic(collider);
         _colliders.Add(collider);
         Count++;
+        Version++;
         _dirty = true;
         LogAdded(_colliders.Count - 1, count);
         return _colliders.Count - 1;
