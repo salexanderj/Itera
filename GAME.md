@@ -7,12 +7,12 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
   (Steam stays off).
 - The world (`WorldGeneration/`): `GameGenerator` (`game.world`, version 1) on the engine's `HeightfieldGenerator`,
   10 cm voxels: gentle grass hills of `FractalNoise`, about 6 m high and up to 10 m up or down, gravel where the ground
-  lies below 2 m, 5 cm of surface over dirt down to 1 m, then stone, and stone boulders (2 to 6 m across) a third of their
-  height buried, at most one a 16 m cell (`JitteredGrid`). The materials are `GameMaterials` (grass, dirt, stone, gravel), drawn by
-  `GamePalette` from the texture sets `grass`, `dirt`, `stone`, and `gravel` in `Textures/`. The sky is one clear day
-  (`GameAtmosphere`), drawn with the engine's look (`RenderLook.Default`) under the engine's sun, which stays where it is
-  (the console's `sun` and `time` move it for a run). A change to what the generator makes raises its `Version` (`tests/Game.Tests/WorldTests` pins a
-  hash).
+  lies below 2 m, 5 cm of surface over dirt down to 1 m, then stone, and stone boulders (2 to 6 m across) a third of
+  their height buried, at most one a 16 m cell (`JitteredGrid`). The materials are `GameMaterials` (grass, dirt, stone,
+  gravel), drawn by `GamePalette` from the texture sets `grass`, `dirt`, `stone`, and `gravel` in `Textures/`. The sky
+  is one clear day (`GameAtmosphere`), drawn with the engine's look (`RenderLook.Default`) under the engine's sun, which
+  stays where it is (the console's `sun` and `time` move it for a run). A change to what the generator makes, or to its
+  grid's size, raises its `Version` (`tests/Game.Tests/WorldTests` pins a hash and the grid's bounds).
 - The fox (`GameModels.Fox`): Khronos's Fox sample (`Models/Fox/`, credits in `Models/SOURCES.md`; 24 joints, clips
   Survey, Walk, and Run; its texture compressed in `Models/Fox/Fox.textures/`), declared at the run's start (`GameRunStartup`). `FoxSystem` puts it on the ground 4 m in front
   of the start pose, side on, then over and over: it looks about (Survey) for 6 s, walks (1.1 m/s) for 8 s and runs

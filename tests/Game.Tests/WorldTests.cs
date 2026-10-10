@@ -4,9 +4,9 @@ using Itera.Engine.Voxels;
 namespace Game.Tests;
 
 /// <summary>
-/// The world: the same seed gives the same voxels (a pinned hash: a change means <see cref="GameGenerator.Version"/>
-/// must rise, or a save or a session of the old world would not match), the start stands on the ground with the eye a
-/// person's height over it, and every benchmark view stands over the ground.
+/// The world: the same seed gives the same voxels in the same bounds (a pinned hash and grid: a change of either means
+/// <see cref="GameGenerator.Version"/> must rise, or a save or a session of the old world would not match), the start
+/// stands on the ground with the eye a person's height over it, and every benchmark view stands over the ground.
 /// </summary>
 public sealed class WorldTests
 {
@@ -37,8 +37,17 @@ public sealed class WorldTests
             }
         }
 
-        // Pinned with the generator's version: a change of the world must come with a new version, and both change here.
-        Assert.Equal((1, 5789805400214179090UL), (generator.Version, hash));
+        // Pinned with the generator's version: a change of the world (its voxels, or its size: the grid's base and bounds
+        // in level-0 chunks) must come with a new version, and all change here.
+        var grid = generator.Grid;
+        Assert.Equal(
+            (1, 5789805400214179090UL, (10, -40, 39, -4, 7)),
+            (
+                generator.Version,
+                hash,
+                (grid.BaseCentimetres, grid.MinChunkXZ, grid.MaxChunkXZ, grid.MinChunkY, grid.MaxChunkY)
+            )
+        );
     }
 
     [Fact]

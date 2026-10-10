@@ -349,4 +349,22 @@ public sealed class NavGridScannerTests : IDisposable
 
         public bool IsGround(byte material) => material == Soil;
     }
+
+    [Fact]
+    public void A_world_reaching_past_the_grids_heights_is_refused()
+    {
+        // A floor 400 m down: past the 16-bit centimetres the grid keeps its floors in.
+        var deep = VoxelGrid.Sized(10, 12.8, -400, 10);
+        using var world = new VoxelWorld(
+            new VoxelSettings { StreamingRadiusMetres = 3 },
+            0,
+            new Systems.FlatTestGenerator(deep),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<VoxelWorld>.Instance
+        );
+
+        var refused = Assert.Throws<InvalidOperationException>(() =>
+            new NavGridScanner(world, new MoverWorldFixture.LeavesPass(), 50)
+        );
+        Assert.Contains("327.67", refused.Message, StringComparison.Ordinal);
+    }
 }

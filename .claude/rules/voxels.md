@@ -21,9 +21,14 @@ loose body where level 0 is not loaded freezes in the air.
 
 ## World generation
 
-A world is made by its generator (`IChunkGenerator`, the game's): `DescribeColumn` says which layers of a column are
-air or one material, and `Fill` writes a chunk's materials and densities. The engine's toolkit is in
-`Voxels/Generation/`:
+A world is made by its generator (`IChunkGenerator`, the game's): `DescribeColumn` says which layers of a column are air
+or one material, and `Fill` writes a chunk's materials and densities. Its grid (`IChunkGenerator.Grid`) sets the world's
+voxel size and its bounds in whole level-0 chunks: `VoxelGrid.Sized(base, halfWidthMetres, floorMetres, topMetres)`
+rounds each bound out to whole chunks, up to ±160 km each way (`VoxelGrid.MostReachCentimetres`) and 128 layers
+(`VoxelGrid.MostLayers`), and a grid of a base alone has the default bounds (±512 m and -51.2 to 102.4 m at 10 cm).
+Streaming, edits, rays, collision, the mover's edge wall, the fall limit, and the play area follow the grid's bounds;
+the grid is part of what the generator's id and version stand for, so a change of size raises the `Version`. The
+engine's toolkit is in `Voxels/Generation/`:
 
 - `HeightfieldGenerator`, a base for ground: a subclass gives the height at a point (`HeightAt`, centimetres), the
   surface material (`SurfaceAt`), the layers below it (`GroundLayers`: a surface depth, bands by depth, then the deep
@@ -46,15 +51,15 @@ only where every voxel is wholly so (the voxels' edges are tested, not their sam
 
 ### Files in `src/Itera.Engine`
 
-  - `Voxels/`: storage (`ChunkKey`, `ChunkTree`, `BrickCodec`, `VoxelConstants`, `VoxelDensity`), the grid (`VoxelGrid`, a world's
-    voxel size from its generator, where centimetres meet voxel indices; `GridLevel`), streaming, edits, generation threads
-    (`VoxelWorkers`, `ColumnJob`), the change list (`VoxelChangeLog`), memory (`VoxelMemory`), lifted pieces
-    (`VoxelPiece`, `PieceRuns`), models (`VoxelModels`), the log's file format (`EditLogSerializer`), what an edit's
-    clears remove (`IVoxelRemovals`), and collision queries (`IVoxelPassability`, `VoxelBoxes`); the generation toolkit
-    in `Generation/`. `VoxelWorld` is the
-    service: streaming in `VoxelWorld.cs`, the edit path, makers, removals, reset, and saves in `.Edits.cs`, lifts and pieces in `.Pieces.cs`, the edit warm-up in `.WarmUp.cs`, rays in
-    `.Raycast.cs`, collision in `.Collision.cs`, and the blocks the raster pipeline meshes (`TryReadBlock`,
-    `BlockMayHaveSurface`) and the sky field reads (`TryReadOwnBlock`) in `.Blocks.cs`.
+  - `Voxels/`: storage (`ChunkKey`, `ChunkTree`, `BrickCodec`, `VoxelConstants`, `VoxelDensity`), the grid (`VoxelGrid`,
+    a world's voxel size and bounds from its generator, where centimetres meet voxel indices; `GridLevel`), streaming,
+    edits, generation threads (`VoxelWorkers`, `ColumnJob`), the change list (`VoxelChangeLog`), memory (`VoxelMemory`),
+    lifted pieces (`VoxelPiece`, `PieceRuns`), models (`VoxelModels`), the log's file format (`EditLogSerializer`), what
+    an edit's clears remove (`IVoxelRemovals`), and collision queries (`IVoxelPassability`, `VoxelBoxes`); the
+    generation toolkit in `Generation/`. `VoxelWorld` is the service: streaming in `VoxelWorld.cs`, the edit path,
+    makers, removals, reset, and saves in `.Edits.cs`, lifts and pieces in `.Pieces.cs`, the edit warm-up in
+    `.WarmUp.cs`, rays in `.Raycast.cs`, collision in `.Collision.cs`, and the blocks the raster pipeline meshes
+    (`TryReadBlock`, `BlockMayHaveSurface`) and the sky field reads (`TryReadOwnBlock`) in `.Blocks.cs`.
 
 ### Conventions
 

@@ -393,7 +393,7 @@ public sealed partial class VoxelWorld : IDisposable
         // workers free them, and each waiting free holds a job.
         for (var job = _maxInFlight + _levels * perLevel; job > 0; job--)
         {
-            _jobPool.Push(new ColumnJob());
+            _jobPool.Push(new ColumnJob(Grid.MaxLayers));
         }
 
         _workers.Start();
@@ -1005,7 +1005,7 @@ public sealed partial class VoxelWorld : IDisposable
             // Walking the trees to free them costs about 0.3 ms per column, so a worker does it.
             _mixedChunks -= CountMixed(column.Layers);
             _residentByLevel[column.Key.Level]--;
-            var job = _jobPool.Count > 0 ? _jobPool.Pop() : new ColumnJob();
+            var job = _jobPool.Count > 0 ? _jobPool.Pop() : new ColumnJob(Grid.MaxLayers);
             job.ResetForFree(column.Key, column.Layers);
             column.Layers.Clear();
             Workers.Enqueue(job);
@@ -1054,9 +1054,9 @@ public sealed partial class VoxelWorld : IDisposable
 
             var wanted = _wanted[level];
             var key = wanted.Keys[wanted.Cursor++];
-            var column = _columnPool.Count > 0 ? _columnPool.Pop() : new Column();
+            var column = _columnPool.Count > 0 ? _columnPool.Pop() : new Column(Grid.MaxLayers);
             column.Reset(key, Grid);
-            var job = _jobPool.Count > 0 ? _jobPool.Pop() : new ColumnJob();
+            var job = _jobPool.Count > 0 ? _jobPool.Pop() : new ColumnJob(Grid.MaxLayers);
             job.Reset(key, Grid, _seed, _edits.Count);
             _edits.CollectForColumn(key, 0, job.Edits);
             _edits.CollectPieces(job.Edits, job.Pieces);

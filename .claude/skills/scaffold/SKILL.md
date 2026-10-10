@@ -106,9 +106,12 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 
 ## A change to what the generator makes
 
+A change of its voxels, or of its world's size (its grid: `VoxelGrid.Sized(base, halfWidthMetres, floorMetres,
+topMetres)`, up to ±160 km each way and 128 layers of chunks; `GameGenerator.WorldGrid` for the starter).
+
 1. Raise the generator's `Version` (`GameGenerator.Version` for the starter).
-2. Pin the new hash with it in `tests/Game.Tests/WorldTests`: the test compares `(Version, hash)`, so a new world with
-   the old version fails.
+2. Pin the new hash and grid with it in `tests/Game.Tests/WorldTests`: the test compares `(Version, hash, grid
+   bounds)`, so a new world, or a new size, with the old version fails.
 3. `GAME.md`'s world description.
 
 ## A model from glTF

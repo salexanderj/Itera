@@ -9,12 +9,17 @@ namespace Itera.Engine.Voxels;
 /// The world's grid is its generator's (<see cref="IChunkGenerator.Grid"/>, <see cref="VoxelWorld.Grid"/>); models use
 /// <see cref="Unit"/> (1 cm).
 /// <para>
-/// The grid also bounds the world in whole level-0 chunks: across, the chunks that cover ±500 m
-/// (<see cref="MapHalfWidthCentimetres"/>); down, the first whole chunk at or below -40.96 m
-/// (<see cref="FloorCentimetres"/>); up, whole chunks to at least 81.92 m (<see cref="TopCentimetres"/>), rounded up to
-/// a multiple of 8 so levels 0 to 3 share the top. At 1 cm that is ±500.48 m, -40.96 m, and 81.92 m; at 10 cm ±512 m,
-/// -51.2 m, and 102.4 m. A coarser level's chunks start at <c>MinChunkY &gt;&gt; level</c>, so a level whose chunk does
-/// not divide the floor reaches deeper.
+/// The grid also bounds the world in whole level-0 chunks, the same number of chunks each side of the middle on x and z
+/// and a range of chunk layers on y. A game sets them for its world (<see cref="Sized"/>, or the constructor in
+/// chunks); its generator's grid is part of what its id and version stand for, so a change of size raises the
+/// generator's <c>Version</c>. A grid of a base alone (<see cref="VoxelGrid(int)"/>) has the default bounds: across,
+/// the chunks that cover ±500 m (<see cref="DefaultHalfWidthCentimetres"/>); down, the first whole chunk at or below
+/// -40.96 m (<see cref="DefaultFloorCentimetres"/>); up, whole chunks to at least 81.92 m
+/// (<see cref="DefaultTopCentimetres"/>), rounded up to a multiple of 8 so levels 0 to 3 share the top. At 1 cm that
+/// is ±500.48 m, -40.96 m, and 81.92 m; at 10 cm ±512 m, -51.2 m, and 102.4 m. A world reaches at most
+/// <see cref="MostReachCentimetres"/> from the middle on any axis and has at most <see cref="MostLayers"/> level-0
+/// layers. A coarser level's chunks start at <c>MinChunkY &gt;&gt; level</c>, so a level whose chunk does not divide the
+/// floor (or the edge, or the top) reaches past it.
 /// </para>
 /// </summary>
 public readonly record struct VoxelGrid
@@ -22,29 +27,108 @@ public readonly record struct VoxelGrid
     /// <summary>A grid of 1 cm level-0 voxels, every level's index the same number as a coordinate's centimetres at level 0.</summary>
     public static VoxelGrid Unit { get; } = new(1);
 
+    /// <summary>A grid of <paramref name="baseCentimetres"/> voxels with the default bounds.</summary>
     public VoxelGrid(int baseCentimetres)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(baseCentimetres, 1);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(baseCentimetres, MostBaseCentimetres);
+        CheckBase(baseCentimetres);
         BaseCentimetres = baseCentimetres;
         var chunk = baseCentimetres * VoxelConstants.ChunkSize;
-        MaxChunkXZ = CeilDiv(MapHalfWidthCentimetres, chunk) - 1;
+        MaxChunkXZ = CeilDiv(DefaultHalfWidthCentimetres, chunk) - 1;
         MinChunkXZ = -(MaxChunkXZ + 1);
-        MinChunkY = FloorDiv(FloorCentimetres, chunk);
-        MaxChunkY = (CeilDiv(TopCentimetres, chunk) + TopChunkMultiple - 1) / TopChunkMultiple * TopChunkMultiple - 1;
+        MinChunkY = FloorDiv(DefaultFloorCentimetres, chunk);
+        MaxChunkY =
+            (CeilDiv(DefaultTopCentimetres, chunk) + TopChunkMultiple - 1) / TopChunkMultiple * TopChunkMultiple - 1;
+    }
+
+    /// <summary>
+    /// A grid of <paramref name="baseCentimetres"/> voxels bounded in level-0 chunks: <paramref name="halfWidthChunks"/>
+    /// chunks each side of the middle on x and z, and the chunk layers <paramref name="minChunkY"/> to
+    /// <paramref name="maxChunkY"/>.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The base is not 1 to <see cref="MostBaseCentimetres"/>, the bounds reach past <see cref="MostReachCentimetres"/>,
+    /// the top lies below the floor, or the layers number more than <see cref="MostLayers"/>.
+    /// </exception>
+    public VoxelGrid(int baseCentimetres, int halfWidthChunks, int minChunkY, int maxChunkY)
+    {
+        CheckBase(baseCentimetres);
+        long chunk = baseCentimetres * VoxelConstants.ChunkSize;
+        ArgumentOutOfRangeException.ThrowIfLessThan(halfWidthChunks, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(
+            halfWidthChunks * chunk,
+            MostReachCentimetres,
+            nameof(halfWidthChunks)
+        );
+        ArgumentOutOfRangeException.ThrowIfLessThan(minChunkY * chunk, -MostReachCentimetres, nameof(minChunkY));
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(
+            (maxChunkY + 1L) * chunk,
+            MostReachCentimetres,
+            nameof(maxChunkY)
+        );
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxChunkY, minChunkY);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(maxChunkY - (long)minChunkY + 1, MostLayers, nameof(maxChunkY));
+        BaseCentimetres = baseCentimetres;
+        MaxChunkXZ = halfWidthChunks - 1;
+        MinChunkXZ = -halfWidthChunks;
+        MinChunkY = minChunkY;
+        MaxChunkY = maxChunkY;
+    }
+
+    /// <summary>
+    /// A grid of <paramref name="baseCentimetres"/> voxels whose world reaches at least
+    /// <paramref name="halfWidthMetres"/> from the middle on x and z, down to <paramref name="floorMetres"/>, and up to
+    /// <paramref name="topMetres"/>: each rounded to whole centimetres, then out to whole level-0 chunks. A 10 cm grid of
+    /// (4000, -51.2, 102.4) reaches ±4,006.4 m, from -51.2 m to 102.4 m.
+    /// </summary>
+    /// <exception cref="ArgumentException">A bound is not finite, the half-width is not above 0, or the top is not above the floor.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The grid is out of the constructor's limits.</exception>
+    public static VoxelGrid Sized(int baseCentimetres, double halfWidthMetres, double floorMetres, double topMetres)
+    {
+        CheckBase(baseCentimetres);
+        if (
+            !double.IsFinite(halfWidthMetres)
+            || !double.IsFinite(floorMetres)
+            || !double.IsFinite(topMetres)
+            || halfWidthMetres <= 0
+            || topMetres <= floorMetres
+        )
+        {
+            throw new ArgumentException(
+                $"A world needs a half-width over 0 and a top over its floor, all finite (half-width {halfWidthMetres} m, floor {floorMetres} m, top {topMetres} m)."
+            );
+        }
+
+        long chunk = baseCentimetres * VoxelConstants.ChunkSize;
+        // At least one chunk each side and one layer, also for bounds under a centimetre.
+        var halfWidth = Math.Max(CeilDiv(Centimetres(halfWidthMetres), chunk), 1);
+        var min = FloorDiv(Centimetres(floorMetres), chunk);
+        var max = Math.Max(CeilDiv(Centimetres(topMetres), chunk) - 1, min);
+        return new VoxelGrid(baseCentimetres, Clamp(halfWidth), Clamp(min), Clamp(max));
     }
 
     /// <summary>The largest base: a level-9 voxel of it is 51.2 m, a chunk at level 0 12.8 m.</summary>
     public const int MostBaseCentimetres = 10;
 
-    /// <summary>How far the world's columns reach from the map's middle at least, in centimetres, on x and z.</summary>
-    public const int MapHalfWidthCentimetres = 50_000;
+    /// <summary>
+    /// How far a world may reach from the middle on any axis, in centimetres (160 km): inside the edit format's limit
+    /// (<see cref="VoxelEdit"/>, 2^24 cm), with room for a play area's margin past it.
+    /// </summary>
+    public const long MostReachCentimetres = 16_000_000;
 
-    /// <summary>The height the world's floor lies at or below, in centimetres.</summary>
-    public const int FloorCentimetres = -4096;
+    /// <summary>
+    /// The most level-0 layers a grid's columns may have. Every layer of a resident column costs memory, whether it holds
+    /// voxels or not, so the height a world reaches is capped by its chunk's size (164 m at 1 cm, 1,638 m at 10 cm).
+    /// </summary>
+    public const int MostLayers = 128;
 
-    /// <summary>The height the world's top lies at or above, in centimetres.</summary>
-    public const int TopCentimetres = 8192;
+    /// <summary>How far the columns of a grid of a base alone reach from the middle at least, in centimetres, on x and z.</summary>
+    public const int DefaultHalfWidthCentimetres = 50_000;
+
+    /// <summary>The height the floor of a grid of a base alone lies at or below, in centimetres.</summary>
+    public const int DefaultFloorCentimetres = -4096;
+
+    /// <summary>The height the top of a grid of a base alone lies at or above, in centimetres.</summary>
+    public const int DefaultTopCentimetres = 8192;
 
     /// <summary>The level-0 chunks from height 0 to the top are rounded up to a multiple of this.</summary>
     private const int TopChunkMultiple = 8;
@@ -66,9 +150,6 @@ public readonly record struct VoxelGrid
 
     /// <summary>Layers in a level-0 column. Columns at higher levels have no more.</summary>
     public int MaxLayers => MaxChunkY - MinChunkY + 1;
-
-    /// <summary>The most layers a column of any grid has: a level-0 column of <see cref="Unit"/>'s.</summary>
-    public static int MostLayers => Unit.MaxLayers;
 
     /// <summary>Lowest level-0 voxel x and z inside the world (an index).</summary>
     public int MinVoxelXZ => MinChunkXZ << VoxelConstants.ChunkShift;
@@ -216,7 +297,29 @@ public readonly record struct VoxelGrid
     public static int FloorDiv(int value, int divisor) =>
         value >= 0 ? value / divisor : -((-value + divisor - 1) / divisor);
 
+    private static long FloorDiv(long value, long divisor) =>
+        value >= 0 ? value / divisor : -((-value + divisor - 1) / divisor);
+
     private static int CeilDiv(int value, int divisor) => -FloorDiv(-value, divisor);
+
+    private static long CeilDiv(long value, long divisor) => -FloorDiv(-value, divisor);
+
+    private static void CheckBase(int baseCentimetres)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(baseCentimetres, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(baseCentimetres, MostBaseCentimetres);
+    }
+
+    /// <summary>Metres to whole centimetres, held within twice <see cref="MostReachCentimetres"/> so a bound past it fails as one.</summary>
+    private static long Centimetres(double metres) =>
+        (long)
+            Math.Clamp(
+                Math.Round(metres * VoxelConstants.CentimetresPerMetre),
+                -2.0 * MostReachCentimetres,
+                2.0 * MostReachCentimetres
+            );
+
+    private static int Clamp(long chunks) => (int)Math.Clamp(chunks, int.MinValue, int.MaxValue);
 }
 
 /// <summary>

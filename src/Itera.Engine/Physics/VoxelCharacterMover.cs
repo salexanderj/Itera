@@ -1090,7 +1090,8 @@ public sealed class VoxelCharacterMover
     /// </summary>
     private double SurfaceOver(int x, int top, int z, bool voxels, bool meshes)
     {
-        // Column x and z 21 bits each, the top 20, and which sources have it.
+        // Column x and z 21 bits each, the top 20, and which sources have it. A move or query reads columns far fewer than
+        // 2^21 cells apart, and the cache is forgotten between them, so the bits left out never tell two apart.
         var key =
             (((long)x & 0x1FFFFF) << 43)
             | (((long)z & 0x1FFFFF) << 22)

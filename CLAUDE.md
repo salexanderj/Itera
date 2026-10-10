@@ -47,8 +47,8 @@ used as references.
   - Anything sent between games: raise `SessionProtocol.Version` and pin the new fingerprint in the engine's
     `WireFingerprintTests`. A game's own messages are the game's; test them with damaged bodies (`HostileValues` and
     `Watchdog` in `tests/Shared`).
-  - What a generator makes: a changed world hash means its `Version` must rise (the starter's `GameGenerator`, pinned in
-    `tests/Game.Tests/WorldTests`).
+  - What a generator makes, or its grid's size: a changed world hash or grid means its `Version` must rise (the
+    starter's `GameGenerator`, pinned in `tests/Game.Tests/WorldTests`).
   - A new system: a zero-allocation test and a behaviour test; an engine system's in `tests/Itera.Engine.Tests/Systems`,
     a game's in its tests. A system the game registers takes its place in the game's `SystemOrderTests` and `GAME.md`.
   - A new option: its range in `EngineOptionsValidator` (the engine's) or the game's validator, and its default in the

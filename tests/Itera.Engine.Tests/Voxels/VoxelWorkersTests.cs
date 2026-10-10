@@ -35,7 +35,7 @@ public sealed class VoxelWorkersTests : IDisposable
     public void Jobs_replay_their_edits_in_order()
     {
         var key = new ColumnKey(0, 0, 0);
-        var job = new ColumnJob();
+        var job = new ColumnJob(VoxelGrid.Unit.MaxLayers);
         job.Reset(key, VoxelGrid.Unit, Seed, snapshotSequence: 2);
         job.Edits.Add(
             VoxelEdit.Sphere(new VoxelCoord(64, 250, 64), 40, VoxelEditOperation.Clear) with
@@ -103,7 +103,7 @@ public sealed class VoxelWorkersTests : IDisposable
     public void Running_out_of_memory_keeps_nothing()
     {
         using var memory = new VoxelMemory(2 << 20);
-        var job = new ColumnJob();
+        var job = new ColumnJob(VoxelGrid.Unit.MaxLayers);
         job.Reset(new ColumnKey(0, 0, 0), VoxelGrid.Unit, Seed, 0);
 
         job.Run(_generator, memory, new byte[VoxelConstants.ChunkVoxels], new byte[VoxelConstants.ChunkVoxels]);
@@ -115,7 +115,7 @@ public sealed class VoxelWorkersTests : IDisposable
     [Fact]
     public void A_job_cancelled_before_it_runs_does_nothing()
     {
-        var job = new ColumnJob();
+        var job = new ColumnJob(VoxelGrid.Unit.MaxLayers);
         job.Reset(new ColumnKey(0, 0, 0), VoxelGrid.Unit, Seed, 0);
         job.Cancel();
 
@@ -130,7 +130,7 @@ public sealed class VoxelWorkersTests : IDisposable
     {
         using var workers = new VoxelWorkers(new ThrowingGenerator(), _memory, 1);
         workers.Start();
-        var job = new ColumnJob();
+        var job = new ColumnJob(VoxelGrid.Unit.MaxLayers);
         job.Reset(new ColumnKey(0, 0, 0), VoxelGrid.Unit, Seed, 0);
 
         workers.Enqueue(job);
@@ -169,7 +169,7 @@ public sealed class VoxelWorkersTests : IDisposable
 
     private ColumnJob RunJob(ColumnKey key)
     {
-        var job = new ColumnJob();
+        var job = new ColumnJob(VoxelGrid.Unit.MaxLayers);
         job.Reset(key, VoxelGrid.Unit, Seed, 0);
         job.Run(_generator, _memory, new byte[VoxelConstants.ChunkVoxels], new byte[VoxelConstants.ChunkVoxels]);
         return job;
@@ -182,7 +182,7 @@ public sealed class VoxelWorkersTests : IDisposable
         workers.Start();
         foreach (var column in columns)
         {
-            var job = new ColumnJob();
+            var job = new ColumnJob(VoxelGrid.Unit.MaxLayers);
             job.Reset(column, VoxelGrid.Unit, Seed, 0);
             workers.Enqueue(job);
         }

@@ -95,10 +95,10 @@ public sealed class PlayArea
     }
 
     /// <summary>
-    /// The engine's play area in a match without voxel terrain: the bounds a 10 cm voxel grid would have (±512 m across,
+    /// The engine's play area in a match without voxel terrain: the default bounds of a 10 cm voxel grid (±512 m across,
     /// from -51.2 m to 102.4 m) and the default margin. A game whose meshes reach past them registers its own.
     /// </summary>
-    public static PlayArea WithoutTerrain { get; } = new(new VoxelGrid(VoxelGrid.MostBaseCentimetres));
+    public static PlayArea WithoutTerrain { get; } = new(new VoxelGrid(10));
 
     /// <summary>How far past the world's edge, floor, and top the box reaches, in metres.</summary>
     public float MarginMetres { get; }

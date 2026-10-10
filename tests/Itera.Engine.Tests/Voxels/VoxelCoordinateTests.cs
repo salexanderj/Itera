@@ -74,8 +74,8 @@ public sealed class VoxelCoordinateTests
         Assert.Equal((minXZ, maxXZ, minY, maxY), (grid.MinChunkXZ, grid.MaxChunkXZ, grid.MinChunkY, grid.MaxChunkY));
         Assert.True(grid.ToCentimetres(grid.MinVoxelXZ) <= -500 * VoxelConstants.CentimetresPerMetre);
         Assert.True(grid.ToCentimetres(grid.EndVoxelXZ) >= 500 * VoxelConstants.CentimetresPerMetre);
-        Assert.True(grid.ToCentimetres(grid.MinVoxelY) <= VoxelGrid.FloorCentimetres);
-        Assert.True(grid.ToCentimetres(grid.EndVoxelY) >= VoxelGrid.TopCentimetres);
+        Assert.True(grid.ToCentimetres(grid.MinVoxelY) <= VoxelGrid.DefaultFloorCentimetres);
+        Assert.True(grid.ToCentimetres(grid.EndVoxelY) >= VoxelGrid.DefaultTopCentimetres);
         Assert.True(new ColumnKey(0, grid.MaxChunkXZ, grid.MinChunkXZ).IsInBounds(grid));
         Assert.False(new ColumnKey(0, grid.MaxChunkXZ + 1, 0).IsInBounds(grid));
         Assert.False(new ChunkKey(0, 0, grid.MaxChunkY + 1, 0).IsInBounds(grid));

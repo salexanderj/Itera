@@ -432,4 +432,21 @@ public sealed class EditLogTests
         stream.Position = 0;
         return stream;
     }
+
+    [Fact]
+    public void A_sized_worlds_log_indexes_edits_inside_it_and_not_past_its_edge()
+    {
+        // Two 12.8 m chunks each side of the middle: the edge at 2,560 cm.
+        var grid = VoxelGrid.Sized(10, 25.6, -12.8, 12.8);
+        var log = new EditLog(1, grid);
+        log.Append(Dig(1, new VoxelCoord(2_400, 0, 0)));
+        log.Append(Dig(2, new VoxelCoord(2_800, 0, 0)));
+        var found = new List<VoxelEdit>();
+
+        log.CollectForColumn(new ColumnKey(0, 1, 0), 0, found);
+        log.CollectForColumn(new ColumnKey(0, 2, 0), 0, found);
+
+        Assert.Equal([1L], found.Select(e => e.Sequence));
+        Assert.Equal(2, log.Count);
+    }
 }

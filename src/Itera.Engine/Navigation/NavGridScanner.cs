@@ -37,6 +37,17 @@ public sealed class NavGridScanner
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(passability);
+        // The grid keeps floors in 16-bit centimetres, so every height the world holds must fit them.
+        var grid = world.Grid;
+        long floor = grid.ToCentimetres(grid.MinVoxelY),
+            top = grid.ToCentimetres(grid.EndVoxelY);
+        if (floor < short.MinValue || top > short.MaxValue)
+        {
+            throw new InvalidOperationException(
+                $"Navigation keeps heights within ±327.67 m, and this world reaches from {floor / 100.0} m to {top / 100.0} m."
+            );
+        }
+
         _world = world;
         _passable = MaterialSet.Passable(passability);
         LowCentimetres = lowCentimetres;

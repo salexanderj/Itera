@@ -209,7 +209,7 @@ public sealed class ChunkTreeTests : IDisposable
     [Fact]
     public void A_column_reads_voxels_through_its_layers()
     {
-        var column = new Column();
+        var column = new Column(VoxelGrid.Unit.MaxLayers);
         var key = new ColumnKey(0, -2, 3);
         column.Reset(key, VoxelGrid.Unit);
         var layer = 10 - VoxelGrid.Unit.MinChunkY;
@@ -281,5 +281,14 @@ public sealed class ChunkTreeTests : IDisposable
         {
             Assert.Equal(expected[b], ChunkTree.GetBrick(_memory, chunk, b & 3, (b >> 2) & 3, b >> 4));
         }
+    }
+
+    [Fact]
+    public void A_column_or_job_too_small_for_a_worlds_columns_is_refused()
+    {
+        var key = new ColumnKey(0, 0, 0);
+
+        Assert.Throws<InvalidOperationException>(() => new Column(2).Reset(key, VoxelGrid.Unit));
+        Assert.Throws<InvalidOperationException>(() => new ColumnJob(2).Reset(key, VoxelGrid.Unit, 1, 0));
     }
 }

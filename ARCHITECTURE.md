@@ -28,7 +28,7 @@ The numbers that shape the engine's technical decisions:
 | Quantity | Value |
 |---|---|
 | World voxel edge | 10 cm at level 0 (set by the generator's `VoxelGrid`); level k is `10 * 2^k` cm; models have a unit of their own, 1 cm in the starter |
-| World extent | whole level-0 chunks covering about ±512 m, from -51.2 m to +102.4 m in height (derived from the grid) |
+| World extent | whole level-0 chunks a game sets in its generator's grid, up to ±160 km each way and 128 layers; by default about ±512 m, from -51.2 m to +102.4 m at 10 cm |
 | Voxels in a dense grid of that extent | about 1.5 x 10^11 (too many to store; see "Voxel storage") |
 | Simulation rate | 60 fixed steps per second (`Engine:FixedStepHz`) |
 | Players | up to `Engine:Session:MaxPlayers` (4 by default), peer to peer, the host authoritative |
@@ -767,10 +767,19 @@ it was 4 x 10^13 (5 TB at one bit each).
   practical capacity. Only the first Warning in any minute is logged at Warning; the stats line counts jobs that ran out of
   memory. Each thread keeps up to 64 free blocks of each pool and takes or gives back 32 at a time under the pool's lock.
 - The world's grid is a value each world owns (`VoxelGrid`, from its generator): the base voxel edge in centimetres, the
-  bounds (whole level-0 chunks covering ±500 m with the floor at the first chunk at or below -40.96 m and the top at whole
-  chunks above 81.92 m rounded up to a multiple of 8), and the conversions between centimetres and voxel indices
-  (`GridLevel` for a level). At a 10 cm base: ±512 m, -51.2 m, and +102.4 m. Code where the world and a model meet uses the
-  grid's and the model's units, never a level's 2^k.
+  bounds in whole level-0 chunks, and the conversions between centimetres and voxel indices (`GridLevel` for a level). A
+  game sizes its world (`VoxelGrid.Sized(base, halfWidthMetres, floorMetres, topMetres)`, each bound rounded out to
+  whole chunks, or the constructor in chunks): at most ±160 km on any axis (`MostReachCentimetres`, inside the edit
+  format's 2^24 cm with room for the play area's margin) and 128 level-0 layers (`MostLayers`: every layer of a resident
+  column costs memory, about 4 KB of mesh blocks and 8 bytes of chunk state, whether it holds voxels or not). The grid
+  is part of what the generator's id and version stand for, so peers and saves agree on it without carrying it, and a
+  change of size raises the version. A grid of a base alone has the default bounds: whole chunks covering ±500 m, the
+  floor at the first chunk at or below -40.96 m, and the top at whole chunks above 81.92 m rounded up to a multiple of
+  8; at a 10 cm base, ±512 m, -51.2 m, and +102.4 m. Columns and generation jobs hold as many layers as their world's
+  grid. The limit is one of storage and streaming: positions in metres are floats about the map's middle, which step
+  coarser far from it (about 1 mm at 8 km, 1.6 cm at 160 km) until an origin that moves with the camera keeps them near
+  zero (open work), and navigation keeps heights within ±327.67 m. Code where the world and a model meet uses the grid's
+  and the model's units, never a level's 2^k.
 - A column (the chunks at one x, z) is the unit of streaming. Level k (voxels of `Edge(k)` cm, chunks of 128 of them) loads
   the columns whose nearest point is within `Engine:Voxels:StreamingRadiusMetres` * 2^k of a streaming centre and unloads
   those beyond that plus one level-k column. The distance is to the column's nearest point, so a disc smaller than a column

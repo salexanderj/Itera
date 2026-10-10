@@ -29,10 +29,17 @@ internal enum ColumnJobResult : byte
 /// </summary>
 internal sealed class ColumnJob
 {
-    private readonly ChildState[] _layers = new ChildState[VoxelGrid.MostLayers];
-    private readonly ChunkFill[] _fills = new ChunkFill[VoxelGrid.MostLayers];
+    private readonly ChildState[] _layers;
+    private readonly ChunkFill[] _fills;
     private int _layerCount;
     private volatile bool _cancelled;
+
+    /// <param name="layerCapacity">The most layers a column of its world has (<see cref="VoxelGrid.MaxLayers"/>).</param>
+    public ColumnJob(int layerCapacity)
+    {
+        _layers = new ChildState[layerCapacity];
+        _fills = new ChunkFill[layerCapacity];
+    }
 
     /// <summary>The column to generate.</summary>
     public ColumnKey Key { get; private set; }
@@ -73,6 +80,13 @@ internal sealed class ColumnJob
 
     private void Reset(ColumnKey key, int layerCount, ulong seed, long snapshotSequence)
     {
+        if (layerCount > _layers.Length)
+        {
+            throw new InvalidOperationException(
+                $"A column of {layerCount} layers does not fit a pool's job of {_layers.Length}."
+            );
+        }
+
         Key = key;
         _layerCount = layerCount;
         Seed = seed;

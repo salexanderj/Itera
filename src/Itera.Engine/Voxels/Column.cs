@@ -17,7 +17,7 @@ internal enum ColumnState : byte
 /// </summary>
 internal sealed class Column
 {
-    private readonly ChildState[] _layers = new ChildState[VoxelGrid.MostLayers];
+    private readonly ChildState[] _layers;
 
     private int _layerCount;
     private int _firstChunkY;
@@ -43,11 +43,21 @@ internal sealed class Column
     /// <summary>The chunk state of each layer, bottom first.</summary>
     public Span<ChildState> Layers => _layers.AsSpan(0, _layerCount);
 
+    /// <param name="layerCapacity">The most layers a column of its world has (<see cref="VoxelGrid.MaxLayers"/>).</param>
+    public Column(int layerCapacity) => _layers = new ChildState[layerCapacity];
+
     /// <summary>Makes this object stand for a new, pending column of a world of <paramref name="grid"/>.</summary>
     public void Reset(ColumnKey key, VoxelGrid grid)
     {
         Key = key;
         _layerCount = key.LayerCount(grid);
+        if (_layerCount > _layers.Length)
+        {
+            throw new InvalidOperationException(
+                $"A column of {_layerCount} layers does not fit a pool's column of {_layers.Length}."
+            );
+        }
+
         _firstChunkY = grid.MinChunkYAt(key.Level);
         State = ColumnState.Pending;
         Job = null;

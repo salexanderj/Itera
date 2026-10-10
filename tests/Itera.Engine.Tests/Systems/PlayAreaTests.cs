@@ -29,7 +29,7 @@ public sealed class PlayAreaTests
     [Fact]
     public void The_default_without_terrain_is_a_10_cm_grids()
     {
-        var grid = new PlayArea(new VoxelGrid(VoxelGrid.MostBaseCentimetres));
+        var grid = new PlayArea(new VoxelGrid(10));
         var area = PlayArea.WithoutTerrain;
 
         Assert.Equal(
