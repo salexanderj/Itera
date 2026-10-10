@@ -1360,12 +1360,14 @@ Engine work that is known and not done:
   fades, mesh colliders, and matches without voxel terrain (`samples/Itera.MeshSample`). Not built: moving colliders
   (doors, platforms) for the mover, hands and feet placed on walls (IK on mesh rigs), walking on walls and ceilings,
   loading models during play, MikkTSpace tangents, clips from other files by joint name, a bridge from a mesh rig to
-  `Skeleton` for foot IK and aim, `KHR_texture_transform`, transparency, morph targets, and GPU culling.
-- **Rendering a game can extend** (2026-10-10, in phases): the look is data (`RenderLook`), the sun moves, with night,
+  `Skeleton` for foot IK and aim, `KHR_texture_transform`, morph targets, and GPU culling (blended materials came
+  with the next item).
+- **Rendering a game can extend** (finished 2026-10-10): the look is data (`RenderLook`), the sun moves, with night,
   mesh assets' blended materials are drawn sorted per object, a game adds passes of its own at five stages
   (`IRenderPass`), a camera's lens may be orthographic, and a game draws views into images (`RenderViews`, the
-  starter's minimap; a mesh material may show one, the mesh sample's screen). Image views draw no shadows or particles
-  yet, and split screen is not built. A low
+  starter's minimap; a mesh material may show one, the mesh sample's screen). Not built: image views with shadows and
+  particles, split screen, HDR rendering, order-independent transparency, transparent voxel materials, a physically
+  based sky, spot lights, and shadowed point lights. A low
   sun's shadow maps cost more (the starter's start view at 2560x1440: 0.15 ms at the engine's sun, 0.19 ms at 30
   degrees, 0.36 ms at 15, 0.40 ms at 5; their longer reach adds 0.01 to 0.03 ms of that); at night they cost 0.015 ms.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no

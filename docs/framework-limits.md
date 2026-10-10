@@ -32,8 +32,8 @@ Ordered by how many game types each blocks.
    2026-10-10); the look was constants in the shaders
    (now data a game sets, `RenderLook`, 2026-10-10); the sun's direction was fixed (now a game sets it, with night, 2026-10-10); no spot lights or shadowed point
    lights; one perspective camera (`mesh.vert` always divides by depth; `RenderView` holds one camera; now a camera's
-   lens may be orthographic, `CameraLens`, and a game draws views into images, `RenderViews`, the starter's minimap,
-   2026-10-10), so no split screen.
+   lens may be orthographic, `CameraLens`, and a game draws views into images, `RenderViews`, which the HUD and mesh
+   materials show: the starter's minimap and the mesh sample's screen, 2026-10-10), so no split screen.
 4. **Sessions are one host with clients.** At most 16 slots (`SessionProtocol.MaxSlots`); clients reach each other only
    through the host; the match ends when the host quits (no host migration); Steam lobbies are friends-only; nothing
    helps lockstep or rollback (Bepu is not bit-identical across CPUs, and peers' step clocks run apart).
@@ -67,6 +67,12 @@ of players and bodies, and saving the game's own state.
    2026-10-10. Left for later: moving colliders for the mover, IK on mesh rigs, walking on walls, loading models during
    play, morph targets (ARCHITECTURE.md, "Open work").
 2. Rendering a game can extend: its own passes, transparency, look data, a moving sun, other cameras and views.
+   Done: the look as data a game sets per frame (`RenderLook`); the sun's direction a game's, with night; mesh assets'
+   blended materials, sorted per object; a game's own passes at five stages of the frame (`IRenderPass`); orthographic
+   lenses; image views, shown by the HUD and by mesh materials (`RenderViews`; the starter's minimap, the mesh sample's
+   screen). Finished 2026-10-10. Left for later: split screen (with input per player, limit 6), HDR rendering,
+   order-independent transparency, transparent voxel materials, a physically based sky, spot lights, shadowed point
+   lights, and image views with shadows and particles (ARCHITECTURE.md, "Open work").
 3. A map size the game sets, with origin shifting.
 4. Gamepads, typed text, sound files and music, a menu a game can replace.
 5. Physics materials, collision groups, and gravity set by the game.
