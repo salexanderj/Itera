@@ -56,7 +56,8 @@ of players and bodies, and saving the game's own state.
    2026-10-09). Done: glTF models read at the run's start and drawn as textured meshes with the world's light and
    shadows, skinned models posed by their clips on the GPU (`.claude/rules/rendering.md`, "Mesh assets"); matches,
    sessions, and saves without voxel terrain; mesh colliders that rays, loose bodies, and the character mover meet;
-   voxel models and loose bodies without terrain, drawn there too. Next: the movement building blocks, then
+   voxel models and loose bodies without terrain, drawn there too; clip cross-fades; movement building blocks (wall
+   normals, probes, a movement mode hook) and the starter's climbing. Next: a sample game without voxel terrain, then
    compressed textures made offline.
 2. Rendering a game can extend: its own passes, transparency, look data, a moving sun, other cameras and views.
 3. A map size the game sets, with origin shifting.

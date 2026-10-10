@@ -1,6 +1,7 @@
 using System.Numerics;
 using Arch.Core;
 using Arch.System;
+using Game.Components;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
 using Itera.Engine.Systems;
@@ -12,7 +13,7 @@ namespace Game.Systems;
 /// <summary>
 /// Makes the local player at the match's start (fixed group, first; it does nothing after): an upright body of the
 /// options' height, standing under the start pose's eye and looking where it looks, with every component the engine's
-/// player systems read. It waits for the voxels round it to load (<see cref="CharacterContact.Waiting"/>). A game adds
+/// player systems read and its <see cref="Climber"/> (<see cref="ClimbMode"/>). It waits for the voxels round it to load (<see cref="CharacterContact.Waiting"/>). A game adds
 /// its own components here.
 /// </summary>
 public sealed partial class PlayerSpawnSystem(
@@ -37,7 +38,8 @@ public sealed partial class PlayerSpawnSystem(
             new EyeSmoothing(),
             new CharacterStandIn(),
             MovementStats.Default,
-            new ThirdPersonView { On = options.ThirdPerson, Metres = ThirdPersonCamera.StartMetres }
+            new ThirdPersonView { On = options.ThirdPerson, Metres = ThirdPersonCamera.StartMetres },
+            new Climber()
         );
         LogCreated(size.HeightMetres, feet.X, feet.Y, feet.Z, options.StartFlying);
     }

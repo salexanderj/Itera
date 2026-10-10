@@ -1301,8 +1301,8 @@ of buffers.
 Engine work that is known and not done:
 
 - **Voxels optional, the rest.** A match runs without voxel terrain (no generator, no `AddIteraVoxels`), its characters
-  and loose bodies moving over mesh colliders and its voxel models drawn; the movement building blocks for climbing and
-  a sample game without voxel terrain are planned (the mesh path's phase 5).
+  and loose bodies moving over mesh colliders and its voxel models drawn. A sample game without voxel terrain is planned
+  (the mesh path's phase 5).
 - **Per-game look data in the shaders.** The art direction's constants (saturation and darkening of the world, the side
   shading, the warm and cool light, the split tone, the occlusion floor, the fog and sky light terms) sit in `mesh.frag` and
   `lighting.glsl`. They should be data a game sets, with today's values as the starter's defaults.

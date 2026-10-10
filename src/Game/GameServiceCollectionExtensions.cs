@@ -90,6 +90,9 @@ public static class GameServiceCollectionExtensions
         services.AddIteraVoxels();
         services.AddSingleton<IVoxelPalette, GamePalette>();
         services.AddSingleton<IAtmosphereSource, GameAtmosphere>();
+        // Stone (the boulders) is climbable, and the player climbs it (Space at a boulder; ClimbMode).
+        services.AddSingleton<IVoxelSurfaceTags, GameSurfaceTags>();
+        services.AddScoped<IMovementMode, ClimbMode>();
         services.AddScoped(sp =>
             StartPose.For(
                 sp.GetRequiredService<IOptions<WorldOptions>>().Value,
@@ -175,7 +178,8 @@ public static class GameServiceCollectionExtensions
                 sp.GetRequiredService<PlayArea>(),
                 sp.GetRequiredService<ILogger<PlayerMovementSystem>>(),
                 sp.GetRequiredService<ConsoleCommands>(),
-                name => BenchmarkViews.Place(views, name)
+                name => BenchmarkViews.Place(views, name),
+                sp.GetService<IMovementMode>()
             );
         });
         services.AddScoped<IFixedUpdateSystem>(sp => new StandInSystem(
