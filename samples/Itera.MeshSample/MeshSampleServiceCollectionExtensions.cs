@@ -1,8 +1,10 @@
 using Itera.Engine;
 using Itera.Engine.Assets;
+using Itera.Engine.Audio;
 using Itera.Engine.Commands;
 using Itera.Engine.Ecs;
 using Itera.Engine.Input;
+using Itera.Engine.Loading;
 using Itera.Engine.Matches;
 using Itera.Engine.Maths;
 using Itera.Engine.Particles;
@@ -145,8 +147,9 @@ public static class MeshSampleServiceCollectionExtensions
 
     /// <summary>
     /// The frame systems, in their run order: the camera at the player's eye, or the fly camera; the debug outlines;
-    /// the camera to the renderer; the block the player aims at, from the camera's pose; the yard camera's view asked
-    /// for; the loose bodies' models; and the mesh assets placed (the yard, the fox).
+    /// the camera to the renderer; the block the player aims at, from the camera's pose; the sounds, after the aim (the
+    /// clang follows it); the yard camera's view asked for; the loose bodies' models; and the mesh assets placed (the
+    /// yard, the fox).
     /// </summary>
     private static void AddFrameSystems(IServiceCollection services)
     {
@@ -192,6 +195,14 @@ public static class MeshSampleServiceCollectionExtensions
             sp.GetRequiredService<CollisionSources>(),
             sp.GetRequiredService<YardColliders>(),
             sp.GetRequiredService<AimHighlight>(),
+            sp.GetRequiredService<WorldOrigin>()
+        ));
+        // The music, the screen's hum, the chime, and the clang where the aim, found just before, comes onto a block.
+        services.AddScoped<IFrameUpdateSystem>(sp => new SampleSoundSystem(
+            sp.GetRequiredService<EcsWorld>().World,
+            sp.GetRequiredService<AudioService>(),
+            sp.GetRequiredService<AimHighlight>(),
+            sp.GetRequiredService<LoadingScreen>(),
             sp.GetRequiredService<WorldOrigin>()
         ));
         // The yard camera asked for each frame (any place in the frame group: it reads nothing the others write).

@@ -24,6 +24,12 @@ matches have no voxel world. It shows what such a game composes and how the engi
 - Its own menu in place of the engine's (`SampleMenu`, in its own look, `SampleMenuStyle`): a bar down the left with
   Play, Join, Settings, and Quit (over a match Resume, Settings, Leave, and Quit), and beside it the page an entry opens:
   the host's address (Enter joins; a bad one says why) or the engine's Settings page inside a panel of its own.
+- Sounds and music read from files (`SampleSounds`, registered by `SampleRunStartup`; the files in `Sounds/`, made in
+  code by `tools/sounds/make_sounds.py demo`, listed in `Sounds/SOURCES.md`): its menu plays the music track `menu` (an
+  intro, then a loop its Ogg tags name) while there is no match; as a match starts `SampleSoundSystem` cross-fades to
+  `yard` (looping whole), holds the screen's hum at its picture's middle (a WAV loop with a `smpl` chunk; walk up to the
+  screen to hear it), plays a clang (one of three files) at a block's middle as the aim comes onto it, and a chime at the
+  listener (stereo, 24-bit) once the loading screen lifts. The console's `music` and `sound files` show them.
 - The sky is the engine's default (no `IAtmosphereSource`).
 - Its play area is the yard (`PlayArea` with the yard's bounds, in place of the engine's 10 cm grid's): the mover's map
   edge is a wall at the yard's side, so nobody walks off it.
@@ -46,6 +52,9 @@ the run's), as `AddMeshSample` does: `services.AddSingleton<IMenu, SampleMenu>()
   `PlayerSettings.Save` as it closes; `CapturingBinding`, `BindingPressed`, and `Escape` pass its key capture on.
 - Over a match, the shade is a plain full-screen `Area` declared first, so it draws under the page (anchored elements
   draw over the flow).
+- Its music: `FollowMusic`, from `BeforeUpdate`, plays its track (`MusicPlayer.Play`) while the phase is `Menu` or
+  `Joining`, and stops it as a match starts unless the game played another meanwhile (`MusicPlayer.Current`); the
+  engine's menu plays `Engine:Audio:MenuMusic`'s track the same way.
 - The starts, leave, and quit go through `MatchControl.RequestStart` (`MatchCommands`' starts), `RequestLeave`, and
   `WindowService.RequestExit`. A game with Steam also lists the friends hosting (`SteamFriendList`, `Watching`) and
   answers `JoinRequests` (a friend's join asked for during a match waits for it, or for the match's end); the sample
@@ -53,8 +62,10 @@ the run's), as `AddMeshSample` does: `services.AddSingleton<IMenu, SampleMenu>()
 
 Its tests (`SampleMenuTests`, over `SampleMenuHarness`) click it by what its elements read, with the engine's hooks for
 a game's tests: `MatchControlStates` puts the test's `MatchControl` into the loop's states (a join connecting, a match
-playing, its end), `MatchControl.PendingStart` and `PendingLeave` show what the menu asked for, and
-`PlayerSettings.WithoutFile` reads and writes no file. `SampleMenuPicturesTests` draws every page at 1280x720 and 2560x1440 into the
+playing, its end), `MatchControl.PendingStart` and `PendingLeave` show what the menu asked for,
+`PlayerSettings.WithoutFile` reads and writes no file, and a `MusicPlayer` with no audio thread says what it was asked
+to play (`Current`). `SampleSoundSystemTests` hear its sounds in a match with no device through
+`AudioService.QueueWithoutThread` (`QueuedEvents`, `QueuedLoops`; sound on), and `SampleSoundsTests` read each file. `SampleMenuPicturesTests` draws every page at 1280x720 and 2560x1440 into the
 folder `ITERA_UI_PICTURES` names. The UI pass blends the UI over the picture in linear light, so a see-through panel
 looks lighter over the world than in those pictures: take a shot of the running game (`game.py --port PORT shot`)
 before settling a colour.
@@ -66,4 +77,5 @@ Run it: `dotnet run --project samples/Itera.MeshSample -- --Engine:Session:Mode=
 `.claude/skills/vulkan/validate.sh --binary samples/Itera.MeshSample/bin/Debug/net10.0/Itera.MeshSample`. Its tests,
 played without a window, are in `tests/Itera.MeshSample.Tests`. Its systems' run order, with reasons where they matter, is in
 `MeshSampleServiceCollectionExtensions` (`AimHighlightSystem` after the camera's systems, since it aims from the camera's
-pose); unlike the starter, it has no `SystemOrderTests` pinning it.
+pose, and `SampleSoundSystem` after it, since its clang follows the aim); unlike the starter, it has no
+`SystemOrderTests` pinning it.

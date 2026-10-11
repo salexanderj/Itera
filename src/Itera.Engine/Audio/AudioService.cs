@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Numerics;
 using Itera.Engine.Audio.Synthesis;
 using Microsoft.Extensions.Logging;
@@ -114,10 +115,12 @@ public sealed partial class AudioService : IDisposable
     public float EffectsVolume { get; set; }
 
     /// <summary>
-    /// For tests: queue sounds with no audio thread, to read them back with <see cref="QueuedEvents"/> and
-    /// <see cref="QueuedLoops"/> until the next <see cref="Publish"/> or <see cref="ClearQueued"/>.
+    /// For a game's tests of its sounds (with no device, as in a <c>HeadlessMatch</c>): queue them with no audio thread,
+    /// to read them back with <see cref="QueuedEvents"/> and <see cref="QueuedLoops"/> until the next
+    /// <see cref="Publish"/>, which forgets them. Sound must be on (<see cref="Enabled"/>; a test run with
+    /// <c>Engine:Audio:Enabled</c> false turns it on itself).
     /// </summary>
-    internal bool QueueWithoutThread { get; set; }
+    public bool QueueWithoutThread { get; set; }
 
     /// <summary>The events queued this iteration. For tests.</summary>
     internal ReadOnlySpan<SoundEvent> Queued => _events.AsSpan(0, _eventCount);
@@ -131,11 +134,11 @@ public sealed partial class AudioService : IDisposable
     /// <summary>What waits for the audio thread. For tests.</summary>
     internal AudioExchange Exchange => _exchange;
 
-    /// <summary>The one-shots queued since the last <see cref="Publish"/>.</summary>
-    internal ReadOnlySpan<SoundEvent> QueuedEvents => _events.AsSpan(0, _eventCount);
+    /// <summary>The one-shots queued since the last <see cref="Publish"/>. For a game's tests (<see cref="QueueWithoutThread"/>).</summary>
+    public ReadOnlySpan<SoundEvent> QueuedEvents => _events.AsSpan(0, _eventCount);
 
-    /// <summary>The loops sustained since the last <see cref="Publish"/>.</summary>
-    internal ReadOnlySpan<SoundLoop> QueuedLoops => _loops.AsSpan(0, _loopCount);
+    /// <summary>The loops sustained since the last <see cref="Publish"/>. For a game's tests (<see cref="QueueWithoutThread"/>).</summary>
+    public ReadOnlySpan<SoundLoop> QueuedLoops => _loops.AsSpan(0, _loopCount);
 
     /// <summary>Forgets what was queued (tests).</summary>
     internal void ClearQueued()
@@ -383,6 +386,64 @@ public sealed partial class AudioService : IDisposable
         var path = Path.Combine(folder, Recipes.NameOf(recipe) + ".wav");
         WavWriter.Write(path, pcm, rate);
         return path;
+    }
+
+    /// <summary>
+    /// Renders recipe <paramref name="recipe"/> at <paramref name="level"/> (0 to 1) into WAV files in
+    /// <paramref name="folder"/>, and returns their paths: a one-shot's variations of the level nearest it, a file each
+    /// (NAME-LEVEL-N.wav); a stream for 8 s at that level (NAME-LEVEL.wav). Material for sound files made from the
+    /// engine's recipes (the mesh sample's demo). Main thread (the console's <c>sound wav NAME LEVEL</c>); allocates.
+    /// </summary>
+    public IReadOnlyList<string> WriteLevel(int recipe, string folder, float level)
+    {
+        CheckRecipe(recipe);
+        ArgumentOutOfRangeException.ThrowIfLessThan(level, 0);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(level, 1);
+        Directory.CreateDirectory(folder);
+        var rate = _settings.SampleRate;
+        var name = string.Create(CultureInfo.InvariantCulture, $"{Recipes.NameOf(recipe)}-{level:0.###}");
+        var paths = new List<string>();
+        switch (Recipes[recipe])
+        {
+            case OneShotRecipe oneShot:
+                var scratch = new float[oneShot.SampleCount(rate)];
+                var index = (int)MathF.Round(level * (oneShot.Levels - 1));
+                for (var variation = 0; variation < oneShot.VariationsPerLevel; variation++)
+                {
+                    var length = oneShot.RenderVariation(scratch, rate, index, variation);
+                    paths.Add(
+                        Write(name + "-" + (variation + 1).ToString(CultureInfo.InvariantCulture), scratch[..length])
+                    );
+                }
+
+                break;
+            case StreamRecipe stream:
+                var generator = stream.Create(rate);
+                generator.Reset(1);
+                var all = new float[(int)(8f * rate / AudioMixer.BlockSamples) * AudioMixer.BlockSamples];
+                for (var offset = 0; offset < all.Length; offset += AudioMixer.BlockSamples)
+                {
+                    generator.Render(all.AsSpan(offset, AudioMixer.BlockSamples), level);
+                }
+
+                paths.Add(Write(name, all));
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"{Recipes.NameOf(recipe)} is read from files: they are its sound already."
+                );
+        }
+
+        return paths;
+
+        string Write(string file, float[] samples)
+        {
+            var pcm = new short[samples.Length];
+            Dsp.ToPcm16(samples, pcm);
+            var path = Path.Combine(folder, file + ".wav");
+            WavWriter.Write(path, pcm, rate);
+            return path;
+        }
     }
 
     private static List<float> RenderOneShots(OneShotRecipe recipe, int rate)

@@ -32,6 +32,11 @@
     />
   </ItemGroup>
 
+  <!-- The sample's sounds (made by tools/sounds/make_sounds.py demo; Sounds/SOURCES.md), copied to Sounds/. -->
+  <ItemGroup>
+    <None Update="Sounds\*.wav;Sounds\*.ogg" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- The sample's shaders, in a folder of their own beside the engine's (Shaders/Game/), so they include its view.glsl. -->
   <ItemGroup>
     <None Remove="Shaders\**" />

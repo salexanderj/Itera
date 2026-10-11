@@ -1,5 +1,6 @@
 using System.Numerics;
 using Itera.Engine;
+using Itera.Engine.Audio;
 using Itera.Engine.Commands;
 using Itera.Engine.Input;
 using Itera.Engine.Matches;
@@ -17,7 +18,8 @@ namespace Itera.MeshSample.Tests;
 
 /// <summary>
 /// The sample's menu drawn alone on a surface of a given size, with a pointer and the menu's keys the test sets, its
-/// elements found by what they read; its pictures written to the folder <c>ITERA_UI_PICTURES</c> names.
+/// elements found by what they read; its pictures written to the folder <c>ITERA_UI_PICTURES</c> names. Its music is the
+/// sample's, with no audio thread (<see cref="MusicPlayer.Current"/> follows the commands).
 /// </summary>
 internal sealed class SampleMenuHarness : IDisposable
 {
@@ -25,6 +27,7 @@ internal sealed class SampleMenuHarness : IDisposable
     private readonly int _height;
     private readonly UiFonts _fonts = new(Options.Create(new EngineOptions()), NullLogger<UiFonts>.Instance);
     private readonly SteamService _steam = new(Options.Create(new EngineOptions()), NullLogger<SteamService>.Instance);
+    private readonly AudioService _audio = new(Options.Create(new EngineOptions()), NullLogger<AudioService>.Instance);
     private readonly UiToolkit _toolkit;
     private readonly UISurface _surface;
     private readonly string? _folder = Environment.GetEnvironmentVariable("ITERA_UI_PICTURES");
@@ -38,6 +41,7 @@ internal sealed class SampleMenuHarness : IDisposable
         options.Application.Name = "Itera Mesh Sample";
         _steam.Initialize();
         _toolkit = new UiToolkit(_fonts, MenuStyle.Plain, Options.Create(options), NullLogger<UiToolkit>.Instance);
+        SampleSounds.Register(_audio);
         var starts = new MatchCommands(
             new ConsoleCommands(Matches, NullLogger<ConsoleCommands>.Instance),
             Matches,
@@ -52,7 +56,8 @@ internal sealed class SampleMenuHarness : IDisposable
             Window,
             PlayerSettings.WithoutFile(),
             new SettingsRows(),
-            Options.Create(options)
+            Options.Create(options),
+            _audio.Music
         );
         _surface = new UISurface([Menu], NullLogger<UISurface>.Instance);
         _surface.Initialize(width, height);
@@ -60,6 +65,9 @@ internal sealed class SampleMenuHarness : IDisposable
     }
 
     public SampleMenu Menu { get; }
+
+    /// <summary>The sample's music, its tracks declared.</summary>
+    public MusicPlayer Music => _audio.Music;
 
     public MatchControl Matches { get; } = new();
 
@@ -146,6 +154,7 @@ internal sealed class SampleMenuHarness : IDisposable
     public void Dispose()
     {
         _surface.Dispose();
+        _audio.Dispose();
         Menu.Dispose();
         _toolkit.Dispose();
         _fonts.Dispose();

@@ -16,7 +16,8 @@ namespace Itera.Engine.Tests.Commands;
 /// The console's <c>sound</c> (<see cref="SoundCommands"/>) without a device: the
 /// counts, on and off, the volume as the player's setting, the recipes with their kinds, the sounds from files (not read
 /// with no sound running), a test or a play at the listener refused with no sound running, an unknown recipe, WAV files
-/// written into the data folder's <c>Sounds</c> (but not for a sound from files), and the usage for anything else; and
+/// written into the data folder's <c>Sounds</c> (but not for a sound from files; with a level, its variations a file
+/// each, or 8 s of a stream), and the usage for anything else; and
 /// <c>music</c>: what plays, the tracks as read (or why not), a track played and stopped with a fade, one that cannot be
 /// played, an unknown one, and a fade out of range.
 /// </summary>
@@ -210,6 +211,28 @@ public sealed class SoundCommandsTests : IDisposable
         var path = Last()["wrote ".Length..];
         Assert.Equal(Path.Combine(_options.Application.DataDirectory(), "Sounds"), Path.GetDirectoryName(path));
         Assert.True(new FileInfo(path).Length > 44);
+    }
+
+    [Fact]
+    public void Wav_with_a_level_writes_its_variations_a_file_each_or_a_stream_at_it()
+    {
+        Run("sound wav bar 0.6");
+        var folder = Path.Combine(_options.Application.DataDirectory(), "Sounds");
+        for (var i = 1; i <= 4; i++)
+        {
+            Assert.True(File.Exists(Path.Combine(folder, $"bar-0.6-{i}.wav")), $"bar-0.6-{i}.wav");
+        }
+
+        Assert.EndsWith("bar-0.6-4.wav", Last(), StringComparison.Ordinal);
+        Run("sound wav tone 0.8");
+        Assert.Equal("wrote " + Path.Combine(folder, "tone-0.8.wav"), Last());
+        using var tone = Itera.Engine.Audio.Files.SoundDecoders.Open(Path.Combine(folder, "tone-0.8.wav"));
+        Assert.Equal(8, tone.Frames / (double)tone.SampleRate, 1);
+
+        Run("sound wav bar 2");
+        Assert.StartsWith("usage: ", Last(), StringComparison.Ordinal);
+        Run("sound wav all 0.5");
+        Assert.StartsWith("usage: ", Last(), StringComparison.Ordinal);
     }
 
     [Theory]

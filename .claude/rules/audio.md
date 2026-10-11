@@ -42,7 +42,11 @@ static buffer (`IAudioDevice.PlayLooping`), round the loop points its file names
 copies are not in step; it fades out by the time since the last round over 80 ms once no longer sustained
 (`AudioMixer.FadeFileLoops`, through `IAudioDevice.SetGain`), and, as a stream, is never cut short for a louder sound.
 The console's `sound files` lists each file as read (channels, rate, length, size, loop, problem), `sound play NAME`
-plays a sound at the listener (a sustained one for 4 s), and `sound wav` writes no file for them.
+plays a sound at the listener (a sustained one for 4 s), and `sound wav` writes no file for them; `sound wav NAME LEVEL`
+writes a recipe's level as material for files (`AudioService.WriteLevel`: the variations a file each, or 8 s of a
+stream; `tools/sounds/make_sounds.py demo` makes the mesh sample's files from them). A game's tests hear its sounds with
+no device through `AudioService.QueueWithoutThread` (sound on), reading `QueuedEvents` and `QueuedLoops` until the next
+`Publish` (the mesh sample's `SampleSoundSystemTests`).
 
 Music (`AudioService.Music`, a `MusicPlayer`, also a DI singleton): a game declares its tracks by name once a run
 (`Declare(name, path, loop)`, at most 64, in its `IRunStartup`; paths from the game's folder) and plays one at a time

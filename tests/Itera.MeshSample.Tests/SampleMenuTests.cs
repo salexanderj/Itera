@@ -17,8 +17,9 @@ namespace Itera.MeshSample.Tests;
 /// The sample's own menu (<see cref="SampleMenu"/>) drawn on a 1280 x 720 surface with a pointer the test moves, its
 /// elements found by what they read: the bar's entries and the starts and quit they ask for, the address typed and
 /// joined (a bad one refused with the reason), the engine's Settings page inside it with a key's binding waited for,
-/// Escape over a match (Resume, Leave), a join's progress with Cancel, a match's start closing it, the keyboard, the
-/// sample's composition using it in place of the engine's, a real match followed, and nothing allocated while idle.
+/// Escape over a match (Resume, Leave), a join's progress with Cancel, a match's start closing it, its music, the
+/// keyboard, the sample's composition using it in place of the engine's, a real match followed, and nothing allocated
+/// while idle.
 /// </summary>
 public sealed class SampleMenuTests : IDisposable
 {
@@ -177,6 +178,29 @@ public sealed class SampleMenuTests : IDisposable
         Frame();
 
         Assert.Equal(SamplePage.Main, Menu.Page);
+    }
+
+    [Fact]
+    public void Its_music_plays_with_no_match_and_while_joining_and_stops_as_a_match_starts()
+    {
+        var music = _harness.Music;
+        Assert.Equal(SampleSounds.MenuMusic, music.CurrentName);
+
+        MatchControlStates.Joining(Matches, "127.0.0.1:47600");
+        _harness.Frame();
+        Assert.Equal(SampleSounds.MenuMusic, music.CurrentName);
+        MatchControlStates.Starting(Matches);
+        _harness.Frame();
+        Assert.Null(music.CurrentName);
+        MatchControlStates.Ended(Matches, null);
+        _harness.Frame();
+        Assert.Equal(SampleSounds.MenuMusic, music.CurrentName);
+
+        // The yard's music, played as a match starts, goes on.
+        MatchControlStates.Starting(Matches);
+        music.Play(SampleSounds.YardMusic);
+        _harness.Frame();
+        Assert.Equal(SampleSounds.YardMusic, music.CurrentName);
     }
 
     [Fact]

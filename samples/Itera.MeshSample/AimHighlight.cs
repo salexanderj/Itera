@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 
 namespace Itera.MeshSample;
 
@@ -14,10 +15,14 @@ public sealed class AimHighlight
     /// <summary>The rim's box: a unit cube placed over the block, a little larger than it.</summary>
     public Matrix4x4 Transform { get; private set; }
 
-    /// <summary>Shows the rim round the box <paramref name="transform"/> places.</summary>
-    public void Show(in Matrix4x4 transform)
+    /// <summary>The block's place in the yard (its corner, absolute): which block it is, whatever the match's origin.</summary>
+    public WorldPoint Block { get; private set; }
+
+    /// <summary>Shows the rim round the box <paramref name="transform"/> places, over the block at <paramref name="block"/>.</summary>
+    public void Show(in Matrix4x4 transform, WorldPoint block)
     {
         Transform = transform;
+        Block = block;
         Active = true;
     }
 

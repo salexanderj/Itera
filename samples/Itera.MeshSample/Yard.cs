@@ -42,6 +42,22 @@ public static class Yard
     /// <summary>How far the ground reaches from the middle, in metres.</summary>
     public const float GroundHalfMetres = 30;
 
+    /// <summary>Where the screen stands: the foot of its panel's left side, absolute.</summary>
+    public static readonly WorldPoint ScreenPlace = new(-5, 0, -12);
+
+    /// <summary>The screen's picture: its lower left corner on the panel's front, and its size, in metres.</summary>
+    private static readonly Vector3 s_pictureCorner = new(0.1f, 4.1f, 0.004f);
+
+    private static readonly Vector2 s_pictureSize = new(3.2f, 1.8f);
+
+    /// <summary>The middle of the screen's picture, absolute (where the sample's hum comes from).</summary>
+    public static WorldPoint ScreenMiddle =>
+        ScreenPlace.Plus(
+            s_pictureCorner.X + s_pictureSize.X / 2,
+            s_pictureCorner.Y + s_pictureSize.Y / 2,
+            s_pictureCorner.Z
+        );
+
     /// <summary>
     /// Where the pieces stand: the ground, the four blocks along the north, the ramps to the west and east, the glass
     /// pane before the start with the amber cubes beyond it, and the screen past the blocks.
@@ -58,7 +74,7 @@ public static class Yard
         new(Glass, new WorldPoint(2, 0, 1)),
         new(Amber, new WorldPoint(6, 0, -3)),
         new(Amber, new WorldPoint(7.5, 0, -2.5)),
-        new(Screen, new WorldPoint(-5, 0, -12)),
+        new(Screen, ScreenPlace),
     ];
 
     /// <summary>The surface tags of each of the yard's materials: the stone's climbable.</summary>
@@ -91,7 +107,7 @@ public static class Yard
         builder.Box(new Vector3(1.6f, 0, -0.1f), new Vector3(1.8f, 4, -0.02f));
         builder.Box(new Vector3(0, 4, -0.12f), new Vector3(3.4f, 6, 0));
         builder.NextMaterial();
-        builder.Picture(new Vector3(0.1f, 4.1f, 0.004f), new Vector2(3.2f, 1.8f));
+        builder.Picture(s_pictureCorner, s_pictureSize);
         var frame = MeshMaterialData.Default with
         {
             Name = "screen-frame",

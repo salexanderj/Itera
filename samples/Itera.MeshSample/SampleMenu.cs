@@ -1,4 +1,5 @@
 using Itera.Engine;
+using Itera.Engine.Audio;
 using Itera.Engine.Commands;
 using Itera.Engine.Input;
 using Itera.Engine.Matches;
@@ -22,9 +23,11 @@ namespace Itera.MeshSample;
 /// match it always shows; over a match Escape opens and closes it; while a join connects it shows how far, with Cancel.
 /// It reaches the run only through the engine's public services: <see cref="MatchControl"/> and
 /// <see cref="MatchCommands"/> (start, leave, the phase, why the last match ended), <see cref="WindowService"/> (quit),
-/// and <see cref="PlayerSettings"/>. Steam is off in the sample, so it lists no friends and asks about no friend's join
-/// (a game with Steam answers <see cref="JoinRequests"/>: a friend's join asked for during a match waits for it, or for
-/// the match's end). Main thread.
+/// <see cref="PlayerSettings"/>, and <see cref="MusicPlayer"/> (its music, <see cref="SampleSounds.MenuMusic"/>, while
+/// there is no match or one is being joined, faded out as a match starts unless the game played another). Steam is off
+/// in the sample, so it lists no friends and asks about no friend's join (a game with Steam answers
+/// <see cref="JoinRequests"/>: a friend's join asked for during a match waits for it, or for the match's end). Main
+/// thread.
 /// </summary>
 public sealed class SampleMenu : UiLayer, IMenu
 {
@@ -52,6 +55,7 @@ public sealed class SampleMenu : UiLayer, IMenu
     private readonly MatchCommands _starts;
     private readonly WindowService _window;
     private readonly PlayerSettings _settings;
+    private readonly MusicPlayer? _music;
     private readonly SettingsPage _settingsPage;
     private readonly TextEntry _address;
     private readonly string _title;
@@ -60,6 +64,7 @@ public sealed class SampleMenu : UiLayer, IMenu
     private string? _notice;
     private bool _seenMatch;
     private int _seenStarted;
+    private bool _playingMusic;
 
     public SampleMenu(
         UiToolkit toolkit,
@@ -69,7 +74,8 @@ public sealed class SampleMenu : UiLayer, IMenu
         WindowService window,
         PlayerSettings settings,
         SettingsRows rows,
-        IOptions<EngineOptions> options
+        IOptions<EngineOptions> options,
+        MusicPlayer? music = null
     )
         : base(toolkit, input)
     {
@@ -78,6 +84,7 @@ public sealed class SampleMenu : UiLayer, IMenu
         _starts = starts;
         _window = window;
         _settings = settings;
+        _music = music;
         _settingsPage = new SettingsPage(settings, rows);
         _address = new TextEntry(MaxAddressLength, PressJoin);
         _title = options.Value.Application.Name;
@@ -123,9 +130,13 @@ public sealed class SampleMenu : UiLayer, IMenu
         }
     }
 
-    /// <summary>A match that started (also one that failed within a frame) or ended: the bar alone, the menu closed.</summary>
+    /// <summary>
+    /// The menu's music follows the matches; a match that started (also one that failed within a frame) or ended: the bar
+    /// alone, the menu closed.
+    /// </summary>
     protected override void BeforeUpdate(in FrameTime time)
     {
+        FollowMusic();
         var hasMatch = _matches.Phase != MatchPhase.Menu;
         if (hasMatch == _seenMatch && _matches.Started == _seenStarted)
         {
@@ -136,6 +147,29 @@ public sealed class SampleMenu : UiLayer, IMenu
         _seenStarted = _matches.Started;
         Show(SamplePage.Main);
         _open = false;
+    }
+
+    /// <summary>
+    /// The menu's music plays while there is no match or one is being joined, fading in over 2 s, and fades out as a match
+    /// starts, unless the game has played another track meanwhile.
+    /// </summary>
+    private void FollowMusic()
+    {
+        var wanted = _matches.Phase is MatchPhase.Menu or MatchPhase.Joining;
+        if (_music is null || wanted == _playingMusic || !_music.TryFind(SampleSounds.MenuMusic, out var track))
+        {
+            return;
+        }
+
+        _playingMusic = wanted;
+        if (wanted)
+        {
+            _music.Play(track);
+        }
+        else if (_music.Current == track)
+        {
+            _music.Stop();
+        }
     }
 
     /// <summary>The address box's typing goes through <see cref="TextFocus"/>, not the game's text focus.</summary>

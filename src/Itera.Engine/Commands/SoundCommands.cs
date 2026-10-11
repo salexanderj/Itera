@@ -13,7 +13,8 @@ namespace Itera.Engine.Commands;
 /// The console's <c>sound</c> command (<see cref="CommandScope.Local"/>): the counts, on and off, the volume, the
 /// recipes' names and kinds, the sounds read from files (each file's channels, rate, length, and problems), a test of a
 /// recipe where the camera looks (a one-shot once, at a level; a stream or a file loop for 4 s) or at the listener, and WAV files of
-/// recipes in the data folder's <c>Sounds</c>, to listen to outside the game. The volume is the player's setting
+/// recipes in the data folder's <c>Sounds</c>, to listen to outside the game (with a level, that level's variations a
+/// file each, or 8 s of a stream at it: material for sound files). The volume is the player's setting
 /// (<see cref="PlayerSettings"/>), as the menu's. And the <c>music</c> command: what plays (the decks' tracks and gains,
 /// the music thread's work), the tracks, and a track played or stopped with a fade (<see cref="MusicPlayer"/>).
 /// </summary>
@@ -38,8 +39,8 @@ public sealed class SoundCommands(
     {
         commands.Register(
             "sound",
-            "[on|off|volume V|recipes|files|test NAME [LEVEL]|play NAME|wav NAME|wav all]",
-            "Sound: the counts, on or off, the master volume (0 to 1), the recipes, the sounds from files, one where the camera looks (a level 0 to 1) or at the listener, or WAV files of recipes.",
+            "[on|off|volume V|recipes|files|test NAME [LEVEL]|play NAME|wav NAME [LEVEL]|wav all]",
+            "Sound: the counts, on or off, the master volume (0 to 1), the recipes, the sounds from files, one where the camera looks (a level 0 to 1) or at the listener, or WAV files of recipes (with a level, that level's variations a file each, or 8 s of a stream at it).",
             CommandScope.Local,
             Sound
         );
@@ -278,7 +279,7 @@ public sealed class SoundCommands(
             return;
         }
 
-        if (context.Is(0, "wav") && context.Count == 2)
+        if (context.Is(0, "wav") && context.Count is 2 or 3)
         {
             Wav(context);
             return;
@@ -422,6 +423,12 @@ public sealed class SoundCommands(
         var folder = Path.Combine(options.Value.Application.DataDirectory(), "Sounds");
         if (context.Is(1, "all"))
         {
+            if (context.Count == 3)
+            {
+                context.PrintUsage();
+                return;
+            }
+
             for (var id = 0; id < audio.Recipes.Count; id++)
             {
                 if (audio.Recipes[id] is not FileRecipe)
@@ -441,6 +448,22 @@ public sealed class SoundCommands(
         if (audio.Recipes[recipe] is FileRecipe)
         {
             context.PrintError($"{audio.Recipes.NameOf(recipe)} is read from files: they are its sound already.");
+            return;
+        }
+
+        if (context.Count == 3)
+        {
+            if (!context.TryGetFloat(2, out var level) || level is < 0 or > 1)
+            {
+                context.PrintUsage();
+                return;
+            }
+
+            foreach (var path in audio.WriteLevel(recipe, folder, level))
+            {
+                context.Print("wrote " + path);
+            }
+
             return;
         }
 

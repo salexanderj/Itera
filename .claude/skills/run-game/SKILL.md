@@ -237,8 +237,8 @@ lists the commands (`ConsoleCommands`):
   `step` [N] (pauses, then N fixed steps), `timescale` [X] (0.05 to 16 for the match; offline only, as are pause,
   resume, and step; pause and step refuse while the match loads), `particles` (on, off, recipes, test NAME [COUNT], pull
   NAME [COUNT], stress NAME BURSTS, stress off), `sound` (on, off, volume V, recipes, files (the sounds read from
-  files, each file's channels, rate, length, and problems), test NAME [LEVEL], play NAME (at the listener; a stream or file loop for 4 s), wav NAME, wav
-  all into `Sounds/`), `music` (what plays: the decks' tracks and gains, underruns, and what the music thread decoded
+  files, each file's channels, rate, length, and problems), test NAME [LEVEL], play NAME (at the listener; a stream or file loop for 4 s), wav NAME [LEVEL] (with a level,
+  that level's variations a file each, or 8 s of a stream at it), wav all into `Sounds/`), `music` (what plays: the decks' tracks and gains, underruns, and what the music thread decoded
   and allocated; list (each track as read, or why not), play NAME [SECONDS] (cross-fading, 2 s by default), stop
   [SECONDS]).
 - The engine's systems, where a game registers them (the starter does): `fly` (the debug fly camera, or walk again where

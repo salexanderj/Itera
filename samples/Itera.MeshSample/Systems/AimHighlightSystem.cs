@@ -54,7 +54,8 @@ public sealed class AimHighlightSystem(
                 // A block is a cube from its place to its place plus its scale.
                 highlight.Show(
                     Matrix4x4.CreateScale(piece.Scale + 2 * RimMetres)
-                        * Matrix4x4.CreateTranslation(origin.ToLocal(piece.Position) - new Vector3(RimMetres))
+                        * Matrix4x4.CreateTranslation(origin.ToLocal(piece.Position) - new Vector3(RimMetres)),
+                    piece.Position
                 );
                 return;
             }
