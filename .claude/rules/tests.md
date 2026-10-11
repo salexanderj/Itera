@@ -123,9 +123,10 @@ Where tests live:
   origin mapping points as one at the middle), `RenderViewTests` (the
   frame's view: its atmosphere, and what a match's end puts back), `Meshes/` (`MeshPassTests`, `MeshAssetDrawsTests`
   (the asset lists, posed instances, and the blended list sorted back to front), `MeshViewTests` (the frame's frustum,
-  cascades, and lights), `LevelBalanceTests`, `MeshColumnTests`, `WorldMeshesTests` over a draw target and staging in
-  memory: the seams' stitched meshes, a full heap, the edits' latency, an image view's lists over `FakeViewLists`, the
-  same blocks drawn local to a moved origin),
+  cascades, and lights), `LevelBalanceTests` (random trees against
+  marking every finest column, a level-9 column), `MeshColumnTests`, `WorldMeshesTests` over a draw target and staging
+  in memory: the seams' stitched meshes, a full heap, the edits' latency, an image view's lists over `FakeViewLists`,
+  the same blocks drawn local to a moved origin, a column cut by the map's edge or wider than the view still split),
   `RenderViewsTests` (declaring, the cadence, panels), `Memory/GpuRangeHeapTests`, `GpuLayoutTests` (of
   `tests/Shared/GpuLayout`, also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`, `DeviceChoiceTests`,
   `RenderThreadTests` (a fake renderer), `RenderPassesTests` (a game's pass at every stage in `EngineComposition`, none

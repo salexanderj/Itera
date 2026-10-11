@@ -45,6 +45,31 @@ public sealed class LevelDistancesTests
         Assert.Equal(25600, distances.ViewRadiusCentimetres);
     }
 
+    /// <summary>
+    /// Eight to ten levels on an 8 km map of 10 cm voxels at the default radius (59.2 m from the grid): each level is
+    /// drawn and streamed twice as far as the one before, past the map's 4 km at level 7, and the view's radius is the
+    /// coarsest level's (7.6 km at eight levels, 30.3 km at ten), which an 8 km view distance ends sooner.
+    /// </summary>
+    [Theory]
+    [InlineData(8)]
+    [InlineData(9)]
+    [InlineData(10)]
+    public void Eight_to_ten_levels_on_an_8_km_map_double_each_level(int levels)
+    {
+        var grid = VoxelGrid.Sized(10, 4_000, -51.2, 102.4);
+        var distances = LevelDistances.From(new VoxelSettings { Levels = levels }, grid);
+
+        Assert.Equal(levels, distances.Levels);
+        for (var level = 1; level < levels; level++)
+        {
+            Assert.Equal(distances.RadiusCentimetres(level - 1) * 2, distances.RadiusCentimetres(level));
+            Assert.True(distances.ReachCentimetres(level) > distances.ReachCentimetres(level - 1));
+        }
+
+        Assert.Equal(5_920L << (levels - 1), distances.ViewRadiusCentimetres);
+        Assert.True(distances.ReachCentimetres(7) > 400_000);
+    }
+
     private static long[] Reaches(LevelDistances distances) =>
         [.. Enumerable.Range(0, distances.Levels).Select(level => distances.ReachCentimetres(level))];
 

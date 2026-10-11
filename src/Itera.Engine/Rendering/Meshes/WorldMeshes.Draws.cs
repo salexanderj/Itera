@@ -143,7 +143,7 @@ public sealed unsafe partial class WorldMeshes
         _balance.Begin(_finestLevel);
         foreach (var column in _byLevel[_coarsestLevel])
         {
-            Select(column);
+            Select(column.Key);
         }
 
         _balance.Balance(_canSplit ??= CanSplit);
@@ -157,8 +157,13 @@ public sealed unsafe partial class WorldMeshes
         var unmeshed = 0;
         for (var i = 0; i < leaves.Count; i++)
         {
+            // A leaf the balance split off past the map's edge has no column and draws nothing.
             var key = leaves[i];
-            var column = _columns[key];
+            if (!_columns.TryGetValue(key, out var column))
+            {
+                continue;
+            }
+
             column.DrawnUpload = Uploads;
             // Columns past the view distance are never meshed and draw nothing there.
             unmeshed += column.Wanted && !column.MeshedOnce ? 1 : 0;
@@ -174,30 +179,34 @@ public sealed unsafe partial class WorldMeshes
     }
 
     /// <summary>
-    /// Draws <paramref name="column"/>, or its four finer columns where they are near enough and meshed; a column not
-    /// meshed yet (loading, or evicted to make room, WorldMeshes.Evict) whose finer columns are meshed stays split until
-    /// it is.
+    /// Draws the column <paramref name="key"/>, or its four finer columns where they are near enough and meshed; a
+    /// column not meshed yet (loading, or evicted to make room, WorldMeshes.Evict) whose finer columns are meshed stays
+    /// split until it is. Past the map's edge or the view's end (<see cref="DrawsNothing"/>) nothing is drawn.
     /// </summary>
-    private void Select(MeshColumn column)
+    private void Select(ColumnKey key)
     {
-        var key = column.Key;
+        if (!_columns.TryGetValue(key, out var column) || DrawsNothing(key, column))
+        {
+            return;
+        }
+
         if (key.Level > _finestLevel)
         {
             var near = IsNear(key);
-            if (
-                (near || !column.MeshedOnce)
-                && TryChildren(key, out var a, out var b, out var c, out var d, orFiner: true)
-            )
+            if ((near || !column.MeshedOnce) && TryChildren(key, orFiner: true))
             {
                 if (!near)
                 {
                     Needed(column);
                 }
 
-                Select(a);
-                Select(b);
-                Select(c);
-                Select(d);
+                var level = key.Level - 1;
+                int x = key.X << 1,
+                    z = key.Z << 1;
+                Select(new ColumnKey(level, x, z));
+                Select(new ColumnKey(level, x + 1, z));
+                Select(new ColumnKey(level, x, z + 1));
+                Select(new ColumnKey(level, x + 1, z + 1));
                 return;
             }
 
@@ -222,7 +231,7 @@ public sealed unsafe partial class WorldMeshes
         }
 
         // The balance draws the four as leaves: each must be meshed itself.
-        if (TryChildren(key, out _, out _, out _, out _, orFiner: false))
+        if (TryChildren(key, orFiner: false))
         {
             return true;
         }
@@ -286,36 +295,39 @@ public sealed unsafe partial class WorldMeshes
     }
 
     /// <summary>
-    /// The four columns of the level below that make up <paramref name="key"/>, when all can be drawn: each meshed, or
-    /// with <paramref name="orFiner"/> standing for by its own four finer columns that can be (a column freed to make
-    /// room, WorldMeshes.Evict, between the coarsest and the leaves the view draws; <see cref="Select"/> splits it in
-    /// turn).
+    /// True when the four columns of the level below that make up <paramref name="key"/> can all be drawn: each meshed,
+    /// drawing nothing (<see cref="DrawsNothing"/>), or with <paramref name="orFiner"/> standing for by its own four
+    /// finer columns that can be (a column freed to make room, WorldMeshes.Evict, between the coarsest and the leaves the
+    /// view draws; <see cref="Select"/> splits it in turn).
     /// </summary>
-    private bool TryChildren(
-        ColumnKey key,
-        out MeshColumn a,
-        out MeshColumn b,
-        out MeshColumn c,
-        out MeshColumn d,
-        bool orFiner
-    )
+    private bool TryChildren(ColumnKey key, bool orFiner)
     {
         var level = key.Level - 1;
         var x = key.X << 1;
         var z = key.Z << 1;
-        a = b = c = d = null!;
-        return Drawable(new ColumnKey(level, x, z), orFiner, out a)
-            && Drawable(new ColumnKey(level, x + 1, z), orFiner, out b)
-            && Drawable(new ColumnKey(level, x, z + 1), orFiner, out c)
-            && Drawable(new ColumnKey(level, x + 1, z + 1), orFiner, out d);
+        return Drawable(new ColumnKey(level, x, z), orFiner)
+            && Drawable(new ColumnKey(level, x + 1, z), orFiner)
+            && Drawable(new ColumnKey(level, x, z + 1), orFiner)
+            && Drawable(new ColumnKey(level, x + 1, z + 1), orFiner);
     }
 
-    private bool Drawable(ColumnKey key, bool orFiner, out MeshColumn column) =>
-        _columns.TryGetValue(key, out column!)
-        && (
-            column.MeshedOnce
-            || (orFiner && key.Level > _finestLevel && TryChildren(key, out _, out _, out _, out _, orFiner: true))
-        );
+    private bool Drawable(ColumnKey key, bool orFiner) =>
+        _columns.TryGetValue(key, out var column)
+            ? column.MeshedOnce
+                || DrawsNothing(key, column)
+                || (orFiner && key.Level > _finestLevel && TryChildren(key, orFiner: true))
+            : !key.IsInBounds(_grid);
+
+    /// <summary>
+    /// True for a column that draws nothing and keeps no coarser column from splitting: one past the view's end, which
+    /// is never meshed (not wanted), or, with no column, one past the map's edge (<paramref name="column"/> null). The
+    /// map's half-width need not be a multiple of a coarse column, so a coarse column at its edge has children past it;
+    /// and a coarse column wider than the view has children past its end. Either way it splits as any other.
+    /// </summary>
+    private bool DrawsNothing(ColumnKey key, MeshColumn? column) =>
+        column is null
+            ? !key.IsInBounds(_grid)
+            : !column.Wanted && NearestSquared(key, in _viewAt) >= _viewDistanceCentimetres * _viewDistanceCentimetres;
 
     /// <summary>
     /// Lists the column's blocks with meshes for the pass's lists; a block along <paramref name="sides"/> (the camera's

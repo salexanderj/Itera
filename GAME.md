@@ -46,8 +46,8 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
   the game's stops the game (`GameServiceCollectionExtensions.ValidateOptions`). Every value in `appsettings.json` is
   the code's default except the name, data folder, and window title (`ShippedSettingsTests`).
 - The benchmark's views (`BenchmarkViews`), also `tp`'s places (`tp far`; `game.py shots far`): `start`, `start-low`,
-  `down`, `up`, `high` (40 m over the middle), and `far`
-  (200 m out along +x, looking back).
+  `down`, `up`, `high` (40 m over the middle), `far` (200 m out along +x, looking back), and `distant` (3,500 m out
+  along +x in the broad relief, looking back, the origin moved there).
 
 ## Systems
 

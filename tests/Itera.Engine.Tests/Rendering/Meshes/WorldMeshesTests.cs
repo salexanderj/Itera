@@ -814,6 +814,94 @@ public sealed class WorldMeshesTests : IDisposable
     }
 
     /// <summary>
+    /// A map 3 level-0 columns wide each way (not a whole number of level-1 columns) cuts its level-1 edge columns in
+    /// half; their children past the edge are never loaded, and draw nothing, so the edge column under the camera still
+    /// splits and its in-map half is drawn from level-0 blocks.
+    /// </summary>
+    [Fact]
+    public void A_column_cut_by_the_maps_edge_still_splits()
+    {
+        var at = new Vector3(3.2f, SlopeGenerator.Height(320, 64, 17) / 100f + 1.5f, 0.64f);
+        // The slope numbers its layers by VoxelGrid.Unit's floor, so the floor and top stay Unit's.
+        var grid = new VoxelGrid(1, 3, VoxelGrid.Unit.MinChunkY, VoxelGrid.Unit.MaxChunkY);
+        Assert.Equal((2, 1), (grid.MaxChunkXZ, grid.MaxChunkXZAt(1)));
+
+        var level0 = FinestDrawnAround(new SizedGenerator(new SlopeGenerator(), grid), at, maxDistance: 100);
+
+        Assert.True(level0 > 0, "Nothing at level 0 was drawn in the edge column under the camera.");
+    }
+
+    /// <summary>
+    /// A view that ends before the far children of the column under the camera (one of its four level-0 columns lies
+    /// past it, so it is never meshed) still splits that column and draws its near children from level-0 blocks.
+    /// </summary>
+    [Fact]
+    public void A_column_wider_than_the_view_still_splits()
+    {
+        // In level-0 column (0, 0) of level-1 column (0, 0): its level-0 column (1, 1) is 0.9 m away at the nearest.
+        var at = new Vector3(0.64f, SlopeGenerator.Height(64, 64, 17) / 100f + 0.3f, 0.64f);
+
+        var level0 = FinestDrawnAround(new SlopeGenerator(), at, maxDistance: 0.85f);
+
+        Assert.True(level0 > 0, "Nothing at level 0 was drawn under the camera.");
+    }
+
+    /// <summary>
+    /// Loads a two-level world of <paramref name="generator"/> round <paramref name="at"/>, meshes it seen from there
+    /// with a view of <paramref name="maxDistance"/>, and counts the level-0 blocks drawn in level-1 column x 1 or 0 the
+    /// camera stands over.
+    /// </summary>
+    private int FinestDrawnAround(IChunkGenerator generator, Vector3 at, float maxDistance)
+    {
+        using var world = TestWorlds.Load(generator, at, radiusMetres: RadiusMetres, levels: Levels);
+        using var targets = new FakeTargets();
+        using var meshes = NewMeshes(targets);
+        meshes.BeginMatch(world, new VoxelModels(world), new NoVoxelTintMap());
+        var view = LookingDown(at);
+        view.MaxDistance = maxDistance;
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var frame = 0;
+        int slot;
+        var level0 = 0;
+        do
+        {
+            Assert.True(DateTime.UtcNow < deadline, "No level-0 block was drawn under the camera.");
+            world.Update(0);
+            slot = frame++ % FrameSync.FramesInFlight;
+            targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
+            level0 = 0;
+            for (var i = 0; i < meshes.DrawCount; i++)
+            {
+                var draw = targets.DrawsOf(slot)[RecordOf(targets.CommandsOf(slot, 0)[i], slot)];
+                var column = (int)MathF.Floor(draw.Origin.X / 2.56f);
+                level0 += draw.VoxelMetres == 0.01f && column == (int)MathF.Floor(at.X / 2.56f) ? 1 : 0;
+            }
+
+            Thread.Sleep(1);
+        } while (level0 == 0 && frame < 3000);
+
+        return level0;
+    }
+
+    /// <summary>The inner generator's world on another grid of the same voxel size: smaller bounds cut it.</summary>
+    private sealed class SizedGenerator(IChunkGenerator inner, VoxelGrid grid) : IChunkGenerator
+    {
+        public VoxelGrid Grid => grid;
+
+        public string Id => inner.Id;
+
+        public int Version => inner.Version;
+
+        public void DescribeColumn(ColumnKey column, ulong seed, Span<ChunkFill> layers) =>
+            inner.DescribeColumn(column, seed, layers);
+
+        public void Fill(ChunkKey chunk, ulong seed, Span<byte> voxels) => inner.Fill(chunk, seed, voxels);
+
+        public void Fill(ChunkKey chunk, ulong seed, Span<byte> voxels, Span<byte> densities) =>
+            inner.Fill(chunk, seed, voxels, densities);
+    }
+
+    /// <summary>
     /// With level 5 among the world's levels the sky field is built round the view on a worker and drawn from: the
     /// lighting record names it, and the air over the slope sees all the sky in the heap's copy.
     /// </summary>

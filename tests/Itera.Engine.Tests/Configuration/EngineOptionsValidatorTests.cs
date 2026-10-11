@@ -80,6 +80,24 @@ public sealed class EngineOptionsValidatorTests
         }
     }
 
+    /// <summary>Ten levels and an 8 km view on an 8 km map of 10 cm voxels pass; a view past 8 km does not.</summary>
+    [Theory]
+    [InlineData(8_000, true)]
+    [InlineData(8_001, false)]
+    public void Ten_levels_and_an_8_km_view_pass_on_an_8_km_map(float viewMetres, bool valid)
+    {
+        var validator = new EngineOptionsValidator([
+            new Itera.Engine.Tests.Voxels.GridShapesGenerator(VoxelGrid.Sized(10, 4_000, -51.2, 102.4)),
+        ]);
+        var options = new EngineOptions
+        {
+            Voxels = new VoxelSettings { Levels = 10 },
+            Renderer = new RendererSettings { ViewDistanceMetres = viewMetres },
+        };
+
+        Assert.Equal(valid, validator.Validate(null, options).Succeeded);
+    }
+
     /// <summary>
     /// On the grid of the registered generator: 10 cm voxels' columns are 12.8 m, so a 16 m radius leaves level 0 no
     /// reach (two columns are 25.6 m), while the shipped 59.2 m draws it to 33.6 m.

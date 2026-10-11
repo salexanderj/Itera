@@ -7,8 +7,8 @@ namespace Game;
 
 /// <summary>
 /// The benchmark's views of the world (<c>Engine:Benchmark</c>, <c>tools/benchmark/</c>): the start pose level, a little
-/// lower, down at the ground, and up at the sky; the world's middle from 40 m over it; and the hills from 200 m out
-/// along +x at a person's eye height, looking back. Each eye height is over the ground (or a boulder) there, so the views
+/// lower, down at the ground, and up at the sky; the world's middle from 40 m over it; and the hills from 200 m and from
+/// 3,500 m out along +x (in the broad relief, far from the middle's origin) at a person's eye height, looking back. Each eye height is over the ground (or a boulder) there, so the views
 /// hold for every seed. A game changes them as its world grows; runs of different views do not compare.
 /// </summary>
 public static class BenchmarkViews
@@ -18,6 +18,9 @@ public static class BenchmarkViews
 
     /// <summary>How far along +x the far view stands, in metres.</summary>
     public const float FarMetres = 200;
+
+    /// <summary>How far along +x the distant view stands, in metres.</summary>
+    public const float DistantMetres = 3_500;
 
     /// <summary>A person's eye height over the ground, in metres.</summary>
     public const float EyeMetres = 1.6f;
@@ -50,6 +53,12 @@ public static class BenchmarkViews
             new("high", new WorldPoint(0, Ground(0, 0, seed) + HighMetres, 0), start.Yaw, -0.3f),
             // Yaw +pi/2 looks along -x, back towards the middle.
             new("far", new WorldPoint(FarMetres, Ground(FarMetres, 0, seed) + EyeMetres, 0), MathF.PI / 2, -0.05f),
+            new(
+                "distant",
+                new WorldPoint(DistantMetres, Ground(DistantMetres, 0, seed) + EyeMetres, 0),
+                MathF.PI / 2,
+                -0.05f
+            ),
         ];
 
     private static double Ground(double x, double z, ulong seed) =>

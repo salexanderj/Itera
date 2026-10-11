@@ -199,10 +199,12 @@ meshes line reports what columns the last frame did not draw hold, what was free
 columns not meshed yet. Each frame it picks a
 level per column (a coarse column splits into its four finer ones when its nearest part is within the finer level's
 reach times `Engine:Renderer:MeshReachShare`, 0.5 by default, and all four are meshed, and stays split while it is not
-meshed itself and they are; `Engine:Renderer:MeshFinestLevel`,
+meshed itself and they are; a finer column past the map's edge, which never loads, or past the view's end, which is
+never meshed, draws nothing and keeps no coarse column from splitting (`WorldMeshes.DrawsNothing`: a map's half-width
+need not be whole coarse columns, and a coarse column may be wider than the view); `Engine:Renderer:MeshFinestLevel`,
 0 by default, is the finest), keeps neighbouring columns, corners included, within one level of each other
-(`LevelBalance`: a column beside one two levels finer splits where its finer columns are meshed; the meshes line counts
-those left), draws the blocks of a column along a side or corner past which a column one level coarser is drawn from
+(`LevelBalance`, which keeps the drawn columns themselves and finds the one over a finest column level by level: a
+column beside one two levels finer splits where its finer columns are meshed; the meshes line counts those left), draws the blocks of a column along a side or corner past which a column one level coarser is drawn from
 their stitched meshes (`WorldMeshes.Stitches.cs`, below), culls blocks to the frustum, and writes a `MeshDraw` and an indexed indirect command per
 block (`firstInstance` names the draw); the camera's commands are sorted nearest first by the distance to each block's
 centre (`WriteCameraNearestFirst`), so the depth test rejects hidden leaves before they are shaded, and runs repeat (in

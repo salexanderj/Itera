@@ -67,7 +67,7 @@ lists the game's). Commonly used:
   `--Game:Player:StartFlying=true`, `ThirdPerson=true`, `HeightMetres=2.5` (1.2 to 2.5), `--Game:Minimap:Metres=128`
   (16 to 256; 64 by default).
 - Renderer (the world and the models as meshes): `MeshFinestLevel` (0), `MeshReachShare` (0.5: each level drawn to
-  half its reach, 10 cm voxels to 16.8 m), `ViewDistanceMetres` (256; 0 for the coarsest level's radius), `MsaaSamples`
+  half its reach, 10 cm voxels to 16.8 m), `ViewDistanceMetres` (256; up to 8000; 0 for the coarsest level's radius), `MsaaSamples`
   (4: 1, 2, 4, or 8), `MeshMegabytes` (512: 64 to 4096; full, it frees the meshes of columns the view does not draw),
   `ShadowMapTexels` (2048: 512 to 4096), `Shadows=false` (no shadow maps: 0.5 to 1.8 ms less at 1440p),
   `PreferredDevice=RAPHAEL` (any part of a device's name, any case; this machine's iGPU), `DebugLines=true`,
@@ -179,7 +179,7 @@ instead of restarts; `game.py restart` takes the options `start` was given again
 offscreen, takes a screenshot of each view once its world has loaded and its light settled (`fly on`, `tp VIEW`,
 `wait view`), stops it, and compares with an earlier set (`tools/benchmark/imgdiff.py`): four views take about 15 s in
 Debug, and sets of the same build agree to a few pixels (on a quiet machine, exactly). A view is a game's `tp` place
-(the starter's benchmark views: `start`, `start-low`, `down`, `up`, `high`, `far`) or `x,y,z,yaw,pitch`. `game.py start`
+(the starter's benchmark views: `start`, `start-low`, `down`, `up`, `high`, `far`, `distant`) or `x,y,z,yaw,pitch`. `game.py start`
 runs offscreen (no window) unless given `--window` (a window on HDMI-A-1) or `--fullscreen` (full screen on DP-1, VSync
 off); with `--window`, add `-- --Engine:Window:VSync=false` when the screen may lock. Under `dotnet watch` (Debug), a
 changed method body or a new method applies to the running game in about 1 to 3 s, from the method's next call
@@ -235,7 +235,7 @@ lists the commands (`ConsoleCommands`):
   it is), `flyspeed`, `camera` (first or third), `pos` (the player's eye and look, the fly camera's while it flies, as
   `Game:World:CameraPose` takes it: absolute metres from the map's middle, whatever the match's origin), `tp` (x y z
   [yaw pitch], absolute too, a pasted pose, or a place the game names: the starter's
-  benchmark views, `start`, `start-low`, `down`, `up`, `high`, and `far`; a jump 512 m or more from the origin moves the
+  benchmark views, `start`, `start-low`, `down`, `up`, `high`, `far`, and `distant`; a jump 512 m or more from the origin moves the
   origin there first, so it lands exactly), `settle` (how long a ball rests before it
   goes back into the grid), `cleanup` (removes every loose body and clears the particles), `reset` (the world as the
   seed made it, every edit undone, then `cleanup`; the loading screen covers the picture while the view is generated

@@ -827,9 +827,19 @@ it was 4 x 10^13 (5 TB at one bit each).
   distance is to the column's nearest point, so a disc smaller than a column (a body's 3 m disc in a 12.8 m column)
   still loads the columns it meets. Every level holds a full disc, so the renderer can use a coarser level where a finer
   column is still loading. `Engine:Voxels:Levels` (4 by default: levels of 10 to 80 cm; 1 to 10) sets how many, and
-  `Engine:Renderer:ViewDistanceMetres` (256 m) ends the view sooner. Each level draws to a share of its voxel size
+  `Engine:Renderer:ViewDistanceMetres` (256 m; up to 8 km) ends the view sooner. Each level draws to a share of its voxel size
   (`Level0ReachMetres` and `ReachGrowth`, `LevelDistances`): 10 cm voxels to 16.8 m, 20 cm to 33.6 m, 40 cm to 67.2 m,
   80 cm to the view.
+- Views to 8 km (measured 2026-10-10 on the starter's 8 km map, Release, offscreen at 2560x1440, seed 1, after the
+  world loaded; at the start and at `distant`, 3.5 km out): with 7 to 10 levels and views of 2, 4, and 8 km, 542 to 672
+  columns were resident (140 to 155 MB of voxels), the mesh heap held 209 to 276 MB of its 512 (nothing freed), the
+  camera drew 708 to 1,243 blocks (1.3 to 2.4 million triangles; the list takes 32,768) and the cascades 248 and 563 at
+  the start, the main thread spent 0.5 to 2 ms a frame on the meshes, and the world loaded in 2 to 3 s (once 5.3 s;
+  a busy machine). Nine levels reach 17 km, so an 8 km view draws its last kilometres from level 8 (25.6 m voxels). The
+  GPU's time for these views waits for a quiet machine. Two faults showed only past 7 levels and were fixed: the level
+  balance marked every finest column under each drawn column (262,144 for one level-9 column; 4.2 s a frame at 9
+  levels), and a coarse column with a child past the view's end or the map's edge never split, so a 2 km view at 10
+  levels drew the start from 51.2 m voxels.
 - Load order: first the coarsest level's columns, nearest first (that level is drawn to the view distance, so a missing
   column is a hole); then columns the view draws now, nearest first in their own level, coarse before fine at equal
   distance; then the ring beyond reach, by metres beyond reach. Each level keeps its own sorted list, rebuilt when a centre
@@ -1470,7 +1480,8 @@ Engine work that is known and not done:
   1 cm to 1 m, positions kept local to a match's origin with absolute types (`WorldPoint`, `VoxelCoord`) wherever
   they cross it, and moves of the origin following the camera (`OriginShiftSystem`, `OriginShifts`; the renderer,
   particles, and sound follow them), positions in messages absolute, and the starter's map 8 km across (broad relief
-  past 1 km). Not built: views past 2 km, a nav grid that moves
+  past 1 km), and views to 8 km (levels 8 to 10; the haze and the far shadows' 200 m end left for Lucy's choice; the
+  GPU's time not yet measured). Not built: a nav grid that moves
   with the players (it covers a game's area and keeps heights within ±327.67 m), and columns that hold only the layers
   with ground or edits, so a map's height costs memory only where something is.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no

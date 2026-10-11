@@ -10,16 +10,18 @@ namespace Itera.Engine.Rendering.Meshes;
 /// pass adds the columns it would draw (<see cref="Add"/>); <see cref="Balance"/> then splits each column that touches
 /// one two or more levels finer, along a side or at a corner, into its four columns of the level below, where those
 /// are meshed, until none is left; a split can make its coarser neighbours split in turn. A column whose finer ones are
-/// not meshed yet stays (<see cref="Unbalanced"/> counts them). Main thread; allocates nothing once its tables have
-/// grown.
+/// not meshed yet stays (<see cref="Unbalanced"/> counts them). It keeps the drawn columns themselves and finds the one
+/// over a finest column by looking at each level above it, so a column 512 finest columns wide (level 9 over level 0)
+/// costs one entry, not a quarter of a million. Main thread; allocates nothing once its tables have grown.
 /// </summary>
 internal sealed class LevelBalance
 {
     private readonly List<ColumnKey> _leaves = [];
 
-    // The level drawn over each column of the finest level, by its x and z.
-    private readonly Dictionary<long, int> _levels = [];
+    // The columns drawn: they do not overlap, so one at most lies over each finest column.
+    private readonly HashSet<ColumnKey> _drawn = [];
     private int _finest;
+    private int _coarsest;
 
     /// <summary>The columns to draw, after <see cref="Balance"/>.</summary>
     public IReadOnlyList<ColumnKey> Leaves => _leaves;
@@ -31,8 +33,9 @@ internal sealed class LevelBalance
     public void Begin(int finestLevel)
     {
         _leaves.Clear();
-        _levels.Clear();
+        _drawn.Clear();
         _finest = finestLevel;
+        _coarsest = finestLevel;
         Unbalanced = 0;
     }
 
@@ -49,7 +52,8 @@ internal sealed class LevelBalance
         }
 
         _leaves.Add(column);
-        Mark(column, column.Level);
+        _drawn.Add(column);
+        _coarsest = Math.Max(_coarsest, column.Level);
     }
 
     /// <summary>
@@ -79,7 +83,11 @@ internal sealed class LevelBalance
                 _leaves.Add(new ColumnKey(level, x + 1, z));
                 _leaves.Add(new ColumnKey(level, x, z + 1));
                 _leaves.Add(new ColumnKey(level, x + 1, z + 1));
-                Mark(leaf, level);
+                _drawn.Remove(leaf);
+                _drawn.Add(new ColumnKey(level, x, z));
+                _drawn.Add(new ColumnKey(level, x + 1, z));
+                _drawn.Add(new ColumnKey(level, x, z + 1));
+                _drawn.Add(new ColumnKey(level, x + 1, z + 1));
                 changed = true;
             }
         }
@@ -114,8 +122,27 @@ internal sealed class LevelBalance
         return sides;
     }
 
-    private TransitionSides Drawn(int x, int z, int level, TransitionSides side) =>
-        _levels.TryGetValue(Pack(x, z), out var drawn) && drawn == level ? side : TransitionSides.None;
+    /// <summary>The column of <paramref name="level"/> over finest column (x, z) is drawn: one look.</summary>
+    private TransitionSides Drawn(int x, int z, int level, TransitionSides side)
+    {
+        var shift = level - _finest;
+        return _drawn.Contains(new ColumnKey(level, x >> shift, z >> shift)) ? side : TransitionSides.None;
+    }
+
+    /// <summary>The level of the column drawn over finest column (x, z), or -1 where none is.</summary>
+    private int LevelAt(int x, int z)
+    {
+        for (var level = _finest; level <= _coarsest; level++)
+        {
+            var shift = level - _finest;
+            if (_drawn.Contains(new ColumnKey(level, x >> shift, z >> shift)))
+            {
+                return level;
+            }
+        }
+
+        return -1;
+    }
 
     /// <summary>True when a column drawn two or more levels finer than <paramref name="leaf"/> touches it, at a side or a corner.</summary>
     private bool TouchesFiner(ColumnKey leaf)
@@ -125,39 +152,50 @@ internal sealed class LevelBalance
         int x0 = leaf.X << shift,
             z0 = leaf.Z << shift;
         var most = leaf.Level - 2;
-        // The ring of finest columns round the leaf's square.
-        for (var i = -1; i <= size; i++)
+        // The ring of finest columns round the leaf's square: the rows past its low and high z, corners included, then
+        // the columns past its low and high x.
+        return FinerAlongX(x0 - 1, x0 + size, z0 - 1, most)
+            || FinerAlongX(x0 - 1, x0 + size, z0 + size, most)
+            || FinerAlongZ(z0, z0 + size - 1, x0 - 1, most)
+            || FinerAlongZ(z0, z0 + size - 1, x0 + size, most);
+    }
+
+    /// <summary>
+    /// True when a column of <paramref name="most"/> or finer is drawn over finest columns <paramref name="first"/> to
+    /// <paramref name="last"/> along x at <paramref name="z"/>; each column found is stepped past whole.
+    /// </summary>
+    private bool FinerAlongX(int first, int last, int z, int most)
+    {
+        var x = first;
+        while (x <= last)
         {
-            if (
-                Finer(x0 + i, z0 - 1, most)
-                || Finer(x0 + i, z0 + size, most)
-                || (i >= 0 && i < size && (Finer(x0 - 1, z0 + i, most) || Finer(x0 + size, z0 + i, most)))
-            )
+            var level = LevelAt(x, z);
+            if (level >= 0 && level <= most)
             {
                 return true;
             }
+
+            x = level < 0 ? x + 1 : ((x >> (level - _finest)) + 1) << (level - _finest);
         }
 
         return false;
     }
 
-    private bool Finer(int x, int z, int most) => _levels.TryGetValue(Pack(x, z), out var level) && level <= most;
-
-    /// <summary>Records <paramref name="level"/> as drawn over every finest column of <paramref name="column"/>'s square.</summary>
-    private void Mark(ColumnKey column, int level)
+    /// <summary>As <see cref="FinerAlongX"/>, along z at <paramref name="x"/>.</summary>
+    private bool FinerAlongZ(int first, int last, int x, int most)
     {
-        var shift = column.Level - _finest;
-        var size = 1 << shift;
-        int x0 = column.X << shift,
-            z0 = column.Z << shift;
-        for (var z = 0; z < size; z++)
+        var z = first;
+        while (z <= last)
         {
-            for (var x = 0; x < size; x++)
+            var level = LevelAt(x, z);
+            if (level >= 0 && level <= most)
             {
-                _levels[Pack(x0 + x, z0 + z)] = level;
+                return true;
             }
-        }
-    }
 
-    private static long Pack(int x, int z) => ((long)x << 32) | (uint)z;
+            z = level < 0 ? z + 1 : ((z >> (level - _finest)) + 1) << (level - _finest);
+        }
+
+        return false;
+    }
 }

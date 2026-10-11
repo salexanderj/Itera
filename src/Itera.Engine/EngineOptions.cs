@@ -176,8 +176,9 @@ public sealed class RendererSettings
     public float MeshReachShare { get; set; } = 0.5f;
 
     /// <summary>
-    /// The view distance in metres, where the fog is whole and the world's meshes stop: 256 by default, 0 to 2000; 0 for
-    /// the coarsest streamed level's radius (473.6 m with four levels).
+    /// The view distance in metres, where the fog is whole and the world's meshes stop: 256 by default, 0 to 8000; 0 for
+    /// the coarsest streamed level's radius (473.6 m with four levels), which also ends a longer one. 8000 is the
+    /// farthest measured (nine levels on the starter's 8 km map; ARCHITECTURE.md).
     /// </summary>
     public float ViewDistanceMetres { get; set; } = 256;
 

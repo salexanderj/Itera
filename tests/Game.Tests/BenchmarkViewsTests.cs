@@ -19,7 +19,7 @@ public sealed class BenchmarkViewsTests
             );
         }
 
-        Assert.Equal(["start", "start-low", "down", "up", "high", "far"], views.Select(v => v.Name));
+        Assert.Equal(["start", "start-low", "down", "up", "high", "far", "distant"], views.Select(v => v.Name));
         Assert.Null(BenchmarkViews.Place(views, "nowhere"));
     }
 }

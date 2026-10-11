@@ -139,4 +139,194 @@ public sealed class LevelBalanceTests
             }
         }
     }
+
+    /// <summary>
+    /// On random trees of drawn columns (levels 0 to 6 over a 4 x 4 square of level-6 columns, from finest level 0 or
+    /// 1, some columns' finer ones not meshed), the leaves, their sides, and the columns left unbalanced are those of the
+    /// first way of keeping the balance, which marked the level drawn over every finest column.
+    /// </summary>
+    [Fact]
+    public void Random_trees_balance_as_marking_every_finest_column_did()
+    {
+        var random = new Random(12345);
+        var balance = new LevelBalance();
+        for (var trial = 0; trial < 200; trial++)
+        {
+            var finest = trial % 2;
+            var leaves = new List<ColumnKey>();
+            for (var x = 0; x < 4; x++)
+            {
+                for (var z = 0; z < 4; z++)
+                {
+                    Grow(new ColumnKey(6, x, z), finest, random, leaves);
+                }
+            }
+
+            // Some columns' finer ones are not meshed: decided by the column, so both ways see the same.
+            var salt = random.Next();
+            bool CanSplit(ColumnKey key) => HashCode.Combine(key, salt) % 5 != 0;
+
+            var reference = new MarkingBalance(finest);
+            balance.Begin(finest);
+            foreach (var leaf in leaves)
+            {
+                balance.Add(leaf);
+                reference.Add(leaf);
+            }
+
+            balance.Balance(CanSplit);
+            reference.Balance(CanSplit);
+
+            Assert.Equal(reference.Leaves.OrderBy(Order), balance.Leaves.OrderBy(Order));
+            Assert.Equal(reference.Unbalanced, balance.Unbalanced);
+            foreach (var leaf in balance.Leaves)
+            {
+                Assert.Equal(reference.SidesOf(leaf), balance.SidesOf(leaf));
+            }
+        }
+    }
+
+    /// <summary>A level-9 column beside level-0 ones (512 finest columns across) splits down to them.</summary>
+    [Fact]
+    public void A_level_9_column_beside_level_0_ones_splits_down_to_them()
+    {
+        var balance = new LevelBalance();
+        balance.Begin(0);
+        balance.Add(new ColumnKey(9, 0, 0));
+        balance.Add(new ColumnKey(0, 512, 0));
+        balance.Add(new ColumnKey(0, 512, 1));
+
+        balance.Balance(s_always);
+
+        // Down the side the level-0 columns touch, each level's column there splits until level 1 meets them.
+        Assert.Equal(0, balance.Unbalanced);
+        Assert.Contains(new ColumnKey(1, 255, 0), balance.Leaves);
+        Assert.DoesNotContain(new ColumnKey(9, 0, 0), balance.Leaves);
+        Assert.Equal(TransitionSides.LowX, balance.SidesOf(new ColumnKey(0, 512, 1)) & TransitionSides.LowX);
+    }
+
+    private static (int, int, int) Order(ColumnKey key) => (key.Level, key.X, key.Z);
+
+    /// <summary>Adds <paramref name="key"/>, or splits it at random down to <paramref name="finest"/>.</summary>
+    private static void Grow(ColumnKey key, int finest, Random random, List<ColumnKey> leaves)
+    {
+        if (key.Level > finest && random.NextDouble() < 0.45)
+        {
+            var level = key.Level - 1;
+            for (var i = 0; i < 4; i++)
+            {
+                Grow(new ColumnKey(level, (key.X << 1) + (i & 1), (key.Z << 1) + (i >> 1)), finest, random, leaves);
+            }
+
+            return;
+        }
+
+        leaves.Add(key);
+    }
+
+    /// <summary>The first way of keeping the balance: the level drawn over every finest column, marked one by one.</summary>
+    private sealed class MarkingBalance(int finest)
+    {
+        private readonly Dictionary<(int, int), int> _levels = [];
+
+        public List<ColumnKey> Leaves { get; } = [];
+
+        public int Unbalanced { get; private set; }
+
+        public void Add(ColumnKey column)
+        {
+            Leaves.Add(column);
+            Mark(column, column.Level);
+        }
+
+        public void Balance(Func<ColumnKey, bool> canSplit)
+        {
+            var changed = true;
+            while (changed)
+            {
+                changed = false;
+                for (var i = 0; i < Leaves.Count; i++)
+                {
+                    var leaf = Leaves[i];
+                    if (leaf.Level < finest + 2 || !TouchesFiner(leaf) || !canSplit(leaf))
+                    {
+                        continue;
+                    }
+
+                    var level = leaf.Level - 1;
+                    int x = leaf.X << 1,
+                        z = leaf.Z << 1;
+                    Leaves[i] = new ColumnKey(level, x, z);
+                    Leaves.Add(new ColumnKey(level, x + 1, z));
+                    Leaves.Add(new ColumnKey(level, x, z + 1));
+                    Leaves.Add(new ColumnKey(level, x + 1, z + 1));
+                    Mark(leaf, level);
+                    changed = true;
+                }
+            }
+
+            Unbalanced = Leaves.Count(leaf => leaf.Level >= finest + 2 && TouchesFiner(leaf));
+        }
+
+        public TransitionSides SidesOf(ColumnKey leaf)
+        {
+            var shift = leaf.Level - finest;
+            var size = 1 << shift;
+            int x0 = leaf.X << shift,
+                z0 = leaf.Z << shift;
+            var coarser = leaf.Level + 1;
+            var sides = TransitionSides.None;
+            sides |= Drawn(x0 - 1, z0, coarser, TransitionSides.LowX);
+            sides |= Drawn(x0 + size, z0, coarser, TransitionSides.HighX);
+            sides |= Drawn(x0, z0 - 1, coarser, TransitionSides.LowZ);
+            sides |= Drawn(x0, z0 + size, coarser, TransitionSides.HighZ);
+            sides |= Drawn(x0 - 1, z0 - 1, coarser, TransitionSides.LowXLowZ);
+            sides |= Drawn(x0 + size, z0 - 1, coarser, TransitionSides.HighXLowZ);
+            sides |= Drawn(x0 - 1, z0 + size, coarser, TransitionSides.LowXHighZ);
+            sides |= Drawn(x0 + size, z0 + size, coarser, TransitionSides.HighXHighZ);
+            return sides;
+        }
+
+        private TransitionSides Drawn(int x, int z, int level, TransitionSides side) =>
+            _levels.TryGetValue((x, z), out var drawn) && drawn == level ? side : TransitionSides.None;
+
+        private bool TouchesFiner(ColumnKey leaf)
+        {
+            var shift = leaf.Level - finest;
+            var size = 1 << shift;
+            int x0 = leaf.X << shift,
+                z0 = leaf.Z << shift;
+            var most = leaf.Level - 2;
+            for (var i = -1; i <= size; i++)
+            {
+                if (
+                    Finer(x0 + i, z0 - 1, most)
+                    || Finer(x0 + i, z0 + size, most)
+                    || (i >= 0 && i < size && (Finer(x0 - 1, z0 + i, most) || Finer(x0 + size, z0 + i, most)))
+                )
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool Finer(int x, int z, int most) => _levels.TryGetValue((x, z), out var level) && level <= most;
+
+        private void Mark(ColumnKey column, int level)
+        {
+            var shift = column.Level - finest;
+            var size = 1 << shift;
+            int x0 = column.X << shift,
+                z0 = column.Z << shift;
+            for (var z = 0; z < size; z++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    _levels[(x0 + x, z0 + z)] = level;
+                }
+            }
+        }
+    }
 }
