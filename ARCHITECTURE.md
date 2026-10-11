@@ -1037,9 +1037,10 @@ holds the decisions, the measurements, and the history of how it replaced a raym
   the starter's 8 km map at nine levels with a 2 km distant cascade and a sun 10 degrees up (the benchmark offscreen at
   2560x1440, two runs each, 2026-10-10): it doubles the shadow maps' time, 0.19 to 0.40 ms more (2.4 to 5.1 million
   more shadow triangles), so the world pass takes 9 to 18 % longer (1.93 to 2.11 ms at the start, 3.20 to 3.58 at
-  `high`); the extra lookups cost almost nothing. Listing its blocks in the far pass instead cost the same and drew the
-  same picture: where the camera draws finer columns the coarser ones are not meshed, so the far pass draws the finer
-  ones too. It changes the starter's picture little, because the 1.5-texel normal offset (3.6 m) leaves out the
+  `high`); the extra lookups cost almost nothing. Listing its blocks in the far pass instead listed the same number of
+  blocks in every view (1,301, 2,234, 1,306, ...), cost the same, and drew the same picture: there the far pass chose
+  the camera's columns, although its cut (`FarShadowCutShare`) is meant to choose one level coarser, as it did when it
+  was added (the forest view's shadow maps 1.44 to 1.27 ms, docs/rendering-redesign.md); why is not yet known. It changes the starter's picture little, because the 1.5-texel normal offset (3.6 m) leaves out the
   shadows of anything under about 4 m, the boulders included, and the starter's gentle slopes cast only under a very
   low sun: at 12 degrees 0.4 % of the start view's pixels changed, at 4 degrees 2.9 % of `high`'s, the back slopes of
   the hills 200 m to 4 km out in shadow. A game with taller ground (cliffs, mountains) gains more.
