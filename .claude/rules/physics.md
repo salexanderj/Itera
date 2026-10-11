@@ -116,6 +116,18 @@ touches the voxels, the game's statics, bodies, and stand-ins; frozen where the 
 straight through `Simulation.Bodies` has no record (it reads the default) and must not be removed past `RemoveBody`
 once recorded.
 
+## The solver and damping
+
+`Engine:Physics:Substeps` (1, 1 to 8) and `VelocityIterations` (8, 1 to 32) set Bepu's solver (`SolveDescription`, never
+the `(int, int)` tuple, which this Bepu swaps), and `LinearDamping` and `AngularDamping` (0.03, 0 to 1; 1 stops every
+body each step) the shares of speed and spin a body loses each second; a game changes them during a match with
+`PhysicsWorld.SetSolver` (the impulses kept for the next solve scaled to the new substeps) and `SetDamping`, and the
+console with `physics solver I S` and `physics damping L A` (`PhysicsCommands`, which prints the match's bodies, statics,
+solver, damping, and gravity). The integrator (`PoseIntegratorCallbacks`, reading `IntegrationSettings`) works one
+substep exactly as before; with more, Bepu integrates a body with constraints once a substep and one without once over
+the step, so each lane's own duration is used (damping as e^(t ln(1 - share))). `PushOn` reads a stand-in's push with
+the gravity, damping, and substeps the last step ran with, per substep while bodies touched it.
+
 ## Mesh colliders and the shared ray
 
 A game's static triangle colliders (`MeshColliders`, scoped to the match): `Add(asset, transform, tagsOf)` registers a

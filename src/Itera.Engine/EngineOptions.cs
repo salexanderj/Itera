@@ -568,7 +568,10 @@ public sealed class OriginSettings
     public double ShiftMetres { get; set; } = 512;
 }
 
-/// <summary>Loose bodies: pieces of voxels that Bepu moves until they rest and go back into the grid.</summary>
+/// <summary>
+/// Physics: loose bodies (pieces of voxels that Bepu moves until they rest and go back into the grid), Bepu's solver, and
+/// how bodies lose speed.
+/// </summary>
 public sealed class PhysicsSettings
 {
     /// <summary>Seconds a loose body must stay at rest before it goes back into the voxel grid.</summary>
@@ -596,6 +599,31 @@ public sealed class PhysicsSettings
 
     /// <summary>The largest <see cref="CollisionCentimetres"/>: a mesh is read no coarser than this.</summary>
     public const int MostCollisionCentimetres = 10;
+
+    /// <summary>
+    /// The solver's substeps in each fixed step, 1 to <see cref="MostSubsteps"/>: more keep fast, stacked, or jointed
+    /// bodies steadier, at more cost (Bepu solves the constraints, and moves the bodies that have any, once a substep).
+    /// A game may change it during a match (<c>PhysicsWorld.SetSolver</c>).
+    /// </summary>
+    public int Substeps { get; set; } = 1;
+
+    /// <summary>The solver's velocity iterations in each substep, 1 to <see cref="MostVelocityIterations"/>.</summary>
+    public int VelocityIterations { get; set; } = 8;
+
+    /// <summary>
+    /// The share of its speed a body loses each second, 0 to 1 (1 stops every body at each step). A game may change it
+    /// during a match (<c>PhysicsWorld.SetDamping</c>).
+    /// </summary>
+    public float LinearDamping { get; set; } = 0.03f;
+
+    /// <summary>The share of its spin a body loses each second, 0 to 1.</summary>
+    public float AngularDamping { get; set; } = 0.03f;
+
+    /// <summary>The most <see cref="Substeps"/>.</summary>
+    public const int MostSubsteps = 8;
+
+    /// <summary>The most <see cref="VelocityIterations"/>.</summary>
+    public const int MostVelocityIterations = 32;
 }
 
 /// <summary>What this game does in a session.</summary>

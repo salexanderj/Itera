@@ -155,6 +155,16 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
             1,
             PhysicsSettings.MostCollisionCentimetres
         );
+        Range(failures, "Physics:Substeps", physics.Substeps, 1, PhysicsSettings.MostSubsteps);
+        Range(
+            failures,
+            "Physics:VelocityIterations",
+            physics.VelocityIterations,
+            1,
+            PhysicsSettings.MostVelocityIterations
+        );
+        Range(failures, "Physics:LinearDamping", physics.LinearDamping, 0, 1);
+        Range(failures, "Physics:AngularDamping", physics.AngularDamping, 0, 1);
 
         var particles = options.Particles;
         Range(failures, "Particles:Capacity", particles.Capacity, 16_384, 1_048_576);

@@ -543,6 +543,7 @@ public sealed partial class GameLoop
         // The match's layers and systems add their commands when a match starts, owned by it (MatchServices).
         _engineCommands.Register();
         _services.GetRequiredService<TimeCommands>().Register();
+        _services.GetRequiredService<PhysicsCommands>().Register();
         _matchCommands.Register();
         _settingsCommands.Register();
         _uiCommands.Register();

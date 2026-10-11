@@ -560,12 +560,25 @@ public sealed class EngineOptionsValidatorTests
     {
         var options = new EngineOptions
         {
-            Physics = new PhysicsSettings { SettleSeconds = 0.1, MaxLooseBodies = 0 },
+            Physics = new PhysicsSettings
+            {
+                SettleSeconds = 0.1,
+                MaxLooseBodies = 0,
+                Substeps = 9,
+                VelocityIterations = 0,
+                LinearDamping = 1.5f,
+                AngularDamping = -0.1f,
+            },
         };
 
         var failures = _validator.Validate(null, options).Failures!.ToArray();
 
-        Assert.Equal(2, failures.Length);
+        Assert.Equal(6, failures.Length);
+        foreach (var key in new[] { "Substeps", "VelocityIterations", "LinearDamping", "AngularDamping" })
+        {
+            Assert.Contains(failures, f => f.StartsWith("Engine:Physics:" + key, StringComparison.Ordinal));
+        }
+
         Assert.All(failures, f => Assert.StartsWith("Engine:Physics:", f, StringComparison.Ordinal));
     }
 

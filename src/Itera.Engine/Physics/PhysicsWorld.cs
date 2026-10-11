@@ -25,14 +25,32 @@ public sealed partial class PhysicsWorld : IDisposable
     private readonly Dictionary<(int X, int Y, int Z), TypedIndex> _largeVoxelBoxes = [];
     private readonly Dictionary<int, TypedIndex> _surfaceBoxes = [];
     private readonly BodyKinds _kinds = new();
+    private readonly PhysicsSettings _settings;
+    private readonly IntegrationSettings _integration;
     private bool _disposed;
 
+    // What the last step ran with, for reading what bodies did to a stand-in in it (PushOn).
+    private Vector3 _stepGravity;
+    private float _stepLinearDamping;
+    private int _stepSubsteps = 1;
+
     /// <param name="logger">Logger.</param>
-    /// <param name="options">The engine's options, for <c>Engine:Physics:Threads</c>; none for the processors' count.</param>
+    /// <param name="options">
+    /// The engine's options (<c>Engine:Physics</c>: threads, substeps, iterations, damping); none for the defaults and a
+    /// quarter of the processors.
+    /// </param>
     public PhysicsWorld(ILogger<PhysicsWorld> logger, IOptions<EngineOptions>? options = null)
     {
         _logger = logger;
-        _threads = options?.Value.Physics.Threads ?? 0;
+        _settings = options?.Value.Physics ?? new PhysicsSettings();
+        _threads = _settings.Threads;
+        _integration = new IntegrationSettings
+        {
+            Gravity = Gravity,
+            LinearDamping = _settings.LinearDamping,
+            AngularDamping = _settings.AngularDamping,
+            Substeps = _settings.Substeps,
+        };
     }
 
     /// <summary>Bepu's worker threads asked for; 0 for <see cref="ThreadCount"/> of the processors.</summary>
@@ -41,8 +59,17 @@ public sealed partial class PhysicsWorld : IDisposable
     /// <summary>Gravity applied to every dynamic body, in metres per second squared.</summary>
     public static Vector3 Gravity => new(0f, -9.81f, 0f);
 
-    /// <summary>The share of its linear velocity a body loses each second (<see cref="PoseIntegratorCallbacks"/>).</summary>
-    public const float LinearDamping = 0.03f;
+    /// <summary>The share of its linear velocity a body loses each second (<see cref="SetDamping"/>).</summary>
+    public float LinearDamping => _integration.LinearDamping;
+
+    /// <summary>The share of its angular velocity a body loses each second (<see cref="SetDamping"/>).</summary>
+    public float AngularDamping => _integration.AngularDamping;
+
+    /// <summary>The solver's substeps in each step (<see cref="SetSolver"/>).</summary>
+    public int Substeps => Simulation.Solver.SubstepCount;
+
+    /// <summary>The solver's velocity iterations in each substep (<see cref="SetSolver"/>).</summary>
+    public int VelocityIterations => Simulation.Solver.VelocityIterationCount;
 
     /// <summary>The simulation. Throws before <see cref="Initialize"/>.</summary>
     public Simulation Simulation =>
@@ -109,11 +136,12 @@ public sealed partial class PhysicsWorld : IDisposable
         _pool = new BufferPool();
         var threadCount = _threads > 0 ? _threads : ThreadCount(Environment.ProcessorCount);
         _dispatcher = new ThreadDispatcher(threadCount);
+        // Never the (int, int) tuple to SolveDescription: in Bepu 2.5.0-beta.29 it swaps its two values.
         _simulation = Simulation.Create(
             _pool,
             new NarrowPhaseCallbacks(_kinds),
-            new PoseIntegratorCallbacks(Gravity, LinearDamping),
-            new SolveDescription(8, 1)
+            new PoseIntegratorCallbacks(_integration),
+            new SolveDescription(_settings.VelocityIterations, _settings.Substeps)
         );
 
         LogInitialized(threadCount);
@@ -130,8 +158,49 @@ public sealed partial class PhysicsWorld : IDisposable
     /// <summary>Advances the simulation by one fixed step.</summary>
     public void Step(float stepSeconds)
     {
+        _stepGravity = _integration.Gravity;
+        _stepLinearDamping = _integration.LinearDamping;
+        _stepSubsteps = _integration.Substeps;
         Simulation.Timestep(stepSeconds, _dispatcher);
         CheckRecords();
+    }
+
+    /// <summary>
+    /// Sets the solver's velocity iterations in each substep (1 to <see cref="PhysicsSettings.MostVelocityIterations"/>)
+    /// and its substeps in each step (1 to <see cref="PhysicsSettings.MostSubsteps"/>), from the next step on: more of
+    /// either keeps fast, stacked, or jointed bodies steadier, at more cost. Main thread, between steps.
+    /// </summary>
+    public void SetSolver(int velocityIterations, int substeps)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(velocityIterations, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(velocityIterations, PhysicsSettings.MostVelocityIterations);
+        ArgumentOutOfRangeException.ThrowIfLessThan(substeps, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(substeps, PhysicsSettings.MostSubsteps);
+        var solver = Simulation.Solver;
+        if (substeps != solver.SubstepCount)
+        {
+            // The impulses kept to start the next solve are a substep's: kept as a second's, so the bodies do not jump.
+            solver.ScaleAccumulatedImpulses(solver.SubstepCount / (float)substeps);
+        }
+
+        solver.VelocityIterationCount = velocityIterations;
+        solver.SubstepCount = substeps;
+        _integration.Substeps = substeps;
+    }
+
+    /// <summary>
+    /// Sets the shares of their speed (<paramref name="linear"/>) and spin (<paramref name="angular"/>) bodies lose each
+    /// second, each 0 to 1 (1 stops every body at each step), from the next step on. Main thread, between steps.
+    /// </summary>
+    public void SetDamping(float linear, float angular)
+    {
+        if (!(linear is >= 0 and <= 1) || !(angular is >= 0 and <= 1))
+        {
+            throw new ArgumentOutOfRangeException(nameof(linear), "Each damping lies between 0 and 1.");
+        }
+
+        _integration.LinearDamping = linear;
+        _integration.AngularDamping = angular;
     }
 
     /// <summary>
@@ -226,12 +295,35 @@ public sealed partial class PhysicsWorld : IDisposable
 
     /// <summary>
     /// The change of velocity bodies gave a stand-in in the last step of <paramref name="stepSeconds"/>: its velocity less
-    /// the velocity it was placed with, after gravity and damping. Times the character's mass, it is the hit's impulse.
+    /// the velocity it was placed with, after the gravity and damping that step ran with (once a substep while bodies
+    /// touched it, as Bepu integrates a body with constraints). Times the character's mass, it is the hit's impulse.
     /// </summary>
     public Vector3 PushOn(BodyHandle body, Vector3 placedVelocity, float stepSeconds)
     {
-        var expected = (placedVelocity + Gravity * stepSeconds) * MathF.Pow(1 - LinearDamping, stepSeconds);
-        return Simulation.Bodies[body].Velocity.Linear - expected;
+        var reference = Simulation.Bodies[body];
+        var keep = Math.Clamp(1 - _stepLinearDamping, 0, 1);
+        Vector3 expected;
+        if (_stepSubsteps > 1 && reference.Constraints.Count > 0)
+        {
+            // v_S = v0 d^dt + g h (d^h + d^2h + ... + d^Sh), h = dt / S.
+            var substep = stepSeconds / _stepSubsteps;
+            var each = MathF.Pow(keep, substep);
+            var power = 1f;
+            var sum = 0f;
+            for (var k = 0; k < _stepSubsteps; k++)
+            {
+                power *= each;
+                sum += power;
+            }
+
+            expected = placedVelocity * MathF.Pow(keep, stepSeconds) + _stepGravity * (substep * sum);
+        }
+        else
+        {
+            expected = (placedVelocity + _stepGravity * stepSeconds) * MathF.Pow(keep, stepSeconds);
+        }
+
+        return reference.Velocity.Linear - expected;
     }
 
     /// <summary>Removes a stand-in and its shape.</summary>
