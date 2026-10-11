@@ -185,6 +185,14 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
 
     public void SetGain(uint source, float gain) => _al.SetSourceProperty(source, SourceFloat.Gain, gain);
 
+    public void SetDirectChannels(uint source, bool direct)
+    {
+        if (_directChannels)
+        {
+            _al.SetSourceProperty(source, (SourceInteger)DirectChannelsSoft, direct ? RemixUnmatchedSoft : 0);
+        }
+    }
+
     /// <summary>Stops <paramref name="source"/> and gives it <paramref name="buffer"/>, looping or not, its channels direct when stereo.</summary>
     private void Attach(uint source, uint buffer, bool looping)
     {

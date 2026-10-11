@@ -83,6 +83,13 @@ public interface IAudioDevice : IDisposable
     /// <summary>Sets <paramref name="source"/>'s gain alone (a fade), leaving the rest as <see cref="SetSource"/> set it.</summary>
     void SetGain(uint source, float gain);
 
+    /// <summary>
+    /// Sends the stereo buffers queued on <paramref name="source"/> (music) to the output's left and right as they are
+    /// when <paramref name="direct"/>, not through the spatial mix; off for mono. <see cref="PlayBuffer"/> and
+    /// <see cref="PlayLooping"/> set it themselves from their buffer, and <see cref="StopSource"/> turns it off.
+    /// </summary>
+    void SetDirectChannels(uint source, bool direct);
+
     /// <summary>Stops <paramref name="source"/> and takes every buffer off it.</summary>
     void StopSource(uint source);
 

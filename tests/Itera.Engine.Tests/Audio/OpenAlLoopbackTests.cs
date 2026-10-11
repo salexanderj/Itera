@@ -1,5 +1,7 @@
 using System.Numerics;
 using Itera.Engine.Audio;
+using Itera.Engine.Audio.Files;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Itera.Engine.Tests.Audio;
 
@@ -13,8 +15,9 @@ public sealed class OpenAlCollectionDefinition
 /// <summary>
 /// <see cref="OpenAlAudioDevice"/> on OpenAL Soft's loopback device, which mixes into memory
 /// (the real device had no test): a source plays its gain above 1 up to
-/// <see cref="AudioMixer.MaxGain"/> at the listener (OpenAL held it at 1); and an error a
-/// call raised is kept for <see cref="IAudioDevice.TakeError"/>, not thrown by the next buffer made.
+/// <see cref="AudioMixer.MaxGain"/> at the listener (OpenAL held it at 1); an error a
+/// call raised is kept for <see cref="IAudioDevice.TakeError"/>, not thrown by the next buffer made; a stereo buffer, and
+/// a stereo music track queued on a deck, keep their left and right apart; and loop points play an intro once.
 /// </summary>
 [Collection(OpenAlCollectionDefinition.Name)]
 public sealed class OpenAlLoopbackTests
@@ -98,6 +101,49 @@ public sealed class OpenAlLoopbackTests
         Assert.Equal(0, device.TakeError());
         device.DeleteSource(source);
         device.DeleteBuffer(buffer);
+    }
+
+    /// <summary>
+    /// A stereo music track through the decks (buffers queued on a source, with direct channels set for them) keeps its
+    /// channels apart: a tone only on its left is heard on the output's left, and the right stays near silent.
+    /// </summary>
+    [Fact]
+    public void A_stereo_music_track_queued_on_a_deck_keeps_its_left_and_right_apart()
+    {
+        using var device = OpenAlAudioDevice.OpenLoopback(Rate, channels: 2);
+        Assert.NotNull(device);
+        var music = new MusicPlayer(
+            NullLogger.Instance,
+            null,
+            _ => new FakeDecoder(2, Rate, Rate * 10, LoopPoints.None)
+            {
+                Wave = (frame, channel) => channel == 0 ? 0.25f * MathF.Sin(2 * MathF.PI * 440 * frame / Rate) : 0,
+            }
+        );
+        var tone = music.Declare("tone", "tone.fake");
+        music.ReadTracks();
+        var streamer = new MusicStreamer(music.Tracks, music.Feeds, music.Open, NullLogger.Instance);
+        using var decks = new MusicDecks(device, music.Exchange, music.Feeds, new AudioStats());
+        device.SetListener(Vector3.Zero, -Vector3.UnitZ, Vector3.UnitY, 1);
+        music.Play(tone, fadeSeconds: 0);
+        music.Publish(running: true);
+        decks.Pump(0, 1, enabled: true);
+        streamer.Pump();
+        decks.Pump(0.004, 1, enabled: true);
+        var output = new float[2 * 8192];
+        device.RenderLoopback(output);
+
+        var left = 0f;
+        var right = 0f;
+        for (var i = 4096; i < 8192; i++)
+        {
+            left += MathF.Abs(output[2 * i]);
+            right += MathF.Abs(output[2 * i + 1]);
+        }
+
+        Assert.InRange(left / 4096, 0.1f, 0.25f);
+        Assert.True(right < left * 0.01f, $"right {right / 4096} against left {left / 4096}");
+        Assert.Equal(0, device.TakeError());
     }
 
     /// <summary>

@@ -19,6 +19,9 @@ public sealed class AudioStats
     private volatile bool _connected = true;
     private int _rendered;
     private long _renderedBytes;
+    private long _musicUnderruns;
+    private readonly int[] _deckTracks = [-1, -1];
+    private readonly float[] _deckGains = new float[2];
 
     /// <summary>One-shot sounds playing.</summary>
     public int OneShots => Volatile.Read(ref _oneShots);
@@ -59,6 +62,15 @@ public sealed class AudioStats
     /// <summary>Bytes of rendered variations in OpenAL buffers.</summary>
     public long RenderedBytes => Interlocked.Read(ref _renderedBytes);
 
+    /// <summary>Times a music deck's queue ran dry before the music thread decoded more.</summary>
+    public long MusicUnderruns => Interlocked.Read(ref _musicUnderruns);
+
+    /// <summary>The track music deck <paramref name="deck"/> (0 or 1) plays, or -1 while silent.</summary>
+    public int MusicDeckTrack(int deck) => Volatile.Read(ref _deckTracks[deck]);
+
+    /// <summary>The gain music deck <paramref name="deck"/> (0 or 1) plays at: the music volume, faded.</summary>
+    public float MusicDeckGain(int deck) => Volatile.Read(ref _deckGains[deck]);
+
     internal void SetPlaying(int oneShots, int streams, int fileLoops = 0)
     {
         Volatile.Write(ref _oneShots, oneShots);
@@ -81,6 +93,14 @@ public sealed class AudioStats
     internal void CountDeviceError() => Interlocked.Increment(ref _deviceErrors);
 
     internal void SetConnected(bool connected) => _connected = connected;
+
+    internal void CountMusicUnderrun() => Interlocked.Increment(ref _musicUnderruns);
+
+    internal void SetMusicDeck(int deck, int track, float gain)
+    {
+        Volatile.Write(ref _deckTracks[deck], track);
+        Volatile.Write(ref _deckGains[deck], gain);
+    }
 
     internal void CountRendered(long bytes)
     {

@@ -363,8 +363,14 @@ public sealed class AudioSettings
     public float EffectsVolume { get; set; } = 1;
 
     /// <summary>
-    /// The most sounds playing at once (OpenAL sources). When all play, a louder new sound takes the quietest one's place
-    /// and a quieter one is not played.
+    /// The music track the engine's menu plays while there is no match (a name a game declared in its
+    /// <c>IRunStartup</c>, <c>MusicPlayer.Declare</c>); null for none. A game's own menu plays its music itself.
+    /// </summary>
+    public string? MenuMusic { get; set; }
+
+    /// <summary>
+    /// The most sounds playing at once (OpenAL sources; at most 254, so with the music's two OpenAL Soft's 256 suffice).
+    /// When all play, a louder new sound takes the quietest one's place and a quieter one is not played.
     /// </summary>
     public int MaxVoices { get; set; } = 64;
 

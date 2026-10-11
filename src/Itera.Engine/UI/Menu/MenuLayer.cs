@@ -1,4 +1,5 @@
 using System.Globalization;
+using Itera.Engine.Audio;
 using Itera.Engine.Commands;
 using Itera.Engine.Input;
 using Itera.Engine.Matches;
@@ -54,7 +55,9 @@ public enum MenuView
 /// (<see cref="IMenuInput"/>); the band at the bottom says what the element under the pointer (or with the focus)
 /// does, or why something cannot be done, and the main page why the last match ended. Its look is the game's
 /// <see cref="MenuStyle"/>, its body text 32.4 units (3 % of the reference screen's height), its title 2.5 times that;
-/// it clicks as the toolkit's layers do. Main thread.
+/// it clicks as the toolkit's layers do. The music track <c>Engine:Audio:MenuMusic</c> names
+/// (<see cref="MusicPlayer.MenuTrack"/>) plays while there is no match or one is being joined, fading in over 2 s, and fades
+/// out as a match starts. Main thread.
 /// </summary>
 public sealed class MenuLayer : UiLayer, IMenu
 {
@@ -101,6 +104,7 @@ public sealed class MenuLayer : UiLayer, IMenu
     private readonly SteamFriendList _friends;
     private readonly JoinRequests _joins;
     private readonly PlayerSettings _settings;
+    private readonly MusicPlayer? _music;
     private readonly SettingsPage _settingsPage;
     private readonly MenuPages _pages;
     private readonly MenuStyle _colours;
@@ -118,6 +122,7 @@ public sealed class MenuLayer : UiLayer, IMenu
     private string? _lastEnd;
     private int _seenStarted;
     private bool _seenMatch;
+    private bool _menuMusic;
     private (JoinStage Stage, long Tenths) _joinShown = (JoinStage.Failed, -1);
     private string _status = "";
     private (JoinRequest? Request, string Text) _confirmText;
@@ -136,7 +141,8 @@ public sealed class MenuLayer : UiLayer, IMenu
         PlayerSettings settings,
         IOptions<EngineOptions> options,
         MenuPages? pages = null,
-        SettingsRows? rows = null
+        SettingsRows? rows = null,
+        MusicPlayer? music = null
     )
         : base(toolkit, input)
     {
@@ -149,6 +155,7 @@ public sealed class MenuLayer : UiLayer, IMenu
         _friends = friends;
         _joins = joins;
         _settings = settings;
+        _music = music;
         _pages = pages ?? new MenuPages();
         _settingsPage = new SettingsPage(settings, rows);
         _title = options.Value.Application.Name;
@@ -253,7 +260,11 @@ public sealed class MenuLayer : UiLayer, IMenu
         _notice = null;
     }
 
-    protected override void BeforeUpdate(in FrameTime time) => FollowMatches();
+    protected override void BeforeUpdate(in FrameTime time)
+    {
+        FollowMatches();
+        FollowMusic();
+    }
 
     /// <summary>The address box's typing goes through the menu's input (<see cref="TextFocus"/>), not the game's.</summary>
     protected override void GiveTyping(TextEntry? entry, TextEntry? before) { }
@@ -834,6 +845,35 @@ public sealed class MenuLayer : UiLayer, IMenu
         _lastEnd = _matches.LastEnd;
         _inGame = false;
         _inGameSettings = false;
+    }
+
+    /// <summary>
+    /// The menu's track plays while there is no match or one is being joined, and fades out as a match starts (unless the game
+    /// has played another meanwhile).
+    /// </summary>
+    private void FollowMusic()
+    {
+        var wanted = _matches.Phase is MatchPhase.Menu or MatchPhase.Joining;
+        if (_music is null || wanted == _menuMusic)
+        {
+            return;
+        }
+
+        _menuMusic = wanted;
+        var track = _music.MenuTrack;
+        if (track < 0)
+        {
+            return;
+        }
+
+        if (wanted)
+        {
+            _music.Play(track);
+        }
+        else if (_music.Current == track)
+        {
+            _music.Stop();
+        }
     }
 
     /// <summary>Frees the pictures of friends no longer listed.</summary>

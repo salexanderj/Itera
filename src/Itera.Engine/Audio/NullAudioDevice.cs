@@ -22,6 +22,8 @@ public sealed class NullAudioDevice : IAudioDevice
 
     public void SetGain(uint source, float gain) { }
 
+    public void SetDirectChannels(uint source, bool direct) { }
+
     public void DeleteBuffer(uint buffer) { }
 
     public uint CreateSource() => 0;

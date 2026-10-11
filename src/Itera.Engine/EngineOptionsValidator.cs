@@ -165,8 +165,8 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         Range(failures, "Audio:Volume", audio.Volume, 0, 1);
         Range(failures, "Audio:MusicVolume", audio.MusicVolume, 0, 1);
         Range(failures, "Audio:EffectsVolume", audio.EffectsVolume, 0, 1);
-        // OpenAL Soft mixes 255 mono sources by default.
-        Range(failures, "Audio:MaxVoices", audio.MaxVoices, 8, 255);
+        // OpenAL Soft makes at most 256 sources by default: the voices and the music's two decks.
+        Range(failures, "Audio:MaxVoices", audio.MaxVoices, 8, 254);
         Range(failures, "Audio:SampleRate", audio.SampleRate, 22_050, 96_000);
 
         Range(failures, "Ui:FontPixels", options.Ui.FontPixels, 8, 64);

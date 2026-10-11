@@ -12,7 +12,8 @@ namespace Itera.Engine.Audio;
 /// camera) to the audio thread through <see cref="AudioExchange"/>. The audio thread (<see cref="AudioMixer"/>, started
 /// by <see cref="Start"/>) makes every OpenAL call; a render thread renders the one-shot recipes for it
 /// (<see cref="RecipeRenderer"/>). Nothing is sent over a session: each game makes the sounds of what it
-/// sees. With no device (or <c>Engine:Audio:Enabled</c> false) no thread starts and every call does nothing. Main thread
+/// sees. Music (<see cref="Music"/>) goes with the sounds: a thread of its own decodes it, and the audio thread plays it.
+/// With no device (or <c>Engine:Audio:Enabled</c> false) no thread starts and every call does nothing. Main thread
 /// only; allocates nothing after start.
 /// </summary>
 public sealed partial class AudioService : IDisposable
@@ -45,6 +46,8 @@ public sealed partial class AudioService : IDisposable
     private AudioMixer? _mixer;
     private Thread? _thread;
     private Thread? _renderThread;
+    private Thread? _musicThread;
+    private MusicStreamer? _streamer;
     private volatile bool _stopping;
     private volatile bool _faulted;
     private int _eventCount;
@@ -61,7 +64,17 @@ public sealed partial class AudioService : IDisposable
         Volume = _settings.Volume;
         MusicVolume = _settings.MusicVolume;
         EffectsVolume = _settings.EffectsVolume;
+        Music = new MusicPlayer(logger, _settings.MenuMusic);
     }
+
+    /// <summary>The music: tracks declared by name and played one at a time, cross-fading.</summary>
+    public MusicPlayer Music { get; }
+
+    /// <summary>The music decoded since the start, in seconds; 0 with no music thread.</summary>
+    public double MusicDecodedSeconds => _streamer?.DecodedSeconds ?? 0;
+
+    /// <summary>The bytes the music thread has allocated (NVorbis decoding); 0 with no music thread.</summary>
+    public long MusicAllocatedBytes => _streamer?.AllocatedBytes ?? 0;
 
     /// <summary>The recipes sounds name.</summary>
     public SoundRecipes Recipes { get; } = new();
@@ -154,8 +167,9 @@ public sealed partial class AudioService : IDisposable
     }
 
     /// <summary>
-    /// Starts the audio thread, when a device is open. With none, the sounds from files are still looked for, so a run
-    /// without sound names a file missing (logged at Error) as one with sound would.
+    /// Reads the music tracks' headers and starts the threads, when a device is open: the music thread (with tracks), the
+    /// sound render thread, and the audio thread. With none, the sounds from files and the tracks are still looked for, so
+    /// a run without sound names a file missing (logged at Error) as one with sound would.
     /// </summary>
     public void Start()
     {
@@ -164,10 +178,19 @@ public sealed partial class AudioService : IDisposable
             return;
         }
 
+        Music.ReadTracks();
         if (!_device.IsAvailable)
         {
             CheckFilesExist();
             return;
+        }
+
+        MusicDecks? decks = null;
+        if (Music.Tracks.Count > 0)
+        {
+            _streamer = new MusicStreamer(Music.Tracks, Music.Feeds, Music.Open, _logger);
+            decks = new MusicDecks(_device, Music.Exchange, Music.Feeds, Stats);
+            _musicThread = new Thread(_streamer.Run) { Name = "Music", IsBackground = true };
         }
 
         var cache = _settings.Cache ? new SoundCache(_cacheDirectory, _logger) : null;
@@ -180,7 +203,8 @@ public sealed partial class AudioService : IDisposable
             _settings.SampleRate,
             _logger,
             cache,
-            renderOnPump: false
+            renderOnPump: false,
+            decks
         );
         // The one-shots render on a thread of their own, so the audio thread plays what is ready meanwhile.
         _renderThread = new Thread(_mixer.Renderer.Run)
@@ -190,6 +214,7 @@ public sealed partial class AudioService : IDisposable
             Priority = ThreadPriority.BelowNormal,
         };
         _thread = new Thread(Run) { Name = "Audio", IsBackground = true };
+        _musicThread?.Start();
         _renderThread.Start();
         _thread.Start();
         LogStarted(_settings.MaxVoices, _settings.SampleRate);
@@ -275,6 +300,7 @@ public sealed partial class AudioService : IDisposable
     /// </summary>
     public void Publish(in ListenerPose listener, double now)
     {
+        Music.Publish(running: _thread is not null);
         if (_thread is null)
         {
             ClearQueued();
@@ -429,7 +455,8 @@ public sealed partial class AudioService : IDisposable
                             stats.Culled,
                             stats.Stolen,
                             stats.Refused,
-                            stats.Underruns
+                            stats.Underruns,
+                            stats.MusicUnderruns
                         );
                     }
                 }
@@ -474,6 +501,10 @@ public sealed partial class AudioService : IDisposable
         _mixer?.Renderer.Stop();
         _renderThread?.Join(TimeSpan.FromSeconds(2));
         _renderThread = null;
+        // The music thread touches no device either; it closes its files as it ends.
+        _streamer?.Stop();
+        _musicThread?.Join(TimeSpan.FromSeconds(2));
+        _musicThread = null;
         _stopping = true;
         var stopped = _thread.Join(TimeSpan.FromSeconds(2));
         if (!stopped)
@@ -503,7 +534,7 @@ public sealed partial class AudioService : IDisposable
 
     [LoggerMessage(
         Level = LogLevel.Debug,
-        Message = "Audio: {OneShots} one-shot(s) and {Streams} stream(s) playing; since start {Played} played, {Culled} too quiet, {Stolen} cut short, {Refused} refused, {Underruns} stream underrun(s)"
+        Message = "Audio: {OneShots} one-shot(s) and {Streams} stream(s) playing; since start {Played} played, {Culled} too quiet, {Stolen} cut short, {Refused} refused, {Underruns} stream underrun(s), {MusicUnderruns} music underrun(s)"
     )]
     private partial void LogStats(
         int oneShots,
@@ -512,7 +543,8 @@ public sealed partial class AudioService : IDisposable
         long culled,
         long stolen,
         long refused,
-        long underruns
+        long underruns,
+        long musicUnderruns
     );
 
     /// <summary>With no audio thread to read them: each file of each sound from files is looked for, and a missing one logged.</summary>

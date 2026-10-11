@@ -14,7 +14,8 @@ namespace Itera.Engine.Commands;
 /// recipes' names and kinds, the sounds read from files (each file's channels, rate, length, and problems), a test of a
 /// recipe where the camera looks (a one-shot once, at a level; a stream or a file loop for 4 s) or at the listener, and WAV files of
 /// recipes in the data folder's <c>Sounds</c>, to listen to outside the game. The volume is the player's setting
-/// (<see cref="PlayerSettings"/>), as the menu's.
+/// (<see cref="PlayerSettings"/>), as the menu's. And the <c>music</c> command: what plays (the decks' tracks and gains,
+/// the music thread's work), the tracks, and a track played or stopped with a fade (<see cref="MusicPlayer"/>).
 /// </summary>
 public sealed class SoundCommands(
     ConsoleCommands commands,
@@ -41,6 +42,177 @@ public sealed class SoundCommands(
             "Sound: the counts, on or off, the master volume (0 to 1), the recipes, the sounds from files, one where the camera looks (a level 0 to 1) or at the listener, or WAV files of recipes.",
             CommandScope.Local,
             Sound
+        );
+        commands.Register(
+            "music",
+            "[list|play NAME [SECONDS]|stop [SECONDS]]",
+            "Music: what plays, the tracks, a track played (cross-fading over SECONDS, 0 to 60, 2 by default), or the music stopped (fading out).",
+            CommandScope.Local,
+            Music
+        );
+    }
+
+    private void Music(CommandContext context)
+    {
+        var music = audio.Music;
+        if (context.Count == 0)
+        {
+            PrintMusic(context);
+            return;
+        }
+
+        if (context.Is(0, "list") && context.Count == 1)
+        {
+            ListTracks(context);
+            return;
+        }
+
+        if (context.Is(0, "play") && context.Count is 2 or 3)
+        {
+            if (!music.TryFind(context[1], out var track))
+            {
+                context.PrintError($"{context[1]}: no such music track; 'music list' lists them.");
+                return;
+            }
+
+            if (!TryFade(context, 2, out var fade))
+            {
+                return;
+            }
+
+            if (music.Tracks[track].Error is { } error)
+            {
+                context.PrintError($"{context[1]} cannot be played: {error}");
+                return;
+            }
+
+            if (music.Current == track)
+            {
+                context.Print(context[1] + " plays already");
+                return;
+            }
+
+            music.Play(track, fade);
+            context.Print(
+                string.Create(CultureInfo.InvariantCulture, $"{context[1]} plays, fading over {fade:0.##} s")
+            );
+            return;
+        }
+
+        if (context.Is(0, "stop") && context.Count is 1 or 2)
+        {
+            if (TryFade(context, 1, out var fade))
+            {
+                music.Stop(fade);
+                context.Print(string.Create(CultureInfo.InvariantCulture, $"music stops, fading over {fade:0.##} s"));
+            }
+
+            return;
+        }
+
+        context.PrintUsage();
+    }
+
+    /// <summary>The fade's seconds at <paramref name="index"/>, or the default when not given; false (with the usage) when out of range.</summary>
+    private static bool TryFade(CommandContext context, int index, out float fade)
+    {
+        fade = MusicPlayer.DefaultFadeSeconds;
+        if (context.Count <= index)
+        {
+            return true;
+        }
+
+        if (context.TryGetFloat(index, out fade) && fade is >= 0 and <= MusicPlayer.MaxFadeSeconds)
+        {
+            return true;
+        }
+
+        context.PrintUsage();
+        return false;
+    }
+
+    private void PrintMusic(CommandContext context)
+    {
+        var music = audio.Music;
+        var playing =
+            music.Current < 0 ? "nothing"
+            : music.Tracks[music.Current].Loop ? music.CurrentName + " (looping)"
+            : music.CurrentName + " (once)";
+        var sound = audio.IsRunning ? "" : " (no sound: " + audio.DeviceName + ")";
+        context.Print(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"music: {playing}{sound}, music volume {audio.MusicVolume:0.##} under the master {audio.Volume:0.##}; {music.Tracks.Count} track(s)"
+            )
+        );
+        if (!audio.IsRunning || music.Tracks.Count == 0)
+        {
+            return;
+        }
+
+        var stats = audio.Stats;
+        context.Print(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"decks: 1 {Deck(0)}, 2 {Deck(1)}; {stats.MusicUnderruns} underrun(s); the music thread decoded {audio.MusicDecodedSeconds:0.#} s and allocated {audio.MusicAllocatedBytes / 1_048_576.0:0.#} MB"
+            )
+        );
+    }
+
+    /// <summary>What music deck <paramref name="deck"/> plays, and how loud.</summary>
+    private string Deck(int deck)
+    {
+        var track = audio.Stats.MusicDeckTrack(deck);
+        return track < 0 || track >= audio.Music.Tracks.Count
+            ? "silent"
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"{audio.Music.Tracks[track].Name} at gain {audio.Stats.MusicDeckGain(deck):0.###}"
+            );
+    }
+
+    private void ListTracks(CommandContext context)
+    {
+        var music = audio.Music;
+        if (music.Tracks.Count == 0)
+        {
+            context.Print("no music tracks");
+            return;
+        }
+
+        for (var i = 0; i < music.Tracks.Count; i++)
+        {
+            var track = music.Tracks[i];
+            var path = Path.GetRelativePath(AppContext.BaseDirectory, track.Path);
+            var menu = i == music.MenuTrack ? " (the menu's)" : "";
+            context.Print($"{track.Name}: {path}, {DescribeTrack(track)}{menu}");
+        }
+    }
+
+    private static string DescribeTrack(MusicTrack track)
+    {
+        if (track.Error is { } error)
+        {
+            return "cannot be read (" + error + ")";
+        }
+
+        if (track.Channels == 0)
+        {
+            return "not read yet";
+        }
+
+        var loop =
+            !track.Loop ? "plays once"
+            : track.LoopPoints.IsSet
+                ? string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"loops {track.LoopPoints.Start} to {track.LoopPoints.End}"
+                )
+            : "loops whole";
+        var problem = track.Warning is null ? "" : " (" + track.Warning + ")";
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{(track.Channels == 2 ? "stereo" : "mono")}, {track.SampleRate} Hz, {track.Seconds:0.#} s, {loop}{problem}"
         );
     }
 
@@ -132,7 +304,7 @@ public sealed class SoundCommands(
         context.Print(
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"since start: {stats.Played} played, {stats.Culled} too quiet, {stats.Stolen} cut short for louder ones, {stats.Refused} refused, {stats.Late} dropped while their recipe rendered, {audio.DroppedEvents} dropped, {stats.Underruns} stream underruns, {stats.DeviceErrors} device errors"
+                $"since start: {stats.Played} played, {stats.Culled} too quiet, {stats.Stolen} cut short for louder ones, {stats.Refused} refused, {stats.Late} dropped while their recipe rendered, {audio.DroppedEvents} dropped, {stats.Underruns} stream underruns, {stats.MusicUnderruns} music underruns, {stats.DeviceErrors} device errors"
             )
         );
     }

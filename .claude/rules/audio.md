@@ -44,6 +44,30 @@ copies are not in step; it fades out by the time since the last round over 80 ms
 The console's `sound files` lists each file as read (channels, rate, length, size, loop, problem), `sound play NAME`
 plays a sound at the listener (a sustained one for 4 s), and `sound wav` writes no file for them.
 
+Music (`AudioService.Music`, a `MusicPlayer`, also a DI singleton): a game declares its tracks by name once a run
+(`Declare(name, path, loop)`, at most 64, in its `IRunStartup`; paths from the game's folder) and plays one at a time
+(`Play(name or number, fadeSeconds = 2, restart)`, `Stop(fadeSeconds)`; `Current`, -1 for none and again once a track
+played once ends or its file fails; the same track again does nothing unless `restart`). Each file's header is read at
+the audio thread's step, also with no device: one that cannot be read is logged at Error and plays nothing (playing it
+fades out what plays). The commands go to the audio thread with the sounds (`MusicExchange`; the last 8 kept). A thread
+of its own, "Music" (`MusicStreamer`), opens the files and decodes ahead into each deck's ring (`MusicFeed`: 8 blocks
+of 4096 frames as 16 bits, in the file's channels and rate, tagged by the request's generation); the audio thread plays
+two decks (`MusicDecks`: a source each outside the voice pool, so `Engine:Audio:MaxVoices` is at most 254, with 4
+buffers queued, at the listener, a stereo track's channels direct through `IAudioDevice.SetDirectChannels`). A track
+played starts on a free deck (or the quieter, cut) and once its first block is queued fades in as the other fades out,
+each at sin(t·π/2) of the music volume as t moves over the fade (0.71 each halfway); a command during a fade goes on
+from the gains then. A looping track goes round its loop points (or whole) with no gap: read up to the loop's end, the
+rest of that block comes from a second decoder of the file waiting at the loop's start (brought there between blocks,
+since NVorbis seeks by decoding from the start; a WAV seeks at once), and the two swap; one that cannot be readied ends
+the track at the loop's end. An Ogg loop shorter than its start takes to decode (the start at about 350 times real time:
+a 0.3 s loop after 100 s) underruns. Sound off and the music volume
+set the decks' gains (0 while off); the music streams on. A file failing as it plays is logged once and its deck ends;
+the old track still fades out; should the music thread itself fail, it logs why and the music stops. The engine's menu plays `Engine:Audio:MenuMusic`'s track (`MusicPlayer.MenuTrack`; a
+name no game declared is logged once) while there is no match or one is being joined, and stops it as a match starts unless
+the game played another. The console's `music` shows what plays, the decks, underruns, and what the music thread
+decoded and allocated; `music list`, `play NAME [SECONDS]`, `stop [SECONDS]`. With no tracks, neither the music thread
+nor the decks start.
+
 Sound files are read by `Audio/Files/`: `SoundDecoders.Open` picks a decoder by the file's
 first bytes, the engine's own `WavDecoder` (`WavReader`: PCM of 8 to 32 bits, IEEE float of 32 or 64, extensible
 formats, RF64, a `smpl` loop) or `VorbisDecoder` (NVorbis 1.0.0-rc.2; loops from `LOOPSTART` with `LOOPLENGTH` or
@@ -61,7 +85,8 @@ sources were set with). Sounds at the listener stay.
 ### Files in `src/Itera.Engine`
 
   - `Audio/`: `AudioService`, `AudioMixer`, `AudioExchange`, `AudioStats`, `SoundRecipe(s)`, `SoundEvent`,
-    `SoundLoop`, `EngineSounds`, `WavWriter`, `SoundCache`; sound files in `Audio/Files/` (`ISoundDecoder`,
+    `SoundLoop`, `EngineSounds`, `WavWriter`, `SoundCache`; the music (`MusicPlayer`, `MusicTrack`, `MusicExchange`,
+    `MusicFeed`, `MusicStreamer`, `MusicDecks`); sound files in `Audio/Files/` (`ISoundDecoder`,
     `SoundDecoders`, `WavReader`, `WavDecoder`, `VorbisDecoder`, `SoundFiles`, `LoopPoints`, `SoundFileException`);
     building blocks in `Audio/Synthesis/` (`SoundRandom`,
     `Dsp`, `OnePole`, `StateVariableFilter`, `NoiseSource`, `ModalBank`); the device (`IAudioDevice`,

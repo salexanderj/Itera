@@ -13,7 +13,8 @@ namespace Itera.Engine.Audio;
 /// may have it render one recipe a round itself. A pool of <see cref="Voices"/> sources plays everything. A sound too
 /// quiet where the listener is (under <see cref="CullGain"/>) is never started; when every voice plays, a louder sound
 /// takes the quietest one-shot's voice (Farnell's point that sound, like pictures, needs a budget and a level of
-/// detail). A stream recipe whose generator throws is ended and not started again; the rest play on. Every call to <see cref="IAudioDevice"/> comes from here, on one thread. After the
+/// detail). A stream recipe whose generator throws is ended and not started again; the rest play on. The music's two
+/// decks (<see cref="MusicDecks"/>) play beside the pool, pumped each round. Every call to <see cref="IAudioDevice"/> comes from here, on one thread. After the
 /// recipes are in buffers it allocates nothing, except the first generator of each stream recipe beyond those made.
 /// </summary>
 public sealed partial class AudioMixer : IDisposable
@@ -49,6 +50,7 @@ public sealed partial class AudioMixer : IDisposable
     private readonly ILogger _logger;
     private readonly RecipeRenderer _renderer;
     private readonly bool _renderOnPump;
+    private readonly MusicDecks? _music;
     private readonly bool[] _failed = new bool[SoundRecipes.MaxRecipes];
     private readonly bool[] _brokenStreams = new bool[SoundRecipes.MaxRecipes];
     private readonly int _sampleRate;
@@ -80,10 +82,26 @@ public sealed partial class AudioMixer : IDisposable
         SoundCache? cache = null,
         bool renderOnPump = true
     )
+        : this(device, recipes, stats, exchange, voices, sampleRate, logger, cache, renderOnPump, null) { }
+
+    /// <summary>A mixer that also pumps <paramref name="music"/>, the music's decks, each round beside the voices (none when null).</summary>
+    internal AudioMixer(
+        IAudioDevice device,
+        SoundRecipes recipes,
+        AudioStats stats,
+        AudioExchange exchange,
+        int voices,
+        int sampleRate,
+        ILogger logger,
+        SoundCache? cache,
+        bool renderOnPump,
+        MusicDecks? music
+    )
     {
         _device = device;
         _renderer = new RecipeRenderer(recipes, sampleRate, cache, logger);
         _renderOnPump = renderOnPump;
+        _music = music;
         _recipes = recipes;
         _stats = stats;
         _exchange = exchange;
@@ -133,6 +151,8 @@ public sealed partial class AudioMixer : IDisposable
             out var shift
         );
         _device.SetListener(_listener.Position, _listener.Forward, _listener.Up, levels.Volume);
+        // Before sound off returns: the music streams on, silent.
+        _music?.Pump(nowSeconds, levels.Music, levels.Enabled);
         if (levels.Effects != _effects)
         {
             _effects = levels.Effects;
@@ -856,6 +876,7 @@ public sealed partial class AudioMixer : IDisposable
         }
 
         _disposed = true;
+        _music?.Dispose();
         if (!_created)
         {
             return;

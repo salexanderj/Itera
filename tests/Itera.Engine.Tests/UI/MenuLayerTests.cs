@@ -24,7 +24,8 @@ namespace Itera.Engine.Tests.UI;
 /// (the UI scale's too), the menu over a match (Escape, resume, leave), a join's cancel, Escape on each page, a game's
 /// own page and Settings rows, the keyboard's focus, the clicks (soft as the pointer comes onto a button, a switch, or a
 /// slider; fuller as one is pressed; none for a page or the menu opening under a still pointer, the address box, or a
-/// slider's drag), and that it draws again only when what it shows changes and allocates nothing while idle or clicking.
+/// slider's drag), the menu's music (with no match and while joining, stopped as a match starts, a game's own left
+/// playing), and that it draws again only when what it shows changes and allocates nothing while idle or clicking.
 /// </summary>
 public sealed class MenuLayerTests : IDisposable
 {
@@ -40,6 +41,7 @@ public sealed class MenuLayerTests : IDisposable
     private readonly AudioService _audio = QueuingAudio();
     private readonly MenuPages _pages = new();
     private readonly SettingsRows _rows = new();
+    private readonly MusicPlayer _music = new(NullLogger.Instance, menuMusic: "theme");
 
     /// <summary>The player's settings, with no file.</summary>
     private PlayerSettings Settings { get; } =
@@ -71,6 +73,9 @@ public sealed class MenuLayerTests : IDisposable
         );
         var starts = new MatchCommands(commands, _matches, steam, Options.Create(options));
         var friends = new SteamFriendList(steam, "test", NullLogger<SteamFriendList>.Instance);
+        // The menu's track, and a game's own; no files are read with no audio thread.
+        _music.Declare("theme", "Music/theme.ogg");
+        _music.Declare("game", "Music/game.ogg");
         _menu = new MenuLayer(
             _toolkit,
             MenuStyle.Plain,
@@ -84,7 +89,8 @@ public sealed class MenuLayerTests : IDisposable
             Settings,
             Options.Create(options),
             _pages,
-            _rows
+            _rows,
+            _music
         );
         _surface = new UISurface([_menu], NullLogger<UISurface>.Instance);
         _surface.Initialize(Width, Height);
@@ -440,6 +446,28 @@ public sealed class MenuLayerTests : IDisposable
         Assert.True(_menu.Ui.TryFind("Downloading the host's world: 1.0 of 3.0 MB", out _));
         Click("Cancel");
         Assert.Equal("The join was cancelled.", _matches.TakeLeave());
+    }
+
+    [Fact]
+    public void The_menus_music_plays_with_no_match_and_while_joining_and_stops_as_a_match_starts()
+    {
+        Assert.Equal("theme", _music.CurrentName);
+
+        MatchControlStates.Joining(_matches, "127.0.0.1:47600");
+        Frame();
+        Assert.Equal("theme", _music.CurrentName);
+        MatchControlStates.Starting(_matches);
+        Frame();
+        Assert.Null(_music.CurrentName);
+        MatchControlStates.Ended(_matches, null);
+        Frame();
+        Assert.Equal("theme", _music.CurrentName);
+
+        // A game's own music, played as its match starts, goes on.
+        MatchControlStates.Starting(_matches);
+        _music.Play("game");
+        Frame();
+        Assert.Equal("game", _music.CurrentName);
     }
 
     [Fact]

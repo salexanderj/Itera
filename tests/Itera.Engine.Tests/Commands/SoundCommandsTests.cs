@@ -16,7 +16,9 @@ namespace Itera.Engine.Tests.Commands;
 /// The console's <c>sound</c> (<see cref="SoundCommands"/>) without a device: the
 /// counts, on and off, the volume as the player's setting, the recipes with their kinds, the sounds from files (not read
 /// with no sound running), a test or a play at the listener refused with no sound running, an unknown recipe, WAV files
-/// written into the data folder's <c>Sounds</c> (but not for a sound from files), and the usage for anything else.
+/// written into the data folder's <c>Sounds</c> (but not for a sound from files), and the usage for anything else; and
+/// <c>music</c>: what plays, the tracks as read (or why not), a track played and stopped with a fade, one that cannot be
+/// played, an unknown one, and a fade out of range.
 /// </summary>
 public sealed class SoundCommandsTests : IDisposable
 {
@@ -152,6 +154,51 @@ public sealed class SoundCommandsTests : IDisposable
 
         Run("sound play tone");
         Assert.Equal("no sound: none (silent)", Last());
+    }
+
+    [Fact]
+    public void Music_lists_the_tracks_plays_one_and_stops_it()
+    {
+        Run("music");
+        Assert.Equal(
+            "music: nothing (no sound: none (silent)), music volume 1 under the master 0.1; 0 track(s)",
+            Last()
+        );
+        Run("music list");
+        Assert.Equal("no music tracks", Last());
+        var music = _audio.Music;
+        music.Declare("theme", Tests.Audio.VorbisDecoderTests.Fixture("tone-stereo-loop.ogg"));
+        music.Declare("gone", Path.Combine(Path.GetTempPath(), "itera-no-such", "gone.ogg"), loop: false);
+        _audio.Start();
+
+        Run("music list");
+        var theme = _console.ScrollbackLine(_console.ScrollbackCount - 2).Text;
+        Assert.StartsWith("theme: ", theme, StringComparison.Ordinal);
+        Assert.EndsWith(
+            "tone-stereo-loop.ogg, stereo, 22050 Hz, 0.5 s, loops 2205 to 11025",
+            theme,
+            StringComparison.Ordinal
+        );
+        Assert.EndsWith("gone.ogg, cannot be read (no such file)", Last(), StringComparison.Ordinal);
+
+        Run("music play theme 1");
+        Assert.Equal("theme plays, fading over 1 s", Last());
+        Assert.Equal("theme", music.CurrentName);
+        Run("music play theme");
+        Assert.Equal("theme plays already", Last());
+        Run("music");
+        Assert.StartsWith("music: theme (looping) (no sound: none (silent))", Last(), StringComparison.Ordinal);
+        Run("music play gone");
+        Assert.Equal("gone cannot be played: no such file", Last());
+        Run("music play nope");
+        Assert.Equal("nope: no such music track; 'music list' lists them.", Last());
+        Run("music play theme 61");
+        Assert.StartsWith("usage: ", Last(), StringComparison.Ordinal);
+        Run("music stop 0.5");
+        Assert.Equal("music stops, fading over 0.5 s", Last());
+        Assert.Equal(-1, music.Current);
+        Run("music again");
+        Assert.StartsWith("usage: ", Last(), StringComparison.Ordinal);
     }
 
     [Fact]

@@ -140,6 +140,7 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<ShaderReloads>();
         services.TryAddSingleton(sp => AudioDeviceFactory.Create(sp.GetRequiredService<ILogger<OpenAlAudioDevice>>()));
         services.TryAddSingleton<AudioService>();
+        services.TryAddSingleton(sp => sp.GetRequiredService<AudioService>().Music);
         // A match's services: its world, physics, session, navigation, save, and ECS world.
         services.TryAddScoped<MatchContext>();
         services.TryAddScoped<MatchServices>();

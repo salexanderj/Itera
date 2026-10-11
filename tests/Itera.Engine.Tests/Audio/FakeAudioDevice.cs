@@ -6,7 +6,8 @@ namespace Itera.Engine.Tests.Audio;
 /// <summary>
 /// An <see cref="IAudioDevice"/> in memory: buffers keep their lengths, channels, rates, and loop points, sources play them
 /// as <see cref="Advance"/> moves time on (a static buffer until its end, or round its loop while looping; a queue buffer
-/// by buffer). Allocates nothing once its sources exist.
+/// by buffer). With <see cref="RecordSamples"/> each source keeps the samples queued on it, in order. Allocates nothing once
+/// its sources exist (unless recording).
 /// </summary>
 internal sealed class FakeAudioDevice : IAudioDevice
 {
@@ -14,6 +15,10 @@ internal sealed class FakeAudioDevice : IAudioDevice
     private readonly List<(int Channels, int Rate)> _bufferFormats = [(0, 0)];
     private readonly List<(int Start, int End)> _bufferLoops = [(-1, -1)];
     private readonly List<Source> _sources = [null!];
+    private readonly List<short[]?> _bufferSamples = [null];
+
+    /// <summary>Keeps every buffer's samples, and each source the samples queued on it (<see cref="Source.Queued"/>).</summary>
+    public bool RecordSamples { get; init; }
 
     public string Name => "fake";
 
@@ -83,6 +88,7 @@ internal sealed class FakeAudioDevice : IAudioDevice
         _bufferSeconds.Add(0);
         _bufferFormats.Add((0, 0));
         _bufferLoops.Add((-1, -1));
+        _bufferSamples.Add(null);
         return (uint)(_bufferSeconds.Count - 1);
     }
 
@@ -99,6 +105,10 @@ internal sealed class FakeAudioDevice : IAudioDevice
         }
 
         FilledHash = hash;
+        if (RecordSamples)
+        {
+            _bufferSamples[(int)buffer] = samples.ToArray();
+        }
     }
 
     public void DeleteBuffer(uint buffer) => DeletedBuffers++;
@@ -171,11 +181,14 @@ internal sealed class FakeAudioDevice : IAudioDevice
 
     public void SetGain(uint source, float gain) => _sources[(int)source].Gain = gain;
 
+    public void SetDirectChannels(uint source, bool direct) => _sources[(int)source].Direct = direct;
+
     public void StopSource(uint source)
     {
         var s = _sources[(int)source];
         s.Playing = false;
         s.Looping = false;
+        s.Direct = false;
         s.Static = 0;
         s.Queue.Clear();
         s.Processed = 0;
@@ -194,7 +207,15 @@ internal sealed class FakeAudioDevice : IAudioDevice
         return buffer;
     }
 
-    public void QueueBuffer(uint source, uint buffer) => _sources[(int)source].Queue.Add(buffer);
+    public void QueueBuffer(uint source, uint buffer)
+    {
+        var s = _sources[(int)source];
+        s.Queue.Add(buffer);
+        if (RecordSamples)
+        {
+            s.Queued.AddRange(_bufferSamples[(int)buffer]!);
+        }
+    }
 
     public void Play(uint source)
     {
@@ -321,5 +342,11 @@ internal sealed class FakeAudioDevice : IAudioDevice
 
         /// <summary>Seconds into its buffer.</summary>
         public float At => Elapsed;
+
+        /// <summary>True while its stereo goes straight to the output's left and right (<see cref="SetDirectChannels"/>).</summary>
+        public bool Direct { get; set; }
+
+        /// <summary>The samples queued on it, in order, with <see cref="RecordSamples"/>.</summary>
+        public List<short> Queued { get; } = [];
     }
 }

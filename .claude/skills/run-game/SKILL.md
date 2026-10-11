@@ -98,7 +98,8 @@ lists the game's). Commonly used:
 - Other systems: `--Engine:Physics:SettleSeconds` (0.5 to 60), `MaxLooseBodies` (1 to 1024), `CollisionCentimetres`
   (the character mover's cells without voxel terrain, 1 to 10, default 10);
   `--Engine:Particles:Enabled=false` (`Capacity` 16,384 to 1,048,576); `--Engine:Audio:Enabled=false` (`Volume` 0 to
-  1, default 0.1; `MusicVolume` and `EffectsVolume` 0 to 1 under it, default 1; `MaxVoices` 8 to 255), `--Engine:Audio:Cache=false`; `--Engine:Loading:Enabled=false`;
+  1, default 0.1; `MusicVolume` and `EffectsVolume` 0 to 1 under it, default 1; `MaxVoices` 8 to 254; `MenuMusic` the track the
+  engine's menu plays), `--Engine:Audio:Cache=false`; `--Engine:Loading:Enabled=false`;
   `--Engine:Control:Enabled=true` (127.0.0.1:47650, `Port`); `--Engine:Benchmark:Enabled=true` (`tools/benchmark`);
   `"--Engine:Console:Run=balls 8; pos"` (commands run once the first match's world and systems exist; with `wait`, a
   script), `--Engine:Console:RunFile=PATH` (a file of command lines, `#` comments, after `Run`'s),
@@ -237,7 +238,9 @@ lists the commands (`ConsoleCommands`):
   resume, and step; pause and step refuse while the match loads), `particles` (on, off, recipes, test NAME [COUNT], pull
   NAME [COUNT], stress NAME BURSTS, stress off), `sound` (on, off, volume V, recipes, files (the sounds read from
   files, each file's channels, rate, length, and problems), test NAME [LEVEL], play NAME (at the listener; a stream or file loop for 4 s), wav NAME, wav
-  all into `Sounds/`).
+  all into `Sounds/`), `music` (what plays: the decks' tracks and gains, underruns, and what the music thread decoded
+  and allocated; list (each track as read, or why not), play NAME [SECONDS] (cross-fading, 2 s by default), stop
+  [SECONDS]).
 - The engine's systems, where a game registers them (the starter does): `fly` (the debug fly camera, or walk again where
   it is), `flyspeed`, `camera` (first or third), `pos` (the player's eye and look, the fly camera's while it flies, as
   `Game:World:CameraPose` takes it: absolute metres from the map's middle, whatever the match's origin), `tp` (x y z

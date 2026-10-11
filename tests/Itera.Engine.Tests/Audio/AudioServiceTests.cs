@@ -129,6 +129,38 @@ public sealed class AudioServiceTests
     }
 
     /// <summary>
+    /// A track played reaches the music thread, which decodes it, and the audio thread, which plays it on a deck at full
+    /// gain (no fade); at the stop both threads end and the decks' sources are freed with the pool's.
+    /// </summary>
+    [Fact]
+    public void A_track_played_reaches_the_music_and_audio_threads_and_plays()
+    {
+        using var audio = Create();
+        var device = new FakeAudioDevice();
+        audio.Initialize(device);
+        var theme = audio.Music.Declare("theme", VorbisDecoderTests.Fixture("tone-stereo-loop.ogg"));
+        audio.Start();
+        audio.Music.Play(theme, fadeSeconds: 0);
+
+        var wait = Stopwatch.StartNew();
+        while (!Heard(audio.Stats, theme) && wait.Elapsed < TimeSpan.FromSeconds(20))
+        {
+            audio.Publish(ListenerPose.Default, 0);
+            Thread.Sleep(20);
+        }
+
+        Assert.True(Heard(audio.Stats, theme));
+        Assert.True(audio.MusicDecodedSeconds > 0);
+        audio.Stop();
+        Assert.Equal(10, device.DeletedSources);
+    }
+
+    /// <summary>A deck plays <paramref name="track"/> at full gain.</summary>
+    private static bool Heard(AudioStats stats, int track) =>
+        (stats.MusicDeckTrack(0) == track && stats.MusicDeckGain(0) == 1)
+        || (stats.MusicDeckTrack(1) == track && stats.MusicDeckGain(1) == 1);
+
+    /// <summary>
     /// An audio thread stuck in the device (rendering a recipe) when the game stops: <see cref="AudioService.Stop"/>
     /// says so and leaves the device open, so the loop's shutdown and the container do not close it under the thread.
     /// </summary>
