@@ -65,8 +65,23 @@ public interface IAudioDevice : IDisposable
     /// </summary>
     void SetSource(uint source, Vector3 position, float gain, float pitch, float referenceMetres, bool atListener);
 
+    /// <summary>
+    /// Marks the frames of <paramref name="buffer"/> a looping source repeats, from <paramref name="startFrame"/> to just
+    /// before <paramref name="endFrame"/>; the part before is played once. Before any source holds the buffer.
+    /// </summary>
+    void SetLoopPoints(uint buffer, int startFrame, int endFrame);
+
     /// <summary>Plays <paramref name="buffer"/> once on <paramref name="source"/>, from its start.</summary>
     void PlayBuffer(uint source, uint buffer);
+
+    /// <summary>
+    /// Plays <paramref name="buffer"/> on <paramref name="source"/> over and over (its loop points', or the whole), from
+    /// <paramref name="startFrame"/>, until <see cref="StopSource"/>.
+    /// </summary>
+    void PlayLooping(uint source, uint buffer, int startFrame);
+
+    /// <summary>Sets <paramref name="source"/>'s gain alone (a fade), leaving the rest as <see cref="SetSource"/> set it.</summary>
+    void SetGain(uint source, float gain);
 
     /// <summary>Stops <paramref name="source"/> and takes every buffer off it.</summary>
     void StopSource(uint source);

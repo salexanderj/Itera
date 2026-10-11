@@ -10,7 +10,8 @@ Sound (`Engine:Audio`, `AudioService`, `docs/procedural-audio.md`) is made in co
 model each sound's physics, driven by a level from 0 to 1. A one-shot recipe (`OneShotRecipe`) is rendered at start as 4
 levels of 4 variations (by default) into OpenAL buffers, and an event plays the nearest level's (never the same
 variation twice running). A stream recipe (`StreamRecipe`) runs live while the game sustains it each iteration
-(`AudioService.Sustain`, by recipe and key) and fades out over 80 ms after. Game code queues with `AudioService.Play`
+(`AudioService.Sustain`, by recipe and key; in the world, or at the listener with `SoundLoop.AtListener`) and fades out
+over 80 ms after. Game code queues with `AudioService.Play`
 and `Sustain`; after each main-loop iteration `Publish` hands them, the camera as the listener, and the volumes
 (`MixLevels`: the master as the listener's gain, the effects' under it on every voice of the pool, music's for music;
 the player's `Volume`, `EffectsVolume`, and `MusicVolume`) to the audio thread
@@ -34,8 +35,14 @@ always plays at the listener, where `AL_SOFT_direct_channels_remix` sends them l
 cannot be read is logged at Error (`Audio: sound NAME: the file PATH cannot be read (WHY); it plays nothing`) and the
 next good file plays in its place; with none the sound is silent, and still counts as ready for the loading screen
 (`SoundRecipes.PreparedCount`: one-shot recipes and sounds from files; at most 256 recipes in all). With no device, a
-missing file is still named at Error. The console's `sound files` lists each file as read (channels, rate, length,
-size, loop, problem), `sound play NAME` plays a sound at the listener, and `sound wav` writes no file for them.
+missing file is still named at Error. A `FileLoopRecipe(path)` (one file of at most 120 s) plays while the game
+sustains it, as a stream recipe does (`Sustain`, by recipe and key; in the world, or at the listener): its voice loops a
+static buffer (`IAudioDevice.PlayLooping`), round the loop points its file names (set on the buffer with
+`AL_SOFT_loop_points`, so the part before them is heard once), or the whole file from a random frame, fading in, so two
+copies are not in step; it fades out by the time since the last round over 80 ms once no longer sustained
+(`AudioMixer.FadeFileLoops`, through `IAudioDevice.SetGain`), and, as a stream, is never cut short for a louder sound.
+The console's `sound files` lists each file as read (channels, rate, length, size, loop, problem), `sound play NAME`
+plays a sound at the listener (a sustained one for 4 s), and `sound wav` writes no file for them.
 
 Sound files are read by `Audio/Files/`: `SoundDecoders.Open` picks a decoder by the file's
 first bytes, the engine's own `WavDecoder` (`WavReader`: PCM of 8 to 32 bits, IEEE float of 32 or 64, extensible

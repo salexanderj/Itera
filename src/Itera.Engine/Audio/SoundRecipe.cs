@@ -149,3 +149,22 @@ public sealed class FileOneShotRecipe : FileRecipe
 
     public override float MostSeconds => MaxSeconds;
 }
+
+/// <summary>
+/// A sound from one file that plays while the game sustains it (<c>AudioService.Sustain</c>, by recipe and key, as a
+/// stream recipe's): a waterfall, a machine's hum, an ambience at the listener. It loops the file's loop (a WAV's
+/// <c>smpl</c> chunk, an Ogg file's LOOPSTART tags) after playing the part before it once, or the whole file; one with no
+/// loop starts at a random place, so two copies are not in step, and fades in. It fades out over 80 ms once no longer
+/// sustained. A file of at most <see cref="MaxSeconds"/>.
+/// </summary>
+public sealed class FileLoopRecipe : FileRecipe
+{
+    /// <summary>The longest a loop's file may last, in seconds (a stereo minute at 48 kHz holds 11 MB).</summary>
+    public const float MaxSeconds = 120;
+
+    /// <param name="path">The file.</param>
+    public FileLoopRecipe(string path)
+        : base([path]) { }
+
+    public override float MostSeconds => MaxSeconds;
+}

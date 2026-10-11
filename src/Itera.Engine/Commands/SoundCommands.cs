@@ -12,7 +12,7 @@ namespace Itera.Engine.Commands;
 /// <summary>
 /// The console's <c>sound</c> command (<see cref="CommandScope.Local"/>): the counts, on and off, the volume, the
 /// recipes' names and kinds, the sounds read from files (each file's channels, rate, length, and problems), a test of a
-/// recipe where the camera looks (a one-shot once, at a level; a stream for 4 s) or at the listener, and WAV files of
+/// recipe where the camera looks (a one-shot once, at a level; a stream or a file loop for 4 s) or at the listener, and WAV files of
 /// recipes in the data folder's <c>Sounds</c>, to listen to outside the game. The volume is the player's setting
 /// (<see cref="PlayerSettings"/>), as the menu's.
 /// </summary>
@@ -126,7 +126,7 @@ public sealed class SoundCommands(
         context.Print(
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"sound {state}, volume {audio.Volume:0.##} (music {audio.MusicVolume:0.##}, effects {audio.EffectsVolume:0.##} under it): {stats.OneShots} one-shots and {stats.Streams} streams playing of {audio.MaxVoices} voices; {audio.Recipes.Count} recipes, {stats.RenderedRecipes} rendered ({stats.RenderedBytes / 1024} KB)"
+                $"sound {state}, volume {audio.Volume:0.##} (music {audio.MusicVolume:0.##}, effects {audio.EffectsVolume:0.##} under it): {stats.OneShots} one-shots, {stats.Streams} streams, and {stats.FileLoops} file loops playing of {audio.MaxVoices} voices; {audio.Recipes.Count} recipes, {stats.RenderedRecipes} rendered ({stats.RenderedBytes / 1024} KB)"
             )
         );
         context.Print(
@@ -200,14 +200,6 @@ public sealed class SoundCommands(
             return;
         }
 
-        if (atListener && audio.Recipes.IsSustained(recipe))
-        {
-            context.PrintError(
-                $"{audio.Recipes.NameOf(recipe)} is sustained, and plays in the world: 'sound test' plays it where the camera looks."
-            );
-            return;
-        }
-
         if (!audio.IsRunning)
         {
             context.PrintError("no sound: " + audio.DeviceName);
@@ -224,6 +216,7 @@ public sealed class SoundCommands(
                     Key = -1,
                     Position = point,
                     Level = level,
+                    AtListener = atListener,
                 },
                 clock.TotalSeconds,
                 StreamTestSeconds

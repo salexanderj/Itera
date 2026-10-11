@@ -8,6 +8,7 @@ public sealed class AudioStats
 {
     private int _oneShots;
     private int _streams;
+    private int _fileLoops;
     private long _played;
     private long _culled;
     private long _stolen;
@@ -24,6 +25,9 @@ public sealed class AudioStats
 
     /// <summary>Streams playing (fading out included).</summary>
     public int Streams => Volatile.Read(ref _streams);
+
+    /// <summary>Sounds from files looping (fading out included).</summary>
+    public int FileLoops => Volatile.Read(ref _fileLoops);
 
     /// <summary>Sounds started since the start.</summary>
     public long Played => Interlocked.Read(ref _played);
@@ -55,10 +59,11 @@ public sealed class AudioStats
     /// <summary>Bytes of rendered variations in OpenAL buffers.</summary>
     public long RenderedBytes => Interlocked.Read(ref _renderedBytes);
 
-    internal void SetPlaying(int oneShots, int streams)
+    internal void SetPlaying(int oneShots, int streams, int fileLoops = 0)
     {
         Volatile.Write(ref _oneShots, oneShots);
         Volatile.Write(ref _streams, streams);
+        Volatile.Write(ref _fileLoops, fileLoops);
     }
 
     internal void CountPlayed() => Interlocked.Increment(ref _played);

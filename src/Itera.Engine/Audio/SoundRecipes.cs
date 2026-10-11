@@ -68,7 +68,7 @@ public sealed class SoundRecipes
     public string NameOf(int id) => _names[id];
 
     /// <summary>True for a recipe the game sustains (<c>AudioService.Sustain</c>) rather than plays once.</summary>
-    public bool IsSustained(int id) => _recipes[id] is StreamRecipe;
+    public bool IsSustained(int id) => _recipes[id] is StreamRecipe or FileLoopRecipe;
 
     /// <summary>What the recipe <paramref name="id"/> is, in a word or two: one-shot, stream, file one-shot.</summary>
     public string KindOf(int id) =>
@@ -76,11 +76,12 @@ public sealed class SoundRecipes
         {
             StreamRecipe => "stream",
             FileOneShotRecipe => "file one-shot",
+            FileLoopRecipe => "file loop",
             _ => "one-shot",
         };
 
     /// <summary>True for a recipe prepared into buffers at start: a one-shot recipe, or a sound from files.</summary>
-    internal static bool IsPrepared(SoundRecipe recipe) => recipe is OneShotRecipe or FileOneShotRecipe;
+    internal static bool IsPrepared(SoundRecipe recipe) => recipe is OneShotRecipe or FileRecipe;
 
     private static void Validate(string name, SoundRecipe recipe)
     {
@@ -96,6 +97,10 @@ public sealed class SoundRecipes
         {
             ok &= files.Paths.Count is >= 1 and <= MaxFiles;
         }
+        else if (recipe is FileLoopRecipe loop)
+        {
+            ok &= loop.Paths.Count == 1;
+        }
         else
         {
             ok &= recipe is StreamRecipe;
@@ -106,7 +111,7 @@ public sealed class SoundRecipes
             throw new ArgumentException(
                 $"Sound recipe '{name}': the reference distance must be above 0 and at most 1000 m, the gain 0 to 4, a"
                     + " one-shot's length above 0 and at most 10 s with 1 to 16 levels and variations, a file one-shot's"
-                    + $" files 1 to {MaxFiles}, and the kind a one-shot, a stream, or a file one-shot.",
+                    + $" files 1 to {MaxFiles}, and the kind a one-shot, a stream, a file one-shot, or a file loop.",
                 nameof(recipe)
             );
         }

@@ -34,7 +34,8 @@ public struct SoundEvent
 }
 
 /// <summary>
-/// A hold on a <see cref="StreamRecipe"/>'s sound, given with <see cref="AudioService.Sustain"/>: a sound plays while
+/// A hold on a <see cref="StreamRecipe"/>'s sound or a <see cref="FileLoopRecipe"/>'s, given with
+/// <see cref="AudioService.Sustain"/>: a sound plays while
 /// the game sustains it (each frame or fixed step), for <see cref="AudioService.HoldSeconds"/> after the last, and then
 /// fades out. The same <see cref="Key"/> and recipe keep the same sound going; the game picks the key (a player's slot,
 /// an entity's id).
@@ -55,4 +56,10 @@ public struct SoundLoop
 
     /// <summary>The sound's gain, times the recipe's; 0 means 1.</summary>
     public float Gain;
+
+    /// <summary>
+    /// True plays it at the listener wherever it moves (an ambience), at its full gain; <see cref="Position"/> is ignored.
+    /// A sound kept stereo plays there whatever this says.
+    /// </summary>
+    public bool AtListener;
 }

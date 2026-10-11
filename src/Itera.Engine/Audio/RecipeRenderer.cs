@@ -16,13 +16,15 @@ namespace Itera.Engine.Audio;
 /// <param name="Cached">True when read from the sound cache.</param>
 /// <param name="Rates">Each variation's rate, for a sound from files; null for a recipe's (the mixer's rate).</param>
 /// <param name="Channels">Each variation's channels, for a sound from files; null for a recipe's (mono).</param>
+/// <param name="Loops">Each variation's loop points, for a sound from files; null for a recipe's (none).</param>
 internal sealed record RenderedRecipe(
     int Id,
     int[] Lengths,
     short[] Samples,
     bool Cached,
     int[]? Rates = null,
-    int[]? Channels = null
+    int[]? Channels = null,
+    LoopPoints[]? Loops = null
 )
 {
     /// <summary>True when the recipe threw, or none of its files could be read: it stays silent.</summary>
@@ -233,6 +235,7 @@ internal sealed partial class RecipeRenderer
         var lengths = new int[paths.Count];
         var rates = new int[paths.Count];
         var channels = new int[paths.Count];
+        var loops = new LoopPoints[paths.Count];
         var samples = new short[chosen.Sum(sound => (long)sound.Samples.Length)];
         var offset = 0;
         for (var i = 0; i < chosen.Length; i++)
@@ -241,11 +244,12 @@ internal sealed partial class RecipeRenderer
             lengths[i] = sound.Samples.Length;
             rates[i] = sound.SampleRate;
             channels[i] = sound.Channels;
+            loops[i] = sound.LoopPoints;
             sound.Samples.CopyTo(samples, offset);
             offset += sound.Samples.Length;
         }
 
-        return new RenderedRecipe(id, lengths, samples, Cached: false, rates, channels);
+        return new RenderedRecipe(id, lengths, samples, Cached: false, rates, channels, loops);
     }
 
     /// <summary>Renders every variation of <paramref name="recipe"/>, level by level: their lengths and samples.</summary>

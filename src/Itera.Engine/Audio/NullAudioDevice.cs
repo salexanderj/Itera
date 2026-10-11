@@ -16,6 +16,12 @@ public sealed class NullAudioDevice : IAudioDevice
 
     public void FillBuffer(uint buffer, ReadOnlySpan<short> samples, int channels, int sampleRate) { }
 
+    public void SetLoopPoints(uint buffer, int startFrame, int endFrame) { }
+
+    public void PlayLooping(uint source, uint buffer, int startFrame) { }
+
+    public void SetGain(uint source, float gain) { }
+
     public void DeleteBuffer(uint buffer) { }
 
     public uint CreateSource() => 0;

@@ -70,7 +70,7 @@ public sealed class SoundCommandsTests : IDisposable
 
         var first = _console.ScrollbackLine(_console.ScrollbackCount - 2).Text;
         Assert.StartsWith(
-            "sound silent (none (silent)), volume 0.1 (music 1, effects 1 under it): 0 one-shots",
+            "sound silent (none (silent)), volume 0.1 (music 1, effects 1 under it): 0 one-shots, 0 streams, and 0 file loops",
             first,
             StringComparison.Ordinal
         );
@@ -151,7 +151,7 @@ public sealed class SoundCommandsTests : IDisposable
         Assert.Equal("no sound: none (silent)", Last());
 
         Run("sound play tone");
-        Assert.StartsWith("tone is sustained, and plays in the world", Last(), StringComparison.Ordinal);
+        Assert.Equal("no sound: none (silent)", Last());
     }
 
     [Fact]

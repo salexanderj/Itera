@@ -155,6 +155,7 @@ public sealed partial class AudioMixer : IDisposable
 
         EndFinishedOneShots();
         SustainLoops(loopCount, nowSeconds);
+        FadeFileLoops(nowSeconds);
         for (var i = 0; i < eventCount; i++)
         {
             StartOneShot(in _events[i], nowSeconds);
@@ -291,7 +292,7 @@ public sealed partial class AudioMixer : IDisposable
     {
         var (levels, variations) = Layout(recipe);
         var total = levels * variations;
-        var bank = new Bank(new uint[total], new float[total], new int[levels]);
+        var bank = new Bank(new uint[total], new float[total], new int[levels], new int[total], new bool[total]);
         Array.Fill(bank.Last, -1);
         var offset = 0;
         for (var index = 0; index < total; index++)
@@ -301,7 +302,15 @@ public sealed partial class AudioMixer : IDisposable
             var channels = rendered.Channels?[index] ?? 1;
             var buffer = _device.CreateBuffer();
             _device.FillBuffer(buffer, rendered.Samples.AsSpan(offset, length), channels, rate);
+            if (rendered.Loops?[index] is { IsSet: true } loop)
+            {
+                // Before any source holds the buffer.
+                _device.SetLoopPoints(buffer, (int)loop.Start, (int)loop.End);
+                bank.Looped[index] = true;
+            }
+
             bank.Buffers[index] = buffer;
+            bank.Frames[index] = length / channels;
             bank.Seconds[index] = length / channels / (float)rate;
             bank.Bytes += length * sizeof(short);
             offset += length;
@@ -430,11 +439,18 @@ public sealed partial class AudioMixer : IDisposable
         _device.SetSource(
             voice.Source,
             voice.Position,
-            voice.Gain * _effects,
+            SourceGain(in voice),
             voice.Pitch,
             voice.Reference,
             voice.AtListener
         );
+
+    /// <summary>
+    /// A voice's gain at its source: its own under the effects' volume, and a file loop's fade (a stream's fade is in its
+    /// samples).
+    /// </summary>
+    private float SourceGain(in Voice voice) =>
+        voice.Gain * (voice.Kind == VoiceKind.FileLoop ? voice.Fade : 1) * _effects;
 
     private int PickVariation(Bank bank, int level, int variations)
     {
@@ -508,20 +524,30 @@ public sealed partial class AudioMixer : IDisposable
         for (var l = 0; l < loopCount; l++)
         {
             ref readonly var loop = ref _loops[l];
-            if (
-                (uint)loop.Recipe >= (uint)_recipes.Count
-                || _recipes[loop.Recipe] is not StreamRecipe recipe
-                || _brokenStreams[loop.Recipe]
-            )
+            if ((uint)loop.Recipe >= (uint)_recipes.Count)
             {
                 continue;
             }
 
+            var recipe = _recipes[loop.Recipe];
+            var stream = recipe as StreamRecipe;
+            var bank = recipe is FileLoopRecipe ? _banks[loop.Recipe] : null;
+            if ((stream is null || _brokenStreams[loop.Recipe]) && bank is null)
+            {
+                // Not a sustained recipe, a broken stream, or a loop whose file is not read yet (or cannot be).
+                continue;
+            }
+
+            // A sound kept stereo plays at the listener, where its channels go left and right.
+            var atListener = loop.AtListener || recipe is FileRecipe { KeepStereo: true };
             var gain = recipe.Gain * (loop.Gain > 0 ? loop.Gain : 1);
-            var index = FindStream(loop.Recipe, loop.Key);
+            var loudness = atListener
+                ? MathF.Min(MaxGain, gain)
+                : Loudness(gain, recipe.ReferenceMetres, loop.Position);
+            var index = FindLoop(loop.Recipe, loop.Key);
+            var started = false;
             if (index < 0)
             {
-                var loudness = Loudness(gain, recipe.ReferenceMetres, loop.Position);
                 if (loudness < CullGain)
                 {
                     continue;
@@ -533,44 +559,107 @@ public sealed partial class AudioMixer : IDisposable
                     continue;
                 }
 
-                StartStream(index, recipe, in loop);
+                if (stream is not null)
+                {
+                    StartStream(index, stream, in loop);
+                }
+                else
+                {
+                    StartFileLoop(index, bank!, in loop, now);
+                    started = true;
+                }
             }
 
             ref var voice = ref _voices[index];
             voice.Seen = true;
             voice.Releasing = false;
             voice.Level = Math.Clamp(loop.Level, 0, 1);
-            voice.Loudness = Loudness(gain, recipe.ReferenceMetres, loop.Position);
+            voice.Loudness = loudness;
             voice.Position = loop.Position;
             voice.Gain = gain;
             voice.Pitch = 1;
             voice.Reference = recipe.ReferenceMetres;
-            voice.AtListener = false;
+            voice.AtListener = atListener;
             SetSource(in voice);
+            if (started)
+            {
+                _device.PlayLooping(voice.Source, bank!.Buffers[0], voice.StartFrame);
+            }
         }
 
         for (var i = 0; i < _voices.Length; i++)
         {
             ref var voice = ref _voices[i];
-            if (voice.Kind == VoiceKind.Stream && !voice.Seen)
+            if (voice.Kind is VoiceKind.Stream or VoiceKind.FileLoop && !voice.Seen)
             {
                 voice.Releasing = true;
             }
         }
     }
 
-    private int FindStream(int recipe, int key)
+    /// <summary>The voice playing <paramref name="recipe"/>'s sound <paramref name="key"/> (a stream or a file loop), or -1.</summary>
+    private int FindLoop(int recipe, int key)
     {
         for (var i = 0; i < _voices.Length; i++)
         {
             ref readonly var voice = ref _voices[i];
-            if (voice.Kind == VoiceKind.Stream && voice.Recipe == recipe && voice.Key == key)
+            if (voice.Kind is VoiceKind.Stream or VoiceKind.FileLoop && voice.Recipe == recipe && voice.Key == key)
             {
                 return i;
             }
         }
 
         return -1;
+    }
+
+    /// <summary>
+    /// Takes voice <paramref name="index"/> for a file loop: from the start when its file names a loop (the part before it
+    /// is heard once), else from a random frame, fading in, so two copies are not in step. It plays once its source is set.
+    /// </summary>
+    private void StartFileLoop(int index, Bank bank, in SoundLoop loop, double now)
+    {
+        ref var voice = ref _voices[index];
+        var looped = bank.Looped[0];
+        voice.Kind = VoiceKind.FileLoop;
+        voice.Recipe = loop.Recipe;
+        voice.Key = loop.Key;
+        voice.Generator = null;
+        voice.Queued = 0;
+        voice.Silent = false;
+        voice.StartFrame = looped ? 0 : (int)(_random.Next() * bank.Frames[0]);
+        voice.Fade = looped ? 1 : 0;
+        voice.LastPump = now;
+        _stats.CountPlayed();
+    }
+
+    /// <summary>
+    /// Fades the file loops by the time since the last round: in, to full, after a start part-way; out, once no longer
+    /// sustained, over <see cref="ReleaseSeconds"/>, then stopped.
+    /// </summary>
+    private void FadeFileLoops(double now)
+    {
+        for (var i = 0; i < _voices.Length; i++)
+        {
+            ref var voice = ref _voices[i];
+            if (voice.Kind != VoiceKind.FileLoop)
+            {
+                continue;
+            }
+
+            var step = (float)(now - voice.LastPump) / ReleaseSeconds;
+            voice.LastPump = now;
+            var before = voice.Fade;
+            voice.Fade = voice.Releasing ? Math.Max(0, voice.Fade - step) : Math.Min(1, voice.Fade + step);
+            if (voice.Releasing && voice.Fade <= 0)
+            {
+                _device.StopSource(voice.Source);
+                voice.Kind = VoiceKind.Free;
+            }
+            else if (voice.Fade != before)
+            {
+                _device.SetGain(voice.Source, SourceGain(in voice));
+            }
+        }
     }
 
     private void StartStream(int index, StreamRecipe recipe, in SoundLoop loop)
@@ -716,7 +805,7 @@ public sealed partial class AudioMixer : IDisposable
             {
                 EndStream(ref voice);
             }
-            else if (voice.Kind == VoiceKind.OneShot)
+            else if (voice.Kind is VoiceKind.OneShot or VoiceKind.FileLoop)
             {
                 _device.StopSource(voice.Source);
                 voice.Kind = VoiceKind.Free;
@@ -728,6 +817,7 @@ public sealed partial class AudioMixer : IDisposable
     {
         var oneShots = 0;
         var streams = 0;
+        var fileLoops = 0;
         foreach (ref readonly var voice in _voices.AsSpan())
         {
             if (voice.Kind == VoiceKind.OneShot)
@@ -738,9 +828,13 @@ public sealed partial class AudioMixer : IDisposable
             {
                 streams++;
             }
+            else if (voice.Kind == VoiceKind.FileLoop)
+            {
+                fileLoops++;
+            }
         }
 
-        _stats.SetPlaying(oneShots, streams);
+        _stats.SetPlaying(oneShots, streams, fileLoops);
     }
 
     /// <summary>
@@ -813,6 +907,9 @@ public sealed partial class AudioMixer : IDisposable
         Free,
         OneShot,
         Stream,
+
+        /// <summary>A sound from a file, looping on a static buffer while sustained.</summary>
+        FileLoop,
     }
 
     private struct Voice
@@ -840,16 +937,27 @@ public sealed partial class AudioMixer : IDisposable
         public int Queued;
         public int Next;
         public SoundGenerator? Generator;
+
+        // A file loop's frame it started from, and when its fade last moved.
+        public int StartFrame;
+        public double LastPump;
     }
 
-    /// <summary>A one-shot recipe's rendered variations, level by level, and the one each level played last.</summary>
-    private sealed class Bank(uint[] buffers, float[] seconds, int[] last)
+    /// <summary>
+    /// A prepared recipe's variations, level by level (a sound from files: a variation a file), their lengths, whether each
+    /// names a loop, and the one each level played last.
+    /// </summary>
+    private sealed class Bank(uint[] buffers, float[] seconds, int[] last, int[] frames, bool[] looped)
     {
         public uint[] Buffers { get; } = buffers;
 
         public float[] Seconds { get; } = seconds;
 
         public int[] Last { get; } = last;
+
+        public int[] Frames { get; } = frames;
+
+        public bool[] Looped { get; } = looped;
 
         public long Bytes { get; set; }
     }

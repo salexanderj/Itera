@@ -100,6 +100,55 @@ public sealed class OpenAlLoopbackTests
         device.DeleteBuffer(buffer);
     }
 
+    /// <summary>
+    /// A looping buffer with loop points (AL_SOFT_loop_points) plays the part before them once, then only its loop: a loud
+    /// intro is never heard again among the quiet loop's repeats.
+    /// </summary>
+    [Fact]
+    public void A_looping_buffer_plays_its_intro_once_then_only_its_loop()
+    {
+        using var device = OpenAlAudioDevice.OpenLoopback(Rate);
+        Assert.NotNull(device);
+        var buffer = device.CreateBuffer();
+        var part = Rate / 10;
+        var samples = new short[2 * part];
+        for (var i = 0; i < samples.Length; i++)
+        {
+            var amplitude = i < part ? 26_000 : 6_500;
+            samples[i] = (short)(amplitude * MathF.Sin(2 * MathF.PI * 400 * i / Rate));
+        }
+
+        device.FillBuffer(buffer, samples, 1, Rate);
+        device.SetLoopPoints(buffer, part, 2 * part);
+        var source = device.CreateSource();
+        device.SetListener(Vector3.Zero, -Vector3.UnitZ, Vector3.UnitY, 1);
+        device.SetSource(source, Vector3.Zero, 1, 1, 1, atListener: true);
+        device.PlayLooping(source, buffer, 0);
+        // Half a second: the intro, then four rounds of the loop.
+        var output = new float[Rate / 2];
+        device.RenderLoopback(output);
+
+        var intro = Peak(output.AsSpan(0, part));
+        var loop = Peak(output.AsSpan(part + 1000));
+        Assert.InRange(intro, 0.6f, 1f);
+        Assert.InRange(loop, 0.1f, 0.3f);
+        Assert.True(device.IsPlaying(source));
+        Assert.Equal(0, device.TakeError());
+        device.DeleteSource(source);
+        device.DeleteBuffer(buffer);
+    }
+
+    private static float Peak(ReadOnlySpan<float> samples)
+    {
+        var peak = 0f;
+        foreach (var sample in samples)
+        {
+            peak = MathF.Max(peak, MathF.Abs(sample));
+        }
+
+        return peak;
+    }
+
     /// <summary>A device with its output reports it there (ALC_CONNECTED is read through OpenAL).</summary>
     [Fact]
     public void A_device_with_its_output_keeps_it()

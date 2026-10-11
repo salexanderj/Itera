@@ -4,13 +4,15 @@ using Itera.Engine.Audio;
 namespace Itera.Engine.Tests.Audio;
 
 /// <summary>
-/// An <see cref="IAudioDevice"/> in memory: buffers keep their lengths, sources play them as <see cref="Advance"/> moves
-/// time on (a static buffer until its end, a queue buffer by buffer). Allocates nothing once its sources exist.
+/// An <see cref="IAudioDevice"/> in memory: buffers keep their lengths, channels, rates, and loop points, sources play them
+/// as <see cref="Advance"/> moves time on (a static buffer until its end, or round its loop while looping; a queue buffer
+/// by buffer). Allocates nothing once its sources exist.
 /// </summary>
 internal sealed class FakeAudioDevice : IAudioDevice
 {
     private readonly List<float> _bufferSeconds = [0];
     private readonly List<(int Channels, int Rate)> _bufferFormats = [(0, 0)];
+    private readonly List<(int Start, int End)> _bufferLoops = [(-1, -1)];
     private readonly List<Source> _sources = [null!];
 
     public string Name => "fake";
@@ -80,6 +82,7 @@ internal sealed class FakeAudioDevice : IAudioDevice
 
         _bufferSeconds.Add(0);
         _bufferFormats.Add((0, 0));
+        _bufferLoops.Add((-1, -1));
         return (uint)(_bufferSeconds.Count - 1);
     }
 
@@ -99,6 +102,12 @@ internal sealed class FakeAudioDevice : IAudioDevice
     }
 
     public void DeleteBuffer(uint buffer) => DeletedBuffers++;
+
+    public void SetLoopPoints(uint buffer, int startFrame, int endFrame) =>
+        _bufferLoops[(int)buffer] = (startFrame, endFrame);
+
+    /// <summary>Buffer <paramref name="buffer"/>'s loop points as set; (-1, -1) for none.</summary>
+    public (int Start, int End) LoopOf(uint buffer) => _bufferLoops[(int)buffer];
 
     /// <summary>When set, <see cref="CreateSource"/> throws: a device failing on the audio thread.</summary>
     public bool FailSources { get; init; }
@@ -145,14 +154,28 @@ internal sealed class FakeAudioDevice : IAudioDevice
         s.Processed = 0;
         s.Static = buffer;
         s.Elapsed = 0;
+        s.Looping = false;
         s.Playing = true;
         s.Starts++;
     }
+
+    public void PlayLooping(uint source, uint buffer, int startFrame)
+    {
+        PlayBuffer(source, buffer);
+        var s = _sources[(int)source];
+        s.Looping = true;
+        s.StartFrame = startFrame;
+        s.Laps = 0;
+        s.Elapsed = startFrame / (float)_bufferFormats[(int)buffer].Rate;
+    }
+
+    public void SetGain(uint source, float gain) => _sources[(int)source].Gain = gain;
 
     public void StopSource(uint source)
     {
         var s = _sources[(int)source];
         s.Playing = false;
+        s.Looping = false;
         s.Static = 0;
         s.Queue.Clear();
         s.Processed = 0;
@@ -194,7 +217,24 @@ internal sealed class FakeAudioDevice : IAudioDevice
             s.Elapsed += seconds * (s.Pitch > 0 ? s.Pitch : 1);
             if (s.Static != 0)
             {
-                s.Playing = s.Elapsed < _bufferSeconds[(int)s.Static];
+                var end = _bufferSeconds[(int)s.Static];
+                if (s.Looping)
+                {
+                    // Round the loop (its points', or the whole buffer) for as long as it plays.
+                    var rate = (float)_bufferFormats[(int)s.Static].Rate;
+                    var (startFrame, endFrame) = _bufferLoops[(int)s.Static];
+                    var loopStart = startFrame >= 0 ? startFrame / rate : 0;
+                    var loopEnd = endFrame > startFrame ? endFrame / rate : end;
+                    while (s.Elapsed >= loopEnd && loopEnd > loopStart)
+                    {
+                        s.Elapsed -= loopEnd - loopStart;
+                        s.Laps++;
+                    }
+
+                    continue;
+                }
+
+                s.Playing = s.Elapsed < end;
                 continue;
             }
 
@@ -269,5 +309,17 @@ internal sealed class FakeAudioDevice : IAudioDevice
         public float Pitch { get; set; }
 
         public int Starts { get; set; }
+
+        /// <summary>True while it loops its buffer.</summary>
+        public bool Looping { get; set; }
+
+        /// <summary>The frame a loop started from.</summary>
+        public int StartFrame { get; set; }
+
+        /// <summary>Times round the loop since it started.</summary>
+        public int Laps { get; set; }
+
+        /// <summary>Seconds into its buffer.</summary>
+        public float At => Elapsed;
     }
 }

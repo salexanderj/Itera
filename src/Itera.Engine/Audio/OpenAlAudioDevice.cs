@@ -28,6 +28,9 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
     private const int DirectChannelsSoft = 0x1033;
     private const int RemixUnmatchedSoft = 2;
 
+    // AL_SOFT_loop_points: the frames a looping static source repeats.
+    private const int LoopPointsSoft = 0x2015;
+
     private readonly ALContext _alc;
     private readonly AL _al;
     private readonly delegate* unmanaged<Device*, void*, int, void> _renderSamples;
@@ -35,6 +38,7 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
     // ALC_SOFT_reopen_device: moves an open device, its contexts, sources, and buffers to another output.
     private readonly delegate* unmanaged<Device*, byte*, int*, byte> _reopen;
     private readonly bool _directChannels;
+    private readonly bool _loopPoints;
     private readonly int _loopbackChannels;
     private Device* _device;
     private Context* _context;
@@ -60,6 +64,7 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
             ? (delegate* unmanaged<Device*, byte*, int*, byte>)alc.GetProcAddress(device, "alcReopenDeviceSOFT")
             : null;
         _directChannels = al.IsExtensionPresent("AL_SOFT_direct_channels_remix");
+        _loopPoints = al.IsExtensionPresent("AL_SOFT_loop_points");
         _loopbackChannels = loopbackChannels;
         Name = name;
     }
@@ -152,9 +157,39 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
         _al.SetSourceProperty(source, SourceFloat.ReferenceDistance, referenceMetres);
     }
 
+    public void SetLoopPoints(uint buffer, int startFrame, int endFrame)
+    {
+        if (!_loopPoints)
+        {
+            // Without the extension a looping source repeats the whole buffer.
+            return;
+        }
+
+        var points = stackalloc int[2] { startFrame, endFrame };
+        _al.SetBufferProperty(buffer, (BufferInteger)LoopPointsSoft, points);
+    }
+
     public void PlayBuffer(uint source, uint buffer)
     {
+        Attach(source, buffer, looping: false);
+        _al.SourcePlay(source);
+    }
+
+    public void PlayLooping(uint source, uint buffer, int startFrame)
+    {
+        Attach(source, buffer, looping: true);
+        // Taken as the source starts.
+        _al.SetSourceProperty(source, SourceInteger.SampleOffset, startFrame);
+        _al.SourcePlay(source);
+    }
+
+    public void SetGain(uint source, float gain) => _al.SetSourceProperty(source, SourceFloat.Gain, gain);
+
+    /// <summary>Stops <paramref name="source"/> and gives it <paramref name="buffer"/>, looping or not, its channels direct when stereo.</summary>
+    private void Attach(uint source, uint buffer, bool looping)
+    {
         _al.SourceStop(source);
+        _al.SetSourceProperty(source, SourceBoolean.Looping, looping);
         _al.SetSourceProperty(source, SourceInteger.Buffer, buffer);
         if (_directChannels)
         {
@@ -162,13 +197,13 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
             _al.GetBufferProperty(buffer, GetBufferInteger.Channels, out int channels);
             _al.SetSourceProperty(source, (SourceInteger)DirectChannelsSoft, channels == 2 ? RemixUnmatchedSoft : 0);
         }
-
-        _al.SourcePlay(source);
     }
 
     public void StopSource(uint source)
     {
         _al.SourceStop(source);
+        // A looping source fed a queue would loop the queue.
+        _al.SetSourceProperty(source, SourceBoolean.Looping, false);
         // Detaching takes every queued buffer off, played or not.
         _al.SetSourceProperty(source, SourceInteger.Buffer, 0);
         if (_directChannels)
