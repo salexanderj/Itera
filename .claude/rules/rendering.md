@@ -22,7 +22,8 @@ redesign's decisions and measurements are in `docs/rendering-redesign.md`; the s
 `raymarcher` and the tag `raymarcher-final` of the Zorf TD archive, `salexanderj/ZorfTD-archive`). The world is meshed
 from its 10 cm voxels near the camera (to 16.8 m) through 20 and 40 cm to 80 cm far (four levels stream by default,
 `Engine:Voxels:Levels`), out to `Engine:Renderer:ViewDistanceMetres` (256 m), where fog hides it in a sky. The sun
-lights it through two shadow cascades; the sky (more under overcast) and the sunlit ground's bounce light the shade,
+lights it through two shadow cascades (a third for the distance under a low sun with
+`Engine:Renderer:DistantShadowMetres`); the sky (more under overcast) and the sunlit ground's bounce light the shade,
 scaled by a sky-visibility field and each vertex's openness; glowing materials give point lights; a filmic tone curve
 ends the frame. The world's materials are drawn from texture sets, each patterned material's recipe baked into a set
 once (`mesh-surface.glsl`'s `surfacePattern`, the recipes `VoxelPattern` names: `Soil`, `Streaks`, `Mottle`, `Clumps`,
@@ -216,11 +217,18 @@ load order they did not; the shadow lists stay unsorted). The frame's view (`Mes
 `WorldMeshes.Upload` and ends after it, and whose frustum, cascades, and lights every list drawn in `MeshPass` shares)
 fits two sun shadow cascades (`ShadowCascades.Fit`: a square round the bounding sphere of the view's slice from 0 to 30 m
 and from 25 m to 200 m or the view distance, its centre snapped to whole texels, reaching 100 m further towards the sun,
-and further as the sun sinks: `MeshView.CasterReach`, up to 300 m)
+and further as the sun sinks: `MeshView.CasterReach`, up to 300 m), and with `Engine:Renderer:DistantShadowMetres`
+(0, none, by default; 400 to 8000) a third, the distant cascade, from where the far one starts to fade (180 m) to that
+depth or the view's end, drawn only while the sun is under 30 degrees over the horizon (`MeshView.DistantSunDegrees`)
+and faded in down to 25 (`MeshView.DistantStrength`, `MeshLighting.DistantStrength`; a higher sun's shadows are too
+short to see there), its casters reaching three times as far towards the sun (`DistantCasterShare`), its texels about
+2.4 m at 2 km (`MeshView.DistantShadows` says whether the frame draws it),
 and writes the slot's `MeshLighting`; with the view's shadows on, `WorldMeshes` lists the blocks that cast into each
 (`CascadeBounds`): those whose bounding sphere meets the cascade's box and lies inside each plane of its slice that faces
-the sun (a block shades the slice only from the sun's side). The near cascade takes the camera's levels; the far one
-is chosen in a second pass one level coarser (`FarShadowCutShare`). A full list warns once a match. The seams between
+the sun (a block shades the slice only from the sun's side). The near cascade takes the camera's levels, and so does the distant one, from
+the terrain's blocks alone (its own list, `MeshPass.DistantList`, of the world's four, `WorldLists`; the models and mesh
+assets keep three lists and cast into it nothing), so its casters are the surfaces the camera draws at that distance;
+the far one is chosen in a second pass one level coarser (`FarShadowCutShare`). A full list warns once a match. The seams between
 levels are stitched (`SurfaceNets.MeshTransition`): the block meshed from its own voxels and the coarser level's block
 that holds it (block `b >> 1`, at `(b & 1) * 16` of its voxels), its cells that straddle the coarser column's boundary
 taking the coarser level's vertices, and at its high x and z faces the coarser level's quads across them. A stitched
@@ -232,7 +240,8 @@ and the next frame reads the nearest asked for after the plain jobs, from a pool
 not pending and do not count towards a column's being meshed; the far cascade draws plain meshes. About nine in ten of
 a seam's open edges close; the levels' samples disagree in a few places. It also prepares
 the palette, counts each model as uploaded at the next frame, removes retired models, and answers `IWorldOnGpu`
-(`IsUpToDate`, `Uploads`), which the world loading task and the benchmark wait on. `MeshPass` first draws the cascades into the two layers of a depth map array
+(`IsUpToDate`, `Uploads`), which the world loading task and the benchmark wait on. `MeshPass` first draws the cascades into the layers of a depth map array (two,
+or three with the distant cascade, whose layer it draws only in a frame that draws it, `MeshFrame.Distant`)
 `Engine:Renderer:ShadowMapTexels` texels a side (2048 by default; `mesh-shadow.vert`, `depth-only.frag`; only faces turned away from the sun, so a lit surface never meets its own
 depth; timed as `ShadowMaps`, part of the `Voxels` time), then the world with `Engine:Renderer:MsaaSamples` (4 by
 default) samples a pixel into images of its own, resolved as rendering ends into the target (the mean) and the depth
@@ -244,9 +253,10 @@ surface the pass draws) with the sun through the cascade
 that covers the point by view depth with a 1.5-texel normal offset (`mesh-light.glsl`'s `sunShadow`: in the near
 cascade contact-hardening shadows, a 2 degree sun whose blur grows with the gap between caster and surface, found by an
 8-tap blocker search of the maps read as depths (binding 9, no comparison) and filtered by 16 comparison taps of a
-Poisson disc, 1 to 16 texels; in the far cascade 3x3 comparison lookups; the near cascade blends into the far one over
-the 5 m before its end, `MeshLighting.NearBlendStart`, the far cascade's slice starting there too, and the far shadows
-fade over the last tenth of theirs, `FarFadeStart`), sky and ground light
+Poisson disc, 1 to 16 texels; in the far and distant cascades 3x3 comparison lookups; the near cascade blends into the
+far one over the 5 m before its end, `MeshLighting.NearBlendStart`, the far cascade's slice starting there too, and the
+far shadows fade over the last tenth of theirs, `FarFadeStart`, or blend there into the distant cascade's, which fade
+over the last tenth of its, `DistantFadeStart`, weakened by its strength), sky and ground light
 dimmed by openness and scaled by the sky field, the point lights, glow, fog, the tone curve, and the grade; the art
 direction's light and grade, as the look gives them: the world's surfaces less saturated, darker, and darker on their
 sides than on their tops (`mesh.frag`'s, the world's own), warm sunlight and cool sky light (`mesh-shade.glsl`'s), and dark tones towards teal and light ones towards orange

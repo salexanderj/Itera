@@ -195,7 +195,7 @@ all made in `Initialize` before the render thread starts:
   `FlushSlot`. They hold the draws (`MeshDraw`), three lists of indexed indirect commands (the camera's and the two
   cascades'), the cascades' record (`MeshLighting`), the models' draws (`MeshModelDraw`) and commands, and the point
   lights (`MeshLight`).
-- The shadow cascades: a D32_SFLOAT image of two layers, `Engine:Renderer:ShadowMapTexels` texels square, one view per
+- The shadow cascades: a D32_SFLOAT image of two layers (three with `Engine:Renderer:DistantShadowMetres`), `Engine:Renderer:ShadowMapTexels` texels square, one view per
   layer, and a comparison sampler (`CompareEnable`, `LessOrEqual`, a white border; linear filtering only when the format
   reports `SampledImageFilterLinearBit`).
 - The sky field: an R8 3D image and a linear sampler with a white border, filled from staging by `RecordSkyField`.

@@ -76,8 +76,20 @@ level's radius ends a view anyway). Two faults showed only past 7 levels. The le
 finest column under each drawn column, a quarter of a million entries for one level-9 column (4.2 s a frame); it now
 keeps the drawn columns and finds the one over a cell level by level. And a coarse column split only when all four
 children were meshed, so a child past the view's end or the map's edge kept it whole: a 2 km view at 10 levels drew the
-start from 51.2 m voxels. Such children now draw nothing and let it split. The haze at 3.5 km and the far shadows' 200
-m end are Lucy's choice, from pictures; the GPU's time for far views waits for a quiet machine.
+start from 51.2 m voxels. Such children now draw nothing and let it split. On the GPU an 8 km view at nine levels
+costs the starter's start view 1.85 ms of world pass against 1.74 at 256 m and four levels, and the view from 40 m up
+3.00 against 2.37 (more ground drawn where there was sky; ARCHITECTURE.md has the table for 7 to 10 levels and 2 to 8
+km). The whole item costs 0.4 to 1.0 % of the world pass at the engine's default view, from the shaders' origin and
+texture tile work: within the 1 % it was held to. Lucy chose, from pictures of the 3.5 km and 40 m views, the starter's
+map seen to its end (an 8 km view over nine levels) with half the haze it had (half of a surface lost at 3 km, not 1.5
+km); the engine's defaults stay 256 m and four levels.
+
+The far shadows end at 200 m. Lucy asked what a third cascade past it would give the average player against its cost;
+the answer, from the engine's sun 58 degrees up, was almost nothing (a high sun's shadows are short, and flat ground far
+off is seen nearly edge-on), and more under a low sun. She chose it as an engine option, off by default
+(`Engine:Renderer:DistantShadowMetres`): terrain only, drawn only while the sun is under 30 degrees and faded in down to
+25, so a high sun costs nothing. Measured at 10 degrees it doubles the shadow maps' time (0.19 to 0.40 ms) and shows
+only shapes taller than about 4 m: on the starter, the hills' back slopes under a sun a few degrees up.
 
 ## Navigation that moves with the players
 
@@ -121,9 +133,5 @@ one above (`Column.First`, `Below`, `Above`).
 
 ## Left for later
 
-The GPU's time for 7 to 10 levels and 2 to 8 km views, a benchmark at 9 levels and 8 km, and phase 5's benchmark
-check (start views within 1 %) wait for a quiet machine. Lucy chose, from pictures of the 3.5 km and 40 m views, the
-starter's map seen to its end (an 8 km view over nine levels) with half the haze it had (half of a surface lost at 3 km,
-not 1.5 km); the engine's defaults stay 256 m and four levels. A third shadow cascade past 200 m is still open. Separate physics simulations for
-far peers, a tint map that moves with the view, atmospheres by region, and navigation windows per group of players are
-left for a game that needs them.
+Separate physics simulations for far peers, a tint map that moves with the view, atmospheres by region, and navigation
+windows per group of players are left for a game that needs them.

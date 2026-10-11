@@ -4,8 +4,9 @@ namespace Itera.Engine.Rendering.Meshes;
 /// What <see cref="WorldMeshes"/> wrote into a frame slot of <see cref="MeshPass"/> for one frame: the
 /// <see cref="GpuData.MeshDraw"/> records (each block drawn in any list has one), the commands of the camera's list and
 /// of the near and far shadow cascades' lists, whether the cascades are drawn (the view's shadows are on), the
-/// models' three lists, and whether a new sky field waits in the slot's staging region at <c>SkyUploadOffset</c>
-/// (<see cref="SkyField"/>), to be copied into the field's image before anything reads it.
+/// models' three lists, whether a new sky field waits in the slot's staging region at <c>SkyUploadOffset</c>
+/// (<see cref="SkyField"/>), to be copied into the field's image before anything reads it, and whether the distant
+/// cascade is drawn (<see cref="MeshView.DistantShadows"/>) with its list's commands (the world's alone).
 /// </summary>
 public readonly record struct MeshFrame(
     int Records,
@@ -17,7 +18,9 @@ public readonly record struct MeshFrame(
     MeshModelList ModelNear = default,
     MeshModelList ModelFar = default,
     bool SkyUploaded = false,
-    ulong SkyUploadOffset = 0
+    ulong SkyUploadOffset = 0,
+    bool Distant = false,
+    int DistantShadows = 0
 )
 {
     /// <summary>The models' list <paramref name="list"/>: 0 the camera's, 1 the near cascade's, 2 the far one's.</summary>

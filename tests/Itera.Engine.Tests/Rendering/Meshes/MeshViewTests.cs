@@ -151,6 +151,120 @@ public sealed class MeshViewTests
     }
 
     /// <summary>
+    /// Without <c>Engine:Renderer:DistantShadowMetres</c>, or under the engine's sun (58 degrees up), no distant cascade is
+    /// drawn and its part of the record is zero, so mesh.frag never reads its layer; the far cascade ends at 200 m.
+    /// </summary>
+    [Fact]
+    public void The_distant_cascade_is_left_out_by_default_and_under_a_high_sun()
+    {
+        var constants = LookingAlongMinusZ(ViewSwitches.Shadows) with { MaxDistance = 3000 };
+        var view = NewView();
+
+        view.Begin(0, in constants);
+
+        Assert.False(view.DistantShadows);
+        Assert.Equal(0, _target.LightingOf(0).DistantStrength);
+        Assert.Equal(0, _target.LightingOf(0).DistantEnd);
+
+        var withOption = NewView(distantMetres: 2000);
+        withOption.Begin(0, in constants);
+
+        Assert.False(withOption.DistantShadows);
+        Assert.Equal(0, _target.LightingOf(0).DistantStrength);
+        Assert.Equal(MeshView.FarShadowMetres, _target.LightingOf(0).FarEnd);
+    }
+
+    /// <summary>
+    /// Under a sun 10 degrees up in the east (+x), a 90 degree view of 16:9 along -z reaching 3 km: the distant cascade
+    /// covers from where the far one starts to fade (180 m) to the option's 2000 m, whole, fading out over its last 200 m,
+    /// with texels about 2.4 m wide (as the option's documentation says). It holds a block 1 km ahead and casters beside
+    /// the view towards the sun, not those beside it away from the sun.
+    /// </summary>
+    [Fact]
+    public void Under_a_low_sun_the_distant_cascade_reaches_from_the_far_ones_fade_to_its_end()
+    {
+        var view = NewView(distantMetres: 2000);
+        var constants = LookingAlongMinusZ(ViewSwitches.Shadows) with
+        {
+            Up = new Vector3(0, 9f / 16, 0),
+            SunDirection = SunPath.FromAngles(90, 10),
+            MaxDistance = 3000,
+        };
+
+        view.Begin(0, in constants);
+
+        ref readonly var lighting = ref _target.LightingOf(0);
+        Assert.True(view.DistantShadows);
+        Assert.Equal(1, lighting.DistantStrength);
+        Assert.Equal(MeshView.FarShadowMetres, lighting.FarEnd);
+        Assert.Equal(180, lighting.FarFadeStart, 3);
+        Assert.Equal(2000, lighting.DistantEnd);
+        Assert.Equal(1800, lighting.DistantFadeStart, 3);
+        Assert.InRange(lighting.DistantTexelMetres, 2.35f, 2.45f);
+        Assert.True(view.DistantCascade.Holds(new Vector3(0, 0, -1000), 10));
+        Assert.True(view.DistantCascade.Holds(new Vector3(3000, 0, -1000), 10));
+        Assert.False(view.DistantCascade.Holds(new Vector3(-3000, 0, -1000), 10));
+    }
+
+    /// <summary>
+    /// An orthographic view chooses its cascades by how far before or behind its middle a point lies: a box 100 m each
+    /// way never reaches the distant cascade, so it is not drawn; a box 1 km each way draws it.
+    /// </summary>
+    [Theory]
+    [InlineData(100f, false)]
+    [InlineData(1000f, true)]
+    public void An_orthographic_box_draws_the_distant_cascade_only_when_it_reaches_it(float half, bool drawn)
+    {
+        var view = NewView(distantMetres: 2000);
+        var constants = LookingDown(ViewSwitches.Shadows) with
+        {
+            SunDirection = SunPath.FromAngles(90, 10),
+            MaxDistance = 3000,
+            Near = -half,
+            Far = half,
+        };
+
+        view.Begin(0, in constants);
+
+        Assert.Equal(drawn, view.DistantShadows);
+        Assert.Equal(drawn ? 1 : 0, _target.LightingOf(0).DistantStrength);
+    }
+
+    [Fact]
+    public void The_distant_cascade_fades_in_as_the_sun_sinks_from_30_to_25_degrees()
+    {
+        Assert.Equal(0, MeshView.DistantStrength(ViewConstants.DefaultSunDirection));
+        Assert.Equal(0, MeshView.DistantStrength(SunPath.FromAngles(90, 30)), 4);
+        Assert.Equal(0.5f, MeshView.DistantStrength(SunPath.FromAngles(90, 27.5f)), 3);
+        Assert.Equal(1, MeshView.DistantStrength(SunPath.FromAngles(90, 25)), 4);
+        Assert.Equal(1, MeshView.DistantStrength(SunPath.FromAngles(90, 5)));
+    }
+
+    /// <summary>
+    /// A view shorter than the option ends the distant cascade; one that ends at or before the far cascade's end, or one
+    /// without shadows, draws none.
+    /// </summary>
+    [Theory]
+    [InlineData(1000f, true, 1000f)]
+    [InlineData(200f, true, 0f)]
+    [InlineData(150f, true, 0f)]
+    [InlineData(3000f, false, 0f)]
+    public void The_view_ends_the_distant_cascade_sooner(float maxDistance, bool shadows, float end)
+    {
+        var view = NewView(distantMetres: 2000);
+        var constants = LookingAlongMinusZ(shadows ? ViewSwitches.Shadows : ViewSwitches.None) with
+        {
+            SunDirection = SunPath.FromAngles(90, 10),
+            MaxDistance = maxDistance,
+        };
+
+        view.Begin(0, in constants);
+
+        Assert.Equal(end > 0, view.DistantShadows);
+        Assert.Equal(end, _target.LightingOf(0).DistantEnd);
+    }
+
+    /// <summary>
     /// The test day through the view, a frame every six minutes: the cascades fit at every hour with an image axis that
     /// turns no more than a few degrees a frame, and the shadow maps are on exactly while the sun is less than 2 degrees
     /// under the horizon.
@@ -225,8 +339,15 @@ public sealed class MeshViewTests
     [InlineData(true)]
     public void A_frame_allocates_nothing(bool orthographic)
     {
-        var view = NewView();
-        var constants = orthographic ? LookingDown(ViewSwitches.Shadows) : LookingAlongMinusZ(ViewSwitches.Shadows);
+        // With the distant cascade drawn: a low sun and a long view.
+        var view = NewView(distantMetres: 2000);
+        var constants = (
+            orthographic ? LookingDown(ViewSwitches.Shadows) : LookingAlongMinusZ(ViewSwitches.Shadows)
+        ) with
+        {
+            SunDirection = SunPath.FromAngles(90, 10),
+            MaxDistance = 3000,
+        };
         PointLight[] events = [new(new Vector3(1, 0, -4), Vector3.One, 5)];
         for (var i = 0; i < 100; i++)
         {
@@ -250,12 +371,21 @@ public sealed class MeshViewTests
         view.Offer(new Vector3(0, 0, -5), Vector3.One, 10);
         view.InView(new Vector3(0, 0, -10), 1);
         view.NearCascade.Holds(new Vector3(0, 0, -10), 1);
+        view.DistantCascade.Holds(new Vector3(0, 0, -1000), 1);
         view.NearFirstKey(new Vector3(0, 0, -10));
         view.End(1, events);
     }
 
-    private MeshView NewView(int mostLights = 128) =>
-        new(_target, Options.Create(new EngineOptions { Renderer = new RendererSettings { MostLights = mostLights } }));
+    private MeshView NewView(int mostLights = 128, float distantMetres = 0) =>
+        new(
+            _target,
+            Options.Create(
+                new EngineOptions
+                {
+                    Renderer = new RendererSettings { MostLights = mostLights, DistantShadowMetres = distantMetres },
+                }
+            )
+        );
 
     private static ViewConstants LookingAlongMinusZ(ViewSwitches switches = ViewSwitches.None) =>
         new()

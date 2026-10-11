@@ -214,6 +214,17 @@ public sealed class RendererSettings
     public int ShadowMapTexels { get; set; } = 2048;
 
     /// <summary>
+    /// The view depth in metres where a third sun shadow cascade, past the far one's 200 m, ends: 0 (the default) leaves
+    /// it out; else 400 to 8000, ended sooner by the view distance (with a view that ends before the far cascade does, it
+    /// is never drawn, though its map's memory is still taken). It shows the shadows of hills and large shapes in the
+    /// distance under a low sun: it is drawn only while the sun is under 30 degrees over the horizon, fading in down to
+    /// 25 (a higher sun's shadows are too short to see that far), and only the terrain casts into it, not the models or
+    /// mesh assets. Its map is one more layer of the shadow maps (<see cref="ShadowMapTexels"/> squared, 16 MB at 2048),
+    /// its texels about 2.4 m wide at 2000 m with a 90 degree view.
+    /// </summary>
+    public float DistantShadowMetres { get; set; }
+
+    /// <summary>
     /// The light budget: point lights a frame shades with, 1 to 256 (<c>Rendering.Meshes.MeshPass.MostLights</c>), 128 by
     /// default: the glowing blocks' and the events' (<c>Rendering.PointLights</c>) brightest at the camera. Each pixel
     /// loops over only the lights of its cluster of the view.

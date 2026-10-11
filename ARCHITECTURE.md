@@ -330,8 +330,8 @@ meshes, the copies from the slot's staging region into the mesh heap (`MeshPass.
 between two barriers), and a new sky field copied into its 3D image, under the loading screen too; the lights sorted
 into the view's clusters; while particles can be alive, the particle passes (the counters reset, the spawn and simulate
 dispatches, and the counters copied to the slot's readback region); the swapchain image's transition; the world
-(`MeshPass.Record`: the posed mesh assets skinned and a game's `Compute` passes, the two sun shadow cascades drawn into
-the layers of one depth map image, then the camera's blocks drawn nearest first, the models, the mesh assets, a game's
+(`MeshPass.Record`: the posed mesh assets skinned and a game's `Compute` passes, the sun shadow cascades (two, three
+with the distant one) drawn into the layers of one depth map image, then the camera's blocks drawn nearest first, the models, the mesh assets, a game's
 `Opaque` passes, the sky where the depth is still 0, the blended mesh assets back to front, and a game's `Transparent`
 passes, into multisampled colour and depth images that are resolved as rendering ends into the target and the depth
 image); in a fresh frame, each image view due (`RenderViewPass.Record`: its own world pass at one sample, then a copy
@@ -764,7 +764,11 @@ and compares runs from the log lines, which keep their form.
   from the view's absolute place and snapping the shadow maps' texels in absolute terms; the particles' GPU pool and
   the sounds playing move with it (`.claude/rules/rendering.md`, "Under a moved origin"). Pictures of the starter's
   start, far, high, and down views before and after the console's `origin move 300 0 -200` differed in 7 to 15 of
-  921,600 pixels, each on a silhouette's edge (2026-10-10); resting debris kept its place. A flight of 2.8 km at
+  921,600 pixels, each on a silhouette's edge (2026-10-10); resting debris kept its place. On the GPU the whole item
+  (the grid's size through sparse columns) costs 0.4 to 1.0 % of the world pass: the benchmark at 256 m and four
+  levels, offscreen at 2560x1440 on a quiet machine, two runs each in turn, took 1.736 ms at the start against 1.724
+  before it, 2.366 against 2.346 at `high`, and 2.639 against 2.613 in the flight (the shadow maps the same), from the
+  shaders' origin and texture tile work (2026-10-10). A flight of 2.8 km at
   500 m/s moved the origin 5 times and ended within a centimetre of where its 336 frames should take it; a walk with the
   origin following every 8 m matched one where it stayed within a millimetre. Peers keep their own origins, so a
   game's message carries a position absolute (`MessageWriter.WritePosition`: 1/64 cm to ±335 km); a host steps the
@@ -843,7 +847,13 @@ it was 4 x 10^13 (5 TB at one bit each).
   camera drew 708 to 1,243 blocks (1.3 to 2.4 million triangles; the list takes 32,768) and the cascades 248 and 563 at
   the start, the main thread spent 0.5 to 2 ms a frame on the meshes, and the world loaded in 2 to 3 s (once 5.3 s;
   a busy machine). Nine levels reach 17 km, so an 8 km view draws its last kilometres from level 8 (25.6 m voxels). The
-  GPU's time for these views waits for a quiet machine. Two faults showed only past 7 levels and were fixed: the level
+  world pass's GPU time (RX 5700 XT, the benchmark offscreen at 2560x1440 on a quiet machine): at the start 1.81 ms
+  with a 2 km view at any of 7 to 10 levels, 1.82 to 1.87 ms with 4 or 8 km at 8 to 10 levels, and 1.93 ms with 7
+  levels at 4 or 8 km (their farthest level, 6.4 m voxels, is finer, so more triangles: 2.06 million against 1.59); at
+  `high`, 40 m up, 2.91 to 3.07 ms (2.37 with the engine's 256 m and four levels: more ground is drawn where there was
+  sky); at `distant` 1.92 to 2.06 ms; the shadow maps 0.08 to 0.18 ms throughout. The starter's 8 km at nine levels:
+  1.85 ms at the start, 3.00 at `high`, 1.98 at `distant` (two runs within 0.2 %), against 1.74, 2.37, and 1.76 at
+  256 m and four levels. Two faults showed only past 7 levels and were fixed: the level
   balance marked every finest column under each drawn column (262,144 for one level-9 column; 4.2 s a frame at 9
   levels), and a coarse column with a child past the view's end or the map's edge never split, so a 2 km view at 10
   levels drew the start from 51.2 m voxels.
@@ -1015,7 +1025,24 @@ holds the decisions, the measurements, and the history of how it replaced a raym
   cascade blends into the far one over 5 m, and the far cascade's shadows fade out over its last tenth. In the near
   cascade the shadows are contact-hardening: a blocker search (8 taps, the maps read as depths) measures the gap between
   caster and surface, and 16 comparison taps over a Poisson disc blur by the gap for a sun 2 degrees across, sharp where
-  a caster meets the surface; the far cascade uses 3 x 3 lookups.
+  a caster meets the surface; the far cascade uses 3 x 3 lookups. With `Engine:Renderer:DistantShadowMetres` (0, none,
+  by default; 400 to 8000) a third cascade, the distant one, covers the view from where the far one starts to fade
+  (180 m) to that depth or the view's end, with 3 x 3 lookups; the far cascade's last tenth blends into it, and it fades
+  out over its own last tenth. It is drawn only while the sun is under 30 degrees over the horizon, faded in down to 25
+  (`MeshLighting.DistantStrength`; under a higher sun a 4 m boulder's shadow is a few of its texels), from the terrain's
+  blocks alone, listed in the camera's pass (the camera's levels, so its casters are the surfaces drawn there; the
+  models and mesh assets cast nothing into it), its casters reaching three times as far towards the sun. Its map is a
+  third layer of the shadow maps (16 MB at 2048 texels), its texels about 2.4 m wide at 2 km; the world's command lists
+  are four a slot (`MeshPass.WorldLists`), about 4 MB more of host-visible memory whether it is on or not. Measured on
+  the starter's 8 km map at nine levels with a 2 km distant cascade and a sun 10 degrees up (the benchmark offscreen at
+  2560x1440, two runs each, 2026-10-10): it doubles the shadow maps' time, 0.19 to 0.40 ms more (2.4 to 5.1 million
+  more shadow triangles), so the world pass takes 9 to 18 % longer (1.93 to 2.11 ms at the start, 3.20 to 3.58 at
+  `high`); the extra lookups cost almost nothing. Listing its blocks in the far pass instead cost the same and drew the
+  same picture: where the camera draws finer columns the coarser ones are not meshed, so the far pass draws the finer
+  ones too. It changes the starter's picture little, because the 1.5-texel normal offset (3.6 m) leaves out the
+  shadows of anything under about 4 m, the boulders included, and the starter's gentle slopes cast only under a very
+  low sun: at 12 degrees 0.4 % of the start view's pixels changed, at 4 degrees 2.9 % of `high`'s, the back slopes of
+  the hills 200 m to 4 km out in shadow. A game with taller ground (cliffs, mountains) gains more.
 - **Anti-aliasing.** `Engine:Renderer:MsaaSamples` (4 by default; 1, 2, 4, or 8, lowered to what the device offers) draws
   the world into multisampled colour and depth images of its own, resolved as rendering ends into the target (the mean) and
   the depth image (sample 0, which the particles and lines test against). SMAA 1x runs only when MSAA is off (below). The
@@ -1497,12 +1524,12 @@ Engine work that is known and not done:
   1 cm to 1 m, positions kept local to a match's origin with absolute types (`WorldPoint`, `VoxelCoord`) wherever
   they cross it, and moves of the origin following the camera (`OriginShiftSystem`, `OriginShifts`; the renderer,
   particles, and sound follow them), positions in messages absolute, and the starter's map 8 km across (broad relief
-  past 1 km), and views to 8 km (levels 8 to 10; the haze and the far shadows' 200 m end left for Lucy's choice; the
-  GPU's time not yet measured), a nav grid that moves with the players over any map (`Engine:Navigation:WindowCells`),
+  past 1 km), seen whole (an 8 km view over nine levels, with lighter haze), and views to 8 km (levels 8 to 10;
+  measured above, "Views to 8 km"), a third shadow cascade for the distance as an option (`DistantShadowMetres`), a nav grid that moves with the players over any map (`Engine:Navigation:WindowCells`),
   and columns that store only the layers round their ground and edits, so a map's height costs memory only where
   something is, with the renderer's level choice counting a column's height (a camera high over the ground meshes no
-  fine level under it). Left: the GPU's time for far views and the benchmark at 9 levels, which wait for a quiet
-  machine; Lucy's choices of haze and far shadows.
+  fine level under it). Left: separate physics simulations for far peers, a tint map that moves with the view,
+  atmospheres by region, and navigation windows per group of players, for a game that needs them.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no
   engine system replicates players, thrown bodies, or characters; the Zorf TD archive has a working design (a player's
   state every step with the host's checks and corrections, bodies as kinematic mirrors played back a few ticks behind,

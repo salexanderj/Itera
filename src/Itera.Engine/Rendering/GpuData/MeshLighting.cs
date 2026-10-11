@@ -4,9 +4,10 @@ namespace Itera.Engine.Rendering.GpuData;
 
 /// <summary>
 /// The light of a frame's world (<c>mesh-data.glsl</c>'s <c>MeshLighting</c>, one per frame slot, read by
-/// <c>mesh.frag</c> and <c>mesh-shadow.vert</c>): the sun's two shadow cascades (each one's view-projection from the
-/// world, uploaded unchanged and used as <c>M * v</c>, the view depth where each ends, and each texel's width for the
-/// normal offset), where the sky field's cells lie (how much of the sky each cell of air round the camera sees, a 3D
+/// <c>mesh.frag</c> and <c>mesh-shadow.vert</c>): the sun's shadow cascades, two and with
+/// <c>Engine:Renderer:DistantShadowMetres</c> a third for the distance (each one's view-projection from the world,
+/// uploaded unchanged and used as <c>M * v</c>, the view depth where each ends, and each texel's width for the normal
+/// offset), where the sky field's cells lie (how much of the sky each cell of air round the camera sees, a 3D
 /// texture), and how many point lights the slot's list holds (<see cref="MeshLight"/>). Written by <c>MeshView</c>
 /// (the cascades and the lights) and <c>WorldMeshes</c> (the sky field's part).
 /// </summary>
@@ -48,8 +49,29 @@ public struct MeshLighting
     /// </summary>
     public float NearBlendStart;
 
-    /// <summary>The view depth where the far cascade's shadows start to fade out, gone at <see cref="FarEnd"/>.</summary>
+    /// <summary>
+    /// The view depth where the far cascade's shadows start to fade out, gone at <see cref="FarEnd"/>; with the distant
+    /// cascade drawn, where they blend into its shadows instead.
+    /// </summary>
     public float FarFadeStart;
+
+    /// <summary>The distant cascade's view-projection, from <see cref="FarFadeStart"/> to <see cref="DistantEnd"/>.</summary>
+    public Matrix4x4 Distant;
+
+    /// <summary>The view depth where the distant cascade ends: farther surfaces take no shadow.</summary>
+    public float DistantEnd;
+
+    /// <summary>The width of one texel of the distant cascade's map.</summary>
+    public float DistantTexelMetres;
+
+    /// <summary>The view depth where the distant cascade's shadows start to fade out, gone at <see cref="DistantEnd"/>.</summary>
+    public float DistantFadeStart;
+
+    /// <summary>
+    /// How much of the distant cascade's shadow is drawn, 0 to 1, by the sun's height (it fades in as the sun sinks); 0
+    /// when it is not drawn this frame, and <c>mesh.frag</c> then does not read its map.
+    /// </summary>
+    public float DistantStrength;
 }
 
 /// <summary>
@@ -71,7 +93,10 @@ public struct MeshLight
     public float Reach;
 }
 
-/// <summary>The shadow pass's push constants (<c>mesh-shadow.vert</c>): the frame slot and the cascade drawn, 0 or 1.</summary>
+/// <summary>
+/// The shadow pass's push constants (<c>mesh-shadow.vert</c>): the frame slot and the cascade drawn, 0 near, 1 far, or 2
+/// distant (<c>mesh-asset-shadow.vert</c>'s 0 or 1: the mesh assets cast into no distant cascade).
+/// </summary>
 public struct MeshShadowConstants
 {
     public uint Slot;

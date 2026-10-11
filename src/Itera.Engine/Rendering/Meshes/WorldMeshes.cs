@@ -1604,6 +1604,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
             _stats.StitchesUploaded,
             Frame.NearShadows,
             Frame.FarShadows,
+            Frame.DistantShadows,
             _stats.LastShadowTriangles,
             _trackedModels.Count,
             _stats.ModelsStarted,
@@ -1724,7 +1725,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
 
     [LoggerMessage(
         Level = LogLevel.Information,
-        Message = "Meshes over {Seconds:F1} s: {Columns} columns, {Meshed} blocks with meshes, {Pending} pending, {Started} jobs started, {Uploaded} uploaded ({Overflowed} with more than 8 surface materials), {Empty} empty, {UploadedMegabytes:F1} MB uploaded, heap {HeapUsedMegabytes:F1} MB of {HeapMegabytes} MB used; {Draws} blocks ({Stitched} stitched) and {Triangles} triangles drawn in the last frame, {StitchesStarted} stitched meshes started and {StitchesUploaded} uploaded, {NearShadows} and {FarShadows} blocks and {ShadowTriangles} triangles into the shadow cascades; {Models} models followed, {ModelsStarted} meshed, {ModelCommands} model blocks drawn as {ModelRecords} instances of {ModelTriangles} triangles ({LevelZero}, {LevelOne}, and {LevelTwo} at levels 0, 1, and 2 or coarser); {Resyncs} resyncs; {Unbalanced} columns beside ones two levels finer in the last frame; {UndrawnMegabytes:F1} MB in columns the last frame did not draw, {Evicted} columns ({EvictedMegabytes:F1} MB) freed to make room; {UnmeshedFrames} frames drew columns not meshed yet (at most {MostUnmeshed}); {Lights} point lights shaded in the last frame, of {EventLights} events' lights; main thread avg {AverageMs:F3} ms max {MaxMs:F2} ms per frame"
+        Message = "Meshes over {Seconds:F1} s: {Columns} columns, {Meshed} blocks with meshes, {Pending} pending, {Started} jobs started, {Uploaded} uploaded ({Overflowed} with more than 8 surface materials), {Empty} empty, {UploadedMegabytes:F1} MB uploaded, heap {HeapUsedMegabytes:F1} MB of {HeapMegabytes} MB used; {Draws} blocks ({Stitched} stitched) and {Triangles} triangles drawn in the last frame, {StitchesStarted} stitched meshes started and {StitchesUploaded} uploaded, {NearShadows}, {FarShadows}, and {DistantShadows} blocks and {ShadowTriangles} triangles into the shadow cascades; {Models} models followed, {ModelsStarted} meshed, {ModelCommands} model blocks drawn as {ModelRecords} instances of {ModelTriangles} triangles ({LevelZero}, {LevelOne}, and {LevelTwo} at levels 0, 1, and 2 or coarser); {Resyncs} resyncs; {Unbalanced} columns beside ones two levels finer in the last frame; {UndrawnMegabytes:F1} MB in columns the last frame did not draw, {Evicted} columns ({EvictedMegabytes:F1} MB) freed to make room; {UnmeshedFrames} frames drew columns not meshed yet (at most {MostUnmeshed}); {Lights} point lights shaded in the last frame, of {EventLights} events' lights; main thread avg {AverageMs:F3} ms max {MaxMs:F2} ms per frame"
     )]
     private partial void LogStats(
         double seconds,
@@ -1745,6 +1746,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         int stitchesUploaded,
         int nearShadows,
         int farShadows,
+        int distantShadows,
         long shadowTriangles,
         int models,
         int modelsStarted,

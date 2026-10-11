@@ -98,6 +98,31 @@ public sealed class EngineOptionsValidatorTests
         Assert.Equal(valid, validator.Validate(null, options).Succeeded);
     }
 
+    /// <summary>The distant shadow cascade is left out (0) or ends 400 m to 8 km out.</summary>
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(400, true)]
+    [InlineData(8_000, true)]
+    [InlineData(200, false)]
+    [InlineData(8_001, false)]
+    [InlineData(-1, false)]
+    [InlineData(float.NaN, false)]
+    public void The_distant_shadows_end_400_m_to_8_km_out_or_are_left_out(float metres, bool valid)
+    {
+        var options = new EngineOptions { Renderer = new RendererSettings { DistantShadowMetres = metres } };
+
+        var result = new EngineOptionsValidator([]).Validate(null, options);
+
+        Assert.Equal(valid, result.Succeeded);
+        if (!valid)
+        {
+            Assert.Contains(
+                result.Failures!,
+                failure => failure.StartsWith("Engine:Renderer:DistantShadowMetres", StringComparison.Ordinal)
+            );
+        }
+    }
+
     /// <summary>
     /// On the grid of the registered generator: 10 cm voxels' columns are 12.8 m, so a 16 m radius leaves level 0 no
     /// reach (two columns are 25.6 m), while the shipped 59.2 m draws it to 33.6 m.

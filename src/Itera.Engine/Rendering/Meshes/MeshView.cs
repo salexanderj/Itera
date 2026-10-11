@@ -6,8 +6,9 @@ namespace Itera.Engine.Rendering.Meshes;
 
 /// <summary>
 /// The frame's view for what <see cref="MeshPass"/> draws, shared by everything that lists draws in it (the world's
-/// blocks and models, <see cref="WorldMeshes"/>): the frustum (<see cref="InView"/>), the two sun shadow cascades fitted
-/// to it (<see cref="ShadowCascades.Fit"/>, <see cref="NearCascade"/>, <see cref="FarCascade"/>) with the slot's lighting
+/// blocks and models, <see cref="WorldMeshes"/>): the frustum (<see cref="InView"/>), the sun shadow cascades fitted to
+/// it (<see cref="ShadowCascades.Fit"/>, <see cref="NearCascade"/>, <see cref="FarCascade"/>, and with
+/// <c>Engine:Renderer:DistantShadowMetres</c> under a low sun <see cref="DistantCascade"/>) with the slot's lighting
 /// record for <c>mesh.frag</c> and <c>mesh-shadow.vert</c>, and the frame's point lights (docs/rendering-redesign.md,
 /// stage 1.5 and phase 3). The drawers offer their lights (<see cref="Offer"/>: the world's glowing blocks), and
 /// <see cref="End"/> the events' (<see cref="PointLights"/>: beams, muzzle flashes, blasts); those within
@@ -30,8 +31,26 @@ public sealed class MeshView
     /// </summary>
     internal const float NearBlendMetres = 5;
 
-    /// <summary>The share of the far cascade's end over which its shadows fade out.</summary>
+    /// <summary>
+    /// The share of the far cascade's end over which its shadows fade out, or blend into the distant cascade's, which
+    /// starts there; and the share of the distant cascade's end over which its own fade out.
+    /// </summary>
     internal const float FarFadeShare = 0.1f;
+
+    /// <summary>
+    /// The distant cascade is drawn only while the sun is lower than this many degrees over the horizon: a higher sun's
+    /// shadows are short, a 4 m boulder's under 7 m, a few texels of its map (about 2.4 m at 2 km).
+    /// </summary>
+    internal const float DistantSunDegrees = 30;
+
+    /// <summary>The sun's height, in degrees, from which down the distant cascade's shadows are drawn whole.</summary>
+    internal const float DistantFullDegrees = 25;
+
+    /// <summary>
+    /// The distant cascade's casters reach this many times as far towards the sun as the others' (<see cref="CasterReach"/>):
+    /// under a low sun, ground tens of metres high casts hundreds of metres.
+    /// </summary>
+    internal const float DistantCasterShare = 3;
 
     /// <summary>
     /// How far towards the sun beyond a cascade's slice a caster still casts into it with the sun at
@@ -61,6 +80,7 @@ public sealed class MeshView
 
     private readonly IMeshDrawTarget _pass;
     private readonly int _shadowMapTexels;
+    private readonly float _distantShadowMetres;
     private readonly int _lightBudget;
 
     // The side planes of the view's frustum, facing in: left, right, bottom, top; each the inward normal (xyz) and the dot
@@ -84,6 +104,7 @@ public sealed class MeshView
         _pass = pass;
         var renderer = options.Value.Renderer;
         _shadowMapTexels = renderer.ShadowMapTexels;
+        _distantShadowMetres = renderer.DistantShadowMetres;
         _lightBudget = Math.Clamp(renderer.MostLights, 1, MeshPass.MostLights);
     }
 
@@ -113,6 +134,16 @@ public sealed class MeshView
 
     /// <summary>The far cascade's casters this frame.</summary>
     public CascadeBounds FarCascade { get; } = new();
+
+    /// <summary>The distant cascade's casters this frame, when <see cref="DistantShadows"/>.</summary>
+    public CascadeBounds DistantCascade { get; } = new();
+
+    /// <summary>
+    /// True when the distant cascade is drawn this frame: the view's shadows on, <c>Engine:Renderer:DistantShadowMetres</c>
+    /// set and reaching past the far cascade within the view's distance, and the sun under
+    /// <see cref="DistantSunDegrees"/>.
+    /// </summary>
+    public bool DistantShadows { get; private set; }
 
     /// <summary>Lights the last <see cref="End"/> wrote into its slot's list.</summary>
     public int LastLights { get; private set; }
@@ -237,8 +268,9 @@ public sealed class MeshView
     }
 
     /// <summary>
-    /// Fits the two cascades to the view (<see cref="ShadowCascades.Fit"/>) and writes their record for
-    /// <c>mesh.frag</c> and <c>mesh-shadow.vert</c>.
+    /// Fits the cascades to the view (<see cref="ShadowCascades.Fit"/>) and writes their record for <c>mesh.frag</c> and
+    /// <c>mesh-shadow.vert</c>: the near and far ones, and the distant one from where the far one starts to fade to
+    /// <c>Engine:Renderer:DistantShadowMetres</c> or the view's distance (<see cref="DistantShadows"/>).
     /// </summary>
     private void WriteCascades(int slot, in ViewConstants view)
     {
@@ -287,6 +319,43 @@ public sealed class MeshView
             Orthographic,
             view.Origin
         );
+        var farFadeStart = farEnd * (1 - FarFadeShare);
+        var distantEnd = Math.Min(_distantShadowMetres, view.MaxDistance);
+        var strength = DistantStrength(sun);
+        // An orthographic view's cascades are chosen by how far before or behind its middle a point lies: a box that ends
+        // before the far cascade fades would never read the distant one.
+        var reaches = !Orthographic || Math.Max(-view.Near, view.Far) > farFadeStart;
+        DistantShadows = Shadows && strength > 0 && distantEnd > farEnd && reaches;
+        var distant = default(CascadeFit);
+        if (DistantShadows)
+        {
+            var (distantFirst, distantLast) = Slice(farFadeStart, distantEnd);
+            distant = ShadowCascades.Fit(
+                view.Position,
+                view.Forward,
+                view.Right,
+                view.Up,
+                distantFirst,
+                distantLast,
+                view.SunDirection,
+                _shadowMapTexels,
+                reach * DistantCasterShare,
+                _imageAxis,
+                Orthographic,
+                view.Origin
+            );
+            DistantCascade.Set(
+                in distant,
+                _shadowMapTexels,
+                view.Position,
+                view.Forward,
+                _planes,
+                distantFirst,
+                distantLast,
+                view.SunDirection
+            );
+        }
+
         NearCascade.Set(
             in near,
             _shadowMapTexels,
@@ -317,8 +386,24 @@ public sealed class MeshView
             FarTexelMetres = far.TexelMetres,
             Shadows = Shadows ? 1u : 0u,
             NearBlendStart = farStart,
-            FarFadeStart = farEnd * (1 - FarFadeShare),
+            FarFadeStart = farFadeStart,
+            Distant = distant.ViewProjection,
+            DistantEnd = DistantShadows ? distantEnd : 0,
+            DistantTexelMetres = distant.TexelMetres,
+            DistantFadeStart = DistantShadows ? distantEnd * (1 - FarFadeShare) : 0,
+            DistantStrength = DistantShadows ? strength : 0,
         };
+    }
+
+    /// <summary>
+    /// How much of the distant cascade's shadow a sun along <paramref name="towardsSun"/> (a unit vector) draws: 0 at
+    /// <see cref="DistantSunDegrees"/> over the horizon and higher, 1 at <see cref="DistantFullDegrees"/> and lower, and
+    /// between them in step with its height, so the shadows fade in as the sun sinks.
+    /// </summary>
+    internal static float DistantStrength(Vector3 towardsSun)
+    {
+        var degrees = MathF.Asin(Math.Clamp(towardsSun.Y, -1, 1)) * 180 / MathF.PI;
+        return Math.Clamp((DistantSunDegrees - degrees) / (DistantSunDegrees - DistantFullDegrees), 0, 1);
     }
 
     /// <summary>

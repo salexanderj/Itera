@@ -42,12 +42,12 @@ public sealed class WorldMeshesTests : IDisposable
         _meshes = NewMeshes(_targets);
     }
 
-    private WorldMeshes NewMeshes(FakeTargets targets, int levels = Levels)
+    private WorldMeshes NewMeshes(FakeTargets targets, int levels = Levels, float distantShadowMetres = 0)
     {
         var options = new EngineOptions
         {
             Voxels = new VoxelSettings { StreamingRadiusMetres = RadiusMetres, Levels = levels },
-            Renderer = new RendererSettings { MeshFinestLevel = 0 },
+            Renderer = new RendererSettings { MeshFinestLevel = 0, DistantShadowMetres = distantShadowMetres },
         };
         var meshes = new WorldMeshes(
             _palette,
@@ -532,6 +532,70 @@ public sealed class WorldMeshesTests : IDisposable
         // The view reaches 100 m, short of the far cascade's 200 m.
         Assert.Equal(100, shadows.FarEnd);
         Assert.True(shadows.NearTexelMetres > 0 && shadows.NearTexelMetres < shadows.FarTexelMetres);
+    }
+
+    /// <summary>
+    /// With <c>Engine:Renderer:DistantShadowMetres</c>, a view 1 km long, and a sun 10 degrees up behind the camera, the
+    /// camera's pass lists the blocks that can shade the distant cascade's slice (the ground round the camera casts
+    /// forwards), each with a draw, and the frame says the cascade is drawn; under the engine's sun, 58 degrees up, it
+    /// lists none and its record's strength is 0.
+    /// </summary>
+    [Fact]
+    public void Under_a_low_sun_the_cameras_pass_lists_the_distant_cascades_blocks()
+    {
+        using var targets = new FakeTargets();
+        using var meshes = NewMeshes(targets, distantShadowMetres: 2000);
+        meshes.BeginMatch(_world, _models, new NoVoxelTintMap());
+        var view = new ViewConstants
+        {
+            Position = Centre,
+            Forward = new Vector3(1, 0, 0),
+            Right = new Vector3(0, 0, 1),
+            Up = new Vector3(0, 1, 0),
+            MaxDistance = 1000,
+            SunDirection = SunPath.FromAngles(270, 10),
+            Switches = ViewSwitches.Shadows,
+        };
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var frame = 0;
+        int slot;
+        do
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The meshes did not catch up.");
+            _world.Update(0);
+            slot = frame++ % FrameSync.FramesInFlight;
+            targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
+            Thread.Sleep(1);
+        } while (!meshes.IsUpToDate);
+
+        // One frame more, of every block meshed.
+        slot = frame++ % FrameSync.FramesInFlight;
+        targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
+        var drawn = meshes.Frame;
+        Assert.True(drawn.Distant);
+        Assert.True(drawn.DistantShadows > 0);
+        Assert.InRange(
+            drawn.Records,
+            drawn.Draws,
+            drawn.Draws + drawn.NearShadows + drawn.FarShadows + drawn.DistantShadows
+        );
+        for (var i = 0; i < drawn.DistantShadows; i++)
+        {
+            var command = targets.CommandsOf(slot, MeshPass.DistantList)[i];
+            Assert.True(command.IndexCount > 0);
+            Assert.InRange(RecordOf(command, slot), 0, drawn.Records - 1);
+        }
+
+        Assert.Equal(1, targets.LightingOf(slot).DistantStrength);
+        Assert.Equal(1000, targets.LightingOf(slot).DistantEnd);
+
+        view.SunDirection = ViewConstants.DefaultSunDirection;
+        slot = frame++ % FrameSync.FramesInFlight;
+        targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
+
+        Assert.False(meshes.Frame.Distant);
+        Assert.Equal(0, meshes.Frame.DistantShadows);
+        Assert.Equal(0, targets.LightingOf(slot).DistantStrength);
     }
 
     [Fact]
@@ -1781,7 +1845,7 @@ public sealed class WorldMeshesTests : IDisposable
         public Span<MeshDraw> DrawsOf(int slot) => _draws[slot];
 
         public Span<DrawIndexedIndirectCommand> CommandsOf(int slot, int list) =>
-            _commands[slot * MeshPass.Lists + list];
+            _commands[slot * MeshPass.WorldLists + list];
 
         public ref MeshLighting LightingOf(int slot) => ref _shadows[slot];
 
@@ -1832,7 +1896,7 @@ public sealed class WorldMeshesTests : IDisposable
 
         private static DrawIndexedIndirectCommand[][] CommandLists()
         {
-            var lists = new DrawIndexedIndirectCommand[FrameSync.FramesInFlight * MeshPass.Lists][];
+            var lists = new DrawIndexedIndirectCommand[FrameSync.FramesInFlight * MeshPass.WorldLists][];
             for (var i = 0; i < lists.Length; i++)
             {
                 lists[i] = new DrawIndexedIndirectCommand[MeshPass.MaxDraws];

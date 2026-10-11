@@ -69,7 +69,9 @@ lists the game's). Commonly used:
 - Renderer (the world and the models as meshes): `MeshFinestLevel` (0), `MeshReachShare` (0.5: each level drawn to
   half its reach, 10 cm voxels to 16.8 m), `ViewDistanceMetres` (256, the starter's 8000; up to 8000; 0 for the coarsest level's radius), `MsaaSamples`
   (4: 1, 2, 4, or 8), `MeshMegabytes` (512: 64 to 4096; full, it frees the meshes of columns the view does not draw),
-  `ShadowMapTexels` (2048: 512 to 4096), `Shadows=false` (no shadow maps: 0.5 to 1.8 ms less at 1440p),
+  `ShadowMapTexels` (2048: 512 to 4096), `DistantShadowMetres` (0, none; 400 to 8000: a third shadow cascade to that
+  depth, past the far one's 200 m, for hills' shadows in the distance, drawn only while the sun is under 30 degrees, so
+  check it with `sun` or `time` low), `Shadows=false` (no shadow maps: 0.5 to 1.8 ms less at 1440p),
   `PreferredDevice=RAPHAEL` (any part of a device's name, any case; this machine's iGPU), `DebugLines=true`,
   `DynamicRenderScaling=false` with `RenderScale=0.75`, `DynamicScalingThreshold=60`, `AntiAliasing=false` (SMAA, which
   runs only with `MsaaSamples=1`), `ShaderSourceDirectory=$PWD/src/Itera.Engine/Rendering/Shaders` (then `shaders

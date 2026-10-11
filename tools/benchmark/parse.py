@@ -58,7 +58,8 @@ for line in lines:
         continue
     m = re.search(
         r"Meshes over .*? ([\d.]+) MB uploaded, heap ([\d.]+) MB of \d+ MB used; \d+ blocks(?: \(\d+ stitched\))? and "
-        r"(\d+) triangles drawn in the last frame, .*?\d+ and \d+ blocks and (\d+) triangles into the shadow cascades",
+        r"(\d+) triangles drawn in the last frame, .*?\d+(?:, \d+,)? and \d+ blocks and (\d+) triangles into the shadow "
+        r"cascades",
         line,
     )
     if m:

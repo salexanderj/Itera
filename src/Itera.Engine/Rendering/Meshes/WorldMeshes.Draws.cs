@@ -23,6 +23,7 @@ public sealed unsafe partial class WorldMeshes
     private int _drawn;
     private int _nearShadows;
     private int _farShadows;
+    private int _distantShadows;
     private long _triangles;
     private long _shadowTriangles;
     private bool _farPass;
@@ -59,8 +60,12 @@ public sealed unsafe partial class WorldMeshes
     /// to the nearest part of a column (<see cref="NearestSquared"/>). A drawn column's blocks with a mesh go into the
     /// camera's list when their box meets the view's frustum, and, with the view's shadows on, into the near cascade's
     /// list when their bounding sphere meets the cascade's box and can shade its slice of the view
-    /// (<see cref="CascadeBounds"/>). With shadows on, a second pass chooses the far cascade's blocks the same way with
-    /// shorter reaches (<see cref="FarShadowCutShare"/>). Each pass gives a block it lists one <see cref="MeshDraw"/>.
+    /// (<see cref="CascadeBounds"/>), and into the distant cascade's list the same way when it is drawn
+    /// (<see cref="MeshView.DistantShadows"/>): from the camera's columns, one level finer than the far pass's at the
+    /// same distance (12.8 m voxels at 1.5 km against 25.6 m, on the starter's nine levels), so its shadows fall from the
+    /// surfaces the camera draws there, for one more test a block. With shadows on, a second pass chooses the far
+    /// cascade's blocks the same way with shorter reaches (<see cref="FarShadowCutShare"/>). Each pass gives a block it
+    /// lists one <see cref="MeshDraw"/>.
     /// The camera's pass draws a block beside a column one level coarser from its stitched mesh where one is ready, and
     /// asks for it where not (WorldMeshes.Stitches.cs). The camera's list is written nearest first
     /// (<see cref="WriteCameraNearestFirst"/>).
@@ -72,6 +77,7 @@ public sealed unsafe partial class WorldMeshes
         _drawn = 0;
         _nearShadows = 0;
         _farShadows = 0;
+        _distantShadows = 0;
         _triangles = 0;
         _shadowTriangles = 0;
         _stitching = !view.Has(ViewSwitches.Plain);
@@ -86,7 +92,8 @@ public sealed unsafe partial class WorldMeshes
             _pass.DrawsOf(slot),
             _pass.CommandsOf(slot, 0),
             _pass.CommandsOf(slot, 1),
-            _pass.CommandsOf(slot, 2)
+            _pass.CommandsOf(slot, 2),
+            _pass.CommandsOf(slot, 3)
         );
         _farPass = false;
         _listFull = false;
@@ -129,7 +136,9 @@ public sealed unsafe partial class WorldMeshes
             near,
             far,
             _skyUploaded,
-            _skyUploadOffset
+            _skyUploadOffset,
+            _view.DistantShadows,
+            _distantShadows
         );
     }
 
@@ -362,8 +371,13 @@ public sealed unsafe partial class WorldMeshes
             var seen = !_farPass && _view.InView(centre, extent) && Room(_drawn);
             var near = !_farPass && _view.Shadows && _view.NearCascade.Holds(centre, radius) && Room(_nearShadows);
             var far = _farPass && _view.FarCascade.Holds(centre, radius) && Room(_farShadows);
+            var distant =
+                !_farPass
+                && _view.DistantShadows
+                && _view.DistantCascade.Holds(centre, radius)
+                && Room(_distantShadows);
             var views = _farPass ? 0 : ViewsSeeing(centre, extent);
-            var listed = seen || near || far;
+            var listed = seen || near || far || distant;
             if (!listed && views == 0)
             {
                 continue;
@@ -389,8 +403,9 @@ public sealed unsafe partial class WorldMeshes
                     ref var stitch = ref column.StitchesMade()[index];
                     if (!stitch.IsCurrent(blockSides, block.Version))
                     {
-                        // A block only an image view sees asks for none: the views take what the camera has.
-                        if (!stitch.InFlight && listed)
+                        // A block only an image view or the distant cascade sees asks for none: the views take what the
+                        // camera has, and the distant cascade's texels are metres wide.
+                        if (!stitch.InFlight && (seen || near))
                         {
                             RequestStitch(column, index, blockSides, distanceSquared);
                         }
@@ -457,6 +472,12 @@ public sealed unsafe partial class WorldMeshes
             if (far)
             {
                 lists.Far[_farShadows++] = command;
+                _shadowTriangles += indexCount / 3;
+            }
+
+            if (distant)
+            {
+                lists.Distant[_distantShadows++] = command;
                 _shadowTriangles += indexCount / 3;
             }
         }
@@ -579,19 +600,21 @@ public sealed unsafe partial class WorldMeshes
     }
 
     /// <summary>
-    /// A frame slot's draws and its three command lists, written by <see cref="Draw"/> (the camera's by
+    /// A frame slot's draws and its four command lists, written by <see cref="Draw"/> (the camera's by
     /// <see cref="WriteCameraNearestFirst"/>).
     /// </summary>
     private readonly ref struct DrawLists(
         Span<MeshDraw> draws,
         Span<DrawIndexedIndirectCommand> camera,
         Span<DrawIndexedIndirectCommand> near,
-        Span<DrawIndexedIndirectCommand> far
+        Span<DrawIndexedIndirectCommand> far,
+        Span<DrawIndexedIndirectCommand> distant
     )
     {
         public readonly Span<MeshDraw> Draws = draws;
         public readonly Span<DrawIndexedIndirectCommand> Camera = camera;
         public readonly Span<DrawIndexedIndirectCommand> Near = near;
         public readonly Span<DrawIndexedIndirectCommand> Far = far;
+        public readonly Span<DrawIndexedIndirectCommand> Distant = distant;
     }
 }

@@ -43,7 +43,7 @@ it runs, except the flush of the staging region it wrote (`StagingBuffer.Flush`;
      `MeshPass.Record`, which first flushes the slot's mapped draw regions (when memory is not coherent), copies the
      material texture sets in the first frame and records an asked-for bake (`RecordTextures`, `RecordBake`), sorts the
      lights into clusters, skins the posed mesh assets (`MeshAssetPass.RecordSkinning`), records a game's `Compute`
-     passes (`RenderPasses`, which adds no barrier after them), draws the two shadow cascades into a depth array, then
+     passes (`RenderPasses`, which adds no barrier after them), draws the shadow cascades into a depth array, then
      in one rendering the world (blocks, models, mesh assets, a game's `Opaque` passes, the sky, the blended mesh
      assets, a game's `Transparent` passes) into the target, resolving the multisampled images into it and the depth
      image when `Engine:Renderer:MsaaSamples` is above 1; then, in a fresh frame with an image view due, each due view

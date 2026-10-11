@@ -79,6 +79,18 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         Range(failures, "Renderer:MeshMegabytes", options.Renderer.MeshMegabytes, 64, 4096);
         Range(failures, "Renderer:SkinMegabytes", options.Renderer.SkinMegabytes, 1, 512);
         Range(failures, "Renderer:ShadowMapTexels", options.Renderer.ShadowMapTexels, 512, 4096);
+        var distant = options.Renderer.DistantShadowMetres;
+        // Written so NaN fails too.
+        if (distant != 0 && !(distant >= 400 && distant <= 8000))
+        {
+            failures.Add(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{Prefix}Renderer:DistantShadowMetres must be 0 (no third cascade) or between 400 and 8000; it is {distant}."
+                )
+            );
+        }
+
         Range(failures, "Renderer:MostLights", options.Renderer.MostLights, 1, 256);
 
         Range(failures, "Renderer:SkyRed", options.Renderer.SkyRed, 0, 1);

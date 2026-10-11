@@ -26,18 +26,23 @@ const vec2 ShadowDisc[16] = vec2[](
     vec2(-0.24188840, 0.99706507), vec2(-0.81409955, 0.91437590), vec2(0.19984126, 0.78641367),
     vec2(0.14383161, -0.14100790));
 
-// How much of the sunlight cascade near (else the far one) lets reach world point world on a surface facing normal: 0
-// to 1. The far cascade: 3x3 lookups, each a 2x2 comparison the sampler blends. The near one: the casters' mean depth
-// at 8 points of the search disc, then 16 comparisons over a disc as wide as the sun's blur from that gap, at least a
-// texel; fully lit where the search finds no caster. 0.10 to 0.22 ms more than 3x3 at 2560x1440.
-float cascadeLight(MeshLighting cascades, bool near, vec3 world, vec3 normal)
+// How much of the sunlight cascade cascade (0 near, 1 far, 2 distant) lets reach world point world on a surface facing
+// normal: 0 to 1. The far and distant cascades: 3x3 lookups, each a 2x2 comparison the sampler blends. The near one:
+// the casters' mean depth at 8 points of the search disc, then 16 comparisons over a disc as wide as the sun's blur from
+// that gap, at least a texel; fully lit where the search finds no caster. 0.10 to 0.22 ms more than 3x3 at 2560x1440.
+float cascadeLight(MeshLighting cascades, uint cascade, vec3 world, vec3 normal)
 {
-    float texel = near ? cascades.nearTexelMetres : cascades.farTexelMetres;
-    mat4 projection = near ? cascades.nearCascade : cascades.farCascade;
+    bool near = cascade == 0u;
+    float texel = near
+        ? cascades.nearTexelMetres
+        : (cascade == 1u ? cascades.farTexelMetres : cascades.distantTexelMetres);
+    mat4 projection = near
+        ? cascades.nearCascade
+        : (cascade == 1u ? cascades.farCascade : cascades.distantCascade);
     vec4 clip = projection * vec4(world + normal * (ShadowNormalTexels * texel), 1.0);
     vec2 uv = clip.xy * 0.5 + 0.5;
     float reference = clip.z - ShadowDepthBias;
-    float layer = near ? 0.0 : 1.0;
+    float layer = float(cascade);
     vec2 step = 1.0 / vec2(textureSize(shadowMaps, 0).xy);
     if (!near)
     {
@@ -84,32 +89,55 @@ float cascadeLight(MeshLighting cascades, bool near, vec3 world, vec3 normal)
     return lit / 16.0;
 }
 
+// How much of the sunlight the distant cascade lets reach world point world on a surface facing normal at view depth
+// depth: its lookups weakened by its strength (the sun's height), and faded to 1 over its last stretch.
+float distantLight(MeshLighting cascades, vec3 world, vec3 normal, float depth)
+{
+    float fade = clamp(
+        (depth - cascades.distantFadeStart) / (cascades.distantEnd - cascades.distantFadeStart),
+        0.0,
+        1.0);
+    return mix(1.0, cascadeLight(cascades, 2u, world, normal), cascades.distantStrength * (1.0 - fade));
+}
+
 // How much of the sunlight reaches world point world on a surface facing normal at view depth depth, in frame slot
 // slot: 0 to 1, from the cascade that covers it; in the band before the near cascade's end, blended from it to the far
-// one, and in the far one's last stretch, faded to 1, so neither end shows as a line. 1 past the far cascade or with
-// shadows off.
+// one, and in the far one's last stretch blended into the distant one where that is drawn (distantStrength above 0),
+// else faded to 1, and the distant one faded to 1 over its own last stretch, so no end shows as a line. 1 past the last
+// cascade or with shadows off.
 float sunShadow(uint slot, vec3 world, vec3 normal, float depth)
 {
     MeshLighting cascades = lighting[slot];
-    if (cascades.shadows == 0u || depth >= cascades.farEnd)
+    bool distant = cascades.distantStrength > 0.0;
+    if (cascades.shadows == 0u || depth >= (distant ? cascades.distantEnd : cascades.farEnd))
     {
         return 1.0;
     }
 
     if (depth < cascades.nearBlendStart)
     {
-        return cascadeLight(cascades, true, world, normal);
+        return cascadeLight(cascades, 0u, world, normal);
     }
 
-    float far = cascadeLight(cascades, false, world, normal);
+    if (depth >= cascades.farEnd)
+    {
+        return distantLight(cascades, world, normal, depth);
+    }
+
+    float far = cascadeLight(cascades, 1u, world, normal);
     if (depth < cascades.nearEnd)
     {
         float share = (depth - cascades.nearBlendStart) / (cascades.nearEnd - cascades.nearBlendStart);
-        return mix(cascadeLight(cascades, true, world, normal), far, share);
+        return mix(cascadeLight(cascades, 0u, world, normal), far, share);
     }
 
     float fade = clamp((depth - cascades.farFadeStart) / (cascades.farEnd - cascades.farFadeStart), 0.0, 1.0);
-    return mix(far, 1.0, fade);
+    if (fade == 0.0)
+    {
+        return far;
+    }
+
+    return mix(far, distant ? distantLight(cascades, world, normal, depth) : 1.0, fade);
 }
 
 // How much of the open sky the air in front of a surface at world (facing normal) sees, 0 to 1: the sky field, blended

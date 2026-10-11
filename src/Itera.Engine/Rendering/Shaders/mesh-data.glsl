@@ -79,6 +79,11 @@ struct MeshLighting
     uint lightCount;
     float nearBlendStart;
     float farFadeStart;
+    mat4 distantCascade;
+    float distantEnd;
+    float distantTexelMetres;
+    float distantFadeStart;
+    float distantStrength;
 };
 
 struct MeshLight
@@ -94,8 +99,8 @@ layout(scalar, set = MESH_SET, binding = 4) restrict readonly buffer MeshLightin
     MeshLighting lighting[];
 };
 
-// The cascades' depth maps, layer 0 near and 1 far, compared as they are read (lit where the point is no farther from
-// the sun than the map holds).
+// The cascades' depth maps, layer 0 near, 1 far, and 2 distant (only with Engine:Renderer:DistantShadowMetres), compared
+// as they are read (lit where the point is no farther from the sun than the map holds).
 layout(set = MESH_SET, binding = 5) uniform sampler2DArrayShadow shadowMaps;
 
 struct MeshModelDraw

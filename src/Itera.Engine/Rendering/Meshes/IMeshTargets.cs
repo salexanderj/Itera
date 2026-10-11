@@ -16,8 +16,8 @@ internal interface IMeshDrawTarget
     Span<MeshDraw> DrawsOf(int slot);
 
     /// <summary>
-    /// The indirect commands of list <paramref name="list"/> of a frame slot (0 the camera's, 1 and 2 the near and far
-    /// shadow cascades'), <see cref="MeshPass.MaxDraws"/> long.
+    /// The indirect commands of list <paramref name="list"/> of a frame slot (0 the camera's, 1 to 3 the near, far, and
+    /// distant shadow cascades'), <see cref="MeshPass.MaxDraws"/> long.
     /// </summary>
     Span<DrawIndexedIndirectCommand> CommandsOf(int slot, int list);
 

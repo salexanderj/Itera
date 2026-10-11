@@ -14,14 +14,15 @@ namespace Itera.Engine.Rendering.Meshes;
 /// the mesh heap, one device-local buffer of words that <see cref="WorldMeshes"/> fills through staging copies: the
 /// materials and the tint map at fixed places at its start, then each block's vertices (<see cref="MeshVertex"/>) and
 /// 16-bit indices in a range of its own; the heap is also the index buffer. It owns the frame's draws too, one region per
-/// frame slot in host-visible buffers that the main thread writes: a <see cref="MeshDraw"/> per block drawn, three lists
-/// of indexed indirect commands (the camera's and the near and far shadow cascades'; a command's first instance names
-/// its draw), the cascades' record (<see cref="MeshLighting"/>), and the frame's look (<see cref="LookConstants"/>);
-/// and the models' too, in the same three lists: a
+/// frame slot in host-visible buffers that the main thread writes: a <see cref="MeshDraw"/> per block drawn, four lists
+/// of indexed indirect commands (the camera's and the near, far, and distant shadow cascades'; a command's first
+/// instance names its draw), the cascades' record (<see cref="MeshLighting"/>), and the frame's look (<see cref="LookConstants"/>);
+/// and the models' too, in the first three lists: a
 /// <see cref="MeshModelDraw"/> per block of each model drawn, the draws of one block together, and one command per
 /// block whose instances are those draws.
 /// <para>
-/// Each frame it draws the cascades into the two layers of a depth map array (<c>mesh-shadow.vert</c>, timed as
+/// Each frame it draws the cascades into the layers of a depth map array, two, or three with
+/// <c>Engine:Renderer:DistantShadowMetres</c> (<c>mesh-shadow.vert</c>, timed as
 /// <see cref="GpuPass.ShadowMaps"/>), then the world: with <c>Engine:Renderer:MsaaSamples</c> above 1 into multisampled
 /// colour and depth images of its own, resolved at the end into the target and the frame's depth image (sample 0),
 /// else into those directly. Every block in view with one <c>vkCmdDrawIndexedIndirect</c> (<c>mesh.vert</c>,
@@ -37,11 +38,22 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     /// <summary>Blocks one frame may draw in each list.</summary>
     public const int MaxDraws = 32_768;
 
-    /// <summary>The command lists of a slot: the camera's, the near cascade's, the far cascade's.</summary>
+    /// <summary>
+    /// The models' and the mesh assets' command lists of a slot: the camera's, the near cascade's, the far cascade's.
+    /// </summary>
     public const int Lists = 3;
 
+    /// <summary>The world's command lists of a slot: those three, then the distant cascade's (only the terrain casts into it).</summary>
+    public const int WorldLists = 4;
+
+    /// <summary>The world's list of the distant cascade.</summary>
+    public const int DistantList = 3;
+
+    /// <summary>The distant cascade's layer of the shadow map (its push constant's cascade, <c>mesh-shadow.vert</c>).</summary>
+    private const int DistantCascade = 2;
+
     /// <summary>Draws (<see cref="MeshDraw"/>) one frame slot holds: enough for every list full, each block apart.</summary>
-    public const int MaxRecords = Lists * MaxDraws;
+    public const int MaxRecords = WorldLists * MaxDraws;
 
     /// <summary>Model draws (<see cref="MeshModelDraw"/>, one per block of a model drawn) one list of a slot holds.</summary>
     public const int MaxModelRecords = 65_536;
@@ -70,7 +82,8 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     /// </summary>
     public const ulong MaterialsOffset = GranuleBytes;
 
-    private const int Cascades = 2;
+    /// <summary>The cascades at most: near, far, and distant.</summary>
+    private const int MostCascades = 3;
 
     /// <summary>The wireframe's depth bias, in the depth format's smallest steps at the face's depth.</summary>
     private const float WireBiasConstant = 64;
@@ -123,7 +136,10 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     private readonly ILogger<MeshPass> _logger;
     private volatile int _requestedSamples;
     private readonly ulong _requestedHeapBytes;
-    private readonly ImageView[] _cascadeViews = new ImageView[Cascades];
+    private readonly ImageView[] _cascadeViews = new ImageView[MostCascades];
+
+    // The shadow map's layers: 2, or 3 with Engine:Renderer:DistantShadowMetres.
+    private readonly int _cascades;
     private byte[] _skyVertexSpirv = [];
     private byte[] _skySpirv = [];
     private byte[] _meshVertexSpirv = [];
@@ -194,6 +210,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         _requestedSamples = options.Value.Renderer.MsaaSamples;
         _requestedHeapBytes = (ulong)options.Value.Renderer.MeshMegabytes << 20;
         ShadowMapTexels = (uint)options.Value.Renderer.ShadowMapTexels;
+        _cascades = options.Value.Renderer.DistantShadowMetres > 0 ? MostCascades : MostCascades - 1;
         _bakeFolder = Path.Combine(options.Value.Application.DataDirectory(), "Bakes");
     }
 
@@ -256,7 +273,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             "mesh draws"
         );
         _commands = _allocator.CreateBuffer(
-            slots * Lists * MaxDraws * (ulong)sizeof(DrawIndexedIndirectCommand),
+            slots * WorldLists * MaxDraws * (ulong)sizeof(DrawIndexedIndirectCommand),
             BufferUsageFlags.IndirectBufferBit,
             MemoryUsage.Upload,
             "mesh draw commands"
@@ -303,9 +320,9 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.SampledBit,
             ImageAspectFlags.DepthBit,
             "shadow cascades",
-            layers: Cascades
+            layers: (uint)_cascades
         );
-        for (var i = 0; i < Cascades; i++)
+        for (var i = 0; i < _cascades; i++)
         {
             _cascadeViews[i] = _shadowMap.CreateLayerView((uint)i, ImageAspectFlags.DepthBit, $"shadow cascade {i}");
         }
@@ -398,7 +415,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         new(Draws.Mapped + (ulong)slot * MaxRecords * (ulong)sizeof(MeshDraw), MaxRecords);
 
     /// <summary>
-    /// The indirect commands of list <paramref name="list"/> (0 the camera's, 1 and 2 the cascades') of
+    /// The indirect commands of list <paramref name="list"/> (0 the camera's, 1 to 3 the cascades') of
     /// <paramref name="slot"/>, written as <see cref="DrawsOf"/> is.
     /// </summary>
     public Span<DrawIndexedIndirectCommand> CommandsOf(int slot, int list) =>
@@ -861,7 +878,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     private static ulong RoundUp(ulong bytes) => (bytes + GranuleBytes - 1) / GranuleBytes * GranuleBytes;
 
     private static ulong CommandsOffset(int slot, int list) =>
-        ((ulong)slot * Lists + (ulong)list) * MaxDraws * (ulong)sizeof(DrawIndexedIndirectCommand);
+        ((ulong)slot * WorldLists + (ulong)list) * MaxDraws * (ulong)sizeof(DrawIndexedIndirectCommand);
 
     private static ulong ModelCommandsOffset(int slot, int list) =>
         ((ulong)slot * Lists + (ulong)list) * MaxModelCommands * (ulong)sizeof(DrawIndexedIndirectCommand);
@@ -881,6 +898,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         FlushCommands(slot, 0, frame.Draws);
         FlushCommands(slot, 1, frame.NearShadows);
         FlushCommands(slot, 2, frame.FarShadows);
+        FlushCommands(slot, DistantList, frame.DistantShadows);
         Lighting.Flush((ulong)slot * (ulong)sizeof(MeshLighting), (ulong)sizeof(MeshLighting));
         Look.Flush((ulong)slot * (ulong)sizeof(LookConstants), (ulong)sizeof(LookConstants));
         Lights.Flush((ulong)slot * MostLights * (ulong)sizeof(MeshLight), MostLights * (ulong)sizeof(MeshLight));
@@ -989,7 +1007,9 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     /// <summary>
     /// Draws each cascade's list into its layer of the shadow map, cleared to 1 (farthest from the sun), then leaves the
     /// map in the layout <c>mesh.frag</c> and the particles' simulate pass read it in. With shadows off the lists are empty and the layers only cleared:
-    /// <c>mesh.frag</c> does not read the map then.
+    /// <c>mesh.frag</c> does not read the map then. The distant cascade's layer is drawn only in a frame that draws it
+    /// (<see cref="MeshFrame.Distant"/>; its record's strength is 0 otherwise, and nothing reads the layer), from the
+    /// world's list alone.
     /// </summary>
     private void RecordCascades(CommandBuffer commandBuffer, int slot, in MeshFrame frame, IMeshPassDraws? draws)
     {
@@ -999,7 +1019,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             commandBuffer,
             ShadowMap.Image,
             ImageAspectFlags.DepthBit,
-            Cascades,
+            (uint)_cascades,
             LightReaders,
             AccessFlags2.None,
             DepthTests,
@@ -1010,8 +1030,14 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         var viewport = new Viewport(0, 0, ShadowMapTexels, ShadowMapTexels, 0, 1);
         var scissor = new Rect2D(new Offset2D(0, 0), new Extent2D(ShadowMapTexels, ShadowMapTexels));
         var set = _set;
-        for (var cascade = 0; cascade < Cascades; cascade++)
+        for (var cascade = 0; cascade < _cascades; cascade++)
         {
+            var distant = cascade == DistantCascade;
+            if (distant && !frame.Distant)
+            {
+                continue;
+            }
+
             var depthAttachment = new RenderingAttachmentInfo
             {
                 SType = StructureType.RenderingAttachmentInfo,
@@ -1029,8 +1055,17 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
                 PDepthAttachment = &depthAttachment,
             };
             vk.CmdBeginRendering(commandBuffer, &renderingInfo);
-            var count = Math.Clamp(cascade == 0 ? frame.NearShadows : frame.FarShadows, 0, MaxDraws);
-            var models = Math.Clamp(frame.ModelList(1 + cascade).Commands, 0, MaxModelCommands);
+            var count = Math.Clamp(
+                cascade switch
+                {
+                    0 => frame.NearShadows,
+                    1 => frame.FarShadows,
+                    _ => frame.DistantShadows,
+                },
+                0,
+                MaxDraws
+            );
+            var models = distant ? 0 : Math.Clamp(frame.ModelList(1 + cascade).Commands, 0, MaxModelCommands);
             if (count + models > 0)
             {
                 var constants = new MeshShadowConstants { Slot = (uint)slot, Cascade = (uint)cascade };
@@ -1072,7 +1107,12 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
                 );
             }
 
-            draws?.RecordShadows(commandBuffer, slot, cascade);
+            // The mesh assets cast into the near and far cascades only.
+            if (!distant)
+            {
+                draws?.RecordShadows(commandBuffer, slot, cascade);
+            }
+
             vk.CmdEndRendering(commandBuffer);
         }
 
@@ -1080,7 +1120,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             commandBuffer,
             ShadowMap.Image,
             ImageAspectFlags.DepthBit,
-            Cascades,
+            (uint)_cascades,
             DepthTests,
             AccessFlags2.DepthStencilAttachmentWriteBit,
             LightReaders,
