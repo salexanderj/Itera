@@ -378,11 +378,10 @@ public sealed class CoarseVoxelTests
 
         public int LowCentimetres => Low;
 
-        public NavGrid CreateGrid() => throw new NotSupportedException();
+        public IReadOnlyList<NavFieldSpec> CreateFields() => throw new NotSupportedException();
 
-        public IReadOnlyList<NavFieldSpec> CreateFields(NavGrid grid) => throw new NotSupportedException();
-
-        public void Fill(NavGrid grid) => throw new NotSupportedException();
+        public void Fill(NavGrid grid, int firstColumn, int firstRow, int lastColumn, int lastRow) =>
+            throw new NotSupportedException();
 
         public int GroundAt(int x, int z) => 150;
 

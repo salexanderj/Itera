@@ -339,32 +339,40 @@ public sealed class NavGridScannerTests : IDisposable
 
         public int LowCentimetres => Low;
 
-        public NavGrid CreateGrid() => throw new NotSupportedException();
+        public IReadOnlyList<NavFieldSpec> CreateFields() => throw new NotSupportedException();
 
-        public IReadOnlyList<NavFieldSpec> CreateFields(NavGrid grid) => throw new NotSupportedException();
-
-        public void Fill(NavGrid grid) => throw new NotSupportedException();
+        public void Fill(NavGrid grid, int firstColumn, int firstRow, int lastColumn, int lastRow) =>
+            throw new NotSupportedException();
 
         public int GroundAt(int x, int z) => Floor;
 
         public bool IsGround(byte material) => material == Soil;
     }
 
+    /// <summary>
+    /// Ground 409.6 m down (a flat world moved there): past the ±327.67 m the grid's floors once held. A cell reads its
+    /// floor there, and a dig lowers it.
+    /// </summary>
     [Fact]
-    public void A_world_reaching_past_the_grids_heights_is_refused()
+    public void A_floor_409_m_down_is_read_and_dug()
     {
-        // A floor 400 m down: past the 16-bit centimetres the grid keeps its floors in.
-        var deep = VoxelGrid.Sized(10, 12.8, -400, 10);
-        using var world = new VoxelWorld(
-            new VoxelSettings { StreamingRadiusMetres = 3 },
-            0,
-            new Systems.FlatTestGenerator(deep),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<VoxelWorld>.Instance
+        const int ground = -40_960;
+        using var world = TestWorlds.Load(
+            new TranslatedGenerator(new Systems.FlatTestGenerator(new VoxelGrid(10)), new VoxelCoord(0, ground, 0)),
+            new Vector3(0, -409, 0),
+            radiusMetres: 5
         );
+        var scanner = new NavGridScanner(world, new MoverWorldFixture.LeavesPass(), Low);
+        var grid = new NavGrid(-400, -400, 16, 16);
+        grid.Floor.AsSpan().Fill(ground);
+        grid.Clear.AsSpan().Fill(byte.MaxValue);
+        var cell = grid.Index(8, 8);
 
-        var refused = Assert.Throws<InvalidOperationException>(() =>
-            new NavGridScanner(world, new MoverWorldFixture.LeavesPass(), 50)
-        );
-        Assert.Contains("327.67", refused.Message, StringComparison.Ordinal);
+        scanner.Rescan(grid, cell);
+        Assert.Equal((ground, NavGrid.MostClear), (grid.Floor[cell], grid.ClearCentimetres(cell)));
+
+        world.Apply(VoxelEdit.Sphere(new VoxelCoord(25, ground, 25), 40, VoxelEditOperation.Clear));
+        Assert.True(scanner.Rescan(grid, cell));
+        Assert.InRange(grid.Floor[cell], ground - 50, ground - 20);
     }
 }

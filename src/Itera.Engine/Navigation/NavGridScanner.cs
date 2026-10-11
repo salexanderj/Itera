@@ -37,17 +37,6 @@ public sealed class NavGridScanner
     {
         ArgumentNullException.ThrowIfNull(world);
         ArgumentNullException.ThrowIfNull(passability);
-        // The grid keeps floors in 16-bit centimetres, so every height the world holds must fit them.
-        var grid = world.Grid;
-        long floor = grid.ToCentimetres(grid.MinVoxelY),
-            top = grid.ToCentimetres(grid.EndVoxelY);
-        if (floor < short.MinValue || top > short.MaxValue)
-        {
-            throw new InvalidOperationException(
-                $"Navigation keeps heights within ±327.67 m, and this world reaches from {floor / 100.0} m to {top / 100.0} m."
-            );
-        }
-
         _world = world;
         _passable = MaterialSet.Passable(passability);
         LowCentimetres = lowCentimetres;
@@ -104,7 +93,7 @@ public sealed class NavGridScanner
         var voxels = _world.Grid;
         var footprint = new CircleFootprint(voxels.ToVoxel(x) + 0.5, voxels.ToVoxel(z) + 0.5, 0.5);
         var worldFloor = voxels.ToCentimetres(voxels.MinVoxelY);
-        var reference = (int)grid.Floor[cell];
+        var reference = grid.Floor[cell];
         var ground = Ground(x, z, reference);
         var limit = ground + LowCentimetres;
         var lowest = Math.Max(Math.Min(reference, ground) - DepthCentimetres, worldFloor);
@@ -116,12 +105,12 @@ public sealed class NavGridScanner
         }
 
         var surface = top == int.MinValue ? int.MinValue : SurfaceOver(x, top, z);
-        short floor;
+        int floor;
         byte clear;
         if (surface > limit)
         {
             // Solid reaches past the limit over the ground: too high to step onto, however it was built.
-            floor = (short)Math.Min(reference, ground);
+            floor = Math.Min(reference, ground);
             clear = 0;
         }
         else
@@ -137,7 +126,7 @@ public sealed class NavGridScanner
                 in _passable
             );
             var room = bottom == int.MaxValue ? NavGrid.MostClear : voxels.ToCentimetres(bottom) - standing;
-            floor = (short)standing;
+            floor = standing;
             clear = (byte)(Math.Clamp(room, 0, NavGrid.MostClear) / NavGrid.ClearUnit);
         }
 
@@ -159,10 +148,21 @@ public sealed class NavGridScanner
     /// whatever it cleared would be wrong) and changes nothing otherwise; stone set or filled from the floor up raises the floor when low enough over
     /// the ground to stand on and blocks the cell otherwise, and stone over the floor lowers the headroom; a fill of a
     /// material walkers pass through changes nothing. A piece put back counts as its bounding sphere filled; painting
-    /// changes nothing. Reports each changed cell to <paramref name="changed"/>. Any thread that owns the grid (the
-    /// source's ground is read on any thread); allocates nothing.
+    /// changes nothing. Only the cells of the grid's window are changed (an edit outside it changes none), and of those
+    /// only the columns <paramref name="firstColumn"/> to <paramref name="lastColumn"/> and rows
+    /// <paramref name="firstRow"/> to <paramref name="lastRow"/> when given (the strips a move of the window brings in).
+    /// Reports each changed cell to <paramref name="changed"/>. Any thread that owns the grid (the source's ground is
+    /// read on any thread); allocates nothing.
     /// </summary>
-    public void Stamp(NavGrid grid, in VoxelEdit edit, Action<int>? changed = null)
+    public void Stamp(
+        NavGrid grid,
+        in VoxelEdit edit,
+        Action<int>? changed = null,
+        int firstColumn = 0,
+        int firstRow = 0,
+        int lastColumn = int.MaxValue,
+        int lastRow = int.MaxValue
+    )
     {
         ArgumentNullException.ThrowIfNull(grid);
         if (!Effect(in edit, out var removes))
@@ -171,26 +171,24 @@ public sealed class NavGridScanner
         }
 
         edit.GetBounds(out var min, out var end);
-        if (!grid.TryCell(min.X, min.Z, out var first))
-        {
-            first = grid.Index(
-                Math.Clamp((min.X - grid.OriginX) / NavGrid.CellCentimetres, 0, grid.Width - 1),
-                Math.Clamp((min.Z - grid.OriginZ) / NavGrid.CellCentimetres, 0, grid.Depth - 1)
-            );
-        }
-
-        if (!grid.TryCell(end.X - 1, end.Z - 1, out var last))
-        {
-            last = grid.Index(
-                Math.Clamp((end.X - 1 - grid.OriginX) / NavGrid.CellCentimetres, 0, grid.Width - 1),
-                Math.Clamp((end.Z - 1 - grid.OriginZ) / NavGrid.CellCentimetres, 0, grid.Depth - 1)
-            );
-        }
-
-        for (var row = grid.Row(first); row <= grid.Row(last); row++)
+        var columns = (
+            First: Math.Max(firstColumn, NavGrid.FloorDivide(min.X - grid.OriginX, NavGrid.CellCentimetres)),
+            Last: Math.Min(
+                Math.Min(lastColumn, grid.Width - 1),
+                NavGrid.FloorDivide(end.X - 1 - grid.OriginX, NavGrid.CellCentimetres)
+            )
+        );
+        var rows = (
+            First: Math.Max(firstRow, NavGrid.FloorDivide(min.Z - grid.OriginZ, NavGrid.CellCentimetres)),
+            Last: Math.Min(
+                Math.Min(lastRow, grid.Depth - 1),
+                NavGrid.FloorDivide(end.Z - 1 - grid.OriginZ, NavGrid.CellCentimetres)
+            )
+        );
+        for (var row = Math.Max(0, rows.First); row <= rows.Last; row++)
         {
             var z = grid.CentreZ(row);
-            for (var column = grid.Column(first); column <= grid.Column(last); column++)
+            for (var column = Math.Max(0, columns.First); column <= columns.Last; column++)
             {
                 var x = grid.CentreX(column);
                 if (!Span(in edit, x, z, out var y0, out var y1))
@@ -475,13 +473,12 @@ public sealed class NavGridScanner
     private static bool Write(NavGrid grid, int cell, int floor, int room, bool open)
     {
         var clear = open ? (byte)Math.Max(1, Math.Clamp(room, 0, NavGrid.MostClear) / NavGrid.ClearUnit) : (byte)0;
-        var newFloor = (short)floor;
-        if (grid.Floor[cell] == newFloor && grid.Clear[cell] == clear)
+        if (grid.Floor[cell] == floor && grid.Clear[cell] == clear)
         {
             return false;
         }
 
-        grid.Floor[cell] = newFloor;
+        grid.Floor[cell] = floor;
         grid.Clear[cell] = clear;
         return true;
     }

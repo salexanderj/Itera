@@ -20,9 +20,10 @@ public sealed class FlowFieldBuilder
     public ReadOnlySpan<int> Costs => _cost;
 
     /// <summary>
-    /// Writes into <paramref name="field"/> the route from every cell of <paramref name="grid"/> to the goal of
-    /// <paramref name="spec"/>, with <paramref name="walkable"/> (from <see cref="NavSize.Derive"/> for the spec's
-    /// size) saying where the walker can stand.
+    /// Writes into <paramref name="field"/> the route from every cell of <paramref name="grid"/> to the goals of
+    /// <paramref name="spec"/> (each the cell under it, or the window's edge cell nearest it), with
+    /// <paramref name="walkable"/> (from <see cref="NavSize.Derive"/> for the spec's size) saying where the walker can
+    /// stand; the field takes the grid's window.
     /// </summary>
     public void Build(NavGrid grid, NavFieldSpec spec, byte[] walkable, FlowField field)
     {
@@ -55,11 +56,13 @@ public sealed class FlowFieldBuilder
         directions.AsSpan().Fill(FlowField.None);
         _counts.AsSpan().Clear();
 
+        field.BuildOver(grid);
         var pending = 0;
-        var goals = spec.GoalCells;
+        var goals = spec.Goals;
         for (var i = 0; i < goals.Length; i++)
         {
-            var goal = goals[i];
+            // Outside the window, the edge cell nearest it stands in.
+            var goal = grid.NearestCell(goals[i].X, goals[i].Z);
             if (cost[goal] != 0)
             {
                 cost[goal] = 0;

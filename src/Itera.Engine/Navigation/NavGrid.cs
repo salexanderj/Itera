@@ -5,11 +5,13 @@ using Itera.Engine.Voxels;
 namespace Itera.Engine.Navigation;
 
 /// <summary>
-/// The navigation grid: one layer of square cells <see cref="CellCentimetres"/> centimetres wide, each with the floor a
-/// walker stands on at its centre, the headroom above that floor, and a cost class the game defines. A cell with no
-/// headroom is blocked: something solid rises too far above the ground there to step onto. Cells are numbered row by
-/// row, x fastest. Arrays are public so the builder, the scanner, and the flow field read them without copies; one
-/// thread writes a grid at a time.
+/// The navigation grid: a window of square cells <see cref="CellCentimetres"/> centimetres wide over the world (the whole
+/// map where it fits, else a square that moves with the players, <see cref="NavigationService"/>), each with the floor a
+/// walker stands on at its centre (absolute centimetres), the headroom above that floor, and a cost class the game
+/// defines. A cell with no headroom is blocked: something solid rises too far above the ground there to step onto.
+/// Cells are numbered row by row, x fastest, from the window's corner (<see cref="OriginX"/>, <see cref="OriginZ"/>,
+/// absolute and a whole number of cells from the absolute 0). Arrays are public so the builder, the scanner, and the flow
+/// field read them without copies; one thread writes a grid at a time.
 /// </summary>
 public sealed class NavGrid
 {
@@ -30,16 +32,16 @@ public sealed class NavGrid
         OriginZ = originZ;
         Width = width;
         Depth = depth;
-        Floor = new short[width * depth];
+        Floor = new int[width * depth];
         Clear = new byte[width * depth];
         Class = new byte[width * depth];
     }
 
-    /// <summary>Level-0 x of the grid's west edge.</summary>
-    public int OriginX { get; }
+    /// <summary>The absolute x of the window's west edge, in centimetres.</summary>
+    public int OriginX { get; private set; }
 
-    /// <summary>Level-0 z of the grid's south edge.</summary>
-    public int OriginZ { get; }
+    /// <summary>The absolute z of the window's south edge, in centimetres.</summary>
+    public int OriginZ { get; private set; }
 
     /// <summary>Cells along x.</summary>
     public int Width { get; }
@@ -50,8 +52,8 @@ public sealed class NavGrid
     /// <summary>Number of cells.</summary>
     public int Count => Floor.Length;
 
-    /// <summary>Each cell's floor: the level-0 y a walker's feet stand at (the first voxel above the ground).</summary>
-    public short[] Floor { get; }
+    /// <summary>Each cell's floor: the absolute y in centimetres a walker's feet stand at (the top of the ground).</summary>
+    public int[] Floor { get; }
 
     /// <summary>
     /// Each cell's headroom above its floor, in <see cref="ClearUnit"/>s, up to <see cref="MostClear"/>; 0 means blocked.
@@ -99,6 +101,16 @@ public sealed class NavGrid
         return true;
     }
 
+    /// <summary>
+    /// The cell nearest the absolute point (<paramref name="x"/>, <paramref name="z"/>) in centimetres: the one under it,
+    /// or past the window's edge the edge cell nearest it (a goal outside the window stands in at its border).
+    /// </summary>
+    public int NearestCell(int x, int z) =>
+        Index(
+            Math.Clamp(FloorDivide(x - OriginX, CellCentimetres), 0, Width - 1),
+            Math.Clamp(FloorDivide(z - OriginZ, CellCentimetres), 0, Depth - 1)
+        );
+
     /// <summary>The cell under the local position <paramref name="metres"/>; false outside the grid.</summary>
     public bool TryCell(WorldOrigin origin, Vector3 metres, out int cell)
     {
@@ -138,6 +150,42 @@ public sealed class NavGrid
         return (float)((south + (north - south) * fv - origin.Centimetres.Y) / perMetre);
     }
 
+    /// <summary>Moves the window's corner to the absolute (<paramref name="originX"/>, <paramref name="originZ"/>); the cells keep their values.</summary>
+    internal void MoveTo(int originX, int originZ) => (OriginX, OriginZ) = (originX, originZ);
+
+    /// <summary>
+    /// Copies every cell of <paramref name="source"/> (a window of the same size elsewhere) that lies in this window too,
+    /// to its place here; the rest of this window is left as it was.
+    /// </summary>
+    public void CopyOverlap(NavGrid source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (source.Width != Width || source.Depth != Depth)
+        {
+            throw new ArgumentException("The grids differ in size.", nameof(source));
+        }
+
+        // Cells from this window's corner to the source's.
+        var dx = (source.OriginX - OriginX) / CellCentimetres;
+        var dz = (source.OriginZ - OriginZ) / CellCentimetres;
+        var firstColumn = Math.Max(0, dx);
+        var lastColumn = Math.Min(Width - 1, Width - 1 + dx);
+        if (firstColumn > lastColumn)
+        {
+            return;
+        }
+
+        var length = lastColumn - firstColumn + 1;
+        for (var row = Math.Max(0, dz); row <= Math.Min(Depth - 1, Depth - 1 + dz); row++)
+        {
+            var to = Index(firstColumn, row);
+            var from = source.Index(firstColumn - dx, row - dz);
+            source.Floor.AsSpan(from, length).CopyTo(Floor.AsSpan(to, length));
+            source.Clear.AsSpan(from, length).CopyTo(Clear.AsSpan(to, length));
+            source.Class.AsSpan(from, length).CopyTo(Class.AsSpan(to, length));
+        }
+    }
+
     /// <summary>Copies rows <paramref name="firstRow"/> to <paramref name="lastRow"/> of <paramref name="source"/>.</summary>
     public void CopyRows(NavGrid source, int firstRow, int lastRow)
     {
@@ -154,6 +202,6 @@ public sealed class NavGrid
         source.Class.AsSpan(start, length).CopyTo(Class.AsSpan(start, length));
     }
 
-    private static int FloorDivide(int value, int divisor) =>
+    internal static int FloorDivide(int value, int divisor) =>
         value >= 0 ? value / divisor : -((-value + divisor - 1) / divisor);
 }

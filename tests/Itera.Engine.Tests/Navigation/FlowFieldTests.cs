@@ -1,4 +1,5 @@
 using Itera.Engine.Navigation;
+using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Tests.Navigation;
 
@@ -210,7 +211,7 @@ public sealed class FlowFieldTests
     public void Building_again_allocates_nothing()
     {
         var (grid, _, goal) = RoadWithWall(2);
-        var spec = new NavFieldSpec("test", s_small, s_avoiding, [goal]);
+        var spec = new NavFieldSpec("test", s_small, s_avoiding, Places(grid, [goal]));
         var walkable = new byte[grid.Count];
         s_small.Derive(grid, walkable, 0, grid.Depth - 1);
         var builder = new FlowFieldBuilder();
@@ -287,9 +288,13 @@ public sealed class FlowFieldTests
         var walkable = new byte[grid.Count];
         size.Derive(grid, walkable, 0, grid.Depth - 1);
         var field = new FlowField(grid);
-        new FlowFieldBuilder().Build(grid, new NavFieldSpec("test", size, costs, goals), walkable, field);
+        new FlowFieldBuilder().Build(grid, new NavFieldSpec("test", size, costs, Places(grid, goals)), walkable, field);
         return new Result(grid, size, field, walkable);
     }
+
+    /// <summary>The centres of <paramref name="cells"/>, as the absolute places a field's goals are.</summary>
+    private static VoxelCoord[] Places(NavGrid grid, int[] cells) =>
+        [.. cells.Select(cell => new VoxelCoord(grid.CentreX(grid.Column(cell)), 0, grid.CentreZ(grid.Row(cell))))];
 
     private sealed record Result(NavGrid Grid, NavSize Size, FlowField Field, byte[] Walkable)
     {

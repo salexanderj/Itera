@@ -171,7 +171,7 @@ Rules:
 | `Physics/` | `PhysicsWorld` (Bepu simulation, pool, thread dispatcher, shared voxel box shapes, characters' stand-ins), callbacks, `BodyKinds`, `VoxelColliders`, `LooseBodies`, `LooseBodyVoxels`, `SolidModelVoxels` and `SolidColumns`, `VoxelCharacterMover`, `MeshColliders` (a game's static triangle colliders, also Bepu mesh statics), `MeshColumns` (the colliders as the mover's cells), `CollisionSources` (the ray over the terrain and the colliders), `SurfaceHit` |
 | `Voxels/` | `VoxelWorld` (streaming, edits, change list, stats, `Raycast`, collision queries, block reads), `VoxelGrid` and `GridLevel`, `VoxelDensity`, `IVoxelPassability`, `VoxelBoxes`, `VoxelMemory` (native block pools), `BrickCodec`, `ChunkTree`, `Column`, `VoxelEditing` and `VoxelEdit`, `VoxelPiece` and `PieceRuns`, `VoxelModels` (small voxel volumes drawn at any position and turn), `EditLog` and `EditLogSerializer`, `VoxelChangeLog`, `IChunkGenerator`, `VoxelWorkers` and `ColumnJob`, `LevelDistances`, `StreamingCentre`, `VoxelConstants` |
 | `Voxels/Generation/` | The world generation toolkit (see "World generation") |
-| `Navigation/` | `NavigationService`, `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`, `INavGridSource` (the game's part), `FlowFieldBuilder` and `FlowField`, `NavGridScanner`, `NavigationDebugLines` |
+| `Navigation/` | `NavigationService` (its window, `NavArea`), `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`, `INavGridSource` (the game's part), `FlowFieldBuilder` and `FlowField`, `NavGridScanner`, `NavigationDebugLines` |
 | `Networking/` | `SessionService` (hosting or joining; `.Host.cs`, `.Client.cs`), `ISessionTransport` with `NetworkService` (LiteNetLib) and `SteamTransport` over `ISteamPlatform`, `SteamService`, `SteamAddress`, `SteamLaunchArguments`, `SteamFriendList`, `SessionProtocol` (message kinds, `MessageWriter`, `MessageReader`), `MatchSettings` and `ISessionGameHandler`, `GameMessageHandler`, `SessionAddress`, `NetLoggerAdapter`, and the helpers `NetEntities`, `PlayerIds`, `TickRing`, and `JitterPlayback` |
 | `UI/` | `UISurface` (the UI's pixels: a Skia CPU surface that draws its layers when one changes and reports the rows that changed), `IUiLayer`, `IMatchUiLayer`, `ConsoleLayer` and `DevConsole`, `StatsLayer`, `AimDotLayer`, `LoadingLayer`, `CentredMessageLayer`, `TextBlobs`, `TextLine`, `UiFonts`, `Amounts`, `WheelSteps`, and `Menu/` (`MenuLayer`, the join and settings pages, `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`) |
 | `Commands/` | `ConsoleCommands` (name, usage, help, scope, owner), `CommandLine`, `EngineCommands`, `MatchCommands`, `SettingsCommands`, `ParticleCommands`, `SoundCommands` |
@@ -818,7 +818,7 @@ it was 4 x 10^13 (5 TB at one bit each).
   walls and caves come in voxel steps, and a piece lifted from the ground, read a centimetre at a time, keeps the
   voxels' steps. The limit is one of storage and streaming: positions in metres are floats from the match's origin, which
   follows the camera, so they keep their precision anywhere on the map (a host's bodies near a far client excepted),
-  and navigation keeps heights within ±327.67 m (open work). Code where the world and a model meet uses the
+  and navigation's window follows the players over any map. Code where the world and a model meet uses the
   grid's and the model's units, never a level's 2^k.
 - A column (the chunks at one x, z) is the unit of streaming. Level k (voxels of `Edge(k)` cm, chunks of 128 of them)
   loads the columns whose nearest point is within the level-0 streaming radius * 2^k of a streaming centre
@@ -1257,13 +1257,23 @@ overlay and fossilize Vulkan layers into the game; the overlay draws one best-pr
 
 ### Navigation by flow fields over a grid
 
-Navigation (`NavigationService`, host and offline only) fills a grid of 50 cm cells (`NavGrid.CellCentimetres`) over the
-map on a thread of its own from a game's `INavGridSource` and builds the flow fields the game asks for. A game without a
-source has no navigation.
+Navigation (`NavigationService`, host and offline only) fills a grid of 50 cm cells (`NavGrid.CellCentimetres`) on a
+thread of its own from a game's `INavGridSource` and builds the flow fields the game asks for. A game without a source
+has no navigation.
 
-- **The grid** (`NavGrid`): one layer of cells over the map, each with its floor (the level-0 y a walker stands at), its
-  headroom (in 2 cm, up to 5.1 m; 0 is blocked), and a cost class. The game's source says the grid's extent, fills it from
-  its own knowledge of the world (the layout as generated, not generated voxels), and says what the ground is at a cell. The
+- **The grid** (`NavGrid`): one layer of cells, each with its floor (absolute centimetres in an `int`, so any map's
+  heights fit), its headroom (in 2 cm, up to 5.1 m; 0 is blocked), and a cost class. The game's source fills a rectangle
+  of it from its own knowledge of the world (the layout as generated, not generated voxels) and says what the ground is
+  at a cell.
+- **The window** (`Engine:Navigation:WindowCells`, 1024: 512 m): a map that fits is covered whole and never moved; on a
+  larger one the grid is a square that follows a focus (`NavigationService.Follow`, else the first streaming centre),
+  moving by 32 m tiles when its corner for the focus lies a quarter of it away, or the focus nears its edge. The thread
+  fills only the strips coming in and stamps on them the logged edits since the last reset that reach them; those wait
+  to be read from the voxels as any stamped edit does. Each field keeps the window it was built over, and a goal past
+  the window stands in at its nearest edge cell, so walkers head that way until the window reaches it. About 6 MB a
+  grid (two are kept), 1 MB a field, and 1 MB a size at 1024. A walker on open ground crossed 2 km of a 4 km map to its
+  goal with 11 moves of the 1024-cell window, each building its field in 30 ms in Release (153 ms in Debug); on a large
+  map a whole field takes far less than the old map-wide grid's, whatever the map's size. The
   rule for a cell, from the source or from the voxels (`NavGridScanner`), at its centre: anything rising at most
   `LowCentimetres` over the ground raises the floor, anything higher blocks the cell, and the headroom runs to the lowest
   blocking voxel over the floor; passable materials count as air. A read takes the floor from the density surface over the
@@ -1481,9 +1491,9 @@ Engine work that is known and not done:
   they cross it, and moves of the origin following the camera (`OriginShiftSystem`, `OriginShifts`; the renderer,
   particles, and sound follow them), positions in messages absolute, and the starter's map 8 km across (broad relief
   past 1 km), and views to 8 km (levels 8 to 10; the haze and the far shadows' 200 m end left for Lucy's choice; the
-  GPU's time not yet measured). Not built: a nav grid that moves
-  with the players (it covers a game's area and keeps heights within ±327.67 m), and columns that hold only the layers
-  with ground or edits, so a map's height costs memory only where something is.
+  GPU's time not yet measured), and a nav grid that moves with the players over any map (`Engine:Navigation:WindowCells`).
+  Not built: columns that hold only the layers with ground or edits, so a map's height costs memory only where
+  something is.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no
   engine system replicates players, thrown bodies, or characters; the Zorf TD archive has a working design (a player's
   state every step with the host's checks and corrections, bodies as kinematic mirrors played back a few ticks behind,

@@ -135,7 +135,9 @@ Where tests live:
   `ShaderReloadTests`.
 - Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `LoopbackTests`, `SteamTransportTests`,
   `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests` (a temporary folder), `Navigation/`
-  (flow fields on small grids, the scanner, the service), `Audio/` (`AudioMixerTests` with the one-shots across a move of the origin, `AudioServiceTests`,
+  (flow fields on small grids, the scanner with a floor 409 m down, the service, and its moving window,
+  `NavigationWindowTests`: moves by tiles, the map's edge, a moved window against one placed there at the start, an edit
+  past it, a reset during a move, a walker 2 km to its goal, no allocation), `Audio/` (`AudioMixerTests` with the one-shots across a move of the origin, `AudioServiceTests`,
   `SynthesisTests`, `SoundCacheTests`), `Particles/`, `Commands/` (`MatchCommandsTests` too), `UI/` (`AimDotLayerTests`, `TextBlobsTests`,
   `DevConsoleTests`, `MenuLayerTests`, `MenuJoinPageTests`, `RadialMenuTests`, `TextLineTests`), `Input/`
   (`MenuInputTests`, `KeyBindingsTests`, `KeyboardFocusTests`, `InputInjectionTests`), `Settings/`, `Loading/`,

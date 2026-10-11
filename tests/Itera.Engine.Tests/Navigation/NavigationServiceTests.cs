@@ -23,7 +23,12 @@ public sealed class NavigationServiceTests
     public void The_grid_and_fields_are_handed_over_at_a_fixed_step()
     {
         var source = new FakeSource();
-        using var service = new NavigationService(source, () => true, NullLogger<NavigationService>.Instance);
+        using var service = new NavigationService(
+            source,
+            () => true,
+            NullLogger<NavigationService>.Instance,
+            area: Area
+        );
         service.Initialize();
         Assert.True(service.Enabled);
         Assert.False(service.Ready);
@@ -51,18 +56,23 @@ public sealed class NavigationServiceTests
     public void A_session_client_builds_nothing()
     {
         var source = new FakeSource();
-        using var service = new NavigationService(source, () => false, NullLogger<NavigationService>.Instance);
+        using var service = new NavigationService(
+            source,
+            () => false,
+            NullLogger<NavigationService>.Instance,
+            area: Area
+        );
         service.Initialize();
         service.AfterFixedStep();
         Assert.False(service.Enabled);
         Assert.False(service.Ready);
-        Assert.Equal(0, source.Grids);
+        Assert.Equal(0, source.FieldSets);
     }
 
     [Fact]
     public void A_game_without_a_source_builds_nothing()
     {
-        using var service = new NavigationService(null, () => true, NullLogger<NavigationService>.Instance);
+        using var service = new NavigationService(null, () => true, NullLogger<NavigationService>.Instance, area: Area);
         service.Initialize();
         service.AfterFixedStep();
         Assert.False(service.Enabled);
@@ -73,7 +83,12 @@ public sealed class NavigationServiceTests
     [Fact]
     public void Disposing_stops_the_thread_and_may_be_repeated()
     {
-        var service = new NavigationService(new FakeSource(), () => true, NullLogger<NavigationService>.Instance);
+        var service = new NavigationService(
+            new FakeSource(),
+            () => true,
+            NullLogger<NavigationService>.Instance,
+            area: Area
+        );
         service.Initialize();
         service.Dispose();
         service.Dispose();
@@ -82,7 +97,12 @@ public sealed class NavigationServiceTests
     [Fact]
     public void Fixed_steps_allocate_nothing()
     {
-        using var service = new NavigationService(new FakeSource(), () => true, NullLogger<NavigationService>.Instance);
+        using var service = new NavigationService(
+            new FakeSource(),
+            () => true,
+            NullLogger<NavigationService>.Instance,
+            area: Area
+        );
         service.Initialize();
         Assert.True(service.WaitUntilPublished(Timeout));
         service.AfterFixedStep();
@@ -251,7 +271,8 @@ public sealed class NavigationServiceTests
             () => true,
             NullLogger<NavigationService>.Instance,
             world,
-            new MoverWorldFixture.LeavesPass()
+            new MoverWorldFixture.LeavesPass(),
+            Area
         );
         service.Initialize();
 
@@ -443,6 +464,9 @@ public sealed class NavigationServiceTests
 
     private const int Floor = 200;
 
+    /// <summary>The 64 by 64 cells round the middle the tests' grid covers: their whole map, so it never moves.</summary>
+    private static readonly NavArea Area = new(-1600, -1600, 64);
+
     private static VoxelWorld FlatWorld(double radiusMetres = 7) =>
         TestWorlds.Load(new BoxesGenerator(Floor), new Vector3(0, 2, 0), radiusMetres);
 
@@ -453,7 +477,8 @@ public sealed class NavigationServiceTests
             () => true,
             NullLogger<NavigationService>.Instance,
             world,
-            new MoverWorldFixture.LeavesPass()
+            new MoverWorldFixture.LeavesPass(),
+            Area
         )
         {
             JobIntervalSeconds = 0,
@@ -473,26 +498,25 @@ public sealed class NavigationServiceTests
         private static readonly NavSize s_size = new("small", 200, 30, 45, 64);
         private static readonly NavCostTable s_costs = new([10], 400, 3000);
 
-        public int Grids { get; private set; }
+        public int FieldSets { get; private set; }
 
         public int Fills { get; private set; }
 
-        public NavGrid CreateGrid()
+        /// <summary>The fields to the centres of cells (30, 30) and (1, 1) of <see cref="Area"/>.</summary>
+        public IReadOnlyList<NavFieldSpec> CreateFields()
         {
-            Grids++;
-            return new NavGrid(-1600, -1600, 64, 64);
-        }
-
-        public IReadOnlyList<NavFieldSpec> CreateFields(NavGrid grid) =>
+            FieldSets++;
+            return
             [
-                new NavFieldSpec("east", s_size, s_costs, [grid.Index(30, 30)]),
-                new NavFieldSpec("west", s_size, s_costs, [grid.Index(1, 1)]),
+                new NavFieldSpec("east", s_size, s_costs, [new VoxelCoord(-75, 0, -75)]),
+                new NavFieldSpec("west", s_size, s_costs, [new VoxelCoord(-1525, 0, -1525)]),
             ];
+        }
 
         /// <summary>When set, filling the grid throws, as a bug in the game's builder would.</summary>
         public bool Throws { get; init; }
 
-        public void Fill(NavGrid grid)
+        public void Fill(NavGrid grid, int firstColumn, int firstRow, int lastColumn, int lastRow)
         {
             Fills++;
             if (Throws)
@@ -500,8 +524,12 @@ public sealed class NavigationServiceTests
                 throw new InvalidOperationException("The test's fill fails.");
             }
 
-            grid.Floor.AsSpan().Fill(Floor);
-            grid.Clear.AsSpan().Fill(byte.MaxValue);
+            for (var row = firstRow; row <= lastRow; row++)
+            {
+                var start = grid.Index(firstColumn, row);
+                grid.Floor.AsSpan(start, lastColumn - firstColumn + 1).Fill(Floor);
+                grid.Clear.AsSpan(start, lastColumn - firstColumn + 1).Fill(byte.MaxValue);
+            }
         }
     }
 }

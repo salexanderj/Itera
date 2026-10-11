@@ -33,6 +33,9 @@ public sealed class EngineOptions
     /// <summary>The match's origin, which positions are measured from (<c>Engine:Origin</c>).</summary>
     public OriginSettings Origin { get; set; } = new();
 
+    /// <summary>The navigation grid (<c>Engine:Navigation</c>).</summary>
+    public NavigationSettings Navigation { get; set; } = new();
+
     /// <summary>Loose bodies (<c>Engine:Physics</c>).</summary>
     public PhysicsSettings Physics { get; set; } = new();
 
@@ -511,6 +514,20 @@ public sealed class CameraSettings
     /// flight), in metres: it must clear the game's ground along a 100 m circle round the origin.
     /// </summary>
     public double CircleHeightMetres { get; set; } = 20;
+}
+
+/// <summary>The navigation grid (<c>NavigationService</c>).</summary>
+public sealed class NavigationSettings
+{
+    /// <summary>The window's most cells across, by default.</summary>
+    public const int DefaultWindowCells = 1024;
+
+    /// <summary>
+    /// The most cells of 50 cm the navigation grid's window is across: 1024 (512 m) by default, 128 to 4096. A map that
+    /// fits is covered whole and the window never moves; on a larger one it moves with the players. About 6 MB a grid
+    /// (two are kept) and 2 MB a field and a size at 1024.
+    /// </summary>
+    public int WindowCells { get; set; } = DefaultWindowCells;
 }
 
 /// <summary>The match's origin, which positions are measured from (<c>OriginShifts</c>).</summary>
