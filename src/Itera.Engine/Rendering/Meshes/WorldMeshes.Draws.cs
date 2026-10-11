@@ -11,7 +11,8 @@ public sealed unsafe partial class WorldMeshes
 {
     /// <summary>
     /// The far cascade's blocks are chosen with the reaches times this, on top of <c>MeshReachShare</c>: one level
-    /// coarser than the camera's at the same distance, as its texels are about a level-4 voxel (16 cm) wide.
+    /// coarser than the camera's at the same distance, as its texels are about 20 cm wide. Its pass is not balanced
+    /// (<see cref="SelectAll"/>), so the coarser cut holds.
     /// </summary>
     private const double FarShadowCutShare = 0.5;
 
@@ -33,8 +34,15 @@ public sealed unsafe partial class WorldMeshes
     private bool _stitching;
     private double _cutShare;
 
-    // The columns each pass draws, kept within one level of their neighbours for the seams' stitching.
+    // The columns each pass draws, in the camera's pass kept within one level of their neighbours for the seams'
+    // stitching.
     private readonly LevelBalance _balance = new();
+
+    /// <summary>The columns the camera's pass chose in the last frame.</summary>
+    internal int LastCameraColumns { get; private set; }
+
+    /// <summary>The columns the far cascade's pass chose in the last frame (0 without shadows).</summary>
+    internal int LastFarColumns { get; private set; }
     private Func<ColumnKey, bool>? _canSplit;
 
     // The camera's commands and their blocks' keys (squared distances from the camera, MeshView.NearFirstKey), sorted nearest
@@ -104,6 +112,7 @@ public sealed unsafe partial class WorldMeshes
         StitchedDraws = _stitchedDraws;
         WriteCameraNearestFirst(lists.Camera);
         WriteViewsNearestFirst(slot);
+        LastFarColumns = 0;
         if (_view.Shadows)
         {
             _farPass = true;
@@ -143,9 +152,11 @@ public sealed unsafe partial class WorldMeshes
     }
 
     /// <summary>
-    /// Chooses the pass's columns from each coarsest one (<see cref="Select"/>), keeps them within a level of their
-    /// neighbours (<see cref="LevelBalance"/>), and draws them, in the camera's pass with the sides past which a column
-    /// one level coarser is drawn.
+    /// Chooses the pass's columns from each coarsest one (<see cref="Select"/>) and draws them. The camera's pass keeps
+    /// them within a level of their neighbours (<see cref="LevelBalance"/>) and draws them with the sides past which a
+    /// column one level coarser is drawn, for the stitched seams. The far cascade's pass draws plain meshes and is not
+    /// balanced: balancing split its columns back to the camera's (on the starter's map the two passes chose the same
+    /// columns in every view), so its coarser cut (<see cref="FarShadowCutShare"/>) saved nothing.
     /// </summary>
     private void SelectAll(in DrawLists lists)
     {
@@ -155,14 +166,23 @@ public sealed unsafe partial class WorldMeshes
             Select(column.Key);
         }
 
-        _balance.Balance(_canSplit ??= CanSplit);
         if (!_farPass)
         {
+            _balance.Balance(_canSplit ??= CanSplit);
             _stats.LastUnbalanced = _balance.Unbalanced;
         }
 
         // By index: a foreach over the interface boxes its enumerator, an allocation each pass.
         var leaves = _balance.Leaves;
+        if (_farPass)
+        {
+            LastFarColumns = leaves.Count;
+        }
+        else
+        {
+            LastCameraColumns = leaves.Count;
+        }
+
         var unmeshed = 0;
         for (var i = 0; i < leaves.Count; i++)
         {

@@ -207,8 +207,8 @@ reach times `Engine:Renderer:MeshReachShare`, 0.5 by default, and all four are m
 meshed itself and they are; a finer column past the map's edge, which never loads, or past the view's end, which is
 never meshed, draws nothing and keeps no coarse column from splitting (`WorldMeshes.DrawsNothing`: a map's half-width
 need not be whole coarse columns, and a coarse column may be wider than the view); `Engine:Renderer:MeshFinestLevel`,
-0 by default, is the finest), keeps neighbouring columns, corners included, within one level of each other
-(`LevelBalance`, which keeps the drawn columns themselves and finds the one over a finest column level by level: a
+0 by default, is the finest), keeps neighbouring columns, corners included, within one level of each other in the
+camera's pass (`LevelBalance`, which keeps the drawn columns themselves and finds the one over a finest column level by level: a
 column beside one two levels finer splits where its finer columns are meshed; the meshes line counts those left), draws the blocks of a column along a side or corner past which a column one level coarser is drawn from
 their stitched meshes (`WorldMeshes.Stitches.cs`, below), culls blocks to the frustum, and writes a `MeshDraw` and an indexed indirect command per
 block (`firstInstance` names the draw); the camera's commands are sorted nearest first by the distance to each block's
@@ -228,7 +228,9 @@ and writes the slot's `MeshLighting`; with the view's shadows on, `WorldMeshes` 
 the sun (a block shades the slice only from the sun's side). The near cascade takes the camera's levels, and so does the distant one, from
 the terrain's blocks alone (its own list, `MeshPass.DistantList`, of the world's four, `WorldLists`; the models and mesh
 assets keep three lists and cast into it nothing), so its casters are the surfaces the camera draws at that distance;
-the far one is chosen in a second pass one level coarser (`FarShadowCutShare`). A full list warns once a match. The seams between
+the far one is chosen in a second pass one level coarser (`FarShadowCutShare`), which is not balanced: it draws plain
+meshes and needs no stitched seams, and balancing it split its columns back to the camera's
+(`WorldMeshes.LastCameraColumns` and `LastFarColumns` count each pass's). A full list warns once a match. The seams between
 levels are stitched (`SurfaceNets.MeshTransition`): the block meshed from its own voxels and the coarser level's block
 that holds it (block `b >> 1`, at `(b & 1) * 16` of its voxels), its cells that straddle the coarser column's boundary
 taking the coarser level's vertices, and at its high x and z faces the coarser level's quads across them. A stitched

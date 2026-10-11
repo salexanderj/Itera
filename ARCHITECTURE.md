@@ -1025,7 +1025,15 @@ holds the decisions, the measurements, and the history of how it replaced a raym
   cascade blends into the far one over 5 m, and the far cascade's shadows fade out over its last tenth. In the near
   cascade the shadows are contact-hardening: a blocker search (8 taps, the maps read as depths) measures the gap between
   caster and surface, and 16 comparison taps over a Poisson disc blur by the gap for a sun 2 degrees across, sharp where
-  a caster meets the surface; the far cascade uses 3 x 3 lookups. With `Engine:Renderer:DistantShadowMetres` (0, none,
+  a caster meets the surface; the far cascade uses 3 x 3 lookups. The far cascade's blocks are chosen one level
+  coarser than the camera's (`FarShadowCutShare`), in a pass that is not balanced (`LevelBalance` keeps the camera's
+  columns within a level of their neighbours, for its stitched seams; the far cascade draws plain meshes). Balanced, as
+  it was until 2026-10-11, the far pass split its columns back to the camera's in every view of the starter, so the
+  coarser cut saved nothing; unbalanced, its shadow maps took 29 to 34 % less in the benchmark's flight (0.142 to 0.094
+  ms at the engine's sun, 0.297 to 0.212 ms at 10 degrees) and 10 to 21 % less at `distant`, the world pass 0.6 to 3.4 %
+  less, with the same picture but for a few blobs of shadow edge. The views at the map's middle did not change: a camera
+  on the corner where columns of every level meet makes both passes choose the fewest columns, a ring of 12 a level.
+  With `Engine:Renderer:DistantShadowMetres` (0, none,
   by default; 400 to 8000) a third cascade, the distant one, covers the view from where the far one starts to fade
   (180 m) to that depth or the view's end, with 3 x 3 lookups; the far cascade's last tenth blends into it, and it fades
   out over its own last tenth. It is drawn only while the sun is under 30 degrees over the horizon, faded in down to 25
@@ -1037,10 +1045,8 @@ holds the decisions, the measurements, and the history of how it replaced a raym
   the starter's 8 km map at nine levels with a 2 km distant cascade and a sun 10 degrees up (the benchmark offscreen at
   2560x1440, two runs each, 2026-10-10): it doubles the shadow maps' time, 0.19 to 0.40 ms more (2.4 to 5.1 million
   more shadow triangles), so the world pass takes 9 to 18 % longer (1.93 to 2.11 ms at the start, 3.20 to 3.58 at
-  `high`); the extra lookups cost almost nothing. Listing its blocks in the far pass instead listed the same number of
-  blocks in every view (1,301, 2,234, 1,306, ...), cost the same, and drew the same picture: there the far pass chose
-  the camera's columns, although its cut (`FarShadowCutShare`) is meant to choose one level coarser, as it did when it
-  was added (the forest view's shadow maps 1.44 to 1.27 ms, docs/rendering-redesign.md); why is not yet known. It changes the starter's picture little, because the 1.5-texel normal offset (3.6 m) leaves out the
+  `high`); the extra lookups cost almost nothing. Listing its blocks in the far pass instead cost the same and drew the
+  same picture, since the far pass then chose the camera's columns (below). It changes the starter's picture little, because the 1.5-texel normal offset (3.6 m) leaves out the
   shadows of anything under about 4 m, the boulders included, and the starter's gentle slopes cast only under a very
   low sun: at 12 degrees 0.4 % of the start view's pixels changed, at 4 degrees 2.9 % of `high`'s, the back slopes of
   the hills 200 m to 4 km out in shadow. A game with taller ground (cliffs, mountains) gains more.

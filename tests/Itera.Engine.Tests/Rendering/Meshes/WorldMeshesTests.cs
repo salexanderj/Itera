@@ -598,6 +598,40 @@ public sealed class WorldMeshesTests : IDisposable
         Assert.Equal(0, targets.LightingOf(slot).DistantStrength);
     }
 
+    /// <summary>
+    /// The far cascade's pass chooses its columns one level coarser than the camera's (<c>FarShadowCutShare</c>) and is
+    /// not balanced: only the camera's stitched seams need neighbours within a level, and balancing the far pass split its
+    /// columns back to the camera's. On four levels, with the camera off the columns' corners (a camera on one touches
+    /// a column of every level, which always splits), it chooses at most three quarters as many columns as the camera's
+    /// pass: 52 against 79 (balanced, it chose 73).
+    /// </summary>
+    [Fact]
+    public void The_far_cascades_pass_chooses_coarser_columns_than_the_cameras()
+    {
+        var at = new Vector3(3.3f, SlopeGenerator.Height(330, 190, 17) / 100f + 0.3f, 1.9f);
+        using var world = TestWorlds.Load(new SlopeGenerator(), at, radiusMetres: RadiusMetres, levels: 4);
+        using var targets = new FakeTargets();
+        using var meshes = NewMeshes(targets, levels: 4);
+        meshes.BeginMatch(world, new VoxelModels(world), new NoVoxelTintMap());
+        var view = LookingDown(at, AboveSpread);
+        view.SunDirection = ViewConstants.DefaultSunDirection;
+        view.Switches = ViewSwitches.Shadows;
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var frame = 0;
+        do
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The meshes did not catch up.");
+            world.Update(0);
+            var slot = frame++ % FrameSync.FramesInFlight;
+            targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
+            Thread.Sleep(1);
+        } while (!meshes.IsUpToDate);
+
+        _output.WriteLine($"camera {meshes.LastCameraColumns} columns, far cascade {meshes.LastFarColumns}");
+        Assert.True(meshes.LastFarColumns > 0);
+        Assert.True(4 * meshes.LastFarColumns <= 3 * meshes.LastCameraColumns);
+    }
+
     [Fact]
     public void Models_count_as_uploaded_once_meshed_and_retired_ones_go_once_the_world_is_meshed()
     {
