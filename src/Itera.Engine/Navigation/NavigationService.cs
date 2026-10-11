@@ -632,6 +632,7 @@ public sealed partial class NavigationService : IDisposable
         _jobFirstRow = -1;
         _jobLastRow = -1;
         _jobEdits = _stripEdits.Count;
+        _editsSinceJob = 0;
         _jobRows = size;
         _dirtyFirstRow = int.MaxValue;
         _dirtyLastRow = -1;
@@ -655,22 +656,23 @@ public sealed partial class NavigationService : IDisposable
         for (var sequence = _voxels.LastReset + 1; sequence <= _editsSeen; sequence++)
         {
             ref readonly var edit = ref _voxels.GetEdit(sequence);
-            if (
-                edit.Operation is VoxelEditOperation.Paint or VoxelEditOperation.Reset
-                || _scanner.ClearsOnlyPassable(in edit)
-            )
+            if (edit.Operation is VoxelEditOperation.Paint or VoxelEditOperation.Reset)
             {
                 continue;
             }
 
+            // The cheap test first: most logged edits lie nowhere near the strips.
             var cells = StampedEdit.Of(in edit);
-            for (var i = 0; i < _stripCount; i++)
+            var meets = false;
+            for (var i = 0; i < _stripCount && !meets; i++)
             {
-                if (cells.Meets(work, in _strips[i]))
-                {
-                    _stripEdits.Add(edit);
-                    break;
-                }
+                meets = cells.Meets(work, in _strips[i]);
+            }
+
+            // As a live edit is read (Changes): one that can change no cell is passed over.
+            if (meets && !_scanner.ClearsOnlyPassable(in edit) && NavGridScanner.CoversAnyCentre(work, in edit))
+            {
+                _stripEdits.Add(edit);
             }
         }
     }
@@ -1094,8 +1096,30 @@ public sealed partial class NavigationService : IDisposable
 /// The square navigation may cover: its corner (absolute centimetres, a whole number of cells from the absolute 0) and
 /// how many cells it is across.
 /// </summary>
-public readonly record struct NavArea(int MinX, int MinZ, int Cells)
+public readonly record struct NavArea
 {
+    /// <exception cref="ArgumentException">The corner is not whole cells from the absolute 0, or there are no cells.</exception>
+    public NavArea(int minX, int minZ, int cells)
+    {
+        if (minX % NavGrid.CellCentimetres != 0 || minZ % NavGrid.CellCentimetres != 0 || cells <= 0)
+        {
+            throw new ArgumentException(
+                $"A navigation area's corner is whole {NavGrid.CellCentimetres} cm cells from 0 and it has cells ({minX}, {minZ}, {cells})."
+            );
+        }
+
+        (MinX, MinZ, Cells) = (minX, minZ, cells);
+    }
+
+    /// <summary>The absolute x of the area's west edge, in centimetres.</summary>
+    public int MinX { get; }
+
+    /// <summary>The absolute z of the area's south edge, in centimetres.</summary>
+    public int MinZ { get; }
+
+    /// <summary>How many cells it is across.</summary>
+    public int Cells { get; }
+
     /// <summary>The square of whole cells that holds <paramref name="grid"/>'s map.</summary>
     public static NavArea Of(VoxelGrid grid)
     {

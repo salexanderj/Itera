@@ -21,7 +21,7 @@ while their users keep the old ones. A read or a stamp judges solid from the sou
 without an `INavGridSource` has no navigation (its loading task is done at once). Floors are absolute centimetres in
 `int`s, so any map's heights fit. `NavigationDebugLines` draws a field's arrows round the camera for a game's debug view.
 
-The grid is a window (`NavArea`, the map's square of whole cells; `Engine:Navigation:WindowCells`, 1024 by default, 128
+The grid is a window (`NavArea`, the map's square of whole cells; `Engine:Navigation:WindowCells`, 1024 by default, 256
 to 4096): a map that fits is covered whole and the window never moves; on a larger one it starts round the match's
 start (the origin) and follows a focus, what the game gives `NavigationService.Follow(WorldPoint)` (a point among its
 players and walkers), else the first streaming centre. It moves by whole tiles (`NavigationService.TileCells`, 64

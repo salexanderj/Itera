@@ -523,9 +523,10 @@ public sealed class NavigationSettings
     public const int DefaultWindowCells = 1024;
 
     /// <summary>
-    /// The most cells of 50 cm the navigation grid's window is across: 1024 (512 m) by default, 128 to 4096. A map that
-    /// fits is covered whole and the window never moves; on a larger one it moves with the players. About 6 MB a grid
-    /// (two are kept) and 2 MB a field and a size at 1024.
+    /// The most cells of 50 cm the navigation grid's window is across: 1024 (512 m) by default, 256 to 4096 (under 256 a
+    /// window moving by 64-cell tiles would move only once its focus had left it). A map that fits is covered whole and
+    /// the window never moves; on a larger one it moves with the players. About 6 MB a grid (two are kept) and 2 MB a
+    /// field and a size at 1024.
     /// </summary>
     public int WindowCells { get; set; } = DefaultWindowCells;
 }

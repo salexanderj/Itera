@@ -166,7 +166,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         Range(failures, "Control:Port", options.Control.Port, 1024, 65_535);
         Range(failures, "Camera:CircleHeightMetres", options.Camera.CircleHeightMetres, -1000, 1000);
         Range(failures, "Origin:ShiftMetres", options.Origin.ShiftMetres, 8, 4096);
-        Range(failures, "Navigation:WindowCells", options.Navigation.WindowCells, 128, 4096);
+        Range(failures, "Navigation:WindowCells", options.Navigation.WindowCells, 256, 4096);
         Range(failures, "Benchmark:SettleSeconds", options.Benchmark.SettleSeconds, 0, 600);
         Range(failures, "Benchmark:MeasureSeconds", options.Benchmark.MeasureSeconds, 0.1, 600);
         Range(failures, "Benchmark:FlightSeconds", options.Benchmark.FlightSeconds, 0, 3600);

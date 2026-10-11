@@ -87,7 +87,7 @@ lists the game's). Commonly used:
   under 1 s in Release. A host and a client both without graphics play a session on 127.0.0.1 (`--Engine:Session:Port`
   to keep off a running game's). `game.py start --headless` adds it. `--Engine:Physics:Threads=1` (1 to 16; 0, the
   default, a quarter of the processors) makes physics repeat run to run.
-- Navigation (a game with an `INavGridSource`): `--Engine:Navigation:WindowCells` (1024, 128 to 4096): the most 50 cm
+- Navigation (a game with an `INavGridSource`): `--Engine:Navigation:WindowCells` (1024, 256 to 4096): the most 50 cm
   cells its grid is across; a larger map's grid is a window that follows the players.
 - The origin: `--Engine:Origin:ShiftMetres` (512, 8 to 4096): how far the camera goes from the match's origin on any
   axis before `OriginShiftSystem` moves the origin to it (the Debug log's `Origin: moved to ...` lines; the control

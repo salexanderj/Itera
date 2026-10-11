@@ -35,7 +35,7 @@ public sealed class NavigationWindowTests(ITestOutputHelper output)
         Assert.Equal(0, (grid.OriginX - FourKilometres.MinX) % (NavigationService.TileCells * NavGrid.CellCentimetres));
         var corner = (grid.OriginX, grid.OriginZ);
 
-        // 30 m along x is under a quarter of the window (32 m): it stays.
+        // 30 m along x puts its corner a tile (32 m) on: not more than a quarter of the window, so it stays.
         service.Follow(new WorldPoint(30, 0, 0));
         Assert.True(service.Settle(Timeout));
         Assert.Equal((0, corner), (service.Moves, (grid.OriginX, grid.OriginZ)));
@@ -48,7 +48,7 @@ public sealed class NavigationWindowTests(ITestOutputHelper output)
         var middleZ = grid.OriginZ + 128 * NavGrid.CellCentimetres;
         Assert.InRange(10_000 - middleX, 0, NavigationService.TileCells * NavGrid.CellCentimetres);
         Assert.InRange(-7_000 - middleZ, 0, NavigationService.TileCells * NavGrid.CellCentimetres);
-        // The field's goal, the middle of the map, now past the window's west and north edges: its corner cell.
+        // The field's goal, the middle of the map, now past the window's low x and high z edges: its corner cell.
         var field = service.Field(0);
         Assert.Equal((grid.OriginX, grid.OriginZ), (field.OriginX, field.OriginZ));
         Assert.Equal(FlowField.Goal, field.Directions[grid.Index(0, grid.Depth - 1)]);
@@ -73,27 +73,40 @@ public sealed class NavigationWindowTests(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// Digs inside the window, outside it, and past the loaded voxels; then the window moves over them. Its cells are
-    /// those of a window placed there at the start with the same edits, and so are its fields.
+    /// Digs inside the window, outside it, and past the loaded voxels; then the window moves half its width, a large dig
+    /// read in the step the move starts still waiting for its cells to be read. Its cells are those of a window placed
+    /// there at the start with the same edits (those both windows hold copied to their new places, the strips filled
+    /// and stamped, the waiting cells moved with it), and so are its fields.
     /// </summary>
     [Fact]
     public void A_moved_window_holds_what_one_placed_there_at_the_start_holds()
     {
         using var world = FlatWorld();
         var area = NavArea.Of(world.Grid);
-        using var moved = Started(new FlatSource([new VoxelCoord(4_000, 0, 0)]), area, 64, world);
-        var start = (moved.Grid.OriginX, moved.Grid.OriginZ);
-        // In the first window (-19.5 to 12.5 m), past it, and past the loaded voxels (40 m: stamped).
+        using var moved = Started(new FlatSource([new VoxelCoord(4_000, 0, 0)]), area, 128, world);
+        Assert.Equal(-5_250, moved.Grid.OriginX);
+        // In the first window (-52.5 to 11.5 m) only, in both windows, past the first, and past the loaded voxels (40 m:
+        // stamped).
+        Dig(world, -3_000);
         Dig(world, 500);
         Dig(world, 2_500);
         Dig(world, 3_300);
         Dig(world, 4_200);
         Assert.True(moved.Settle(Timeout));
 
+        // Six digs under both windows, applied at once: more cells than a step reads, so some still wait when the window
+        // moves.
+        foreach (var (x, z) in new[] { (300, 25), (600, 25), (900, 25), (300, 400), (600, 400), (900, 400) })
+        {
+            world.Apply(VoxelEdit.Sphere(new VoxelCoord(x, Floor, z), 60, VoxelEditOperation.Clear));
+        }
+
         moved.Follow(new WorldPoint(30, 2, 0));
+        moved.AfterFixedStep();
+        Assert.True(moved.Moving);
+        Assert.True(moved.PendingRescans > 0);
         Assert.True(moved.Settle(Timeout));
-        Assert.Equal(1, moved.Moves);
-        Assert.NotEqual(start, (moved.Grid.OriginX, moved.Grid.OriginZ));
+        Assert.Equal((1, -2_050), (moved.Moves, moved.Grid.OriginX));
 
         using var fresh = new NavigationService(
             new FlatSource([new VoxelCoord(4_000, 0, 0)]),
@@ -102,7 +115,7 @@ public sealed class NavigationWindowTests(ITestOutputHelper output)
             world,
             new MoverWorldFixture.LeavesPass(),
             area,
-            64
+            128
         )
         {
             JobIntervalSeconds = 0,
@@ -116,10 +129,11 @@ public sealed class NavigationWindowTests(ITestOutputHelper output)
         Assert.Equal(b.Floor, a.Floor);
         Assert.Equal(b.Clear, a.Clear);
         Assert.Equal(fresh.Field(0).Directions, moved.Field(0).Directions);
-        // The digs at 25 m, 33 m, and 42 m are in it (12.5 to 44.5 m), lowered.
-        Assert.True(a.Floor[a.NearestCell(2_525, 25)] < Floor);
-        Assert.True(a.Floor[a.NearestCell(3_325, 25)] < Floor);
-        Assert.True(a.Floor[a.NearestCell(4_225, 25)] < Floor);
+        // The digs at 3, 5, 6, 9, 25, 33, and 42 m are in it (-20.5 to 43.5 m), lowered.
+        foreach (var x in (int[])[325, 525, 625, 925, 2_525, 3_325, 4_225])
+        {
+            Assert.True(a.Floor[a.NearestCell(x, 25)] < Floor, $"The dig at {x} cm is not in the window.");
+        }
     }
 
     [Fact]
@@ -223,6 +237,7 @@ public sealed class NavigationWindowTests(ITestOutputHelper output)
         }
 
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal(16, service.Moves);
 
         static void MoveAndBack(NavigationService service)
         {
@@ -253,7 +268,7 @@ public sealed class NavigationWindowTests(ITestOutputHelper output)
     private static void Dig(VoxelWorld world, int x) =>
         world.Apply(VoxelEdit.Sphere(new VoxelCoord(x, Floor, 25), 30, VoxelEditOperation.Clear));
 
-    /// <summary>A flat floor 2 m up on 1 cm voxels, its map ±51.2 m, loaded 40 m round the middle.</summary>
+    /// <summary>A flat floor 2 m up on 1 cm voxels, its map ±500 m, loaded 40 m round the middle.</summary>
     private static VoxelWorld FlatWorld() =>
         TestWorlds.Load(new BoxesGenerator(Floor), new Vector3(0, 2, 0), radiusMetres: 40);
 
