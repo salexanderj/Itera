@@ -16,9 +16,9 @@ namespace Itera.Engine.Physics;
 /// a pair with a contact of depth 0 or more is recorded for <see cref="PhysicsTriggers"/>, and none makes a constraint.
 /// A pair's material is its two sides' (<see cref="BodyKinds.ContactOf"/>): friction the product of their square
 /// roots, the engine's contact springs (30 Hz, critically damped, 2 m/s) for all. A pair with a
-/// bouncy side (not a stand-in) that is touching, or will be by the step's end at its speeds with the match's gravity,
-/// is recorded for <see cref="PhysicsContacts"/>, which sets its bounce after the step; other pairs are not looked at
-/// further.
+/// bouncy side or a side marked <see cref="PhysicsMarks.ContactEvents"/> (not a stand-in) that is touching, or will be by
+/// the step's end at its speeds with the match's gravity, is recorded for <see cref="PhysicsContacts"/>, which sets its
+/// bounce and gives its impact events after the step; other pairs are not looked at further.
 /// </summary>
 internal struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
 {
@@ -148,9 +148,13 @@ internal struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
         pairMaterial.MaximumRecoveryVelocity = ContactMaterial.MaximumRecoveryVelocity;
         pairMaterial.SpringSettings = ContactMaterial.Spring;
         var bounciness = MathF.Max(a.Bounciness, b.Bounciness);
-        if (bounciness > 0 && _contacts is not null && manifold.Count > 0)
+        if (_contacts is not null && manifold.Count > 0)
         {
-            RecordContact(workerIndex, pair, ref manifold, bounciness);
+            var reports = _kinds.ReportsContacts(pair.A) || _kinds.ReportsContacts(pair.B);
+            if (bounciness > 0 || reports)
+            {
+                RecordContact(workerIndex, pair, ref manifold, bounciness, reports);
+            }
         }
 
         return true;
@@ -164,7 +168,8 @@ internal struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
         int workerIndex,
         CollidablePair pair,
         ref TManifold manifold,
-        float bounciness
+        float bounciness,
+        bool reports
     )
         where TManifold : unmanaged, IContactManifold<TManifold>
     {
@@ -210,14 +215,24 @@ internal struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
             approach = MathF.Sqrt(MathF.Max(approach * approach - 2 * towards * depth, 0));
         }
 
+        var sideA = SideOf(pair.A);
+        var sideB = SideOf(pair.B);
+        var centreA =
+            pair.A.Mobility == CollidableMobility.Static
+                ? contacts.Statics![pair.A.StaticHandle].Pose.Position
+                : bodies[pair.A.BodyHandle].Pose.Position;
         contacts.Record(
             workerIndex,
             new ContactRecord
             {
                 A = pair.A,
                 B = pair.B,
-                Key = PhysicsContacts.KeyOf(SideOf(pair.A), SideOf(pair.B)),
+                SideA = sideA,
+                SideB = sideB,
+                Key = PhysicsContacts.KeyOf(sideA, sideB),
                 Depth = depth,
+                Point = centreA + offsetA,
+                Reports = reports,
                 Normal = normal,
                 OffsetA = offsetA,
                 OffsetB = offsetB,

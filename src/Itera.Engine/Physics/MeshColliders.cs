@@ -193,6 +193,7 @@ public sealed partial class MeshColliders(
         {
             physics.SetMaterial(found.Static, settings.Material);
             physics.SetLayer(found.Static, settings.Layer, settings.Group);
+            physics.SetMarks(found.Static, settings.Marks);
         }
     }
 

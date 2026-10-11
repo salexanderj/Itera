@@ -106,7 +106,7 @@ public sealed partial class PhysicsWorld
         Simulation.Bodies.Remove(trigger.Body);
         Simulation.Shapes.Remove(entry.BepuShape);
         _kinds.Forget(trigger.Body);
-        _contacts?.Forget(PhysicsContacts.BodySide(trigger.Body));
+        _contacts?.Forget(PhysicsContacts.BodySide(trigger.Body), _kinds);
     }
 
     /// <summary>True when <paramref name="trigger"/> is a zone of this world.</summary>

@@ -119,7 +119,9 @@ Where tests live:
   allocation; trigger zones in `PhysicsTriggersTests`: a ball through a zone entering and leaving once and falling as
   without it, one asleep inside staying in, removals giving a removed leave, a zone moved onto a resting ball and off,
   layers, a kinematic mirror seen, each shape, a move of the origin, one thread against four, drops, no allocation; the
-  characters' in `Systems/TriggerCharacterSystemTests`), mesh colliders (`MeshCollidersTests`: two-sided rays across buckets, tags, a ball that
+  characters' in `Systems/TriggerCharacterSystemTests`; impact events in `ImpactEventsTests`: drops from 1 and 4 m
+  reporting their speed, place, normal, and materials, a ball rolling to rest asleep giving nothing more, two marked
+  balls meeting and parting, a marked static, a removal, the origin, drops, no allocation), mesh colliders (`MeshCollidersTests`: two-sided rays across buckets, tags, a ball that
   lands on a collider's Bepu static at any voxel level) and the shared ray (`CollisionSourcesTests`); the colliders as
   the mover's cells (`MeshColumnsTests`); the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves)
   and 10,000 random moves that never leave it inside a voxel, the same test bodies run on voxels and on triangles built

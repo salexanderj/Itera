@@ -2,7 +2,10 @@ using BepuPhysics;
 
 namespace Itera.Engine.Physics;
 
-/// <summary>Marks a game gives a body of its own (<see cref="PhysicsWorld.AddBody"/>), any of them together.</summary>
+/// <summary>
+/// Marks a game gives a body or static of its own (<see cref="PhysicsWorld.AddBody"/>, <see cref="PhysicsWorld.AddStatic"/>,
+/// <see cref="PhysicsWorld.SetMarks(BodyHandle, PhysicsMarks)"/>), any of them together.
+/// </summary>
 [Flags]
 public enum PhysicsMarks : byte
 {
@@ -14,6 +17,12 @@ public enum PhysicsMarks : byte
     /// vehicle the game streams the world round itself).
     /// </summary>
     KeepsMovingUnloaded = 1,
+
+    /// <summary>
+    /// Reports its impacts: each pair it is in gives an <see cref="ImpactEvent"/> as it begins touching (where, how
+    /// fast, which materials) and as it ends (<see cref="PhysicsWorld.ImpactEvents"/>). Bodies and statics alike.
+    /// </summary>
+    ContactEvents = 2,
 }
 
 /// <summary>
@@ -95,10 +104,10 @@ public sealed partial class PhysicsWorld
         }
 
         _triggers?.ForgetBody(body, _kinds.Born(body.Value), _kinds);
+        _contacts?.Forget(PhysicsContacts.BodySide(body), _kinds);
         BodyRemoving?.Invoke(body);
         Simulation.Bodies.Remove(body);
         _kinds.Forget(body);
-        _contacts?.Forget(PhysicsContacts.BodySide(body));
     }
 
     /// <summary>
@@ -111,9 +120,18 @@ public sealed partial class PhysicsWorld
         CheckMaterial(settings.Material);
         CheckLayer(settings.Layer);
         var handle = Simulation.Statics.Add(description);
-        _kinds.SetStatic(handle, BodyKinds.AnyLevel, settings.Material, settings.Layer, settings.Group);
+        _kinds.SetStatic(handle, BodyKinds.AnyLevel, settings.Material, settings.Layer, settings.Group, settings.Marks);
         return handle;
     }
+
+    /// <summary>Sets a body's marks (<see cref="PhysicsMarks"/>), from the next step on. Main thread, between steps.</summary>
+    public void SetMarks(BodyHandle body, PhysicsMarks marks) => _kinds.SetMarks(body, marks);
+
+    /// <summary>Sets a static's marks (<see cref="PhysicsMarks"/>), from the next step on. Main thread, between steps.</summary>
+    public void SetMarks(StaticHandle handle, PhysicsMarks marks) => _kinds.SetMarks(handle, marks);
+
+    /// <summary>A static's marks.</summary>
+    public PhysicsMarks MarksOf(StaticHandle handle) => _kinds.Static(handle.Value).Marks;
 
     /// <summary>
     /// Puts <paramref name="body"/> in <paramref name="layer"/> and <paramref name="group"/> (0 for none), from the next
@@ -219,9 +237,9 @@ public sealed partial class PhysicsWorld
     /// <summary>Removes a static, forgetting its record. Its shape stays the caller's. Main thread, between steps.</summary>
     public void RemoveStatic(StaticHandle handle)
     {
+        _contacts?.Forget(PhysicsContacts.StaticSide(handle), _kinds);
         Simulation.Statics.Remove(handle);
         _kinds.ClearStatic(handle);
-        _contacts?.Forget(PhysicsContacts.StaticSide(handle));
     }
 
     /// <summary>

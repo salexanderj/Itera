@@ -76,6 +76,9 @@ internal struct StaticRecord
 
     /// <summary>A game's group: bodies and statics of one group other than 0 never touch each other.</summary>
     public int Group;
+
+    /// <summary>A game's marks for it.</summary>
+    public PhysicsMarks Marks;
 }
 
 /// <summary>
@@ -300,7 +303,8 @@ internal sealed class BodyKinds
         int level,
         PhysicsMaterialId material = default,
         PhysicsLayerId layer = default,
-        int group = 0
+        int group = 0,
+        PhysicsMarks marks = PhysicsMarks.None
     ) =>
         StaticSlot(handle.Value) = new StaticRecord
         {
@@ -309,7 +313,24 @@ internal sealed class BodyKinds
             Material = material,
             Layer = layer,
             Group = group,
+            Marks = marks,
         };
+
+    /// <summary>Sets a body's marks. Main thread, between steps.</summary>
+    public void SetMarks(BodyHandle body, PhysicsMarks marks) => BodySlot(body.Value).Marks = marks;
+
+    /// <summary>Sets a static's marks. Main thread, between steps.</summary>
+    public void SetMarks(StaticHandle handle, PhysicsMarks marks) => StaticSlot(handle.Value).Marks = marks;
+
+    /// <summary>True when <paramref name="collidable"/>'s record is marked to report its impacts.</summary>
+    public bool ReportsContacts(CollidableReference collidable) =>
+        (
+            (
+                collidable.Mobility == CollidableMobility.Static
+                    ? Static(collidable.StaticHandle.Value).Marks
+                    : Body(collidable.BodyHandle.Value).Marks
+            ) & PhysicsMarks.ContactEvents
+        ) != 0;
 
     private ref StaticRecord StaticSlot(int handle)
     {

@@ -188,6 +188,18 @@ next cell's edge, whatever its material); a bouncy one bounces where such a hop 
 pair that strikes while already touching (a ball rolling into a wall of the voxels it rolls on). `physics` prints the
 bounces set and the contacts dropped past the buffers.
 
+Impact events: a body or static marked `PhysicsMarks.ContactEvents` (at `AddBody` or `AddStatic`, a mesh collider's
+settings, or `SetMarks`) has its pairs followed by the same pass (stand-ins left out; only pairs with a bouncy or marked
+side do this work). Each such pair gives an `ImpactEvent` as it begins touching (`Began`: its sides, `ImpactSide`, a
+body or static by handle and `Born` or the voxels, in a fixed order, bodies by handle, then statics, then the voxels;
+the point where they met, local and moved with the origin; the normal from B towards A; the speed they came together at,
+gravity's part over the gap included; and both physics materials) and as it ends (`Ended`; `Removed` when a side was
+removed between steps, given first at the next step). `PhysicsWorld.ImpactEvents` holds the last step's, for the next
+step's systems. A pair Bepu no longer meets only because its bodies sleep still touches (no `Ended` as a ball falls
+asleep, no `Began` as it wakes), and a body rolling over voxel cells' borders begins nothing (the voxels count as one).
+A pair that strikes again while still touching (a ball rolling into a wall of the same voxels or the same static) gives
+no new `Began`. Events past the buffers (8,192 a step) are dropped and counted with the contacts.
+
 ## Layers and groups
 
 A collision layer (`PhysicsLayerId`) is registered by name once a run, in the game's `IRunStartup` or a mod's, in

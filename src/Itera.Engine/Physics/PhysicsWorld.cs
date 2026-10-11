@@ -93,6 +93,13 @@ public sealed partial class PhysicsWorld : IDisposable
     public long Bounces => _contacts?.Bounces ?? 0;
 
     /// <summary>
+    /// The pairs with a side marked <see cref="PhysicsMarks.ContactEvents"/> that began or stopped touching in the last
+    /// step (those of sides removed since the step before first, then by pair), for the systems of the next step to read.
+    /// Main thread.
+    /// </summary>
+    public ReadOnlySpan<ImpactEvent> ImpactEvents => _contacts is null ? default : _contacts.Events;
+
+    /// <summary>
     /// The friction of <paramref name="material"/> (<see cref="PhysicsMaterial.Friction"/>); 1, the default's, for a world
     /// with no registry or a material it does not have.
     /// </summary>
@@ -187,6 +194,7 @@ public sealed partial class PhysicsWorld : IDisposable
         );
         _integration.Bodies = _simulation.Bodies;
         _contacts.Bodies = _simulation.Bodies;
+        _contacts.Statics = _simulation.Statics;
         _kinds.Contacts = _materials?.Seal() ?? ContactMaterial.DefaultTable;
         _kinds.Touches = _layers?.Seal() ?? BodyKinds.NewTouches();
         _kinds.CharacterLayer = _layers?.CharacterLayer ?? PhysicsLayerId.Default;
@@ -212,7 +220,7 @@ public sealed partial class PhysicsWorld : IDisposable
         _contacts!.BeginStep(stepSeconds, _stepGravity);
         _triggers!.BeginStep();
         Simulation.Timestep(stepSeconds, _dispatcher);
-        _contacts.EndStep(Simulation);
+        _contacts.EndStep(Simulation, _kinds);
         EndTriggerStep();
         CheckRecords();
     }
@@ -326,6 +334,7 @@ public sealed partial class PhysicsWorld : IDisposable
     /// </summary>
     public (int Bodies, int Statics) Shift(Vector3 metres)
     {
+        _contacts?.Shift(metres);
         var bodies = Simulation.Bodies;
         var moved = 0;
         for (var index = 0; index < bodies.Sets.Length; index++)
