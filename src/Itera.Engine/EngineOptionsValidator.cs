@@ -163,6 +163,8 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
 
         var audio = options.Audio;
         Range(failures, "Audio:Volume", audio.Volume, 0, 1);
+        Range(failures, "Audio:MusicVolume", audio.MusicVolume, 0, 1);
+        Range(failures, "Audio:EffectsVolume", audio.EffectsVolume, 0, 1);
         // OpenAL Soft mixes 255 mono sources by default.
         Range(failures, "Audio:MaxVoices", audio.MaxVoices, 8, 255);
         Range(failures, "Audio:SampleRate", audio.SampleRate, 22_050, 96_000);

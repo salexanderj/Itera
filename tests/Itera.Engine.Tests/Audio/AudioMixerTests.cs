@@ -62,6 +62,9 @@ public sealed class AudioMixerTests
 
         public bool Enabled { get; set; } = true;
 
+        /// <summary>The effects' volume posted with each round.</summary>
+        public float Effects { get; set; } = 1;
+
         /// <summary>Posts <paramref name="events"/> and <paramref name="loops"/> and pumps once.</summary>
         public void Pump(SoundEvent[]? events = null, SoundLoop[]? loops = null)
         {
@@ -69,8 +72,11 @@ public sealed class AudioMixerTests
                 events ?? [],
                 loops ?? [],
                 new ListenerPose(Listener, -Vector3.UnitZ, Vector3.UnitY),
-                1,
-                Enabled
+                MixLevels.Full with
+                {
+                    Effects = Effects,
+                    Enabled = Enabled,
+                }
             );
             Engine.Pump(Now);
         }
@@ -223,7 +229,7 @@ public sealed class AudioMixerTests
         var menu = Click(Vector3.Zero) with { AtListener = true };
         mixer.Pump([Click(at), menu]);
         var by = new Vector3(300, -20, -512);
-        mixer.Exchange.Post([Click(new Vector3(3, 0, 0))], [], ListenerPose.Default, 1, true);
+        mixer.Exchange.Post([Click(new Vector3(3, 0, 0))], [], ListenerPose.Default, MixLevels.Full);
 
         mixer.Exchange.Shift(by);
         mixer.Listener -= by;
@@ -237,6 +243,46 @@ public sealed class AudioMixerTests
     }
 
     /// <summary>A stream fading out after its last round, when the origin moves, is heard from where it was.</summary>
+    [Fact]
+    public void The_effects_volume_scales_every_voice_and_sets_them_again_when_it_changes()
+    {
+        var mixer = new Mixer();
+        var hum = new SoundLoop
+        {
+            Recipe = 1,
+            Key = 3,
+            Position = new Vector3(0, 0, -2),
+            Level = 1,
+            Gain = 0.8f,
+        };
+        mixer.Pump([Click(new Vector3(1, 0, 0), gain: 0.5f)], [hum]);
+        Assert.Equal(0.5f, mixer.Device.PlayingAt(new Vector3(1, 0, 0))!.Gain, 5);
+        Assert.Equal(0.8f, mixer.Device.PlayingAt(hum.Position)!.Gain, 5);
+
+        mixer.Effects = 0.25f;
+        mixer.Pump(loops: [hum]);
+
+        Assert.Equal(0.125f, mixer.Device.PlayingAt(new Vector3(1, 0, 0))!.Gain, 5);
+        Assert.Equal(0.2f, mixer.Device.PlayingAt(hum.Position)!.Gain, 5);
+        // The master volume is the listener's gain, apart from the effects'.
+        Assert.Equal(1f, mixer.Device.ListenerGain);
+    }
+
+    [Fact]
+    public void A_move_of_the_origin_keeps_the_effects_volume()
+    {
+        var mixer = new Mixer { Effects = 0.5f };
+        var at = new Vector3(3, 0, 0);
+        mixer.Pump([Click(at)]);
+        var by = new Vector3(40, 0, 0);
+
+        mixer.Exchange.Shift(by);
+        mixer.Listener -= by;
+        mixer.Pump();
+
+        Assert.Equal(0.5f, mixer.Device.PlayingAt(at - by)!.Gain, 5);
+    }
+
     [Fact]
     public void A_move_of_the_origin_moves_a_stream_fading_out()
     {

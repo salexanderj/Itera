@@ -10,10 +10,24 @@ public readonly record struct ListenerPose(Vector3 Position, Vector3 Forward, Ve
 }
 
 /// <summary>
+/// The volumes the audio thread mixes at, each 0 to 1, and whether sound plays: the master (the listener's gain), and
+/// under it the effects (every voice of the pool: recipes, file sounds, the menu's clicks) and music.
+/// </summary>
+/// <param name="Volume">The master volume.</param>
+/// <param name="Effects">The effects' volume under the master.</param>
+/// <param name="Music">Music's volume under the master.</param>
+/// <param name="Enabled">False silences every sound.</param>
+public readonly record struct MixLevels(float Volume, float Effects, float Music, bool Enabled)
+{
+    /// <summary>Every volume full, sound on.</summary>
+    public static MixLevels Full => new(1, 1, 1, true);
+}
+
+/// <summary>
 /// How the main thread hands sound to the audio thread: one lock around fixed arrays, taken briefly by each side. The
 /// main thread <see cref="Post"/>s once a main-loop iteration: its new events (added to those still waiting; past
-/// <see cref="MaxEvents"/> they are dropped) and its sustained loops, listener, volume, and on or off (which replace the
-/// last). The audio thread <see cref="Take"/>s them. When the match's origin moves (<see cref="Shift"/>), what waits moves
+/// <see cref="MaxEvents"/> they are dropped) and its sustained loops, listener, and volumes (<see cref="MixLevels"/>),
+/// which replace the last. The audio thread <see cref="Take"/>s them. When the match's origin moves (<see cref="Shift"/>), what waits moves
 /// with it, and the move waits for the audio thread too, which moves the sounds playing. Allocates nothing.
 /// </summary>
 public sealed class AudioExchange
@@ -30,8 +44,7 @@ public sealed class AudioExchange
     private int _eventCount;
     private int _loopCount;
     private ListenerPose _listener = ListenerPose.Default;
-    private float _volume = 1;
-    private bool _enabled = true;
+    private MixLevels _levels = MixLevels.Full;
     private Vector3 _shift;
     private long _dropped;
 
@@ -40,14 +53,13 @@ public sealed class AudioExchange
 
     /// <summary>
     /// Adds <paramref name="events"/> to those waiting, replaces the sustained loops with <paramref name="loops"/>, and
-    /// sets the listener, volume, and on or off. Main thread.
+    /// sets the listener and the volumes. Main thread.
     /// </summary>
     public void Post(
         ReadOnlySpan<SoundEvent> events,
         ReadOnlySpan<SoundLoop> loops,
         in ListenerPose listener,
-        float volume,
-        bool enabled
+        in MixLevels levels
     )
     {
         lock (_gate)
@@ -65,8 +77,7 @@ public sealed class AudioExchange
             loops[..loopCount].CopyTo(_loops);
             _loopCount = loopCount;
             _listener = listener;
-            _volume = volume;
-            _enabled = enabled;
+            _levels = levels;
         }
     }
 
@@ -105,8 +116,7 @@ public sealed class AudioExchange
         Span<SoundLoop> loops,
         out int loopCount,
         out ListenerPose listener,
-        out float volume,
-        out bool enabled,
+        out MixLevels levels,
         out Vector3 shift
     )
     {
@@ -120,8 +130,7 @@ public sealed class AudioExchange
             _loops.AsSpan(0, _loopCount).CopyTo(loops);
             loopCount = _loopCount;
             listener = _listener;
-            volume = _volume;
-            enabled = _enabled;
+            levels = _levels;
         }
     }
 }

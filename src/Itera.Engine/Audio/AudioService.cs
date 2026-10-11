@@ -59,6 +59,8 @@ public sealed partial class AudioService : IDisposable
         _logger = logger;
         Enabled = _settings.Enabled;
         Volume = _settings.Volume;
+        MusicVolume = _settings.MusicVolume;
+        EffectsVolume = _settings.EffectsVolume;
     }
 
     /// <summary>The recipes sounds name.</summary>
@@ -90,6 +92,12 @@ public sealed partial class AudioService : IDisposable
 
     /// <summary>The master volume, 0 to 1.</summary>
     public float Volume { get; set; }
+
+    /// <summary>Music's volume under the master, 0 to 1.</summary>
+    public float MusicVolume { get; set; }
+
+    /// <summary>The effects' volume under the master (every sound but music), 0 to 1.</summary>
+    public float EffectsVolume { get; set; }
 
     /// <summary>
     /// For tests: queue sounds with no audio thread, to read them back with <see cref="QueuedEvents"/> and
@@ -246,7 +254,7 @@ public sealed partial class AudioService : IDisposable
     }
 
     /// <summary>
-    /// Hands this iteration's events and loops, the listener, and the volume to the audio thread, and starts the next
+    /// Hands this iteration's events and loops, the listener, and the volumes to the audio thread, and starts the next
     /// iteration's lists. Main thread, once a main-loop iteration, after the frame systems placed the camera.
     /// </summary>
     public void Publish(in ListenerPose listener, double now)
@@ -279,8 +287,12 @@ public sealed partial class AudioService : IDisposable
             _events.AsSpan(0, _eventCount),
             _held.AsSpan(0, _heldCount),
             in listener,
-            Math.Clamp(Volume, 0, 1),
-            Enabled
+            new MixLevels(
+                Math.Clamp(Volume, 0, 1),
+                Math.Clamp(EffectsVolume, 0, 1),
+                Math.Clamp(MusicVolume, 0, 1),
+                Enabled
+            )
         );
         ClearQueued();
     }

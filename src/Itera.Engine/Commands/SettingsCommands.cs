@@ -15,7 +15,7 @@ public sealed class SettingsCommands(ConsoleCommands commands, PlayerSettings se
     {
         commands.Register(
             "settings",
-            "[volume V|sensitivity DEG|fov DEG|uiscale X|scaling on|off|threshold FPS|shadows on|off|aa off|smaa|2x|4x|8x|vsync on|off|fullscreen on|off]",
+            "[volume V|musicvolume V|effectsvolume V|sensitivity DEG|fov DEG|uiscale X|scaling on|off|threshold FPS|shadows on|off|aa off|smaa|2x|4x|8x|vsync on|off|fullscreen on|off]",
             "The player's settings (the menu's Settings), kept in settings.json; with nothing, each one.",
             CommandScope.Local,
             Run
@@ -78,6 +78,12 @@ public sealed class SettingsCommands(ConsoleCommands commands, PlayerSettings se
                 case "VOLUME":
                     settings.SetVolume(value);
                     break;
+                case "MUSICVOLUME":
+                    settings.SetMusicVolume(value);
+                    break;
+                case "EFFECTSVOLUME":
+                    settings.SetEffectsVolume(value);
+                    break;
                 case "SENSITIVITY":
                     settings.SetMouseSensitivity(value);
                     break;
@@ -128,7 +134,7 @@ public sealed class SettingsCommands(ConsoleCommands commands, PlayerSettings se
         context.Print(
             string.Create(
                 culture,
-                $"volume {settings.Volume:F2}, sensitivity {settings.MouseSensitivity:F2}, fov {settings.FieldOfViewDegrees:F0}, uiscale {settings.UiScale:F2}, scaling {CommandContext.OnOff(settings.DynamicScaling)}, threshold {settings.ScalingThreshold:F0}, shadows {CommandContext.OnOff(settings.Shadows)}, aa {AntiAliasModes.ConsoleName(settings.AntiAliasMode)}, vsync {CommandContext.OnOff(settings.VSync)}, fullscreen {CommandContext.OnOff(settings.Fullscreen)}"
+                $"volume {settings.Volume:F2}, musicvolume {settings.MusicVolume:F2}, effectsvolume {settings.EffectsVolume:F2}, sensitivity {settings.MouseSensitivity:F2}, fov {settings.FieldOfViewDegrees:F0}, uiscale {settings.UiScale:F2}, scaling {CommandContext.OnOff(settings.DynamicScaling)}, threshold {settings.ScalingThreshold:F0}, shadows {CommandContext.OnOff(settings.Shadows)}, aa {AntiAliasModes.ConsoleName(settings.AntiAliasMode)}, vsync {CommandContext.OnOff(settings.VSync)}, fullscreen {CommandContext.OnOff(settings.Fullscreen)}"
             )
         );
     }

@@ -39,6 +39,8 @@ public sealed partial class PlayerSettings
     public const float MostFieldOfView = 120;
 
     private const string VolumeKey = "Volume";
+    private const string MusicVolumeKey = "MusicVolume";
+    private const string EffectsVolumeKey = "EffectsVolume";
     private const string SensitivityKey = "MouseSensitivity";
     private const string FieldOfViewKey = "FieldOfViewDegrees";
     private const string DynamicScalingKey = "DynamicRenderScaling";
@@ -75,6 +77,8 @@ public sealed partial class PlayerSettings
     private static readonly HashSet<string> s_known = new(StringComparer.Ordinal)
     {
         VolumeKey,
+        MusicVolumeKey,
+        EffectsVolumeKey,
         SensitivityKey,
         FieldOfViewKey,
         DynamicScalingKey,
@@ -180,6 +184,8 @@ public sealed partial class PlayerSettings
         _window = window;
         _logger = logger;
         Volume = Math.Clamp(options.Audio.Volume, 0, 1);
+        MusicVolume = Math.Clamp(options.Audio.MusicVolume, 0, 1);
+        EffectsVolume = Math.Clamp(options.Audio.EffectsVolume, 0, 1);
         MouseSensitivity = (float)options.Camera.MouseSensitivity;
         FieldOfViewDegrees = (float)options.Camera.FieldOfViewDegrees;
         DynamicScaling = options.Renderer.DynamicRenderScaling;
@@ -194,6 +200,8 @@ public sealed partial class PlayerSettings
         VSync = options.Window.VSync;
         Fullscreen = options.Window.Fullscreen;
         Remember(commandLine, VolumeKey, "Engine:Audio:Volume");
+        Remember(commandLine, MusicVolumeKey, "Engine:Audio:MusicVolume");
+        Remember(commandLine, EffectsVolumeKey, "Engine:Audio:EffectsVolume");
         Remember(commandLine, SensitivityKey, "Engine:Camera:MouseSensitivity");
         Remember(commandLine, FieldOfViewKey, "Engine:Camera:FieldOfViewDegrees");
         Remember(commandLine, DynamicScalingKey, "Engine:Renderer:DynamicRenderScaling");
@@ -218,6 +226,12 @@ public sealed partial class PlayerSettings
 
     /// <summary>The master volume, 0 to 1.</summary>
     public float Volume { get; private set; }
+
+    /// <summary>Music's volume under the master, 0 to 1.</summary>
+    public float MusicVolume { get; private set; }
+
+    /// <summary>The effects' volume under the master (recipes, file sounds, the menu's clicks), 0 to 1.</summary>
+    public float EffectsVolume { get; private set; }
 
     /// <summary>The least UI scale.</summary>
     public const float LeastUiScale = 0.75f;
@@ -364,6 +378,8 @@ public sealed partial class PlayerSettings
         if (_audio is not null)
         {
             _audio.Volume = Volume;
+            _audio.MusicVolume = MusicVolume;
+            _audio.EffectsVolume = EffectsVolume;
         }
 
         if (_toolkit is not null)
@@ -395,6 +411,26 @@ public sealed partial class PlayerSettings
         if (Change(VolumeKey, Volume, Math.Clamp(volume, 0, 1), out var value))
         {
             Volume = value;
+            Apply();
+        }
+    }
+
+    /// <summary>Sets music's volume under the master, 0 to 1; at once.</summary>
+    public void SetMusicVolume(float volume)
+    {
+        if (Change(MusicVolumeKey, MusicVolume, Math.Clamp(volume, 0, 1), out var value))
+        {
+            MusicVolume = value;
+            Apply();
+        }
+    }
+
+    /// <summary>Sets the effects' volume under the master, 0 to 1; at once.</summary>
+    public void SetEffectsVolume(float volume)
+    {
+        if (Change(EffectsVolumeKey, EffectsVolume, Math.Clamp(volume, 0, 1), out var value))
+        {
+            EffectsVolume = value;
             Apply();
         }
     }
@@ -534,6 +570,8 @@ public sealed partial class PlayerSettings
             {
                 writer.WriteStartObject();
                 WriteNumber(writer, VolumeKey, Volume);
+                WriteNumber(writer, MusicVolumeKey, MusicVolume);
+                WriteNumber(writer, EffectsVolumeKey, EffectsVolume);
                 WriteNumber(writer, SensitivityKey, MouseSensitivity);
                 WriteNumber(writer, FieldOfViewKey, FieldOfViewDegrees);
                 WriteBoolean(writer, DynamicScalingKey, DynamicScaling);
@@ -613,6 +651,8 @@ public sealed partial class PlayerSettings
         }
 
         Volume = Read(VolumeKey, Volume, 0, 1);
+        MusicVolume = Read(MusicVolumeKey, MusicVolume, 0, 1);
+        EffectsVolume = Read(EffectsVolumeKey, EffectsVolume, 0, 1);
         MouseSensitivity = Read(SensitivityKey, MouseSensitivity, LeastSensitivity, MostSensitivity);
         FieldOfViewDegrees = Read(FieldOfViewKey, FieldOfViewDegrees, LeastFieldOfView, MostFieldOfView);
         DynamicScaling = Read(DynamicScalingKey, DynamicScaling);

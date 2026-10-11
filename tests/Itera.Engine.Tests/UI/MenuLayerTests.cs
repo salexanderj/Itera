@@ -274,21 +274,13 @@ public sealed class MenuLayerTests : IDisposable
         Click("Settings");
         Assert.Equal(MenuView.Settings, _menu.View);
         Assert.Equal(SettingsRows.GameTab, _menu.SettingsTab);
-        Assert.Equal(["Game", "Graphics", "Keybindings", "Back"], _menu.Buttons);
-        // Game: volume, sensitivity, field of view, UI scale; VSync and full screen.
-        Assert.Equal(4, Count(UiKind.Slider));
+        Assert.Equal(["Game", "Graphics", "Sound", "Keybindings", "Back"], _menu.Buttons);
+        // Game: sensitivity, field of view, UI scale; VSync and full screen.
+        Assert.Equal(3, Count(UiKind.Slider));
         Assert.Equal([true, false], Switches());
 
-        // The volume's bar: down at its middle, dragged past its right end, let go.
-        var volume = Element(UiKind.Slider, 0).Rect;
-        Hold(new Vector2(volume.MidX, volume.MidY), pressed: true);
-        Assert.Equal(0.5f, Settings.Volume, 2);
-        Hold(new Vector2(volume.Right + 200, volume.MidY), pressed: false);
-        Assert.Equal(1f, Settings.Volume, 2);
-        Release(new Vector2(volume.Right + 200, volume.MidY));
-
         // The UI scale: its bar's right end is 150 %, and the toolkit takes it at once.
-        var scale = Element(UiKind.Slider, 3).Rect;
+        var scale = Element(UiKind.Slider, 2).Rect;
         Hold(new Vector2(scale.Right - 1, scale.MidY), pressed: true);
         Release(new Vector2(scale.Right - 1, scale.MidY));
         Assert.Equal(PlayerSettings.MostUiScale, Settings.UiScale);
@@ -328,6 +320,28 @@ public sealed class MenuLayerTests : IDisposable
         Assert.False(Settings.Shadows);
         Assert.Equal([false, false], Switches());
 
+        // Sound: the volume, music's, and the effects'. The volume's bar: down at its middle, dragged past its right
+        // end, let go; music's and the effects' at their left ends.
+        Click("Sound");
+        Assert.Equal(SettingsRows.SoundTab, _menu.SettingsTab);
+        Assert.Equal(3, Count(UiKind.Slider));
+        var volume = Element(UiKind.Slider, 0).Rect;
+        Hold(new Vector2(volume.MidX, volume.MidY), pressed: true);
+        Assert.Equal(0.5f, Settings.Volume, 2);
+        Hold(new Vector2(volume.Right + 200, volume.MidY), pressed: false);
+        Assert.Equal(1f, Settings.Volume, 2);
+        Release(new Vector2(volume.Right + 200, volume.MidY));
+        foreach (var slider in new[] { 1, 2 })
+        {
+            var bar = Element(UiKind.Slider, slider).Rect;
+            Hold(new Vector2(bar.Left + 1, bar.MidY), pressed: true);
+            Hold(new Vector2(bar.Left - 50, bar.MidY), pressed: false);
+            Release(new Vector2(bar.Left - 50, bar.MidY));
+        }
+
+        Assert.Equal(0f, Settings.MusicVolume);
+        Assert.Equal(0f, Settings.EffectsVolume);
+
         Click("Keybindings");
         Assert.Equal(SettingsRows.KeysTab, _menu.SettingsTab);
 
@@ -357,6 +371,7 @@ public sealed class MenuLayerTests : IDisposable
             [
                 "Game",
                 "Graphics",
+                "Sound",
                 "Keybindings",
                 "F1",
                 "Space",
@@ -454,7 +469,7 @@ public sealed class MenuLayerTests : IDisposable
         Assert.True(_menu.Ui.TryFind("Minimap", out _));
         ClickAt(Centre(Element(UiKind.Switch, 2).Rect));
         Assert.False(Settings.IsOn(minimap));
-        Assert.Equal(["Game", "Graphics", "Display", "Keybindings", "Back"], _menu.Buttons);
+        Assert.Equal(["Game", "Graphics", "Sound", "Display", "Keybindings", "Back"], _menu.Buttons);
         Click("Display");
         ClickAt(Centre(Element(UiKind.Switch, 0).Rect));
         Assert.True(Settings.IsOn(hud));

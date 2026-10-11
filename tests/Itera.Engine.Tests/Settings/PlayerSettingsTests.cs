@@ -562,6 +562,36 @@ public sealed class PlayerSettingsTests : IDisposable
         Assert.Equal(0.8f, Create(new EngineOptions()).UiScale, 3);
     }
 
+    [Fact]
+    public void Music_and_effects_volumes_come_from_the_options_then_the_file_within_range_and_the_command_line_wins()
+    {
+        var options = new EngineOptions();
+        options.Audio.MusicVolume = 0.6f;
+        options.Audio.EffectsVolume = 0.4f;
+        var plain = Create(options);
+        Assert.Equal(0.6f, plain.MusicVolume);
+        Assert.Equal(0.4f, plain.EffectsVolume);
+
+        File.WriteAllText(FilePath, """{ "MusicVolume": 3, "EffectsVolume": 0.25 }""");
+        var read = Create(options);
+        Assert.Equal(1f, read.MusicVolume);
+        Assert.Equal(0.25f, read.EffectsVolume);
+
+        // The command line gave the effects' volume: the file's is not read for this run.
+        var given = Create(options, new CommandLineKeys(["--Engine:Audio:EffectsVolume=0.4"]));
+        Assert.Equal(0.4f, given.EffectsVolume);
+
+        read.SetMusicVolume(0.5f);
+        read.SetEffectsVolume(-1);
+        read.Save();
+        var again = Create(new EngineOptions());
+        Assert.Equal(0.5f, again.MusicVolume, 3);
+        Assert.Equal(0f, again.EffectsVolume);
+        // An old file without the keys reads the options' defaults.
+        File.WriteAllText(FilePath, """{ "Volume": 0.3 }""");
+        Assert.Equal(1f, Create(new EngineOptions()).MusicVolume);
+    }
+
     private PlayerSettings Create(EngineOptions options, CommandLineKeys? keys = null, KeyBindings? bindings = null)
     {
         var settings = new PlayerSettings(

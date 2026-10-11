@@ -8,12 +8,12 @@ namespace Itera.Engine.UI.Menu;
 
 /// <summary>
 /// The Settings page as a part (<see cref="Build"/>), which the engine's menu shows and a game's own menu can show
-/// inside its own: a row of tabs (Game, Graphics, a game's own tabs, Keybindings), then the tab's rows, each a name and
+/// inside its own: a row of tabs (Game, Graphics, Sound, a game's own tabs, Keybindings), then the tab's rows, each a name and
 /// a slider (with its value) or a switch, and on Keybindings each action's binding, a click on which waits for the next
 /// key or mouse button (<see cref="CapturingBinding"/>, <see cref="BindingPressed"/>); then its buttons
-/// (<see cref="Footer"/>): Back, beside Reset keys on Keybindings. Game: the volume,
-/// mouse sensitivity, field of view, UI scale, VSync, full screen; Graphics: dynamic render scaling, its threshold,
-/// shadows, anti-aliasing; a game's switches (<see cref="SettingsRows"/>) after the engine's on their tab. A setting
+/// (<see cref="Footer"/>): Back, beside Reset keys on Keybindings. Game: mouse sensitivity, field of view, UI scale,
+/// VSync, full screen; Graphics: dynamic render scaling, its threshold, shadows, anti-aliasing; Sound: the volume, and
+/// under it music's and the effects'; a game's switches (<see cref="SettingsRows"/>) after the engine's on their tab. A setting
 /// changes at once (<see cref="PlayerSettings"/>); the caller writes them when the page is left
 /// (<see cref="PlayerSettings.Save"/>). Sizes are units for a menu whose body text is 32.4 units (3 % of the reference
 /// screen's height). Its texts allocate only when a value they show changes. Main thread.
@@ -39,6 +39,8 @@ public sealed class SettingsPage
     private static readonly int s_reset = Ui.Id("settings.reset");
     private static readonly int s_back = Ui.Id("settings.back");
     private static readonly int s_volume = Ui.Id("settings.volume");
+    private static readonly int s_musicVolume = Ui.Id("settings.music");
+    private static readonly int s_effectsVolume = Ui.Id("settings.effects");
     private static readonly int s_sensitivity = Ui.Id("settings.sensitivity");
     private static readonly int s_fieldOfView = Ui.Id("settings.fov");
     private static readonly int s_uiScale = Ui.Id("settings.uiscale");
@@ -139,7 +141,6 @@ public sealed class SettingsPage
         {
             if (_tab == SettingsRows.GameTab)
             {
-                Slider(ui, s_volume, "Volume", "How loud the game is.", _settings.Volume, 0, 1, Percent);
                 Slider(
                     ui,
                     s_sensitivity,
@@ -178,6 +179,39 @@ public sealed class SettingsPage
                     _settings.VSync
                 );
                 Switch(ui, s_fullscreen, "Full screen", "The window covers its screen.", _settings.Fullscreen);
+            }
+            else if (_tab == SettingsRows.SoundTab)
+            {
+                Slider(
+                    ui,
+                    s_volume,
+                    "Master Volume",
+                    "How loud the game is: music and effects alike.",
+                    _settings.Volume,
+                    0,
+                    1,
+                    Percent
+                );
+                Slider(
+                    ui,
+                    s_musicVolume,
+                    "Music Volume",
+                    "How loud the music is, under the volume.",
+                    _settings.MusicVolume,
+                    0,
+                    1,
+                    Percent
+                );
+                Slider(
+                    ui,
+                    s_effectsVolume,
+                    "Effects Volume",
+                    "How loud every other sound is, under the volume.",
+                    _settings.EffectsVolume,
+                    0,
+                    1,
+                    Percent
+                );
             }
             else if (_tab == SettingsRows.GraphicsTab)
             {
@@ -225,12 +259,9 @@ public sealed class SettingsPage
     {
         using (ui.Row(s_tabs, new UiBox { Gap = Gap }))
         {
-            TabButton(
-                ui,
-                SettingsRows.GameTab,
-                "The volume, the mouse, the field of view, the UI's size, and the screen."
-            );
+            TabButton(ui, SettingsRows.GameTab, "The mouse, the field of view, the UI's size, and the screen.");
             TabButton(ui, SettingsRows.GraphicsTab, "How the world is drawn.");
+            TabButton(ui, SettingsRows.SoundTab, "The volume, and music's and the effects' under it.");
             foreach (var tab in _rows.GameTabs)
             {
                 TabButton(ui, tab, "The game's own settings.");
@@ -343,6 +374,14 @@ public sealed class SettingsPage
         if (id == s_volume)
         {
             _settings.SetVolume(value);
+        }
+        else if (id == s_musicVolume)
+        {
+            _settings.SetMusicVolume(value);
+        }
+        else if (id == s_effectsVolume)
+        {
+            _settings.SetEffectsVolume(value);
         }
         else if (id == s_sensitivity)
         {

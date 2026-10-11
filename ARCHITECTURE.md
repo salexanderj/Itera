@@ -1373,7 +1373,7 @@ has no navigation.
   px at 720, 24 px at 1440, never under 10), and the menu's 32.4 units (3 % of the height).
 - The main menu (`MenuLayer`, a layer of the UI toolkit) is the run's: Play Offline, Host Game, Join Game, Settings, and
   Quit, with a join page of the Steam friends who host and an address box, and, over a match at Escape, Resume, Settings,
-  Leave Match, and Quit. The settings (volume, mouse sensitivity, field of view, the UI scale, dynamic render scaling,
+  Leave Match, and Quit. The settings (the volume with music's and the effects' under it, mouse sensitivity, field of view, the UI scale, dynamic render scaling,
   shadows, anti-aliasing, VSync, full screen, and the keybindings) apply at once and live in `settings.json`, below the
   command line. A game gives the menu its look (`MenuStyle`), adds its own pages (`MenuPages`) and its switches to the
   Settings page (`SettingsRows`), or swaps the menu for its own (`IMenu`, which can show the engine's `SettingsPage`), which reaches the run through the same public services: matches

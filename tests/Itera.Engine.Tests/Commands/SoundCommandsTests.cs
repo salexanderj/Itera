@@ -69,7 +69,11 @@ public sealed class SoundCommandsTests : IDisposable
         Run("sound");
 
         var first = _console.ScrollbackLine(_console.ScrollbackCount - 2).Text;
-        Assert.StartsWith("sound silent (none (silent)), volume 0.1: 0 one-shots", first, StringComparison.Ordinal);
+        Assert.StartsWith(
+            "sound silent (none (silent)), volume 0.1 (music 1, effects 1 under it): 0 one-shots",
+            first,
+            StringComparison.Ordinal
+        );
         Assert.StartsWith("since start: 0 played", Last(), StringComparison.Ordinal);
     }
 

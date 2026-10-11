@@ -11,7 +11,9 @@ model each sound's physics, driven by a level from 0 to 1. A one-shot recipe (`O
 levels of 4 variations (by default) into OpenAL buffers, and an event plays the nearest level's (never the same
 variation twice running). A stream recipe (`StreamRecipe`) runs live while the game sustains it each iteration
 (`AudioService.Sustain`, by recipe and key) and fades out over 80 ms after. Game code queues with `AudioService.Play`
-and `Sustain`; after each main-loop iteration `Publish` hands them and the camera, as the listener, to the audio thread
+and `Sustain`; after each main-loop iteration `Publish` hands them, the camera as the listener, and the volumes
+(`MixLevels`: the master as the listener's gain, the effects' under it on every voice of the pool, music's for music;
+the player's `Volume`, `EffectsVolume`, and `MusicVolume`) to the audio thread
 (`AudioMixer`), which alone calls OpenAL: 64 voices (`Engine:Audio:MaxVoices`), each up to a gain of 4
 (`AudioMixer.MaxGain`), sounds under 0.002 of gain never started, a louder sound taking the quietest one-shot's voice. A
 render thread (`RecipeRenderer`) renders the one-shots at start, while the audio thread plays those ready; a recipe or

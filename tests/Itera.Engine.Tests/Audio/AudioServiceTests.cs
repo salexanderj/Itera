@@ -46,8 +46,7 @@ public sealed class AudioServiceTests
             [new SoundEvent { Recipe = bar, Position = new Vector3(5, 0, 0) }],
             [],
             in listener,
-            1,
-            true
+            MixLevels.Full
         );
         audio.Play(new SoundEvent { Recipe = bar, Position = new Vector3(1, 0, 0) });
         audio.Sustain(
@@ -77,10 +76,10 @@ public sealed class AudioServiceTests
         Assert.Equal(new Vector3(3, 0, 0) - by, audio.Held[0].Position);
         var events = new SoundEvent[AudioExchange.MaxEvents];
         var loops = new SoundLoop[AudioExchange.MaxLoops];
-        audio.Exchange.Take(events, out var count, loops, out _, out var taken, out _, out _, out var shift);
+        audio.Exchange.Take(events, out var count, loops, out _, out var taken, out _, out var shift);
         Assert.Equal((1, new Vector3(5, 0, 0) - by), (count, events[0].Position));
         Assert.Equal((by, new Vector3(4, 0, 0) - by), (shift, taken.Position));
-        audio.Exchange.Take(events, out _, loops, out _, out _, out _, out _, out var again);
+        audio.Exchange.Take(events, out _, loops, out _, out _, out _, out var again);
         Assert.Equal(Vector3.Zero, again);
     }
 

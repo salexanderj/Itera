@@ -6,11 +6,11 @@ namespace Itera.Engine.UI.Menu;
 /// <param name="Switch">The switch (<see cref="PlayerSettings.RegisterSwitch"/>).</param>
 /// <param name="Label">The row's name.</param>
 /// <param name="Hint">What it does, shown while the pointer is on it.</param>
-/// <param name="Tab">The tab it is on: the engine's "Game" or "Graphics", or one of the game's own.</param>
+/// <param name="Tab">The tab it is on: the engine's "Game", "Graphics", or "Sound", or one of the game's own.</param>
 public sealed record SettingsSwitchRow(GameSwitch Switch, string Label, string Hint, string Tab);
 
 /// <summary>
-/// A game's own rows on the Settings page (<see cref="SettingsPage"/>): its switches, each on the engine's "Game" or
+/// A game's own rows on the Settings page (<see cref="SettingsPage"/>): its switches, each on the engine's "Game", "Sound", or
 /// "Graphics" tab after the engine's rows, or on a tab of the game's own (shown before Keybindings, in the order first
 /// named). A game adds them once a run, in its <c>IRunStartup</c>, after registering the switch. Run-wide; main thread.
 /// </summary>
@@ -21,6 +21,9 @@ public sealed class SettingsRows
 
     /// <summary>The engine's Graphics tab.</summary>
     public const string GraphicsTab = "Graphics";
+
+    /// <summary>The engine's Sound tab.</summary>
+    public const string SoundTab = "Sound";
 
     /// <summary>The engine's Keybindings tab.</summary>
     public const string KeysTab = "Keybindings";
@@ -46,7 +49,7 @@ public sealed class SettingsRows
         }
 
         _switches.Add(new SettingsSwitchRow(which, label, hint, tab));
-        if (tab != GameTab && tab != GraphicsTab && !_tabs.Contains(tab))
+        if (tab != GameTab && tab != GraphicsTab && tab != SoundTab && !_tabs.Contains(tab))
         {
             _tabs.Add(tab);
         }

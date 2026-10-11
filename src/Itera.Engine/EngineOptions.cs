@@ -353,6 +353,15 @@ public sealed class AudioSettings
     /// </summary>
     public float Volume { get; set; } = 0.1f;
 
+    /// <summary>Music's volume under <see cref="Volume"/>, 0 to 1: a game's default for the player's Music setting.</summary>
+    public float MusicVolume { get; set; } = 1;
+
+    /// <summary>
+    /// The effects' volume under <see cref="Volume"/> (recipes, file sounds, the menu's clicks), 0 to 1: a game's default
+    /// for the player's Effects setting.
+    /// </summary>
+    public float EffectsVolume { get; set; } = 1;
+
     /// <summary>
     /// The most sounds playing at once (OpenAL sources). When all play, a louder new sound takes the quietest one's place
     /// and a quieter one is not played.

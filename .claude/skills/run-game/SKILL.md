@@ -98,7 +98,7 @@ lists the game's). Commonly used:
 - Other systems: `--Engine:Physics:SettleSeconds` (0.5 to 60), `MaxLooseBodies` (1 to 1024), `CollisionCentimetres`
   (the character mover's cells without voxel terrain, 1 to 10, default 10);
   `--Engine:Particles:Enabled=false` (`Capacity` 16,384 to 1,048,576); `--Engine:Audio:Enabled=false` (`Volume` 0 to
-  1, default 0.1; `MaxVoices` 8 to 255), `--Engine:Audio:Cache=false`; `--Engine:Loading:Enabled=false`;
+  1, default 0.1; `MusicVolume` and `EffectsVolume` 0 to 1 under it, default 1; `MaxVoices` 8 to 255), `--Engine:Audio:Cache=false`; `--Engine:Loading:Enabled=false`;
   `--Engine:Control:Enabled=true` (127.0.0.1:47650, `Port`); `--Engine:Benchmark:Enabled=true` (`tools/benchmark`);
   `"--Engine:Console:Run=balls 8; pos"` (commands run once the first match's world and systems exist; with `wait`, a
   script), `--Engine:Console:RunFile=PATH` (a file of command lines, `#` comments, after `Run`'s),
@@ -205,7 +205,7 @@ control port's `run` runs commands outside any script, so `wait` there fails (th
 lists the commands (`ConsoleCommands`):
 
 - Engine: `help`, `clear`, `play` [SEED], `host` [SEED] [steam|direct], `join` ADDRESS, `leave`, `settings` (volume,
-  sensitivity, fov, uiscale 0.75 to 1.5, scaling, threshold, shadows, aa off|smaa|2x|4x|8x, vsync, fullscreen; a test run that changes them
+  musicvolume, effectsvolume, sensitivity, fov, uiscale 0.75 to 1.5, scaling, threshold, shadows, aa off|smaa|2x|4x|8x, vsync, fullscreen; a test run that changes them
   writes the data folder's `settings.json`: give render options on the command line instead, or run with the agent data
   folder, `--Engine:Application:DataFolder=<DataFolder>-agent`), `lines`, `shadows`, `scale` (the run's only), `aa` (on,
   off, edges, weights, auto; the run's only), `lights` (test N: N warm lights round the camera for ten minutes; clear),

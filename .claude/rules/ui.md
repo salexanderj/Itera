@@ -125,9 +125,11 @@ is `MenuStyle.Plain`). It clicks with `menu-hover` as the pointer moves onto a c
 
 The Settings page (`SettingsPage`, a toolkit part a game's own menu shows inside its own: `Build`, then `Footer` for
 Back, beside Reset keys on Keybindings; `CapturingBinding`, `BindingPressed`, and `Escape` for its key capture) has
-three tabs, and a game's own (`SettingsRows`). Game: volume, mouse sensitivity (0.02 to 0.5 degrees a pixel), field of
-view (60 to 120 degrees across 16:9), UI scale (75 to 150 %, in steps of 5), VSync, and full screen
-(`Engine:Window:Fullscreen`). Graphics:
+four tabs, and a game's own (`SettingsRows`). Game: mouse sensitivity (0.02 to 0.5 degrees a pixel), field of view
+(60 to 120 degrees across 16:9), UI scale (75 to 150 %, in steps of 5), VSync, and full screen
+(`Engine:Window:Fullscreen`). Sound: Master Volume, and under it Music Volume and Effects Volume (`Volume`,
+`MusicVolume`, and `EffectsVolume` in `settings.json`; `Engine:Audio:Volume`, `MusicVolume`, and `EffectsVolume` their
+defaults). Graphics:
 dynamic render scaling, the dynamic scaling threshold, shadows, and anti-aliasing (a slider through Off, SMAA, MSAA 2x,
 4x, and 8x; `AntiAliasMode`, kept as `AntiAliasing` and `MsaaSamples` in `settings.json`).
 Keybindings (`KeyBindings`,

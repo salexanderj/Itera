@@ -19,8 +19,8 @@ public sealed class AudioExchangeTests
     public void Events_add_up_until_taken_and_past_the_most_are_dropped_and_counted()
     {
         var some = new SoundEvent[400];
-        _exchange.Post(some, [], ListenerPose.Default, 1, true);
-        _exchange.Post(some, [], ListenerPose.Default, 1, true);
+        _exchange.Post(some, [], ListenerPose.Default, MixLevels.Full);
+        _exchange.Post(some, [], ListenerPose.Default, MixLevels.Full);
 
         var (events, _) = Take();
         Assert.Equal(AudioExchange.MaxEvents, events);
@@ -32,29 +32,33 @@ public sealed class AudioExchangeTests
     public void Loops_the_listener_and_the_volume_replace_the_last_and_stay_after_a_take()
     {
         var listener = new ListenerPose(new Vector3(1, 2, 3), Vector3.UnitX, Vector3.UnitY);
-        _exchange.Post([], [new SoundLoop { Key = 1 }, new SoundLoop { Key = 2 }], ListenerPose.Default, 1, true);
-        _exchange.Post([], [new SoundLoop { Key = 3 }], in listener, 0.5f, false);
+        _exchange.Post(
+            [],
+            [new SoundLoop { Key = 1 }, new SoundLoop { Key = 2 }],
+            ListenerPose.Default,
+            MixLevels.Full
+        );
+        _exchange.Post([], [new SoundLoop { Key = 3 }], in listener, new MixLevels(0.5f, 0.25f, 0.75f, false));
 
-        _exchange.Take(_events, out _, _loops, out var loops, out var taken, out var volume, out var enabled, out _);
+        _exchange.Take(_events, out _, _loops, out var loops, out var taken, out var levels, out _);
         Assert.Equal(1, loops);
         Assert.Equal(3, _loops[0].Key);
         Assert.Equal(listener, taken);
-        Assert.Equal(0.5f, volume);
-        Assert.False(enabled);
+        Assert.Equal(new MixLevels(0.5f, 0.25f, 0.75f, false), levels);
         Assert.Equal(1, Take().Loops);
     }
 
     [Fact]
     public void Past_the_most_loops_the_rest_are_left_out()
     {
-        _exchange.Post([], new SoundLoop[AudioExchange.MaxLoops + 5], ListenerPose.Default, 1, true);
+        _exchange.Post([], new SoundLoop[AudioExchange.MaxLoops + 5], ListenerPose.Default, MixLevels.Full);
 
         Assert.Equal(AudioExchange.MaxLoops, Take().Loops);
     }
 
     private (int Events, int Loops) Take()
     {
-        _exchange.Take(_events, out var events, _loops, out var loops, out _, out _, out _, out _);
+        _exchange.Take(_events, out var events, _loops, out var loops, out _, out _, out _);
         return (events, loops);
     }
 }

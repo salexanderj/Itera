@@ -84,7 +84,7 @@ public sealed class SampleMenuTests : IDisposable
     {
         Click("Settings");
         Assert.Equal(SamplePage.Settings, Menu.Page);
-        Assert.True(Menu.Ui.TryFind("Volume", out _));
+        Assert.True(Menu.Ui.TryFind("Sensitivity", out _));
 
         Click("Keybindings");
         Click("F1");

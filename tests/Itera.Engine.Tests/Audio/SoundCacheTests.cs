@@ -320,7 +320,7 @@ public sealed class SoundCacheTests : IDisposable
             NullLogger.Instance,
             cache
         );
-        exchange.Post([], [], new ListenerPose(Vector3.Zero, -Vector3.UnitZ, Vector3.UnitY), 1, true);
+        exchange.Post([], [], new ListenerPose(Vector3.Zero, -Vector3.UnitZ, Vector3.UnitY), MixLevels.Full);
         mixer.Pump(0);
         return (device, recipe);
     }

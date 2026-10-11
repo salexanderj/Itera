@@ -114,7 +114,7 @@ public sealed class SoundCommands(
         context.Print(
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"sound {state}, volume {audio.Volume:0.##}: {stats.OneShots} one-shots and {stats.Streams} streams playing of {audio.MaxVoices} voices; {audio.Recipes.Count} recipes, {stats.RenderedRecipes} rendered ({stats.RenderedBytes / 1024} KB)"
+                $"sound {state}, volume {audio.Volume:0.##} (music {audio.MusicVolume:0.##}, effects {audio.EffectsVolume:0.##} under it): {stats.OneShots} one-shots and {stats.Streams} streams playing of {audio.MaxVoices} voices; {audio.Recipes.Count} recipes, {stats.RenderedRecipes} rendered ({stats.RenderedBytes / 1024} KB)"
             )
         );
         context.Print(

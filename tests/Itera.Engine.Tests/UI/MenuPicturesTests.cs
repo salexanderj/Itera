@@ -37,6 +37,8 @@ public sealed class MenuPicturesTests
         menu.Picture("settings-game");
         menu.Click("Graphics");
         menu.Picture("settings-graphics");
+        menu.Click("Sound");
+        menu.Picture("settings-sound");
         menu.Click("Keybindings");
         menu.Picture("settings-keys");
         menu.Menu.Escape();

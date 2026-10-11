@@ -62,6 +62,7 @@ public sealed partial class AudioMixer : IDisposable
     private readonly short[] _pcm = new short[BlockSamples];
     private SoundRandom _random = new(0x2545_F491);
     private ListenerPose _listener = ListenerPose.Default;
+    private float _effects = 1;
     private int _streamsPrepared;
     private bool _errorLogged;
     private double _nextConnectionCheck;
@@ -128,17 +129,22 @@ public sealed partial class AudioMixer : IDisposable
             _loops,
             out var loopCount,
             out _listener,
-            out var volume,
-            out var enabled,
+            out var levels,
             out var shift
         );
-        _device.SetListener(_listener.Position, _listener.Forward, _listener.Up, volume);
+        _device.SetListener(_listener.Position, _listener.Forward, _listener.Up, levels.Volume);
+        if (levels.Effects != _effects)
+        {
+            _effects = levels.Effects;
+            SetEveryVoice();
+        }
+
         if (shift != Vector3.Zero)
         {
             MoveVoices(shift);
         }
 
-        if (!enabled)
+        if (!levels.Enabled)
         {
             StopAll();
             TakeRendered();
@@ -361,7 +367,7 @@ public sealed partial class AudioMixer : IDisposable
         voice.Pitch = pitch;
         voice.Reference = reference;
         voice.AtListener = sound.AtListener;
-        _device.SetSource(voice.Source, sound.Position, gain, pitch, reference, sound.AtListener);
+        SetSource(in voice);
         _device.PlayBuffer(voice.Source, bank.Buffers[slot]);
         _stats.CountPlayed();
     }
@@ -379,10 +385,38 @@ public sealed partial class AudioMixer : IDisposable
             if (voice.Kind != VoiceKind.Free && !voice.AtListener)
             {
                 voice.Position -= shift;
-                _device.SetSource(voice.Source, voice.Position, voice.Gain, voice.Pitch, voice.Reference, false);
+                SetSource(in voice);
             }
         }
     }
+
+    /// <summary>The effects' volume changed: every voice playing is set again under it.</summary>
+    private void SetEveryVoice()
+    {
+        for (var i = 0; i < _voices.Length; i++)
+        {
+            ref readonly var voice = ref _voices[i];
+            if (voice.Kind != VoiceKind.Free)
+            {
+                SetSource(in voice);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Sets <paramref name="voice"/>'s source from what it remembers: its place (or the listener), its gain under the
+    /// effects' volume, its pitch, and its reference distance. The one place a voice's gain reaches the device, so a
+    /// moved origin or a changed volume never loses either.
+    /// </summary>
+    private void SetSource(in Voice voice) =>
+        _device.SetSource(
+            voice.Source,
+            voice.Position,
+            voice.Gain * _effects,
+            voice.Pitch,
+            voice.Reference,
+            voice.AtListener
+        );
 
     private int PickVariation(Bank bank, int level, int variations)
     {
@@ -494,7 +528,7 @@ public sealed partial class AudioMixer : IDisposable
             voice.Pitch = 1;
             voice.Reference = recipe.ReferenceMetres;
             voice.AtListener = false;
-            _device.SetSource(voice.Source, loop.Position, gain, 1, recipe.ReferenceMetres, atListener: false);
+            SetSource(in voice);
         }
 
         for (var i = 0; i < _voices.Length; i++)
