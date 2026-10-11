@@ -9,17 +9,17 @@ namespace Itera.Engine.Commands;
 /// The console's <c>physics</c> command (<see cref="CommandScope.Local"/>: each game's own physics): the match's bodies
 /// and statics, its solver's iterations and substeps, its damping, and its gravity; and for this match, the solver's
 /// iterations and substeps (<see cref="PhysicsWorld.SetSolver"/>), the damping (<see cref="PhysicsWorld.SetDamping"/>),
-/// and the gravity (<see cref="PhysicsWorld.SetGravity"/>).
+/// and the gravity (<see cref="PhysicsWorld.SetGravity"/>); and the run's physics materials.
 /// </summary>
-public sealed class PhysicsCommands(ConsoleCommands commands, MatchControl matches)
+public sealed class PhysicsCommands(ConsoleCommands commands, MatchControl matches, PhysicsMaterials materials)
 {
     /// <summary>Adds the command to the registry. Once, at startup.</summary>
     public void Register()
     {
         commands.Register(
             "physics",
-            "[solver ITERATIONS SUBSTEPS|damping LINEAR ANGULAR|gravity X Y Z]",
-            "Physics: the match's bodies and statics, solver, damping, and gravity; solver sets its velocity iterations (1 to 32) and substeps (1 to 8), damping the shares of speed and spin bodies lose each second (0 to 1), gravity its gravity (m/s², each part -100 to 100; characters fall by its strength's share of 9.81), for this match.",
+            "[materials|solver ITERATIONS SUBSTEPS|damping LINEAR ANGULAR|gravity X Y Z]",
+            "Physics: the match's bodies and statics, solver, damping, gravity, and bounces; materials lists the run's physics materials; solver sets its velocity iterations (1 to 32) and substeps (1 to 8), damping the shares of speed and spin bodies lose each second (0 to 1), gravity its gravity (m/s², each part -100 to 100; characters fall by its strength's share of 9.81), for this match.",
             CommandScope.Local,
             Physics
         );
@@ -27,6 +27,23 @@ public sealed class PhysicsCommands(ConsoleCommands commands, MatchControl match
 
     private void Physics(CommandContext context)
     {
+        if (context.Is(0, "materials") && context.Count == 1)
+        {
+            for (var i = 0; i < materials.Count; i++)
+            {
+                var id = new PhysicsMaterialId((byte)i);
+                var material = materials[id];
+                context.Print(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{materials.NameOf(id)}: friction {material.Friction:0.###}, bounciness {material.Bounciness:0.###}"
+                    )
+                );
+            }
+
+            return;
+        }
+
         if (matches.Current?.Physics is not { IsInitialized: true } physics)
         {
             context.PrintError("no match: physics belongs to a match");
@@ -115,7 +132,7 @@ public sealed class PhysicsCommands(ConsoleCommands commands, MatchControl match
         context.Print(
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"physics: {all} bodies ({bodies.ActiveSet.Count} awake), {physics.Simulation.Statics.Count} statics; solver {physics.VelocityIterations} iterations, {physics.Substeps} substep(s); damping {physics.LinearDamping:0.###} linear, {physics.AngularDamping:0.###} angular; gravity ({gravity.X:0.##}, {gravity.Y:0.##}, {gravity.Z:0.##})"
+                $"physics: {all} bodies ({bodies.ActiveSet.Count} awake), {physics.Simulation.Statics.Count} statics; solver {physics.VelocityIterations} iterations, {physics.Substeps} substep(s); damping {physics.LinearDamping:0.###} linear, {physics.AngularDamping:0.###} angular; gravity ({gravity.X:0.##}, {gravity.Y:0.##}, {gravity.Z:0.##}); {physics.Bounces} bounces set, {physics.ContactsDropped} contacts dropped"
             )
         );
     }

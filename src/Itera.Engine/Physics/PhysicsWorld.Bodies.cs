@@ -16,11 +16,14 @@ public enum PhysicsMarks : byte
     KeepsMovingUnloaded = 1,
 }
 
-/// <summary>A game's settings for a body or static of its own; the default is the engine's (no flags).</summary>
+/// <summary>A game's settings for a body or static of its own; the default is the engine's (its material, no marks).</summary>
 public readonly record struct PhysicsBodySettings
 {
     /// <summary>A game's marks for it.</summary>
     public PhysicsMarks Marks { get; init; }
+
+    /// <summary>Its physics material (<see cref="PhysicsMaterials"/>).</summary>
+    public PhysicsMaterialId Material { get; init; }
 }
 
 public sealed partial class PhysicsWorld
@@ -50,8 +53,9 @@ public sealed partial class PhysicsWorld
             throw new ArgumentOutOfRangeException(nameof(gravityScale), gravityScale, "A gravity scale is finite.");
         }
 
+        CheckMaterial(settings.Material);
         var body = Simulation.Bodies.Add(description);
-        _kinds.Set(body, BodyKind.Loose, marks: settings.Marks);
+        _kinds.Set(body, BodyKind.Loose, marks: settings.Marks, material: settings.Material);
         if (gravityScale != 1)
         {
             _kinds.SetGravityScale(body, gravityScale);
@@ -70,17 +74,49 @@ public sealed partial class PhysicsWorld
         BodyRemoving?.Invoke(body);
         Simulation.Bodies.Remove(body);
         _kinds.Forget(body);
+        _contacts?.Forget(PhysicsContacts.BodySide(body));
     }
 
     /// <summary>
-    /// Adds a game's own static, which bodies of every voxel level touch (as a mesh collider). Remove it with
-    /// <see cref="RemoveStatic"/>. Its shape stays the caller's. Main thread, between steps.
+    /// Adds a game's own static, which bodies of every voxel level touch (as a mesh collider), of the material
+    /// <paramref name="settings"/> name. Remove it with <see cref="RemoveStatic"/>. Its shape stays the caller's. Main
+    /// thread, between steps.
     /// </summary>
-    public StaticHandle AddStatic(in StaticDescription description)
+    public StaticHandle AddStatic(in StaticDescription description, in PhysicsBodySettings settings = default)
     {
+        CheckMaterial(settings.Material);
         var handle = Simulation.Statics.Add(description);
-        _kinds.SetGameStatic(handle);
+        _kinds.SetStatic(handle, BodyKinds.AnyLevel, settings.Material);
         return handle;
+    }
+
+    /// <summary>Sets <paramref name="body"/>'s physics material, from the next step on. Main thread, between steps.</summary>
+    public void SetMaterial(BodyHandle body, PhysicsMaterialId material)
+    {
+        CheckMaterial(material);
+        _kinds.SetMaterial(body, material);
+    }
+
+    /// <summary>Sets a static's physics material, from the next step on. Main thread, between steps.</summary>
+    public void SetMaterial(StaticHandle handle, PhysicsMaterialId material)
+    {
+        CheckMaterial(material);
+        _kinds.SetMaterial(handle, material);
+    }
+
+    /// <summary>A body's physics material.</summary>
+    public PhysicsMaterialId MaterialOf(BodyHandle body) => _kinds.Body(body.Value).Material;
+
+    /// <summary>A static's physics material.</summary>
+    public PhysicsMaterialId MaterialOf(StaticHandle handle) => _kinds.Static(handle.Value).Material;
+
+    /// <summary>Throws for a material the run did not register.</summary>
+    internal void CheckMaterial(PhysicsMaterialId material)
+    {
+        if (material.Value >= _kinds.Contacts.Length)
+        {
+            throw new ArgumentOutOfRangeException(nameof(material), material.Value, "No such physics material.");
+        }
     }
 
     /// <summary>Removes a static, forgetting its record. Its shape stays the caller's. Main thread, between steps.</summary>
@@ -88,6 +124,7 @@ public sealed partial class PhysicsWorld
     {
         Simulation.Statics.Remove(handle);
         _kinds.ClearStatic(handle);
+        _contacts?.Forget(PhysicsContacts.StaticSide(handle));
     }
 
     /// <summary>

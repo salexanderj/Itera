@@ -237,8 +237,9 @@ lists the commands (`ConsoleCommands`):
   compile from; reload compiles them again), `quit` [CODE] (the exit code, 0 to 255), `ecs` (counts, list COMPONENT [N],
   show ID[:VERSION]|player: the match's entities and their components' fields, `EcsInspector`), `pause`, `resume`,
   `step` [N] (pauses, then N fixed steps), `timescale` [X] (0.05 to 16 for the match; offline only, as are pause,
-  resume, and step; pause and step refuse while the match loads), `physics` (the match's bodies, statics, solver, damping, and gravity; solver ITERATIONS
-  SUBSTEPS, damping LINEAR ANGULAR, gravity X Y Z for the match), `particles` (on, off, recipes, test NAME [COUNT], pull
+  resume, and step; pause and step refuse while the match loads), `physics` (the match's bodies, statics, solver, damping, gravity, bounces set, and contacts
+  dropped; solver ITERATIONS SUBSTEPS, damping LINEAR ANGULAR, gravity X Y Z for the match; materials: the run's physics
+  materials with their friction and bounciness), `particles` (on, off, recipes, test NAME [COUNT], pull
   NAME [COUNT], stress NAME BURSTS, stress off), `sound` (on, off, volume V, recipes, files (the sounds read from
   files, each file's channels, rate, length, and problems), test NAME [LEVEL], play NAME (at the listener; a stream or file loop for 4 s), wav NAME [LEVEL] (with a level,
   that level's variations a file each, or 8 s of a stream at it), wav all into `Sounds/`), `music` (what plays: the decks' tracks and gains, underruns, and what the music thread decoded

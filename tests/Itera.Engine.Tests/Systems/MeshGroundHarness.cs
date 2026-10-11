@@ -25,7 +25,7 @@ internal sealed class MeshGroundHarness : IDisposable
     /// <summary>Below this height, in metres, a body has fallen out.</summary>
     public const float FallLimitMetres = -20;
 
-    public MeshGroundHarness(double settleSeconds = 3, int maxBodies = 64)
+    public MeshGroundHarness(double settleSeconds = 3, int maxBodies = 64, PhysicsMaterials? materials = null)
     {
         Options = Microsoft.Extensions.Options.Options.Create(
             new EngineOptions
@@ -33,7 +33,7 @@ internal sealed class MeshGroundHarness : IDisposable
                 Physics = new PhysicsSettings { SettleSeconds = settleSeconds, MaxLooseBodies = maxBodies },
             }
         );
-        Physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance);
+        Physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance, null, materials);
         Physics.Initialize();
         Colliders = new MeshColliders(Physics, NullLogger<MeshColliders>.Instance);
         Vector3[] ground = [new(-10, 0, -10), new(-10, 0, 10), new(10, 0, 10), new(10, 0, -10)];

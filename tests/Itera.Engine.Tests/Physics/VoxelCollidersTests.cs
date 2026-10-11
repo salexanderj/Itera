@@ -20,6 +20,9 @@ public sealed class VoxelCollidersTests : IDisposable
     private readonly VoxelWorld _world;
     private readonly PhysicsWorld _physics;
     private readonly VoxelColliders _colliders;
+    private readonly PhysicsMaterials _materials = new();
+    private readonly PhysicsMaterialId _ice;
+    private readonly PhysicsMaterialId _rubber;
 
     public VoxelCollidersTests()
     {
@@ -43,7 +46,9 @@ public sealed class VoxelCollidersTests : IDisposable
         }
 
         _world = TestWorlds.Load(new BoxesGenerator(Floor, [.. boxes]), new Vector3(0, 2, 0), radiusMetres: 4);
-        _physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance);
+        _ice = _materials.Register("ice", new PhysicsMaterial(0.03f, 0));
+        _rubber = _materials.Register("rubber", new PhysicsMaterial(1, 0.8f));
+        _physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance, null, _materials);
         _physics.Initialize();
         _colliders = new VoxelColliders(
             _physics,
@@ -102,6 +107,51 @@ public sealed class VoxelCollidersTests : IDisposable
             Pose(steep).Position.Z < steepStart.Z - 0.2f,
             $"The box on 60 degrees stayed near {steepStart}: {Pose(steep).Position}."
         );
+    }
+
+    [Fact]
+    public void A_bouncy_ball_rolling_over_the_floor_crosses_its_cells_as_a_plain_one_does()
+    {
+        // 4 m/s along -x from x = 0.8, at z = 0.8 and -0.8, rolling at 5/7 of it once it stops sliding: over the borders
+        // of four cells of 32 cm in 0.5 s, clear of the wall and the leaves. Each ball hops up to about 2 cm at a border
+        // (Bepu's contact with the next cell's edge, the engine's own before materials); the bouncy one must not be
+        // thrown higher (its new contact at each border was bounced, 40 cm, before the voxel statics were one ground).
+        var plain = AddSphere(new Vector3(0.8f, 2.1f, -0.8f), 0.1f, new Vector3(-4, 0, 0));
+        var bouncy = AddSphere(new Vector3(0.8f, 2.1f, 0.8f), 0.1f, new Vector3(-4, 0, 0));
+        _physics.SetMaterial(bouncy, _rubber);
+        float plainHighest = 0f,
+            bouncyHighest = 0f;
+
+        for (var i = 0; i < 30; i++)
+        {
+            Run(1);
+            plainHighest = MathF.Max(plainHighest, Pose(plain).Position.Y);
+            bouncyHighest = MathF.Max(bouncyHighest, Pose(bouncy).Position.Y);
+        }
+
+        Assert.True(Pose(bouncy).Position.X < -0.33f, $"The ball stopped at {Pose(bouncy).Position}.");
+        Assert.True(plainHighest < 2.13f, $"The plain ball rose to {plainHighest}.");
+        Assert.True(
+            bouncyHighest < plainHighest + 0.01f,
+            $"The bouncy ball rose to {bouncyHighest}, the plain one to {plainHighest}."
+        );
+    }
+
+    [Fact]
+    public void An_ice_box_slides_down_the_30_degree_slope_the_default_box_rests_on()
+    {
+        var at = new Vector3(0, 2.29f, -1.6f);
+        var size = new Vector3(0.2f, 0.1f, 0.2f);
+        var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitX, 30 * MathF.PI / 180);
+        var ice = AddBox(at, size, turn);
+        _physics.SetMaterial(ice, _ice);
+
+        Run(120);
+
+        // Friction sqrt(0.03 x 1) = 0.17, under tan 30 = 0.58: down the slope (towards +z, the way it falls) and off its
+        // foot at z = -1.21, where the box of the default material stays near where it lands (the test before).
+        Assert.Equal(_ice, _physics.MaterialOf(ice));
+        Assert.True(Pose(ice).Position.Z > -1.21f, $"The ice box stayed on the slope: {Pose(ice).Position}.");
     }
 
     [Fact]

@@ -27,6 +27,8 @@ public sealed partial class PhysicsWorld : IDisposable
     private readonly BodyKinds _kinds = new();
     private readonly PhysicsSettings _settings;
     private readonly IntegrationSettings _integration;
+    private readonly PhysicsMaterials? _materials;
+    private PhysicsContacts? _contacts;
     private bool _disposed;
 
     // What the last step ran with, for reading what bodies did to a stand-in in it (PushOn).
@@ -39,9 +41,15 @@ public sealed partial class PhysicsWorld : IDisposable
     /// The engine's options (<c>Engine:Physics</c>: threads, substeps, iterations, damping); none for the defaults and a
     /// quarter of the processors.
     /// </param>
-    public PhysicsWorld(ILogger<PhysicsWorld> logger, IOptions<EngineOptions>? options = null)
+    /// <param name="materials">The run's physics materials, sealed as the match begins; none for the engine's alone.</param>
+    public PhysicsWorld(
+        ILogger<PhysicsWorld> logger,
+        IOptions<EngineOptions>? options = null,
+        PhysicsMaterials? materials = null
+    )
     {
         _logger = logger;
+        _materials = materials;
         _settings = options?.Value.Physics ?? new PhysicsSettings();
         _threads = _settings.Threads;
         _integration = new IntegrationSettings(_kinds)
@@ -76,6 +84,12 @@ public sealed partial class PhysicsWorld : IDisposable
 
     /// <summary>The share of its angular velocity a body loses each second (<see cref="SetDamping"/>).</summary>
     public float AngularDamping => _integration.AngularDamping;
+
+    /// <summary>The bounces the engine set since the match began (<see cref="PhysicsMaterial.Bounciness"/>).</summary>
+    public long Bounces => _contacts?.Bounces ?? 0;
+
+    /// <summary>Contacts not followed because there were too many in a step.</summary>
+    public long ContactsDropped => _contacts?.Dropped ?? 0;
 
     /// <summary>The solver's substeps in each step (<see cref="SetSolver"/>).</summary>
     public int Substeps => Simulation.Solver.SubstepCount;
@@ -149,13 +163,16 @@ public sealed partial class PhysicsWorld : IDisposable
         var threadCount = _threads > 0 ? _threads : ThreadCount(Environment.ProcessorCount);
         _dispatcher = new ThreadDispatcher(threadCount);
         // Never the (int, int) tuple to SolveDescription: in Bepu 2.5.0-beta.29 it swaps its two values.
+        _contacts = new PhysicsContacts(threadCount);
         _simulation = Simulation.Create(
             _pool,
-            new NarrowPhaseCallbacks(_kinds),
+            new NarrowPhaseCallbacks(_kinds, _contacts),
             new PoseIntegratorCallbacks(_integration),
             new SolveDescription(_settings.VelocityIterations, _settings.Substeps)
         );
         _integration.Bodies = _simulation.Bodies;
+        _contacts.Bodies = _simulation.Bodies;
+        _kinds.Contacts = _materials?.Seal() ?? ContactMaterial.DefaultTable;
 
         LogInitialized(threadCount);
     }
@@ -174,7 +191,9 @@ public sealed partial class PhysicsWorld : IDisposable
         _stepGravity = _integration.Gravity;
         _stepLinearDamping = _integration.LinearDamping;
         _stepSubsteps = _integration.Substeps;
+        _contacts!.BeginStep(stepSeconds, _stepGravity);
         Simulation.Timestep(stepSeconds, _dispatcher);
+        _contacts.EndStep(Simulation);
         CheckRecords();
     }
 

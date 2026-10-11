@@ -103,7 +103,12 @@ Where tests live:
   `TextureDecodeTests`, `MipChainTests`, `MeshTangentsTests`; a model's compressed textures (`CompressedTexturesTests`:
   read where they match, each mismatch decoded with a warning, the image's hash wherever the model keeps it).
 - `Itera.Engine.Tests/Physics/`: a game's bodies and the records by handle (`PhysicsBodiesTests`: a reused handle
-  starts afresh, freezing and forgetting, `Holds`), mesh colliders (`MeshCollidersTests`: two-sided rays across buckets, tags, a ball that
+  starts afresh, freezing and forgetting, `Holds`), physics materials (`PhysicsMaterialsTests`: the registry's rules,
+  the default pair exactly the engine's contact, drops at bounciness 0, 0.5, and 0.8 at 1 and 4 substeps, small drops
+  landing at every place within a step, a body bouncing where the removed body that had its handle rested, two balls of
+  bounciness 1 trading speeds, a bouncing ball coming to rest, a mesh collider's material, no allocation; in
+  `VoxelCollidersTests` an ice box sliding down the 30 degree slope and a bouncy ball rolling over cells' borders no
+  higher than a plain one), mesh colliders (`MeshCollidersTests`: two-sided rays across buckets, tags, a ball that
   lands on a collider's Bepu static at any voxel level) and the shared ray (`CollisionSourcesTests`); the colliders as
   the mover's cells (`MeshColumnsTests`); the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves)
   and 10,000 random moves that never leave it inside a voxel, the same test bodies run on voxels and on triangles built

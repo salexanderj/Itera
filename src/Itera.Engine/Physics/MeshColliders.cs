@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace Itera.Engine.Physics;
 
 /// <summary>
-/// The match's static triangle colliders that a game registers (<see cref="Add(MeshAsset, in Matrix4x4, Func{string, uint}?)"/>):
+/// The match's static triangle colliders that a game registers (<see cref="Add(MeshAsset, in Matrix4x4, Func{string, uint}?, in PhysicsBodySettings)"/>):
 /// a mesh asset or triangles built in code, placed by a transform, each triangle with the surface tags of its material
 /// (game-defined bits; <c>IVoxelSurfaceTags</c> gives the voxels' theirs). Only registered colliders collide: drawing and
 /// colliding stay apart, so one model may be decoration in one place and ground in another.
@@ -21,7 +21,8 @@ namespace Itera.Engine.Physics;
 /// query after a collider was added or removed (that query allocates); every other query allocates nothing.</item>
 /// <item>Each collider is also a Bepu mesh static posed at its anchor's local place (its triangles wound as Bepu asks:
 /// clockwise seen from the front, where glTF's are counter-clockwise), which every loose body touches whatever its voxel
-/// level (<c>BodyKinds.SetGameStatic</c>); Bepu's meshes stop bodies from their front only.</item>
+/// level (<c>PhysicsWorld.AddStatic</c>), of the physics material its settings name; Bepu's meshes stop bodies from
+/// their front only.</item>
 /// </list>
 /// Scoped to the match; add colliders once its physics exists (from a system's <c>Initialize</c> on). Main thread.
 /// </summary>
@@ -56,7 +57,7 @@ public sealed partial class MeshColliders(
     public int Count { get; private set; }
 
     /// <summary>
-    /// The match's origin: a transform given to <see cref="Add(MeshAsset, in Matrix4x4, Func{string, uint}?)"/> and the
+    /// The match's origin: a transform given to <see cref="Add(MeshAsset, in Matrix4x4, Func{string, uint}?, in PhysicsBodySettings)"/> and the
     /// points of rays are local to it.
     /// </summary>
     public WorldOrigin Origin { get; } = origin ?? new WorldOrigin();
@@ -77,26 +78,38 @@ public sealed partial class MeshColliders(
     /// <summary>
     /// Registers the triangles of <paramref name="asset"/> placed by <paramref name="transform"/> (from the asset's space
     /// to the local space of <see cref="Origin"/>, used as <c>v * M</c>), each tagged by its material's name through
-    /// <paramref name="tagsOf"/> (none when null). A skinned asset collides as its file stores it. Returns the collider's
-    /// number.
+    /// <paramref name="tagsOf"/> (none when null), of the physics material <paramref name="settings"/> name. A skinned
+    /// asset collides as its file stores it. Returns the collider's number.
     /// </summary>
-    public int Add(MeshAsset asset, in Matrix4x4 transform, Func<string, uint>? tagsOf = null)
+    public int Add(
+        MeshAsset asset,
+        in Matrix4x4 transform,
+        Func<string, uint>? tagsOf = null,
+        in PhysicsBodySettings settings = default
+    )
     {
         var positions = Positions(asset, tagsOf, out var tags);
         var (anchor, offset) = AnchorOfLocal(transform.Translation);
-        return Add(positions, asset.Indices, in transform, tags, anchor, offset);
+        return Add(positions, asset.Indices, in transform, tags, anchor, offset, settings);
     }
 
     /// <summary>
     /// Registers the triangles of <paramref name="asset"/> at the absolute point <paramref name="at"/>, placed from it by
     /// <paramref name="transform"/> (from the asset's space to metres from <paramref name="at"/>, used as <c>v * M</c>):
-    /// precise anywhere on the map whatever the origin. Tags as the other overload. Returns the collider's number.
+    /// precise anywhere on the map whatever the origin. Tags and settings as the other overload. Returns the collider's
+    /// number.
     /// </summary>
-    public int Add(MeshAsset asset, in WorldPoint at, in Matrix4x4 transform, Func<string, uint>? tagsOf = null)
+    public int Add(
+        MeshAsset asset,
+        in WorldPoint at,
+        in Matrix4x4 transform,
+        Func<string, uint>? tagsOf = null,
+        in PhysicsBodySettings settings = default
+    )
     {
         var positions = Positions(asset, tagsOf, out var tags);
         var (anchor, offset) = AnchorOf(at);
-        return Add(positions, asset.Indices, in transform, tags, anchor, offset);
+        return Add(positions, asset.Indices, in transform, tags, anchor, offset, settings);
     }
 
     /// <summary>The asset's vertex positions, and each triangle's tags by its material's name.</summary>
@@ -125,33 +138,65 @@ public sealed partial class MeshColliders(
     /// <summary>
     /// Registers triangles built in code: <paramref name="indices"/> three a triangle into <paramref name="positions"/>,
     /// counter-clockwise seen from the front, placed by <paramref name="transform"/> (to the local space of
-    /// <see cref="Origin"/>), every one tagged <paramref name="tags"/>. Returns the collider's number.
+    /// <see cref="Origin"/>), every one tagged <paramref name="tags"/>, of the physics material <paramref name="settings"/>
+    /// name. Returns the collider's number.
     /// </summary>
-    public int Add(ReadOnlySpan<Vector3> positions, ReadOnlySpan<uint> indices, in Matrix4x4 transform, uint tags = 0)
+    public int Add(
+        ReadOnlySpan<Vector3> positions,
+        ReadOnlySpan<uint> indices,
+        in Matrix4x4 transform,
+        uint tags = 0,
+        in PhysicsBodySettings settings = default
+    )
     {
         var all = new uint[indices.Length / 3];
         Array.Fill(all, tags);
         var (anchor, offset) = AnchorOfLocal(transform.Translation);
-        return Add(positions, indices, in transform, all, anchor, offset);
+        return Add(positions, indices, in transform, all, anchor, offset, settings);
     }
 
     /// <summary>
     /// Registers triangles built in code at the absolute point <paramref name="at"/>, placed from it by
-    /// <paramref name="transform"/>, every one tagged <paramref name="tags"/>. Returns the collider's number.
+    /// <paramref name="transform"/>, every one tagged <paramref name="tags"/>, of the physics material
+    /// <paramref name="settings"/> name. Returns the collider's number.
     /// </summary>
     public int Add(
         ReadOnlySpan<Vector3> positions,
         ReadOnlySpan<uint> indices,
         in WorldPoint at,
         in Matrix4x4 transform,
-        uint tags = 0
+        uint tags = 0,
+        in PhysicsBodySettings settings = default
     )
     {
         var all = new uint[indices.Length / 3];
         Array.Fill(all, tags);
         var (anchor, offset) = AnchorOf(at);
-        return Add(positions, indices, in transform, all, anchor, offset);
+        return Add(positions, indices, in transform, all, anchor, offset, settings);
     }
+
+    /// <summary>
+    /// Changes collider <paramref name="collider"/>'s settings (its physics material), from the next step on. Main thread,
+    /// between steps.
+    /// </summary>
+    public void SetSettings(int collider, in PhysicsBodySettings settings)
+    {
+        if ((uint)collider >= (uint)_colliders.Count || _colliders[collider] is not { } found)
+        {
+            throw new ArgumentOutOfRangeException(nameof(collider), collider, "No such collider.");
+        }
+
+        physics.CheckMaterial(settings.Material);
+        found.Settings = settings;
+        if (found.HasStatic)
+        {
+            physics.SetMaterial(found.Static, settings.Material);
+        }
+    }
+
+    /// <summary>Collider <paramref name="collider"/>'s settings.</summary>
+    public PhysicsBodySettings SettingsOf(int collider) =>
+        (uint)collider < (uint)_colliders.Count && _colliders[collider] is { } found ? found.Settings : default;
 
     /// <summary>
     /// The anchor of a collider placed at the local point <paramref name="local"/> (whole metres nearest it) and what to
@@ -400,7 +445,8 @@ public sealed partial class MeshColliders(
         in Matrix4x4 transform,
         uint[] tags,
         VoxelCoord anchor,
-        Vector3 offset
+        Vector3 offset,
+        in PhysicsBodySettings settings
     )
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -410,7 +456,10 @@ public sealed partial class MeshColliders(
         }
 
         var count = indices.Length / 3;
-        var collider = new Collider(new Vector3[count], new Vector3[count], new Vector3[count], tags, anchor);
+        var collider = new Collider(new Vector3[count], new Vector3[count], new Vector3[count], tags, anchor)
+        {
+            Settings = settings,
+        };
         for (var t = 0; t < count; t++)
         {
             collider.A[t] = Vector3.Transform(positions[(int)indices[t * 3]], transform) + offset;
@@ -452,11 +501,11 @@ public sealed partial class MeshColliders(
         var simulation = physics.Simulation;
         var shape = simulation.Shapes.Add(new Mesh(triangles, Vector3.One, pool));
         collider.Shape = shape;
-        collider.Static = simulation.Statics.Add(
-            new StaticDescription(Origin.ToLocal(collider.Anchor), Quaternion.Identity, shape)
+        collider.Static = physics.AddStatic(
+            new StaticDescription(Origin.ToLocal(collider.Anchor), Quaternion.Identity, shape),
+            collider.Settings
         );
         collider.HasStatic = true;
-        physics.Kinds.SetGameStatic(collider.Static);
     }
 
     private void RemoveStatic(Collider collider)
@@ -611,6 +660,9 @@ public sealed partial class MeshColliders(
         public StaticHandle Static { get; set; }
 
         public bool HasStatic { get; set; }
+
+        /// <summary>A game's settings for it (its physics material).</summary>
+        public PhysicsBodySettings Settings { get; set; }
     }
 
     [LoggerMessage(

@@ -1,4 +1,5 @@
 using BepuPhysics;
+using BepuPhysics.Collidables;
 
 namespace Itera.Engine.Physics;
 
@@ -42,6 +43,9 @@ internal struct BodyRecord
     /// <summary>The share of the match's gravity it falls by (1 for all of it).</summary>
     public float GravityScale;
 
+    /// <summary>Its physics material.</summary>
+    public PhysicsMaterialId Material;
+
     /// <summary>A body never recorded: a loose body at level 0, in no ragdoll, falling by all of gravity.</summary>
     public static BodyRecord Default => new() { GravityScale = 1 };
 }
@@ -54,6 +58,9 @@ internal struct StaticRecord
 
     /// <summary>Which static this is of all that took the handle: 0 for none recorded, else a count over the match.</summary>
     public long Born;
+
+    /// <summary>Its physics material.</summary>
+    public PhysicsMaterialId Material;
 }
 
 /// <summary>
@@ -82,6 +89,20 @@ internal sealed class BodyKinds
 
     /// <summary>Bodies whose gravity scale is not 1: while there are none, the integrator reads no scales.</summary>
     public int ScaledBodies { get; private set; }
+
+    /// <summary>Each physics material's contact settings, by number (<see cref="PhysicsMaterials"/>; the engine's alone by default).</summary>
+    public ContactMaterial[] Contacts { get; set; } = ContactMaterial.DefaultTable;
+
+    /// <summary>The contact settings of the material of <paramref name="collidable"/>'s record.</summary>
+    public ref readonly ContactMaterial ContactOf(CollidableReference collidable)
+    {
+        var material =
+            collidable.Mobility == CollidableMobility.Static
+                ? Static(collidable.StaticHandle.Value).Material.Value
+                : Body(collidable.BodyHandle.Value).Material.Value;
+        var contacts = Contacts;
+        return ref material < contacts.Length ? ref contacts[material] : ref contacts[0];
+    }
 
     /// <summary>The share of the match's gravity the body with handle value <paramref name="handle"/> falls by.</summary>
     public float GravityScale(int handle) => Body(handle).GravityScale;
@@ -120,14 +141,15 @@ internal sealed class BodyKinds
 
     /// <summary>
     /// Records a body anew: its kind, the voxel level it collides with (its base level too), the ragdoll it belongs to (0
-    /// for none), and a game's marks; the rest from the default. Main thread, between steps.
+    /// for none), a game's marks, and its physics material; its share of gravity 1. Main thread, between steps.
     /// </summary>
     public void Set(
         BodyHandle body,
         BodyKind kind,
         int level = 0,
         int ragdoll = 0,
-        PhysicsMarks marks = PhysicsMarks.None
+        PhysicsMarks marks = PhysicsMarks.None,
+        PhysicsMaterialId material = default
     )
     {
         ref var record = ref BodySlot(body.Value);
@@ -141,8 +163,16 @@ internal sealed class BodyKinds
             Marks = marks,
             Born = ++_born,
             GravityScale = 1,
+            Material = material,
         };
     }
+
+    /// <summary>Sets a body's physics material. Main thread, between steps.</summary>
+    public void SetMaterial(BodyHandle body, PhysicsMaterialId material) => BodySlot(body.Value).Material = material;
+
+    /// <summary>Sets a static's physics material. Main thread, between steps.</summary>
+    public void SetMaterial(StaticHandle handle, PhysicsMaterialId material) =>
+        StaticSlot(handle.Value).Material = material;
 
     /// <summary>Sets the share of the match's gravity a recorded body falls by. Main thread, between steps.</summary>
     public void SetGravityScale(BodyHandle body, float scale)
@@ -183,15 +213,23 @@ internal sealed class BodyKinds
         }
     }
 
-    /// <summary>Records the voxel level of a static anew. Main thread, between steps.</summary>
-    public void SetStatic(StaticHandle handle, int level)
-    {
-        if (handle.Value >= _statics.Length)
+    /// <summary>Records the voxel level (and physics material) of a static anew. Main thread, between steps.</summary>
+    public void SetStatic(StaticHandle handle, int level, PhysicsMaterialId material = default) =>
+        StaticSlot(handle.Value) = new StaticRecord
         {
-            Array.Resize(ref _statics, Math.Max(_statics.Length * 2, handle.Value + 1));
+            Level = (byte)level,
+            Born = ++_born,
+            Material = material,
+        };
+
+    private ref StaticRecord StaticSlot(int handle)
+    {
+        if (handle >= _statics.Length)
+        {
+            Array.Resize(ref _statics, Math.Max(_statics.Length * 2, handle + 1));
         }
 
-        _statics[handle.Value] = new StaticRecord { Level = (byte)level, Born = ++_born };
+        return ref _statics[handle];
     }
 
     /// <summary>

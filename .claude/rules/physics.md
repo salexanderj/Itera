@@ -101,15 +101,15 @@ mask at a time; the figures are in ARCHITECTURE.md).
 ## A game's own bodies and statics, and the records
 
 The engine keeps a record for each Bepu body and static by handle (`BodyKinds`: a body's `BodyKind`, the voxel level
-it collides with now and the one it was made for, its ragdoll, a game's `PhysicsMarks`, and `Born`, which of the bodies
-that took the handle it is; a static's voxel level); the narrow phase reads them on Bepu's worker threads, and they are
+it collides with now and the one it was made for, its ragdoll, a game's `PhysicsMarks`, its physics material, its share
+of gravity, and `Born`, which of the bodies that took the handle it is; a static's voxel level and physics material); the narrow phase reads them on Bepu's worker threads, and they are
 written on the main thread between steps. A handle never recorded reads the default (a loose body at level 0, in no
 ragdoll; a static at level 0). Every removal resets its record (`PhysicsWorld.RemoveBody` and `RemoveStatic`, which
 `LooseBodies`, `RemoveStandIn`, `VoxelColliders`, and `MeshColliders` use), so a body or static that takes a removed
 one's handle starts afresh; in Debug builds `PhysicsWorld.Step` throws when a recorded body was removed past
 `RemoveBody`. A game adds its own with `PhysicsWorld.AddBody(description, settings)` (recorded as a loose body: it
 touches the voxels, the game's statics, bodies, and stand-ins; frozen where the voxels round it are not loaded, unless
-`PhysicsMarks.KeepsMovingUnloaded`; moved with the origin; not one of `LooseBodies`, so not counted, settled, or read by
+`PhysicsMarks.KeepsMovingUnloaded`; of `PhysicsBodySettings.Material`; moved with the origin; not one of `LooseBodies`, so not counted, settled, or read by
 `PhysicsReadSystem`) and `AddStatic` (touched by bodies of every voxel level, as a mesh collider), removes them with
 `RemoveBody` and `RemoveStatic` (the shapes stay the game's), and tells a reused handle apart with `BornOf` and
 `Holds(body, born)`. `RemoveBody` first calls `BodyRemoving`, which the voxel colliders set to `Forget`. A body added
@@ -143,6 +143,36 @@ a movement mode is given the stats with the scaled gravity. Down stays -Y for ch
 `PushOn` takes the stand-in's share. A floating ball (share 0) at rest settles into a floating sphere of voxels with
 terrain: a game makes floaters as its own bodies (`AddBody`).
 
+## Physics materials and bounces
+
+A physics material (`PhysicsMaterial`: friction 0 to 4, bounciness 0 to 1) is registered by name once a run, in the
+game's `IRunStartup` or a mod's, in `PhysicsMaterials` (run-wide; at most 64; `PhysicsMaterialId`, a byte), which the
+first match seals (a later `Register` throws). Material 0 is `default`, friction 1 and no bounce, which every body and
+static has unless given another: two of them give exactly the contact the engine had before materials. A body takes one
+at `AddBody` (`PhysicsBodySettings.Material`) or later (`SetMaterial`, `MaterialOf`), a static at `AddStatic`, and a
+mesh collider at `Add` (`PhysicsBodySettings`; `SetSettings`, `SettingsOf`); `physics materials` lists them. The narrow
+phase (`NarrowPhaseCallbacks`) reads both sides' records (`BodyKinds.ContactOf`, a table of `ContactMaterial` the match
+copies at its start): friction is the product of their square roots (sqrt(a·b)), and every pair has the engine's
+springs (30 Hz, critically damped, recovery at most 2 m/s), so a bouncy body sinks no further than any other.
+
+Bepu has no coefficient of restitution: its contacts stop a pair. A pair with a bouncy side (bounciness the larger of
+the two; stand-ins left out) is recorded by the narrow phase when it touches or will by the step's end at its speeds
+with the match's gravity (within 1 mm), with its deepest contact and the speed the two meet at there (their speed
+before the step, and what gravity adds or takes, by each side's share, over the gap still between them), on each
+worker's buffer (`PhysicsContacts`: 4,096 pairs, shared by the workers, at least 1,024 each). A pair is two bodies, or
+a body and a static, and every voxel static counts as one, the voxel ground: a ball that rolls from one cell's static
+into the next has not begun touching anything. After the step, on the main thread, the buffers are sorted by pair (so
+the threads' order does not count below the capacities), one contact kept a pair (the deepest), and each pair that was
+not touching the step before and came together at 0.5 m/s or more (`MinimumBounceSpeed`) is pushed apart at the
+contact until it separates at its bounciness times that speed, by its masses and inertias (`PhysicsContacts.Bounce`;
+statics and kinematic bodies take none); slower pairs rest and roll as Bepu solves them. Removing a body or static
+forgets its pairs, so one that takes its handle next begins afresh. The bounce does not depend on the substeps; a ball
+then rises a step's rise short of the curve (at 60 Hz, about 3 cm from a 1 m drop at bounciness 0.8), less what
+damping takes. A ball rolling over voxels hops up to about 2 cm at a cell's border at 4 m/s (Bepu's contact with the
+next cell's edge, whatever its material); a bouncy one bounces where such a hop lands at 0.5 m/s or more. Not bounced: a
+pair that strikes while already touching (a ball rolling into a wall of the voxels it rolls on). `physics` prints the
+bounces set and the contacts dropped past the buffers.
+
 ## Mesh colliders and the shared ray
 
 A game's static triangle colliders (`MeshColliders`, scoped to the match): `Add(asset, transform, tagsOf)` registers a
@@ -153,7 +183,7 @@ takes one away. Only registered colliders collide; drawing
 stays apart. Add them once the match's physics exists (from a system's `Initialize` on). Each collider keeps an anchor (the absolute
 whole metres nearest its point) and its triangles from it, with a grid of 4 m buckets over absolute x and z (made again
 at the first query after a change, which allocates; other queries allocate nothing), and each collider is also a Bepu
-`Mesh` static posed at its anchor's local place, its triangles wound clockwise seen
+`Mesh` static posed at its anchor's local place, of its settings' physics material, its triangles wound clockwise seen
 from the front as Bepu asks (glTF's are counter-clockwise), one-sided in Bepu, at `BodyKinds.AnyLevel`: every loose body
 touches it whatever its voxel level (`SetGameStatic`; `ClearStatic` on removal). Surface tags are up to 32 bits a game
 defines: voxel materials through its `IVoxelSurfaceTags` (none by default), mesh materials by name at registration.
@@ -165,7 +195,7 @@ ray (`ToolAim`) stays the terrain's own.
 ### Files in `src/Itera.Engine`
 
   - `Physics/`: the Bepu simulation and stand-ins (`PhysicsWorld`; a game's bodies and statics in `PhysicsWorld.Bodies.cs`;
-    the records by handle, `BodyKinds`), voxel box statics (`VoxelColliders`), loose bodies
+    the records by handle, `BodyKinds`; physics materials, `PhysicsMaterials`, and the bounces, `PhysicsContacts`), voxel box statics (`VoxelColliders`), loose bodies
     (`LooseBodies`: table, rest, and removal; `.Pieces.cs` balls and lifted pieces; `.Parts.cs` cut parts and ragdolls;
     `.Hulls.cs` large hulls), loose bodies and solid models as voxels (`LooseBodyVoxels`, `SolidModelVoxels`,
     `SolidColumns`), the character mover (`VoxelCharacterMover`) and the mesh colliders as its cells (`MeshColumns`), a
