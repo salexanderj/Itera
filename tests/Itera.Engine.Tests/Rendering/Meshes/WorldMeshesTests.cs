@@ -814,6 +814,53 @@ public sealed class WorldMeshesTests : IDisposable
     }
 
     /// <summary>
+    /// The columns of a heightfield store only the layers round their ground: a stone ball set 20 m up, far over them,
+    /// widens its column (the world posts it) and its blocks are made, meshed, and drawn, seen from 30 m up.
+    /// </summary>
+    [Fact]
+    public void A_ball_set_far_over_the_ground_widens_its_column_and_is_drawn()
+    {
+        var at = new Vector3(0.64f, 30, 0.64f);
+        using var world = TestWorlds.Load(
+            new Voxels.Generation.HillsGenerator(VoxelGrid.Unit, features: false),
+            at,
+            radiusMetres: RadiusMetres,
+            levels: Levels
+        );
+        using var targets = new FakeTargets();
+        using var meshes = NewMeshes(targets);
+        meshes.BeginMatch(world, new VoxelModels(world), new NoVoxelTintMap());
+        var view = LookingDown(at);
+        var key = new ColumnKey(0, 0, 0);
+        Assert.True(world.TryGetStoredLayers(key, out var first, out var end));
+        var ballLayer = 2_000 / 128 - VoxelGrid.Unit.MinChunkY;
+        Assert.True(end <= ballLayer, $"The column stores layers {first} to {end}, the ball's {ballLayer} among them.");
+
+        world.Apply(VoxelEdit.Sphere(new VoxelCoord(64, 2_000, 64), 40, VoxelEditOperation.Set, 3));
+
+        Assert.True(world.TryGetStoredLayers(key, out first, out end));
+        Assert.InRange(ballLayer, first, end - 1);
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var frame = 0;
+        var drawn = false;
+        while (!drawn)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The ball was not drawn.");
+            world.Update(0);
+            var slot = frame++ % FrameSync.FramesInFlight;
+            targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
+            for (var i = 0; i < meshes.DrawCount && !drawn; i++)
+            {
+                var draw = targets.DrawsOf(slot)[RecordOf(targets.CommandsOf(slot, 0)[i], slot)];
+                // A block whose 32 cm reach from its corner holds the ball's middle at 20 m.
+                drawn = draw.Origin.Y <= 20 && draw.Origin.Y + 32 * draw.VoxelMetres > 20;
+            }
+
+            Thread.Sleep(1);
+        }
+    }
+
+    /// <summary>
     /// A map 3 level-0 columns wide each way (not a whole number of level-1 columns) cuts its level-1 edge columns in
     /// half; their children past the edge are never loaded, and draw nothing, so the edge column under the camera still
     /// splits and its in-map half is drawn from level-0 blocks.

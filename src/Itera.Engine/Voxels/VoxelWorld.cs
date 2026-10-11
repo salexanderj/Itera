@@ -680,6 +680,23 @@ public sealed partial class VoxelWorld : IDisposable
     /// <summary>The voxel memory, for reading resident columns (the GPU upload). Main thread.</summary>
     internal VoxelMemory ReadMemory => Memory;
 
+    /// <summary>
+    /// The layers a resident column stores, from <paramref name="first"/> to before <paramref name="end"/> (counted from
+    /// the grid's floor at its level): every layer below is one fill and every layer above another, so only these, and
+    /// the faces where they meet those, can hold a surface. False when it is not resident. Main thread.
+    /// </summary>
+    internal bool TryGetStoredLayers(ColumnKey key, out int first, out int end)
+    {
+        if (TryGetResident(key, out var column))
+        {
+            (first, end) = (column.First, column.End);
+            return true;
+        }
+
+        (first, end) = (0, 0);
+        return false;
+    }
+
     /// <summary>Adds the key of every resident column to <paramref name="keys"/>. For a resync; allocates as the list grows.</summary>
     internal void CollectResidentColumns(List<ColumnKey> keys)
     {

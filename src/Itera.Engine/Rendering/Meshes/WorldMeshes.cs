@@ -609,6 +609,9 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
                     case VoxelChangeKind.ChunkChanged:
                         ChunkChanged(world, in change);
                         break;
+                    case VoxelChangeKind.ColumnWidened:
+                        ColumnWidened(world, change.Column);
+                        break;
                 }
             }
         }
@@ -658,7 +661,8 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
             return;
         }
 
-        var column = new MeshColumn(key, _grid);
+        var (firstLayer, endLayer) = MeshLayers(world, key);
+        var column = new MeshColumn(key, _grid, firstLayer, endLayer);
         if (IsWanted(key, _wantedAt, 0))
         {
             Wake(world, column);
@@ -693,6 +697,35 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
                     MarkFacing(world, side, -dx, -dz);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// The layers of a resident column that can hold a surface: those it stores and one each side, where they meet the
+    /// fills below and above them (a surface on a stored layer's face belongs to the block whose voxel is below it).
+    /// </summary>
+    private (int First, int End) MeshLayers(VoxelWorld world, ColumnKey key)
+    {
+        var count = key.LayerCount(_grid);
+        if (!world.TryGetStoredLayers(key, out var first, out var end))
+        {
+            return (0, count);
+        }
+
+        return (Math.Max(first - 1, 0), Math.Min(end + 1, count));
+    }
+
+    /// <summary>
+    /// An edit stored layers of the column past its blocks: the column is made again with blocks for them and meshed
+    /// again, as one loaded.
+    /// </summary>
+    private void ColumnWidened(VoxelWorld world, ColumnKey key)
+    {
+        var (first, end) = MeshLayers(world, key);
+        if (_columns.TryGetValue(key, out var column) && !column.Covers(first, end))
+        {
+            RemoveColumn(key);
+            AddColumn(world, key);
         }
     }
 
@@ -917,17 +950,10 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
                 for (var by = y0; by <= y1; by++)
                 {
                     var layer = (by >> 2) - _grid.MinChunkYAt(level);
-                    if (layer < 0 || layer >= key.LayerCount(_grid))
+                    if (column.TryIndex(layer, (bx & 3) + ((by & 3) << 2) + ((bz & 3) << 4), out var index))
                     {
-                        continue;
+                        MarkChanged(world, column, index, edited);
                     }
-
-                    MarkChanged(
-                        world,
-                        column,
-                        layer * MeshColumn.BlocksPerChunk + (bx & 3) + ((by & 3) << 2) + ((bz & 3) << 4),
-                        edited
-                    );
                 }
             }
         }
@@ -999,22 +1025,17 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         }
 
         var firstChunkY = _grid.MinChunkYAt(level);
-        var layers = stitches.Length / MeshColumn.BlocksPerChunk;
         for (var fy = 2 * y; fy <= 2 * y + 1; fy++)
         {
             var layer = (fy >> 2) - firstChunkY;
-            if ((uint)layer >= (uint)layers)
-            {
-                continue;
-            }
-
             for (var fz = 2 * z; fz <= 2 * z + 1; fz++)
             {
                 for (var fx = 2 * x; fx <= 2 * x + 1; fx++)
                 {
-                    stitches[
-                        layer * MeshColumn.BlocksPerChunk + (fx & 3) + ((fy & 3) << 2) + ((fz & 3) << 4)
-                    ].CoarseChanges++;
+                    if (fine.TryIndex(layer, (fx & 3) + ((fy & 3) << 2) + ((fz & 3) << 4), out var fineIndex))
+                    {
+                        stitches[fineIndex].CoarseChanges++;
+                    }
                 }
             }
         }

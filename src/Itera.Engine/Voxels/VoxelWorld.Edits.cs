@@ -575,6 +575,7 @@ public sealed partial class VoxelWorld
         var layerOffset = Grid.MinChunkYAt(key.Level);
         var first = Math.Max(0, (min.Y >> shift) - layerOffset);
         var last = Math.Min(column.LayerCount - 1, ((end.Y - 1) >> shift) - layerOffset);
+        var (storedFirst, storedEnd) = (column.First, column.End);
         for (var layer = first; layer <= last; layer++)
         {
             var before = column.LayerAt(layer);
@@ -620,6 +621,11 @@ public sealed partial class VoxelWorld
                 var isMixed = after.Kind == ChildKind.Handle;
                 _mixedChunks += (isMixed ? 1 : 0) - (wasMixed ? 1 : 0);
             }
+        }
+
+        if (column.First != storedFirst || column.End != storedEnd)
+        {
+            _changes.Add(new VoxelChange(VoxelChangeKind.ColumnWidened, key, -1, -1));
         }
     }
 

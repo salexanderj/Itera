@@ -17,7 +17,8 @@ public sealed class MeshColumnTests
     [Fact]
     public void The_blocks_to_read_come_nearest_the_view_first()
     {
-        var column = new MeshColumn(new ColumnKey(0, 0, 0), s_grid);
+        var key = new ColumnKey(0, 0, 0);
+        var column = new MeshColumn(key, s_grid, 0, key.LayerCount(s_grid));
         var random = new Random(3);
         for (var i = 0; i < column.Blocks.Length; i++)
         {
