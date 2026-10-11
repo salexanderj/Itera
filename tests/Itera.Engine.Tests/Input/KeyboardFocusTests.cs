@@ -1,3 +1,4 @@
+using System.Text;
 using Itera.Engine.Input;
 using Itera.Engine.Windowing;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -216,15 +217,16 @@ public sealed class KeyboardFocusTests : IDisposable
 
         public void Close() => IsOpen = false;
 
-        public void KeyDown(Key key, bool control)
+        public bool KeyDown(Key key, bool control)
         {
             Keys.Add(key);
             LastControl = control;
+            return false;
         }
 
         public void KeyUp(Key key) { }
 
-        public void Character(char character) => Typed += character;
+        public void Character(Rune character) => Typed += character.ToString();
 
         public void Paste(string text) => Typed += text;
 

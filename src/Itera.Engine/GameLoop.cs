@@ -712,10 +712,14 @@ public sealed partial class GameLoop
         ApplyLoading();
     }
 
-    /// <summary>A match ended: what the run kept of it (the view, the title, the particles) is put back.</summary>
+    /// <summary>
+    /// A match ended: what the run kept of it (the view, the title, the particles, the game's text box, Escape handlers,
+    /// and panel) is put back.
+    /// </summary>
     private void OnMatchEnded()
     {
         _renderView.ResetAfterMatch();
+        _input.EndMatch();
         _window.SetTitle(_window.BaseTitle);
         _particles.Clear();
         _noMatchStart = _clock.TotalSeconds;

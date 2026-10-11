@@ -12,7 +12,7 @@ public interface IMenuInput
     bool IsOpen { get; }
 
     /// <summary>The text box typed into, or null.</summary>
-    IKeyboardFocus? TextFocus { get; }
+    ITextInput? TextFocus { get; }
 
     /// <summary>Escape went down with the console closed: back, resume, or open the in-game menu.</summary>
     void Escape();

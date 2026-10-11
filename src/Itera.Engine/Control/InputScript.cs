@@ -109,7 +109,7 @@ internal sealed class InputScript
                     _input.InjectPointer(action.Look);
                     break;
                 case ActionKind.Type:
-                    foreach (var character in action.Text!)
+                    foreach (var character in action.Text!.EnumerateRunes())
                     {
                         _input.HandleCharacter(character);
                     }

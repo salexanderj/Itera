@@ -1,3 +1,4 @@
+using System.Text;
 using Itera.Engine.Commands;
 using Itera.Engine.Diagnostics;
 using Itera.Engine.Input;
@@ -184,12 +185,13 @@ public sealed partial class DevConsole : IKeyboardFocus, IConsoleOutput
         }
     }
 
-    public void KeyDown(Key key, bool control)
+    /// <summary>A key went down; false always, as the console repeats held keys itself (<see cref="Update"/>).</summary>
+    public bool KeyDown(Key key, bool control)
     {
         if (key == _repeatKey)
         {
             // A repeat from the platform; the console repeats held keys itself.
-            return;
+            return false;
         }
 
         if (Apply(key, control))
@@ -198,6 +200,8 @@ public sealed partial class DevConsole : IKeyboardFocus, IConsoleOutput
             _repeatControl = control;
             _repeatAt = _now + RepeatDelaySeconds;
         }
+
+        return false;
     }
 
     public void KeyUp(Key key)
@@ -208,7 +212,7 @@ public sealed partial class DevConsole : IKeyboardFocus, IConsoleOutput
         }
     }
 
-    public void Character(char character)
+    public void Character(Rune character)
     {
         if (_line.Insert(character))
         {

@@ -9,7 +9,6 @@ using Itera.Engine.Settings;
 using Itera.Engine.Windowing;
 using Itera.Modding;
 using Microsoft.Extensions.Options;
-using Silk.NET.Input;
 using SkiaSharp;
 
 namespace Itera.Engine.UI.Menu;
@@ -74,8 +73,7 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
     private readonly string _title;
     private readonly List<Element> _elements = [];
     private readonly Dictionary<ulong, (FriendAvatar Source, SKImage Image)> _avatars = [];
-    private readonly TextLine _address = new(MaxAddressLength);
-    private readonly TextBoxFocus _addressFocus;
+    private readonly TextEntry _addressEntry;
     private MenuView _page = MenuView.Main;
     private bool _inGame;
     private bool _inGameSettings;
@@ -142,7 +140,7 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
         _steam = steam;
         _friends = friends;
         _title = options.Value.Application.Name;
-        _addressFocus = new TextBoxFocus(_address, PressJoinAddress);
+        _addressEntry = new TextEntry(MaxAddressLength, PressJoinAddress);
         friends.JoinRequested += OnJoinRequested;
     }
 
@@ -157,7 +155,7 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
 
     public bool IsOpen => View != MenuView.None;
 
-    public IKeyboardFocus? TextFocus => View == MenuView.Join && _addressFocused ? _addressFocus : null;
+    public ITextInput? TextFocus => View == MenuView.Join && _addressFocused ? _addressEntry : null;
 
     /// <summary>Over the HUD; the console is drawn over it (registered after it).</summary>
     public bool AboveMatch => true;
@@ -167,7 +165,7 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
     public bool Dirty => _dirty;
 
     /// <summary>The address box's text, for tests.</summary>
-    public TextLine Address => _address;
+    public TextLine Address => _addressEntry.Line;
 
     /// <summary>The labels of the buttons shown, in order, for tests.</summary>
     public IEnumerable<string> Buttons =>
@@ -244,9 +242,9 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
             ShowJoin();
         }
 
-        if (_address.Version != _addressVersion)
+        if (_addressEntry.Line.Version != _addressVersion)
         {
-            _addressVersion = _address.Version;
+            _addressVersion = _addressEntry.Line.Version;
             _dirty = true;
         }
 
@@ -637,7 +635,7 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
     /// <summary>Joins the address typed, or says why it cannot.</summary>
     private void JoinAddress()
     {
-        var address = _address.Text.Trim();
+        var address = _addressEntry.Line.Text.Trim();
         if (!SessionAddress.TryParse(address, out _, out _) && !SteamAddress.TryParse(address, out _, out _))
         {
             _notice =
@@ -1067,7 +1065,7 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
         var left = box.Left + 1.5f * unit;
         var room = box.Width - 3 * unit;
         var baseline = box.MidY - (font.Metrics.Ascent + font.Metrics.Descent) / 2;
-        var text = _address.Text;
+        var text = _addressEntry.Line.Text;
         if (text.Length == 0 && !_addressFocused)
         {
             _addressScroll = 0;
@@ -1076,7 +1074,7 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
             return;
         }
 
-        var cursor = font.MeasureText(text.AsSpan(0, _address.Cursor));
+        var cursor = font.MeasureText(text.AsSpan(0, _addressEntry.Line.Cursor));
         _addressScroll = ScrollToCursor(_addressScroll, cursor, font.MeasureText(text), room);
         canvas.Save();
         canvas.ClipRect(new SKRect(box.Left + 0.5f * unit, box.Top, box.Right - 0.5f * unit, box.Bottom));
@@ -1213,38 +1211,5 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
         Tab,
         Bind,
         ResetKeys,
-    }
-
-    /// <summary>The keyboard while the address box takes it: editing keys and characters, Enter joins.</summary>
-    private sealed class TextBoxFocus(TextLine line, Action enter) : IKeyboardFocus
-    {
-        public bool Enabled => true;
-
-        public bool IsOpen => true;
-
-        public void Open() { }
-
-        public void Close() { }
-
-        public void KeyDown(Key key, bool control)
-        {
-            if (key is Key.Enter or Key.KeypadEnter)
-            {
-                enter();
-                return;
-            }
-
-            line.Edit(key, control, out _);
-        }
-
-        public void KeyUp(Key key) { }
-
-        public void Character(char character) => line.Insert(character);
-
-        public void Paste(string text) => line.Paste(text);
-
-        public void Scroll(float steps) { }
-
-        public void ReleaseKeys() { }
     }
 }

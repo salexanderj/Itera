@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using System.Text;
 using Itera.Engine.Windowing;
 using Microsoft.Extensions.Logging;
 using Silk.NET.Input;
@@ -16,7 +17,9 @@ namespace Itera.Engine.Input;
 /// pointer is on (a radial menu's, <see cref="SetDrawnPointer"/>), the captured mouse moves it instead of the view, and
 /// its buttons click it instead of reaching the game. While a game's panel is set (<see cref="SetPanel"/>, such as a
 /// map screen), the pointer is free, its left clicks and the wheel go to <see cref="MenuPointer"/> without capturing it,
-/// and Escape goes to the panel; keys still reach the game. ` opens the <see cref="IKeyboardFocus"/> (the in-game
+/// and Escape goes to the panel; keys still reach the game. While a game's text box has the typing
+/// (<see cref="SetTextFocus"/>), keys and characters go to it instead of the game. A game's screens close on Escape
+/// before the menu opens (<see cref="AddEscapeHandler"/>). ` opens the <see cref="IKeyboardFocus"/> (the in-game
 /// console) when there is one: until it closes (` or Escape), keys, characters, and the wheel go to it instead of the
 /// game, clicks do nothing, and the pointer is free; it is captured again on closing if it was captured on opening.
 /// Blocking at the events, not the snapshots, means nothing typed reaches the game later. The control port's
@@ -35,6 +38,27 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
     private IKeyboardFocus? _focus;
     private IMenuInput? _menu;
     private IPanelInput? _panel;
+    private ITextInput? _text;
+
+    /// <summary>
+    /// True when characters come from the window's own callback as whole code points (<see cref="OnCodePoint"/>), not
+    /// from Silk.NET's <c>KeyChar</c>, which cuts one past U+FFFF to 16 bits.
+    /// </summary>
+    private bool _codePoints;
+
+    /// <summary>A game's screens that Escape closes before the menu opens, oldest first (<see cref="AddEscapeHandler"/>).</summary>
+    private readonly List<IEscapeHandler> _escapeHandlers = [];
+
+    /// <summary>The handlers as Escape went down, so one that removes another as it closes skips none.</summary>
+    private IEscapeHandler[] _asking = [];
+
+    /// <summary>The key a text box repeats while it is held (<see cref="ITextInput.KeyDown"/>), or none.</summary>
+    private Key _repeatKey = Key.Unknown;
+    private bool _repeatControl;
+    private double _repeatAt;
+
+    /// <summary>The text box <see cref="_repeatKey"/> went down in; the repeat stops when the typing goes elsewhere.</summary>
+    private ITextInput? _repeatTarget;
 
     /// <summary>True when the pointer was captured as the panel was set: clearing it captures the pointer again.</summary>
     private bool _panelRecapture;
@@ -77,6 +101,15 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
         _windowService = windowService;
         _logger = logger;
     }
+
+    /// <summary>Seconds a text box's key is held before it repeats (<see cref="ITextInput.KeyDown"/>).</summary>
+    public const double RepeatDelaySeconds = 0.4;
+
+    /// <summary>Repeats a second of a text box's held key after <see cref="RepeatDelaySeconds"/>.</summary>
+    public const double RepeatsPerSecond = 30;
+
+    /// <summary>The clock a text box's repeats are timed by, in seconds; a test sets its own.</summary>
+    internal Func<double> Clock { get; set; } = static () => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
 
     /// <summary>The input of the frame being built. Set by <see cref="BeginFrame"/>; read by frame systems.</summary>
     public ref readonly InputSnapshot Frame => ref _frame;
@@ -170,6 +203,63 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
         }
     }
 
+    /// <inheritdoc />
+    public ITextInput? TextFocus => _text;
+
+    /// <inheritdoc />
+    public void SetTextFocus(ITextInput? text)
+    {
+        if (ReferenceEquals(text, _text))
+        {
+            return;
+        }
+
+        if (text is not null && _text is null)
+        {
+            // The keys are the box's now: a player walking stops, and their releases still reach the game.
+            _accumulator.ReleaseKeys();
+        }
+
+        _text = text;
+    }
+
+    /// <inheritdoc />
+    public void ClearTextFocus(ITextInput text)
+    {
+        if (ReferenceEquals(text, _text))
+        {
+            SetTextFocus(null);
+        }
+    }
+
+    /// <inheritdoc />
+    public void AddEscapeHandler(IEscapeHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        if (!_escapeHandlers.Contains(handler))
+        {
+            _escapeHandlers.Add(handler);
+        }
+    }
+
+    /// <inheritdoc />
+    public void RemoveEscapeHandler(IEscapeHandler handler) => _escapeHandlers.Remove(handler);
+
+    /// <summary>
+    /// A match ended: what its game set here goes with it (its text box, its Escape handlers, its panel, and the drawn
+    /// pointer), so nothing of an ended match is kept or asked. Main thread.
+    /// </summary>
+    public void EndMatch()
+    {
+        _text = null;
+        _repeatKey = Key.Unknown;
+        _repeatTarget = null;
+        _escapeHandlers.Clear();
+        _panelRecapture = false;
+        SetPanel(null);
+        SetDrawnPointer(false, default, 0);
+    }
+
     /// <summary>True while a game's panel takes the free pointer (<see cref="SetPanel"/>).</summary>
     public bool PanelSet => _panel is not null;
 
@@ -218,12 +308,20 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
         }
     }
 
-    /// <summary>A key goes down or up, as if pressed on the keyboard: the console, when open, gets it instead. Main thread.</summary>
+    /// <summary>
+    /// A key goes down or up, as if pressed on the keyboard: the console, when open, gets it instead. The console key
+    /// also types its character, as a keyboard's does, which opening the console drops (no other key types one: the
+    /// control port's <c>type</c> does). Main thread.
+    /// </summary>
     public void InjectKey(Key key, bool down)
     {
         if (down)
         {
             HandleKeyDown(key, null);
+            if (key == Key.GraveAccent)
+            {
+                HandleCharacter('`');
+            }
         }
         else
         {
@@ -295,6 +393,9 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
         }
 
         _input = _windowService.Window.CreateInput();
+        // After the input context, whose own character callback this replaces.
+        _codePoints = _windowService.SetCharacterCallback(OnCodePoint);
+        LogCharacters(_codePoints ? "the window's callback, whole code points" : "Silk.NET's KeyChar, 16 bits");
         _input.ConnectionChanged += OnConnectionChanged;
         _windowService.FocusChanged += OnFocusChanged;
 
@@ -321,6 +422,7 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
     /// </summary>
     public void Update()
     {
+        RepeatText(Clock());
         var wanted = _pointer.Update(_injectedCapture || (_mouse is not null && _windowService.IsFocused));
         if (wanted != _captured)
         {
@@ -462,7 +564,10 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
     {
         keyboard.KeyDown += OnKeyDown;
         keyboard.KeyUp += OnKeyUp;
-        keyboard.KeyChar += OnKeyChar;
+        if (!_codePoints)
+        {
+            keyboard.KeyChar += OnKeyChar;
+        }
     }
 
     private void Unsubscribe(IKeyboard keyboard)
@@ -493,7 +598,14 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
 
     private void OnKeyUp(IKeyboard keyboard, Key key, int scancode) => HandleKeyUp(key);
 
-    private void OnKeyChar(IKeyboard keyboard, char character) => HandleCharacter(character);
+    /// <summary>Silk.NET's character, cut to 16 bits: only without the window's own callback (<see cref="_codePoints"/>).</summary>
+    private void OnKeyChar(IKeyboard keyboard, char character)
+    {
+        if (!char.IsSurrogate(character))
+        {
+            HandleCharacter(character);
+        }
+    }
 
     private void OnMouseDown(IMouse mouse, MouseButton button) => HandleMouseDown(button);
 
@@ -507,7 +619,7 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
             _controlHeld = true;
         }
 
-        if (key == Key.GraveAccent)
+        if (key == Key.GraveAccent && _focus is { Enabled: true })
         {
             if (_graveHeld)
             {
@@ -560,15 +672,20 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
         if (key != Key.Escape && _menu?.TextFocus is { } text)
         {
             // The menu's text box takes the keys (` still opens the console).
-            if (key == Key.V && _controlHeld)
-            {
-                text.Paste(keyboard?.ClipboardText ?? "");
-            }
-            else
-            {
-                text.KeyDown(key, _controlHeld);
-            }
+            Type(text, key, keyboard);
+            return;
+        }
 
+        if (_text is { } typing && GameTakesInput)
+        {
+            // A game's text box takes every key, Escape and Enter too (` opened the console above).
+            Type(typing, key, keyboard);
+            return;
+        }
+
+        if (key == Key.Escape && GameTakesInput && EscapeHandled())
+        {
+            // A game's screen closed; the menu stays shut.
             return;
         }
 
@@ -614,12 +731,108 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
             _graveHeld = false;
         }
 
+        if (key == _repeatKey)
+        {
+            _repeatKey = Key.Unknown;
+        }
+
         // Held keys are released for the game too, so none stays held after the console closes.
         _accumulator.KeyUp(key);
         if (_focus is { IsOpen: true } open)
         {
             open.KeyUp(key);
         }
+        else
+        {
+            _text?.KeyUp(key);
+        }
+    }
+
+    /// <summary>True while a game's text box and screens may take keys: the menu is shut and the game's input not blocked.</summary>
+    private bool GameTakesInput => _menu is not { IsOpen: true } && !_gameInputBlocked;
+
+    /// <summary>
+    /// A key for a text box: Ctrl+V pastes the clipboard, any other goes to the box, and one the box repeats while held
+    /// is sent again from <see cref="Update"/> until it comes up.
+    /// </summary>
+    private void Type(ITextInput box, Key key, IKeyboard? keyboard)
+    {
+        if (key == Key.V && _controlHeld)
+        {
+            box.Paste(keyboard?.ClipboardText ?? "");
+            return;
+        }
+
+        var repeats = box.KeyDown(key, _controlHeld);
+        _repeatKey = repeats ? key : Key.Unknown;
+        _repeatControl = _controlHeld;
+        _repeatTarget = box;
+        _repeatAt = Clock() + RepeatDelaySeconds;
+    }
+
+    /// <summary>The text box that has the typing now: the menu's, else the game's while it may take keys; none while the console is open.</summary>
+    private ITextInput? TypingTarget =>
+        _focus is { IsOpen: true } ? null
+        : _menu?.TextFocus is { } menu ? menu
+        : GameTakesInput ? _text
+        : null;
+
+    /// <summary>
+    /// Repeats a text box's held key when it is due, while the typing stays with that box; a long wait repeats a few
+    /// times, not a burst of every repeat it missed.
+    /// </summary>
+    internal void RepeatText(double now)
+    {
+        if (_repeatKey == Key.Unknown)
+        {
+            return;
+        }
+
+        if (!ReferenceEquals(TypingTarget, _repeatTarget))
+        {
+            _repeatKey = Key.Unknown;
+            _repeatTarget = null;
+            return;
+        }
+
+        var repeats = 0;
+        while (now >= _repeatAt && repeats < 4)
+        {
+            _repeatTarget!.KeyDown(_repeatKey, _repeatControl);
+            _repeatAt += 1 / RepeatsPerSecond;
+            repeats++;
+        }
+
+        if (now >= _repeatAt)
+        {
+            _repeatAt = now + 1 / RepeatsPerSecond;
+        }
+    }
+
+    /// <summary>
+    /// Escape offered to the game's screens, the newest added first: true when one took it. They are asked from a copy
+    /// made as Escape went down, each only while it is still added, so one that removes others as it closes skips none
+    /// and asks none twice.
+    /// </summary>
+    private bool EscapeHandled()
+    {
+        var count = _escapeHandlers.Count;
+        if (_asking.Length < count)
+        {
+            _asking = new IEscapeHandler[Math.Max(4, 2 * count)];
+        }
+
+        _escapeHandlers.CopyTo(_asking);
+        var taken = false;
+        for (var i = count - 1; i >= 0 && !taken; i--)
+        {
+            var handler = _asking[i];
+            taken = _escapeHandlers.Contains(handler) && handler.Escape();
+        }
+
+        // No ended match's screen is kept here.
+        Array.Clear(_asking, 0, count);
+        return taken;
     }
 
     /// <summary>
@@ -629,8 +842,11 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
     internal static bool IsShortcutKey(Key key, bool macOS) =>
         key is Key.ControlLeft or Key.ControlRight || (macOS && key is Key.SuperLeft or Key.SuperRight);
 
+    /// <summary>A character was typed (one in the Basic Multilingual Plane; tests).</summary>
+    internal void HandleCharacter(char character) => HandleCharacter(new Rune(character));
+
     /// <summary>A character was typed.</summary>
-    internal void HandleCharacter(char character)
+    internal void HandleCharacter(Rune character)
     {
         if (_dropNextCharacter)
         {
@@ -638,7 +854,7 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
             return;
         }
 
-        if (_graveHeld && character == '`')
+        if (_graveHeld && character.Value == '`')
         {
             // The key's repeats, while it is held after opening the console.
             return;
@@ -651,6 +867,19 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
         else if (_menu?.TextFocus is { } text)
         {
             text.Character(character);
+        }
+        else if (_text is { } typing && GameTakesInput)
+        {
+            typing.Character(character);
+        }
+    }
+
+    /// <summary>A code point from the window's character callback: whole, also past U+FFFF; one that is no character is dropped.</summary>
+    internal void OnCodePoint(uint codePoint)
+    {
+        if (codePoint <= int.MaxValue && Rune.TryCreate((int)codePoint, out var character))
+        {
+            HandleCharacter(character);
         }
     }
 
@@ -835,6 +1064,7 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
         {
             // Release events for keys held now may go to another window.
             _accumulator.ReleaseAll();
+            _repeatKey = Key.Unknown;
             _controlHeld = false;
             _graveHeld = false;
             _focus?.ReleaseKeys();
@@ -885,6 +1115,9 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
         Message = "Input devices: {Keyboards} keyboard(s), {Mice} mouse/mice, {Gamepads} gamepad(s)"
     )]
     private partial void LogDevices(int keyboards, int mice, int gamepads);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Input: characters from {Source}")]
+    private partial void LogCharacters(string source);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Exit requested by Escape (the pointer was free)")]
     private partial void LogEscape();

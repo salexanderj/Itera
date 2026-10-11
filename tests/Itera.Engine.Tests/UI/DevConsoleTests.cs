@@ -1,3 +1,4 @@
+using System.Text;
 using Itera.Engine.Commands;
 using Itera.Engine.Diagnostics;
 using Itera.Engine.Networking;
@@ -38,7 +39,7 @@ public sealed class DevConsoleTests
         Type(console, "sy");
         console.KeyDown(Key.Left, false);
         console.KeyUp(Key.Left);
-        console.Character('a');
+        console.Character(new Rune('a'));
         console.KeyDown(Key.End, false);
         Type(console, " hi");
         console.KeyDown(Key.Home, false);
@@ -55,9 +56,9 @@ public sealed class DevConsoleTests
         var console = Create();
         console.Open();
 
-        console.Character('\t');
-        console.Character('\b');
-        console.Character('x');
+        console.Character(new Rune('\t'));
+        console.Character(new Rune('\b'));
+        console.Character(new Rune('x'));
 
         Assert.Equal("x", console.Line);
     }
@@ -547,7 +548,7 @@ public sealed class DevConsoleTests
     {
         foreach (var character in text)
         {
-            console.Character(character);
+            console.Character(new Rune(character));
         }
     }
 

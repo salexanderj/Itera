@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text;
 using Itera.Engine.Audio;
 using Itera.Engine.Commands;
 using Itera.Engine.Input;
@@ -129,11 +130,11 @@ public sealed class MenuLayerTests : IDisposable
     {
         Click(MainButton(2));
         Assert.Equal(MenuView.Join, _menu.View);
-        var box = Assert.IsAssignableFrom<IKeyboardFocus>(_menu.TextFocus);
+        var box = Assert.IsAssignableFrom<ITextInput>(_menu.TextFocus);
 
         foreach (var character in "nowhere")
         {
-            box.Character(character);
+            box.Character(new Rune(character));
         }
 
         box.KeyDown(Key.Enter, false);
@@ -143,7 +144,7 @@ public sealed class MenuLayerTests : IDisposable
         box.KeyDown(Key.U, true);
         foreach (var character in "127.0.0.1:47600")
         {
-            box.Character(character);
+            box.Character(new Rune(character));
         }
 
         box.KeyDown(Key.Enter, false);
@@ -167,10 +168,10 @@ public sealed class MenuLayerTests : IDisposable
         var before = Column((int)box.Right + 3, box);
         var beforeLeft = Column((int)box.Left - 3, box);
 
-        var focus = Assert.IsAssignableFrom<IKeyboardFocus>(_menu.TextFocus);
+        var focus = Assert.IsAssignableFrom<ITextInput>(_menu.TextFocus);
         for (var i = 0; i < MenuLayer.MaxAddressLength; i++)
         {
-            focus.Character('W');
+            focus.Character(new Rune('W'));
         }
 
         Frame();
@@ -501,10 +502,10 @@ public sealed class MenuLayerTests : IDisposable
         // The address box, under the friends' list: neither under the pointer nor clicked.
         Click(new Vector2(Width / 2f, 72 * Unit));
         Assert.Equal(0, _audio.QueuedEvents.Length);
-        var box = Assert.IsAssignableFrom<IKeyboardFocus>(_menu.TextFocus);
+        var box = Assert.IsAssignableFrom<ITextInput>(_menu.TextFocus);
         foreach (var character in "127.0.0.1:47600")
         {
-            box.Character(character);
+            box.Character(new Rune(character));
         }
 
         box.KeyDown(Key.Enter, false);

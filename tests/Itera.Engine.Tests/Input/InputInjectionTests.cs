@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text;
 using Itera.Engine.Input;
 using Itera.Engine.Windowing;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -180,11 +181,15 @@ public sealed class InputInjectionTests : IDisposable
 
         public void Close() => IsOpen = false;
 
-        public void KeyDown(Key key, bool control) => Keys.Add(key);
+        public bool KeyDown(Key key, bool control)
+        {
+            Keys.Add(key);
+            return false;
+        }
 
         public void KeyUp(Key key) { }
 
-        public void Character(char character) { }
+        public void Character(Rune character) { }
 
         public void Paste(string text) { }
 

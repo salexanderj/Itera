@@ -50,4 +50,32 @@ public interface IFrameInput
     /// left alone.
     /// </summary>
     void ClearPanel(IPanelInput panel) { }
+
+    /// <summary>The game's text box that takes the typing (<see cref="SetTextFocus"/>), or null.</summary>
+    ITextInput? TextFocus => null;
+
+    /// <summary>
+    /// Gives the typing to a game's text box (a chat line, a save's name; <see cref="UI.TextEntry"/>), or takes it back
+    /// (null). While one is set, and the console and the menu are closed and the game's input is not blocked, every key
+    /// goes to it (Escape and Enter too, so the box ends the typing itself; ` too unless the console is on, which ` still
+    /// opens), with the characters typed and pasted, and no key reaches the game; the keys held as it is set are let go,
+    /// so a player walking stops, and a key it repeats is sent again while held. The mouse, the wheel, and the pointer
+    /// stay the game's. Setting the box already set changes nothing.
+    /// </summary>
+    void SetTextFocus(ITextInput? text) { }
+
+    /// <summary>
+    /// Takes the typing back from <paramref name="text"/> when it is the box set, as <see cref="SetTextFocus"/> with
+    /// null does; another's is left alone.
+    /// </summary>
+    void ClearTextFocus(ITextInput text) { }
+
+    /// <summary>
+    /// Adds a screen that Escape closes before the menu opens (<see cref="IEscapeHandler"/>); the newest added is asked
+    /// first. Adding one already added changes nothing.
+    /// </summary>
+    void AddEscapeHandler(IEscapeHandler handler) { }
+
+    /// <summary>Removes <paramref name="handler"/>; one not added is ignored.</summary>
+    void RemoveEscapeHandler(IEscapeHandler handler) { }
 }

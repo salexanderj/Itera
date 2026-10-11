@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text;
 using Itera.Engine.Input;
 using Itera.Engine.Windowing;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -289,7 +290,7 @@ public sealed class MenuInputTests : IDisposable
     {
         public bool IsOpen { get; set; }
 
-        public IKeyboardFocus? TextFocus { get; set; }
+        public ITextInput? TextFocus { get; set; }
 
         public int Escapes { get; private set; }
 
@@ -312,11 +313,11 @@ public sealed class MenuInputTests : IDisposable
 
         public void Close() => IsOpen = false;
 
-        public void KeyDown(Key key, bool control) { }
+        public bool KeyDown(Key key, bool control) => false;
 
         public void KeyUp(Key key) { }
 
-        public void Character(char character) { }
+        public void Character(Rune character) { }
 
         public void Paste(string text) { }
 
@@ -325,30 +326,24 @@ public sealed class MenuInputTests : IDisposable
         public void ReleaseKeys() { }
     }
 
-    private sealed class TypedFocus : IKeyboardFocus
+    private sealed class TypedFocus : ITextInput
     {
-        public bool Enabled => true;
-
-        public bool IsOpen => true;
-
         public string Typed { get; private set; } = "";
 
         public List<Key> Keys { get; } = [];
 
-        public void Open() { }
+        public List<Key> Released { get; } = [];
 
-        public void Close() { }
+        public bool KeyDown(Key key, bool control)
+        {
+            Keys.Add(key);
+            return false;
+        }
 
-        public void KeyDown(Key key, bool control) => Keys.Add(key);
+        public void KeyUp(Key key) => Released.Add(key);
 
-        public void KeyUp(Key key) { }
-
-        public void Character(char character) => Typed += character;
+        public void Character(Rune character) => Typed += character.ToString();
 
         public void Paste(string text) => Typed += text;
-
-        public void Scroll(float steps) { }
-
-        public void ReleaseKeys() { }
     }
 }

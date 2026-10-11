@@ -18,6 +18,9 @@ public sealed partial class WindowService : IDisposable
     private IWindow? _window;
     private Glfw? _glfw;
 
+    /// <summary>The character callback set on the window (<see cref="SetCharacterCallback"/>), kept so it is not collected.</summary>
+    private GlfwCallbacks.CharCallback? _characters;
+
     /// <summary>Set by <see cref="Wake"/>; what <see cref="WaitEvents"/> sleeps on.</summary>
     private readonly AutoResetEvent _wake = new(false);
     private bool _abandoned;
@@ -193,6 +196,25 @@ public sealed partial class WindowService : IDisposable
             RefreshRate = refresh;
             LogRefreshRate(screen, refresh, how);
         }
+    }
+
+    /// <summary>
+    /// Sends each character typed in the window to <paramref name="typed"/> as GLFW gives it: a whole Unicode code point.
+    /// Silk.NET's <c>IKeyboard.KeyChar</c> casts it to a <see cref="char"/>, so one past U+FFFF (an emoji) arrives as
+    /// another character. This replaces the callback Silk.NET's input context set, whose <c>KeyChar</c> then stays
+    /// silent, so call it after creating the input. False without a window. Main thread.
+    /// </summary>
+    public unsafe bool SetCharacterCallback(Action<uint> typed)
+    {
+        ArgumentNullException.ThrowIfNull(typed);
+        if (_window?.Native?.Glfw is not { } handle || _glfw is null)
+        {
+            return false;
+        }
+
+        _characters = (_, codePoint) => typed(codePoint);
+        _glfw.SetCharCallback((WindowHandle*)handle, _characters);
+        return true;
     }
 
     /// <summary>

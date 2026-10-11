@@ -27,6 +27,22 @@ pixels at any render scale; hidden while the loading screen is drawn. A game add
 (made into `TextBlobs` once) chosen each frame by a callback, with a shadow, allocating nothing; `Amounts` formats
 counts as 500, 12.5K, 30M.
 
+A game's own text box (a chat line, a save's name) takes the typing through `IFrameInput.SetTextFocus` (`ITextInput`;
+`TextEntry` is a ready-made one over a `TextLine`): while it is set, and the console and the menu are closed and the
+game's input is not blocked, every key goes to it (Escape and Enter too, so the box ends the typing itself, usually
+with `ClearTextFocus`; ` too while the console is off), with the characters typed and pasted, and no key reaches the
+game; the keys held as it is set are let go. The mouse, the wheel, and the pointer stay the game's, and ` still opens
+the console. Silk.NET passes on no key repeats, so `InputService` repeats a key a text box says repeats (Backspace,
+Delete, Left, Right; `ITextInput.KeyDown` returns true) after 0.4 s, 30 times a second, for the menu's box too; the
+console repeats its own. The box's callbacks and `IEscapeHandler.Escape` run inside the window's key event: short, never
+throwing, no ECS changes. Characters
+arrive whole (`Rune`): `WindowService.SetCharacterCallback` takes GLFW's code points, since Silk.NET's `KeyChar` cuts
+one past U+FFFF to 16 bits, and `TextLine` keeps a UTF-16 pair whole; a glyph the UI font lacks draws as its box.
+GLFW 3.4 has no IME composition (preedit) support. Escape goes, in order, to the console when open, the menu when open,
+the game's text box, the game's screens (`IEscapeHandler`, `AddEscapeHandler`; the newest first, each taking it or
+passing it on, with the pointer and keys left as they are), the game's panel (`IPanelInput`), and otherwise opens the
+menu. A match's end drops its text box, screens, panel, and drawn pointer (`InputService.EndMatch`).
+
 The stats line (F1, `stats`, `Engine:Ui:Stats`) shows frames per second, frame and GPU time, the render scale, fixed
 steps per second, the session, and the living particles.
 
@@ -80,11 +96,11 @@ registered later that clash with another action keep the file's (`KeyBindings` u
 ### Files in `src/Itera.Engine`
 
   - `UI/`: the surface and its layers (console, stats line, `LoadingLayer`), the font (`UiFonts`, from `UI/Fonts/`,
-    copied to `Fonts/`), `TextBlobs`, `TextLine`, and the menu in `UI/Menu/` (`MenuLayer`, `MenuLayer.Settings.cs`,
+    copied to `Fonts/`), `TextBlobs`, `TextLine`, `TextEntry`, and the menu in `UI/Menu/` (`MenuLayer`, `MenuLayer.Settings.cs`,
     `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`), `CentredMessageLayer`, `Amounts`.
   - `Input/`: snapshots per frame and per fixed step (`InputSnapshot`: `InputService.Frame` and `InputService.Tick`), `PointerCapture`, `IKeyboardFocus`, `IMenuInput` (`UiPointer`,
-    `CapturingBinding`), `IFrameInput` and `InputService` (`SetDrawnPointer`, `SetPanel`), `IPanelInput`, `KeyBindings`,
-    `InputBinding`.
+    `CapturingBinding`), `IFrameInput` and `InputService` (`SetDrawnPointer`, `SetPanel`, `SetTextFocus`,
+    `AddEscapeHandler`), `IPanelInput`, `ITextInput`, `IEscapeHandler`, `KeyBindings`, `InputBinding`.
   - `Commands/` (not `Console/`: that namespace would hide `System.Console`): `ConsoleCommands`, `CommandLine`,
     `EngineCommands`, `MatchCommands`, `SettingsCommands`, `ParticleCommands`, `SoundCommands`, `TimeCommands` (pause,
     step, timescale), `EcsCommands` (`ecs`, registered at a match's ECS step). The console's scripts:

@@ -214,7 +214,7 @@ public sealed class PanelInputTests : IDisposable
     {
         public bool IsOpen { get; set; }
 
-        public IKeyboardFocus? TextFocus => null;
+        public ITextInput? TextFocus => null;
 
         public int Escapes { get; private set; }
 

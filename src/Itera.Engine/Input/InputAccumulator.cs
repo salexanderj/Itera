@@ -86,6 +86,12 @@ public sealed class InputAccumulator
     /// </summary>
     public void ReleaseButtons() => _buttonsHeld = 0;
 
+    /// <summary>
+    /// Forgets every held key, for when something else takes the keys (a game's text box): a player walking stops. Mouse
+    /// buttons stay held.
+    /// </summary>
+    public void ReleaseKeys() => _held = default;
+
     /// <summary>The snapshot for the frame being built; starts collecting the next frame's presses and movement.</summary>
     public InputSnapshot TakeFrame(bool pointerCaptured) => Take(ref _sinceFrame, pointerCaptured);
 

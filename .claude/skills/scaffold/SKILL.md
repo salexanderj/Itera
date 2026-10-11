@@ -245,6 +245,22 @@ A choice the player makes and the game keeps in `settings.json` (the starter's m
 3. Test it as the starter's `MinimapSystemTests` does (the key hides and shows it in the player's settings, and does
    nothing while the input is blocked); the engine's `PlayerSettingsTests` cover the file.
 
+## A text box, or a screen that Escape closes
+
+A chat line, a save's name, or a sign's text the player types; an inventory or map that Escape shuts before the menu
+opens (`.claude/rules/ui.md`).
+
+1. A text box: keep a `TextEntry(maxLength, enter, escape)` (its `Line` holds the text and cursor) and give it the
+   typing with `IFrameInput.SetTextFocus(entry)` when it opens (a key the game reads, a click on it). Every key but `
+   goes to it until `ClearTextFocus(entry)`, which its `enter` and `escape` callbacks usually call; the player stops
+   walking while it has the keys. Draw `entry.Line` in an `IMatchUiLayer` (redraw when `Line.Version` changes). A game
+   with its own editing keys implements `ITextInput` instead.
+2. A screen Escape closes: implement `IEscapeHandler` (`Escape()` returns true when it was open and closes, false to
+   let Escape pass on), and `IFrameInput.AddEscapeHandler(screen)` once, at the match's start (a system's
+   `Initialize`). The newest added is asked first. The engine drops both at the match's end.
+3. Test them over the real `InputService` (`tests/Itera.Engine.Tests/Input/TextFocusTests` shows how) or a
+   `HeadlessMatch` (`match.Input`).
+
 ## A test that plays the real game
 
 For a feature that needs the real world and systems, play the game without a window (`HeadlessMatch`; see
