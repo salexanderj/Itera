@@ -140,18 +140,17 @@ public sealed class VoxelGridTests
         // Across: at least one chunk each side, and no farther than 160 km (12,500 chunks of 12.8 m).
         Assert.ThrowsAny<ArgumentException>(() => new VoxelGrid(10, 0, -1, 1));
         Assert.ThrowsAny<ArgumentException>(() => new VoxelGrid(10, 12_501, -1, 1));
-        // Up and down: within 160 km, the top over the floor, and at most 128 layers.
+        // Up and down: within 160 km and the top over the floor; all of it, 25,000 layers of 12.8 m.
         Assert.ThrowsAny<ArgumentException>(() => new VoxelGrid(10, 1, -12_501, -12_400));
         Assert.ThrowsAny<ArgumentException>(() => new VoxelGrid(10, 1, 12_400, 12_500));
         Assert.ThrowsAny<ArgumentException>(() => new VoxelGrid(10, 1, 2, 1));
-        Assert.ThrowsAny<ArgumentException>(() => new VoxelGrid(10, 1, 0, VoxelGrid.MostLayers));
-        _ = new VoxelGrid(10, 12_500, 0, VoxelGrid.MostLayers - 1);
+        Assert.Equal(25_000, new VoxelGrid(10, 12_500, -12_500, 12_499).MaxLayers);
         // In metres: finite, a half-width over 0, a top over the floor, and the same limits.
         Assert.ThrowsAny<ArgumentException>(() => VoxelGrid.Sized(10, double.NaN, 0, 1));
         Assert.ThrowsAny<ArgumentException>(() => VoxelGrid.Sized(10, 0, 0, 1));
         Assert.ThrowsAny<ArgumentException>(() => VoxelGrid.Sized(10, 10, 5, 5));
         Assert.ThrowsAny<ArgumentException>(() => VoxelGrid.Sized(10, 1e12, 0, 1));
-        Assert.ThrowsAny<ArgumentException>(() => VoxelGrid.Sized(1, 10, 0, 165));
+        Assert.ThrowsAny<ArgumentException>(() => VoxelGrid.Sized(1, 10, 0, 160_001));
         Assert.ThrowsAny<ArgumentException>(() => VoxelGrid.Sized(101, 10, 0, 1));
     }
 
@@ -169,6 +168,5 @@ public sealed class VoxelGridTests
         Assert.True(grid.ToCentimetres(grid.EndVoxelXZ) >= VoxelGrid.DefaultHalfWidthCentimetres);
         Assert.True(grid.ToCentimetres(grid.MinVoxelY) <= VoxelGrid.DefaultFloorCentimetres);
         Assert.True(grid.ToCentimetres(grid.EndVoxelY) >= VoxelGrid.DefaultTopCentimetres);
-        Assert.True(grid.MaxLayers <= VoxelGrid.MostLayers);
     }
 }

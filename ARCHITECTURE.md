@@ -28,7 +28,7 @@ The numbers that shape the engine's technical decisions:
 | Quantity | Value |
 |---|---|
 | World voxel edge | 1 cm to 1 m at level 0, set by the generator's `VoxelGrid` (10 cm in the starter); level k is twice level k-1; models have a unit of their own, 1 cm in the starter |
-| World extent | whole level-0 chunks a game sets in its generator's grid, up to ±160 km each way and 128 layers; by default about ±512 m, from -51.2 m to +102.4 m at 10 cm |
+| World extent | whole level-0 chunks a game sets in its generator's grid, up to ±160 km each way, up and down too; by default about ±512 m, from -51.2 m to +102.4 m at 10 cm |
 | Voxels in a dense grid of that extent | about 1.5 x 10^11 (too many to store; see "Voxel storage") |
 | Simulation rate | 60 fixed steps per second (`Engine:FixedStepHz`) |
 | Players | up to `Engine:Session:MaxPlayers` (4 by default), peer to peer, the host authoritative |
@@ -804,9 +804,15 @@ it was 4 x 10^13 (5 TB at one bit each).
 - The world's grid is a value each world owns (`VoxelGrid`, from its generator): the base voxel edge in centimetres, the
   bounds in whole level-0 chunks, and the conversions between centimetres and voxel indices (`GridLevel` for a level). A
   game sizes its world (`VoxelGrid.Sized(base, halfWidthMetres, floorMetres, topMetres)`, each bound rounded out to
-  whole chunks, or the constructor in chunks): at most ±160 km on any axis (`MostReachCentimetres`, inside the edit
-  format's 2^24 cm with room for the play area's margin) and 128 level-0 layers (`MostLayers`: every layer of a resident
-  column costs memory, about 4 KB of mesh blocks and 8 bytes of chunk state, whether it holds voxels or not). The grid
+  whole chunks, or the constructor in chunks): at most ±160 km on any axis, up and down too (`MostReachCentimetres`,
+  inside the edit format's 2^24 cm with room for the play area's margin). A column stores a window of its layers (the
+  generator's range, `IChunkGenerator.DescribeRange`, and the layers its edits reach), with one fill below it and one
+  above it; its mesh column keeps blocks (about 4 KB a layer) only for the runs of layers that can hold a surface
+  (`VoxelWorld.CollectSurfaceLayers`: a layer of more than one fill, or one whose fill differs from the layer above
+  it, and a layer each side). Measured 2026-10-10: 64 columns of the hills test generator stored 111 layers in a world 12
+  layers tall and in one 25,000 layers tall; a ball set 100 km up widened its column to 7,813 stored layers (62 KB of
+  chunk state) and two runs that can hold a surface; a ball 60 m up over 1 cm voxels left blocks for 11 of the 45
+  layers the column stores; a ray 100 km down took 0.6 ms in Debug. The grid
   is part of what the generator's id and version stand for, so peers and saves agree on it without carrying it, and a
   change of size raises the version. A grid of a base alone has the default bounds: whole chunks covering ±500 m, the
   floor at the first chunk at or below -40.96 m, and the top at whole chunks above 81.92 m rounded up to a multiple of
@@ -1486,14 +1492,16 @@ Engine work that is known and not done:
   lights, and shadowed point lights (each with the choices offered in `docs/rendering-extension.md`). A low sun's shadow
   maps cost more (the starter's start view at 2560x1440: 0.15 ms at the engine's sun, 0.19 ms at 30 degrees, 0.36 ms at
   15, 0.40 ms at 5; their longer reach adds 0.01 to 0.03 ms of that); at night they cost 0.015 ms.
-- **Large maps** (under way): built, a map's size set in its generator's grid (up to ±160 km and 128 layers), voxels of
+- **Large maps** (built 2026-10-10): a map's size set in its generator's grid (up to ±160 km, up and down too), voxels of
   1 cm to 1 m, positions kept local to a match's origin with absolute types (`WorldPoint`, `VoxelCoord`) wherever
   they cross it, and moves of the origin following the camera (`OriginShiftSystem`, `OriginShifts`; the renderer,
   particles, and sound follow them), positions in messages absolute, and the starter's map 8 km across (broad relief
   past 1 km), and views to 8 km (levels 8 to 10; the haze and the far shadows' 200 m end left for Lucy's choice; the
-  GPU's time not yet measured), and a nav grid that moves with the players over any map (`Engine:Navigation:WindowCells`).
-  Not built: columns that hold only the layers with ground or edits, so a map's height costs memory only where
-  something is.
+  GPU's time not yet measured), a nav grid that moves with the players over any map (`Engine:Navigation:WindowCells`),
+  and columns that store only the layers round their ground and edits, so a map's height costs memory only where
+  something is, with the renderer's level choice counting a column's height (a camera high over the ground meshes no
+  fine level under it). Left: the GPU's time for far views and the benchmark at 9 levels, which wait for a quiet
+  machine; Lucy's choices of haze and far shadows.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no
   engine system replicates players, thrown bodies, or characters; the Zorf TD archive has a working design (a player's
   state every step with the host's checks and corrections, bodies as kinematic mirrors played back a few ticks behind,

@@ -76,7 +76,8 @@ Where tests live:
   on random shapes sampled per level: open edges at a seam, sides and corners, high and low; noise at every place and
   side), and `MeshVertexTests`.
 - `Itera.Engine.Tests/Voxels/`: `VoxelBlocksTests` (blocks read for meshing against voxel-by-voxel reads), storage, edits, workers, and `VoxelWorld` on small test generators (`SlopeGenerator`,
-  `DomeGenerator`, `BoxesGenerator`: a flat floor with boxes of given materials); `VoxelGridTests`, and
+  `DomeGenerator`, `BoxesGenerator`: a flat floor with boxes of given materials); `VoxelGridTests`, `TallWorldTests` (a world 25,000 layers tall
+  storing what one 12 tall does; an edit 100 km up, its two runs of surface layers, rays to it and down 100 km), and
   `BaseTenWorldTests`, worlds on a 10 cm grid (`GridShapesGenerator`: shapes whose faces lie off the 10 cm lines)
   checked against the shapes at each voxel's sample point; pinned content hashes; rays and
   collision queries against voxel-by-voxel walks; row spans against the point test (`VoxelEditingTests`); large edits
@@ -88,7 +89,7 @@ Where tests live:
   `MeshGroundHarness`); `ClimbingMode` over mesh walls through `PlayerMovementSystem` (`ClimbingModeTests`).
 - `Itera.Engine.Tests/Voxels/Generation/`: the shapes' row spans against point tests, fractal noise, the jittered grid,
   the scalar field, the field tint map with `VoxelTintSampler`, and the heightfield generator (every description against
-  its filled voxels, fills against a voxel-by-voxel reference, `HillsGenerator`).
+  its filled voxels, a column's range and its layers standing for every layer, fills against a voxel-by-voxel reference, `HillsGenerator`).
 - `Itera.Engine.Tests/Maths/` and `Animation/`: the deterministic maths and rotations, the octahedral encoding, the
   origin's conversions at up to ±160 km (`WorldOriginTests`), and skeletons, clips, aiming, and foot IK over a humanoid
   test skeleton (`HumanoidTestSkeleton`).
@@ -126,7 +127,9 @@ Where tests live:
   cascades, and lights), `LevelBalanceTests` (random trees against
   marking every finest column, a level-9 column), `MeshColumnTests`, `WorldMeshesTests` over a draw target and staging
   in memory: the seams' stitched meshes, a full heap, the edits' latency, an image view's lists over `FakeViewLists`,
-  the same blocks drawn local to a moved origin, a column cut by the map's edge or wider than the view still split),
+  the same blocks drawn local to a moved origin, a column cut by the map's edge or wider than the view still split, a
+  ball set far over a heightfield's ground widening its column and drawn from blocks for its runs alone, no fine blocks
+  under a camera high over the ground),
   `RenderViewsTests` (declaring, the cadence, panels), `Memory/GpuRangeHeapTests`, `GpuLayoutTests` (of
   `tests/Shared/GpuLayout`, also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`, `DeviceChoiceTests`,
   `RenderThreadTests` (a fake renderer), `RenderPassesTests` (a game's pass at every stage in `EngineComposition`, none

@@ -29,8 +29,14 @@ steps in a piece lifted from it; an edit measures a voxel on at most 10 sub-rows
 a voxel changes nothing, and a small ball settling into coarse voxels leaves no trace;
 `Engine:Voxels:StreamingRadiusMetres` 0 takes the radius from the grid, 4.625 level-0 columns where that passes 59.2 m),
 and its bounds in whole level-0 chunks: `VoxelGrid.Sized(base, halfWidthMetres, floorMetres, topMetres)` rounds each
-bound out to whole chunks, up to ±160 km each way (`VoxelGrid.MostReachCentimetres`) and 128 layers
-(`VoxelGrid.MostLayers`), and a grid of a base alone has the default bounds (±512 m and -51.2 to 102.4 m at 10 cm).
+bound out to whole chunks, up to ±160 km each way, up and down too (`VoxelGrid.MostReachCentimetres`), and a grid of
+a base alone has the default bounds (±512 m and -51.2 to 102.4 m at 10 cm). A column stores only a window of its layers
+(`Column`: `First`, `Stored`; every layer below it `Below` and every layer above it `Above`, air or one material each;
+`LayerAt` reads any layer): the generator's range (`IChunkGenerator.DescribeRange`: by default the whole column; the
+heightfield base answers the layers round its ground and features, found by halving the column) and the layers its
+edits reach (`ColumnJob`); an edit that changes a layer outside stores it (`Column.Widen`), and one that changes a layer
+that was one fill posts `VoxelChangeKind.ColumnLayersChanged`. So a world's height costs memory only where its ground
+and edits are: a column of a world 25,000 layers tall stores the layers one 12 layers tall does.
 Streaming, edits, rays, collision, the mover's edge wall, the fall limit, and the play area follow the grid's bounds
 (absolute; streaming centres and rays come in local metres and are read through the world's origin,
 `VoxelWorld.Origin`, a hit's voxels absolute and `VoxelHit.Entry` taking the origin);

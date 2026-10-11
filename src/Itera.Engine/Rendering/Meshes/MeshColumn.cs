@@ -95,53 +95,109 @@ internal struct MeshStitch
 }
 
 /// <summary>
-/// The blocks of one resident column at a meshed level, for the layers that can hold a surface (the voxel column's
-/// stored layers and one each side, where they meet the fills below and above them: <see cref="FirstLayer"/>,
-/// <see cref="Layers"/>): 64 a chunk (4 x 4 x 4 cells of 32 voxels), block index
-/// <c>(layer - FirstLayer) * 64 + x + 4y + 16z</c> with x, y, z the cell in the chunk. Main thread.
+/// The blocks of one resident column at a meshed level, for the layers that can hold a surface (runs of layers round the
+/// voxel column's layers of more than one fill and its faces between two fills, <c>VoxelWorld.CollectSurfaceLayers</c>):
+/// 64 a chunk (4 x 4 x 4 cells of 32 voxels), the runs' layers one after another, block index
+/// <c>row * 64 + x + 4y + 16z</c> with x, y, z the cell in the chunk (<see cref="TryIndex"/>, <see cref="BlockAt"/>).
+/// Main thread.
 /// </summary>
 internal sealed class MeshColumn
 {
     public const int BlocksPerChunk = 64;
 
     private readonly int _firstChunkY;
+    private readonly (int First, int End, int Row)[] _runs;
 
     /// <param name="key">The column.</param>
     /// <param name="grid">Its world's grid.</param>
-    /// <param name="firstLayer">The first layer with blocks, counted from the grid's floor at the column's level.</param>
-    /// <param name="endLayer">The layer after the last with blocks.</param>
-    public MeshColumn(ColumnKey key, VoxelGrid grid, int firstLayer, int endLayer)
+    /// <param name="runs">The runs of layers with blocks, bottom first, apart (counted from the grid's floor at its level).</param>
+    public MeshColumn(ColumnKey key, VoxelGrid grid, ReadOnlySpan<(int First, int End)> runs)
     {
         Key = key;
         _firstChunkY = grid.MinChunkYAt(key.Level);
-        FirstLayer = firstLayer;
-        Layers = Math.Max(endLayer - firstLayer, 0);
-        Blocks = new MeshBlock[Layers * BlocksPerChunk];
+        _runs = new (int, int, int)[runs.Length];
+        var rows = 0;
+        for (var i = 0; i < runs.Length; i++)
+        {
+            _runs[i] = (runs[i].First, runs[i].End, rows);
+            rows += runs[i].End - runs[i].First;
+        }
+
+        Layers = rows;
+        FirstLayer = runs.Length > 0 ? runs[0].First : 0;
+        EndLayer = runs.Length > 0 ? runs[^1].End : 0;
+        Blocks = new MeshBlock[rows * BlocksPerChunk];
         for (var i = 0; i < Blocks.Length; i++)
         {
             Blocks[i].DrawnSlot = -1;
         }
     }
 
+    /// <summary>A column with blocks for the layers from <paramref name="firstLayer"/> to before <paramref name="endLayer"/>.</summary>
+    public MeshColumn(ColumnKey key, VoxelGrid grid, int firstLayer, int endLayer)
+        : this(key, grid, [(firstLayer, endLayer)]) { }
+
     public ColumnKey Key { get; }
 
     /// <summary>The first layer with blocks, counted from the grid's floor at the column's level.</summary>
     public int FirstLayer { get; }
+
+    /// <summary>The layer after the last with blocks.</summary>
+    public int EndLayer { get; }
 
     /// <summary>How many layers have blocks.</summary>
     public int Layers { get; }
 
     public MeshBlock[] Blocks { get; }
 
-    /// <summary>True when the layers from <paramref name="firstLayer"/> to before <paramref name="endLayer"/> have blocks.</summary>
-    public bool Covers(int firstLayer, int endLayer) => firstLayer >= FirstLayer && endLayer <= FirstLayer + Layers;
+    /// <summary>True when every layer of <paramref name="runs"/> has blocks.</summary>
+    public bool Covers(ReadOnlySpan<(int First, int End)> runs)
+    {
+        foreach (var (first, end) in runs)
+        {
+            var covered = false;
+            foreach (var run in _runs)
+            {
+                covered |= first >= run.First && end <= run.End;
+            }
+
+            if (!covered)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /// <summary>The block index of <paramref name="cell"/> (x + 4y + 16z) in <paramref name="layer"/>; false where the layer has no blocks.</summary>
     public bool TryIndex(int layer, int cell, out int index)
     {
-        var row = layer - FirstLayer;
-        index = row * BlocksPerChunk + cell;
-        return (uint)row < (uint)Layers;
+        foreach (var run in _runs)
+        {
+            if (layer >= run.First && layer < run.End)
+            {
+                index = (run.Row + layer - run.First) * BlocksPerChunk + cell;
+                return true;
+            }
+        }
+
+        index = -1;
+        return false;
+    }
+
+    /// <summary>The layer of block row <paramref name="row"/>.</summary>
+    private int LayerOf(int row)
+    {
+        foreach (var run in _runs)
+        {
+            if (row < run.Row + run.End - run.First)
+            {
+                return run.First + row - run.Row;
+            }
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(row), row, "The column has no such row of blocks.");
     }
 
     /// <summary>
@@ -256,9 +312,8 @@ internal sealed class MeshColumn
     /// <summary>The block's coordinates (in blocks of its level) for index <paramref name="index"/>.</summary>
     public (int X, int Y, int Z) BlockAt(int index)
     {
-        var layer = index / BlocksPerChunk;
         var cell = index % BlocksPerChunk;
-        var chunkY = _firstChunkY + FirstLayer + layer;
+        var chunkY = _firstChunkY + LayerOf(index / BlocksPerChunk);
         return ((Key.X << 2) + (cell & 3), (chunkY << 2) + ((cell >> 2) & 3), (Key.Z << 2) + (cell >> 4));
     }
 

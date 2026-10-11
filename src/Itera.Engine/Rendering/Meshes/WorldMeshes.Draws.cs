@@ -278,7 +278,7 @@ public sealed unsafe partial class WorldMeshes
         var shift = VoxelConstants.ChunkShift + key.Level;
         var firstChunkY = _grid.MinChunkYAt(key.Level) + column.FirstLayer;
         double bottom = _grid.ToCentimetres(firstChunkY << shift);
-        double top = _grid.ToCentimetres((firstChunkY + column.Layers) << shift);
+        double top = _grid.ToCentimetres((_grid.MinChunkYAt(key.Level) + column.EndLayer) << shift);
         var y = at.Y * perMetre;
         var dy = Math.Max(0, Math.Max(bottom - y, y - top));
         return dx * dx + dy * dy + dz * dz;

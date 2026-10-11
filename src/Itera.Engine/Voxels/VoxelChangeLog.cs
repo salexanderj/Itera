@@ -24,10 +24,11 @@ public enum VoxelChangeKind : byte
     ChunkChanged = 3,
 
     /// <summary>
-    /// An edit stored layers of the column past the ones it stored (<c>VoxelWorld.TryGetStoredLayers</c>): what keeps a
-    /// layer's blocks may need to make room for them. The edit's brick and chunk changes come before it.
+    /// An edit changed a layer of the column that was one fill (past its stored layers, or stored): the layers that can
+    /// hold a surface (<c>VoxelWorld.CollectSurfaceLayers</c>) may differ, and what keeps blocks for them may need to make
+    /// room. The edit's brick and chunk changes come before it.
     /// </summary>
-    ColumnWidened = 4,
+    ColumnLayersChanged = 4,
 }
 
 /// <summary>One entry of the world's change list.</summary>

@@ -697,6 +697,48 @@ public sealed partial class VoxelWorld : IDisposable
         return false;
     }
 
+    /// <summary>
+    /// The layers of a resident column that can hold a surface, as runs from a first layer to before an end (counted from
+    /// the grid's floor at its level), bottom first, into <paramref name="runs"/> (cleared first): each layer that holds
+    /// more than one fill or whose fill differs from the layer above it (a surface on a layer's top face belongs to the
+    /// blocks below it), with one layer each side. Every other layer is one fill between two layers of the same: all
+    /// air or all solid. False when the column is not resident. Main thread; allocates nothing once the list has grown.
+    /// </summary>
+    internal bool CollectSurfaceLayers(ColumnKey key, List<(int First, int End)> runs)
+    {
+        runs.Clear();
+        if (!TryGetResident(key, out var column))
+        {
+            return false;
+        }
+
+        // Beyond one layer past the stored ones, every layer is the fill below or above, the same as its neighbours.
+        var count = column.LayerCount;
+        var from = Math.Max(column.First - 1, 0);
+        var to = Math.Min(column.End, count - 1);
+        for (var layer = from; layer <= to; layer++)
+        {
+            var state = column.LayerAt(layer);
+            if (state.Kind != ChildKind.Handle && (layer + 1 >= count || state == column.LayerAt(layer + 1)))
+            {
+                continue;
+            }
+
+            var first = Math.Max(layer - 1, 0);
+            var end = Math.Min(layer + 2, count);
+            if (runs.Count > 0 && runs[^1].End >= first)
+            {
+                runs[^1] = (runs[^1].First, end);
+            }
+            else
+            {
+                runs.Add((first, end));
+            }
+        }
+
+        return true;
+    }
+
     /// <summary>Adds the key of every resident column to <paramref name="keys"/>. For a resync; allocates as the list grows.</summary>
     internal void CollectResidentColumns(List<ColumnKey> keys)
     {

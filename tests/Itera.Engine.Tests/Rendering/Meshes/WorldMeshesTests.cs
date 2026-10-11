@@ -868,13 +868,13 @@ public sealed class WorldMeshesTests : IDisposable
     }
 
     /// <summary>
-    /// The columns of a heightfield store only the layers round their ground: a stone ball set 20 m up, far over them,
+    /// The columns of a heightfield store only the layers round their ground: a stone ball set 60 m up, far over them,
     /// widens its column (the world posts it) and its blocks are made, meshed, and drawn, seen from 30 m up.
     /// </summary>
     [Fact]
     public void A_ball_set_far_over_the_ground_widens_its_column_and_is_drawn()
     {
-        var at = new Vector3(0.64f, 30, 0.64f);
+        var at = new Vector3(0.64f, 70, 0.64f);
         using var world = TestWorlds.Load(
             new Voxels.Generation.HillsGenerator(VoxelGrid.Unit, features: false),
             at,
@@ -887,10 +887,10 @@ public sealed class WorldMeshesTests : IDisposable
         var view = LookingDown(at);
         var key = new ColumnKey(0, 0, 0);
         Assert.True(world.TryGetStoredLayers(key, out var first, out var end));
-        var ballLayer = 2_000 / 128 - VoxelGrid.Unit.MinChunkY;
+        var ballLayer = 6_000 / 128 - VoxelGrid.Unit.MinChunkY;
         Assert.True(end <= ballLayer, $"The column stores layers {first} to {end}, the ball's {ballLayer} among them.");
 
-        world.Apply(VoxelEdit.Sphere(new VoxelCoord(64, 2_000, 64), 40, VoxelEditOperation.Set, 3));
+        world.Apply(VoxelEdit.Sphere(new VoxelCoord(64, 6_000, 64), 40, VoxelEditOperation.Set, 3));
 
         Assert.True(world.TryGetStoredLayers(key, out first, out end));
         Assert.InRange(ballLayer, first, end - 1);
@@ -906,12 +906,17 @@ public sealed class WorldMeshesTests : IDisposable
             for (var i = 0; i < meshes.DrawCount && !drawn; i++)
             {
                 var draw = targets.DrawsOf(slot)[RecordOf(targets.CommandsOf(slot, 0)[i], slot)];
-                // A block whose 32 cm reach from its corner holds the ball's middle at 20 m.
-                drawn = draw.Origin.Y <= 20 && draw.Origin.Y + 32 * draw.VoxelMetres > 20;
+                // A block whose 32 cm reach from its corner holds the ball's middle at 60 m.
+                drawn = draw.Origin.Y <= 60 && draw.Origin.Y + 32 * draw.VoxelMetres > 60;
             }
 
             Thread.Sleep(1);
         }
+
+        // Blocks for the layers round the ground and round the ball (two runs), not the 45 or so from one to the other.
+        Assert.True(world.TryGetStoredLayers(key, out first, out end));
+        _output.WriteLine($"{meshes.BlockLayers(key)} layers with blocks of {end - first} stored");
+        Assert.InRange(meshes.BlockLayers(key), 4, (end - first) / 3);
     }
 
     /// <summary>
@@ -1395,7 +1400,7 @@ public sealed class WorldMeshesTests : IDisposable
         void Step(WorldMeshes meshes, FakeTargets targets, Vector3 at)
         {
             var slot = frame++ % FrameSync.FramesInFlight;
-            var view = LookingDown(at);
+            var view = LookingDown(at, AboveSpread);
             view.SunDirection = ViewConstants.DefaultSunDirection;
             view.Switches = ViewSwitches.Shadows;
             targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
@@ -1498,8 +1503,15 @@ public sealed class WorldMeshesTests : IDisposable
 
     private void Begin() => _meshes.BeginMatch(_world, _models, new NoVoxelTintMap());
 
-    /// <summary>From above the view sees the level-0 columns round the middle and the level-1 ones past them.</summary>
-    private static readonly Vector3 Above = new(0, 30, 0);
+    /// <summary>
+    /// From 3.5 m over the middle (inside the height of the slope's blocks, so the columns' distances are across them) a
+    /// wide view down (<see cref="AboveSpread"/>) sees the level-0 columns round the middle and the level-1 ones past
+    /// them.
+    /// </summary>
+    private static readonly Vector3 Above = new(0, 3.5f, 0);
+
+    /// <summary>How far the view from <see cref="Above"/> reaches to each side per metre down: about 85 degrees.</summary>
+    private const float AboveSpread = 12;
 
     /// <summary>Begins the match, meshes the world seen from <see cref="Above"/>, and its seams' stitched meshes; returns how many are drawn.</summary>
     private int StitchFromAbove()
@@ -1524,7 +1536,7 @@ public sealed class WorldMeshesTests : IDisposable
     )
     {
         var slot = _frame++ % FrameSync.FramesInFlight;
-        var view = LookingDown(at ?? Centre);
+        var view = at == Above ? LookingDown(Above, AboveSpread) : LookingDown(at ?? Centre);
         (view.OriginX, view.OriginY, view.OriginZ) = (origin.X, origin.Y, origin.Z);
         if (shadows)
         {
@@ -1635,14 +1647,17 @@ public sealed class WorldMeshesTests : IDisposable
     private static int RecordOf(DrawIndexedIndirectCommand command, int slot) =>
         (int)command.FirstInstance - slot * MeshPass.MaxRecords;
 
-    /// <summary>A view 1.5 m above the ground looking straight down with a 90 degree field of view.</summary>
-    private static ViewConstants LookingDown(Vector3 at) =>
+    /// <summary>
+    /// A view at <paramref name="at"/> looking straight down, with a 90 degree field of view, or wider: reaching
+    /// <paramref name="spread"/> metres to each side per metre down.
+    /// </summary>
+    private static ViewConstants LookingDown(Vector3 at, float spread = 1) =>
         new()
         {
             Position = at,
             Forward = new Vector3(0, -1, 0),
-            Right = new Vector3(1, 0, 0),
-            Up = new Vector3(0, 0, -1),
+            Right = new Vector3(spread, 0, 0),
+            Up = new Vector3(0, 0, -spread),
             MaxDistance = 100,
         };
 

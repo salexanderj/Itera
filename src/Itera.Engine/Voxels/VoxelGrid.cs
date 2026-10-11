@@ -17,8 +17,8 @@ namespace Itera.Engine.Voxels;
 /// -40.96 m (<see cref="DefaultFloorCentimetres"/>); up, whole chunks to at least 81.92 m
 /// (<see cref="DefaultTopCentimetres"/>), rounded up to a multiple of 8 so levels 0 to 3 share the top. At 1 cm that
 /// is ±500.48 m, -40.96 m, and 81.92 m; at 10 cm ±512 m, -51.2 m, and 102.4 m. A world reaches at most
-/// <see cref="MostReachCentimetres"/> from the middle on any axis and has at most <see cref="MostLayers"/> level-0
-/// layers. A coarser level's chunks start at <c>MinChunkY &gt;&gt; level</c>, so a level whose chunk does not divide the
+/// <see cref="MostReachCentimetres"/> from the middle on any axis, up and down too: its height costs memory only where
+/// its columns store layers (the ground's and its edits', <see cref="IChunkGenerator.DescribeRange"/>). A coarser level's chunks start at <c>MinChunkY &gt;&gt; level</c>, so a level whose chunk does not divide the
 /// floor (or the edge, or the top) reaches past it.
 /// </para>
 /// </summary>
@@ -47,7 +47,7 @@ public readonly record struct VoxelGrid
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">
     /// The base is not 1 to <see cref="MostBaseCentimetres"/>, the bounds reach past <see cref="MostReachCentimetres"/>,
-    /// the top lies below the floor, or the layers number more than <see cref="MostLayers"/>.
+    /// or the top lies below the floor.
     /// </exception>
     public VoxelGrid(int baseCentimetres, int halfWidthChunks, int minChunkY, int maxChunkY)
     {
@@ -66,7 +66,6 @@ public readonly record struct VoxelGrid
             nameof(maxChunkY)
         );
         ArgumentOutOfRangeException.ThrowIfLessThan(maxChunkY, minChunkY);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(maxChunkY - (long)minChunkY + 1, MostLayers, nameof(maxChunkY));
         BaseCentimetres = baseCentimetres;
         MaxChunkXZ = halfWidthChunks - 1;
         MinChunkXZ = -halfWidthChunks;
@@ -118,13 +117,6 @@ public readonly record struct VoxelGrid
     /// (<see cref="VoxelEdit"/>, 2^24 cm), with room for a play area's margin past it.
     /// </summary>
     public const long MostReachCentimetres = 16_000_000;
-
-    /// <summary>
-    /// The most level-0 layers a grid's columns may have. Every layer of a resident column costs memory, whether it holds
-    /// voxels or not, so the height a world reaches is capped by its chunk's size (164 m at 1 cm, 1,638 m at 10 cm, 16.4 km
-    /// at 1 m).
-    /// </summary>
-    public const int MostLayers = 128;
 
     /// <summary>How far the columns of a grid of a base alone reach from the middle at least, in centimetres, on x and z.</summary>
     public const int DefaultHalfWidthCentimetres = 50_000;

@@ -77,6 +77,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     private readonly Stack<MeshJob> _freeStitchJobs = new();
     private readonly Queue<MeshJob> _waiting = new();
     private readonly List<ColumnKey> _resident = [];
+    private readonly List<(int First, int End)> _surfaceLayers = [];
     private MeshMaterial[] _materials = [];
     private VoxelWorld? _world;
 
@@ -609,8 +610,8 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
                     case VoxelChangeKind.ChunkChanged:
                         ChunkChanged(world, in change);
                         break;
-                    case VoxelChangeKind.ColumnWidened:
-                        ColumnWidened(world, change.Column);
+                    case VoxelChangeKind.ColumnLayersChanged:
+                        ColumnLayersChanged(world, change.Column);
                         break;
                 }
             }
@@ -661,8 +662,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
             return;
         }
 
-        var (firstLayer, endLayer) = MeshLayers(world, key);
-        var column = new MeshColumn(key, _grid, firstLayer, endLayer);
+        var column = new MeshColumn(key, _grid, CollectionsMarshal.AsSpan(SurfaceLayers(world, key)));
         if (IsWanted(column, _wantedAt, 0))
         {
             Wake(world, column);
@@ -700,29 +700,33 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         }
     }
 
+    /// <summary>How many layers of the column have blocks; 0 when it has none or is not followed. For tests.</summary>
+    internal int BlockLayers(ColumnKey key) => _columns.TryGetValue(key, out var column) ? column.Layers : 0;
+
     /// <summary>
-    /// The layers of a resident column that can hold a surface: those it stores and one each side, where they meet the
-    /// fills below and above them (a surface on a stored layer's face belongs to the block whose voxel is below it).
+    /// The runs of layers of a resident column that can hold a surface (<see cref="VoxelWorld.CollectSurfaceLayers"/>),
+    /// in a list kept for it, valid until the next call.
     /// </summary>
-    private (int First, int End) MeshLayers(VoxelWorld world, ColumnKey key)
+    private List<(int First, int End)> SurfaceLayers(VoxelWorld world, ColumnKey key)
     {
-        var count = key.LayerCount(_grid);
-        if (!world.TryGetStoredLayers(key, out var first, out var end))
+        if (!world.CollectSurfaceLayers(key, _surfaceLayers))
         {
-            return (0, count);
+            _surfaceLayers.Add((0, key.LayerCount(_grid)));
         }
 
-        return (Math.Max(first - 1, 0), Math.Min(end + 1, count));
+        return _surfaceLayers;
     }
 
     /// <summary>
-    /// An edit stored layers of the column past its blocks: the column is made again with blocks for them and meshed
-    /// again, as one loaded.
+    /// An edit changed a layer of the column that was one fill: when its layers that can hold a surface are no longer all
+    /// among the column's blocks, the column is made again with blocks for them and meshed again, as one loaded.
     /// </summary>
-    private void ColumnWidened(VoxelWorld world, ColumnKey key)
+    private void ColumnLayersChanged(VoxelWorld world, ColumnKey key)
     {
-        var (first, end) = MeshLayers(world, key);
-        if (_columns.TryGetValue(key, out var column) && !column.Covers(first, end))
+        if (
+            _columns.TryGetValue(key, out var column)
+            && !column.Covers(CollectionsMarshal.AsSpan(SurfaceLayers(world, key)))
+        )
         {
             RemoveColumn(key);
             AddColumn(world, key);

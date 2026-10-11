@@ -169,7 +169,9 @@ seams between levels open (`ViewSwitches.Plain`, read by `WorldMeshes` alone).
 
 `WorldMeshes` (`Rendering/Meshes/`) follows the match's world (in a match without voxel terrain, its voxel models alone:
 no columns, no sky field, no stitches; `BeginMatch` with a null world). It meshes the world block by block: a block is a 32-voxel
-cell of a chunk, read with a 2-voxel apron on the main thread (`VoxelWorld.TryReadBlock`, `BlockMayHaveSurface`;
+cell of a chunk, kept only in the runs of a column's layers that can hold a surface (`MeshColumn`, from
+`VoxelWorld.CollectSurfaceLayers`; an edit that changes a layer of one fill, `VoxelChangeKind.ColumnLayersChanged`,
+makes a column whose runs no longer cover its surfaces again and meshes it), read with a 2-voxel apron on the main thread (`VoxelWorld.TryReadBlock`, `BlockMayHaveSurface`;
 `VoxelWorld.Blocks.cs`, materials and densities) and meshed on `MeshWorkers` threads by `SurfaceNets`
 (`src/Itera.Engine/Meshing/`: naive Surface Nets, one vertex per cell, at the mean of the points where the density
 (`VoxelDensity`) crosses one half along the cell's crossing edges; normals from a 4x4x4 gradient of the densities;
@@ -197,7 +199,9 @@ when the view needs them (`MeshColumn.Evicted`, `NeededUpload`). A block that st
 no longer counts as pending, and is read again at most once a second after a range has been freed (`RetryStarved`). The
 meshes line reports what columns the last frame did not draw hold, what was freed, and the frames that drew wanted
 columns not meshed yet. Each frame it picks a
-level per column (a coarse column splits into its four finer ones when its nearest part is within the finer level's
+level per column (a column's nearest part is that of its box: its square, and its height from its first layer with
+blocks to its last, so a camera high over the ground meshes no fine level under it; a coarse column splits into its
+four finer ones when its nearest part is within the finer level's
 reach times `Engine:Renderer:MeshReachShare`, 0.5 by default, and all four are meshed, and stays split while it is not
 meshed itself and they are; a finer column past the map's edge, which never loads, or past the view's end, which is
 never meshed, draws nothing and keeps no coarse column from splitting (`WorldMeshes.DrawsNothing`: a map's half-width

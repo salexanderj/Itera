@@ -500,7 +500,7 @@ public sealed class HeightfieldGeneratorTests
         {
             var voxels = NewVoxels();
             var densities = NewVoxels();
-            var fills = new ChunkFill[VoxelGrid.MostLayers];
+            var fills = new ChunkFill[grid.MaxLayers];
             var jobs = new List<(ColumnKey Column, int Layer)>();
             // The largest level measured is the first column, so the feature lists are already big enough.
             for (var level = 5; level >= 0; level--)

@@ -26,8 +26,9 @@ Ordered by how many game types each blocks.
 2. **A voxel world is required, in a fixed box.** When this was written, `MatchServices` took `VoxelWorld`,
    `PhysicsWorld`, and the voxel colliders, and every match needed an `IChunkGenerator`. Now a match runs without a
    voxel world, its characters and loose bodies over the game's mesh colliders; the box remains, now sized by the game
-   in its generator's grid (`VoxelGrid.Sized`: up to ±160 km across and 128 layers of chunks, by default ±512 m and -51
-   to +102 m at 10 cm voxels, 2026-10-10); the view reaches 2 km at most; positions are measured from a match's origin
+   in its generator's grid (`VoxelGrid.Sized`: up to ±160 km across, up and down too, by default ±512 m and -51
+   to +102 m at 10 cm voxels, 2026-10-10), its columns storing only the layers round their ground; the view reaches
+   8 km; navigation's grid follows the players; positions are measured from a match's origin
    (`WorldOrigin`, with absolute `WorldPoint`s where they cross it), which follows the camera (`OriginShiftSystem`,
    2026-10-10).
    Blocks open worlds, flight, space, and long race tracks.
@@ -79,6 +80,7 @@ of players and bodies, and saving the game's own state.
    screen). Finished 2026-10-10. Left for later: split screen (with input per player, limit 6), HDR rendering,
    order-independent transparency, transparent voxel materials, a physically based sky, spot lights, shadowed point
    lights, and image views with shadows and particles (ARCHITECTURE.md, "Open work").
-3. A map size the game sets, with origin shifting.
+3. A map size the game sets, with origin shifting. Done 2026-10-10 (left: the GPU's time for far views on a quiet
+   machine, and the look of far views: haze and far shadows).
 4. Gamepads, typed text, sound files and music, a menu a game can replace.
 5. Physics materials, collision groups, and gravity set by the game.

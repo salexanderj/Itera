@@ -575,7 +575,7 @@ public sealed partial class VoxelWorld
         var layerOffset = Grid.MinChunkYAt(key.Level);
         var first = Math.Max(0, (min.Y >> shift) - layerOffset);
         var last = Math.Min(column.LayerCount - 1, ((end.Y - 1) >> shift) - layerOffset);
-        var (storedFirst, storedEnd) = (column.First, column.End);
+        var fillChanged = false;
         for (var layer = first; layer <= last; layer++)
         {
             var before = column.LayerAt(layer);
@@ -595,6 +595,8 @@ public sealed partial class VoxelWorld
             {
                 column.Widen(layer) = after;
             }
+
+            fillChanged |= after != before && before.Kind != ChildKind.Handle;
 
             if (count > ChunkChangeBricks)
             {
@@ -623,9 +625,9 @@ public sealed partial class VoxelWorld
             }
         }
 
-        if (column.First != storedFirst || column.End != storedEnd)
+        if (fillChanged)
         {
-            _changes.Add(new VoxelChange(VoxelChangeKind.ColumnWidened, key, -1, -1));
+            _changes.Add(new VoxelChange(VoxelChangeKind.ColumnLayersChanged, key, -1, -1));
         }
     }
 
