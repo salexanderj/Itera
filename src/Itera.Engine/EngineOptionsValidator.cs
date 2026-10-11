@@ -168,6 +168,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         Range(failures, "Audio:SampleRate", audio.SampleRate, 22_050, 96_000);
 
         Range(failures, "Ui:FontPixels", options.Ui.FontPixels, 8, 64);
+        Range(failures, "Ui:Scale", options.Ui.Scale, 0.75f, 1.5f);
         Range(failures, "Console:ScrollbackLines", options.Console.ScrollbackLines, 100, 10_000);
         if (options.Console.RunFile is { } runFile && !string.IsNullOrWhiteSpace(runFile) && !File.Exists(runFile))
         {

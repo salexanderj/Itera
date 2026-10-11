@@ -707,6 +707,12 @@ public sealed class UiSettings
     /// <summary>Height of the UI's text in pixels, 8 to 64.</summary>
     public float FontPixels { get; set; } = 18;
 
+    /// <summary>
+    /// The UI's size, 0.75 to 1.5 (1: as designed): every toolkit layer's units are multiplied by it
+    /// (<see cref="UI.Toolkit.Ui.UnitPixelsFor"/>), the default for the player's own UI scale.
+    /// </summary>
+    public float Scale { get; set; } = 1;
+
     /// <summary>Starts with the stats line shown (the <c>stats</c> command and F1 turn it on and off).</summary>
     public bool Stats { get; set; }
 

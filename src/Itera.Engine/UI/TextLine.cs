@@ -17,6 +17,10 @@ public sealed class TextLine
 {
     private readonly StringBuilder _text = new();
 
+    /// <summary>The text as a string, made again only after a change (<see cref="Text"/>).</summary>
+    private string? _string;
+    private int _stringVersion = -1;
+
     /// <param name="maxLength">The longest the line may grow; characters past it are not taken.</param>
     public TextLine(int maxLength)
     {
@@ -27,8 +31,20 @@ public sealed class TextLine
     /// <summary>The longest the line may grow.</summary>
     public int MaxLength { get; }
 
-    /// <summary>The text (allocates).</summary>
-    public string Text => _text.ToString();
+    /// <summary>The text; made as a string again only after a change, so reading it each frame allocates nothing.</summary>
+    public string Text
+    {
+        get
+        {
+            if (_string is null || _stringVersion != Version)
+            {
+                _string = _text.ToString();
+                _stringVersion = Version;
+            }
+
+            return _string;
+        }
+    }
 
     /// <summary>Characters in the line.</summary>
     public int Length => _text.Length;
