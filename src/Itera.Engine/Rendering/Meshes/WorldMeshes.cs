@@ -663,7 +663,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
 
         var (firstLayer, endLayer) = MeshLayers(world, key);
         var column = new MeshColumn(key, _grid, firstLayer, endLayer);
-        if (IsWanted(key, _wantedAt, 0))
+        if (IsWanted(column, _wantedAt, 0))
         {
             Wake(world, column);
         }
@@ -750,8 +750,9 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     /// parent's split distance (its own level's reach times <c>Engine:Renderer:MeshReachShare</c>) and two of its
     /// columns. Only these are meshed.
     /// </summary>
-    private bool IsWanted(ColumnKey key, in WorldPoint at, double slack)
+    private bool IsWanted(MeshColumn column, in WorldPoint at, double slack)
     {
+        var key = column.Key;
         double size = _grid.ColumnCentimetres(key.Level);
         var limit = _viewDistanceCentimetres;
         if (key.Level < _coarsestLevel)
@@ -761,7 +762,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         }
 
         limit += slack;
-        return NearestSquared(key, at) < limit * limit;
+        return NearestSquared(column, at) < limit * limit;
     }
 
     /// <summary>
@@ -780,11 +781,11 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         foreach (var column in _order)
         {
             var key = column.Key;
-            if (!column.Wanted && IsWanted(key, viewPosition, 0))
+            if (!column.Wanted && IsWanted(column, viewPosition, 0))
             {
                 Wake(world, column);
             }
-            else if (column.Wanted && !IsWanted(key, viewPosition, _grid.ColumnCentimetres(key.Level)))
+            else if (column.Wanted && !IsWanted(column, viewPosition, _grid.ColumnCentimetres(key.Level)))
             {
                 Sleep(column);
             }

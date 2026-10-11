@@ -814,6 +814,60 @@ public sealed class WorldMeshesTests : IDisposable
     }
 
     /// <summary>
+    /// A column's distance counts its height (its blocks' layers round its ground): over a heightfield, from 60 m up no
+    /// level-0 block is drawn under the camera, where from 2.5 m over the ground they are, the same columns across.
+    /// </summary>
+    [Fact]
+    public void A_camera_high_over_the_ground_draws_no_fine_blocks_under_it()
+    {
+        var ground = (float)Voxels.Generation.HillsGenerator.Height(64, 64, 17) / 100;
+        var low = new Vector3(0.64f, ground + 2.5f, 0.64f);
+        var high = low with { Y = ground + 60 };
+        using var world = TestWorlds.Load(
+            new Voxels.Generation.HillsGenerator(VoxelGrid.Unit, features: false),
+            low,
+            radiusMetres: RadiusMetres,
+            levels: Levels
+        );
+        using var targets = new FakeTargets();
+        using var meshes = NewMeshes(targets);
+        meshes.BeginMatch(world, new VoxelModels(world), new NoVoxelTintMap());
+
+        var (lowFine, _) = Settled(low);
+        var (highFine, highAll) = Settled(high);
+
+        Assert.True(lowFine > 0, "Nothing at level 0 was drawn from 2.5 m.");
+        Assert.Equal(0, highFine);
+        Assert.True(highAll > 0, "Nothing was drawn from 60 m.");
+
+        // Frames from <at> until the meshes are up to date: the level-0 blocks the last drew, and all it drew.
+        (int Fine, int All) Settled(Vector3 at)
+        {
+            var view = LookingDown(at);
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            var frame = 0;
+            int slot;
+            do
+            {
+                Assert.True(DateTime.UtcNow < deadline, "The meshes did not catch up.");
+                world.Update(0);
+                slot = frame++ % FrameSync.FramesInFlight;
+                targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
+                Thread.Sleep(1);
+            } while (frame < 3 || !meshes.IsUpToDate);
+
+            var fine = 0;
+            for (var i = 0; i < meshes.DrawCount; i++)
+            {
+                fine +=
+                    targets.DrawsOf(slot)[RecordOf(targets.CommandsOf(slot, 0)[i], slot)].VoxelMetres == 0.01f ? 1 : 0;
+            }
+
+            return (fine, meshes.DrawCount);
+        }
+    }
+
+    /// <summary>
     /// The columns of a heightfield store only the layers round their ground: a stone ball set 20 m up, far over them,
     /// widens its column (the world posts it) and its blocks are made, meshed, and drawn, seen from 30 m up.
     /// </summary>

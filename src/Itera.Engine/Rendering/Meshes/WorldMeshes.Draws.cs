@@ -192,7 +192,7 @@ public sealed unsafe partial class WorldMeshes
 
         if (key.Level > _finestLevel)
         {
-            var near = IsNear(key);
+            var near = IsNear(column);
             if ((near || !column.MeshedOnce) && TryChildren(key, orFiner: true))
             {
                 if (!near)
@@ -256,28 +256,32 @@ public sealed unsafe partial class WorldMeshes
     }
 
     /// <summary>True when the nearest part of the column is within the reach of the level below it, in this pass's cut.</summary>
-    private bool IsNear(ColumnKey key)
+    private bool IsNear(MeshColumn column)
     {
-        var reach = _distances.ReachCentimetres(key.Level - 1) * _cutShare;
-        return NearestSquared(key, in _viewAt) < reach * reach;
+        var reach = _distances.ReachCentimetres(column.Key.Level - 1) * _cutShare;
+        return NearestSquared(column, in _viewAt) < reach * reach;
     }
 
     /// <summary>
-    /// The squared horizontal distance from <paramref name="at"/> to the nearest point of the column, in centimetres:
-    /// 0 inside it. A coarse column is tens of metres across, so its centre says little about how near it comes.
+    /// The squared distance from <paramref name="at"/> to the nearest point of the column's box, in centimetres: its
+    /// square, and its height from the bottom of its first layer with blocks to the top of its last, so a column far
+    /// below the view (a camera high over the ground) is far, as one far across is. 0 inside it. A coarse column is tens of
+    /// metres across, so its centre says little about how near it comes.
     /// </summary>
-    private double NearestSquared(ColumnKey key, in WorldPoint at)
+    private double NearestSquared(MeshColumn column, in WorldPoint at)
     {
+        var key = column.Key;
         double half = _grid.ColumnCentimetres(key.Level) / 2;
-        var dx = Math.Max(
-            0,
-            Math.Abs(_grid.ToCentimetres(key.CentreVoxelX) - at.X * VoxelConstants.CentimetresPerMetre) - half
-        );
-        var dz = Math.Max(
-            0,
-            Math.Abs(_grid.ToCentimetres(key.CentreVoxelZ) - at.Z * VoxelConstants.CentimetresPerMetre) - half
-        );
-        return dx * dx + dz * dz;
+        const double perMetre = VoxelConstants.CentimetresPerMetre;
+        var dx = Math.Max(0, Math.Abs(_grid.ToCentimetres(key.CentreVoxelX) - at.X * perMetre) - half);
+        var dz = Math.Max(0, Math.Abs(_grid.ToCentimetres(key.CentreVoxelZ) - at.Z * perMetre) - half);
+        var shift = VoxelConstants.ChunkShift + key.Level;
+        var firstChunkY = _grid.MinChunkYAt(key.Level) + column.FirstLayer;
+        double bottom = _grid.ToCentimetres(firstChunkY << shift);
+        double top = _grid.ToCentimetres((firstChunkY + column.Layers) << shift);
+        var y = at.Y * perMetre;
+        var dy = Math.Max(0, Math.Max(bottom - y, y - top));
+        return dx * dx + dy * dy + dz * dz;
     }
 
     /// <summary>
@@ -327,7 +331,8 @@ public sealed unsafe partial class WorldMeshes
     private bool DrawsNothing(ColumnKey key, MeshColumn? column) =>
         column is null
             ? !key.IsInBounds(_grid)
-            : !column.Wanted && NearestSquared(key, in _viewAt) >= _viewDistanceCentimetres * _viewDistanceCentimetres;
+            : !column.Wanted
+                && NearestSquared(column, in _viewAt) >= _viewDistanceCentimetres * _viewDistanceCentimetres;
 
     /// <summary>
     /// Lists the column's blocks with meshes for the pass's lists; a block along <paramref name="sides"/> (the camera's
