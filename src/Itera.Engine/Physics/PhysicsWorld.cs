@@ -178,9 +178,10 @@ public sealed partial class PhysicsWorld : IDisposable
         _dispatcher = new ThreadDispatcher(threadCount);
         // Never the (int, int) tuple to SolveDescription: in Bepu 2.5.0-beta.29 it swaps its two values.
         _contacts = new PhysicsContacts(threadCount);
+        _triggers = new PhysicsTriggers(threadCount);
         _simulation = Simulation.Create(
             _pool,
-            new NarrowPhaseCallbacks(_kinds, _contacts),
+            new NarrowPhaseCallbacks(_kinds, _contacts, _triggers),
             new PoseIntegratorCallbacks(_integration),
             new SolveDescription(_settings.VelocityIterations, _settings.Substeps)
         );
@@ -209,8 +210,10 @@ public sealed partial class PhysicsWorld : IDisposable
         _stepLinearDamping = _integration.LinearDamping;
         _stepSubsteps = _integration.Substeps;
         _contacts!.BeginStep(stepSeconds, _stepGravity);
+        _triggers!.BeginStep();
         Simulation.Timestep(stepSeconds, _dispatcher);
         _contacts.EndStep(Simulation);
+        EndTriggerStep();
         CheckRecords();
     }
 
@@ -474,4 +477,10 @@ public sealed partial class PhysicsWorld : IDisposable
         Message = "Physics simulation created: 0 bodies, {Threads} worker thread(s)"
     )]
     private partial void LogInitialized(int threads);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Physics: the trigger zones' buffers were full ({Pairs} overlaps, at least {PerWorker} a worker thread); overlaps past them were dropped and read as left and entered again (once a match)"
+    )]
+    private partial void LogTriggerDrops(int pairs, int perWorker);
 }

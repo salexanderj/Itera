@@ -11,8 +11,11 @@ namespace Itera.Engine.Physics;
 /// lifted pieces only (not the voxels, not other stand-ins), a body cut off a character touches the voxels only
 /// (<see cref="BodyKind.Cut"/>), and a body touches only the voxel statics of the level it collides with
 /// (<see cref="BodyKinds"/>); then a pair whose layers do not touch, or that shares a group other than 0, does not
-/// (<see cref="BodyKinds.LayersAllow"/>, <see cref="PhysicsLayers"/>). A pair's material is its two sides' (<see cref="BodyKinds.ContactOf"/>): friction the
-/// product of their square roots, the engine's contact springs (30 Hz, critically damped, 2 m/s) for all. A pair with a
+/// (<see cref="BodyKinds.LayersAllow"/>, <see cref="PhysicsLayers"/>). A trigger zone (<see cref="BodyKind.Trigger"/>)
+/// pairs with every body its layers allow (moving, asleep, frozen, or mirrored; not statics, stand-ins, or other zones):
+/// a pair with a contact of depth 0 or more is recorded for <see cref="PhysicsTriggers"/>, and none makes a constraint.
+/// A pair's material is its two sides' (<see cref="BodyKinds.ContactOf"/>): friction the product of their square
+/// roots, the engine's contact springs (30 Hz, critically damped, 2 m/s) for all. A pair with a
 /// bouncy side (not a stand-in) that is touching, or will be by the step's end at its speeds with the match's gravity,
 /// is recorded for <see cref="PhysicsContacts"/>, which sets its bounce after the step; other pairs are not looked at
 /// further.
@@ -21,11 +24,13 @@ internal struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
 {
     private readonly BodyKinds _kinds;
     private readonly PhysicsContacts? _contacts;
+    private readonly PhysicsTriggers? _triggers;
 
-    public NarrowPhaseCallbacks(BodyKinds kinds, PhysicsContacts? contacts = null)
+    public NarrowPhaseCallbacks(BodyKinds kinds, PhysicsContacts? contacts = null, PhysicsTriggers? triggers = null)
     {
         _kinds = kinds;
         _contacts = contacts;
+        _triggers = triggers;
     }
 
     public readonly void Initialize(Simulation simulation) { }
@@ -36,7 +41,30 @@ internal struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
         CollidableReference a,
         CollidableReference b,
         ref float speculativeMargin
-    ) => EngineAllows(a, b) && _kinds.LayersAllow(a, b);
+    ) =>
+        IsTrigger(a) || IsTrigger(b)
+            ? TriggerAllows(a, b) && _kinds.LayersAllow(a, b)
+            : EngineAllows(a, b) && _kinds.LayersAllow(a, b);
+
+    /// <summary>True for a trigger zone's body.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private readonly bool IsTrigger(CollidableReference collidable) =>
+        collidable.Mobility != CollidableMobility.Static && _kinds[collidable.BodyHandle.Value] == BodyKind.Trigger;
+
+    /// <summary>A zone pairs with a body that is not a stand-in or a zone; never with a static.</summary>
+    private readonly bool TriggerAllows(CollidableReference a, CollidableReference b)
+    {
+        if (a.Mobility == CollidableMobility.Static || b.Mobility == CollidableMobility.Static)
+        {
+            return false;
+        }
+
+        var kindA = _kinds[a.BodyHandle.Value];
+        var kindB = _kinds[b.BodyHandle.Value];
+        return !(kindA == BodyKind.Trigger && kindB == BodyKind.Trigger)
+            && kindA != BodyKind.StandIn
+            && kindB != BodyKind.StandIn;
+    }
 
     /// <summary>The engine's own rules, before a game's layers and groups.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -97,6 +125,23 @@ internal struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
     )
         where TManifold : unmanaged, IContactManifold<TManifold>
     {
+        if (IsTrigger(pair.A) || IsTrigger(pair.B))
+        {
+            // A zone stops nothing: it notes a body that overlaps it.
+            pairMaterial = default;
+            if (_triggers is not null && Overlaps(ref manifold))
+            {
+                var aIsTrigger = IsTrigger(pair.A);
+                _triggers.Record(
+                    workerIndex,
+                    aIsTrigger ? pair.A.BodyHandle : pair.B.BodyHandle,
+                    aIsTrigger ? pair.B.BodyHandle : pair.A.BodyHandle
+                );
+            }
+
+            return false;
+        }
+
         ref readonly var a = ref _kinds.ContactOf(pair.A);
         ref readonly var b = ref _kinds.ContactOf(pair.B);
         pairMaterial.FrictionCoefficient = a.RootFriction * b.RootFriction;
@@ -180,6 +225,21 @@ internal struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
                 Bounciness = bounciness,
             }
         );
+    }
+
+    /// <summary>True when a contact of the manifold has a depth of 0 or more: the shapes overlap.</summary>
+    private static bool Overlaps<TManifold>(ref TManifold manifold)
+        where TManifold : unmanaged, IContactManifold<TManifold>
+    {
+        for (var i = 0; i < manifold.Count; i++)
+        {
+            if (manifold.GetDepth(i) >= 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Its side of a pair: every voxel static is the one voxel ground.</summary>

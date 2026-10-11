@@ -155,7 +155,7 @@ public sealed class PhysicsCommands(
         context.Print(
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"physics: {all} bodies ({bodies.ActiveSet.Count} awake), {physics.Simulation.Statics.Count} statics; solver {physics.VelocityIterations} iterations, {physics.Substeps} substep(s); damping {physics.LinearDamping:0.###} linear, {physics.AngularDamping:0.###} angular; gravity ({gravity.X:0.##}, {gravity.Y:0.##}, {gravity.Z:0.##}); {physics.Bounces} bounces set, {physics.ContactsDropped} contacts dropped"
+                $"physics: {all} bodies ({bodies.ActiveSet.Count} awake), {physics.Simulation.Statics.Count} statics; solver {physics.VelocityIterations} iterations, {physics.Substeps} substep(s); damping {physics.LinearDamping:0.###} linear, {physics.AngularDamping:0.###} angular; gravity ({gravity.X:0.##}, {gravity.Y:0.##}, {gravity.Z:0.##}); {physics.Bounces} bounces set, {physics.ContactsDropped} contacts dropped; {physics.TriggerCount} trigger zone(s), {physics.TriggerEventsDropped} trigger overlaps and events dropped"
             )
         );
     }

@@ -185,6 +185,7 @@ public static class EngineServiceCollectionExtensions
         );
         services.TryAddScoped<PlayerInputBlock>();
         services.TryAddScoped<WorldResets>();
+        services.TryAddScoped<CharacterTriggers>();
         services.TryAddSingleton<MovementKeys>();
         // The transports live for the run; each match's session opens and closes the one it uses.
         services.TryAddSingleton<NetworkService>();

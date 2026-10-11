@@ -237,8 +237,8 @@ lists the commands (`ConsoleCommands`):
   compile from; reload compiles them again), `quit` [CODE] (the exit code, 0 to 255), `ecs` (counts, list COMPONENT [N],
   show ID[:VERSION]|player: the match's entities and their components' fields, `EcsInspector`), `pause`, `resume`,
   `step` [N] (pauses, then N fixed steps), `timescale` [X] (0.05 to 16 for the match; offline only, as are pause,
-  resume, and step; pause and step refuse while the match loads), `physics` (the match's bodies, statics, solver, damping, gravity, bounces set, and contacts
-  dropped; solver ITERATIONS SUBSTEPS, damping LINEAR ANGULAR, gravity X Y Z for the match; materials: the run's physics
+  resume, and step; pause and step refuse while the match loads), `physics` (the match's bodies, statics, solver, damping, gravity, bounces set, contacts
+  dropped, trigger zones, and their overlaps and events dropped; solver ITERATIONS SUBSTEPS, damping LINEAR ANGULAR, gravity X Y Z for the match; materials: the run's physics
   materials with their friction, bounciness, and the voxel materials mapped to them; layers: each collision layer, the
   characters' and the voxels', and the layers it does not touch), `particles` (on, off, recipes, test NAME [COUNT], pull
   NAME [COUNT], stress NAME BURSTS, stress off), `sound` (on, off, volume V, recipes, files (the sounds read from

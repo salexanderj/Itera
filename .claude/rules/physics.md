@@ -205,6 +205,27 @@ mover reads every mesh collider whatever its layer, so a gate of a layer balls d
 `physics layers` prints each layer, the characters' and the voxels', and the layers it does not touch (the match's
 table in a match, else the run's).
 
+## Trigger zones
+
+A trigger zone (`PhysicsWorld.AddTrigger(shape, position, orientation, layer)`: a `TriggerShape` box, sphere, or capsule
+along its local y, local to the origin and moved with it; at most 256, `MostTriggers`; `MoveTrigger`, `RemoveTrigger`,
+`HoldsTrigger`, `TriggerOf`, and a `TriggerId` of its handle and `Born`) is a kinematic body that never sleeps and stops
+nothing (`BodyKind.Trigger`). The narrow phase pairs it with every body its layers allow (moving, asleep: an awake
+kinematic body meets the sleeping ones, frozen, or a client's mirror; not statics, stand-ins, or other zones), records
+a pair with a contact of depth 0 or more on its worker's buffer (`PhysicsTriggers`: 4,096 pairs shared by the workers,
+at least 1,024 each), and makes no constraint. After the step the overlaps are sorted by zone and body (the threads'
+order does not count below the capacities) and set against the last step's: `PhysicsWorld.TriggerEvents`
+(`TriggerEvent`: `Entered` or `Left`, the zone, the body and its `Born`, and `Removed`), read by the systems of the next
+step, those of bodies and zones removed since the step before first (`RemoveBody`, `RemoveTrigger`: a removed `Left`
+for each body that was in); `IsInside`. Overlaps and events past the buffers are dropped and counted
+(`TriggerEventsDropped`, a Warning once a match; a dropped overlap reads as a body leaving and entering again). A zone
+sees only what overlaps it at a step's end (no sweep): a body that moves more than the zone's depth and its own width
+in a step can cross a thin zone unseen (a 20 cm ball at 30 m/s through a zone 20 cm deep). A zone's layer is its
+record's (`SetLayer` on its body changes it for bodies and characters alike). Characters are not Bepu bodies: `TriggerCharacterSystem`
+(`.claude/rules/systems.md`) tests each entity with a `TriggerSensor` as an upright capsule (`TriggerOverlap`) and writes
+the match's `CharacterTriggers` (`CharacterTriggerEvent`, with the entity). `physics` prints the zones and the overlaps
+dropped.
+
 ## Mesh colliders and the shared ray
 
 A game's static triangle colliders (`MeshColliders`, scoped to the match): `Add(asset, transform, tagsOf)` registers a
@@ -227,7 +248,8 @@ ray (`ToolAim`) stays the terrain's own.
 ### Files in `src/Itera.Engine`
 
   - `Physics/`: the Bepu simulation and stand-ins (`PhysicsWorld`; a game's bodies and statics in `PhysicsWorld.Bodies.cs`;
-    the records by handle, `BodyKinds`; physics materials, `PhysicsMaterials`, the bounces, `PhysicsContacts`, and the layers, `PhysicsLayers`), voxel box statics (`VoxelColliders`), loose bodies
+    the records by handle, `BodyKinds`; physics materials, `PhysicsMaterials`, the bounces, `PhysicsContacts`, the layers, `PhysicsLayers`, and the trigger zones,
+    `PhysicsWorld.Triggers.cs`, `PhysicsTriggers`, `TriggerOverlap`), voxel box statics (`VoxelColliders`), loose bodies
     (`LooseBodies`: table, rest, and removal; `.Pieces.cs` balls and lifted pieces; `.Parts.cs` cut parts and ragdolls;
     `.Hulls.cs` large hulls), loose bodies and solid models as voxels (`LooseBodyVoxels`, `SolidModelVoxels`,
     `SolidColumns`), the character mover (`VoxelCharacterMover`) and the mesh colliders as its cells (`MeshColumns`), a

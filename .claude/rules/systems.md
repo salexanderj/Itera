@@ -74,6 +74,14 @@ the point a jump asked for (`tp`; then the camera is not read that step), throug
 compile the code; registered anywhere but first, it throws at the first step. A game that leaves it out keeps its
 first origin.
 
+Trigger zones and characters: `TriggerCharacterSystem` (fixed, after the characters move and their stand-ins) tests
+each entity with a `TriggerSensor` (and `CharacterPosition`, `CharacterSize`; not `Bodiless`) as an upright capsule of
+its size at its feet against every zone of the match's physics whose layer touches the characters', and writes the
+match's `CharacterTriggers` (scoped, the engine's): `Events` (`CharacterTriggerEvent`: entered or left, the zone, the
+entity, and removed when the entity, its sensor, or the zone went; a character that turns bodiless leaves plainly),
+sorted by entity and zone, read by the systems after it that step and the others at the next, and `IsInside`; at most
+1,024 pairs, the rest dropped and counted.
+
 The world and bodies: `StreamingCentreSystem` (fixed, last) centres streaming on the local player's eye (or the active
 camera while flying), round remote players on a host, and round loose bodies; `MapResetSystem` (fixed, after the origin and the game's spawns) runs
 `cleanup` (every loose body and particle) and `reset` (the world back to the seed's, counted in `WorldResets` for a

@@ -17,6 +17,9 @@ public enum BodyKind : byte
     /// voxels only, not other bodies or stand-ins.
     /// </summary>
     Cut = 2,
+
+    /// <summary>A trigger zone (<see cref="PhysicsWorld.AddTrigger"/>): sees the bodies that overlap it and stops none.</summary>
+    Trigger = 3,
 }
 
 /// <summary>What the engine keeps for one body, by its handle.</summary>

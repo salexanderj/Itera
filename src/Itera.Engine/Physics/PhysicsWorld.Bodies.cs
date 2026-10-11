@@ -88,6 +88,13 @@ public sealed partial class PhysicsWorld
     /// </summary>
     public void RemoveBody(BodyHandle body)
     {
+        if (_kinds[body.Value] == BodyKind.Trigger)
+        {
+            RemoveTrigger(new TriggerId(body, _kinds.Born(body.Value)));
+            return;
+        }
+
+        _triggers?.ForgetBody(body, _kinds.Born(body.Value), _kinds);
         BodyRemoving?.Invoke(body);
         Simulation.Bodies.Remove(body);
         _kinds.Forget(body);

@@ -19,6 +19,12 @@ public struct RemotePlayer;
 public struct Bodiless;
 
 /// <summary>
+/// Marks a character the trigger zones see (<c>TriggerCharacterSystem</c>): as an upright capsule of its size at its
+/// feet, whose comings and goings are in the match's <c>CharacterTriggers</c>.
+/// </summary>
+public struct TriggerSensor;
+
+/// <summary>
 /// The movement buttons a <see cref="PlayerCommand"/> carries. A game's own buttons go in
 /// <see cref="PlayerCommand.Actions"/>. Compare bits directly; no enum helpers in hot code.
 /// </summary>
