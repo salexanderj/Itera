@@ -32,9 +32,9 @@ the mesh colliders it registers.
 changing anything structural. `docs/` holds the write-ups behind decisions: `voxel-structures.md`, `edit-log-compaction.md`,
 `procedural-audio.md`, `anti-aliasing.md`, `rendering-redesign-brief.md` with `rendering-redesign.md` (the raster
 renderer's decisions and measurements), `rendering-extension.md` (what a game can change in the renderer, and why),
-`framework-plan.md` (how Itera became a framework), and `framework-limits.md` (what kinds of game the engine blocks
-today, and the order of work). `docs/references/` holds notes on outside projects
-used as references.
+`map-size-and-origin.md` (large maps, the floating origin, and why), `framework-plan.md` (how Itera became a framework),
+and `framework-limits.md` (what kinds of game the engine blocks today, and the order of work). `docs/references/` holds
+notes on outside projects used as references.
 
 # How to work
 

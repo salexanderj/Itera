@@ -80,7 +80,7 @@ of players and bodies, and saving the game's own state.
    screen). Finished 2026-10-10. Left for later: split screen (with input per player, limit 6), HDR rendering,
    order-independent transparency, transparent voxel materials, a physically based sky, spot lights, shadowed point
    lights, and image views with shadows and particles (ARCHITECTURE.md, "Open work").
-3. A map size the game sets, with origin shifting. Done 2026-10-10 (left: the GPU's time for far views on a quiet
-   machine, and the look of far views: haze and far shadows).
+3. A map size the game sets, with origin shifting. Done 2026-10-10 (`docs/map-size-and-origin.md`; left: the GPU's
+   time for far views on a quiet machine, and the look of far views: haze and far shadows).
 4. Gamepads, typed text, sound files and music, a menu a game can replace.
 5. Physics materials, collision groups, and gravity set by the game.
