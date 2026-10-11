@@ -25,7 +25,19 @@ engine's recipes are `bar`, `tone`, `menu-hover`, and `menu-press` (`EngineSound
 `SoundEvent.AtListener`). A game registers its own recipes once a run (an `IRunStartup`, before the audio thread takes
 them) and plays them from its systems; `docs/procedural-audio.md` has the methods.
 
-Sound files are read by `Audio/Files/` (nothing plays them yet): `SoundDecoders.Open` picks a decoder by the file's
+A sound may be read from files instead (`FileRecipe`): a game registers a `FileOneShotRecipe(paths)` by name as it
+registers a recipe (paths from the game's folder; 1 to 16 files, each a variation, never the same twice running; each
+at most 30 s) and plays it with `Play` as any one-shot. The render thread reads its files whole after the recipes
+before it (`RecipeRenderer.Read`) and the audio thread puts each into a buffer at its own rate (OpenAL resamples). A
+stereo file is mixed to mono and placed in the world, unless the recipe is `KeepStereo`: then it keeps its channels and
+always plays at the listener, where `AL_SOFT_direct_channels_remix` sends them left and right as they are. A file that
+cannot be read is logged at Error (`Audio: sound NAME: the file PATH cannot be read (WHY); it plays nothing`) and the
+next good file plays in its place; with none the sound is silent, and still counts as ready for the loading screen
+(`SoundRecipes.PreparedCount`: one-shot recipes and sounds from files; at most 256 recipes in all). With no device, a
+missing file is still named at Error. The console's `sound files` lists each file as read (channels, rate, length,
+size, loop, problem), `sound play NAME` plays a sound at the listener, and `sound wav` writes no file for them.
+
+Sound files are read by `Audio/Files/`: `SoundDecoders.Open` picks a decoder by the file's
 first bytes, the engine's own `WavDecoder` (`WavReader`: PCM of 8 to 32 bits, IEEE float of 32 or 64, extensible
 formats, RF64, a `smpl` loop) or `VorbisDecoder` (NVorbis 1.0.0-rc.2; loops from `LOOPSTART` with `LOOPLENGTH` or
 `LOOPEND`), mono or stereo, each as an `ISoundDecoder` of floats; `SoundFiles.Decode` reads one whole into 16-bit

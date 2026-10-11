@@ -14,7 +14,7 @@ public sealed class NullAudioDevice : IAudioDevice
 
     public uint CreateBuffer() => 0;
 
-    public void FillBuffer(uint buffer, ReadOnlySpan<short> samples, int sampleRate) { }
+    public void FillBuffer(uint buffer, ReadOnlySpan<short> samples, int channels, int sampleRate) { }
 
     public void DeleteBuffer(uint buffer) { }
 

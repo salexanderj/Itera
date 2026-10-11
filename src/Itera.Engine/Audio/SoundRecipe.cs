@@ -3,7 +3,8 @@ namespace Itera.Engine.Audio;
 /// <summary>
 /// How a sound is made. Recipes are code: each models a sound from its physics (what gives the energy, what rings, what
 /// shapes it on the way out; Farnell, <i>Designing Sound</i>), driven by one number, its level. The game registers them
-/// by name in <see cref="SoundRecipes"/>. Two kinds: <see cref="OneShotRecipe"/> and <see cref="StreamRecipe"/>.
+/// by name in <see cref="SoundRecipes"/>. Two kinds: <see cref="OneShotRecipe"/> and <see cref="StreamRecipe"/>; a sound
+/// read from files (<see cref="FileRecipe"/>) is registered and played the same way.
 /// </summary>
 public abstract class SoundRecipe
 {
@@ -96,4 +97,55 @@ public abstract class SoundGenerator
     /// <paramref name="level"/> (0 to 1) across this one, so changes do not click. Keep samples within ±1.
     /// </summary>
     public abstract void Render(Span<float> output, float level);
+}
+
+/// <summary>
+/// A sound read from files (WAV or Ogg Vorbis: <see cref="Files.SoundDecoders"/>) rather than made in code, played by
+/// name as a recipe is. Its files are decoded once at start, on the render thread, into OpenAL buffers, each at its own
+/// rate. A file that cannot be read is logged at Error and plays nothing; the rest play. A stereo file is mixed to mono
+/// and played in the world, unless <see cref="KeepStereo"/>, which keeps its channels and plays it at the listener.
+/// </summary>
+public abstract class FileRecipe : SoundRecipe
+{
+    /// <param name="paths">The files; a relative path is from the game's folder (where it runs from).</param>
+    protected FileRecipe(IEnumerable<string> paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        Paths = [.. paths.Select(Resolve)];
+    }
+
+    /// <summary>The files, as full paths.</summary>
+    public IReadOnlyList<string> Paths { get; }
+
+    /// <summary>
+    /// Keeps a stereo file's two channels and plays the sound at the listener (music-like stings, an interface sound, an
+    /// ambience); by default a stereo file is mixed to mono, (left + right) / 2, and played where the event says.
+    /// </summary>
+    public bool KeepStereo { get; init; }
+
+    /// <summary>The longest a file may last, in seconds: it is held whole in memory.</summary>
+    public abstract float MostSeconds { get; }
+
+    /// <summary>A full path for <paramref name="path"/>: as it is when rooted, else from the game's folder.</summary>
+    public static string Resolve(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        return Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path);
+    }
+}
+
+/// <summary>
+/// A short sound from files: each file a variation of it (one level), an event playing one at random but never the one it
+/// played last, as a one-shot recipe's variations play. A file of at most <see cref="MaxSeconds"/>.
+/// </summary>
+public sealed class FileOneShotRecipe : FileRecipe
+{
+    /// <summary>The longest a one-shot's file may last, in seconds.</summary>
+    public const float MaxSeconds = 30;
+
+    /// <param name="paths">One file or more (at most 16): its variations.</param>
+    public FileOneShotRecipe(params string[] paths)
+        : base(paths) { }
+
+    public override float MostSeconds => MaxSeconds;
 }

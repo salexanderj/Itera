@@ -79,10 +79,11 @@ public sealed partial class AudioService : IDisposable
     public string DeviceName => _device.Name;
 
     /// <summary>
-    /// True once every one-shot recipe registered so far has its variations in buffers, or when no audio thread runs
-    /// (nothing will render them). A recipe registered later makes it false until that one is rendered.
+    /// True once every one-shot recipe and sound from files registered so far has its variations in buffers (a file that
+    /// cannot be read counts as done, silent), or when no audio thread runs (nothing will prepare them). A recipe
+    /// registered later makes it false until that one is ready.
     /// </summary>
-    public bool AllRendered => !IsRunning || Stats.RenderedRecipes >= Recipes.OneShotCount;
+    public bool AllRendered => !IsRunning || Stats.RenderedRecipes >= Recipes.PreparedCount;
 
     /// <summary>True while the audio thread runs: a device opened and nothing failed.</summary>
     public bool IsRunning => _thread is not null && !_faulted;
@@ -133,6 +134,12 @@ public sealed partial class AudioService : IDisposable
     /// <summary>The loops held for the audio thread as of the last <see cref="Publish"/> (tests).</summary>
     internal int HeldLoops => _heldCount;
 
+    /// <summary>
+    /// The files of the sound from files <paramref name="recipe"/> as the render thread read them (channels, rate, length,
+    /// loop, or why one could not be read); null before they are read, or with no audio thread.
+    /// </summary>
+    public IReadOnlyList<SoundFileInfo>? FilesOf(int recipe) => _mixer?.Renderer.FilesOf(recipe);
+
     /// <summary>Events dropped because an iteration or the exchange was full.</summary>
     public long DroppedEvents => _droppedHere + _exchange.DroppedEvents;
 
@@ -146,11 +153,20 @@ public sealed partial class AudioService : IDisposable
         EngineSounds.Register(Recipes);
     }
 
-    /// <summary>Starts the audio thread, when a device is open.</summary>
+    /// <summary>
+    /// Starts the audio thread, when a device is open. With none, the sounds from files are still looked for, so a run
+    /// without sound names a file missing (logged at Error) as one with sound would.
+    /// </summary>
     public void Start()
     {
-        if (!_device.IsAvailable || _thread is not null)
+        if (_thread is not null)
         {
+            return;
+        }
+
+        if (!_device.IsAvailable)
+        {
+            CheckFilesExist();
             return;
         }
 
@@ -332,7 +348,9 @@ public sealed partial class AudioService : IDisposable
         {
             OneShotRecipe oneShot => RenderOneShots(oneShot, rate),
             StreamRecipe stream => RenderStream(stream, rate),
-            _ => throw new InvalidOperationException("Unknown kind of sound recipe."),
+            _ => throw new InvalidOperationException(
+                $"{Recipes.NameOf(recipe)} is read from files: they are its sound already."
+            ),
         };
         var pcm = new short[samples.Count];
         Dsp.ToPcm16(samples.ToArray(), pcm);
@@ -496,6 +514,32 @@ public sealed partial class AudioService : IDisposable
         long refused,
         long underruns
     );
+
+    /// <summary>With no audio thread to read them: each file of each sound from files is looked for, and a missing one logged.</summary>
+    private void CheckFilesExist()
+    {
+        for (var id = 0; id < Recipes.Count; id++)
+        {
+            if (Recipes[id] is not FileRecipe files)
+            {
+                continue;
+            }
+
+            foreach (var path in files.Paths)
+            {
+                if (!File.Exists(path))
+                {
+                    LogFileMissing(Recipes.NameOf(id), path);
+                }
+            }
+        }
+    }
+
+    [LoggerMessage(
+        Level = LogLevel.Error,
+        Message = "Audio: sound {Name}: the file {Path} cannot be read (no such file); it plays nothing"
+    )]
+    private partial void LogFileMissing(string name, string path);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Audio: the audio thread failed; the game goes on without sound")]
     private partial void LogFaulted(Exception exception);

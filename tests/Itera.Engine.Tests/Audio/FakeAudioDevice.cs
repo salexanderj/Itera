@@ -10,6 +10,7 @@ namespace Itera.Engine.Tests.Audio;
 internal sealed class FakeAudioDevice : IAudioDevice
 {
     private readonly List<float> _bufferSeconds = [0];
+    private readonly List<(int Channels, int Rate)> _bufferFormats = [(0, 0)];
     private readonly List<Source> _sources = [null!];
 
     public string Name => "fake";
@@ -78,12 +79,14 @@ internal sealed class FakeAudioDevice : IAudioDevice
         }
 
         _bufferSeconds.Add(0);
+        _bufferFormats.Add((0, 0));
         return (uint)(_bufferSeconds.Count - 1);
     }
 
-    public void FillBuffer(uint buffer, ReadOnlySpan<short> samples, int sampleRate)
+    public void FillBuffer(uint buffer, ReadOnlySpan<short> samples, int channels, int sampleRate)
     {
-        _bufferSeconds[(int)buffer] = samples.Length / (float)sampleRate;
+        _bufferSeconds[(int)buffer] = samples.Length / channels / (float)sampleRate;
+        _bufferFormats[(int)buffer] = (channels, sampleRate);
         FilledSamples += samples.Length;
         var hash = FilledHash;
         foreach (var s in samples)
@@ -209,6 +212,10 @@ internal sealed class FakeAudioDevice : IAudioDevice
             }
         }
     }
+
+    /// <summary>Buffer <paramref name="buffer"/>'s channels, rate, and length as last filled.</summary>
+    public (int Channels, int Rate, float Seconds) BufferOf(uint buffer) =>
+        (_bufferFormats[(int)buffer].Channels, _bufferFormats[(int)buffer].Rate, _bufferSeconds[(int)buffer]);
 
     /// <summary>The sources playing now.</summary>
     public int Playing()

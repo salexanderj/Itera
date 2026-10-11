@@ -11,8 +11,9 @@ namespace Itera.Engine.Commands;
 
 /// <summary>
 /// The console's <c>sound</c> command (<see cref="CommandScope.Local"/>): the counts, on and off, the volume, the
-/// recipes' names, a test of a recipe where the camera looks (a one-shot once, at a level; a stream for 4 s), and WAV
-/// files of recipes in the data folder's <c>Sounds</c>, to listen to outside the game. The volume is the player's setting
+/// recipes' names and kinds, the sounds read from files (each file's channels, rate, length, and problems), a test of a
+/// recipe where the camera looks (a one-shot once, at a level; a stream for 4 s) or at the listener, and WAV files of
+/// recipes in the data folder's <c>Sounds</c>, to listen to outside the game. The volume is the player's setting
 /// (<see cref="PlayerSettings"/>), as the menu's.
 /// </summary>
 public sealed class SoundCommands(
@@ -36,8 +37,8 @@ public sealed class SoundCommands(
     {
         commands.Register(
             "sound",
-            "[on|off|volume V|recipes|test NAME [LEVEL]|wav NAME|wav all]",
-            "Sound: the counts, on or off, the master volume (0 to 1), the recipes, one where the camera looks (a level 0 to 1), or WAV files of recipes.",
+            "[on|off|volume V|recipes|files|test NAME [LEVEL]|play NAME|wav NAME|wav all]",
+            "Sound: the counts, on or off, the master volume (0 to 1), the recipes, the sounds from files, one where the camera looks (a level 0 to 1) or at the listener, or WAV files of recipes.",
             CommandScope.Local,
             Sound
         );
@@ -81,16 +82,27 @@ public sealed class SoundCommands(
         {
             for (var id = 0; id < audio.Recipes.Count; id++)
             {
-                var kind = audio.Recipes[id] is StreamRecipe ? "stream" : "one-shot";
-                context.Print(audio.Recipes.NameOf(id) + " (" + kind + ")");
+                context.Print(audio.Recipes.NameOf(id) + " (" + audio.Recipes.KindOf(id) + ")");
             }
 
             return;
         }
 
+        if (context.Is(0, "files"))
+        {
+            PrintFiles(context);
+            return;
+        }
+
         if (context.Is(0, "test") && context.Count >= 2)
         {
-            Test(context);
+            Test(context, atListener: false);
+            return;
+        }
+
+        if (context.Is(0, "play") && context.Count == 2)
+        {
+            Test(context, atListener: true);
             return;
         }
 
@@ -125,7 +137,56 @@ public sealed class SoundCommands(
         );
     }
 
-    private void Test(CommandContext context)
+    /// <summary>Each sound read from files, then each of its files as read (or why not), relative to the game's folder.</summary>
+    private void PrintFiles(CommandContext context)
+    {
+        var any = false;
+        for (var id = 0; id < audio.Recipes.Count; id++)
+        {
+            if (audio.Recipes[id] is not FileRecipe recipe)
+            {
+                continue;
+            }
+
+            any = true;
+            context.Print($"{audio.Recipes.NameOf(id)} ({audio.Recipes.KindOf(id)}, {recipe.Paths.Count} file(s))");
+            var files = audio.FilesOf(id);
+            for (var i = 0; i < recipe.Paths.Count; i++)
+            {
+                var path = Path.GetRelativePath(AppContext.BaseDirectory, recipe.Paths[i]);
+                context.Print("  " + path + ": " + Describe(files is not null && i < files.Count ? files[i] : null));
+            }
+        }
+
+        if (!any)
+        {
+            context.Print("no sounds from files");
+        }
+    }
+
+    private string Describe(SoundFileInfo? file)
+    {
+        if (file is null)
+        {
+            return audio.IsRunning ? "not read yet" : "not read (no sound: " + audio.DeviceName + ")";
+        }
+
+        if (file.Failed)
+        {
+            return "cannot be read (" + file.Problem + ")";
+        }
+
+        var loop = file.LoopPoints.IsSet
+            ? string.Create(CultureInfo.InvariantCulture, $", loops {file.LoopPoints.Start} to {file.LoopPoints.End}")
+            : "";
+        var problem = file.Problem is null ? "" : " (" + file.Problem + ")";
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{(file.Channels == 2 ? "stereo" : "mono")}, {file.SampleRate} Hz, {file.Seconds:0.##} s, {file.Bytes / 1024} KB{loop}{problem}"
+        );
+    }
+
+    private void Test(CommandContext context, bool atListener)
     {
         if (!TryRecipe(context, 1, out var recipe))
         {
@@ -133,9 +194,17 @@ public sealed class SoundCommands(
         }
 
         var level = 1f;
-        if (context.Count >= 3 && (!context.TryGetFloat(2, out level) || level is < 0 or > 1))
+        if (!atListener && context.Count >= 3 && (!context.TryGetFloat(2, out level) || level is < 0 or > 1))
         {
             context.PrintUsage();
+            return;
+        }
+
+        if (atListener && audio.Recipes.IsSustained(recipe))
+        {
+            context.PrintError(
+                $"{audio.Recipes.NameOf(recipe)} is sustained, and plays in the world: 'sound test' plays it where the camera looks."
+            );
             return;
         }
 
@@ -145,8 +214,8 @@ public sealed class SoundCommands(
             return;
         }
 
-        var point = Aim();
-        if (audio.Recipes[recipe] is StreamRecipe)
+        var point = atListener ? Vector3.Zero : Aim();
+        if (audio.Recipes.IsSustained(recipe))
         {
             audio.SustainFor(
                 new SoundLoop
@@ -168,15 +237,18 @@ public sealed class SoundCommands(
                     Recipe = recipe,
                     Position = point,
                     Level = level,
+                    AtListener = atListener,
                 }
             );
         }
 
         context.Print(
-            string.Create(
-                CultureInfo.InvariantCulture,
-                $"{audio.Recipes.NameOf(recipe)} at level {level:0.##} at ({point.X:F2}, {point.Y:F2}, {point.Z:F2})"
-            )
+            atListener
+                ? audio.Recipes.NameOf(recipe) + " at the listener"
+                : string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{audio.Recipes.NameOf(recipe)} at level {level:0.##} at ({point.X:F2}, {point.Y:F2}, {point.Z:F2})"
+                )
         );
     }
 
@@ -187,16 +259,27 @@ public sealed class SoundCommands(
         {
             for (var id = 0; id < audio.Recipes.Count; id++)
             {
-                context.Print("wrote " + audio.WriteWav(id, folder));
+                if (audio.Recipes[id] is not FileRecipe)
+                {
+                    context.Print("wrote " + audio.WriteWav(id, folder));
+                }
             }
 
             return;
         }
 
-        if (TryRecipe(context, 1, out var recipe))
+        if (!TryRecipe(context, 1, out var recipe))
         {
-            context.Print("wrote " + audio.WriteWav(recipe, folder));
+            return;
         }
+
+        if (audio.Recipes[recipe] is FileRecipe)
+        {
+            context.PrintError($"{audio.Recipes.NameOf(recipe)} is read from files: they are its sound already.");
+            return;
+        }
+
+        context.Print("wrote " + audio.WriteWav(recipe, folder));
     }
 
     private bool TryRecipe(CommandContext context, int index, out int recipe)

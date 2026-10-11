@@ -184,7 +184,7 @@ public sealed partial class AudioMixer : IDisposable
             return;
         }
 
-        var bank = MakeBank((OneShotRecipe)_recipes[rendered.Id], rendered.Lengths, rendered.Samples);
+        var bank = MakeBank(_recipes[rendered.Id], rendered);
         _banks[rendered.Id] = bank;
         _stats.CountRendered(bank.Bytes);
     }
@@ -283,26 +283,41 @@ public sealed partial class AudioMixer : IDisposable
         LogStreamFailed(exception, _recipes.NameOf(id));
     }
 
-    /// <summary>A recipe's variations, <paramref name="lengths"/> long in <paramref name="pcm"/>, put into buffers.</summary>
-    private Bank MakeBank(OneShotRecipe recipe, int[] lengths, short[] pcm)
+    /// <summary>
+    /// A recipe's rendered variations (or a sound's files) put into buffers, each at its rate and channels (a recipe's at
+    /// the mixer's rate, mono).
+    /// </summary>
+    private Bank MakeBank(SoundRecipe recipe, RenderedRecipe rendered)
     {
-        var total = recipe.Levels * recipe.VariationsPerLevel;
-        var bank = new Bank(new uint[total], new float[total], new int[recipe.Levels]);
+        var (levels, variations) = Layout(recipe);
+        var total = levels * variations;
+        var bank = new Bank(new uint[total], new float[total], new int[levels]);
         Array.Fill(bank.Last, -1);
         var offset = 0;
         for (var index = 0; index < total; index++)
         {
-            var length = lengths[index];
+            var length = rendered.Lengths[index];
+            var rate = rendered.Rates?[index] ?? _sampleRate;
+            var channels = rendered.Channels?[index] ?? 1;
             var buffer = _device.CreateBuffer();
-            _device.FillBuffer(buffer, pcm.AsSpan(offset, length), _sampleRate);
+            _device.FillBuffer(buffer, rendered.Samples.AsSpan(offset, length), channels, rate);
             bank.Buffers[index] = buffer;
-            bank.Seconds[index] = length / (float)_sampleRate;
+            bank.Seconds[index] = length / channels / (float)rate;
             bank.Bytes += length * sizeof(short);
             offset += length;
         }
 
         return bank;
     }
+
+    /// <summary>A prepared recipe's levels and variations a level: a sound from files has one level, a variation a file.</summary>
+    private static (int Levels, int Variations) Layout(SoundRecipe recipe) =>
+        recipe switch
+        {
+            OneShotRecipe oneShot => (oneShot.Levels, oneShot.VariationsPerLevel),
+            FileRecipe files => (1, files.Paths.Count),
+            _ => (1, 1),
+        };
 
     private void EndFinishedOneShots()
     {
@@ -319,7 +334,7 @@ public sealed partial class AudioMixer : IDisposable
 
     private void StartOneShot(in SoundEvent sound, double now)
     {
-        if ((uint)sound.Recipe >= (uint)_recipes.Count || _recipes[sound.Recipe] is not OneShotRecipe)
+        if ((uint)sound.Recipe >= (uint)_recipes.Count || !SoundRecipes.IsPrepared(_recipes[sound.Recipe]))
         {
             return;
         }
@@ -335,10 +350,13 @@ public sealed partial class AudioMixer : IDisposable
             return;
         }
 
-        var recipe = (OneShotRecipe)_recipes[sound.Recipe];
+        var recipe = _recipes[sound.Recipe];
+        var (levels, variations) = Layout(recipe);
+        // A sound kept stereo plays at the listener, where its channels go left and right.
+        var atListener = sound.AtListener || recipe is FileRecipe { KeepStereo: true };
         var gain = recipe.Gain * (sound.Gain > 0 ? sound.Gain : 1);
         var reference = recipe.ReferenceMetres * (sound.Reach > 0 ? Math.Min(sound.Reach, 100) : 1);
-        var loudness = sound.AtListener ? MathF.Min(MaxGain, gain) : Loudness(gain, reference, sound.Position);
+        var loudness = atListener ? MathF.Min(MaxGain, gain) : Loudness(gain, reference, sound.Position);
         if (loudness < CullGain)
         {
             _stats.CountCulled();
@@ -352,9 +370,9 @@ public sealed partial class AudioMixer : IDisposable
             return;
         }
 
-        var level = (int)MathF.Round(Math.Clamp(sound.Level, 0, 1) * (recipe.Levels - 1));
-        var variation = PickVariation(bank, level, recipe.VariationsPerLevel);
-        var slot = level * recipe.VariationsPerLevel + variation;
+        var level = (int)MathF.Round(Math.Clamp(sound.Level, 0, 1) * (levels - 1));
+        var variation = PickVariation(bank, level, variations);
+        var slot = level * variations + variation;
         var pitch = sound.Pitch > 0 ? Math.Clamp(sound.Pitch, 0.25f, 4f) : 1;
         ref var voice = ref _voices[index];
         voice.Kind = VoiceKind.OneShot;
@@ -366,7 +384,7 @@ public sealed partial class AudioMixer : IDisposable
         voice.Gain = gain;
         voice.Pitch = pitch;
         voice.Reference = reference;
-        voice.AtListener = sound.AtListener;
+        voice.AtListener = atListener;
         SetSource(in voice);
         _device.PlayBuffer(voice.Source, bank.Buffers[slot]);
         _stats.CountPlayed();
@@ -629,7 +647,7 @@ public sealed partial class AudioMixer : IDisposable
                 // The voice's buffers take turns: the one queued QueueDepth blocks ago has played.
                 var buffer = _streamBuffers[i * QueueDepth + voice.Next];
                 voice.Next = (voice.Next + 1) % QueueDepth;
-                _device.FillBuffer(buffer, _pcm, _sampleRate);
+                _device.FillBuffer(buffer, _pcm, 1, _sampleRate);
                 _device.QueueBuffer(voice.Source, buffer);
                 voice.Queued++;
                 if (to <= 0)

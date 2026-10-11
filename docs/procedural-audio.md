@@ -71,7 +71,8 @@ Chapter 22 (game audio) gives the reasons that matter here:
 ## How recipes work
 
 A recipe is a small model of a sound's physics driven by one number, its level (0 to 1: how hard, how big). It is
-registered by name in `SoundRecipes` (at most 128). The engine offers two kinds:
+registered by name in `SoundRecipes` (at most 256). The engine offers two kinds made in code (a sound read from a file,
+`FileOneShotRecipe`, is registered and played the same way):
 
 - A `OneShotRecipe` (a hit, a step, a dig) is rendered at start, `Levels` times `VariationsPerLevel` variations at fixed
   seeds, into OpenAL buffers. An event plays the variation nearest its level, never the same one twice running, with

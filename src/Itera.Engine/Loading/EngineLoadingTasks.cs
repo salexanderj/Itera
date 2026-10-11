@@ -17,7 +17,7 @@ public sealed class SoundsLoadingTask(AudioService audio) : ILoadingTask
     {
         get
         {
-            var total = audio.Recipes.OneShotCount;
+            var total = audio.Recipes.PreparedCount;
             var fraction = total == 0 ? 0 : audio.Stats.RenderedRecipes / (float)total;
             return LoadingProgress.Part(audio.AllRendered, fraction);
         }

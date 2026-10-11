@@ -235,7 +235,8 @@ lists the commands (`ConsoleCommands`):
   show ID[:VERSION]|player: the match's entities and their components' fields, `EcsInspector`), `pause`, `resume`,
   `step` [N] (pauses, then N fixed steps), `timescale` [X] (0.05 to 16 for the match; offline only, as are pause,
   resume, and step; pause and step refuse while the match loads), `particles` (on, off, recipes, test NAME [COUNT], pull
-  NAME [COUNT], stress NAME BURSTS, stress off), `sound` (on, off, volume V, recipes, test NAME [LEVEL], wav NAME, wav
+  NAME [COUNT], stress NAME BURSTS, stress off), `sound` (on, off, volume V, recipes, files (the sounds read from
+  files, each file's channels, rate, length, and problems), test NAME [LEVEL], play NAME (at the listener), wav NAME, wav
   all into `Sounds/`).
 - The engine's systems, where a game registers them (the starter does): `fly` (the debug fly camera, or walk again where
   it is), `flyspeed`, `camera` (first or third), `pos` (the player's eye and look, the fly camera's while it flies, as

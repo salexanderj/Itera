@@ -204,10 +204,10 @@ public sealed class SoundCacheTests : IDisposable
             Cache()
         );
 
-        Assert.Equal(1, recipes.OneShotCount);
+        Assert.Equal(1, recipes.PreparedCount);
         mixer.Pump(0);
 
-        Assert.Equal(recipes.OneShotCount, stats.RenderedRecipes);
+        Assert.Equal(recipes.PreparedCount, stats.RenderedRecipes);
         Assert.Equal(1, hum.Created);
     }
 

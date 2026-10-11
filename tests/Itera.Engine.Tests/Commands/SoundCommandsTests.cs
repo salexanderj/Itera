@@ -14,9 +14,9 @@ namespace Itera.Engine.Tests.Commands;
 
 /// <summary>
 /// The console's <c>sound</c> (<see cref="SoundCommands"/>) without a device: the
-/// counts, on and off, the volume as the player's setting, the recipes, a test
-/// refused with no sound running, an unknown recipe, WAV files written into the data folder's <c>Sounds</c>, and the
-/// usage for anything else.
+/// counts, on and off, the volume as the player's setting, the recipes with their kinds, the sounds from files (not read
+/// with no sound running), a test or a play at the listener refused with no sound running, an unknown recipe, WAV files
+/// written into the data folder's <c>Sounds</c> (but not for a sound from files), and the usage for anything else.
 /// </summary>
 public sealed class SoundCommandsTests : IDisposable
 {
@@ -118,6 +118,24 @@ public sealed class SoundCommandsTests : IDisposable
     }
 
     [Fact]
+    public void Files_lists_each_sound_from_files_with_its_files_and_a_file_sound_writes_no_wav()
+    {
+        Run("sound files");
+        Assert.Equal("no sounds from files", Last());
+
+        _audio.Recipes.Register("door", new FileOneShotRecipe("Sounds/door-1.wav", "Sounds/door-2.ogg"));
+        Run("sound files");
+        Assert.Equal("door (file one-shot, 2 file(s))", _console.ScrollbackLine(_console.ScrollbackCount - 3).Text);
+        Assert.Equal("  " + Path.Combine("Sounds", "door-2.ogg") + ": not read (no sound: none (silent))", Last());
+
+        Run("sound recipes");
+        Assert.Equal("door (file one-shot)", Last());
+
+        Run("sound wav door");
+        Assert.Equal("door is read from files: they are its sound already.", Last());
+    }
+
+    [Fact]
     public void A_test_needs_a_recipe_and_running_sound()
     {
         Run("sound test nosuch");
@@ -128,6 +146,12 @@ public sealed class SoundCommandsTests : IDisposable
 
         Run("sound test bar");
         Assert.Equal("no sound: none (silent)", Last());
+
+        Run("sound play bar");
+        Assert.Equal("no sound: none (silent)", Last());
+
+        Run("sound play tone");
+        Assert.StartsWith("tone is sustained, and plays in the world", Last(), StringComparison.Ordinal);
     }
 
     [Fact]

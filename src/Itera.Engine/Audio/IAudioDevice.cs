@@ -3,8 +3,9 @@ using System.Numerics;
 namespace Itera.Engine.Audio;
 
 /// <summary>
-/// An opened audio output: the OpenAL calls <see cref="AudioService"/>'s thread makes. Buffers hold mono 16-bit
-/// samples; sources play them at a place in the world. After <see cref="AudioService"/> starts its thread, only that
+/// An opened audio output: the OpenAL calls <see cref="AudioService"/>'s thread makes. Buffers hold 16-bit samples, mono
+/// or stereo; sources play them at a place in the world (mono) or at the listener (a stereo buffer's channels to the
+/// left and right). After <see cref="AudioService"/> starts its thread, only that
 /// thread calls these.
 /// </summary>
 public interface IAudioDevice : IDisposable
@@ -38,8 +39,11 @@ public interface IAudioDevice : IDisposable
     /// <summary>Makes a buffer.</summary>
     uint CreateBuffer();
 
-    /// <summary>Fills <paramref name="buffer"/> with mono 16-bit <paramref name="samples"/> at <paramref name="sampleRate"/>.</summary>
-    void FillBuffer(uint buffer, ReadOnlySpan<short> samples, int sampleRate);
+    /// <summary>
+    /// Fills <paramref name="buffer"/> with 16-bit <paramref name="samples"/> of <paramref name="channels"/> channels (1,
+    /// or 2 interleaved, left first) at <paramref name="sampleRate"/>.
+    /// </summary>
+    void FillBuffer(uint buffer, ReadOnlySpan<short> samples, int channels, int sampleRate);
 
     /// <summary>Frees a buffer no source holds.</summary>
     void DeleteBuffer(uint buffer);
@@ -57,7 +61,7 @@ public interface IAudioDevice : IDisposable
     /// Places <paramref name="source"/> at <paramref name="position"/> with <paramref name="gain"/> and
     /// <paramref name="pitch"/>, full within <paramref name="referenceMetres"/> and falling as the reciprocal of the
     /// distance past it; or, when <paramref name="atListener"/> is true, at the listener wherever it moves, at its full
-    /// gain (<paramref name="position"/> ignored).
+    /// gain (<paramref name="position"/> ignored), a stereo buffer's channels going to the left and right as they are.
     /// </summary>
     void SetSource(uint source, Vector3 position, float gain, float pitch, float referenceMetres, bool atListener);
 

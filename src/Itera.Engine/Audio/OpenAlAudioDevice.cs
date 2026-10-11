@@ -5,7 +5,10 @@ namespace Itera.Engine.Audio;
 
 /// <summary>
 /// OpenAL Soft output device and context. Every source plays up to <see cref="AudioMixer.MaxGain"/>, not OpenAL's
-/// default of 1, so a gain above 1 is heard near it too. An error a call raises is kept
+/// default of 1, so a gain above 1 is heard near it too. A stereo buffer plays with
+/// <c>AL_SOFT_direct_channels_remix</c> (where the library has it): its left and right go to the output's left and right
+/// as they are, not through the spatial mix; a mono buffer is mixed as before (a source's mode is set as a buffer plays
+/// and cleared as it stops, so a reused source never keeps it). An error a call raises is kept
 /// until <see cref="TakeError"/> reads it, and never fails a later buffer or source.
 /// </summary>
 public sealed unsafe class OpenAlAudioDevice : IAudioDevice
@@ -14,11 +17,16 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
     private const int FormatChannelsSoft = 0x1990;
     private const int FormatTypeSoft = 0x1991;
     private const int MonoSoft = 0x1500;
+    private const int StereoSoft = 0x1501;
     private const int FloatSoft = 0x1406;
     private const int Frequency = 0x1007;
 
     // ALC_EXT_disconnect: whether the output is still there.
     private const int Connected = 0x313;
+
+    // AL_SOFT_direct_channels_remix: a source's channels straight to the output's, remixed where they do not match.
+    private const int DirectChannelsSoft = 0x1033;
+    private const int RemixUnmatchedSoft = 2;
 
     private readonly ALContext _alc;
     private readonly AL _al;
@@ -26,6 +34,8 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
 
     // ALC_SOFT_reopen_device: moves an open device, its contexts, sources, and buffers to another output.
     private readonly delegate* unmanaged<Device*, byte*, int*, byte> _reopen;
+    private readonly bool _directChannels;
+    private readonly int _loopbackChannels;
     private Device* _device;
     private Context* _context;
     private int _error;
@@ -37,7 +47,8 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
         Device* device,
         Context* context,
         string name,
-        delegate* unmanaged<Device*, void*, int, void> renderSamples = null
+        delegate* unmanaged<Device*, void*, int, void> renderSamples = null,
+        int loopbackChannels = 1
     )
     {
         _alc = alc;
@@ -48,6 +59,8 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
         _reopen = alc.IsExtensionPresent(device, "ALC_SOFT_reopen_device")
             ? (delegate* unmanaged<Device*, byte*, int*, byte>)alc.GetProcAddress(device, "alcReopenDeviceSOFT")
             : null;
+        _directChannels = al.IsExtensionPresent("AL_SOFT_direct_channels_remix");
+        _loopbackChannels = loopbackChannels;
         Name = name;
     }
 
@@ -84,11 +97,12 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
         return buffer;
     }
 
-    public void FillBuffer(uint buffer, ReadOnlySpan<short> samples, int sampleRate)
+    public void FillBuffer(uint buffer, ReadOnlySpan<short> samples, int channels, int sampleRate)
     {
+        var format = channels == 2 ? BufferFormat.Stereo16 : BufferFormat.Mono16;
         fixed (short* data = samples)
         {
-            _al.BufferData(buffer, BufferFormat.Mono16, data, samples.Length * sizeof(short), sampleRate);
+            _al.BufferData(buffer, format, data, samples.Length * sizeof(short), sampleRate);
         }
     }
 
@@ -142,6 +156,13 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
     {
         _al.SourceStop(source);
         _al.SetSourceProperty(source, SourceInteger.Buffer, buffer);
+        if (_directChannels)
+        {
+            // A stereo buffer's channels straight to the output's; a mono one through the mix, as ever.
+            _al.GetBufferProperty(buffer, GetBufferInteger.Channels, out int channels);
+            _al.SetSourceProperty(source, (SourceInteger)DirectChannelsSoft, channels == 2 ? RemixUnmatchedSoft : 0);
+        }
+
         _al.SourcePlay(source);
     }
 
@@ -150,6 +171,10 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
         _al.SourceStop(source);
         // Detaching takes every queued buffer off, played or not.
         _al.SetSourceProperty(source, SourceInteger.Buffer, 0);
+        if (_directChannels)
+        {
+            _al.SetSourceProperty(source, (SourceInteger)DirectChannelsSoft, 0);
+        }
     }
 
     public bool IsPlaying(uint source)
@@ -213,10 +238,11 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
     }
 
     /// <summary>
-    /// Opens OpenAL Soft's loopback device at <paramref name="sampleRate"/>, mono float, which renders only when asked
+    /// Opens OpenAL Soft's loopback device at <paramref name="sampleRate"/>, float, mono or with
+    /// <paramref name="channels"/> 2 stereo (left and right interleaved), which renders only when asked
     /// (<see cref="RenderLoopback"/>): the real OpenAL path in tests, with no output. Null when the library lacks it.
     /// </summary>
-    internal static OpenAlAudioDevice? OpenLoopback(int sampleRate)
+    internal static OpenAlAudioDevice? OpenLoopback(int sampleRate, int channels = 1)
     {
         var alc = ALContext.GetApi(soft: true);
         var open = (delegate* unmanaged<byte*, Device*>)alc.GetProcAddress(null, "alcLoopbackOpenDeviceSOFT");
@@ -235,7 +261,7 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
         var attributes = stackalloc int[]
         {
             FormatChannelsSoft,
-            MonoSoft,
+            channels == 2 ? StereoSoft : MonoSoft,
             FormatTypeSoft,
             FloatSoft,
             Frequency,
@@ -245,10 +271,10 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
         var context = Activate(alc, device, attributes);
         var al = AL.GetApi(soft: true);
         al.DistanceModel(DistanceModel.InverseDistanceClamped);
-        return new OpenAlAudioDevice(alc, al, device, context, "OpenAL loopback", render);
+        return new OpenAlAudioDevice(alc, al, device, context, "OpenAL loopback", render, channels);
     }
 
-    /// <summary>Mixes the next <paramref name="output"/>'s samples of a loopback device into it.</summary>
+    /// <summary>Mixes the next <paramref name="output"/>'s samples of a loopback device into it (its frames' channels interleaved).</summary>
     internal void RenderLoopback(Span<float> output)
     {
         if (_renderSamples is null)
@@ -258,7 +284,7 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
 
         fixed (float* samples = output)
         {
-            _renderSamples(_device, samples, output.Length);
+            _renderSamples(_device, samples, output.Length / _loopbackChannels);
         }
     }
 

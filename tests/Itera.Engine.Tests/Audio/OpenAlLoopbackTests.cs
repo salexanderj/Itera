@@ -29,7 +29,7 @@ public sealed class OpenAlLoopbackTests
         var buffer = device.CreateBuffer();
         var tone = new short[Rate];
         Array.Fill(tone, (short)3277);
-        device.FillBuffer(buffer, tone, Rate);
+        device.FillBuffer(buffer, tone, 1, Rate);
         var source = device.CreateSource();
         device.SetListener(Vector3.Zero, -Vector3.UnitZ, Vector3.UnitY, 1);
 
@@ -57,6 +57,46 @@ public sealed class OpenAlLoopbackTests
 
         Assert.NotEqual(0, device.TakeError());
         Assert.Equal(0, device.TakeError());
+        device.DeleteBuffer(buffer);
+    }
+
+    /// <summary>
+    /// A stereo buffer at the listener keeps its channels apart (direct channels): sound only on its left is heard on the
+    /// output's left, and the right stays near silent.
+    /// </summary>
+    [Fact]
+    public void A_stereo_buffer_at_the_listener_keeps_its_left_and_right_apart()
+    {
+        using var device = OpenAlAudioDevice.OpenLoopback(Rate, channels: 2);
+        Assert.NotNull(device);
+        var buffer = device.CreateBuffer();
+        var frames = Rate / 2;
+        var leftOnly = new short[frames * 2];
+        for (var i = 0; i < frames; i++)
+        {
+            leftOnly[2 * i] = (short)(8000 * MathF.Sin(2 * MathF.PI * 440 * i / Rate));
+        }
+
+        device.FillBuffer(buffer, leftOnly, 2, Rate);
+        var source = device.CreateSource();
+        device.SetListener(Vector3.Zero, -Vector3.UnitZ, Vector3.UnitY, 1);
+        device.SetSource(source, Vector3.Zero, 1, 1, 1, atListener: true);
+        device.PlayBuffer(source, buffer);
+        var output = new float[2 * 8192];
+        device.RenderLoopback(output);
+
+        var left = 0f;
+        var right = 0f;
+        for (var i = 4096; i < 8192; i++)
+        {
+            left += MathF.Abs(output[2 * i]);
+            right += MathF.Abs(output[2 * i + 1]);
+        }
+
+        Assert.InRange(left / 4096, 0.1f, 0.25f);
+        Assert.True(right < left * 0.01f, $"right {right / 4096} against left {left / 4096}");
+        Assert.Equal(0, device.TakeError());
+        device.DeleteSource(source);
         device.DeleteBuffer(buffer);
     }
 

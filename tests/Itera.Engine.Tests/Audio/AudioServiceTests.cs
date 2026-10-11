@@ -123,7 +123,7 @@ public sealed class AudioServiceTests
 
         audio.Stop();
         Assert.Equal(1, audio.Stats.Played);
-        Assert.Equal(audio.Recipes.OneShotCount, audio.Stats.RenderedRecipes);
+        Assert.Equal(audio.Recipes.PreparedCount, audio.Stats.RenderedRecipes);
         // The thread freed its sources on the way out.
         Assert.Equal(8, device.DeletedSources);
     }
