@@ -6,8 +6,9 @@ namespace Game.Tests;
 
 /// <summary>
 /// The world: the same seed gives the same voxels in the same bounds (a pinned hash and grid: a change of either means
-/// <see cref="GameGenerator.Version"/> must rise, or a save or a session of the old world would not match), the start
-/// stands on the ground with the eye a person's height over it, and every benchmark view stands over the ground.
+/// <see cref="GameGenerator.Version"/> must rise, or a save or a session of the old world would not match), the middle
+/// as version 1 made it, the broad relief past 1 km inside the grid, the start on the ground with the eye a person's
+/// height over it, and every benchmark view over the ground.
 /// </summary>
 public sealed class WorldTests
 {
@@ -15,10 +16,72 @@ public sealed class WorldTests
     public void The_same_seed_gives_the_same_voxels()
     {
         var generator = new GameGenerator();
+
+        // Pinned with the generator's version: a change of the world (its voxels, or its size: the grid's base and bounds
+        // in level-0 chunks) must come with a new version, and all change here. The last chunk lies in the broad relief
+        // (2 km out at level 2).
+        var grid = generator.Grid;
+        Assert.Equal(
+            (2, 14497145286141956781UL, (10, -313, 312, -4, 7)),
+            (
+                generator.Version,
+                Hash(generator, [(0, 0), (3, -2), (-7, 5), (40, -30)]),
+                (grid.BaseCentimetres, grid.MinChunkXZ, grid.MaxChunkXZ, grid.MinChunkY, grid.MaxChunkY)
+            )
+        );
+    }
+
+    /// <summary>
+    /// Within 1 km of the middle the world is version 1's, voxel for voxel (the hash version 1 pinned): the broad relief
+    /// starts past it, so the start and its views look as they did.
+    /// </summary>
+    [Fact]
+    public void Near_the_middle_the_voxels_are_version_1s()
+    {
+        Assert.Equal(5789805400214179090UL, Hash(new GameGenerator(), [(0, 0), (3, -2), (-7, 5)]));
+    }
+
+    /// <summary>
+    /// The broad relief: none within 1 km, rising smoothly to whole at 1.5 km, and up to 30 m up or down; the ground
+    /// over the whole map, every 25 m, keeps more than 15 m of stone over the world's floor and 50 m under its top.
+    /// </summary>
+    [Fact]
+    public void The_broad_relief_rises_past_1_km_and_the_ground_stays_inside_the_grid()
+    {
+        var grid = new GameGenerator().Grid;
+        var floor = grid.MinVoxelY * grid.BaseCentimetres;
+        var top = grid.EndVoxelY * grid.BaseCentimetres;
+        var edge = grid.EndVoxelXZ * grid.BaseCentimetres;
+        Assert.Equal((-5_120, 10_240, 400_640), (floor, top, edge));
+
+        Assert.Equal(0, GameGenerator.Relief(99_990, 1_000, 1));
+        Assert.Equal(0, GameGenerator.Relief(-70_000, 70_000, 1));
+        double lowest = double.MaxValue,
+            highest = double.MinValue,
+            deepest = 0;
+        for (var x = -400_000; x <= 400_000; x += 2_500)
+        {
+            for (var z = -400_000; z <= 400_000; z += 2_500)
+            {
+                var height = GameGenerator.SurfaceHeight(x, z, 1);
+                lowest = Math.Min(lowest, height);
+                highest = Math.Max(highest, height);
+                deepest = Math.Max(deepest, Math.Abs(GameGenerator.Relief(x, z, 1)));
+            }
+        }
+
+        Assert.InRange(deepest, 1_000, GameGenerator.ReliefCentimetres);
+        Assert.True(lowest > floor + 1_500, $"The ground falls to {lowest} cm.");
+        Assert.True(highest < top - 5_000, $"The ground rises to {highest} cm.");
+    }
+
+    /// <summary>FNV-1a over the voxels and densities of three layers of chunks at each place, levels 0 to 2, seed 1.</summary>
+    private static ulong Hash(GameGenerator generator, (int X, int Z)[] places)
+    {
         var voxels = new byte[VoxelConstants.ChunkVoxels];
         var densities = new byte[VoxelConstants.ChunkVoxels];
         var hash = 14695981039346656037UL;
-        foreach (var (x, z) in new[] { (0, 0), (3, -2), (-7, 5) })
+        foreach (var (x, z) in places)
         {
             for (var level = 0; level < 3; level++)
             {
@@ -38,17 +101,7 @@ public sealed class WorldTests
             }
         }
 
-        // Pinned with the generator's version: a change of the world (its voxels, or its size: the grid's base and bounds
-        // in level-0 chunks) must come with a new version, and all change here.
-        var grid = generator.Grid;
-        Assert.Equal(
-            (1, 5789805400214179090UL, (10, -40, 39, -4, 7)),
-            (
-                generator.Version,
-                hash,
-                (grid.BaseCentimetres, grid.MinChunkXZ, grid.MaxChunkXZ, grid.MinChunkY, grid.MaxChunkY)
-            )
-        );
+        return hash;
     }
 
     [Fact]

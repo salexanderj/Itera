@@ -269,13 +269,13 @@ public sealed class ScenarioTests
         var output = new Output();
         commands.Execute("fly on; flyspeed 500", output);
         match.Step(1);
-        commands.Execute("tp -1400 40 0 -90 0", output);
+        commands.Execute("tp -1400 80 0 -90 0", output);
         match.Step(1);
 
         Assert.Empty(output.Failures);
-        Assert.Equal(new WorldPoint(-1_400, 40, 0), origin.Metres);
+        Assert.Equal(new WorldPoint(-1_400, 80, 0), origin.Metres);
         var start = origin.ToWorld(Camera(match.World).Position);
-        Assert.True(start.DistanceTo(new WorldPoint(-1_400, 40, 0)) < 1e-4, $"Landed at {start}.");
+        Assert.True(start.DistanceTo(new WorldPoint(-1_400, 80, 0)) < 1e-4, $"Landed at {start}.");
 
         var moves = origin.Moves;
         var farthest = 0f;
@@ -294,9 +294,46 @@ public sealed class ScenarioTests
         Assert.True(farthest < 512 + 8.4f, $"The camera went {farthest} m from the origin.");
         var flown = 336 * (500.0 / 60);
         Assert.True(
-            end.DistanceTo(new WorldPoint(-1_400 + flown, 40, 0)) < 0.01,
-            $"The flight ended at {end.X:R},{end.Y:R},{end.Z:R}, not {-1_400 + flown:R},40,0."
+            end.DistanceTo(new WorldPoint(-1_400 + flown, 80, 0)) < 0.01,
+            $"The flight ended at {end.X:R},{end.Y:R},{end.Z:R}, not {-1_400 + flown:R},80,0."
         );
+    }
+
+    /// <summary>
+    /// The map's edge at 4,006.4 m (313 columns of 12.8 m) is a wall: the player jumps to 4 km out (the origin with it),
+    /// stands on the ground there once it has loaded, and walks along +x for 5 s without passing it.
+    /// </summary>
+    [Fact]
+    public void The_maps_edge_4_km_out_is_a_wall()
+    {
+        using var provider = GameComposition.Build(s_options);
+        using var match = new HeadlessRun(provider).Play(seed: 1);
+        Assert.True(match.WaitUntilLoaded());
+        var origin = Origin(match);
+        var commands = provider.GetRequiredService<ConsoleCommands>();
+        var output = new Output();
+        var eye = GameGenerator.SurfaceHeight(399_000, 0, 1) / 100 + CharacterSize.ForHeight(1.7f).EyeMetres + 0.5;
+        // Looking along +x: a yaw of -90 degrees.
+        commands.Execute(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"tp 3990 {eye} 0 -90 0"),
+            output
+        );
+        match.Step(1);
+        Assert.True(match.WaitUntilLoaded());
+        match.Step(60);
+        var stood = Player(match.World).Contact.Grounded;
+
+        match.Input.InjectKey(Key.W, true);
+        match.Step(300);
+        match.Input.InjectKey(Key.W, false);
+        var (position, contact) = Player(match.World);
+        var feet = origin.ToWorld(position.Feet);
+
+        Assert.Empty(output.Failures);
+        Assert.Equal(3_990, origin.Metres.X);
+        Assert.True(stood, "Not on the ground after the jump.");
+        Assert.True(contact.Grounded, $"Not on the ground at {feet}.");
+        Assert.InRange(feet.X, 4_000, 4_006.4);
     }
 
     /// <summary>

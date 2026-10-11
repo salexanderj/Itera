@@ -22,7 +22,7 @@ public sealed class GameOptionsTests
     [Theory]
     [InlineData("Game:Player:HeightMetres", "3", "Game:Player:HeightMetres must be between")]
     [InlineData("Game:World:CameraPose", "1,2,3", "Game:World:CameraPose must be")]
-    [InlineData("Game:World:CameraPose", "5000,20,0,0,0", "Game:World:CameraPose must lie in the play area")]
+    [InlineData("Game:World:CameraPose", "7000,20,0,0,0", "Game:World:CameraPose must lie in the play area")]
     [InlineData("Game:Player:HeightMetre", "2", "Game:Player:HeightMetre is not an option")]
     [InlineData("Game:Wrld:CameraPose", "1,2,3,4,5", "Game:Wrld is not an option")]
     [InlineData("Game:Player:HeightMetres", "tall", "Game:Player")]

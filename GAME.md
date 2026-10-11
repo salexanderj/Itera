@@ -5,14 +5,18 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
 
 - Name: "Itera Game" (`Engine:Application:Name`), data folder `IteraGame` (`~/.local/share/IteraGame/`), no Steam App ID
   (Steam stays off).
-- The world (`WorldGeneration/`): `GameGenerator` (`game.world`, version 1) on the engine's `HeightfieldGenerator`,
-  10 cm voxels: gentle grass hills of `FractalNoise`, about 6 m high and up to 10 m up or down, gravel where the ground
-  lies below 2 m, 5 cm of surface over dirt down to 1 m, then stone, and stone boulders (2 to 6 m across) a third of
-  their height buried, at most one a 16 m cell (`JitteredGrid`). The materials are `GameMaterials` (grass, dirt, stone,
+- The world (`WorldGeneration/`): `GameGenerator` (`game.world`, version 2) on the engine's `HeightfieldGenerator`,
+  10 cm voxels, 8 km across (`GameGenerator.WorldGrid`: ±4,006.4 m, from 51.2 m below the middle's height to 102.4 m
+  above it): gentle grass hills of `FractalNoise`, about 6 m high and up to 10 m up or down, gravel where the hills lie
+  below 2 m, 5 cm of surface over dirt down to 1 m, then stone, and stone boulders (2 to 6 m across) a third of their
+  height buried, at most one a 16 m cell (`JitteredGrid`); past 1 km from the middle, broad relief (`Relief`: one
+  octave 2 km across, up to 30 m up or down) rises over the hills, whole from 1.5 km, so within 1 km the world is
+  version 1's, voxel for voxel. The materials are `GameMaterials` (grass, dirt, stone,
   gravel), drawn by `GamePalette` from the texture sets `grass`, `dirt`, `stone`, and `gravel` in `Textures/`. The sky
   is one clear day (`GameAtmosphere`), drawn with the engine's look (`RenderLook.Default`) under the engine's sun, which
   stays where it is (the console's `sun` and `time` move it for a run). A change to what the generator makes, or to its
-  grid's size, raises its `Version` (`tests/Game.Tests/WorldTests` pins a hash and the grid's bounds).
+  grid's size, raises its `Version` (`tests/Game.Tests/WorldTests` pins a hash and the grid's bounds, and checks the
+  middle against version 1's hash and the ground inside the grid).
 - The fox (`GameModels.Fox`): Khronos's Fox sample (`Models/Fox/`, credits in `Models/SOURCES.md`; 24 joints, clips
   Survey, Walk, and Run; its texture compressed in `Models/Fox/Fox.textures/`), declared at the run's start (`GameRunStartup`). `FoxSystem` puts it on the ground 4 m in front
   of the start pose, side on, then over and over: it looks about (Survey) for 6 s, walks (1.1 m/s) for 8 s and runs
@@ -78,4 +82,5 @@ goes in this order where its comments say why, with a behaviour test and a zero-
   SharpGLTF's own world matrices; its compressed textures made from its image), `BenchmarkViewsTests`, and
   `ScenarioTests` (the starter played without a window through `HeadlessMatch`; the fox read, drawn posed, its clip
   moving with the steps, walking its circle; the boulder nearest the start climbed onto; a walk with the origin
-  following the camera every 8 m against one where it stays; a flight of 2.8 km, the origin following the camera).
+  following the camera every 8 m against one where it stays; a flight of 2.8 km, the origin following the camera; the
+  map's edge 4 km out a wall).

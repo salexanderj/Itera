@@ -118,7 +118,7 @@ ready ... entering main loop`. Then the match's: `Match 1: offline, seed N` (or 
 ...`, or `join ADDRESS`), `Session: offline, seed N` (or `hosting on UDP port ...`, `hosting through Steam ...`, or
 `joined ADDRESS in slot N, seed N; downloaded ...`; with a save name, a `Save: starting from NAME ...` or `Save: NAME
 does not exist yet ...` line before it), physics, `Meshes: N material texture set(s) ...`, `Voxels: N worker
-thread(s), budget ..., generator game.world v1` (on a client `Session: loaded N edit(s) of the host's world`; from a
+thread(s), budget ..., generator game.world v2` (on a client `Session: loaded N edit(s) of the host's world`; from a
 save `Save: loaded N edit(s) of NAME`), the ECS world, the game's lines (the starter's `Player: 1.70 m tall, feet at
 ...` and `Debug camera at ...`), `Loading: waiting for N task(s)`, and `Loading: done after N s (...)`. Quit in the
 menu, the close button, Ctrl+C (SIGINT), SIGTERM, or SIGHUP ends the run with exit code 0 and shutdown lines in

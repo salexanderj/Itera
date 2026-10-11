@@ -1469,8 +1469,8 @@ Engine work that is known and not done:
 - **Large maps** (under way): built, a map's size set in its generator's grid (up to ±160 km and 128 layers), voxels of
   1 cm to 1 m, positions kept local to a match's origin with absolute types (`WorldPoint`, `VoxelCoord`) wherever
   they cross it, and moves of the origin following the camera (`OriginShiftSystem`, `OriginShifts`; the renderer,
-  particles, and sound follow them), positions in messages absolute. Not built: the starter's 8 km map, views past
-  2 km, a nav grid that moves
+  particles, and sound follow them), positions in messages absolute, and the starter's map 8 km across (broad relief
+  past 1 km). Not built: views past 2 km, a nav grid that moves
   with the players (it covers a game's area and keeps heights within ±327.67 m), and columns that hold only the layers
   with ground or edits, so a map's height costs memory only where something is.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no

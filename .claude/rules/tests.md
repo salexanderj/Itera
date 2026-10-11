@@ -47,7 +47,8 @@ paths:
   far, no allocation) and `Systems/OriginShiftSystemTests` (the camera followed past the distance, a jump's request
   first); the game's `ChecklistTests` checks its own components' vectors against its handlers, and its `ScenarioTests`
   a walk with the origin following the camera every 8 m against one that stays, and a flight of 2.8 km (a far `tp`
-  landing exactly, the origin never much more than 512 m from the camera, the flight ending within a centimetre).
+  landing exactly, the origin never much more than 512 m from the camera, the flight ending within a centimetre), and
+  the map's edge 4 km out.
   Positions in messages: `Networking/MessageReaderTests` (1/64 cm to ±335 km, peers with other origins, hostile
   bytes).
 - Composition: `tests/Itera.Engine.Tests/Matches/EngineComposition.cs` builds the engine's real services with the least
