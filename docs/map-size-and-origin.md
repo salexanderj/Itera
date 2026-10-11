@@ -122,7 +122,8 @@ one above (`Column.First`, `Below`, `Above`).
 ## Left for later
 
 The GPU's time for 7 to 10 levels and 2 to 8 km views, a benchmark at 9 levels and 8 km, and phase 5's benchmark
-check (start views within 1 %) wait for a quiet machine. Lucy's choices: the haze at distance, a third shadow cascade
-(its cost unmeasured), and whether the starter's view grows past 256 m and 4 levels. Separate physics simulations for
+check (start views within 1 %) wait for a quiet machine. Lucy chose, from pictures of the 3.5 km and 40 m views, the
+starter's map seen to its end (an 8 km view over nine levels) with half the haze it had (half of a surface lost at 3 km,
+not 1.5 km); the engine's defaults stay 256 m and four levels. A third shadow cascade past 200 m is still open. Separate physics simulations for
 far peers, a tint map that moves with the view, atmospheres by region, and navigation windows per group of players are
 left for a game that needs them.

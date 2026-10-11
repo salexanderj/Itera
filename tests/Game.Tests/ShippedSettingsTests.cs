@@ -17,6 +17,9 @@ public sealed class ShippedSettingsTests
         "Engine:Application:Name",
         "Engine:Application:DataFolder",
         "Engine:Window:Title",
+        // The starter's map is 8 km across: it is seen to its end, nine levels deep.
+        "Engine:Renderer:ViewDistanceMetres",
+        "Engine:Voxels:Levels",
     };
 
     [Fact]

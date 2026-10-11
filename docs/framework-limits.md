@@ -81,6 +81,7 @@ of players and bodies, and saving the game's own state.
    order-independent transparency, transparent voxel materials, a physically based sky, spot lights, shadowed point
    lights, and image views with shadows and particles (ARCHITECTURE.md, "Open work").
 3. A map size the game sets, with origin shifting. Done 2026-10-10 (`docs/map-size-and-origin.md`; left: the GPU's
-   time for far views on a quiet machine, and the look of far views: haze and far shadows).
+   time for far views on a quiet machine, and whether shadows reach past 200 m; the starter's view is its whole map, 8 km
+   over nine levels, with lighter haze).
 4. Gamepads, typed text, sound files and music, a menu a game can replace.
 5. Physics materials, collision groups, and gravity set by the game.

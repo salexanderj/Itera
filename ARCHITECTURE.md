@@ -32,7 +32,7 @@ The numbers that shape the engine's technical decisions:
 | Voxels in a dense grid of that extent | about 1.5 x 10^11 (too many to store; see "Voxel storage") |
 | Simulation rate | 60 fixed steps per second (`Engine:FixedStepHz`) |
 | Players | up to `Engine:Session:MaxPlayers` (4 by default), peer to peer, the host authoritative |
-| View distance | 256 m (`Engine:Renderer:ViewDistanceMetres`) |
+| View distance | 256 m by default (`Engine:Renderer:ViewDistanceMetres`, up to 8 km); the starter's 8 km over 9 levels |
 | Render budget | the world pass at most 4 ms on a mid-range desktop GPU at 2560x1440 with shadows and materials (the budget of the renderer's redesign) |
 
 Notes on outside projects that were consulted as references, not templates, are in `docs/references/` (the Stride

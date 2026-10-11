@@ -13,8 +13,10 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
   octave 2 km across, up to 30 m up or down) rises over the hills, whole from 1.5 km, so within 1 km the world is
   version 1's, voxel for voxel. The materials are `GameMaterials` (grass, dirt, stone,
   gravel), drawn by `GamePalette` from the texture sets `grass`, `dirt`, `stone`, and `gravel` in `Textures/`. The sky
-  is one clear day (`GameAtmosphere`), drawn with the engine's look (`RenderLook.Default`) under the engine's sun, which
-  stays where it is (the console's `sun` and `time` move it for a run). A change to what the generator makes, or to its
+  is one clear day (`GameAtmosphere`: a light haze, `Haze` 0.02, that hides half of a surface 3 km away), drawn with the
+  engine's look (`RenderLook.Default`) under the engine's sun, which stays where it is (the console's `sun` and `time`
+  move it for a run). The map is seen to its end: an 8 km view (`Engine:Renderer:ViewDistanceMetres` 8000) over nine
+  levels (`Engine:Voxels:Levels` 9, voxels of 10 cm to 25.6 m), where the engine's defaults are 256 m and four. A change to what the generator makes, or to its
   grid's size, raises its `Version` (`tests/Game.Tests/WorldTests` pins a hash and the grid's bounds, and checks the
   middle against version 1's hash and the ground inside the grid).
 - The fox (`GameModels.Fox`): Khronos's Fox sample (`Models/Fox/`, credits in `Models/SOURCES.md`; 24 joints, clips
@@ -44,7 +46,7 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
   (`CameraPose`), and `Game:Minimap` (`Metres` 64, 16 to 256), checked by `PlayerOptionsValidator`,
   `WorldOptionsValidator`, and `MinimapOptionsValidator`; a key under `Game` in no section of
   the game's stops the game (`GameServiceCollectionExtensions.ValidateOptions`). Every value in `appsettings.json` is
-  the code's default except the name, data folder, and window title (`ShippedSettingsTests`).
+  the code's default except the name, data folder, window title, view distance, and levels (`ShippedSettingsTests`).
 - The benchmark's views (`BenchmarkViews`), also `tp`'s places (`tp far`; `game.py shots far`): `start`, `start-low`,
   `down`, `up`, `high` (40 m over the middle), `far` (200 m out along +x, looking back), and `distant` (3,500 m out
   along +x in the broad relief, looking back, the origin moved there).
