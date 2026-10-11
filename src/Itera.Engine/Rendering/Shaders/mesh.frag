@@ -139,7 +139,10 @@ void main()
         vec3 centimetres = world * CentimetresPerMetre;
         ivec3 whole = ivec3(floor(centimetres));
         vec3 part = centimetres - vec3(whole);
-        float mapTint = meshTintAt(world);
+        // In the world's absolute centimetres: the whole centimetres from the camera's frame (precise, near it) plus the
+        // origin's, so the surface's noise and bands stay where they are in the world wherever the origin is.
+        whole += viewOrigin();
+        float mapTint = meshTintAt(whole, part);
         float weights[8] = float[](inWeightsLow.x, inWeightsLow.y, inWeightsLow.z, inWeightsLow.w, inWeightsHigh.x,
             inWeightsHigh.y, inWeightsHigh.z, inWeightsHigh.w);
         uint first = 0u;

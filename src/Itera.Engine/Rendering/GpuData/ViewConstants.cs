@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Rendering.GpuData;
 
@@ -9,13 +10,14 @@ namespace Itera.Engine.Rendering.GpuData;
 /// (<see cref="ViewSwitches.Orthographic"/>) has parallel rays along <see cref="Forward"/> from
 /// <c>Position + x * Right + y * Up</c>: <see cref="Right"/> and <see cref="Up"/> are the image's half width and half
 /// height in metres. Built on the main thread for each frame (<see cref="Create"/>) and pushed by the render thread.
-/// Field order and types match the GLSL block; <c>GpuLayoutTests</c> checks them. It is 116 bytes of the 128 the spec
-/// guarantees for push constants; the switches share one word's bits (<see cref="Switches"/>), and a new switch takes a
-/// bit there.
+/// Field order and types match the GLSL block; <c>GpuLayoutTests</c> checks them. It is all 128 bytes the spec
+/// guarantees for push constants: the switches share one word's bits (<see cref="Switches"/>), and a new switch takes a
+/// bit there; a new value goes to a per-slot record, as the look's does (<c>LookConstants</c>). Positions are local:
+/// metres from the match's origin (<see cref="OriginX"/>).
 /// </summary>
 public struct ViewConstants
 {
-    /// <summary>Eye position in world metres; an orthographic view's middle.</summary>
+    /// <summary>Eye position in metres from the match's origin; an orthographic view's middle.</summary>
     public Vector3 Position;
 
     /// <summary>Unit view direction.</summary>
@@ -73,6 +75,21 @@ public struct ViewConstants
     /// </summary>
     public float Far;
 
+    /// <summary>
+    /// The match's origin in absolute centimetres (whole metres): what a shader adds to a point's whole centimetres for its
+    /// place in the world (the surfaces' noise, strata, tint map, and texture tiles; <c>viewOrigin</c> in view.glsl).
+    /// </summary>
+    public int OriginX;
+
+    /// <inheritdoc cref="OriginX"/>
+    public int OriginY;
+
+    /// <inheritdoc cref="OriginX"/>
+    public int OriginZ;
+
+    /// <summary>The match's origin in absolute centimetres.</summary>
+    public readonly VoxelCoord Origin => new(OriginX, OriginY, OriginZ);
+
     /// <summary>True when every switch in <paramref name="switches"/> is on.</summary>
     public readonly bool Has(ViewSwitches switches) => (Switches & switches) == switches;
 
@@ -119,7 +136,8 @@ public struct ViewConstants
     /// near plane not above 0 is 5 cm; an orthographic height not above 0 is 1 m, a near not finite (such as NaN, for
     /// none) is <paramref name="maxDistance"/> behind the position, and a far not finite or not past the near is
     /// <paramref name="maxDistance"/> past the position (past the near when that lies ahead). Sizes and depths are kept
-    /// within <see cref="MostLensMetres"/>, where a float still tells a metre's depths apart.
+    /// within <see cref="MostLensMetres"/>, where a float still tells a metre's depths apart. The camera is local to
+    /// <paramref name="origin"/>, the match's origin in absolute centimetres (zero without a match).
     /// </summary>
     public static ViewConstants Create(
         in CameraView camera,
@@ -130,6 +148,7 @@ public struct ViewConstants
         in Atmosphere atmosphere,
         float maxDistance,
         bool shadows,
+        VoxelCoord origin,
         float renderScale = 1,
         ViewSwitches debugViews = ViewSwitches.None
     )
@@ -186,6 +205,9 @@ public struct ViewConstants
             Air = atmosphere.PackAir(),
             Near = near,
             Far = far,
+            OriginX = origin.X,
+            OriginY = origin.Y,
+            OriginZ = origin.Z,
         };
     }
 

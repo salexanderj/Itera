@@ -201,6 +201,111 @@ public sealed class WorldMeshesTests : IDisposable
     }
 
     /// <summary>
+    /// With the match's origin moved 300 m, 20 m down, and 512 m back, a view at the same place in the world draws the
+    /// blocks it draws with the origin at the middle, in the same order and from the same meshes, each block's corner
+    /// local to the origin (less it, to float rounding), and the sky field's corner with them.
+    /// </summary>
+    [Fact]
+    public void With_the_origin_moved_the_same_blocks_are_drawn_local_to_it()
+    {
+        Begin();
+        RunUntilUpToDate();
+        var at = Centre + new Vector3(1.3f, 0, -0.7f);
+        var first = Frame(at, shadows: true);
+        var middle = Drawn(first);
+        var sky = _targets.LightingOf(first).SkyCorner;
+        var origin = new VoxelCoord(30_000, -2_000, -51_200);
+        var by = new Vector3(300, -20, -512);
+
+        var slot = Frame(at - by, shadows: true, origin: origin);
+        var moved = Drawn(slot);
+
+        Assert.True(middle.Count > 4);
+        Assert.Equal(middle.Count, moved.Count);
+        for (var i = 0; i < middle.Count; i++)
+        {
+            Assert.Equal(
+                (middle[i].VoxelMetres, middle[i].VertexBase, middle[i].Command),
+                (moved[i].VoxelMetres, moved[i].VertexBase, moved[i].Command)
+            );
+            Assert.True(
+                Vector3.Distance(middle[i].Origin - by, moved[i].Origin) < 1e-4f,
+                $"Draw {i} at {moved[i].Origin}; at the middle {middle[i].Origin}."
+            );
+        }
+
+        if (_meshes.HasSkyField)
+        {
+            Assert.True(Vector3.Distance(sky - by, _targets.LightingOf(slot).SkyCorner) < 1e-4f);
+        }
+    }
+
+    /// <summary>
+    /// A material's tile phase is the origin modulo the tile's width on each axis, in doubles, for any width to the
+    /// millimetre (a whole number of tiles from the origin, to a micrometre); and the frame stages the materials again
+    /// with their phases for a moved origin (a material without a set, the 3 m width the console's materials all draws).
+    /// </summary>
+    [Fact]
+    public void The_materials_tile_phases_follow_the_origin()
+    {
+        Assert.Equal(
+            new Vector3(1.92f, 0.48f, 1.23f),
+            MeshMaterial.TilePhase(new VoxelCoord(15_000_000, -2_000, 123), 2.56)
+        );
+        Assert.Equal(Vector3.Zero, MeshMaterial.TilePhase(default, 2.56));
+        var random = new Random(3);
+        for (var i = 0; i < 1000; i++)
+        {
+            var origin = new VoxelCoord(
+                random.Next(-160_000, 160_000) * 100,
+                random.Next(-1_000, 1_000) * 100,
+                random.Next(-160_000, 160_000) * 100
+            );
+            var width = random.Next(100, 10_000) / 1000.0;
+            var phase = MeshMaterial.TilePhase(origin, width);
+            foreach (var (centimetres, part) in new[] { (origin.X, phase.X), (origin.Y, phase.Y), (origin.Z, phase.Z) })
+            {
+                Assert.InRange(part, 0, width);
+                var tiles = (centimetres / 100.0 - part) / width;
+                Assert.True(
+                    Math.Abs(tiles - Math.Round(tiles)) * width < 1e-6 * Math.Max(1, Math.Abs(tiles) / 1e4),
+                    $"{part} for {centimetres} cm in {width} m"
+                );
+            }
+        }
+
+        Begin();
+        RunUntilUpToDate();
+        var origin2 = new VoxelCoord(30_000, -2_000, -51_200);
+        Frame(Centre - new Vector3(300, -20, -512), origin: origin2);
+        var heapMaterials = MemoryMarshal.Cast<byte, MeshMaterial>(
+            _targets.Heap.AsSpan((int)MeshPass.MaterialsOffset, (int)MeshPass.MaterialsBytes)
+        );
+        Assert.Equal(MeshMaterial.TilePhase(origin2, MeshMaterial.AllMaterialsTileMetres), heapMaterials[1].TileOrigin);
+    }
+
+    /// <summary>The camera's draws of <paramref name="slot"/> in their order: each one's record and command.</summary>
+    private List<(Vector3 Origin, float VoxelMetres, uint VertexBase, (uint, int, uint) Command)> Drawn(int slot)
+    {
+        var drawn = new List<(Vector3, float, uint, (uint, int, uint))>();
+        for (var i = 0; i < _meshes.DrawCount; i++)
+        {
+            var command = _targets.CommandsOf(slot, 0)[i];
+            var draw = _targets.DrawsOf(slot)[RecordOf(command, slot)];
+            drawn.Add(
+                (
+                    draw.Origin,
+                    draw.VoxelMetres,
+                    draw.VertexBase,
+                    (command.IndexCount, command.VertexOffset, command.FirstIndex)
+                )
+            );
+        }
+
+        return drawn;
+    }
+
+    /// <summary>
     /// An image view lists, in its own records, the camera's levels' blocks its own box holds (more than the camera's
     /// narrow look down sees), nearest first by its depth, and the models in it the camera does not see; its lighting
     /// record has the sky field's place as the frame's.
@@ -1221,10 +1326,17 @@ public sealed class WorldMeshesTests : IDisposable
     /// <paramref name="shadows"/>, and every block from its plain mesh when <paramref name="plain"/>. Returns the slot it
     /// used.
     /// </summary>
-    private int Frame(Vector3? at = null, bool shadows = false, ModelDraw[]? draws = null, bool plain = false)
+    private int Frame(
+        Vector3? at = null,
+        bool shadows = false,
+        ModelDraw[]? draws = null,
+        bool plain = false,
+        VoxelCoord origin = default
+    )
     {
         var slot = _frame++ % FrameSync.FramesInFlight;
         var view = LookingDown(at ?? Centre);
+        (view.OriginX, view.OriginY, view.OriginZ) = (origin.X, origin.Y, origin.Z);
         if (shadows)
         {
             view.SunDirection = ViewConstants.DefaultSunDirection;

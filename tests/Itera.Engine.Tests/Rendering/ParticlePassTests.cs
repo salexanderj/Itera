@@ -1,5 +1,8 @@
+using System.Numerics;
+using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Rendering.Shaders;
+using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Itera.Engine.Tests.Rendering;
@@ -30,6 +33,28 @@ public sealed class ParticlePassTests : IDisposable
         {
             Directory.Delete(_cache, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// The pool's particles move with the match's origin: a frame that simulates in another origin takes the whole move
+    /// since the last frame that simulated (frames between may not), and an emptied pool takes the frame's origin.
+    /// </summary>
+    [Fact]
+    public void The_pool_moves_by_the_origins_move_since_it_last_simulated()
+    {
+        var pool = new ParticlePoolOrigin();
+        pool.Emptied(default);
+
+        Assert.Equal(Vector3.Zero, pool.Simulated(default));
+        Assert.Equal(new Vector3(300, -20, -512), pool.Simulated(new VoxelCoord(30_000, -2_000, -51_200)));
+        Assert.Equal(Vector3.Zero, pool.Simulated(new VoxelCoord(30_000, -2_000, -51_200)));
+        // Two moves, the frame between them not simulating: the next frame takes both.
+        Assert.Equal(
+            new Vector3(-150_300, 40, 150_512),
+            pool.Simulated(new VoxelCoord(-15_000_000, 2_000, 15_000_000))
+        );
+        pool.Emptied(new VoxelCoord(100, 0, 0));
+        Assert.Equal(Vector3.Zero, pool.Simulated(new VoxelCoord(100, 0, 0)));
     }
 
     [Fact]

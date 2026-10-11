@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering.Meshes;
 using Itera.Engine.Voxels;
 
@@ -387,14 +388,18 @@ public sealed class BaseTenWorldTests
         using var world = TestWorlds.Load(_generator, centre, radiusMetres: Radius, levels: level + 1);
         var field = new SkyField();
 
-        field.Read(world, centre, coarsestLevel: level);
+        field.Read(world, new WorldPoint(centre.X, centre.Y, centre.Z), coarsestLevel: level);
 
         Assert.Equal(level, field.CellLevel);
         Assert.Equal(0.8f, field.CellMetres, 6);
         var resident = new List<ColumnKey>();
         world.CollectResidentColumns(resident);
         var columns = resident.Where(key => key.Level == level).ToHashSet();
-        var corner = field.Corner / field.CellMetres;
+        var corner = new Vector3(
+            (float)(field.Corner.X / field.CellMetres),
+            (float)(field.Corner.Y / field.CellMetres),
+            (float)(field.Corner.Z / field.CellMetres)
+        );
         var (x0, y0, z0) = ((int)MathF.Round(corner.X), (int)MathF.Round(corner.Y), (int)MathF.Round(corner.Z));
         var solid = field.Solid;
         int stone = 0,

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using Arch.Core;
+using Itera.Engine.Audio;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
 using Itera.Engine.Maths;
@@ -16,7 +17,8 @@ namespace Itera.Engine.Matches;
 /// Moves the match's origin (<see cref="WorldOrigin"/>) and, with it, everything the engine keeps in local positions, so
 /// that nothing moves in the world: every Bepu body and static (<see cref="PhysicsWorld.Shift"/>), the engine's
 /// components (<see cref="ShiftedComponents"/>), the world's streaming centres, the retired models, the point lights'
-/// flashes, and the particles' queued bursts and attractors; then the game's <see cref="IOriginShiftHandler"/>s, in
+/// flashes, the particles' queued bursts and attractors, the sounds queued, held, waiting, and playing, and the frame
+/// view's camera; then the game's <see cref="IOriginShiftHandler"/>s, in
 /// their registration order. A local position far from the new origin rounds to its floats there. It moves only between
 /// steps and frames or in the first fixed system's update, so every system of a step or a frame sees one origin (it
 /// throws elsewhere). Mods are not told. Scoped to the match; main thread; allocates nothing but its Debug line.
@@ -53,6 +55,8 @@ public sealed partial class OriginShifts
     private readonly IOriginShiftHandler[] _handlers;
     private readonly ILogger<OriginShifts> _logger;
     private readonly VoxelWorld? _voxels;
+    private readonly AudioService? _audio;
+    private readonly RenderView? _view;
 
     /// <param name="origin">The match's origin.</param>
     /// <param name="physics">The match's Bepu simulation.</param>
@@ -63,6 +67,8 @@ public sealed partial class OriginShifts
     /// <param name="handlers">The game's handlers.</param>
     /// <param name="logger">Logger.</param>
     /// <param name="voxels">The match's voxel world; none without terrain.</param>
+    /// <param name="audio">The run's sound; none in a test without it.</param>
+    /// <param name="view">The run's frame view, whose camera moves too; none in a test without it.</param>
     public OriginShifts(
         WorldOrigin origin,
         PhysicsWorld physics,
@@ -72,7 +78,9 @@ public sealed partial class OriginShifts
         ParticleEmitter particles,
         IEnumerable<IOriginShiftHandler> handlers,
         ILogger<OriginShifts> logger,
-        VoxelWorld? voxels = null
+        VoxelWorld? voxels = null,
+        AudioService? audio = null,
+        RenderView? view = null
     )
     {
         Origin = origin;
@@ -84,6 +92,8 @@ public sealed partial class OriginShifts
         _handlers = [.. handlers];
         _logger = logger;
         _voxels = voxels;
+        _audio = audio;
+        _view = view;
     }
 
     /// <summary>The match's origin.</summary>
@@ -130,6 +140,8 @@ public sealed partial class OriginShifts
         _models.ShiftRetired(metres);
         _lights.Shift(metres);
         _particles.Shift(metres);
+        _audio?.Shift(metres);
+        _view?.ShiftCamera(metres);
         foreach (var handler in _handlers)
         {
             handler.OnOriginShifted(in shift);

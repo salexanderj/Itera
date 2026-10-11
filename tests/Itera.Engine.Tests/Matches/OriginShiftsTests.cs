@@ -24,7 +24,7 @@ namespace Itera.Engine.Tests.Matches;
 /// <see cref="OriginShifts"/>: the origin moves to the whole metres nearest the point asked, and everything the engine
 /// keeps in local positions moves the other way (the components' positions, current and previous, and nothing else of
 /// theirs; Bepu's bodies and statics; the lights' flashes, the particles' queued bursts and attractors, the retired
-/// models), then the game's handlers hear of it; every component's vector field is either moved or listed as no
+/// models, the frame view's camera), then the game's handlers hear of it; every component's vector field is either moved or listed as no
 /// position; it moves only between steps and frames or in the first fixed system's update; and a shift allocates
 /// nothing.
 /// </summary>
@@ -60,6 +60,7 @@ public sealed class OriginShiftsTests : IDisposable
         NullLogger<ParticleEmitter>.Instance
     );
     private readonly WorldOrigin _origin = new();
+    private readonly RenderView _view = new(Options.Create(new EngineOptions()));
     private readonly Recorder _handler = new();
     private readonly OriginShifts _shifts;
 
@@ -74,7 +75,8 @@ public sealed class OriginShiftsTests : IDisposable
             _lights,
             _particles,
             [_handler],
-            NullLogger<OriginShifts>.Instance
+            NullLogger<OriginShifts>.Instance,
+            view: _view
         );
     }
 
@@ -114,6 +116,7 @@ public sealed class OriginShiftsTests : IDisposable
         );
         _particles.SetAttractor(1, new Vector3(3, 3, 3));
         _particles.StressOrigin = new Vector3(4, 4, 4);
+        _view.SetCamera(CameraView.Default with { Position = new Vector3(6, 7, 8) });
         var cube = _models.Add([_models.Encode(Cube(4))], new VoxelCoord(4, 4, 4));
         _models.Retire(cube, 0, new Vector3(5, 0, 5), Quaternion.Identity, 0);
         var floor = _physics.Simulation.Statics.Add(
@@ -156,6 +159,7 @@ public sealed class OriginShiftsTests : IDisposable
         Assert.Equal(new Vector4(new Vector3(3, 3, 3) - s_by, 1), _particles.Attractors[1]);
         Assert.Equal(default, _particles.Attractors[2]);
         Assert.Equal(new Vector3(4, 4, 4) - s_by, _particles.StressOrigin);
+        Assert.Equal(new Vector3(6, 7, 8) - s_by, _view.Camera.Position);
         Assert.Equal(new Vector3(5, 0, 5) - s_by, _models.Retired[0].Corner);
         Assert.Equal(new Vector3(0, -0.5f, 0) - s_by, _physics.Simulation.Statics[floor].Pose.Position);
         Assert.Equal(new Vector3(1, 1, 1) - s_by, _physics.Simulation.Bodies[ball].Pose.Position);

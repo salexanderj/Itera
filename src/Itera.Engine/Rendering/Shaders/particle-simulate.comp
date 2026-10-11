@@ -9,7 +9,9 @@
 // particle falls again where the image shows its support gone. Particles in view and within the view distance go on the
 // frame's list of cubes or of sprites, whose counts are the instance counts of the two indirect draws; a lit one among
 // them takes its sunlight from the shadow cascades and its sky light from the sky field (mesh-light.glsl, MeshPass's
-// set as set 1), eased halfway each frame so a particle crossing a shadow's edge does not flicker.
+// set as set 1), eased halfway each frame so a particle crossing a shadow's edge does not flicker. When the match's
+// origin has moved since the pool was last simulated, every particle made before this frame first moves by it the other
+// way (push.shift), so it stays where it is in the world.
 #define PARTICLE_WRITES
 #include "particle-constants.glsl"
 #include "particle-data.glsl"
@@ -138,6 +140,16 @@ void main()
     }
 
     Particle particle = particles[index];
+    // A particle made before this frame moves with the match's origin (push.shift, zero while it stays), so it stays where
+    // it is in the world; one made this frame is in the frame's origin already.
+    if ((particle.packed & PARTICLE_NEW) == 0u && any(notEqual(push.shift, vec3(0.0))))
+    {
+        particle.position -= push.shift;
+        particle.end -= push.shift;
+        particles[index].end = particle.end;
+    }
+
+    particle.packed &= ~PARTICLE_NEW;
     // Every particle is drawn in the frame it was made, however short its life: a beam lives one frame.
     float age = particle.age + push.delta;
     if (age >= particle.lifetime)

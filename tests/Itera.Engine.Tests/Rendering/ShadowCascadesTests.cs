@@ -1,5 +1,6 @@
 using System.Numerics;
 using Itera.Engine.Rendering;
+using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Tests.Rendering;
 
@@ -53,6 +54,35 @@ public sealed class ShadowCascadesTests
         var u = Vector3.Cross(r, forward);
         right = r * (TanHalf * Aspect);
         up = u * TanHalf;
+    }
+
+    /// <summary>
+    /// A fit local to an origin O, at the local place p, maps every point as a fit at p + O with the origin at the middle
+    /// maps it from p + O: the texels are snapped where they are in the world, so moving the origin moves none (the map's
+    /// coordinates to a thousandth of a texel).
+    /// </summary>
+    [Fact]
+    public void A_fit_local_to_a_moved_origin_maps_points_as_one_at_the_middle()
+    {
+        Camera(35, -20, out var f, out var r, out var u);
+        var sun = Sun(40, 120);
+        var origin = new VoxelCoord(30_000, -2_000, -51_200);
+        var by = new Vector3(300, -20, -512);
+        var p = new Vector3(3.7f, 6.1f, -2.4f);
+
+        var local = ShadowCascades.Fit(p, f, r, u, Near, Far, sun, Map, Caster, origin: origin);
+        var middle = ShadowCascades.Fit(p + by, f, r, u, Near, Far, sun, Map, Caster);
+
+        Assert.Equal(middle.TexelMetres, local.TexelMetres);
+        var random = new Random(5);
+        for (var i = 0; i < 100; i++)
+        {
+            var point = p + new Vector3(random.Next(-40, 40), random.Next(-10, 10), random.Next(-40, 40));
+            var a = Ndc(in local, point);
+            var b = Ndc(in middle, point + by);
+            // A thousandth of a texel across the map's -1 to 1.
+            Assert.True(Vector3.Distance(a, b) < 2e-3f / Map, $"At {point}: {a} local, {b} at the middle.");
+        }
     }
 
     private static CascadeFit Fit(Vector3 position, float yaw, float pitch, Vector3 sun)

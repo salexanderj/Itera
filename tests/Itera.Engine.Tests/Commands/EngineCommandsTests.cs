@@ -134,6 +134,7 @@ public sealed class EngineCommandsTests : IDisposable
             in atmosphere,
             100,
             shadows: false,
+            default,
             debugViews: _view.DebugViews
         );
         Assert.True(constants.Has(ViewSwitches.Levels));
@@ -156,6 +157,7 @@ public sealed class EngineCommandsTests : IDisposable
                     in atmosphere,
                     100,
                     shadows: false,
+                    default,
                     debugViews: _view.DebugViews
                 )
                 .Has(ViewSwitches.Plain)
@@ -194,6 +196,7 @@ public sealed class EngineCommandsTests : IDisposable
             in atmosphere,
             100,
             shadows: false,
+            default,
             debugViews: _view.DebugViews
         );
         Assert.True(constants.Has(ViewSwitches.MaterialsAll | ViewSwitches.Levels));

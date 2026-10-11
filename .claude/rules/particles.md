@@ -29,6 +29,14 @@ the culling, and the sprites' facing work through an orthographic camera too. Th
 that overwrites the oldest. Nothing comes back to the game and nothing is sent: each game makes its own particles. The console's
 `particles` tests recipes by name.
 
+The pool's particles are local to the match's origin and move with it: the render thread keeps the origin the pool was
+last simulated in (`ParticlePoolOrigin`), and the first frame that simulates in another (each frame's `ParticleWrite`
+carries its origin) gives the difference in `ParticleConstants.Shift`, which `particle-simulate.comp` takes off every
+particle made before that frame (its position and segment end; the spawn pass marks the frame's new ones,
+`PARTICLE_NEW`, already in the frame's origin). Frames that do not simulate (presented again, under the loading screen,
+none alive) leave the move pending, and an emptied pool takes the frame's origin. The queued bursts, attractors, and the
+stress test's place move on the CPU (`ParticleEmitter.Shift`, from `OriginShifts`).
+
 ### Files in `src/Itera.Engine`
 
   - `Particles/`: `ParticleEmitter`, `ParticleBurst`, `ParticleRecipe(s)`, `ParticleStats`, `ParticleColours`,

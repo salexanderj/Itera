@@ -228,6 +228,12 @@ public sealed class RenderView
     /// <summary>Sets the camera for the frame being built.</summary>
     public void SetCamera(in CameraView camera) => Camera = camera;
 
+    /// <summary>
+    /// The match's origin moved by <paramref name="metres"/>: the camera last set moves the other way, so what reads it
+    /// before the next frame sets it (the listener, the console's commands) has it in the new origin (<c>OriginShifts</c>).
+    /// </summary>
+    public void ShiftCamera(Vector3 metres) => Camera = Camera with { Position = Camera.Position - metres };
+
     /// <summary>Sets the sky, sunlight, and air for the frame being built; they stay until set again.</summary>
     public void SetAtmosphere(in Atmosphere atmosphere) => Atmosphere = atmosphere;
 

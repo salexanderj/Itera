@@ -17,13 +17,17 @@
 #define PARTICLE_MAX_RECIPES 128u
 #define PARTICLE_MAX_ATTRACTORS 64u
 
-// GpuParticle.Packed: the recipe, the attractor, the resting bit, the sky light, and the sunlight (bytes, 0 to 255).
+// GpuParticle.Packed: the recipe, the attractor, the resting bit, the new bit, the sky light, and the sunlight (bytes,
+// 0 to 255).
 #define PARTICLE_RECIPE_MASK 255u
 #define PARTICLE_ATTRACTOR_SHIFT 8u
 #define PARTICLE_ATTRACTOR_MASK 63u
 #define PARTICLE_RESTING 0x4000u
 #define PARTICLE_SKY_SHIFT 16u
 #define PARTICLE_SUN_SHIFT 24u
+// Made this frame, in the frame's origin already: the simulate pass moves every other particle by push.shift, then
+// clears the bit.
+#define PARTICLE_NEW 0x8000u
 
 // ParticleDraw, ParticleCollision, ParticleStretch, ParticleTraits, ParticleShape.
 #define PARTICLE_DRAW_CUBE 0u

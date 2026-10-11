@@ -114,20 +114,22 @@ Where tests live:
   a material packed with its set), `RenderLookTests` (the engine's look pinned to the shaders' former constants, every
   value copied and tunable), `SunPathTests` (daylight and night round the horizon, the test day, compass angles),
   `ViewConstantsTests` (the push constants against the shaders, the lens: a perspective near plane, an orthographic box
-  and its depth), `ShadowCascadesTests` (slices and orthographic boxes inside their cascades), `RenderViewTests` (the
+  and its depth), `ShadowCascadesTests` (slices and orthographic boxes inside their cascades, a fit local to a moved
+  origin mapping points as one at the middle), `RenderViewTests` (the
   frame's view: its atmosphere, and what a match's end puts back), `Meshes/` (`MeshPassTests`, `MeshAssetDrawsTests`
   (the asset lists, posed instances, and the blended list sorted back to front), `MeshViewTests` (the frame's frustum,
   cascades, and lights), `LevelBalanceTests`, `MeshColumnTests`, `WorldMeshesTests` over a draw target and staging in
-  memory: the seams' stitched meshes, a full heap, the edits' latency, an image view's lists over `FakeViewLists`),
+  memory: the seams' stitched meshes, a full heap, the edits' latency, an image view's lists over `FakeViewLists`, the
+  same blocks drawn local to a moved origin),
   `RenderViewsTests` (declaring, the cadence, panels), `Memory/GpuRangeHeapTests`, `GpuLayoutTests` (of
   `tests/Shared/GpuLayout`, also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`, `DeviceChoiceTests`,
   `RenderThreadTests` (a fake renderer), `RenderPassesTests` (a game's pass at every stage in `EngineComposition`, none
   made or written without graphics; too many, or names empty or used twice, refused), the passes' shaders against their
-  push constants (`UiPassTests`, `UpscalePassTests`, `LoadingPassTests`, `ParticlePassTests`), `ScreenshotTests`,
+  push constants (`UiPassTests`, `UpscalePassTests`, `LoadingPassTests`, `ParticlePassTests`, with the pool's origin), `ScreenshotTests`,
   `ShaderReloadTests`.
 - Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `LoopbackTests`, `SteamTransportTests`,
   `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests` (a temporary folder), `Navigation/`
-  (flow fields on small grids, the scanner, the service), `Audio/` (`AudioMixerTests`, `AudioServiceTests`,
+  (flow fields on small grids, the scanner, the service), `Audio/` (`AudioMixerTests` with the one-shots across a move of the origin, `AudioServiceTests`,
   `SynthesisTests`, `SoundCacheTests`), `Particles/`, `Commands/` (`MatchCommandsTests` too), `UI/` (`AimDotLayerTests`, `TextBlobsTests`,
   `DevConsoleTests`, `MenuLayerTests`, `MenuJoinPageTests`, `RadialMenuTests`, `TextLineTests`), `Input/`
   (`MenuInputTests`, `KeyBindingsTests`, `KeyboardFocusTests`, `InputInjectionTests`), `Settings/`, `Loading/`,

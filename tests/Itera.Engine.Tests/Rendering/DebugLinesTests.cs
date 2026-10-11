@@ -102,7 +102,8 @@ public sealed class DebugLinesTests : IDisposable
             Vector3.UnitY,
             Atmosphere.Clear(Vector3.One),
             100,
-            true
+            true,
+            default
         );
 
         // The point 7 m along the ray through image point (0.3, -0.6) (viewRay in view.glsl).

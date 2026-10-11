@@ -756,8 +756,13 @@ and compares runs from the log lines, which keep their form.
   A walk with the origin following the player every 100 steps matches one without within a millimetre over 45 m (the
   one without rounds its feet to floats 30 to 40 m out, losing about a micrometre a step), and balls at rest settle
   into the same voxels. Moving it with 384 balls and their voxel statics took 0.6 ms in a Debug test on a busy machine
-  (12 ms the first time, mostly compiling). Until the origin follows the camera on its own (open work), the local
-  floats are as precise as a map's middle allows: about 0.1 mm at 707 m.
+  (12 ms the first time, mostly compiling). The renderer draws everything local to it and takes it back only for what
+  is drawn by place (the surfaces' noise, strata, tint, and texture tiles), choosing and ordering the world's columns
+  from the view's absolute place and snapping the shadow maps' texels in absolute terms; the particles' GPU pool and
+  the sounds playing move with it (`.claude/rules/rendering.md`, "Under a moved origin"). Pictures of the starter's
+  start, far, high, and down views before and after the console's `origin move 300 0 -200` differed in 7 to 15 of
+  921,600 pixels, each on a silhouette's edge (2026-10-10); resting debris kept its place. Until the origin follows the
+  camera on its own (open work), the local floats are as precise as a map's middle allows: about 0.1 mm at 707 m.
 - **Positions in metres use `System.Numerics`** (`Vector3`, `Matrix4x4`, `Quaternion`), which Bepu takes directly.
   `Silk.NET.Maths` stays at the edges of Silk.NET APIs (window and swapchain sizes).
 - **Anything every peer must compute alike** uses `DeterministicMath` (below), never `System.Random` or platform maths.
@@ -1457,9 +1462,8 @@ Engine work that is known and not done:
   15, 0.40 ms at 5; their longer reach adds 0.01 to 0.03 ms of that); at night they cost 0.015 ms.
 - **Large maps** (under way): built, a map's size set in its generator's grid (up to ±160 km and 128 layers), voxels of
   1 cm to 1 m, positions kept local to a match's origin with absolute types (`WorldPoint`, `VoxelCoord`) wherever
-  they cross it, and moves of the origin on the CPU (`OriginShifts`). Not built: the renderer, the particles' GPU pool,
-  and the sound under a moved origin, the origin following the camera on its own (with a warm-up of its first move),
-  views past 2 km, a nav grid that moves
+  they cross it, and moves of the origin (`OriginShifts`; the renderer, particles, and sound follow them). Not built:
+  the origin following the camera on its own (with a warm-up of its first move), views past 2 km, a nav grid that moves
   with the players (it covers a game's area and keeps heights within ±327.67 m), and columns that hold only the layers
   with ground or edits, so a map's height costs memory only where something is.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no

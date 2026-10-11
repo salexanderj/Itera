@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Meshing;
 using Itera.Engine.Rendering.Meshes;
 using Itera.Engine.Voxels;
@@ -34,24 +35,30 @@ public sealed class MeshColumnTests
         var order = new int[column.Blocks.Length];
         var distances = new float[column.Blocks.Length];
 
-        var count = column.DirtyNearestFirst(s_grid, view, order, distances);
+        var at = new WorldPoint(view.X, view.Y, view.Z);
+        var count = column.DirtyNearestFirst(s_grid, at, order, distances);
 
         var expected = column.Blocks.Count(block => block.Dirty && !block.InFlight);
         Assert.Equal(expected, count);
         Assert.Equal(target, order[0]);
-        var last = 0f;
+        // In absolute metres, in doubles, as the column measures them.
+        var block = SurfaceNets.BlockSize * s_grid.Edge(0) / 100.0;
+        var last = 0.0;
         for (var k = 0; k < count; k++)
         {
-            ref readonly var block = ref column.Blocks[order[k]];
-            Assert.True(block.Dirty && !block.InFlight);
+            ref readonly var entry = ref column.Blocks[order[k]];
+            Assert.True(entry.Dirty && !entry.InFlight);
             var (x, y, z) = column.BlockAt(order[k]);
-            var distance = Vector3.DistanceSquared((new Vector3(x, y, z) + new Vector3(0.5f)) * blockMetres, view);
-            Assert.True(distance >= last);
+            double dx = (x + 0.5) * block - at.X,
+                dy = (y + 0.5) * block - at.Y,
+                dz = (z + 0.5) * block - at.Z;
+            var distance = dx * dx + dy * dy + dz * dz;
+            Assert.True(distance >= last - 1e-9, $"Block {k} at {distance}, the one before at {last}.");
             last = distance;
         }
 
         var start = SystemAllocation.StartMeasurement();
-        column.DirtyNearestFirst(s_grid, view, order, distances);
+        column.DirtyNearestFirst(s_grid, at, order, distances);
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - start);
     }
 

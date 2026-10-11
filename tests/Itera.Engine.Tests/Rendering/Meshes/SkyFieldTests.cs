@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering.Meshes;
 using Itera.Engine.Tests.Voxels;
 using Itera.Engine.Voxels;
@@ -90,7 +91,7 @@ public sealed class SkyFieldTests
         using var world = TestWorlds.Load(new SlopeGenerator(), new Vector3(0, 2.5f, 0), radiusMetres: 4, levels: 2);
         var field = new SkyField();
 
-        field.Read(world, new Vector3(0, 2.5f, 0), coarsestLevel: 1);
+        field.Read(world, new WorldPoint(0, 2.5, 0), coarsestLevel: 1);
         field.Flood();
 
         var cell = SkyField.CellMetresFor(VoxelGrid.Unit);
@@ -112,12 +113,13 @@ public sealed class SkyFieldTests
     {
         var centre = new Vector3(0, 2.5f, 0);
         using var world = TestWorlds.Load(new SlopeGenerator(), centre, radiusMetres: 4, levels: 2);
+        var at = new WorldPoint(0, 2.5, 0);
         var whole = new SkyField();
-        whole.Read(world, centre, coarsestLevel: 1);
+        whole.Read(world, at, coarsestLevel: 1);
         whole.Flood();
 
         var spread = new SkyField();
-        spread.BeginRead(world, centre, coarsestLevel: 1);
+        spread.BeginRead(world, at, coarsestLevel: 1);
         var calls = 1;
         while (!spread.ContinueRead(world, untilTicks: 0))
         {
@@ -150,12 +152,16 @@ public sealed class SkyFieldTests
         var level = levels - 1;
         var stride = 1 << (SkyField.LevelFor(VoxelGrid.Unit) - level);
 
-        field.Read(world, loaded + new Vector3(60, 0, 0), coarsestLevel: level);
+        field.Read(world, new WorldPoint(60, 2.5, 0), coarsestLevel: level);
 
         var resident = new List<ColumnKey>();
         world.CollectResidentColumns(resident);
         var columns = resident.Where(key => key.Level == level).ToHashSet();
-        var corner = field.Corner / field.CellMetres;
+        var corner = new Vector3(
+            (float)(field.Corner.X / field.CellMetres),
+            (float)(field.Corner.Y / field.CellMetres),
+            (float)(field.Corner.Z / field.CellMetres)
+        );
         var (x0, y0, z0) = (
             (int)MathF.Round(corner.X) * stride,
             (int)MathF.Round(corner.Y) * stride,
@@ -213,11 +219,12 @@ public sealed class SkyFieldTests
     {
         var centre = new Vector3(0, 2.5f, 0);
         using var world = TestWorlds.Load(new SlopeGenerator(), centre, radiusMetres: 4, levels: 2);
+        var at = new WorldPoint(0, 2.5, 0);
         var field = new SkyField();
-        field.Read(world, centre, coarsestLevel: 1);
+        field.Read(world, at, coarsestLevel: 1);
 
         var before = SystemAllocation.StartMeasurement();
-        field.BeginRead(world, centre, coarsestLevel: 1);
+        field.BeginRead(world, at, coarsestLevel: 1);
         while (!field.ContinueRead(world, untilTicks: 0)) { }
 
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);

@@ -1,6 +1,7 @@
 using System.Numerics;
 using Itera.Engine.Rendering.Materials;
 using Itera.Engine.Rendering.Voxels;
+using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Rendering.GpuData;
 
@@ -46,6 +47,40 @@ public struct MeshMaterial
     /// its normal map and occlusion (0 to 1), and the blur in mip levels (0 to 4, a quarter of the byte's range a level).
     /// </summary>
     public uint TextureStyle;
+
+    /// <summary>
+    /// The match's origin's place within the material's texture tile, in metres on each axis: the origin modulo the
+    /// tile's width (<see cref="TextureMetres"/>, or <see cref="AllMaterialsTileMetres"/> for a material without a set),
+    /// worked out in doubles for the frame's origin (<see cref="TilePhase"/>, <c>WorldMeshes</c>), so mesh-surface.glsl's
+    /// <c>tilePoint</c> finds the same place in the tile far from the map's middle; zero at the middle.
+    /// </summary>
+    public Vector3 TileOrigin;
+
+    /// <summary>
+    /// The tile's width, in metres, that the console's <c>materials all</c> draws a material without a set with (mesh.frag's
+    /// <c>drawnTexture</c>).
+    /// </summary>
+    public const float AllMaterialsTileMetres = 3;
+
+    /// <summary>
+    /// The place of <paramref name="origin"/> (absolute centimetres) within a tile <paramref name="tileMetres"/> wide on
+    /// each axis, 0 to the width, in doubles.
+    /// </summary>
+    public static Vector3 TilePhase(VoxelCoord origin, double tileMetres)
+    {
+        if (!(tileMetres > 0))
+        {
+            return Vector3.Zero;
+        }
+
+        return new Vector3(Phase(origin.X), Phase(origin.Y), Phase(origin.Z));
+
+        float Phase(int centimetres)
+        {
+            var metres = centimetres / (double)VoxelConstants.CentimetresPerMetre;
+            return (float)(metres - Math.Floor(metres / tileMetres) * tileMetres);
+        }
+    }
 
     /// <summary>The <see cref="Texture"/> bit of a set in the large arrays.</summary>
     public const uint LargeTextureBit = 1 << 16;

@@ -78,7 +78,19 @@ public sealed class RenderLookTests
         var atmosphere = new Atmosphere(new Vector3(0.5f, 0.6f, 0.8f), new Vector3(1, 0.9f, 0.7f), 0.4f, 0.6f, 0.2f);
         var camera = CameraView.Default;
         var sun = Vector3.Normalize(new Vector3(0.3f, 0.6f, 0.2f));
-        var view = ViewConstants.Create(in camera, 640, 480, 1, sun, in atmosphere, 256, true, 1, ViewSwitches.None);
+        var view = ViewConstants.Create(
+            in camera,
+            640,
+            480,
+            1,
+            sun,
+            in atmosphere,
+            256,
+            true,
+            default,
+            1,
+            ViewSwitches.None
+        );
         var haze = MathF.Round(0.4f * 255) / 255;
         var overcast = MathF.Round(0.6f * 255) / 255;
         var grade = MathF.Round(0.2f * 255) / 255;
@@ -146,7 +158,19 @@ public sealed class RenderLookTests
             )
         );
         // Under the horizon the sun throws no light back from the ground.
-        var below = ViewConstants.Create(in camera, 640, 480, 1, -sun, in atmosphere, 256, true, 1, ViewSwitches.None);
+        var below = ViewConstants.Create(
+            in camera,
+            640,
+            480,
+            1,
+            -sun,
+            in atmosphere,
+            256,
+            true,
+            default,
+            1,
+            ViewSwitches.None
+        );
         Assert.Equal(look.GroundLight, LookConstants.From(in look, in below).GroundLight);
     }
 

@@ -473,6 +473,23 @@ declarations are not sealed, no view is drawn, and no pass is made. `Declare`, `
 for a game's tests: the loop with `Mode=None` and `HeadlessMatch.Frame` forget each frame's asks and panels before the
 frame systems, as with graphics (no UI is drawn there to call `Show`).
 
+### Under a moved origin
+
+Everything the renderer draws is local to the match's origin (`WorldOrigin`, CLAUDE.md's Units), as the camera is; the
+frame's view constants carry the origin in absolute centimetres (`ViewConstants.OriginX` to `OriginZ`, `viewOrigin` in
+view.glsl), set by `GameLoop` from the match's (zero without one) and by `RenderViewPass` for each image view; the
+camera a frame system last set (`RenderView.Camera`) moves with the origin, for what reads it before the next frame. What is
+drawn by its place in the world takes the origin back: `mesh.frag`'s whole centimetres (the surfaces' noise and strata)
+are the local ones plus it, the tint map is read from those (`meshTintAt(whole, part)`, its corner taken off in
+integers), and the texture sets' tiles take the origin's remainder by the tile's width in integers (`tilePoint`). On
+the CPU, `WorldMeshes` writes each block's corner local (`(block * blockCm - originCm) / 100` in doubles), chooses,
+orders, and frees columns from the view's absolute place (a `WorldPoint`: `_wantedAt` and `_orderedAt` are absolute, so
+a move of the origin starts no sort or remeshing), keeps the sky field's box absolute (`SkyField.Corner` and `Centre`)
+and writes its corner local each frame, and the shadow cascades snap their texels in absolute terms
+(`ShadowCascades.Fit`'s origin), so a move of the origin changes no texel. The console's run-only `origin move` checks
+it (ARCHITECTURE.md has the result). The particles and the
+sound follow the origin too (`.claude/rules/particles.md`, `.claude/rules/audio.md`).
+
 ### Files in `src/Itera.Engine`
 
   - `Rendering/`: Vulkan bootstrap (`VulkanContext`, `DeviceRequirements`), the frame (`FrameRenderer`, `RenderThread`,
@@ -500,9 +517,10 @@ frame systems, as with graphics (no UI is drawn there to call `Show`).
   `Game/` of the shader tree is the game's (`ShaderCompiler.GameFolder`); the engine's shaders use no folder of that name.
 
 - Structs that shaders read use GLSL `layout(scalar)` and have a `GpuLayout` test. Matrices go to
-  the GPU unchanged and are used as `M * v` in GLSL. The view's push constants (`ViewConstants`) are 116 of the 128 bytes
-  the spec guarantees; its on/off switches share one word's bits (`ViewSwitches`, `viewSwitch` in view.glsl, which
-  `ViewConstantsTests` checks), so a new switch takes a bit there. Details in the `ecs-vulkan` skill.
+  the GPU unchanged and are used as `M * v` in GLSL. The view's push constants (`ViewConstants`) are all 128 bytes the
+  spec guarantees (the last three ints the match's origin, `viewOrigin` in view.glsl); its on/off switches share one
+  word's bits (`ViewSwitches`, `viewSwitch` in view.glsl, which `ViewConstantsTests` checks), so a new switch takes a bit
+  there, and a new value goes to a per-slot record as the look's does. Details in the `ecs-vulkan` skill.
 
 ### Package notes
 

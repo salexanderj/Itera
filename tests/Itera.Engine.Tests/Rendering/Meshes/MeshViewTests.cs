@@ -165,7 +165,7 @@ public sealed class MeshViewTests
         for (var hours = 0f; hours <= 24; hours += 0.1f)
         {
             var sun = SunPath.AtHour(hours);
-            var constants = ViewConstants.Create(in camera, 640, 480, 0, sun, in atmosphere, 100, true);
+            var constants = ViewConstants.Create(in camera, 640, 480, 0, sun, in atmosphere, 100, true, default);
 
             view.Begin(0, in constants);
 

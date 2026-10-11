@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Meshing;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Voxels;
@@ -249,14 +250,14 @@ public sealed unsafe partial class WorldMeshes
     private bool IsNear(ColumnKey key)
     {
         var reach = _distances.ReachCentimetres(key.Level - 1) * _cutShare;
-        return NearestSquared(key, _view.Position) < reach * reach;
+        return NearestSquared(key, in _viewAt) < reach * reach;
     }
 
     /// <summary>
     /// The squared horizontal distance from <paramref name="at"/> to the nearest point of the column, in centimetres:
     /// 0 inside it. A coarse column is tens of metres across, so its centre says little about how near it comes.
     /// </summary>
-    private double NearestSquared(ColumnKey key, Vector3 at)
+    private double NearestSquared(ColumnKey key, in WorldPoint at)
     {
         double half = _grid.ColumnCentimetres(key.Level) / 2;
         var dx = Math.Max(
@@ -268,6 +269,20 @@ public sealed unsafe partial class WorldMeshes
             Math.Abs(_grid.ToCentimetres(key.CentreVoxelZ) - at.Z * VoxelConstants.CentimetresPerMetre) - half
         );
         return dx * dx + dz * dz;
+    }
+
+    /// <summary>
+    /// The corner of block (x, y, z), blocks <paramref name="blockCentimetres"/> across, local to the frame's origin in
+    /// metres: worked out in doubles from whole centimetres, so a block far from the map's middle is drawn where it is.
+    /// </summary>
+    private Vector3 LocalCorner(int x, int y, int z, long blockCentimetres)
+    {
+        const double perMetre = VoxelConstants.CentimetresPerMetre;
+        return new Vector3(
+            (float)((x * blockCentimetres - _origin.X) / perMetre),
+            (float)((y * blockCentimetres - _origin.Y) / perMetre),
+            (float)((z * blockCentimetres - _origin.Z) / perMetre)
+        );
     }
 
     /// <summary>
@@ -311,11 +326,12 @@ public sealed unsafe partial class WorldMeshes
         var level = column.Key.Level;
         var voxelMetres = _grid.EdgeMetres(level);
         var blockMetres = SurfaceNets.BlockSize * voxelMetres;
+        var blockCentimetres = (long)SurfaceNets.BlockSize * _grid.Edge(level);
         foreach (var index in column.Drawn)
         {
             ref readonly var block = ref column.Blocks[index];
             var (x, y, z) = column.BlockAt(index);
-            var origin = new Vector3(x, y, z) * blockMetres;
+            var origin = LocalCorner(x, y, z, blockCentimetres);
             if (!_farPass)
             {
                 OfferLight(in block, origin, voxelMetres);

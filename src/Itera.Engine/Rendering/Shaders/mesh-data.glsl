@@ -35,6 +35,8 @@ struct MeshMaterial
     float textureMetres;
     uint texture;
     uint textureStyle;
+    // The match's origin's place within the material's texture tile, metres on each axis (tilePoint).
+    vec3 tileOrigin;
 };
 
 // MeshMaterial.texture: the set's layer plus 1 in bits 0 to 15 (0: the recipe), the large arrays' bit, and the colour
@@ -300,9 +302,10 @@ float meshTintTexel(ivec2 texel, int size)
     return float((tintMap[MESH_TINT_HEADER_WORDS + index / 4u] >> (8u * (index & 3u))) & 0xFFu) / 255.0;
 }
 
-// The tint map at world point world (metres), blended between the centres of the four texels around it; 0 without a
-// map. The same as VoxelTintSampler.At on the CPU.
-float meshTintAt(vec3 world)
+// The tint map at the point whole + part (whole absolute centimetres and the fraction within one), blended between the
+// centres of the four texels around it; 0 without a map. The map's corner is taken off in integers first, so the point
+// keeps its fraction far from the map's middle. The same as VoxelTintSampler.At on the CPU.
+float meshTintAt(ivec3 whole, vec3 part)
 {
     int size = int(tintMap[0]);
     if (size == 0)
@@ -310,8 +313,8 @@ float meshTintAt(vec3 world)
         return 0.0;
     }
 
-    vec2 corner = vec2(int(tintMap[2]), int(tintMap[3]));
-    vec2 p = (world.xz * CentimetresPerMetre - corner) / float(1 << int(tintMap[1])) - 0.5;
+    ivec2 corner = ivec2(int(tintMap[2]), int(tintMap[3]));
+    vec2 p = (vec2(whole.xz - corner) + part.xz) / float(1 << int(tintMap[1])) - 0.5;
     ivec2 texel = ivec2(floor(p));
     vec2 f = p - vec2(texel);
     float near = mix(meshTintTexel(texel, size), meshTintTexel(texel + ivec2(1, 0), size), f.x);

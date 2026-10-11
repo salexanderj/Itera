@@ -110,7 +110,7 @@ void main()
     particle.age = 0.0;
     particle.velocity = direction * speed + burst.velocity;
     particle.lifetime = lifetime;
-    particle.packed = (burst.packed & PARTICLE_RECIPE_MASK) | attractor << PARTICLE_ATTRACTOR_SHIFT
+    particle.packed = (burst.packed & PARTICLE_RECIPE_MASK) | attractor << PARTICLE_ATTRACTOR_SHIFT | PARTICLE_NEW
         | 255u << PARTICLE_SKY_SHIFT | 255u << PARTICLE_SUN_SHIFT;
     particle.colour = packUnorm4x8(vec4(clamp(tint.rgb * shade, 0.0, 1.0), tint.a));
     particle.seed = seed;

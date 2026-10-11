@@ -9,6 +9,7 @@ using Itera.Engine.Rendering.Shaders;
 using Itera.Engine.Settings;
 using Itera.Engine.UI;
 using Itera.Engine.Windowing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Itera.Engine.Commands;
 
@@ -16,7 +17,7 @@ namespace Itera.Engine.Commands;
 /// The engine's console commands, all <see cref="CommandScope.Local"/>: <c>help</c>, <c>clear</c>, <c>lines</c>,
 /// <c>shadows</c>, <c>scale</c> (the render scale), <c>aa</c>, <c>lights</c> (test lights), <c>view</c> (the debug views),
 /// <c>materials</c>, <c>look</c> (the look's values), <c>sun</c> and <c>time</c> (the run's sun), <c>lens</c> (the run's
-/// camera lens), <c>stats</c> (its key,
+/// camera lens), <c>origin</c> (the match's origin, and a move of it), <c>stats</c> (its key,
 /// F1 by default),
 /// <c>screenshot</c>, <c>wait</c> (holds a script: <see cref="DevConsole.Hold"/>), <c>shaders</c>, and <c>quit</c>. A setting given no value prints what it is. <c>shadows</c>
 /// changes the player's settings (<see cref="PlayerSettings"/>), as the menu does, so the next change of another
@@ -118,6 +119,13 @@ public sealed class EngineCommands
             "Point lights for this run: test scatters N warm lights round the camera for ten minutes (the light budget keeps the brightest); clear takes every light's flash away.",
             CommandScope.Local,
             Lights
+        );
+        _commands.Register(
+            "origin",
+            "[move DX DY DZ]",
+            "The match's origin, which this game's positions are measured from (whole metres): with no argument prints it and the camera's place from it and in the world; move moves it by DX DY DZ whole metres for this run, and everything kept in positions with it, so nothing in the world moves.",
+            CommandScope.Local,
+            Origin
         );
         _commands.Register(
             "view",
@@ -366,6 +374,55 @@ public sealed class EngineCommands
         }
 
         context.Print("lines " + CommandContext.OnOff(_lines.Enabled));
+    }
+
+    private void Origin(CommandContext context)
+    {
+        var shifts = _matches is { Phase: MatchPhase.Loading or MatchPhase.Playing, Current: { } match }
+            ? match.Services.GetService<OriginShifts>()
+            : null;
+        if (shifts is null)
+        {
+            context.PrintError("origin: no match.");
+            return;
+        }
+
+        if (context.Count == 0)
+        {
+            var camera = _view.Camera.Position;
+            var world = shifts.Origin.ToWorld(camera);
+            context.Print(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"origin {shifts.Origin.Metres} m; the camera {camera.X:F2},{camera.Y:F2},{camera.Z:F2} from it, {world} in the world"
+                )
+            );
+            return;
+        }
+
+        if (
+            context.Count != 4
+            || !context.Is(0, "move")
+            || !context.TryGetDouble(1, out var x)
+            || !context.TryGetDouble(2, out var y)
+            || !context.TryGetDouble(3, out var z)
+        )
+        {
+            context.PrintUsage();
+            return;
+        }
+
+        try
+        {
+            shifts.ShiftTo(shifts.Origin.Metres.Plus(x, y, z));
+        }
+        catch (ArgumentException exception)
+        {
+            context.PrintError("origin: " + exception.Message);
+            return;
+        }
+
+        context.Print(string.Create(CultureInfo.InvariantCulture, $"origin {shifts.Origin.Metres} m"));
     }
 
     private void Lights(CommandContext context)

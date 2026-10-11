@@ -99,9 +99,19 @@ public sealed class SunPathTests
     {
         var camera = CameraView.Default;
         var atmosphere = Atmosphere.Clear(new Vector3(0.5f, 0.6f, 0.8f));
-        var night = ViewConstants.Create(in camera, 640, 480, 0, SunPath.AtHour(22), in atmosphere, 100, true);
-        var dusk = ViewConstants.Create(in camera, 640, 480, 0, SunPath.FromAngles(200, 0), in atmosphere, 100, true);
-        var day = ViewConstants.Create(in camera, 640, 480, 0, SunPath.AtHour(12), in atmosphere, 100, true);
+        var night = ViewConstants.Create(in camera, 640, 480, 0, SunPath.AtHour(22), in atmosphere, 100, true, default);
+        var dusk = ViewConstants.Create(
+            in camera,
+            640,
+            480,
+            0,
+            SunPath.FromAngles(200, 0),
+            in atmosphere,
+            100,
+            true,
+            default
+        );
+        var day = ViewConstants.Create(in camera, 640, 480, 0, SunPath.AtHour(12), in atmosphere, 100, true, default);
 
         Assert.False(night.Has(ViewSwitches.Shadows));
         Assert.True(dusk.Has(ViewSwitches.Shadows));

@@ -35,7 +35,7 @@ public sealed class AudioExchangeTests
         _exchange.Post([], [new SoundLoop { Key = 1 }, new SoundLoop { Key = 2 }], ListenerPose.Default, 1, true);
         _exchange.Post([], [new SoundLoop { Key = 3 }], in listener, 0.5f, false);
 
-        _exchange.Take(_events, out _, _loops, out var loops, out var taken, out var volume, out var enabled);
+        _exchange.Take(_events, out _, _loops, out var loops, out var taken, out var volume, out var enabled, out _);
         Assert.Equal(1, loops);
         Assert.Equal(3, _loops[0].Key);
         Assert.Equal(listener, taken);
@@ -54,7 +54,7 @@ public sealed class AudioExchangeTests
 
     private (int Events, int Loops) Take()
     {
-        _exchange.Take(_events, out var events, _loops, out var loops, out _, out _, out _);
+        _exchange.Take(_events, out var events, _loops, out var loops, out _, out _, out _, out _);
         return (events, loops);
     }
 }

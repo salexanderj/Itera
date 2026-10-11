@@ -52,11 +52,14 @@ nearest the point (within the edit format's ±167.77 km) and moves everything ke
 nothing moves in the world: Bepu's bodies and statics (`PhysicsWorld.Shift`), the engine's components
 (`OriginShifts.ShiftedComponents`: the camera's, the characters' feet now and before, a climber's target, mesh
 placements and loose bodies' poses now and before), the world's streaming centres, the retired models, the point
-lights' flashes, the particles' queued bursts, attractors, and stress place, and then the game's
+lights' flashes, the particles' queued bursts, attractors, and stress place, the sounds queued, held, waiting, and
+playing, the frame view's camera (`RenderView.Camera`, which the listener and some commands read before the next frame
+sets it), and then the game's
 `IOriginShiftHandler`s in their registration order (the starter's `FoxRouteShift`). It moves only between steps and
 frames, or in the first fixed system's update (`EcsWorld.OriginMayMove`; a move asked anywhere else throws, and asking
 for the place it is at returns false wherever it is asked), so every system of a step or a frame sees one origin; it allocates nothing but its Debug line. A position far from the new origin rounds to its
-floats there. Mods are not told. Nothing moves it on its own and no command does yet: only tests call it, and the
-renderer, the particles' GPU pool, and the sound do not follow it yet (ARCHITECTURE.md's open work).
+floats there. Mods are not told. Nothing moves it on its own yet (ARCHITECTURE.md's open work): tests and the
+console's run-only `origin move DX DY DZ` (`EngineCommands`, with `origin` printing it and the camera's place) do. The
+renderer, the particles' GPU pool, and the sound follow it (`.claude/rules/rendering.md`, "Under a moved origin").
 
 The other folders are in their areas' files in `.claude/rules/`.

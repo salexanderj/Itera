@@ -1,8 +1,10 @@
+using System.Numerics;
 using Itera.Engine.Particles;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Rendering.Memory;
 using Itera.Engine.Rendering.Pipelines;
 using Itera.Engine.Rendering.Shaders;
+using Itera.Engine.Voxels;
 using Itera.Modding;
 using Microsoft.Extensions.Logging;
 using Silk.NET.Vulkan;
@@ -19,7 +21,43 @@ namespace Itera.Engine.Rendering;
 /// True when the emitter was cleared (<see cref="ParticleFrame.Clear"/>): the pool is emptied before the next particles
 /// are made.
 /// </param>
-public readonly record struct ParticleWrite(ParticleConstants Constants, bool Active, bool Clear = false);
+/// <param name="Origin">The frame's origin in absolute centimetres, which its bursts and attractors are local to.</param>
+public readonly record struct ParticleWrite(
+    ParticleConstants Constants,
+    bool Active,
+    bool Clear = false,
+    VoxelCoord Origin = default
+);
+
+/// <summary>
+/// Where the particle pool's positions are measured from: the origin of the last frame that simulated them (render
+/// thread). A frame that simulates in another origin moves every particle made before it by the difference
+/// (<see cref="ParticleConstants.Shift"/>); frames that do not simulate (presented again, under the loading screen, or
+/// with no particle alive) leave it, so the next one that does takes the whole move. An emptied pool takes the frame's.
+/// </summary>
+internal sealed class ParticlePoolOrigin
+{
+    private VoxelCoord _origin;
+
+    /// <summary>The pool was emptied in a frame of <paramref name="frame"/>'s origin: nothing in it to move.</summary>
+    public void Emptied(VoxelCoord frame) => _origin = frame;
+
+    /// <summary>
+    /// A frame of <paramref name="frame"/>'s origin simulates the pool: how far the particles made before it move, in
+    /// metres (to take off), after which the pool is in its origin.
+    /// </summary>
+    public Vector3 Simulated(VoxelCoord frame)
+    {
+        const double perMetre = VoxelConstants.CentimetresPerMetre;
+        var shift = new Vector3(
+            (float)(((double)frame.X - _origin.X) / perMetre),
+            (float)(((double)frame.Y - _origin.Y) / perMetre),
+            (float)(((double)frame.Z - _origin.Z) / perMetre)
+        );
+        _origin = frame;
+        return shift;
+    }
+}
 
 /// <summary>
 /// The particles on the GPU (they move and meet the world on the GPU, and the game only
@@ -100,6 +138,7 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
     private Pipeline _spritePipeline;
     private Format _format;
     private bool _poolCleared;
+    private readonly ParticlePoolOrigin _poolOrigin = new();
     private double _nextStatsLine = StatsLineSeconds;
     private bool _disposed;
 
@@ -247,7 +286,7 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
         var frame = _emitter.Drain(bursts, time.TotalSeconds);
         if (!frame.Active)
         {
-            return new ParticleWrite(default, false, frame.Clear);
+            return new ParticleWrite(default, false, frame.Clear, view.Origin);
         }
 
         if (time.TotalSeconds >= _nextStatsLine)
@@ -298,7 +337,7 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
             Far = view.Far,
             Orthographic = view.Orthographic ? 1u : 0u,
         };
-        return new ParticleWrite(constants, true, frame.Clear);
+        return new ParticleWrite(constants, true, frame.Clear, view.Origin);
     }
 
     /// <summary>
@@ -386,7 +425,11 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
             // Every slot starts free (lifetime 0), and again after the emitter was cleared.
             vk.CmdFillBuffer(commandBuffer, Pool.Buffer, 0, Vk.WholeSize, 0);
             _poolCleared = true;
+            _poolOrigin.Emptied(write.Origin);
         }
+
+        // The particles made before this frame move with the origin, if it moved since they last did.
+        constants.Shift = _poolOrigin.Simulated(write.Origin);
 
         var start = ParticleCounters.Start;
         vk.CmdUpdateBuffer(commandBuffer, Counters.Buffer, 0, (ulong)sizeof(ParticleCounters), &start);

@@ -79,7 +79,7 @@ public sealed class ViewConstantsTests(CompiledShaders compiler) : IClassFixture
 
         var atmosphere = new Atmosphere(new Vector3(0.5f, 0.6f, 0.7f), new Vector3(0.9f, 0.4f, 0.3f), 0.2f, 1f, 0.6f);
 
-        var view = ViewConstants.Create(in camera, 1920, 1080, 1, Vector3.UnitY, in atmosphere, 17.28f, true);
+        var view = ViewConstants.Create(in camera, 1920, 1080, 1, Vector3.UnitY, in atmosphere, 17.28f, true, default);
 
         // Default orientation looks along -Z. A 90 degree field of view puts the top edge at 45 degrees up.
         Assert.Equal(-Vector3.UnitZ, view.Forward);
@@ -100,7 +100,17 @@ public sealed class ViewConstantsTests(CompiledShaders compiler) : IClassFixture
     {
         var atmosphere = Atmosphere.Clear(Vector3.One);
 
-        var full = ViewConstants.Create(CameraView.Default, 2560, 1440, 0, Vector3.UnitY, in atmosphere, 10, true);
+        var full = ViewConstants.Create(
+            CameraView.Default,
+            2560,
+            1440,
+            0,
+            Vector3.UnitY,
+            in atmosphere,
+            10,
+            true,
+            default
+        );
         var scaled = ViewConstants.Create(
             CameraView.Default,
             2560,
@@ -110,6 +120,7 @@ public sealed class ViewConstantsTests(CompiledShaders compiler) : IClassFixture
             in atmosphere,
             10,
             false,
+            default,
             0.67f
         );
 
@@ -134,7 +145,8 @@ public sealed class ViewConstantsTests(CompiledShaders compiler) : IClassFixture
             Vector3.UnitY,
             Atmosphere.Clear(Vector3.One),
             256,
-            true
+            true,
+            default
         );
 
         Assert.False(view.Orthographic);
@@ -166,7 +178,8 @@ public sealed class ViewConstantsTests(CompiledShaders compiler) : IClassFixture
             Vector3.UnitY,
             Atmosphere.Clear(Vector3.One),
             256,
-            true
+            true,
+            default
         );
 
         Assert.True(view.Orthographic);
@@ -200,9 +213,9 @@ public sealed class ViewConstantsTests(CompiledShaders compiler) : IClassFixture
         };
         var inverted = orthographic with { HeightMetres = 10, NearMetres = 10, FarMetres = 5 };
 
-        var near = ViewConstants.Create(in perspective, 100, 100, 0, Vector3.UnitY, in air, 256, false);
-        var box = ViewConstants.Create(in orthographic, 100, 100, 0, Vector3.UnitY, in air, 256, false);
-        var turned = ViewConstants.Create(in inverted, 100, 100, 0, Vector3.UnitY, in air, 256, false);
+        var near = ViewConstants.Create(in perspective, 100, 100, 0, Vector3.UnitY, in air, 256, false, default);
+        var box = ViewConstants.Create(in orthographic, 100, 100, 0, Vector3.UnitY, in air, 256, false, default);
+        var turned = ViewConstants.Create(in inverted, 100, 100, 0, Vector3.UnitY, in air, 256, false, default);
 
         Assert.Equal(ViewConstants.DefaultNearMetres, near.Near);
         Assert.Equal(0.5f, box.Up.Length(), 5);
@@ -216,7 +229,7 @@ public sealed class ViewConstantsTests(CompiledShaders compiler) : IClassFixture
             NearMetres = 3e9f,
             FarMetres = float.NaN,
         };
-        var bounded = ViewConstants.Create(in huge, 100, 100, 0, Vector3.UnitY, in air, 256, false);
+        var bounded = ViewConstants.Create(in huge, 100, 100, 0, Vector3.UnitY, in air, 256, false, default);
         Assert.Equal(ViewConstants.MostLensMetres / 2, bounded.Up.Length(), 0);
         Assert.Equal((ViewConstants.MostLensMetres - 1, ViewConstants.MostLensMetres), (bounded.Near, bounded.Far));
         Assert.True(float.IsFinite(bounded.Clip(Vector3.Zero).Z));
@@ -235,7 +248,8 @@ public sealed class ViewConstantsTests(CompiledShaders compiler) : IClassFixture
                 Vector3.UnitY,
                 in air,
                 256,
-                false
+                false,
+                default
             );
             Assert.Equal(1f, wide.Up.Length(), 5);
         }
@@ -324,7 +338,7 @@ public sealed class ViewConstantsTests(CompiledShaders compiler) : IClassFixture
 
         var atmosphere = Atmosphere.Clear(Vector3.One);
 
-        var view = ViewConstants.Create(in camera, 100, 100, 0, Vector3.UnitY, in atmosphere, 10, false);
+        var view = ViewConstants.Create(in camera, 100, 100, 0, Vector3.UnitY, in atmosphere, 10, false, default);
 
         AssertClose(-Vector3.UnitX, view.Forward);
         AssertClose(-Vector3.UnitZ, view.Right);

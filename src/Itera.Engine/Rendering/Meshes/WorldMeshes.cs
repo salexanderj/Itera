@@ -1,6 +1,6 @@
 using System.Diagnostics;
-using System.Numerics;
 using System.Runtime.InteropServices;
+using Itera.Engine.Maths;
 using Itera.Engine.Meshing;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Rendering.Materials;
@@ -89,8 +89,16 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     private MeshWorkers? _workers;
     private bool _worldDataStaged;
     private bool _orderStale;
-    private Vector3 _orderedAt;
-    private Vector3 _wantedAt;
+
+    // Where the view was, absolute (whatever the origin), when the columns were last ordered and chosen.
+    private WorldPoint _orderedAt;
+    private WorldPoint _wantedAt;
+
+    // The frame's origin (absolute centimetres), which its draws are local to, and the view's absolute place; the origin
+    // the materials' tile phases were staged for.
+    private VoxelCoord _origin;
+    private WorldPoint _viewAt;
+    private VoxelCoord _stagedOrigin;
     private bool _wantedStale;
     private double _viewDistanceCentimetres;
     private int _pendingBlocks;
@@ -398,13 +406,22 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         _evictedWordsThisFrame = 0;
         _nothingToEvict = false;
         ForgetRemovedModels();
+        // The columns are chosen and ordered from the view's absolute place, the draws written local to the origin; the
+        // materials go again when the origin moved, with their tile phases for it.
+        _origin = view.Origin;
+        _viewAt = WorldPoint.FromCentimetres(_origin).Plus(view.Position.X, view.Position.Y, view.Position.Z);
+        if (_origin != _stagedOrigin)
+        {
+            _worldDataStaged = false;
+        }
+
         StageWorldData();
         _viewDistanceCentimetres = view.MaxDistance * VoxelConstants.CentimetresPerMetre;
         if (world is not null)
         {
             ReadChanges(world);
-            UpdateSky(world, view.Position, nowSeconds);
-            UpdateWanted(world, view.Position);
+            UpdateSky(world, _viewAt, nowSeconds);
+            UpdateWanted(world, _viewAt);
         }
 
         TakeFinished();
@@ -419,7 +436,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         if (world is not null)
         {
             RetryStarved(world, nowSeconds);
-            StartJobs(world, view.Position, deadline);
+            StartJobs(world, _viewAt, deadline);
             StartStitchJobs(world, deadline);
         }
 
@@ -515,6 +532,16 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
             return;
         }
 
+        // Each material's tile phase for the frame's origin (its set's width, or the width materials all draws one
+        // without a set with).
+        for (var i = 0; i < _materials.Length; i++)
+        {
+            var width =
+                _materials[i].TextureMetres > 0 ? _materials[i].TextureMetres : MeshMaterial.AllMaterialsTileMetres;
+            _materials[i].TileOrigin = MeshMaterial.TilePhase(_origin, width);
+        }
+
+        _stagedOrigin = _origin;
         var materials = _writer.Write(MeshPass.MaterialsOffset, (int)(MeshPass.MaterialsBytes / sizeof(uint)));
         MemoryMarshal.AsBytes(_materials.AsSpan()).CopyTo(new Span<byte>(materials, (int)MeshPass.MaterialsBytes));
         var tint = TintMapWords(_tintMap!);
@@ -690,7 +717,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     /// parent's split distance (its own level's reach times <c>Engine:Renderer:MeshReachShare</c>) and two of its
     /// columns. Only these are meshed.
     /// </summary>
-    private bool IsWanted(ColumnKey key, Vector3 at, double slack)
+    private bool IsWanted(ColumnKey key, in WorldPoint at, double slack)
     {
         double size = _grid.ColumnCentimetres(key.Level);
         var limit = _viewDistanceCentimetres;
@@ -708,9 +735,9 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     /// When the view has moved a metre (or the match has just begun): columns that came near enough to be drawn are meshed, and those that went more
     /// than a column beyond lose their meshes.
     /// </summary>
-    private void UpdateWanted(VoxelWorld world, Vector3 viewPosition)
+    private void UpdateWanted(VoxelWorld world, in WorldPoint viewPosition)
     {
-        if (!_wantedStale && Vector3.DistanceSquared(viewPosition, _wantedAt) < 1)
+        if (!_wantedStale && viewPosition.DistanceTo(_wantedAt) < 1)
         {
             return;
         }
@@ -1315,7 +1342,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     /// Reads the changed blocks of the columns nearest the view first and queues their jobs, until the time budget, the
     /// job pool, or the changed blocks run out. A block that can hold no surface loses its mesh at once.
     /// </summary>
-    private void StartJobs(VoxelWorld world, Vector3 viewPosition, long deadline)
+    private void StartJobs(VoxelWorld world, in WorldPoint viewPosition, long deadline)
     {
         if (_pendingBlocks == 0)
         {
@@ -1385,7 +1412,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     }
 
     /// <summary>The column's blocks to read in <see cref="_blockOrder"/>, nearest the view first; returns how many.</summary>
-    private int SortDirtyBlocks(MeshColumn column, Vector3 viewPosition)
+    private int SortDirtyBlocks(MeshColumn column, in WorldPoint viewPosition)
     {
         if (_blockOrder.Length < column.Blocks.Length)
         {
@@ -1397,9 +1424,9 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     }
 
     /// <summary>Orders the columns nearest the view first when the view moved a metre or columns came or went.</summary>
-    private void SortColumns(Vector3 viewPosition)
+    private void SortColumns(in WorldPoint viewPosition)
     {
-        if (!_orderStale && Vector3.DistanceSquared(viewPosition, _orderedAt) < 1)
+        if (!_orderStale && viewPosition.DistanceTo(_orderedAt) < 1)
         {
             return;
         }

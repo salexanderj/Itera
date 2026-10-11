@@ -1,6 +1,7 @@
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Rendering.Memory;
 using Itera.Engine.Rendering.Meshes;
+using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Silk.NET.Vulkan;
@@ -102,9 +103,15 @@ public sealed partial class RenderViewPass : IDisposable
     /// <summary>
     /// Starts the views due this frame (asked for, and their frames since the last update past their cadence): their
     /// constants (the asked camera at the view's size, the frame's sun and sky, no shadows) and frustums, before the
-    /// world's and the mesh assets' lists are written. Returns them. Main thread, after the frame systems.
+    /// world's and the mesh assets' lists are written, local to <paramref name="origin"/> (the match's, absolute
+    /// centimetres). Returns them. Main thread, after the frame systems.
     /// </summary>
-    internal ReadOnlySpan<IRenderViewLists> BeginViews(int slot, RenderView renderView, float maxDistance)
+    internal ReadOnlySpan<IRenderViewLists> BeginViews(
+        int slot,
+        RenderView renderView,
+        float maxDistance,
+        VoxelCoord origin
+    )
     {
         var count = 0;
         var atmosphere = renderView.Atmosphere;
@@ -128,7 +135,8 @@ public sealed partial class RenderViewPass : IDisposable
                 sun,
                 in atmosphere,
                 maxDistance,
-                shadows: false
+                shadows: false,
+                origin
             );
             target.View.Begin(slot, in frame.View);
             _due[count++] = target;

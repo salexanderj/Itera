@@ -29,6 +29,61 @@ public sealed class AudioServiceTests
         return new SoundEvent { Recipe = bar, Position = new Vector3(0, 0, -1) };
     }
 
+    /// <summary>
+    /// When the match's origin moves, the sounds queued this iteration, the loops sustained and held, and what waits for
+    /// the audio thread (its events and listener) move the other way, and the move waits for the audio thread's next take.
+    /// </summary>
+    [Fact]
+    public void A_move_of_the_origin_moves_the_sounds_queued_sustained_held_and_waiting()
+    {
+        using var audio = Create();
+        audio.Initialize(new NullAudioDevice());
+        audio.QueueWithoutThread = true;
+        audio.Recipes.TryFind("bar", out var bar);
+        audio.Recipes.TryFind("tone", out var tone);
+        var listener = new ListenerPose(new Vector3(4, 0, 0), -Vector3.UnitZ, Vector3.UnitY);
+        audio.Exchange.Post(
+            [new SoundEvent { Recipe = bar, Position = new Vector3(5, 0, 0) }],
+            [],
+            in listener,
+            1,
+            true
+        );
+        audio.Play(new SoundEvent { Recipe = bar, Position = new Vector3(1, 0, 0) });
+        audio.Sustain(
+            new SoundLoop
+            {
+                Recipe = tone,
+                Key = 1,
+                Position = new Vector3(2, 0, 0),
+            }
+        );
+        audio.SustainFor(
+            new SoundLoop
+            {
+                Recipe = tone,
+                Key = 2,
+                Position = new Vector3(3, 0, 0),
+            },
+            0,
+            5
+        );
+        var by = new Vector3(300, -20, -512);
+
+        audio.Shift(by);
+
+        Assert.Equal(new Vector3(1, 0, 0) - by, audio.Queued[0].Position);
+        Assert.Equal(new Vector3(2, 0, 0) - by, audio.Sustained[0].Position);
+        Assert.Equal(new Vector3(3, 0, 0) - by, audio.Held[0].Position);
+        var events = new SoundEvent[AudioExchange.MaxEvents];
+        var loops = new SoundLoop[AudioExchange.MaxLoops];
+        audio.Exchange.Take(events, out var count, loops, out _, out var taken, out _, out _, out var shift);
+        Assert.Equal((1, new Vector3(5, 0, 0) - by), (count, events[0].Position));
+        Assert.Equal((by, new Vector3(4, 0, 0) - by), (shift, taken.Position));
+        audio.Exchange.Take(events, out _, loops, out _, out _, out _, out _, out var again);
+        Assert.Equal(Vector3.Zero, again);
+    }
+
     [Fact]
     public void With_no_device_nothing_starts_and_calls_do_nothing()
     {

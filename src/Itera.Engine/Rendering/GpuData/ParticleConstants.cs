@@ -4,8 +4,8 @@ namespace Itera.Engine.Rendering.GpuData;
 
 /// <summary>
 /// The push constants of the particle compute passes (<c>particle-spawn.comp</c> and <c>particle-simulate.comp</c>,
-/// <c>layout(push_constant, scalar)</c>). They do not push <see cref="ViewConstants"/>, which takes 116 of the
-/// 128 bytes every device must allow. Built by the main thread (<c>ParticlePass.Write</c>) and pushed by the render
+/// <c>layout(push_constant, scalar)</c>). They do not push <see cref="ViewConstants"/>, which takes all 128 bytes
+/// every device must allow; these take all of them too. Built by the main thread (<c>ParticlePass.Write</c>) and pushed by the render
 /// thread. Field order and types match the GLSL block; <c>ParticlePassTests</c> checks them.
 /// </summary>
 public struct ParticleConstants
@@ -31,7 +31,7 @@ public struct ParticleConstants
     /// <summary>The farthest a particle is drawn, metres.</summary>
     public float MaxDistance;
 
-    /// <summary>The camera, world metres.</summary>
+    /// <summary>The camera, metres from the match's origin.</summary>
     public Vector3 Camera;
 
     /// <summary>1 when the sprites' and cubes' lists are filled; 0 simulates without drawing.</summary>
@@ -72,4 +72,11 @@ public struct ParticleConstants
     /// the image's half width and half height in metres, and its rays run along <see cref="Forward"/>.
     /// </summary>
     public uint Orthographic;
+
+    /// <summary>
+    /// How far the match's origin moved, in whole metres, since the pool's particles were last moved
+    /// (<see cref="ParticlePoolOrigin"/>): the simulate pass takes it off every particle made before this frame, so
+    /// nothing moves in the world; zero while the origin stays. Set by the render thread.
+    /// </summary>
+    public Vector3 Shift;
 }

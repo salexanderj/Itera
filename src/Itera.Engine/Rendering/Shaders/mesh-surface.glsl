@@ -595,10 +595,12 @@ vec3 triplanarWeights(vec3 normal)
 }
 
 // The point offset (metres from the camera) in tiles tileMetres wide, kept small: the camera's place within a tile plus
-// the offset.
-vec3 tilePoint(vec3 offset, float tileMetres)
+// the offset. The camera's place in the world is its local position plus the match's origin; the origin's place within
+// material index's tile comes worked out on the CPU in doubles (MeshMaterial.TileOrigin), so the tiles stay where they
+// are in the world far from the map's middle, at any tile width.
+vec3 tilePoint(uint index, vec3 offset, float tileMetres)
 {
-    return (offset + mod(view.position, tileMetres)) / tileMetres;
+    return (offset + mod(view.position + materials[index].tileOrigin, tileMetres)) / tileMetres;
 }
 
 // A set's colour with occlusion and its normal map's x and y (each -1 to 1) at uv in layer, from the large arrays or the
@@ -639,7 +641,7 @@ float textureHeight(uint index, uint texture, float metres, vec3 offset, vec3 no
     bool large = (texture & MESH_TEXTURE_LARGE) != 0u;
     float layer = float(int(texture & 0xFFFFu) - 1);
     vec3 weights = triplanarWeights(normal);
-    vec3 p = tilePoint(offset, metres);
+    vec3 p = tilePoint(index, offset, metres);
     float blur = textureBlur(index);
     dx *= blur / metres;
     dy *= blur / metres;
@@ -679,7 +681,7 @@ Surface surfaceTextured(uint index, uint texture, float metres, vec3 mean, float
     float match = float(texture >> 24u) / 255.0;
     vec4 amount = unpackUnorm4x8(materials[index].amounts);
     vec3 weights = triplanarWeights(normal);
-    vec3 p = tilePoint(offset, metres);
+    vec3 p = tilePoint(index, offset, metres);
     float blur = textureBlur(index);
     vec3 dx = dOffsetX * blur / metres;
     vec3 dy = dOffsetY * blur / metres;

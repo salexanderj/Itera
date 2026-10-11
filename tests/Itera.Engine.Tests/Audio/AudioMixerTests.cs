@@ -211,6 +211,61 @@ public sealed class AudioMixerTests
         Assert.Equal(0, mixer.Stats.OneShots);
     }
 
+    /// <summary>
+    /// When the match's origin moves, a one-shot playing in the world moves the other way (heard from where it was), one
+    /// at the listener stays, and an event still waiting for the mixer plays where it belongs.
+    /// </summary>
+    [Fact]
+    public void A_move_of_the_origin_moves_the_one_shots_playing_and_waiting()
+    {
+        var mixer = new Mixer();
+        var at = new Vector3(1, 0, 2);
+        var menu = Click(Vector3.Zero) with { AtListener = true };
+        mixer.Pump([Click(at), menu]);
+        var by = new Vector3(300, -20, -512);
+        mixer.Exchange.Post([Click(new Vector3(3, 0, 0))], [], ListenerPose.Default, 1, true);
+
+        mixer.Exchange.Shift(by);
+        mixer.Listener -= by;
+        mixer.Pump();
+
+        Assert.NotNull(mixer.Device.PlayingAt(at - by));
+        Assert.Null(mixer.Device.PlayingAt(at));
+        Assert.NotNull(mixer.Device.PlayingAt(Vector3.Zero));
+        Assert.NotNull(mixer.Device.PlayingAt(new Vector3(3, 0, 0) - by));
+        Assert.Equal(-by, mixer.Device.ListenerPosition);
+    }
+
+    /// <summary>A stream fading out after its last round, when the origin moves, is heard from where it was.</summary>
+    [Fact]
+    public void A_move_of_the_origin_moves_a_stream_fading_out()
+    {
+        var mixer = new Mixer();
+        var at = new Vector3(2, 0, 1);
+        mixer.Run(
+            0.1f,
+            [
+                new SoundLoop
+                {
+                    Recipe = 1,
+                    Key = 7,
+                    Position = at,
+                    Level = 1,
+                },
+            ]
+        );
+        // Not sustained this round: it fades out over 80 ms.
+        mixer.Pump();
+        var by = new Vector3(300, -20, -512);
+
+        mixer.Exchange.Shift(by);
+        mixer.Listener -= by;
+        mixer.Pump();
+
+        Assert.NotNull(mixer.Device.PlayingAt(at - by));
+        Assert.Null(mixer.Device.PlayingAt(at));
+    }
+
     [Fact]
     public void A_sound_too_quiet_where_the_listener_is_is_never_started()
     {

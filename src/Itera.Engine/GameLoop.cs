@@ -8,6 +8,7 @@ using Itera.Engine.Diagnostics;
 using Itera.Engine.Input;
 using Itera.Engine.Loading;
 using Itera.Engine.Matches;
+using Itera.Engine.Maths;
 using Itera.Engine.Modding;
 using Itera.Engine.Networking;
 using Itera.Engine.Particles;
@@ -115,6 +116,9 @@ public sealed partial class GameLoop
     private bool _modelsDroppedReported;
     private bool _meshesDroppedReported;
     private bool _worldOnGpu;
+
+    // The match's origin while its world is on the GPU (BeginMatchGpu to EndMatchGpu); null otherwise.
+    private WorldOrigin? _origin;
     private readonly ExitSignalPolicy _exitSignals = new();
     private volatile bool _cancelRequested;
     private PosixSignal _signal;
@@ -840,7 +844,7 @@ public sealed partial class GameLoop
         // The models are drawn with the world, in the frame's view, whose point lights the world's glowing blocks and the
         // events give; and the image views due this frame, in theirs.
         _meshView.Begin(request.Slot, in view);
-        var views = _renderViewPass.BeginViews(request.Slot, _renderView, _maxViewDistance);
+        var views = _renderViewPass.BeginViews(request.Slot, _renderView, _maxViewDistance, Origin);
         // Without terrain no world is followed: nothing to upload or draw of it.
         var copies = _worldOnGpu ? _worldMeshes.Upload(request.Slot, now, in view, _modelInstances.Draws, views) : 0;
         var meshAssets = _meshAssetDraws.Write(
@@ -921,9 +925,13 @@ public sealed partial class GameLoop
     /// </summary>
     private void BeginMatchGpu(MatchServices match)
     {
+        _origin = match.Services.GetRequiredService<WorldOrigin>();
         _worldMeshes.BeginMatch(match.Terrain?.Voxels, match.Models, match.TintMap);
         _worldOnGpu = true;
     }
+
+    /// <summary>The match's origin in absolute centimetres, which the frame's positions are local to; zero without one.</summary>
+    private VoxelCoord Origin => _origin?.Centimetres ?? default;
 
     /// <summary>The match's world leaves the GPU: the meshes stop following it, and its lights' flashes go.</summary>
     private void EndMatchGpu()
@@ -936,6 +944,7 @@ public sealed partial class GameLoop
 
         _meshView.ForgetSun();
         _renderViews.EndMatch();
+        _origin = null;
 
         _pointLights.Clear();
     }
@@ -997,6 +1006,7 @@ public sealed partial class GameLoop
             in atmosphere,
             _maxViewDistance,
             _renderView.Shadows,
+            Origin,
             _renderView.RenderScale,
             _renderView.DebugViews
         );

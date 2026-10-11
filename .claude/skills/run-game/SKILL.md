@@ -214,7 +214,10 @@ lists the commands (`ConsoleCommands`):
   `time` [HH:MM|off] (the sun at a time of a test day: sunrise 06:00, the engine's sun at 12:00, sunset 18:00; the
   run's only), `lens` [ortho HEIGHT [NEAR FAR]|off] (the camera drawn through an orthographic lens: an image HEIGHT
   metres high round the camera, which is the middle of what it shows, from NEAR to FAR metres along the view, negative
-  behind it, by default the view distance each way; off gives the camera's own lens back; the run's only), `stats`,
+  behind it, by default the view distance each way; off gives the camera's own lens back; the run's only), `origin`
+  [move DX DY DZ] (the match's origin, which positions are measured from, and the camera's place from it and in the
+  world; move moves it by whole metres, and everything with it, so nothing in the world moves: for checking that
+  nothing does; the run's only), `stats`,
   `screenshot` [SCALE] [noui] [PATH.png] (a PNG at PATH.png or in the data folder's
   `Screenshots/`), `wait` (loaded, view (the view's world loaded and on the GPU, as the loading screen waits for), ticks
   N, frames N, or seconds N of real time, then an optional timeout in seconds), `shaders` [reload] (the folder shaders

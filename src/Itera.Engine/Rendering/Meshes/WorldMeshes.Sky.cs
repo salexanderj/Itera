@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging;
 
@@ -58,8 +59,10 @@ public sealed unsafe partial class WorldMeshes
     private bool _skyDrawn;
     private bool _skyUploaded;
     private ulong _skyUploadOffset;
-    private Vector3 _skyCorner;
-    private Vector3 _skyCentre;
+
+    // The drawn field's corner and middle, absolute (written local to each frame's origin).
+    private WorldPoint _skyCorner;
+    private WorldPoint _skyCentre;
     private bool _skyChanged;
     private double _skyBuiltAt = double.NegativeInfinity;
     private bool _skyFaultReported;
@@ -88,7 +91,7 @@ public sealed unsafe partial class WorldMeshes
     /// Stages a finished build and draws from it, goes on with a read, or starts a build when one is due. Main thread, in
     /// the frame's upload.
     /// </summary>
-    private void UpdateSky(VoxelWorld world, Vector3 viewPosition, double nowSeconds)
+    private void UpdateSky(VoxelWorld world, in WorldPoint viewPosition, double nowSeconds)
     {
         _skyUploaded = false;
         if (_skyBuild is { IsCompleted: true } build)
@@ -142,8 +145,8 @@ public sealed unsafe partial class WorldMeshes
 
         var due =
             (!_skyDrawn && nowSeconds - _skyBuiltAt > SkyChangeSeconds)
-            || Vector3.Distance(viewPosition, _skyCentre) > SkyMoveMetres
-            || MathF.Abs(viewPosition.Y - _skyCentre.Y) > SkyClimbMetres
+            || viewPosition.DistanceTo(_skyCentre) > SkyMoveMetres
+            || Math.Abs(viewPosition.Y - _skyCentre.Y) > SkyClimbMetres
             || (_skyChanged && nowSeconds - _skyBuiltAt > SkyChangeSeconds);
         if (!due)
         {
@@ -187,7 +190,12 @@ public sealed unsafe partial class WorldMeshes
             return;
         }
 
-        lighting.SkyCorner = _skyCorner;
+        var origin = WorldPoint.FromCentimetres(_origin);
+        lighting.SkyCorner = new Vector3(
+            (float)(_skyCorner.X - origin.X),
+            (float)(_skyCorner.Y - origin.Y),
+            (float)(_skyCorner.Z - origin.Z)
+        );
         lighting.SkyCellMetres = _skyField.CellMetres;
     }
 

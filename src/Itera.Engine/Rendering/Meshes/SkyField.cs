@@ -1,4 +1,4 @@
-using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Rendering.Meshes;
@@ -73,11 +73,11 @@ internal sealed class SkyField
     /// <summary>The light of each cell once <see cref="Flood()"/> has run: index x + sizeX (y + sizeY z).</summary>
     public byte[] Light { get; } = new byte[Cells];
 
-    /// <summary>The low corner of cell (0, 0, 0) in world metres, set by <see cref="BeginRead"/>.</summary>
-    public Vector3 Corner { get; private set; }
+    /// <summary>The low corner of cell (0, 0, 0), absolute (whole cells), set by <see cref="BeginRead"/>.</summary>
+    public WorldPoint Corner { get; private set; }
 
-    /// <summary>The middle of the box in world metres, set by <see cref="BeginRead"/>.</summary>
-    public Vector3 Centre { get; private set; }
+    /// <summary>The middle of the box, absolute, set by <see cref="BeginRead"/>.</summary>
+    public WorldPoint Centre { get; private set; }
 
     /// <summary>Each cell's material as the read left it (air 0), indexed as <see cref="Light"/>. For tests.</summary>
     public ReadOnlySpan<byte> Solid => _solid;
@@ -98,7 +98,7 @@ internal sealed class SkyField
     /// Reads which cells of the box round <paramref name="centre"/> are solid from <paramref name="world"/> whole
     /// (<see cref="BeginRead"/>, then <see cref="ContinueRead"/> with no time limit). Main thread.
     /// </summary>
-    public void Read(VoxelWorld world, Vector3 centre, int coarsestLevel)
+    public void Read(VoxelWorld world, in WorldPoint centre, int coarsestLevel)
     {
         BeginRead(world, centre, coarsestLevel);
         ContinueRead(world, long.MaxValue);
@@ -111,24 +111,24 @@ internal sealed class SkyField
     /// that load later are not read (the box's cells there stay air); a column that unloads before its blocks are read
     /// leaves them air too. Main thread; allocates nothing once the lists have grown.
     /// </summary>
-    public void BeginRead(VoxelWorld world, Vector3 centre, int coarsestLevel)
+    public void BeginRead(VoxelWorld world, in WorldPoint centre, int coarsestLevel)
     {
         ArgumentNullException.ThrowIfNull(world);
         _grid = world.Grid;
         CellLevel = LevelFor(_grid);
         _level = Math.Min(CellLevel, coarsestLevel);
         _stride = 1 << (CellLevel - _level);
-        var cellCentimetres = (float)_grid.Edge(CellLevel);
-        // The corner in cells: the camera's cell less half the box, snapped.
+        double cellCentimetres = _grid.Edge(CellLevel);
+        // The corner in cells, absolute: the camera's cell less half the box, snapped.
         var cx = (int)Math.Floor(centre.X * VoxelConstants.CentimetresPerMetre / cellCentimetres) - SizeXZ / 2;
         var cy = (int)Math.Floor(centre.Y * VoxelConstants.CentimetresPerMetre / cellCentimetres) - SizeY / 2;
         var cz = (int)Math.Floor(centre.Z * VoxelConstants.CentimetresPerMetre / cellCentimetres) - SizeXZ / 2;
         cx = FloorTo(cx, Snap);
         cy = FloorTo(cy, Snap);
         cz = FloorTo(cz, Snap);
-        var metres = CellMetres;
-        Corner = new Vector3(cx, cy, cz) * metres;
-        Centre = Corner + new Vector3(SizeXZ, SizeY, SizeXZ) * (0.5f * metres);
+        var metres = cellCentimetres / VoxelConstants.CentimetresPerMetre;
+        Corner = new WorldPoint(cx * metres, cy * metres, cz * metres);
+        Centre = Corner.Plus(SizeXZ * 0.5 * metres, SizeY * 0.5 * metres, SizeXZ * 0.5 * metres);
         Array.Clear(_solid);
         UniformBlocks = 0;
         StoredBlocks = 0;

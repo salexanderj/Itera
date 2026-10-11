@@ -1,3 +1,4 @@
+using Itera.Engine.Maths;
 using Itera.Engine.Meshing;
 using Itera.Engine.Voxels;
 
@@ -243,9 +244,10 @@ internal sealed class MeshColumn
     /// across it. <paramref name="distances"/> is scratch; both hold at least <see cref="Blocks"/>' length. Allocates
     /// nothing.
     /// </summary>
-    public int DirtyNearestFirst(VoxelGrid grid, System.Numerics.Vector3 viewPosition, int[] order, float[] distances)
+    public int DirtyNearestFirst(VoxelGrid grid, in WorldPoint viewPosition, int[] order, float[] distances)
     {
-        var blockMetres = SurfaceNets.BlockSize * grid.EdgeMetres(Key.Level);
+        // In absolute metres, whatever the match's origin.
+        var blockMetres = SurfaceNets.BlockSize * (double)grid.Edge(Key.Level) / VoxelConstants.CentimetresPerMetre;
         var count = 0;
         for (var i = 0; i < Blocks.Length; i++)
         {
@@ -256,9 +258,11 @@ internal sealed class MeshColumn
             }
 
             var (x, y, z) = BlockAt(i);
-            var centre = (new System.Numerics.Vector3(x, y, z) + new System.Numerics.Vector3(0.5f)) * blockMetres;
+            double dx = (x + 0.5) * blockMetres - viewPosition.X,
+                dy = (y + 0.5) * blockMetres - viewPosition.Y,
+                dz = (z + 0.5) * blockMetres - viewPosition.Z;
             order[count] = i;
-            distances[count++] = System.Numerics.Vector3.DistanceSquared(centre, viewPosition);
+            distances[count++] = (float)(dx * dx + dy * dy + dz * dz);
         }
 
         Array.Sort(distances, order, 0, count);

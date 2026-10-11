@@ -129,9 +129,15 @@ public sealed partial class AudioMixer : IDisposable
             out var loopCount,
             out _listener,
             out var volume,
-            out var enabled
+            out var enabled,
+            out var shift
         );
         _device.SetListener(_listener.Position, _listener.Forward, _listener.Up, volume);
+        if (shift != Vector3.Zero)
+        {
+            MoveVoices(shift);
+        }
+
         if (!enabled)
         {
             StopAll();
@@ -350,9 +356,32 @@ public sealed partial class AudioMixer : IDisposable
         voice.Loudness = loudness;
         voice.Start = now;
         voice.Seconds = bank.Seconds[slot] / pitch;
+        voice.Position = sound.Position;
+        voice.Gain = gain;
+        voice.Pitch = pitch;
+        voice.Reference = reference;
+        voice.AtListener = sound.AtListener;
         _device.SetSource(voice.Source, sound.Position, gain, pitch, reference, sound.AtListener);
         _device.PlayBuffer(voice.Source, bank.Buffers[slot]);
         _stats.CountPlayed();
+    }
+
+    /// <summary>
+    /// The match's origin moved by <paramref name="shift"/>: each sound playing in the world (a one-shot not at the
+    /// listener, or a stream, sustained or fading after its last round) moves the other way, so it is heard from where it
+    /// was. A stream still sustained takes its new place again this round.
+    /// </summary>
+    private void MoveVoices(Vector3 shift)
+    {
+        for (var i = 0; i < _voices.Length; i++)
+        {
+            ref var voice = ref _voices[i];
+            if (voice.Kind != VoiceKind.Free && !voice.AtListener)
+            {
+                voice.Position -= shift;
+                _device.SetSource(voice.Source, voice.Position, voice.Gain, voice.Pitch, voice.Reference, false);
+            }
+        }
     }
 
     private int PickVariation(Bank bank, int level, int variations)
@@ -460,6 +489,11 @@ public sealed partial class AudioMixer : IDisposable
             voice.Releasing = false;
             voice.Level = Math.Clamp(loop.Level, 0, 1);
             voice.Loudness = Loudness(gain, recipe.ReferenceMetres, loop.Position);
+            voice.Position = loop.Position;
+            voice.Gain = gain;
+            voice.Pitch = 1;
+            voice.Reference = recipe.ReferenceMetres;
+            voice.AtListener = false;
             _device.SetSource(voice.Source, loop.Position, gain, 1, recipe.ReferenceMetres, atListener: false);
         }
 
@@ -744,6 +778,13 @@ public sealed partial class AudioMixer : IDisposable
         public bool Releasing;
         public bool Silent;
         public bool Started;
+
+        // A sound's place and what its source was set with, to set it again when the origin moves.
+        public Vector3 Position;
+        public float Gain;
+        public float Pitch;
+        public float Reference;
+        public bool AtListener;
         public int Queued;
         public int Next;
         public SoundGenerator? Generator;

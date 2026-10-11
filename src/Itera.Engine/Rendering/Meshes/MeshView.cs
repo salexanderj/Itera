@@ -270,7 +270,8 @@ public sealed class MeshView
             _shadowMapTexels,
             reach,
             _imageAxis,
-            Orthographic
+            Orthographic,
+            view.Origin
         );
         var far = ShadowCascades.Fit(
             view.Position,
@@ -283,7 +284,8 @@ public sealed class MeshView
             _shadowMapTexels,
             reach,
             _imageAxis,
-            Orthographic
+            Orthographic,
+            view.Origin
         );
         NearCascade.Set(
             in near,

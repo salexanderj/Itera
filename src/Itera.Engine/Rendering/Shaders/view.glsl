@@ -23,6 +23,10 @@ layout(push_constant, scalar) uniform View
     // starts, negative behind the position), and where an orthographic view's box ends (0 for perspective).
     float near;
     float far;
+    // The match's origin in absolute centimetres (whole metres), which every position here is measured from: viewOrigin.
+    int originX;
+    int originY;
+    int originZ;
 } view;
 
 // The bits of view.switches, as ViewSwitches has them (ViewConstantsTests checks): the sun casts shadows through the
@@ -35,6 +39,13 @@ const uint ViewLevels = 8u;
 const uint ViewPlain = 16u;
 const uint ViewMaterialsFlat = 32u;
 const uint ViewMaterialsAll = 64u;
+
+// The match's origin in absolute centimetres: a point's whole centimetres from the camera's (local) frame plus this are
+// its place in the world, for what is drawn by place (the surfaces' noise, strata, tint map, and texture tiles).
+ivec3 viewOrigin()
+{
+    return ivec3(view.originX, view.originY, view.originZ);
+}
 
 // True when the switch which (a ViewSwitches bit) is on.
 bool viewSwitch(uint which)

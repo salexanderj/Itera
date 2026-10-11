@@ -23,6 +23,12 @@ engine's recipes are `bar`, `tone`, `menu-hover`, and `menu-press` (`EngineSound
 `SoundEvent.AtListener`). A game registers its own recipes once a run (an `IRunStartup`, before the audio thread takes
 them) and plays them from its systems; `docs/procedural-audio.md` has the methods.
 
+Positions are local to the match's origin. When it moves, `OriginShifts` calls `AudioService.Shift`: the events
+queued this iteration, the loops sustained and held, and what waits in the exchange (events, loops, listener) move the
+other way, and the exchange keeps the move for the audio thread's next take, which moves the sounds playing in the
+world, one-shots and streams (a stream fading after its last round too; `AudioMixer`, whose voices remember what their
+sources were set with). Sounds at the listener stay.
+
 ### Files in `src/Itera.Engine`
 
   - `Audio/`: `AudioService`, `AudioMixer`, `AudioExchange`, `AudioStats`, `SoundRecipe(s)`, `SoundEvent`,

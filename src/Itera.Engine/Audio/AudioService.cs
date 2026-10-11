@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Numerics;
 using Itera.Engine.Audio.Synthesis;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -95,6 +96,18 @@ public sealed partial class AudioService : IDisposable
     /// <see cref="QueuedLoops"/> until the next <see cref="Publish"/> or <see cref="ClearQueued"/>.
     /// </summary>
     internal bool QueueWithoutThread { get; set; }
+
+    /// <summary>The events queued this iteration. For tests.</summary>
+    internal ReadOnlySpan<SoundEvent> Queued => _events.AsSpan(0, _eventCount);
+
+    /// <summary>The loops sustained this iteration. For tests.</summary>
+    internal ReadOnlySpan<SoundLoop> Sustained => _loops.AsSpan(0, _loopCount);
+
+    /// <summary>The loops held. For tests.</summary>
+    internal ReadOnlySpan<SoundLoop> Held => _held.AsSpan(0, _heldCount);
+
+    /// <summary>What waits for the audio thread. For tests.</summary>
+    internal AudioExchange Exchange => _exchange;
 
     /// <summary>The one-shots queued since the last <see cref="Publish"/>.</summary>
     internal ReadOnlySpan<SoundEvent> QueuedEvents => _events.AsSpan(0, _eventCount);
@@ -205,6 +218,31 @@ public sealed partial class AudioService : IDisposable
     {
         CheckRecipe(loop.Recipe);
         Hold(in loop, now + seconds);
+    }
+
+    /// <summary>
+    /// The match's origin moved by <paramref name="metres"/> (<c>OriginShifts</c>): the events queued this iteration, the
+    /// loops sustained and held, and what waits for the audio thread move the other way, and the audio thread moves the
+    /// one-shots playing. Main thread.
+    /// </summary>
+    public void Shift(Vector3 metres)
+    {
+        for (var i = 0; i < _eventCount; i++)
+        {
+            _events[i].Position -= metres;
+        }
+
+        for (var i = 0; i < _loopCount; i++)
+        {
+            _loops[i].Position -= metres;
+        }
+
+        for (var i = 0; i < _heldCount; i++)
+        {
+            _held[i].Position -= metres;
+        }
+
+        _exchange.Shift(metres);
     }
 
     /// <summary>

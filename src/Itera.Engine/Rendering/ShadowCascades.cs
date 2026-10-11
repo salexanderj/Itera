@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Rendering;
 
@@ -50,6 +51,11 @@ public static class ShadowCascades
     /// <param name="orthographic">
     /// True for an orthographic view, whose slice is a box (its depths may be negative: behind the position).
     /// </param>
+    /// <param name="origin">
+    /// The match's origin in absolute centimetres, which <paramref name="position"/> and the matrix are local to: the snap
+    /// to whole texels is taken in absolute terms, so the map's texels stay where they are in the world when the origin
+    /// moves.
+    /// </param>
     /// <remarks>
     /// The radius is the farthest corner's distance from the slice's centre, grown by one part in
     /// <c>mapTexels - 1</c> so that the snap of up to half a texel cannot push a corner out of the square, then rounded
@@ -66,7 +72,8 @@ public static class ShadowCascades
         int mapTexels,
         float casterMetres,
         Vector3 imageAxis = default,
-        bool orthographic = false
+        bool orthographic = false,
+        VoxelCoord origin = default
     )
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(mapTexels, 0);
@@ -154,12 +161,19 @@ public static class ShadowCascades
         var by = (sz * ax) - (sx * az);
         var bz = (sx * ay) - (sy * ax);
 
-        // Snap the centre's place on the image axes to whole texels.
+        // Snap the centre's place on the image axes to whole texels, in absolute terms (the origin's place on each axis
+        // added, then taken off again), so a move of the origin moves no texel.
+        const double perMetre = VoxelConstants.CentimetresPerMetre;
+        double ox = origin.X / perMetre,
+            oy = origin.Y / perMetre,
+            oz = origin.Z / perMetre;
+        var originA = (ox * ax) + (oy * ay) + (oz * az);
+        var originB = (ox * bx) + (oy * by) + (oz * bz);
         var centreA = (cx * ax) + (cy * ay) + (cz * az);
         var centreB = (cx * bx) + (cy * by) + (cz * bz);
         var centreS = (cx * sx) + (cy * sy) + (cz * sz);
-        var snapA = Math.Round(centreA / texel) * texel;
-        var snapB = Math.Round(centreB / texel) * texel;
+        var snapA = (Math.Round((centreA + originA) / texel) * texel) - originA;
+        var snapB = (Math.Round((centreB + originB) / texel) * texel) - originB;
 
         // z is 0 at the sphere's sun side extended by the casters' reach, and 1 at its far side.
         var depth = (2 * radius) + casterMetres;
