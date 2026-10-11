@@ -18,6 +18,8 @@
     <PackageVersion Include="Silk.NET.MoltenVK.Native" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.OpenAL" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.OpenAL.Soft.Native" Version="1.23.1" />
+    <!-- Ogg Vorbis files (sound files and music). A release candidate: it fixes 0.10.5's seek bugs and an endless loop. -->
+    <PackageVersion Include="NVorbis" Version="1.0.0-rc.2" />
     <PackageVersion Include="Silk.NET.Shaderc" Version="2.23.0" />
     <PackageVersion Include="Silk.NET.Shaderc.Native" Version="2.23.0" />
   </ItemGroup>

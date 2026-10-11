@@ -23,6 +23,14 @@ engine's recipes are `bar`, `tone`, `menu-hover`, and `menu-press` (`EngineSound
 `SoundEvent.AtListener`). A game registers its own recipes once a run (an `IRunStartup`, before the audio thread takes
 them) and plays them from its systems; `docs/procedural-audio.md` has the methods.
 
+Sound files are read by `Audio/Files/` (nothing plays them yet): `SoundDecoders.Open` picks a decoder by the file's
+first bytes, the engine's own `WavDecoder` (`WavReader`: PCM of 8 to 32 bits, IEEE float of 32 or 64, extensible
+formats, RF64, a `smpl` loop) or `VorbisDecoder` (NVorbis 1.0.0-rc.2; loops from `LOOPSTART` with `LOOPLENGTH` or
+`LOOPEND`), mono or stereo, each as an `ISoundDecoder` of floats; `SoundFiles.Decode` reads one whole into 16-bit
+samples (stereo kept or mixed to mono), refusing one longer than it is given. NVorbis's own seek lands on wrong samples
+near a file's start, so `VorbisDecoder.Seek` decodes from the start up to the frame. A file that cannot be read throws
+`SoundFileException` saying why. The tests' Ogg files are made by `tools/sounds/make_sounds.py`.
+
 Positions are local to the match's origin. When it moves, `OriginShifts` calls `AudioService.Shift`: the events
 queued this iteration, the loops sustained and held, and what waits in the exchange (events, loops, listener) move the
 other way, and the exchange keeps the move for the audio thread's next take, which moves the sounds playing in the
@@ -32,7 +40,9 @@ sources were set with). Sounds at the listener stay.
 ### Files in `src/Itera.Engine`
 
   - `Audio/`: `AudioService`, `AudioMixer`, `AudioExchange`, `AudioStats`, `SoundRecipe(s)`, `SoundEvent`,
-    `SoundLoop`, `EngineSounds`, `WavWriter`, `SoundCache`; building blocks in `Audio/Synthesis/` (`SoundRandom`,
+    `SoundLoop`, `EngineSounds`, `WavWriter`, `SoundCache`; sound files in `Audio/Files/` (`ISoundDecoder`,
+    `SoundDecoders`, `WavReader`, `WavDecoder`, `VorbisDecoder`, `SoundFiles`, `LoopPoints`, `SoundFileException`);
+    building blocks in `Audio/Synthesis/` (`SoundRandom`,
     `Dsp`, `OnePole`, `StateVariableFilter`, `NoiseSource`, `ModalBank`); the device (`IAudioDevice`,
     `OpenAlAudioDevice`, `NullAudioDevice`).
 
@@ -40,3 +50,5 @@ sources were set with). Sounds at the listener stay.
 
 - OpenAL comes from `Silk.NET.OpenAL.Soft.Native`; when it cannot load, `AudioDeviceFactory` falls
   back to `NullAudioDevice` with a warning.
+- NVorbis 1.0.0-rc.2 (MIT), a release candidate pinned for its fixes over 0.10.5 (whose seeks land off and can throw
+  "GranulePos mismatch"). It allocates while it decodes and its `SeekTo` is wrong near a file's start (exact from 0).

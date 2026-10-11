@@ -25,6 +25,11 @@
     <Using Include="Itera.TestSupport" />
   </ItemGroup>
 
+  <!-- Short Ogg Vorbis files the sound file readers' tests decode (made by tools/sounds/make_sounds.py; SOURCES.md). -->
+  <ItemGroup>
+    <None Include="Audio\Fixtures\*.ogg" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\Itera.Engine\Itera.Engine.csproj" />
     <!-- Build-order only. The sample mod is copied into TestMods/ below and loaded through the mod loader. -->

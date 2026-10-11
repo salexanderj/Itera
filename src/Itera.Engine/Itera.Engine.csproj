@@ -23,6 +23,7 @@
   <ItemGroup Label="Audio">
     <PackageReference Include="Silk.NET.OpenAL" />
     <PackageReference Include="Silk.NET.OpenAL.Soft.Native" />
+    <PackageReference Include="NVorbis" />
   </ItemGroup>
 
   <ItemGroup Label="Shaders">
