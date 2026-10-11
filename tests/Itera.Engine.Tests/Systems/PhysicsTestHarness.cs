@@ -21,7 +21,8 @@ internal sealed class PhysicsTestHarness : IDisposable
         int maxBodies = 64,
         double loadedMetres = 4,
         int levels = 1,
-        VoxelGrid? grid = null
+        VoxelGrid? grid = null,
+        PhysicsMaterials? materials = null
     )
     {
         var options = new EngineOptions
@@ -40,7 +41,7 @@ internal sealed class PhysicsTestHarness : IDisposable
         Voxels.SetCenters([Vector3.Zero]);
         VoxelLoading.WaitUntilLoaded(Voxels);
 
-        Physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance);
+        Physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance, null, materials);
         Physics.Initialize();
         var passability = new NothingPassable();
         Colliders = new VoxelColliders(Physics, Voxels, passability, NullLogger<VoxelColliders>.Instance);

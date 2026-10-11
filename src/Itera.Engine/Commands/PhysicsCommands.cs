@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using System.Text;
 using Itera.Engine.Matches;
 using Itera.Engine.Physics;
 
@@ -33,10 +34,20 @@ public sealed class PhysicsCommands(ConsoleCommands commands, MatchControl match
             {
                 var id = new PhysicsMaterialId((byte)i);
                 var material = materials[id];
+                // The voxel materials mapped to it (the default's are every other).
+                var voxels = new StringBuilder();
+                for (var voxel = 1; voxel < 256 && i > 0; voxel++)
+                {
+                    if (materials.OfVoxel((byte)voxel) == id)
+                    {
+                        voxels.Append(voxels.Length == 0 ? "; voxels " : ", ").Append(voxel);
+                    }
+                }
+
                 context.Print(
                     string.Create(
                         CultureInfo.InvariantCulture,
-                        $"{materials.NameOf(id)}: friction {material.Friction:0.###}, bounciness {material.Bounciness:0.###}"
+                        $"{materials.NameOf(id)}: friction {material.Friction:0.###}, bounciness {material.Bounciness:0.###}{voxels}"
                     )
                 );
             }

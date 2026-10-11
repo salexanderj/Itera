@@ -62,6 +62,18 @@ internal readonly struct MaterialSet
         return new MaterialSet(in words);
     }
 
+    /// <summary>The materials in this set or <paramref name="other"/>.</summary>
+    public MaterialSet Union(in MaterialSet other)
+    {
+        var words = default(Words);
+        for (var i = 0; i < 4; i++)
+        {
+            words[i] = _words[i] | other._words[i];
+        }
+
+        return new MaterialSet(in words);
+    }
+
     /// <summary>True when the set holds <paramref name="material"/>.</summary>
     public bool Contains(byte material) => ((_words[material >> 6] >> (material & 63)) & 1) != 0;
 

@@ -26,7 +26,8 @@ public readonly record struct PhysicsMaterialId(byte Value)
 /// The run's physics materials, by name (<see cref="PhysicsMaterial"/>): registered once a run, at the game's
 /// <c>IRunStartup</c> (or a mod's), before the first match, which seals them; at most <see cref="MaxMaterials"/>.
 /// Material 0 is <c>default</c>, the engine's (friction 1, no bounce), which every body and static has unless given
-/// another (the voxels' statics always). Main thread.
+/// another. Voxel materials take theirs by <see cref="MapVoxel"/> (default unless mapped): the voxel colliders build a
+/// static for each physics material a cell's voxels have, and a ball takes its voxel material's. Main thread.
 /// </summary>
 public sealed class PhysicsMaterials
 {
@@ -39,12 +40,16 @@ public sealed class PhysicsMaterials
     /// <summary>The default material's name.</summary>
     public const string DefaultName = "default";
 
+    /// <summary>The most physics materials the voxels have, the default among them (each a static in a cell).</summary>
+    public const int MostVoxelMaterials = 8;
+
     private readonly List<(string Name, PhysicsMaterial Material)> _materials = [(DefaultName, new(1, 0))];
     private readonly Dictionary<string, PhysicsMaterialId> _byName = new(StringComparer.Ordinal)
     {
         [DefaultName] = PhysicsMaterialId.Default,
     };
 
+    private readonly byte[] _voxels = new byte[256];
     private ContactMaterial[]? _contacts;
 
     /// <summary>How many materials there are, the default among them.</summary>
@@ -93,6 +98,61 @@ public sealed class PhysicsMaterials
         _materials.Add((name, material));
         _byName.Add(name, id);
         return id;
+    }
+
+    /// <summary>
+    /// Gives voxel material <paramref name="voxelMaterial"/> the physics material <paramref name="material"/> (default to
+    /// undo it). Throws for air, a material not registered, a mapping that would give the voxels more than
+    /// <see cref="MostVoxelMaterials"/> physics materials, or once sealed.
+    /// </summary>
+    public void MapVoxel(byte voxelMaterial, PhysicsMaterialId material)
+    {
+        if (IsSealed)
+        {
+            throw new InvalidOperationException(
+                $"Voxel material {voxelMaterial}: voxels are mapped before the first match (in an IRunStartup)."
+            );
+        }
+
+        if (voxelMaterial == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(voxelMaterial), voxelMaterial, "Air has no physics material.");
+        }
+
+        if (material.Value >= _materials.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(material), material.Value, "No such physics material.");
+        }
+
+        var was = _voxels[voxelMaterial];
+        _voxels[voxelMaterial] = material.Value;
+        if (VoxelMaterialCount() > MostVoxelMaterials)
+        {
+            _voxels[voxelMaterial] = was;
+            throw new InvalidOperationException(
+                $"The voxels have at most {MostVoxelMaterials} physics materials, the default among them."
+            );
+        }
+    }
+
+    /// <summary>The physics material of voxel material <paramref name="voxelMaterial"/>.</summary>
+    public PhysicsMaterialId OfVoxel(byte voxelMaterial) => new(_voxels[voxelMaterial]);
+
+    /// <summary>How many physics materials the voxels have, the default among them (unless every one is mapped).</summary>
+    public int VoxelMaterialCount()
+    {
+        Span<bool> used = stackalloc bool[MaxMaterials];
+        var count = 0;
+        for (var voxel = 1; voxel < _voxels.Length; voxel++)
+        {
+            if (!used[_voxels[voxel]])
+            {
+                used[_voxels[voxel]] = true;
+                count++;
+            }
+        }
+
+        return count;
     }
 
     /// <summary>The material named <paramref name="name"/>, if one is registered.</summary>

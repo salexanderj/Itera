@@ -150,7 +150,14 @@ game's `IRunStartup` or a mod's, in `PhysicsMaterials` (run-wide; at most 64; `P
 first match seals (a later `Register` throws). Material 0 is `default`, friction 1 and no bounce, which every body and
 static has unless given another: two of them give exactly the contact the engine had before materials. A body takes one
 at `AddBody` (`PhysicsBodySettings.Material`) or later (`SetMaterial`, `MaterialOf`), a static at `AddStatic`, and a
-mesh collider at `Add` (`PhysicsBodySettings`; `SetSettings`, `SettingsOf`); `physics materials` lists them. The narrow
+mesh collider at `Add` (`PhysicsBodySettings`; `SetSettings`, `SettingsOf`); `physics materials` lists them. A voxel
+material takes one by `PhysicsMaterials.MapVoxel` (before the first match; `OfVoxel`), the voxels at most 8 among them
+with the default (`MostVoxelMaterials`): `VoxelColliders` builds a cell's voxels of each physics material into a static
+of their own (one walk of the cell each, the other materials left out with the passable ones, `PartCount`; a cell of
+one material is one static, and a world that maps no voxel material walks and builds as it did before materials), and
+counts a cell of several towards `MaxRebuiltCells` as that many; a ball made from nothing takes its voxel material's
+(`LooseBodies.TryCreateBall`), a lifted piece the default. Splitting costs: over a block of a random material in each
+voxel, cells of three physics materials built in about twice the time of one, with 1.85 times the boxes. The narrow
 phase (`NarrowPhaseCallbacks`) reads both sides' records (`BodyKinds.ContactOf`, a table of `ContactMaterial` the match
 copies at its start): friction is the product of their square roots (sqrt(a·b)), and every pair has the engine's
 springs (30 Hz, critically damped, recovery at most 2 m/s), so a bouncy body sinks no further than any other.

@@ -88,6 +88,9 @@ public sealed partial class PhysicsWorld : IDisposable
     /// <summary>The bounces the engine set since the match began (<see cref="PhysicsMaterial.Bounciness"/>).</summary>
     public long Bounces => _contacts?.Bounces ?? 0;
 
+    /// <summary>The run's physics materials, if it has a registry (a test's world may have none).</summary>
+    internal PhysicsMaterials? Materials => _materials;
+
     /// <summary>Contacts not followed because there were too many in a step.</summary>
     public long ContactsDropped => _contacts?.Dropped ?? 0;
 

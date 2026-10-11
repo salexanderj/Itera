@@ -11,12 +11,14 @@ namespace Itera.Engine.Physics;
 
 /// <summary>
 /// Gives Bepu the level-0 voxels near its dynamic bodies. Each 32x32x32-voxel cell (32 cm on a 1 cm grid, 3.2 m at 10 cm) that a body's bounds reach,
-/// widened by its movement in one step and a margin, becomes one static: a compound of boxes that cover the cell's
-/// blocking voxels (<see cref="VoxelBoxes"/>; passable foliage gives none). The world's change list rebuilds a cell after
+/// widened by its movement in one step and a margin, becomes one static for each physics material its voxels have
+/// (<see cref="PhysicsMaterials.MapVoxel"/>; one where no voxel material is mapped): a compound of boxes that cover the
+/// cell's blocking voxels of that material (<see cref="VoxelBoxes"/>, one walk of the cell each; passable foliage gives
+/// none). The world's change list rebuilds a cell after
 /// an edit, which wakes bodies resting on it: at most <see cref="MaxRebuiltCells"/> a step, the rest in later steps
 /// (a 50 cm dig under a pile rebuilt cells for up to 10 ms in one step), so a body may rest on
 /// dug-away voxels, or sit in placed ones, for a few steps. A count rather than a time keeps the simulation the same
-/// on a busy machine as on an idle one. A cell a body reaches for the
+/// on a busy machine as on an idle one; a cell of several physics materials counts as that many cells. A cell a body reaches for the
 /// first time is always built at once. A cell no body has needed for a second is removed. A body cut off a character
 /// (<see cref="BodyKind.Cut"/>) whose own level's columns are not resident collides with the finest coarser level that is,
 /// up to the coarse level (<see cref="CoarseLevelOf"/>: level 0 itself at 10 cm, where it freezes instead), and goes back to its own once that loads: it falls on
@@ -79,6 +81,11 @@ public sealed partial class VoxelColliders : IDisposable
     private readonly ILogger<VoxelColliders> _logger;
     private readonly VoxelBoxes _boxes = new();
 
+    // The physics materials of a cell's statics, and for each the materials its walk leaves out: the passable ones and
+    // the voxels of the other physics materials.
+    private PhysicsMaterialId[] _partMaterials = [PhysicsMaterialId.Default];
+    private MaterialSet[] _partExcluded;
+
     // A cell's columns' tops and surfaces where the world keeps densities (voxels coarser than 1 cm).
     private readonly int[] _columnTops = new int[CellSize * CellSize];
     private readonly double[] _surfaces = new double[CellSize * CellSize];
@@ -104,10 +111,14 @@ public sealed partial class VoxelColliders : IDisposable
         _physics = physics;
         _voxels = voxels;
         _passable = MaterialSet.Passable(passability);
+        _partExcluded = [_passable];
         _logger = logger;
         // A body removed through the physics world is forgotten here first.
         physics.BodyRemoving = Forget;
     }
+
+    /// <summary>The physics materials a cell's statics may have: one static for each its voxels have.</summary>
+    public int PartCount => _partMaterials.Length;
 
     /// <summary>Statics built for bodies.</summary>
     public int StaticCount { get; private set; }
@@ -152,8 +163,53 @@ public sealed partial class VoxelColliders : IDisposable
     public void Initialize()
     {
         _cursor = _voxels.CreateChangeCursor();
+        ReadParts();
         var coarseLevel = CoarseLevelOf(_voxels.Grid);
-        LogInitialized(CellSize, coarseLevel);
+        LogInitialized(CellSize, coarseLevel, _partMaterials.Length);
+    }
+
+    /// <summary>
+    /// The physics materials the voxels have (<see cref="PhysicsMaterials.OfVoxel"/>): the default first where a voxel
+    /// material is unmapped, then the others by their first voxel material; and what each walk leaves out.
+    /// </summary>
+    private void ReadParts()
+    {
+        if (_physics.Materials is not { } materials)
+        {
+            return;
+        }
+
+        Span<bool> seen = stackalloc bool[PhysicsMaterials.MaxMaterials];
+        var parts = new List<PhysicsMaterialId>();
+        for (var pass = 0; pass < 2; pass++)
+        {
+            for (var voxel = 1; voxel < 256; voxel++)
+            {
+                var material = materials.OfVoxel((byte)voxel);
+                if ((pass == 0) == (material == PhysicsMaterialId.Default) && !seen[material.Value])
+                {
+                    seen[material.Value] = true;
+                    parts.Add(material);
+                }
+            }
+        }
+
+        _partMaterials = [.. parts];
+        _partExcluded = new MaterialSet[parts.Count];
+        Span<byte> others = stackalloc byte[255];
+        for (var part = 0; part < parts.Count; part++)
+        {
+            var count = 0;
+            for (var voxel = 1; voxel < 256; voxel++)
+            {
+                if (materials.OfVoxel((byte)voxel) != parts[part])
+                {
+                    others[count++] = (byte)voxel;
+                }
+            }
+
+            _partExcluded[part] = _passable.Union(MaterialSet.Of(others[..count]));
+        }
     }
 
     /// <summary>
@@ -242,7 +298,7 @@ public sealed partial class VoxelColliders : IDisposable
             {
                 // A changed cell; past the limit it stays dirty for the next step.
                 Build(key, ref cell);
-                rebuilt++;
+                rebuilt += _partMaterials.Length;
             }
         }
     }
@@ -620,12 +676,29 @@ public sealed partial class VoxelColliders : IDisposable
         }
     }
 
-    /// <summary>Builds a cell's static from the voxels, or removes it when the cell holds nothing that blocks.</summary>
+    /// <summary>
+    /// Builds a cell's statics from the voxels, one for each physics material, removing those whose voxels hold nothing
+    /// that blocks.
+    /// </summary>
     private void Build(CellKey key, ref Cell cell)
     {
         cell.Dirty = false;
         cell.Built = true;
         CellsBuilt++;
+        // The columns' surfaces are read once for the cell, at its first part with boxes: -1 until then.
+        var surfaces = -1;
+        for (var part = 0; part < _partMaterials.Length; part++)
+        {
+            BuildPart(key, ref cell.Parts[part], part, ref surfaces);
+        }
+    }
+
+    /// <summary>
+    /// Builds the static of the cell's voxels of physics material <paramref name="index"/>, or removes it when they hold
+    /// nothing that blocks.
+    /// </summary>
+    private void BuildPart(CellKey key, ref Part cell, int index, ref int surfacesRead)
+    {
         int x0 = key.X << CellShift,
             y0 = key.Y << CellShift,
             z0 = key.Z << CellShift;
@@ -638,11 +711,11 @@ public sealed partial class VoxelColliders : IDisposable
             x0 + CellSize - 1,
             y0 + CellSize - 1,
             z0 + CellSize - 1,
-            in _passable
+            in _partExcluded[index]
         );
         if (_boxes.Count == 0)
         {
-            RemoveStatic(ref cell);
+            RemovePart(ref cell);
             return;
         }
 
@@ -651,7 +724,12 @@ public sealed partial class VoxelColliders : IDisposable
         // The edge of one of the cell's voxels.
         var metres = _voxels.Grid.EdgeMetres(key.Level);
         var boxes = _boxes.Boxes;
-        var surfaces = key.Level == 0 && ReadSurfaces(x0, y0, z0);
+        if (surfacesRead < 0)
+        {
+            surfacesRead = key.Level == 0 && ReadSurfaces(x0, y0, z0) ? 1 : 0;
+        }
+
+        var surfaces = surfacesRead == 1;
         var count = 0;
         for (var i = 0; i < boxes.Length; i++)
         {
@@ -707,7 +785,7 @@ public sealed partial class VoxelColliders : IDisposable
             var edge = _voxels.Grid.Edge(key.Level);
             var corner = _voxels.Origin.ToLocal(new VoxelCoord(x0 * edge, y0 * edge, z0 * edge));
             cell.Static = simulation.Statics.Add(new StaticDescription(corner, Quaternion.Identity, shape));
-            _physics.Kinds.SetStatic(cell.Static, key.Level);
+            _physics.Kinds.SetStatic(cell.Static, key.Level, _partMaterials[index]);
             cell.HasStatic = true;
             StaticCount++;
         }
@@ -808,6 +886,14 @@ public sealed partial class VoxelColliders : IDisposable
 
     private void RemoveStatic(ref Cell cell)
     {
+        for (var part = 0; part < _partMaterials.Length; part++)
+        {
+            RemovePart(ref cell.Parts[part]);
+        }
+    }
+
+    private void RemovePart(ref Part cell)
+    {
         if (!cell.HasStatic)
         {
             return;
@@ -825,9 +911,9 @@ public sealed partial class VoxelColliders : IDisposable
 
     [LoggerMessage(
         Level = LogLevel.Information,
-        Message = "Voxel colliders ready: cells of {Cell} voxels near bodies, at level 0 and at level {Coarse} for giants' bodies"
+        Message = "Voxel colliders ready: cells of {Cell} voxels near bodies, at level 0 and at level {Coarse} for giants' bodies; {Parts} physics material(s) of voxels"
     )]
-    private partial void LogInitialized(int cell, int coarse);
+    private partial void LogInitialized(int cell, int coarse, int parts);
 
     [LoggerMessage(
         Level = LogLevel.Debug,
@@ -851,14 +937,43 @@ public sealed partial class VoxelColliders : IDisposable
 
     private struct Cell
     {
-        public StaticHandle Static;
-        public TypedIndex Shape;
-        public bool HasStatic;
+        /// <summary>Its statics, one for each physics material of the voxels (<see cref="_partMaterials"/>).</summary>
+        public Parts Parts;
         public bool Dirty;
 
         /// <summary>True once built: a cell never built holds nothing for bodies yet, so it is built at once.</summary>
         public bool Built;
-        public int Boxes;
         public long LastNeeded;
+
+        public readonly bool HasStatic
+        {
+            get
+            {
+                foreach (var part in Parts)
+                {
+                    if (part.HasStatic)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+        }
+    }
+
+    [InlineArray(PhysicsMaterials.MostVoxelMaterials)]
+    private struct Parts
+    {
+        private Part _part;
+    }
+
+    /// <summary>A cell's static of one physics material.</summary>
+    private struct Part
+    {
+        public StaticHandle Static;
+        public TypedIndex Shape;
+        public bool HasStatic;
+        public int Boxes;
     }
 }

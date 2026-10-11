@@ -172,7 +172,10 @@ public sealed partial class LooseBodies
                     new BodyActivityDescription(0.01f)
                 )
         );
-        _physics.Kinds.Set(body, BodyKind.Loose);
+        // A ball is of its voxel material's physics material; a lifted piece of the default.
+        var material =
+            ballRadius > 0 && _physics.Materials is { } materials ? materials.OfVoxel(ballMaterial) : default;
+        _physics.Kinds.Set(body, BodyKind.Loose, material: material);
         var model = _models.Add([voxels.Tree], voxels.Size);
         var boxMin = new Vector3(-pivot.X, -pivot.Y, -pivot.Z) * voxelMetres;
         var boxMax =

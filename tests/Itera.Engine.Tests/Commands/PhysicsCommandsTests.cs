@@ -1,5 +1,6 @@
 using Itera.Engine.Commands;
 using Itera.Engine.Matches;
+using Itera.Engine.Physics;
 using Itera.Engine.Tests.Matches;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -7,7 +8,8 @@ namespace Itera.Engine.Tests.Commands;
 
 /// <summary>
 /// The console's <c>physics</c> (<see cref="PhysicsCommands"/>): with no match it says so; in one it prints the bodies,
-/// statics, solver, damping, and gravity, sets the solver and the damping for the match, and refuses values out of range.
+/// statics, solver, damping, and gravity, sets the solver and the damping for the match, and refuses values out of range;
+/// it lists the run's physics materials with the voxel materials mapped to them.
 /// </summary>
 public sealed class PhysicsCommandsTests
 {
@@ -53,6 +55,31 @@ public sealed class PhysicsCommandsTests
             (physics.VelocityIterations, physics.Substeps, physics.LinearDamping, physics.AngularDamping)
         );
         Assert.Equal(2, output.Errors.Count(line => line.StartsWith("usage: ", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void It_lists_the_materials_with_the_voxel_materials_mapped_to_them()
+    {
+        using var provider = EngineComposition.Build(terrain: false);
+        var commands = provider.GetRequiredService<ConsoleCommands>();
+        provider.GetRequiredService<PhysicsCommands>().Register();
+        var materials = provider.GetRequiredService<PhysicsMaterials>();
+        var ice = materials.Register("ice", new PhysicsMaterial(0.03f, 0));
+        materials.Register("rubber", new PhysicsMaterial(1, 0.8f));
+        materials.MapVoxel(7, ice);
+        materials.MapVoxel(9, ice);
+        var output = new Output();
+
+        commands.Execute("physics materials", output);
+
+        Assert.Equal(
+            [
+                "default: friction 1, bounciness 0",
+                "ice: friction 0.03, bounciness 0; voxels 7, 9",
+                "rubber: friction 1, bounciness 0.8",
+            ],
+            output.Lines
+        );
     }
 
     private sealed class Output : IConsoleOutput
