@@ -21,9 +21,43 @@ matches have no voxel world. It shows what such a game composes and how the engi
   in among the blocks, is drawn into a 384 by 216 image every other frame (`RenderViews`), shown on a screen 4 m up on a post
   past the blocks, ahead of the start (the yard's `yard-screen`, its `screen` material: `RenderViews.ShowOnMaterial`),
   which glows with it; the camera sees the screen too, showing its own last picture there.
+- Its own menu in place of the engine's (`SampleMenu`, in its own look, `SampleMenuStyle`): a bar down the left with
+  Play, Join, Settings, and Quit (over a match Resume, Settings, Leave, and Quit), and beside it the page an entry opens:
+  the host's address (Enter joins; a bad one says why) or the engine's Settings page inside a panel of its own.
 - The sky is the engine's default (no `IAtmosphereSource`).
 - Its play area is the yard (`PlayArea` with the yard's bounds, in place of the engine's 10 cm grid's): the mover's map
   edge is a wall at the yard's side, so nobody walks off it.
+
+## A game's own menu
+
+A game swaps the engine's menu by registering its own `IMenu` singleton after `AddIteraEngine` (the last registered is
+the run's), as `AddMeshSample` does: `services.AddSingleton<IMenu, SampleMenu>()`. `SampleMenu` is a toolkit layer
+(`UiLayer`) of about 430 lines; a game's menu copies these parts of it:
+
+- `AboveMatch` overridden to true (the `IMenu` interface says so too, but `UiLayer`'s own member wins), so it draws
+  over the HUD and keeps the pointer while the game's input is blocked.
+- `Visible` is `IsOpen`: always with no match, while a join connects or a match starts (a join with no menu showing
+  would leave the game's input free), and over a match once Escape opened it (`Escape`).
+- `BeforeUpdate` follows `MatchControl`: a match starting (its `Started` count, which also catches one that failed
+  within a frame) or ending closes the menu over it and shows the first page; `LastEnd` says why the last match ended.
+- Its text box's typing goes through the menu's input: `GiveTyping` does nothing, `StillTyping` is true, and
+  `TextFocus` is the box's `TextEntry` while its page shows; `Ui.StartTyping(id)` as the page opens, so Enter joins at once.
+- The engine's Settings page: `SettingsPage.Build`, then `Footer` (true when Back is clicked); `Opened` as it opens,
+  `PlayerSettings.Save` as it closes; `CapturingBinding`, `BindingPressed`, and `Escape` pass its key capture on.
+- Over a match, the shade is a plain full-screen `Area` declared first, so it draws under the page (anchored elements
+  draw over the flow).
+- The starts, leave, and quit go through `MatchControl.RequestStart` (`MatchCommands`' starts), `RequestLeave`, and
+  `WindowService.RequestExit`. A game with Steam also lists the friends hosting (`SteamFriendList`, `Watching`) and
+  answers `JoinRequests` (a friend's join asked for during a match waits for it, or for the match's end); the sample
+  has Steam off.
+
+Its tests (`SampleMenuTests`, over `SampleMenuHarness`) click it by what its elements read; `EngineState` sets the run's
+match state the engine's loop alone sets. `SampleMenuPicturesTests` draws every page at 1280x720 and 2560x1440 into the
+folder `ITERA_UI_PICTURES` names. The UI pass blends the UI over the picture in linear light, so a see-through panel
+looks lighter over the world than in those pictures: take a shot of the running game (`game.py --port PORT shot`)
+before settling a colour.
+
+## Running it
 
 Run it: `dotnet run --project samples/Itera.MeshSample -- --Engine:Session:Mode=Offline`. Its data folder is
 `IteraMeshSample`; runs an agent starts add `--Engine:Application:DataFolder=IteraMeshSample-agent`. Vulkan validation:

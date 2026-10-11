@@ -67,7 +67,9 @@ when a hash of its result changes, allocating nothing for an unchanged page; a d
 at Error and shows nothing until one does not. `Ui.Dump()` prints the layout one element a line (kind, id, text,
 rectangle, state), for tests and agents; tests pin rectangles with `FixedTextMeasurer` and draw a layer alone with
 `LayerPicture` (`ITERA_UI_PICTURES` names a folder `UiLayerTests` keeps its page's picture in, and `MenuPicturesTests` every menu
-page's at two sizes). A HUD layer gets the
+page's at two sizes). The UI pass blends the UI over the picture in linear light (its target is sRGB), while Skia and
+`LayerPicture` compose in sRGB values, so a see-through colour shows more of the world in the game than in a picture (a
+dark panel at 88 % alpha lets about half through): choose see-through colours from a shot of the running game. A HUD layer gets the
 pointer's button and the wheel only while a panel is set (`SetPanel`), as the menu and panels do, and no pointer while
 the game's input is blocked (the menu open); navigation keys reach a layer through its `Keys`: the run's menu (an
 `IMenu` toolkit layer) gets `IFrameInput.MenuKeys`, Tab, Shift+Tab, the arrows, Enter, and Space collected while it is
@@ -100,7 +102,10 @@ loop updates it whatever menu shows; a menu sets `Watching` while it lists the f
 friend's Steam "Join game": with no match it joins at once, during one it waits as `Pending` for the menu to ask,
 `Accept` or `Decline`, and goes with that match), and `SaveFiles` (the data folder's saves, newest first). While a menu
 is open the game gets no input, and with `Engine:Ui:MenuPausesOffline` (false by default) an offline match's steps are
-held (`FixedStepAccumulator.Hold`, apart from the console's `pause`; a host's or a client's never wait).
+held (`FixedStepAccumulator.Hold`, apart from the console's `pause`; a host's or a client's never wait). The mesh sample
+swaps it for its own (`SampleMenu`, a toolkit layer in a look of its own, with the engine's `SettingsPage` inside); its
+README lists what a game's menu must do (`AboveMatch`, `Visible` through joins and starts, following `MatchControl`,
+its text box's typing through `TextFocus`, the Settings page's key capture, the shade first in the flow).
 
 The engine's main menu (`UI/Menu/MenuLayer`, a toolkit layer, run-wide, drawn over the HUD and under the console; its
 look `MenuLook`: the plain style at 32.4-unit text, with 3.24-unit outlines and 12.96-unit corners): a run starts at it unless

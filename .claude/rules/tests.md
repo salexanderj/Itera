@@ -6,7 +6,9 @@ paths:
 ## Tests
 
 - `tests/Itera.Modding.Tests`, `tests/Itera.Engine.Tests`, `tests/Game.Tests` (the game's own), and
-  `tests/Itera.MeshSample.Tests` (the sample without voxels, played through `HeadlessMatch`), with subfolders that
+  `tests/Itera.MeshSample.Tests` (the sample without voxels, played through `HeadlessMatch`; its own menu clicked by
+  label, `SampleMenuTests` over `SampleMenuHarness`, with `EngineState` setting the run's match state a game's tests
+  cannot reach, and its pages drawn by `SampleMenuPicturesTests`), with subfolders that
   mirror `src/`. `tests/Shared/` holds `SystemAllocation`, `ArchStartup`, `SerialCollectionDefinition`,
   `RunsLongAttribute` and `LongFirstCollectionOrderer`, `xunit.runner.json`, `VoxelLoading` (load a test's voxel world),
   `FakeTransport` (an in-memory session transport: no sockets, no clocks), `HostileValues` and `Watchdog` (hostile field

@@ -11,6 +11,7 @@ using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.Voxels;
 using Itera.Engine.Settings;
 using Itera.Engine.Systems;
+using Itera.Engine.UI.Menu;
 using Itera.MeshSample.Rendering;
 using Itera.MeshSample.Systems;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,6 +49,8 @@ public static class MeshSampleServiceCollectionExtensions
             sp.GetRequiredService<MovementProbes>(),
             Yard.Climbable
         ));
+        // The sample's own menu in place of the engine's: the last IMenu registered is the run's.
+        services.AddSingleton<IMenu, SampleMenu>();
         AddFixedSystems(services);
         AddFrameSystems(services);
         return services;

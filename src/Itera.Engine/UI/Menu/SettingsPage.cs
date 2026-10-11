@@ -245,7 +245,7 @@ public sealed class SettingsPage
         var id = Ui.Id(Ui.Id("settings.tab"), StableHash(tab));
         _hints[id] = hint;
         var marks = tab == _tab ? UiMarks.Selected : UiMarks.None;
-        if (ui.Button(id, tab, box: UiBox.Fixed(TabWidth, TabHeight), marks: marks).Clicked)
+        if (ui.Button(id, tab, box: Fixed(TabWidth, TabHeight), marks: marks).Clicked)
         {
             _tab = tab;
             _bindAction = -1;
@@ -412,7 +412,7 @@ public sealed class SettingsPage
                     var id = Ui.Id(s_keyList, i);
                     _hints[id] = row.Hint;
                     var label = i == _bindAction ? "Press a key…" : Keys[new KeyAction(i)].Label;
-                    if (ui.Button(id, label, box: UiBox.Fixed(ControlWidth, KeyButtonHeight)).Clicked)
+                    if (ui.Button(id, label, box: Fixed(ControlWidth, KeyButtonHeight)).Clicked)
                     {
                         _bindAction = i;
                         _bindHint =
@@ -433,21 +433,31 @@ public sealed class SettingsPage
         _hints[s_back] = "Keeps the settings for the next start too.";
         if (_tab != SettingsRows.KeysTab)
         {
-            return ui.Button(s_back, back, box: UiBox.Fixed(367.2f, 64.8f)).Clicked;
+            return ui.Button(s_back, back, box: Fixed(367.2f, 64.8f)).Clicked;
         }
 
         using (ui.Row(0, new UiBox { Gap = 21.6f }))
         {
             _hints[s_reset] = "Every action back to its first key.";
-            if (ui.Button(s_reset, "Reset keys", box: UiBox.Fixed(216, 59.4f)).Clicked)
+            if (ui.Button(s_reset, "Reset keys", box: Fixed(216, 59.4f)).Clicked)
             {
                 _bindAction = -1;
                 Keys.ResetAll();
             }
 
-            return ui.Button(s_back, back, box: UiBox.Fixed(216, 59.4f)).Clicked;
+            return ui.Button(s_back, back, box: Fixed(216, 59.4f)).Clicked;
         }
     }
+
+    /// <summary>
+    /// A button's box of a fixed size with narrow label margins of its own, so its label fits whatever margins the
+    /// menu's style gives buttons.
+    /// </summary>
+    private static UiBox Fixed(float width, float height) =>
+        UiBox.Fixed(width, height) with
+        {
+            Padding = new UiEdges(8, 0),
+        };
 
     /// <summary>A value's text, made again only when the value changes (the formats are static, so passing one allocates nothing).</summary>
     private string ValueText(int id, float value, Func<int, float, string> text)
