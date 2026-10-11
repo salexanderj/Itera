@@ -530,7 +530,7 @@ def main():
     sub.add_argument("--release", action="store_true", help="the Release build (default Debug)")
     sub.add_argument("--settle", type=float, default=2.5, help="seconds after the view loads before the shot (2.5)")
     sub.add_argument("--compare", help="an earlier set's folder to compare with (imgdiff.py)")
-    sub.add_argument("--game", nargs="*", default=[], help="more game arguments")
+    sub.add_argument("--game", nargs="*", action="extend", default=[], help="more game arguments (repeat it: --game=A --game=B)")
     sub = add("run", cmd_run, "run console commands (';' separates them)")
     sub.add_argument("-q", "--quiet", action="store_true", help="leave out the log lines")
     sub.add_argument("-s", "--script", action="store_true",
