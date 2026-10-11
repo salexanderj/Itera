@@ -75,6 +75,59 @@ public sealed class WorldTests
         Assert.True(highest < top - 5_000, $"The ground rises to {highest} cm.");
     }
 
+    /// <summary>
+    /// A column's range and its layers stand for every layer as the generator describes it, round the middle and out in
+    /// the broad relief, at every level: only the few layers holding the ground and the boulders are stored of the 12.
+    /// </summary>
+    [Fact]
+    public void A_columns_range_stands_for_every_layer()
+    {
+        var generator = new GameGenerator();
+        int stored = 0,
+            total = 0;
+        for (var level = 0; level <= VoxelConstants.MaxLevel; level++)
+        {
+            var reach = level <= 2 ? 3 : 1;
+            foreach (var (cx, cz) in new[] { (0, 0), (200 >> level, -150 >> level) })
+            {
+                for (var z = cz - reach; z <= cz + reach; z++)
+                {
+                    for (var x = cx - reach; x <= cx + reach; x++)
+                    {
+                        var column = new ColumnKey(level, x, z);
+                        if (!column.IsInBounds(generator.Grid))
+                        {
+                            continue;
+                        }
+
+                        var fills = new ChunkFill[column.LayerCount(generator.Grid)];
+                        generator.DescribeColumn(column, 1, fills);
+                        generator.DescribeRange(column, 1, out var first, out var last, out var below, out var above);
+                        var window = new ChunkFill[Math.Max(last - first + 1, 0)];
+                        if (window.Length > 0)
+                        {
+                            generator.DescribeLayers(column, 1, first, window);
+                        }
+
+                        for (var layer = 0; layer < fills.Length; layer++)
+                        {
+                            var stands =
+                                layer < first ? below
+                                : layer > last ? above
+                                : window[layer - first];
+                            Assert.True(fills[layer] == stands, $"{column}, layer {layer}: {fills[layer]}, {stands}");
+                        }
+
+                        stored += window.Length;
+                        total += fills.Length;
+                    }
+                }
+            }
+        }
+
+        Assert.True(stored * 2 < total, $"{stored} of {total} layers stored.");
+    }
+
     /// <summary>FNV-1a over the voxels and densities of three layers of chunks at each place, levels 0 to 2, seed 1.</summary>
     private static ulong Hash(GameGenerator generator, (int X, int Z)[] places)
     {

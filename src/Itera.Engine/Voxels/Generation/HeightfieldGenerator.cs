@@ -62,17 +62,110 @@ public abstract class HeightfieldGenerator : IChunkGenerator
     public abstract int Version { get; }
 
     /// <inheritdoc />
-    public void DescribeColumn(ColumnKey column, ulong seed, Span<ChunkFill> layers)
+    public void DescribeColumn(ColumnKey column, ulong seed, Span<ChunkFill> layers) =>
+        DescribeLayers(column, seed, 0, layers);
+
+    /// <inheritdoc />
+    public void DescribeLayers(ColumnKey column, ulong seed, int first, Span<ChunkFill> layers)
     {
         var at = new GridLevel(Grid, column.Level);
         var ground = ColumnFor(column, at, seed);
         for (var layer = 0; layer < layers.Length; layer++)
         {
-            var firstY = column.Chunk(layer, Grid).Y << VoxelConstants.ChunkShift;
-            var minY = at.SampleAt(firstY);
-            var maxY = at.SampleAt(firstY + VoxelConstants.ChunkSize - 1);
-            layers[layer] = ground.Describe(minY, maxY);
+            layers[layer] = DescribeBlock(column, at, ground, first + layer, first + layer);
         }
+    }
+
+    /// <summary>
+    /// The layers that may hold more than one fill: below them the deep material, above them air. A layer's description
+    /// goes from the deep material through mixed to air as it rises (the ground's), with the layers a feature touches
+    /// mixed; so a block of layers described whole as one fill is that fill throughout, and the first and last mixed
+    /// layers are found by halving the column, not by describing each of its layers. With none mixed, the deep material
+    /// ends where the first layer of air begins.
+    /// </summary>
+    public void DescribeRange(
+        ColumnKey column,
+        ulong seed,
+        out int first,
+        out int last,
+        out ChunkFill below,
+        out ChunkFill above
+    )
+    {
+        var at = new GridLevel(Grid, column.Level);
+        var ground = ColumnFor(column, at, seed);
+        var count = column.LayerCount(Grid);
+        below = ChunkFill.Uniform(Layers.DeepMaterial);
+        above = ChunkFill.Air;
+        first = FirstMixed(column, at, ground, 0, count - 1);
+        if (first < 0)
+        {
+            // No layer mixed: air from the first layer described as air, the deep material below it.
+            var boundary = count;
+            for (var (low, high) = (0, count - 1); low <= high; )
+            {
+                var middle = (low + high) / 2;
+                if (DescribeBlock(column, at, ground, middle, middle).Kind == ChunkFillKind.Air)
+                {
+                    (boundary, high) = (middle, middle - 1);
+                }
+                else
+                {
+                    low = middle + 1;
+                }
+            }
+
+            (first, last) = (boundary, boundary - 1);
+            return;
+        }
+
+        last = LastMixed(column, at, ground, first, count - 1);
+    }
+
+    /// <summary>What the layers from <paramref name="first"/> to <paramref name="last"/> hold, described as one block.</summary>
+    private ChunkFill DescribeBlock(ColumnKey column, GridLevel at, ColumnGround ground, int first, int last)
+    {
+        var minY = at.SampleAt(column.Chunk(first, Grid).Y << VoxelConstants.ChunkShift);
+        var maxY = at.SampleAt(
+            (column.Chunk(last, Grid).Y << VoxelConstants.ChunkShift) + VoxelConstants.ChunkSize - 1
+        );
+        return ground.Describe(minY, maxY);
+    }
+
+    /// <summary>The lowest mixed layer from <paramref name="first"/> to <paramref name="last"/>, or -1.</summary>
+    private int FirstMixed(ColumnKey column, GridLevel at, ColumnGround ground, int first, int last)
+    {
+        if (first > last || DescribeBlock(column, at, ground, first, last).Kind != ChunkFillKind.Mixed)
+        {
+            return -1;
+        }
+
+        if (first == last)
+        {
+            return first;
+        }
+
+        var middle = first + (last - first) / 2;
+        var low = FirstMixed(column, at, ground, first, middle);
+        return low >= 0 ? low : FirstMixed(column, at, ground, middle + 1, last);
+    }
+
+    /// <summary>The highest mixed layer from <paramref name="first"/> to <paramref name="last"/>, or -1.</summary>
+    private int LastMixed(ColumnKey column, GridLevel at, ColumnGround ground, int first, int last)
+    {
+        if (first > last || DescribeBlock(column, at, ground, first, last).Kind != ChunkFillKind.Mixed)
+        {
+            return -1;
+        }
+
+        if (first == last)
+        {
+            return first;
+        }
+
+        var middle = first + (last - first) / 2;
+        var high = LastMixed(column, at, ground, middle + 1, last);
+        return high >= 0 ? high : LastMixed(column, at, ground, first, middle);
     }
 
     /// <inheritdoc />

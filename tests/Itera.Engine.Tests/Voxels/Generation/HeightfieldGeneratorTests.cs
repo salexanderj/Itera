@@ -31,6 +31,66 @@ public sealed class HeightfieldGeneratorTests
         ];
     }
 
+    /// <summary>
+    /// A column's range (<see cref="IChunkGenerator.DescribeRange"/>), with the deep material below it, air above it,
+    /// and its layers described from its first (<see cref="IChunkGenerator.DescribeLayers"/>), stands for every layer
+    /// as <see cref="IChunkGenerator.DescribeColumn"/> describes it: over 9 x 9 columns round the middle at levels 0 to 2
+    /// and a few at every level, on 1 and 10 cm voxels, the boulders and the caves under the ground among them. The
+    /// range holds a small share of the column's layers.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(10)]
+    public void A_columns_range_and_its_layers_stand_for_every_layer(int baseCentimetres)
+    {
+        var grid = new VoxelGrid(baseCentimetres);
+        var generator = new HillsGenerator(grid);
+        int stored = 0,
+            total = 0;
+        foreach (var seed in s_seeds)
+        {
+            for (var level = 0; level <= VoxelConstants.MaxLevel; level++)
+            {
+                var columns = new List<ColumnKey>(ColumnsAt(grid, level));
+                for (var z = -4; z <= 4 && level <= 2; z++)
+                {
+                    for (var x = -4; x <= 4; x++)
+                    {
+                        columns.Add(new ColumnKey(level, x, z));
+                    }
+                }
+
+                foreach (var column in columns)
+                {
+                    var fills = Describe(generator, column, seed);
+                    generator.DescribeRange(column, seed, out var first, out var last, out var below, out var above);
+                    var window = new ChunkFill[Math.Max(last - first + 1, 0)];
+                    if (window.Length > 0)
+                    {
+                        generator.DescribeLayers(column, seed, first, window);
+                    }
+
+                    for (var layer = 0; layer < fills.Length; layer++)
+                    {
+                        var stands =
+                            layer < first ? below
+                            : layer > last ? above
+                            : window[layer - first];
+                        Assert.True(
+                            fills[layer] == stands,
+                            $"seed {seed}, {column}, layer {layer} of {first} to {last}: {fills[layer]}, the range's {stands}"
+                        );
+                    }
+
+                    stored += window.Length;
+                    total += fills.Length;
+                }
+            }
+        }
+
+        Assert.True(stored * 3 < total, $"{stored} of {total} layers stored.");
+    }
+
     private static ChunkFill[] Describe(HillsGenerator generator, ColumnKey column, ulong seed)
     {
         var fills = new ChunkFill[column.LayerCount(generator.Grid)];
