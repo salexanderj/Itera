@@ -23,6 +23,7 @@ using Itera.Engine.Systems;
 using Itera.Engine.Time;
 using Itera.Engine.UI;
 using Itera.Engine.UI.Menu;
+using Itera.Engine.UI.Toolkit;
 using Itera.Engine.Voxels;
 using Itera.Engine.Windowing;
 using Microsoft.Extensions.Configuration;
@@ -214,6 +215,8 @@ public static class EngineServiceCollectionExtensions
         services.AddSingleton<IUiLayer>(sp => sp.GetRequiredService<StatsLayer>());
         // The menu over the match's layers, and the console over the menu. A game gives the menu its own look.
         services.TryAddSingleton(MenuStyle.Plain);
+        // What toolkit layers share (the engine's menu among them, and a game's).
+        services.TryAddSingleton<UiToolkit>();
         services.TryAddSingleton<MenuLayer>();
         // The engine's menu, unless the game registers its own IMenu after this (the last registered is the one used).
         services.TryAddSingleton<IMenu>(sp => sp.GetRequiredService<MenuLayer>());

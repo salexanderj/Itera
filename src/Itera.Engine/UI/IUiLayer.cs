@@ -23,6 +23,12 @@ public interface IUiLayer
     void Update(in FrameTime time);
 
     /// <summary>
+    /// <see cref="Update(in FrameTime)"/> with the surface's size, which <see cref="UISurface"/> calls: a layer laid out
+    /// by the screen's size (a toolkit layer) takes it here; by default the size is ignored.
+    /// </summary>
+    void Update(in FrameTime time, int width, int height) => Update(in time);
+
+    /// <summary>
     /// The pixels the layer may cover on a surface of <paramref name="width"/> x <paramref name="height"/>. They hold
     /// everything it draws: <see cref="UISurface"/> clips it there.
     /// </summary>

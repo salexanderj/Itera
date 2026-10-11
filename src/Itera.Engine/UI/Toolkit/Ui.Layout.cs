@@ -109,7 +109,9 @@ public sealed partial class Ui
 
     private float Px(float units) => units * UnitPixels;
 
-    private static bool IsContainer(UiKind kind) => kind <= UiKind.Scroll;
+    private static bool IsContainer(UiKind kind) => kind <= UiKind.Pressable;
+
+    private static bool IsRow(UiKind kind) => kind is UiKind.Row or UiKind.Pressable;
 
     private static bool HasText(UiKind kind) => kind is UiKind.Text or UiKind.Button or UiKind.TextBox;
 
@@ -228,7 +230,7 @@ public sealed partial class Ui
 
         return node.Kind switch
         {
-            UiKind.Row => sum + Math.Max(0, flow - 1) * gap,
+            UiKind.Row or UiKind.Pressable => sum + Math.Max(0, flow - 1) * gap,
             // Every column as wide as the widest child, also where the grid has fewer children than columns.
             UiKind.Grid => node.Columns * widest + (node.Columns - 1) * gap,
             _ => widest,
@@ -242,7 +244,7 @@ public sealed partial class Ui
         var pad = Padding(in node);
         var inner = Math.Max(0, node.W - pad.Across);
         var gap = Gap(in node);
-        if (node.Kind == UiKind.Row)
+        if (IsRow(node.Kind))
         {
             Distribute(index, inner, gap, widths: true);
             return;
@@ -740,7 +742,7 @@ public sealed partial class Ui
                 : node.Clip;
         var (sumWidth, sumHeight, flow) = FlowSums(index);
         var gaps = gap * Math.Max(0, flow - 1);
-        var x = left + (node.Kind == UiKind.Row ? Offset(node.Box.AlignX, innerWidth - sumWidth - gaps) : 0);
+        var x = left + (IsRow(node.Kind) ? Offset(node.Box.AlignX, innerWidth - sumWidth - gaps) : 0);
         var y = top;
         if (node.Kind == UiKind.Column)
         {
@@ -748,7 +750,10 @@ public sealed partial class Ui
         }
         else if (node.Kind == UiKind.Scroll)
         {
-            y += Scrolled(node.Id, sumHeight + gaps - innerHeight, node.Box.AlignY);
+            _nodes[index].Content = sumHeight + gaps;
+            var shift = Scrolled(node.Id, sumHeight + gaps - innerHeight, node.Box.AlignY);
+            _nodes[index].Scrolled = Math.Max(0, -shift);
+            y += shift;
         }
 
         var cell = node.Kind == UiKind.Grid ? Math.Max(0, (innerWidth - (node.Columns - 1) * gap) / node.Columns) : 0;
@@ -766,6 +771,7 @@ public sealed partial class Ui
             switch (node.Kind)
             {
                 case UiKind.Row:
+                case UiKind.Pressable:
                     c.X = x;
                     c.Y = top + Offset(node.Box.AlignY, innerHeight - c.H);
                     x += c.W + gap;
@@ -804,21 +810,17 @@ public sealed partial class Ui
     {
         if (overflow <= 0)
         {
-            if (_scrolls.ContainsKey(id))
-            {
-                _scrolls[id] = 0;
-            }
-
+            HoldScroll(id, 0);
             return Offset(align, -overflow);
         }
 
-        if (!_scrolls.TryGetValue(id, out var offset))
+        if (!ScrollOf(id, out var offset))
         {
             return 0;
         }
 
         var held = Math.Clamp(offset, 0, overflow);
-        _scrolls[id] = held;
+        HoldScroll(id, held);
         return -held;
     }
 

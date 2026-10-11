@@ -43,6 +43,30 @@ the game's text box, the game's screens (`IEscapeHandler`, `AddEscapeHandler`; t
 passing it on, with the pointer and keys left as they are), the game's panel (`IPanelInput`), and otherwise opens the
 menu. A match's end drops its text box, screens, panel, and drawn pointer (`InputService.EndMatch`).
 
+The UI toolkit (`UI/Toolkit/`): a layer derives from `UiLayer` and describes its UI in code in `Build(Ui ui)`, each
+frame it is shown: containers closed with `using` (`Row`, `Column`, `Stack`, `Grid`, `Scroll`, and `Pressable`, a row
+clicked as a whole, its state the scope's) and elements (`Text`, `Button`, `Switch`, `Slider`, `TextBox` over a
+`TextEntry`, `Area` the game draws in `DrawArea`, redrawn when its `version` changes, `Space`), each with an id of the
+code's (`Ui.Id("name")`, `Ui.Id(list, index)`; 0 for none), `UiMarks` (disabled, selected, passive: takes no pointer),
+and a `UiBox` (sizes that fit, are fixed, grow from their content by weight, or take a share; padding, gaps, alignment,
+an anchor over the rest, a panel, `Blocks` to stop the pointer reaching what lies under it), texts set
+by `UiText` (a role the style sizes, a tone it colours, wrapping, the most lines). The layout runs as flexbox and Clay
+do; text wraps or is cut with an ellipsis; units are pixels of a 1080-pixel-high screen, scaled with the screen's height
+and `Engine:Ui:Scale` (`Ui.UnitPixelsFor`), text never under 10 px. Each element returns its `UiState` from the input
+matched against the last layout (hover, a click when released on the element pressed, a slider dragged also off it,
+the wheel to the innermost scroll area, keyboard focus by Tab and the arrows with Enter or Space to press, a text box's
+typing given through `SetTextFocus`); `Ui.Tween` eases values kept by id. Each kind is drawn by `UiStyle`, every part of
+it virtual (the engine's plain look in `MenuStyle`'s colours); `UiPainter` draws fills, outlines, and text from blobs
+kept while drawn, in the UI font with system fonts for characters it lacks (`UiTypefaces`). `UiToolkit` (run-wide)
+holds the measurer, painter, style, scale, and the clicks (`menu-hover`, `menu-press`). A layer is drawn again only
+when a hash of its result changes, allocating nothing for an unchanged page; a declaration that throws is logged once
+at Error and shows nothing until one does not. `Ui.Dump()` prints the layout one element a line (kind, id, text,
+rectangle, state), for tests and agents; tests pin rectangles with `FixedTextMeasurer` and draw a layer alone with
+`LayerPicture` (`ITERA_UI_PICTURES` names a folder `UiLayerTests` keeps its page's picture in). A HUD layer gets the
+pointer's button and the wheel only while a panel is set (`SetPanel`), as the menu and panels do, and no pointer while
+the game's input is blocked (the menu open); navigation keys reach a layer through its `Keys`. `Invalidate()` redraws a
+layer whatever its UI says (what an area shows came from elsewhere).
+
 The stats line (F1, `stats`, `Engine:Ui:Stats`) shows frames per second, frame and GPU time, the render scale, fixed
 steps per second, the session, and the living particles.
 
@@ -107,7 +131,9 @@ registered later that clash with another action keep the file's (`KeyBindings` u
 ### Files in `src/Itera.Engine`
 
   - `UI/`: the surface and its layers (console, stats line, `LoadingLayer`), the font (`UiFonts`, from `UI/Fonts/`,
-    copied to `Fonts/`), `TextBlobs`, `TextLine`, `TextEntry`, and the menu in `UI/Menu/` (`IMenu`, `MenuLayer`, `MenuLayer.Settings.cs`,
+    copied to `Fonts/`), `TextBlobs`, `TextLine`, `TextEntry`, the toolkit in `UI/Toolkit/` (`Ui` with its layout,
+    input, and dump, `UiBox`, `UiSize`, `UiText`, `UiState`, `UiElement`, `UiInput`, `UiStyle`, `UiPainter`,
+    `UiTypefaces`, `UiToolkit`, `UiLayer`), and the menu in `UI/Menu/` (`IMenu`, `MenuLayer`, `MenuLayer.Settings.cs`,
     `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`), `CentredMessageLayer`, `Amounts`.
   - `Input/`: snapshots per frame and per fixed step (`InputSnapshot`: `InputService.Frame` and `InputService.Tick`), `PointerCapture`, `IKeyboardFocus`, `IMenuInput` (`UiPointer`,
     `CapturingBinding`), `IFrameInput` and `InputService` (`SetDrawnPointer`, `SetPanel`, `SetTextFocus`,

@@ -73,7 +73,7 @@ public sealed partial class Ui
             text.Append(" float");
         }
 
-        DumpState(text, node.Id);
+        DumpState(text, index);
         text.Append('\n');
     }
 }

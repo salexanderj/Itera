@@ -18,6 +18,9 @@ public enum UiKind
     /// <summary>A column that shows part of its children and scrolls through the rest.</summary>
     Scroll,
 
+    /// <summary>A row that takes the pointer as a whole, as a button does (a list's row with a picture and a name).</summary>
+    Pressable,
+
     /// <summary>A text.</summary>
     Text,
 

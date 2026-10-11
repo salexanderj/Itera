@@ -12,7 +12,7 @@ paths:
   `FakeTransport` (an in-memory session transport: no sockets, no clocks), `HostileValues` and `Watchdog` (hostile field
   values and damaged message bodies, and rows run on a worker thread that fail past 1 s of wall time, times
   `ITERA_TEST_TIME_SCALE` on a slower machine), `GpuLayout` (a C# struct against a compiled shader's block, so a game's
-  tests check its own passes' structs too), `LayerInk` (what a UI layer draws outside its `Bounds`: a HUD layer's tests
+  tests check its own passes' structs too), `LayerPicture` (a UI layer drawn alone into a bitmap or PNG), `LayerInk` (what a UI layer draws outside its `Bounds`: a HUD layer's tests
   draw it at a few screen sizes and expect none, as `tests/Game.Tests/MinimapLayerTests` does, beside its hiding,
   redraw, and zero-allocation tests), and `WireFingerprint` (the wire's bytes pinned with the protocol version; it reads
   the engine's internals, so the game's tests leave it out), compiled into the projects that use them.
@@ -142,7 +142,9 @@ Where tests live:
   `NavigationWindowTests`: moves by tiles, the map's edge, a moved window against one placed there at the start, an edit
   past it, a reset during a move, a walker 2 km to its goal, no allocation), `Audio/` (`AudioMixerTests` with the one-shots across a move of the origin, `AudioServiceTests`,
   `SynthesisTests`, `SoundCacheTests`), `Particles/`, `Commands/` (`MatchCommandsTests` too), `UI/` (`AimDotLayerTests`, `TextBlobsTests`,
-  `DevConsoleTests`, `MenuLayerTests`, `MenuJoinPageTests`, `RadialMenuTests`, `TextLineTests`), `Input/`
+  `DevConsoleTests`, `MenuLayerTests`, `MenuJoinPageTests`, `RadialMenuTests`, `TextLineTests`; `Toolkit/`:
+  `UiLayoutTests` pinning rectangles with `FixedTextMeasurer`, `UiInputTests`, `UiLayerTests` through `UISurface` and
+  `LayerPicture`), `Input/`
   (`MenuInputTests`, `KeyBindingsTests`, `KeyboardFocusTests`, `InputInjectionTests`, `TextFocusTests`), `Settings/`, `Loading/`,
   `Control/`, `EngineStepsTests` (the start-up steps), `ModLoaderIntegrationTests` (loads the real sample mod and
   checks that it unloads), and `ModDispatcherTests` (a throwing mod isolated, callbacks timed).

@@ -98,6 +98,12 @@ public readonly record struct UiBox
     /// <summary>The style draws a panel behind it.</summary>
     public bool Panel { get; init; }
 
+    /// <summary>
+    /// The pointer stops at it: what lies under it (drawn before it) takes no hover or click, though it takes none
+    /// itself. A modal panel's shade over the rest.
+    /// </summary>
+    public bool Blocks { get; init; }
+
     /// <summary>Both sizes at once.</summary>
     public static UiBox Sized(UiSize width, UiSize height) => new() { Width = width, Height = height };
 
@@ -118,6 +124,7 @@ public readonly record struct UiBox
             Padding = Padding ?? fallback.Padding,
             Gap = Gap ?? fallback.Gap,
             Panel = Panel || fallback.Panel,
+            Blocks = Blocks || fallback.Blocks,
         };
 
     /// <summary><paramref name="size"/>, with the least and most the code set on an automatic size kept.</summary>

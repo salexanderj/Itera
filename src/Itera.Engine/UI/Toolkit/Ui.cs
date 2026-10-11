@@ -3,7 +3,7 @@ using SkiaSharp;
 namespace Itera.Engine.UI.Toolkit;
 
 /// <summary>
-/// A UI described in code: between <see cref="Begin"/> and <see cref="End"/> the code declares containers (scopes it
+/// A UI described in code: between <see cref="Begin(float, float, float, in UiInput)"/> and <see cref="End"/> the code declares containers (scopes it
 /// closes with <c>using</c>: <see cref="Row"/>, <see cref="Column"/>, <see cref="Stack"/>, <see cref="Grid"/>,
 /// <see cref="Scroll"/>) and elements (<see cref="Text(string, in UiText, in UiBox)"/>, <see cref="Button"/>,
 /// <see cref="Switch"/>, <see cref="Slider"/>, <see cref="TextBox"/>, <see cref="Area"/>) in the order they show, and
@@ -16,7 +16,7 @@ namespace Itera.Engine.UI.Toolkit;
 /// Declaring and laying out allocate nothing once the pools have grown (the strings are the code's; a text box's typing
 /// is made into a string once after each change). Units are pixels of a screen <see cref="ReferenceHeight"/> pixels
 /// high, times <see cref="UnitPixels"/> (<see cref="UnitPixelsFor"/>). A declaration that threw is dropped by the next
-/// <see cref="Begin"/>. Main thread.
+/// <see cref="Begin(float, float, float, in UiInput)"/>. Main thread.
 /// </summary>
 public sealed partial class Ui
 {
@@ -43,9 +43,6 @@ public sealed partial class Ui
 
     /// <summary>Where each id was last laid out: the rectangles the input is matched against while the next is declared.</summary>
     private readonly Dictionary<int, SKRect> _lastRects = [];
-
-    /// <summary>How far each scroll area is scrolled, in pixels, by id.</summary>
-    private readonly Dictionary<int, float> _scrolls = [];
 
     /// <param name="measurer">How wide text is and how tall its lines are.</param>
     /// <param name="style">The look and the sizes the code leaves to it.</param>
@@ -145,6 +142,7 @@ public sealed partial class Ui
 
         IndexIds();
         Layout();
+        AfterLayout();
         Hash = ComputeHash();
         _lastRects.Clear();
         foreach (var (id, index) in _byId)
@@ -183,6 +181,19 @@ public sealed partial class Ui
     /// </summary>
     public UiScope Scroll(int id, in UiBox box = default) => Open(UiKind.Scroll, id, in box, 0);
 
+    /// <summary>
+    /// A row that takes the pointer as a whole, as a button does: hovered, pressed, clicked, and focused as one (its
+    /// state is the scope's <see cref="UiScope.State"/>), drawn by the style as a face behind its children. Elements
+    /// inside it that take the pointer themselves come first; mark pictures and texts inside it
+    /// <see cref="UiMarks.Passive"/> where they should not. Close it with <c>using</c>.
+    /// </summary>
+    public UiScope Pressable(int id, in UiBox box = default, UiMarks marks = UiMarks.None)
+    {
+        var index = Add(UiKind.Pressable, id, in box, marks);
+        _open = index;
+        return new UiScope(this, index, StateOf(index));
+    }
+
     /// <summary>A text with no id.</summary>
     public UiState Text(string text, in UiText setting = default, in UiBox box = default) =>
         Text(0, text, in setting, in box);
@@ -198,10 +209,16 @@ public sealed partial class Ui
     }
 
     /// <summary>A button with <paramref name="label"/>; <see cref="UiState.Clicked"/> when released on itself.</summary>
-    public UiState Button(int id, string label, in UiText setting = default, in UiBox box = default)
+    public UiState Button(
+        int id,
+        string label,
+        in UiText setting = default,
+        in UiBox box = default,
+        UiMarks marks = UiMarks.None
+    )
     {
         ArgumentNullException.ThrowIfNull(label);
-        var index = Add(UiKind.Button, id, in box);
+        var index = Add(UiKind.Button, id, in box, marks);
         _texts[index] = label;
         _nodes[index].TextSetting = setting;
         return StateOf(index);
@@ -211,9 +228,9 @@ public sealed partial class Ui
     /// A switch showing <paramref name="on"/>; <see cref="UiState.Clicked"/> when clicked, and the code flips its value
     /// (the switch shows the value given at its next declaration).
     /// </summary>
-    public UiState Switch(int id, bool on, in UiBox box = default)
+    public UiState Switch(int id, bool on, in UiBox box = default, UiMarks marks = UiMarks.None)
     {
-        var index = Add(UiKind.Switch, id, in box);
+        var index = Add(UiKind.Switch, id, in box, marks);
         _nodes[index].On = on;
         return StateOf(index);
     }
@@ -222,14 +239,21 @@ public sealed partial class Ui
     /// A slider at <paramref name="value"/> between <paramref name="least"/> and <paramref name="most"/>; when the pointer
     /// or a key moves it, <see cref="UiState.Changed"/> and the new <see cref="UiState.Value"/>.
     /// </summary>
-    public UiState Slider(int id, float value, float least, float most, in UiBox box = default)
+    public UiState Slider(
+        int id,
+        float value,
+        float least,
+        float most,
+        in UiBox box = default,
+        UiMarks marks = UiMarks.None
+    )
     {
         if (!(most > least))
         {
             throw new ArgumentOutOfRangeException(nameof(most), most, "A slider's most must be above its least.");
         }
 
-        var index = Add(UiKind.Slider, id, in box);
+        var index = Add(UiKind.Slider, id, in box, marks);
         ref var node = ref _nodes[index];
         node.Least = least;
         node.Most = most;
@@ -241,30 +265,77 @@ public sealed partial class Ui
     /// A box showing <paramref name="entry"/>'s line, or <paramref name="placeholder"/> (dim) while it is empty; clicking it
     /// gives it the typing.
     /// </summary>
-    public UiState TextBox(int id, TextEntry entry, string? placeholder = null, in UiBox box = default)
+    public UiState TextBox(
+        int id,
+        TextEntry entry,
+        string? placeholder = null,
+        in UiBox box = default,
+        UiMarks marks = UiMarks.None
+    )
     {
         ArgumentNullException.ThrowIfNull(entry);
-        var index = Add(UiKind.TextBox, id, in box);
+        var index = Add(UiKind.TextBox, id, in box, marks);
         _entries[index] = entry;
         _texts[index] = placeholder;
         return StateOf(index);
     }
 
-    /// <summary>An area the game draws itself (<c>UiLayer.DrawArea</c>), which takes the pointer like a button.</summary>
-    public UiState Area(int id, in UiBox box = default)
+    /// <summary>
+    /// An area the game draws itself (<c>UiLayer.DrawArea</c>), which takes the pointer like a button unless
+    /// <see cref="UiMarks.Passive"/>. Its drawing is redone when <paramref name="version"/> changes (a picture that
+    /// arrived, a value it shows), as for any change of the layout.
+    /// </summary>
+    public UiState Area(int id, in UiBox box = default, UiMarks marks = UiMarks.None, int version = 0)
     {
-        var index = Add(UiKind.Area, id, in box);
+        var index = Add(UiKind.Area, id, in box, marks);
+        _nodes[index].Version = version;
         return StateOf(index);
     }
 
     /// <summary>Empty room that takes nothing: a gap of its own size, or, growing, what pushes its neighbours apart.</summary>
     public void Space(in UiBox box) => Add(UiKind.Space, 0, in box);
 
+    /// <summary>The kind of element <paramref name="id"/> in the last layout, or null.</summary>
+    public UiKind? KindOf(int id) => _byId.TryGetValue(id, out var index) && !_building ? _nodes[index].Kind : null;
+
+    /// <summary>The height of a line of text at <paramref name="pixels"/>, as the layout measures it.</summary>
+    public float LineHeight(float pixels) => _measurer.LineHeight(pixels);
+
+    /// <summary>How many elements are drawn (<see cref="Drawn"/>): all of the last layout.</summary>
+    public int DrawnCount => _building ? 0 : _hitCount;
+
+    /// <summary>
+    /// The element drawn <paramref name="order"/>-th: the flow in the order declared, then anchored elements (drawn over
+    /// it).
+    /// </summary>
+    public UiElement Drawn(int order)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(order);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(order, DrawnCount);
+        return ElementAt(_hits[order].Index);
+    }
+
     /// <summary>
     /// Scrolls scroll area <paramref name="id"/> to <paramref name="pixels"/> from its top (kept within its content at
     /// the next layout).
     /// </summary>
-    public void ScrollTo(int id, float pixels) => _scrolls[id] = Math.Max(0, pixels);
+    public void ScrollTo(int id, float pixels)
+    {
+        ArgumentOutOfRangeException.ThrowIfZero(id);
+        ref var memory = ref System.Runtime.InteropServices.CollectionsMarshal.GetValueRefOrAddDefault(
+            _memory,
+            id,
+            out _
+        );
+        memory.Scrolls = true;
+        memory.Scroll = Math.Max(0, pixels);
+    }
+
+    /// <summary>
+    /// Forgets what is kept for <paramref name="id"/>: a scroll area's offset, a tween's run (an id given to other
+    /// content).
+    /// </summary>
+    public void Forget(int id) => _memory.Remove(id);
 
     /// <summary>Where element <paramref name="id"/> was last laid out, in screen pixels; empty when it was not.</summary>
     public SKRect Rect(int id) => _lastRects.TryGetValue(id, out var rect) ? rect : SKRect.Empty;
@@ -311,7 +382,17 @@ public sealed partial class Ui
             node.Most,
             node.Box.Panel,
             node.Depth,
-            node.Floating
+            node.Floating,
+            node.Marks,
+            node.Id != 0 && node.Id == _hovered,
+            node.Id != 0 && node.Id == _pressed && node.Id == _hovered,
+            node.Id != 0 && node.Id == _focused && _focusShown,
+            node.Id != 0 && node.Id == _typing,
+            Padding(in node),
+            node.Scrolled,
+            node.Content,
+            node.Version,
+            node.End
         );
     }
 
@@ -345,11 +426,11 @@ public sealed partial class Ui
         var index = Add(kind, id, in box);
         _nodes[index].Columns = columns;
         _open = index;
-        return new UiScope(this, index);
+        return new UiScope(this, index, new UiState(id, Rect(id)));
     }
 
     /// <summary>Appends an element to the container open now, with the style's defaults under its box.</summary>
-    private int Add(UiKind kind, int id, in UiBox box)
+    private int Add(UiKind kind, int id, in UiBox box, UiMarks marks = UiMarks.None)
     {
         if (!_building)
         {
@@ -376,6 +457,7 @@ public sealed partial class Ui
             Depth = parent == NoNode ? 0 : _nodes[parent].Depth + 1,
             Box = box.Over(Style.DefaultBox(kind)),
             Floating = floating,
+            Marks = marks,
         };
         _texts[index] = null;
         _entries[index] = null;
@@ -406,13 +488,6 @@ public sealed partial class Ui
         Array.Resize(ref _entries, size);
     }
 
-    /// <summary>Element <paramref name="index"/>'s state as declared: its rectangle from the last layout.</summary>
-    private UiState StateOf(int index)
-    {
-        var id = _nodes[index].Id;
-        return new UiState(id, Rect(id), Value: _nodes[index].Value);
-    }
-
     /// <summary>Maps the ids declared to their elements; an id declared twice throws.</summary>
     private void IndexIds()
     {
@@ -429,8 +504,23 @@ public sealed partial class Ui
         }
     }
 
-    /// <summary>The element's state for <see cref="Dump"/> (none until the input is matched against the layout).</summary>
-    private static void DumpState(System.Text.StringBuilder text, int id) { }
+    /// <summary>The element's state for <see cref="Dump"/>: its flags, and the pointer's, the focus's, and the typing's.</summary>
+    private void DumpState(System.Text.StringBuilder text, int index)
+    {
+        ref readonly var node = ref _nodes[index];
+        var id = node.Id;
+        text.Append((node.Marks & UiMarks.Disabled) != 0 ? " disabled" : "");
+        text.Append((node.Marks & UiMarks.Selected) != 0 ? " selected" : "");
+        if (id == 0)
+        {
+            return;
+        }
+
+        text.Append(id == _hovered ? " hover" : "");
+        text.Append(id == _pressed ? " pressed" : "");
+        text.Append(id == _focused ? " focus" : "");
+        text.Append(id == _typing ? " typing" : "");
+    }
 
     private SKRect RectOf(int index)
     {
@@ -464,8 +554,16 @@ public sealed partial class Ui
             // The text by its characters: an equal string made again draws the same.
             hash.Add(_texts[i] is { } text ? string.GetHashCode(text, StringComparison.Ordinal) : 0);
             hash.Add(_entries[i] is { } entry ? entry.Line.Version : 0);
+            hash.Add(node.Marks);
+            hash.Add(node.Version);
         }
 
+        hash.Add(_hovered);
+        hash.Add(_pressed);
+        hash.Add(_focused);
+        hash.Add(_focusShown);
+        hash.Add(_typing);
+        hash.Add(_tweens.ToHashCode());
         return hash.ToHashCode();
     }
 }
@@ -476,11 +574,15 @@ public readonly ref struct UiScope
     private readonly Ui _ui;
     private readonly int _index;
 
-    internal UiScope(Ui ui, int index)
+    internal UiScope(Ui ui, int index, UiState state = default)
     {
         _ui = ui;
         _index = index;
+        State = state;
     }
+
+    /// <summary>A pressable row's state (<see cref="Ui.Pressable"/>); its rectangle for any other container.</summary>
+    public UiState State { get; }
 
     /// <summary>Closes the container.</summary>
     public void Dispose() => _ui.Close(_index);

@@ -24,6 +24,17 @@ internal struct UiNode
     public float Least;
     public float Most;
     public bool On;
+    public UiMarks Marks;
+
+    /// <summary>A number of the game's the element's drawing depends on (an area's picture), so a change redraws it.</summary>
+    public int Version;
+
+    /// <summary>The index after the last element inside it (its subtree is contiguous).</summary>
+    public int End;
+
+    /// <summary>A scroll area's content height (its children and gaps) and how far it is scrolled, in pixels.</summary>
+    public float Content;
+    public float Scrolled;
 
     /// <summary>Laid out of its parent's flow (<see cref="UiBox.Anchor"/>), or inside such an element.</summary>
     public bool Floating;

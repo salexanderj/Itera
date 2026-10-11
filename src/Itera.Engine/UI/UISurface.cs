@@ -117,7 +117,7 @@ public sealed unsafe partial class UISurface : IDisposable
         for (var i = 0; i < _layers.Length; i++)
         {
             var layer = _layers[i];
-            layer.Update(in time);
+            layer.Update(in time, Width, Height);
             var shown = layer.Visible;
             visible |= shown;
             var bounds = shown ? Within(layer.Bounds(Width, Height), full) : SKRectI.Empty;
