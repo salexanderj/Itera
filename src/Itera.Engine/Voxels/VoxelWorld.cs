@@ -576,6 +576,25 @@ public sealed partial class VoxelWorld : IDisposable
     public bool TryGetMaterial(VoxelCoord point, out byte material) => TryGetMaterial(point, 0, out material);
 
     /// <summary>
+    /// Reads the material of level-0 voxel <paramref name="voxel"/> (in voxels, not centimetres). Returns false, with
+    /// air, when its column is not resident. Voxels above or below the world are air.
+    /// </summary>
+    internal bool TryGetVoxelMaterial(VoxelCoord voxel, out byte material)
+    {
+        if (
+            !_columns.TryGetValue(ColumnKey.Containing(voxel, 0), out var column)
+            || column.State != ColumnState.Resident
+        )
+        {
+            material = VoxelConstants.Air;
+            return false;
+        }
+
+        material = column.ReadVoxel(Memory, voxel);
+        return true;
+    }
+
+    /// <summary>
     /// Reads the material of the level-<paramref name="level"/> voxel that holds the point <paramref name="point"/>
     /// (centimetres). Returns false, with air, when that column is not resident. For tests of coarse levels.
     /// </summary>

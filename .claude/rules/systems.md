@@ -31,7 +31,9 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   system after it. While `PlayerInputBlock.Blocked`, the input reads as nothing pressed; a `Bodiless` player only looks
   about.
 - `PlayerMovementSystem` (fixed) moves every entity with a command and `MovementStats` through the voxels with
-  `VoxelCharacterMover`: steering faster on walkable ground than in the air, jumping, gravity (its own times the match's
+  `VoxelCharacterMover`: steering faster on walkable ground than in the air (on the ground by its acceleration times the
+  ground's friction, at most 1, `CharacterContact.GroundMaterial` and `PhysicsWorld.FrictionOf`: on ice of 0.05 a person
+  takes 1.8 s to reach walking speed and as long to stop), jumping, gravity (its own times the match's
   share of the Earth's, given the match's `PhysicsWorld`; a jump keeps its own launch speed), sliding on steep ground,
   pushes from loose bodies, the eye eased after a step (`EyeSmoothing.Offset`) and to a new eye height at 2 m/s
   (`EyeSmoothing.Height`). The local player crouches while Crouch is held (0.77 of its height and eye, 0.4 of its

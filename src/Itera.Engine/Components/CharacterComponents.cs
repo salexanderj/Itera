@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Physics;
 
 namespace Itera.Engine.Components;
 
@@ -176,6 +177,15 @@ public struct CharacterContact
 
     /// <summary>A jump fired in the last step's move.</summary>
     public bool Jumped;
+
+    /// <summary>
+    /// Grounded, the physics material of what it stands on (a voxel's by its voxel material, a mesh collider's by its
+    /// settings); the default on a loose body or in the air. The engine's walking grips by its friction, at most 1.
+    /// </summary>
+    public PhysicsMaterialId GroundMaterial;
+
+    /// <summary>Grounded, the surface tags of what it stands on (the game's bits); 0 on a loose body or in the air.</summary>
+    public uint GroundTags;
 }
 
 /// <summary>

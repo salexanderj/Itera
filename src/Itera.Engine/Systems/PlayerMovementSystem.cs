@@ -220,6 +220,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             World = World,
             Seconds = step.StepSeconds,
             GravityShare = _physics?.GravityShare ?? 1,
+            Physics = _physics,
             CameraFound = camera.Found,
             CameraPosition = camera.Position,
         };
@@ -639,6 +640,9 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         /// <summary>The match's gravity as a share of the Earth's: each character falls by its own gravity times it.</summary>
         public float GravityShare;
 
+        /// <summary>The match's physics, for the friction of the ground a character stands on; none grips fully.</summary>
+        public PhysicsWorld? Physics;
+
         public bool CameraFound;
         public Vector3 CameraPosition;
 
@@ -743,6 +747,8 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             contact.WallNormal = result.WallNormal;
             contact.Waiting = waiting;
             contact.Jumped = jumped;
+            contact.GroundMaterial = result.GroundMaterial;
+            contact.GroundTags = result.GroundTags;
 
             // The eye starts where it was before a step and eases to where the body puts it.
             var offset = Math.Clamp(eye.Offset - result.SteppedMetres, -size.StepMetres, size.StepMetres) * EyeEase;
@@ -751,9 +757,11 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
 
         /// <summary>
         /// The engine's walking: the horizontal velocity turned towards the command's, a slide down steep ground, the
-        /// loose bodies' push, a jump from walkable ground, and gravity (the character's own times the match's share). A
-        /// jump leaves at the speed that reaches its height under the character's own gravity, so under less it rises
-        /// higher (half gravity, twice the height and time). Returns the velocity to move by.
+        /// loose bodies' push, a jump from walkable ground, and gravity (the character's own times the match's share). On
+        /// walkable ground it turns by the ground acceleration times the ground's friction, at most 1 (on ice of 0.05 a
+        /// person takes 1.8 s to reach walking speed, and as long to stop). A jump leaves at the speed that reaches its
+        /// height under the character's own gravity, so under less it rises higher (half gravity, twice the height and
+        /// time). Returns the velocity to move by.
         /// </summary>
         private readonly Vector3 Steer(
             in PlayerCommand command,
@@ -779,7 +787,9 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             // keys steer, so a fall or a slide keeps its speed.
             if (walkable || wanted != Vector2.Zero)
             {
-                var limit = (walkable ? stats.GroundAcceleration : stats.AirAcceleration) * Seconds;
+                var grip =
+                    walkable && Physics is { } physics ? MathF.Min(physics.FrictionOf(contact.GroundMaterial), 1) : 1;
+                var limit = (walkable ? stats.GroundAcceleration * grip : stats.AirAcceleration) * Seconds;
                 var length = change.Length();
                 horizontal = length <= limit ? wanted : horizontal + change * (limit / length);
             }

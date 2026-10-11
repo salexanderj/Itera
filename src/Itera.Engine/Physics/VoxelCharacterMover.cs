@@ -51,6 +51,11 @@ public enum CharacterMoveStatus : byte
 /// When the horizontal move met a wall, the last one's normal across x and z (a unit length, pointing out of the wall
 /// towards the body); zero when it met none.
 /// </param>
+/// <param name="GroundMaterial">
+/// Grounded, the physics material of what the body stands on (a voxel's by its voxel material,
+/// <see cref="PhysicsMaterials.OfVoxel"/>; a mesh collider's by its settings); the default on a loose body or in the air.
+/// </param>
+/// <param name="GroundTags">Grounded, the surface tags of what the body stands on; 0 on a loose body or in the air.</param>
 public readonly record struct CharacterMoveResult(
     CharacterMoveStatus Status,
     bool Grounded,
@@ -60,7 +65,9 @@ public readonly record struct CharacterMoveResult(
     float SteppedMetres,
     bool Steep = false,
     Vector2 Downhill = default,
-    Vector2 WallNormal = default
+    Vector2 WallNormal = default,
+    PhysicsMaterialId GroundMaterial = default,
+    uint GroundTags = 0
 );
 
 /// <summary>
@@ -309,6 +316,12 @@ public sealed class VoxelCharacterMover
         _surfaces = new double[side * side];
     }
 
+    /// <summary>The run's physics materials, for the ground's (<see cref="CharacterMoveResult.GroundMaterial"/>); none gives the default.</summary>
+    public PhysicsMaterials? Materials { get; init; }
+
+    /// <summary>The voxel materials' surface tags, for the ground's (<see cref="CharacterMoveResult.GroundTags"/>); none gives none.</summary>
+    public IVoxelSurfaceTags? SurfaceTags { get; init; }
+
     /// <summary>
     /// The widest body the mover takes, in metres: the window of cells a slide reads (512 cells) limits it. A 10 m giant's
     /// radius is 1.5 m.
@@ -479,6 +492,13 @@ public sealed class VoxelCharacterMover
         double downX = 0,
             downZ = 0;
         var steep = groundedAfter && IsSteep(px, py, pz, r, step, slope, out downX, out downZ);
+        var groundMaterial = PhysicsMaterialId.Default;
+        uint groundTags = 0;
+        if (groundedAfter)
+        {
+            ReadGround(px, py, pz, r, out groundMaterial, out groundTags);
+        }
+
         var vy = velocity.Y;
         if ((landed || groundedAfter) && vy < 0 || hitCeiling && vy > 0)
         {
@@ -496,8 +516,94 @@ public sealed class VoxelCharacterMover
             (float)(stepped / _cellsPerMetre),
             steep,
             new Vector2((float)downX, (float)downZ),
-            hitWall ? wallNormal : Vector2.Zero
+            hitWall ? wallNormal : Vector2.Zero,
+            groundMaterial,
+            groundTags
         );
+    }
+
+    /// <summary>
+    /// What a grounded body stands on: the highest voxel or mesh triangle within the grounded reach under the feet's
+    /// centre, else the highest under four points half its radius out; a voxel's physics material and tags by its voxel
+    /// material, a triangle's by its collider. On a loose body, or where none of the five finds ground, the default and
+    /// no tags.
+    /// </summary>
+    private void ReadGround(double px, double py, double pz, double r, out PhysicsMaterialId material, out uint tags)
+    {
+        var y1 = (int)Math.Floor(py - 1e-6);
+        var y0 = y1 - (int)Math.Ceiling(_oneStep + _edge) - 1;
+        if (GroundAt((int)Math.Floor(px), (int)Math.Floor(pz), y0, y1, out _, out material, out tags))
+        {
+            return;
+        }
+
+        var best = int.MinValue;
+        var half = r * 0.5;
+        for (var i = 0; i < 4; i++)
+        {
+            var x = (int)
+                Math.Floor(
+                    px
+                        + (
+                            i == 0 ? half
+                            : i == 1 ? -half
+                            : 0
+                        )
+                );
+            var z = (int)
+                Math.Floor(
+                    pz
+                        + (
+                            i == 2 ? half
+                            : i == 3 ? -half
+                            : 0
+                        )
+                );
+            if (GroundAt(x, z, y0, y1, out var top, out var found, out var foundTags) && top > best)
+            {
+                best = top;
+                material = found;
+                tags = foundTags;
+            }
+        }
+    }
+
+    /// <summary>The highest blocking voxel or mesh triangle of column (x, z) from y0 to y1, with its material and tags.</summary>
+    private bool GroundAt(int x, int z, int y0, int y1, out int top, out PhysicsMaterialId material, out uint tags)
+    {
+        top = int.MinValue;
+        material = PhysicsMaterialId.Default;
+        tags = 0;
+        if (_world is { } world)
+        {
+            for (var y = y1; y >= y0; y--)
+            {
+                if (
+                    world.TryGetVoxelMaterial(new VoxelCoord(x, y, z), out var voxel)
+                    && voxel != VoxelConstants.Air
+                    && !_passable.Contains(voxel)
+                )
+                {
+                    top = y;
+                    material = Materials?.OfVoxel(voxel) ?? PhysicsMaterialId.Default;
+                    tags = SurfaceTags?.TagsOf(voxel) ?? 0;
+                    break;
+                }
+            }
+        }
+
+        if (
+            _meshes is { } meshes
+            && meshes.TopAt(x, z, y0, y1, out var meshTop, out var meshTags, out var collider)
+            && meshTop >= top
+        )
+        {
+            top = meshTop;
+            material = meshes.MaterialOf(collider);
+            tags = meshTags;
+        }
+
+        return top != int.MinValue;
     }
 
     /// <summary>

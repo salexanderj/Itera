@@ -74,6 +74,14 @@ grid, or `PlayArea.WithoutTerrain`, a 10 cm grid's bounds, with a bounds constru
 Where a mesh's top is over the voxels' but its surface lies under theirs (a steep triangle half in the ground), the
 voxels' surface holds the body.
 
+A grounded move reports what the body stands on (`CharacterMoveResult.GroundMaterial` and `GroundTags`, kept in
+`CharacterContact`): the highest blocking voxel or mesh triangle within the grounded reach under the feet's centre,
+else the highest under four points half the radius out; a voxel's physics material by its voxel material
+(`PhysicsMaterials.OfVoxel`) and its tags by `IVoxelSurfaceTags`, a triangle's tags and its collider's material as it
+is at the move (`MeshColumns.TopAt`, a span keeping its collider); on a loose body or in the air the default and no
+tags. The mover takes the run's materials and the voxels' tags as `Materials` and `SurfaceTags` (the core sets them;
+a mover made without them reads the default).
+
 Building blocks for a game's movement modes (`IMovementMode`, `.claude/rules/systems.md`): a move reports the last
 wall it met (`CharacterMoveResult.WallNormal`, across x and z, out of the wall; zero for none; also
 `CharacterContact.WallNormal`); a step height of 0 turns off stepping up and keeping to the ground; and

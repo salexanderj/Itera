@@ -14,10 +14,17 @@ namespace Itera.Engine.Physics;
 /// </param>
 public readonly record struct PhysicsMaterial(float Friction, float Bounciness);
 
-/// <summary>A material registered in <see cref="PhysicsMaterials"/>, by its number; the default is the engine's own.</summary>
-/// <param name="Value">Its place in the registry.</param>
-public readonly record struct PhysicsMaterialId(byte Value)
+/// <summary>
+/// A material registered in <see cref="PhysicsMaterials"/>, by its number; the default is the engine's own. Its number
+/// is a field, so the ECS inspector shows it where a component keeps one.
+/// </summary>
+public readonly record struct PhysicsMaterialId
 {
+    /// <summary>Its place in the registry.</summary>
+    public readonly byte Value;
+
+    public PhysicsMaterialId(byte value) => Value = value;
+
     /// <summary>The engine's material: friction 1, no bounce.</summary>
     public static PhysicsMaterialId Default => default;
 }

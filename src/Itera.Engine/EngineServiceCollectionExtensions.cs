@@ -246,6 +246,9 @@ public static class EngineServiceCollectionExtensions
     {
         var passability = services.GetRequiredService<IVoxelPassability>();
         var colliders = services.GetRequiredService<MeshColliders>();
+        // The ground's physics material and surface tags, reported with each move.
+        var materials = services.GetRequiredService<PhysicsMaterials>();
+        var tags = services.GetRequiredService<IVoxelSurfaceTags>();
         if (services.GetService<VoxelWorld>() is { } world)
         {
             return new VoxelCharacterMover(
@@ -253,7 +256,11 @@ public static class EngineServiceCollectionExtensions
                 passability,
                 services.GetRequiredService<LooseBodyVoxels>(),
                 colliders
-            );
+            )
+            {
+                Materials = materials,
+                SurfaceTags = tags,
+            };
         }
 
         var cell = services.GetRequiredService<IOptions<EngineOptions>>().Value.Physics.CollisionCentimetres;
@@ -264,7 +271,10 @@ public static class EngineServiceCollectionExtensions
             cell,
             edge,
             services.GetRequiredService<LooseBodyVoxels>()
-        );
+        )
+        {
+            Materials = materials,
+        };
     }
 
     private static LooseBodies CreateLooseBodies(IServiceProvider services)

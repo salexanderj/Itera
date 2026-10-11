@@ -111,7 +111,9 @@ Where tests live:
   higher than a plain one; voxel materials' in `VoxelPhysicsMaterialsTests`: a static for each physics material of a
   cell, each with its own voxels' boxes, none split with nothing mapped, a box sliding down a slope of ice voxels, a
   cleared material's static removed, a ball of its voxel material's, the mapping's rules, the build timed for one and
-  three materials, no allocation), mesh colliders (`MeshCollidersTests`: two-sided rays across buckets, tags, a ball that
+  three materials, no allocation; the ground a move reports in `GroundMaterialTests`: a mesh floor's collider material
+  read as it is now and its tags, past the floor's edge, voxels' by their voxel material, none in the air, no
+  allocation), mesh colliders (`MeshCollidersTests`: two-sided rays across buckets, tags, a ball that
   lands on a collider's Bepu static at any voxel level) and the shared ray (`CollisionSourcesTests`); the colliders as
   the mover's cells (`MeshColumnsTests`); the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves)
   and 10,000 random moves that never leave it inside a voxel, the same test bodies run on voxels and on triangles built

@@ -88,6 +88,13 @@ public sealed partial class PhysicsWorld : IDisposable
     /// <summary>The bounces the engine set since the match began (<see cref="PhysicsMaterial.Bounciness"/>).</summary>
     public long Bounces => _contacts?.Bounces ?? 0;
 
+    /// <summary>
+    /// The friction of <paramref name="material"/> (<see cref="PhysicsMaterial.Friction"/>); 1, the default's, for a world
+    /// with no registry or a material it does not have.
+    /// </summary>
+    public float FrictionOf(PhysicsMaterialId material) =>
+        _materials is { } materials && material.Value < materials.Count ? materials[material].Friction : 1;
+
     /// <summary>The run's physics materials, if it has a registry (a test's world may have none).</summary>
     internal PhysicsMaterials? Materials => _materials;
 

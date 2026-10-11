@@ -72,6 +72,37 @@ public sealed class PlayerMovementSystemTests : IDisposable
         Assert.Equal(0, bad.Pitch);
     }
 
+    [Theory]
+    [InlineData(1f, 0.1f)]
+    [InlineData(0.05f, 1.8f)]
+    public void A_player_reaches_walking_speed_and_stops_by_the_grounds_friction(float friction, float seconds)
+    {
+        var materials = new PhysicsMaterials();
+        var ground = materials.Register("ground", new PhysicsMaterial(friction, 0));
+        materials.MapVoxel(FlatGenerator.Stone, ground);
+        using var physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance, null, materials);
+        physics.Initialize();
+        using var voxels = LoadWorld(new FlatGenerator(), new Vector3(0, 0, -2), radiusMetres: 9);
+        var mover = new VoxelCharacterMover(voxels, new NothingPassable()) { Materials = materials };
+        using var world = World.Create();
+        using var system = Create(world, new Vector3(0, 3, 4), mover: mover, physics: physics);
+        Run(world, system, 90, default);
+        Assert.Equal(ground, Read(world).Contact.GroundMaterial);
+
+        // Forward along -z: 4.5 m/s at 50 m/s² times the friction (at most 1), then the keys let go.
+        var speeding = StepsUntil(
+            world,
+            system,
+            new PlayerCommand { Move = new Vector2(0, 1) },
+            speed => speed >= 4.49f
+        );
+        var stopping = StepsUntil(world, system, default, speed => speed <= 0.01f);
+
+        Assert.InRange(speeding / 60f, seconds * 0.9f, seconds * 1.1f + 1 / 60f);
+        Assert.InRange(stopping / 60f, seconds * 0.9f, seconds * 1.1f + 1 / 60f);
+        Assert.True(Read(world).Contact.Grounded);
+    }
+
     [Fact]
     public void A_velocity_that_is_not_a_number_stops_the_player_instead_of_freezing_it()
     {
@@ -830,6 +861,27 @@ public sealed class PlayerMovementSystemTests : IDisposable
             );
             system.Update(in Step);
         }
+    }
+
+    /// <summary>Runs steps of <paramref name="command"/> until the player's speed across x and z passes <paramref name="done"/>.</summary>
+    private static int StepsUntil(
+        World world,
+        PlayerMovementSystem system,
+        PlayerCommand command,
+        Func<float, bool> done
+    )
+    {
+        for (var steps = 1; steps <= 600; steps++)
+        {
+            Run(world, system, 1, command);
+            var velocity = Read(world).Velocity.MetresPerSecond;
+            if (done(new Vector2(velocity.X, velocity.Z).Length()))
+            {
+                return steps;
+            }
+        }
+
+        return int.MaxValue;
     }
 
     private static (CharacterPosition Position, CharacterVelocity Velocity, CharacterContact Contact) Read(World world)

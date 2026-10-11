@@ -407,7 +407,8 @@ public sealed partial class MeshColliders(
         out Vector3 b,
         out Vector3 c,
         out VoxelCoord anchor,
-        out uint tags
+        out uint tags,
+        out int collider
     )
     {
         a = _a[triangle];
@@ -415,6 +416,7 @@ public sealed partial class MeshColliders(
         c = _c[triangle];
         anchor = _anchors[triangle];
         tags = _tags[triangle];
+        collider = _owner[triangle];
     }
 
     /// <summary>Removes every collider's static from the physics, while it still exists. Safe to call more than once.</summary>

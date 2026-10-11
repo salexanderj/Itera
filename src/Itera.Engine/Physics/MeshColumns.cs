@@ -198,21 +198,32 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     }
 
     /// <summary>The tags of the highest triangle blocking a cell of column (x, z) from y0 to y1; 0 for none.</summary>
-    public uint TagsAt(int x, int z, int y0, int y1)
+    public uint TagsAt(int x, int z, int y0, int y1) => TopAt(x, z, y0, y1, out _, out var tags, out _) ? tags : 0;
+
+    /// <summary>
+    /// The highest cell of column (x, z) from y0 to y1 a triangle blocks, with the triangle's tags and its collider
+    /// (<see cref="MeshColliders"/>); false for none.
+    /// </summary>
+    public bool TopAt(int x, int z, int y0, int y1, out int top, out uint tags, out int collider)
     {
-        var best = int.MinValue;
-        uint tags = 0;
+        top = int.MinValue;
+        tags = 0;
+        collider = -1;
         foreach (ref readonly var span in Spans(x, z))
         {
-            if (span.Hi >= y0 && span.Lo <= y1 && Math.Min(span.Hi, y1) > best)
+            if (span.Hi >= y0 && span.Lo <= y1 && Math.Min(span.Hi, y1) > top)
             {
-                best = Math.Min(span.Hi, y1);
+                top = Math.Min(span.Hi, y1);
                 tags = span.Tags;
+                collider = span.Collider;
             }
         }
 
-        return tags;
+        return collider >= 0;
     }
+
+    /// <summary>The physics material of collider <paramref name="collider"/>, read now (a game may change it).</summary>
+    public PhysicsMaterialId MaterialOf(int collider) => colliders.SettingsOf(collider).Material;
 
     /// <summary>The top of the highest cell blocked from y0 to y1 in column (x, z), or <see cref="int.MinValue"/>.</summary>
     private int ColumnTop(int x, int z, int y0, int y1)
@@ -314,7 +325,15 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
         {
             // In cells from the chunk's corner across and from a whole cell at the collider's anchor up, so the small
             // shift behind the front is not lost to rounding at any place or height.
-            colliders.Triangle(triangle, out var ma, out var mb, out var mc, out var anchor, out var tags);
+            colliders.Triangle(
+                triangle,
+                out var ma,
+                out var mb,
+                out var mc,
+                out var anchor,
+                out var tags,
+                out var collider
+            );
             var y0 = (int)Math.Floor(anchor.Y / (double)VoxelConstants.CentimetresPerMetre * cellsPerMetre);
             var a = Local(ma, anchor, x0, y0, z0);
             var b = Local(mb, anchor, x0, y0, z0);
@@ -369,7 +388,10 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
                     var cellLo = (int)MathF.Floor(lo + Epsilon);
                     var cellHi = Math.Max(cellLo, (int)MathF.Ceiling(hi - Epsilon) - 1);
                     _built.Add(
-                        (x | (z << ChunkBits), new ColumnSpan(y0 + cellLo, y0 + cellHi, surface - cellLo, tags))
+                        (
+                            x | (z << ChunkBits),
+                            new ColumnSpan(y0 + cellLo, y0 + cellHi, surface - cellLo, tags, collider)
+                        )
                     );
                 }
             }
@@ -497,7 +519,7 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     /// the lowest (a wall's highest point; kept from it, so a float holds it to a ten-thousandth of a cell at any height),
     /// and its tags.
     /// </summary>
-    private readonly record struct ColumnSpan(int Lo, int Hi, float Surface, uint Tags);
+    private readonly record struct ColumnSpan(int Lo, int Hi, float Surface, uint Tags, int Collider);
 
     /// <summary>The spans of a chunk's columns: column i's from <c>Offsets[i]</c> to <c>Offsets[i + 1]</c>.</summary>
     private sealed class Chunk
