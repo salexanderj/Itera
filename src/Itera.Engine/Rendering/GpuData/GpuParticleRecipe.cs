@@ -34,8 +34,11 @@ public struct GpuParticleRecipe
     public float SizeJitter;
     public float ColourJitter;
 
-    /// <summary>Metres per second squared, downwards.</summary>
-    public float Gravity;
+    /// <summary>The recipe's gravity, metres per second squared: its multiple of the match's (<c>PhysicsWorld.Gravity</c>).</summary>
+    public Vector3 Gravity;
+
+    /// <summary>The match's up, against its gravity (+y with none): a particle rests on a surface facing it.</summary>
+    public Vector3 Up;
     public float Drag;
     public float Restitution;
     public float Friction;
@@ -45,8 +48,8 @@ public struct GpuParticleRecipe
     public float FadeIn;
     public float FadeOutShare;
 
-    /// <summary>The recipe as the shaders read it.</summary>
-    public static GpuParticleRecipe From(in ParticleRecipe recipe) =>
+    /// <summary>The recipe as the shaders read it, under the match's <paramref name="gravity"/>.</summary>
+    public static GpuParticleRecipe From(in ParticleRecipe recipe, Vector3 gravity) =>
         new()
         {
             Draw = (uint)recipe.Draw,
@@ -66,7 +69,8 @@ public struct GpuParticleRecipe
             SizeEnd = recipe.SizeEnd,
             SizeJitter = Math.Clamp(recipe.SizeJitter, 0, 1),
             ColourJitter = Math.Clamp(recipe.ColourJitter, 0, 1),
-            Gravity = recipe.Gravity * 9.81f,
+            Gravity = gravity * recipe.Gravity,
+            Up = gravity.LengthSquared() > 0 ? -Vector3.Normalize(gravity) : Vector3.UnitY,
             Drag = Math.Max(0, recipe.Drag),
             Restitution = Math.Clamp(recipe.Restitution, 0, 1),
             Friction = Math.Clamp(recipe.Friction, 0, 1),

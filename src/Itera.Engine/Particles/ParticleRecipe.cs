@@ -124,7 +124,10 @@ public struct ParticleRecipe
     /// <summary>How far one particle's colour may be lighter or darker than the recipe's, as a share (0 to 1).</summary>
     public float ColourJitter;
 
-    /// <summary>Gravity as a multiple of 9.81 m/s² downwards; negative rises (smoke).</summary>
+    /// <summary>
+    /// Gravity as a multiple of the match's (<c>PhysicsWorld.Gravity</c>, 9.81 m/s² down by default); negative rises
+    /// (smoke). A particle rests on a surface that faces against the match's gravity.
+    /// </summary>
     public float Gravity;
 
     /// <summary>How fast its speed falls away, per second: the velocity is multiplied by exp(-drag * seconds).</summary>

@@ -271,10 +271,11 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
     /// <summary>
     /// Writes the frame's recipes, the bursts the emitter queued (<see cref="ParticleEmitter.Drain"/>), and the
     /// attractors into the regions of <paramref name="slot"/>, keeping the camera's attractor at the camera, and
-    /// returns the compute passes' constants. Main thread, between taking the frame's request and publishing the frame.
-    /// Writes only, in address order.
+    /// returns the compute passes' constants; each recipe's gravity a multiple of the match's <paramref name="gravity"/>
+    /// (the Earth's with no match). Main thread, between taking the frame's request and publishing the frame. Writes
+    /// only, in address order.
     /// </summary>
-    public ParticleWrite Write(int slot, in FrameTime time, in ViewConstants view)
+    public ParticleWrite Write(int slot, in FrameTime time, in ViewConstants view, System.Numerics.Vector3 gravity)
     {
         if ((uint)slot >= FrameSync.FramesInFlight)
         {
@@ -302,7 +303,7 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
         );
         for (var i = 0; i < recipes.Length; i++)
         {
-            recipeTarget[i] = GpuParticleRecipe.From(in recipes[i]);
+            recipeTarget[i] = GpuParticleRecipe.From(in recipes[i], gravity);
         }
 
         _emitter.Attractors.CopyTo(

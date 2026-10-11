@@ -12,6 +12,7 @@ using Itera.Engine.Maths;
 using Itera.Engine.Modding;
 using Itera.Engine.Networking;
 using Itera.Engine.Particles;
+using Itera.Engine.Physics;
 using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Rendering.Memory;
@@ -883,7 +884,7 @@ public sealed partial class GameLoop
 
         var lines = _linePass.Write(request.Slot, _debugLines.Vertices);
         _particleCommands.UpdateStress();
-        var particles = _particlePass.Write(request.Slot, in frame, in view);
+        var particles = _particlePass.Write(request.Slot, in frame, in view, match.Physics.Gravity);
         _renderPasses.Write(request.Slot, in frame, in view);
         var uiRows = WriteUi(in request, in ui);
         _exchange.Publish(
@@ -989,7 +990,7 @@ public sealed partial class GameLoop
         _dynamicScale.Update(now);
         var view = CreateView(in request);
         var lines = _linePass.Write(request.Slot, _debugLines.Vertices);
-        var particles = _particlePass.Write(request.Slot, in frame, in view);
+        var particles = _particlePass.Write(request.Slot, in frame, in view, PhysicsWorld.DefaultGravity);
         var uiRows = WriteUi(in request, in ui);
         _exchange.Publish(
             new RenderFrame(

@@ -187,7 +187,7 @@ void main()
         }
         else
         {
-            velocity.y -= recipe.gravity * push.delta;
+            velocity += recipe.gravity * push.delta;
         }
 
         velocity *= exp(-recipe.drag * push.delta);
@@ -224,7 +224,7 @@ void main()
                         velocity = tangent * (1.0 - recipe.friction) - into * recipe.restitution * normal;
                     }
 
-                    if (normal.y > 0.7 && length(velocity) < RestSpeed)
+                    if (dot(normal, recipe.up) > 0.7 && length(velocity) < RestSpeed)
                     {
                         velocity = vec3(0.0);
                         packed |= PARTICLE_RESTING;

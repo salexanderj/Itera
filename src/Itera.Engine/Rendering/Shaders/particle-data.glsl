@@ -76,7 +76,8 @@ struct ParticleRecipe
     float sizeEnd;
     float sizeJitter;
     float colourJitter;
-    float gravity;
+    vec3 gravity;
+    vec3 up;
     float drag;
     float restitution;
     float friction;

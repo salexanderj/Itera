@@ -16,7 +16,8 @@ by name (`ParticleRecipes`, registered once a run; `StockEffects` registers seve
 the world's pass, in frames that draw the world (under the loading screen they wait). They meet the world through the
 camera's depth image (`DepthTarget`, handed to the compute pass and back): a particle that moves to just behind what
 the image shows (0.3 m and its step) bounces off that surface, sticks, or dies as its recipe says, with the surface's
-slope from the neighbouring depths; off the image, behind something, or within 0.6 m of the camera (an orthographic
+slope from the neighbouring depths (it comes to rest on one that faces against the match's gravity); off the image,
+behind something, or within 0.6 m of the camera (an orthographic
 view's: outside its box) it meets nothing, and a resting particle falls again where the image shows its support gone. A lit particle in
 view takes its sunlight from the shadow cascades and its sky light from the sky field (`mesh-light.glsl`, with
 `MeshPass`'s set bound as set 1), eased halfway each frame, into two bytes of its record. Lit cubes and soft sprites are
@@ -26,7 +27,9 @@ their draw set, compiled with `LOOK_BINDING 8`; the look is in `.claude/rules/re
 and the grade, and their sunlight scaled by `LOOK.daylight`, so it fades at dusk and is gone at night. Their constants
 (`ParticleConstants`) carry the view's near, far, and lens (`Orthographic`), so the depth read back, the collisions,
 the culling, and the sprites' facing work through an orthographic camera too. The pool (262,144 by default) is a ring
-that overwrites the oldest. Nothing comes back to the game and nothing is sent: each game makes its own particles. The console's
+that overwrites the oldest. A recipe's gravity is a multiple of the match's (`PhysicsWorld.Gravity`, its direction
+too; the Earth's with no match): `GpuParticleRecipe` carries the vector and the match's up (+y with no gravity), which
+`ParticlePass.Write` is given each frame. Nothing comes back to the game and nothing is sent: each game makes its own particles. The console's
 `particles` tests recipes by name.
 
 The pool's particles are local to the match's origin and move with it: the render thread keeps the origin the pool was

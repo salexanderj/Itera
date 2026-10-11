@@ -9,7 +9,8 @@ namespace Itera.Engine.Tests.Rendering;
 
 /// <summary>
 /// The particle shaders against the structs the CPU writes and sizes: the pool, the recipes, the bursts, the counters
-/// (whose first 32 bytes are the two indirect draws), the compute passes' push constants, and the draws' view.
+/// (whose first 32 bytes are the two indirect draws), the compute passes' push constants, and the draws' view; and a
+/// recipe's gravity, a multiple of the match's, with the match's up for resting.
 /// </summary>
 public sealed class ParticlePassTests : IDisposable
 {
@@ -39,6 +40,28 @@ public sealed class ParticlePassTests : IDisposable
     /// The pool's particles move with the match's origin: a frame that simulates in another origin takes the whole move
     /// since the last frame that simulated (frames between may not), and an emptied pool takes the frame's origin.
     /// </summary>
+    [Fact]
+    public void A_recipes_gravity_is_its_multiple_of_the_matchs_and_rests_against_it()
+    {
+        var sparks = new Itera.Engine.Particles.ParticleRecipe { Gravity = 1 };
+        var smoke = new Itera.Engine.Particles.ParticleRecipe { Gravity = -0.04f };
+
+        var earth = GpuParticleRecipe.From(in sparks, Itera.Engine.Physics.PhysicsWorld.DefaultGravity);
+        var rising = GpuParticleRecipe.From(in smoke, Itera.Engine.Physics.PhysicsWorld.DefaultGravity);
+        var sideways = GpuParticleRecipe.From(in sparks, new Vector3(6, -8, 0));
+        var none = GpuParticleRecipe.From(in sparks, Vector3.Zero);
+
+        Assert.Equal(new Vector3(0, -9.81f, 0), earth.Gravity);
+        Assert.Equal(Vector3.UnitY, earth.Up);
+        // Smoke rises as before, and still rests on surfaces facing up.
+        Assert.Equal(0.3924f, rising.Gravity.Y, 5);
+        Assert.Equal(Vector3.UnitY, rising.Up);
+        Assert.Equal(new Vector3(6, -8, 0), sideways.Gravity);
+        Assert.True(Vector3.Distance(new Vector3(-0.6f, 0.8f, 0), sideways.Up) < 1e-6f);
+        Assert.Equal(Vector3.Zero, none.Gravity);
+        Assert.Equal(Vector3.UnitY, none.Up);
+    }
+
     [Fact]
     public void The_pool_moves_by_the_origins_move_since_it_last_simulated()
     {
