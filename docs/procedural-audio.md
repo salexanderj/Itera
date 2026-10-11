@@ -2,7 +2,9 @@
 
 Written 2026-09-28, when sound was brought forward. The project has no recorded or bought sound effects and asked
 whether a game on Itera can make its sounds in code with the methods of Andy Farnell's *Designing Sound* (MIT Press,
-2010). This note gives the answer, the methods compared, and how the engine's recipes work.
+2010). This note gives the answer, the methods compared, and how the engine's recipes work. Since 2026-10-11 a game
+also plays sounds and music read from files, where synthesis does badly or a recording is at hand
+(`docs/sound-files.md`).
 
 ## The book
 

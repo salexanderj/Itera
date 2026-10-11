@@ -1,6 +1,6 @@
 ---
 name: scaffold
-description: "Steps, file lists, and templates for adding to Itera or a game on it: a system (engine or game), an option, a console command, a game message, a generator change, a model from glTF, the game's look and sun, the main camera's lens, a render pass of the game's own, an image view (a minimap, a screen in the world), a game's own on/off setting, a text box or a screen Escape closes, a HUD screen or panel on the UI toolkit, a page in the engine's menu, a game's own menu, a UI style, a test that plays the real game, and a game without voxel terrain. Use before adding any of these, so every place they touch changes together; the checklist tests (ChecklistTests, ShippedSettingsTests, SystemOrderTests, WorldTests) fail when one is missed."
+description: "Steps, file lists, and templates for adding to Itera or a game on it: a system (engine or game), an option, a console command, a game message, a generator change, a model from glTF, a sound from a file, music, the game's look and sun, the main camera's lens, a render pass of the game's own, an image view (a minimap, a screen in the world), a game's own on/off setting, a text box or a screen Escape closes, a HUD screen or panel on the UI toolkit, a page in the engine's menu, a game's own menu, a UI style, a test that plays the real game, and a game without voxel terrain. Use before adding any of these, so every place they touch changes together; the checklist tests (ChecklistTests, ShippedSettingsTests, SystemOrderTests, WorldTests) fail when one is missed."
 ---
 
 # Adding to Itera
@@ -156,6 +156,36 @@ surface layer, small stones) vanish.
    [SECONDS]]` puts one in front of the camera, the log's `Mesh assets:` lines have no Warning or note about it, a
    `ScenarioTests` row finds it in `MeshInstances`, and for a skinned model a test like `FoxModelTests` compares its
    clips with SharpGLTF's own world matrices.
+
+## A sound from a file
+
+1. The files in `src/Game/Sounds/` (WAV, or Ogg Vorbis; mono or stereo), copied by a csproj item like the mesh
+   sample's (`<None Update="Sounds\*.wav;Sounds\*.ogg" CopyToOutputDirectory="PreserveNewest" />`), and a row each in
+   `Sounds/SOURCES.md` with its source and licence. A loop names its points in the file: a WAV's `smpl` chunk, or an Ogg
+   file's `LOOPSTART` with `LOOPLENGTH` or `LOOPEND`; the file makes the join seamless (`docs/sound-files.md`).
+2. Register it in the game's `IRunStartup` by name, as a recipe: `audio.Recipes.Register("clang", new
+   FileOneShotRecipe(Path.Combine("Sounds", "clang-1.wav"), ...) { Gain = 0.5f, ReferenceMetres = 2 })` (1 to 16
+   files, each a variation, at most 30 s each; `KeepStereo = true` for a stereo sound at the listener), or `new
+   FileLoopRecipe(path)` (one file of at most 120 s) for a sound held while sustained (`SampleSounds`).
+3. A system finds it once (`audio.Recipes.TryFind`, in `Initialize`) and plays it: `audio.Play(new SoundEvent { Recipe,
+   Position, Level })`, or for a loop `audio.Sustain(new SoundLoop { Recipe, Key, Position })` each frame it should
+   play (positions local; `SoundLoop.AtListener` or `SoundEvent.AtListener` for no place).
+4. Check it: `sound files` lists each file as read, `sound play NAME` plays it at the listener, the log names a file
+   that cannot be read at Error, and a test hears it with no device (`AudioService.QueueWithoutThread`, with sound on:
+   `QueuedEvents`, `QueuedLoops`; the mesh sample's `SampleSoundSystemTests`) and reads the file
+   (`SoundDecoders.Open`: channels, rate, frames, loop points; `SampleSoundsTests`).
+
+## Music
+
+1. The track's file (Ogg Vorbis, or WAV) with the game's sounds (above), its loop named in the file when it has an
+   intro; a track loops whole by default.
+2. Declare it in the game's `IRunStartup`: `audio.Music.Declare("forest", Path.Combine("Sounds", "forest.ogg"),
+   loop: true)` (at most 64, before the audio thread starts; the headers are read then, a bad file logged at Error).
+3. Play it from a system or the game's menu: `music.Play("forest")` (cross-fades over 2 s from what plays;
+   `fadeSeconds`, and `restart` to play it from its start when it plays already), `music.Stop()`; `music.Current` says
+   what was asked for. The engine's menu plays the track `Engine:Audio:MenuMusic` names; a game's own menu plays its own
+   (`SampleMenu.FollowMusic`).
+4. Check it: `music list`, `music play NAME`, and `music` (the decks' gains, underruns, what the music thread decoded).
 
 ## The game's look
 

@@ -6,7 +6,8 @@ paths:
 
 ## Sound
 
-Sound (`Engine:Audio`, `AudioService`, `docs/procedural-audio.md`) is made in code: recipes by name (`SoundRecipes`)
+Sound (`Engine:Audio`, `AudioService`; `docs/procedural-audio.md`, and for files and music `docs/sound-files.md`) is
+made in code, or read from files (below): recipes by name (`SoundRecipes`)
 model each sound's physics, driven by a level from 0 to 1. A one-shot recipe (`OneShotRecipe`) is rendered at start as 4
 levels of 4 variations (by default) into OpenAL buffers, and an event plays the nearest level's (never the same
 variation twice running). A stream recipe (`StreamRecipe`) runs live while the game sustains it each iteration

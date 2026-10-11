@@ -48,8 +48,9 @@ Ordered by how many game types each blocks.
    or triggers, fixed solver settings; `VoxelColliders` freezes any dynamic body, a game's too, where no level-0 column
    is loaded.
 6. **Input, sound, the menu, and saves.** Keyboard and mouse only (gamepads are counted, not read; all devices feed one
-   player); sound is procedural and mono (no file loading, no music path); a save holds the edit log and 4 KB of the
-   game's match data. When this was written a game got no typed text, the menu was sealed, and Escape always opened
+   player); sound was procedural and mono (no file loading, no music path) until 2026-10-11, when sounds and music
+   from WAV and Ogg Vorbis files came (`docs/sound-files.md`); a save holds the edit log and 4 KB of the game's match
+   data. When this was written a game got no typed text, the menu was sealed, and Escape always opened
    it; since 2026-10-11 a game's text box takes the typing, its screens take Escape first, it swaps the menu for its
    own or adds pages and Settings rows to the engine's, and a UI toolkit lays out, drives, and draws its screens
    (`docs/ui-toolkit.md`).
@@ -94,6 +95,11 @@ and bodies, and saving the game's own state.
    (`MatchControlStates`). Left for later: nine-slice images, a safe-area margin, rich text, right-to-left text, IME
    composition (GLFW 3.4 has none), per-element redraw areas.
 5. Sound files and music: WAV (a reader of the engine's own) and Ogg Vorbis (NVorbis 0.10.5), with a music path.
+   Done 2026-10-11 (`docs/sound-files.md`): WAV and Ogg Vorbis read (NVorbis 1.0.0-rc.2, not 0.10.5, whose seeks land
+   off), sounds from files as one-shots and as loops round the points their files name, music streamed on a thread of
+   its own with equal-power cross-fades and the menu's track an option, Master, Music, and Effects volumes on a Sound
+   tab, and the mesh sample's sounds and music made in code. Left for later: EFX filters and reverb, Doppler, playlists,
+   a track's own volume, ducking, more than two channels, and Opus, FLAC, or MP3.
 6. Physics materials, collision groups, and gravity set by the game.
 
 Gamepads come later (not a high priority, 2026-10-11); the research for them is in `docs/ui-toolkit.md`.

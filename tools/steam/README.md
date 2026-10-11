@@ -44,7 +44,7 @@ libSkiaSharp.so         libSkiaSharp.dll    the UI's drawing
 libsteam_api.so         steam_api64.dll     Steam
 Game.pdb, Itera.Engine.pdb, Itera.Modding.pdb
 appsettings.json
-Fonts/, Shaders/, Textures/  (and Mods/ when a player adds mods)
+Fonts/, Models/, Shaders/, Textures/  (Sounds/ with sound files, and Mods/ when a player adds mods)
 ```
 
 Single file (`-p:PublishSingleFile=true`) puts every managed assembly and the .NET runtime into the game's file. The

@@ -47,6 +47,7 @@ engine so far). The research and decisions behind the engine are in `docs/`:
 - `docs/edit-log-compaction.md`: what a long edit log costs and the methods compared.
 - `docs/anti-aliasing.md`: the research behind SMAA 1x before FSR 1.
 - `docs/procedural-audio.md`: sound made in code, after Farnell's *Designing Sound*.
+- `docs/sound-files.md`: sounds and music read from WAV and Ogg Vorbis files, the choices made, and the measurements.
 
 ## 2. Dependencies and their roles
 
@@ -60,6 +61,7 @@ Versions are pinned in `Directory.Packages.props` (central package management).
 | Silk.NET.MoltenVK.Native | 2.23.0 | Vulkan on macOS | Ships `libMoltenVK.dylib` so no user install is needed. |
 | Silk.NET.Shaderc + .Shaderc.Native | 2.23.0 | GLSL to SPIR-V at runtime, targeting Vulkan 1.3 | No build-time shader toolchain needed; enables shader hot reload. |
 | Silk.NET.OpenAL + Silk.NET.OpenAL.Soft.Native | 2.23.0 / 1.23.1 | Audio output | OpenAL Soft is bundled for every platform, so a game runs without a system OpenAL. |
+| NVorbis | 1.0.0-rc.2 | Decodes Ogg Vorbis sound files and music (`Audio/Files/VorbisDecoder`) | MIT and managed; a release candidate pinned for its fixes over 0.10.5, whose seeks land off and can throw (`docs/sound-files.md`). It allocates as it decodes, so it runs on the sound render and music threads. |
 | Silk.NET.Maths | 2.23.0 | Vector and matrix types used by Silk.NET APIs | Required by the windowing API surface. |
 | Arch + Arch.System | 2.1.0 / 1.1.0 | Entity component system | Archetype-based, allocation-free queries, fast iteration. Game logic is systems over components. |
 | BepuPhysics + BepuUtilities | 2.5.0-beta.29 | Rigid body physics: loose bodies against the voxels (characters move with Itera's own mover) | Fast, SIMD-based, actively maintained. The 2.4 stable line only targets net6.0 and is old. |
@@ -160,7 +162,7 @@ Rules:
 | `Rendering/Shaders/` | GLSL files copied to `Shaders/` in the output: the full-screen, mesh, mesh asset, skinning, shadow, sky, FSR, SMAA, loading, UI, debug-line, particle, cluster, and material-bake shaders, and the include-only files (`view.glsl`, `mesh-asset-data.glsl`, `turns.glsl`, `mesh-data.glsl`, `mesh-light.glsl`, `mesh-surface.glsl`, `mesh-shade.glsl` (the light and grade every surface of the mesh pass takes), `surface-noise.glsl`, `lighting.glsl`, `sky.glsl`, `particle-data.glsl`, `particle-constants.glsl`, `look.glsl`); a game's own shaders are the tree's `Game/` folder (`Shaders/Game/` in the output); `ShaderCompiler` (GLSL to SPIR-V through Shaderc with a disk cache), `ShaderSource` (`#include` expansion) and `ShaderRoots` (where the engine's and the game's shaders are read from), `ShaderReloads` and `IReloadsShaders` |
 | `Particles/` | `ParticleEmitter` (bursts queued for the next frame, the pool's ring, attractors, the stress test), `ParticleBurst`, `ParticleRecipe` and `ParticleRecipes` (by name, at most 128), `ParticleStats`, `ParticleColours`, `StockEffects` (seven general recipes); the GPU side is `Rendering/ParticlePass` |
 | `Native/` | Valve's `steam_api` library for each platform (`Native/Steam/`, with a README naming the release), copied next to the game. |
-| `Audio/` | `AudioService` (where game code queues sounds), `AudioMixer` (the audio thread's work), `RecipeRenderer`, `AudioExchange`, `AudioStats`, `SoundRecipe` (`OneShotRecipe`, `StreamRecipe`, `SoundGenerator`; `FileRecipe` and `FileOneShotRecipe`, sounds read from files) and `SoundRecipes` (by name, at most 256), `Files/` (the WAV and Ogg Vorbis readers), `SoundEvent` and `SoundLoop`, `EngineSounds`, `SoundCache`, `WavWriter`; `Synthesis/` (`SoundRandom`, `Dsp`, `OnePole`, `StateVariableFilter`, `NoiseSource`, `ModalBank`); the device (`IAudioDevice`, `OpenAlAudioDevice`, `NullAudioDevice`, `AudioDeviceFactory`) |
+| `Audio/` | `AudioService` (where game code queues sounds), `AudioMixer` (the audio thread's work), `RecipeRenderer`, `AudioExchange`, `AudioStats`, `SoundRecipe` (`OneShotRecipe`, `StreamRecipe`, `SoundGenerator`; `FileRecipe`, `FileOneShotRecipe`, and `FileLoopRecipe`, sounds read from files) and `SoundRecipes` (by name, at most 256), `Files/` (the WAV and Ogg Vorbis readers), the music (`MusicPlayer`, `MusicTrack`, `MusicExchange`, `MusicFeed`, `MusicStreamer`, `MusicDecks`), `SoundEvent` and `SoundLoop`, `EngineSounds`, `SoundCache`, `WavWriter`; `Synthesis/` (`SoundRandom`, `Dsp`, `OnePole`, `StateVariableFilter`, `NoiseSource`, `ModalBank`); the device (`IAudioDevice`, `OpenAlAudioDevice`, `NullAudioDevice`, `AudioDeviceFactory`) |
 | `Loading/` | `LoadingScreen`, `ILoadingTask` and `LoadingProgress`, `EngineLoadingTasks` (Sounds, World, Navigation, Warm-up), `ModelsLoadingTask` (waits for a list of models to reach the GPU) |
 | `Ecs/` | `EcsWorld` (Arch world plus fixed and frame system groups), `IFixedUpdateSystem`, `IFrameUpdateSystem`, `EcsChecks` and `CheckedWorldExtensions` (Debug-only precondition checks for Arch calls) |
 | `Components/` | The ECS components the engine's systems share: cameras, characters and players, loose bodies, and `NetEntity` |
@@ -206,9 +208,10 @@ line, UI, upscale, SMAA, and loading passes, and the timestamp query pool), 14. 
 the engine's console commands, the console as the keyboard focus, and the menu for the input), 15. game
 (`IRunStartup.Start`: the game's run-wide registries, its sound and particle recipes, keybindings, on/off settings, and
 image views), 16. mods, 17. mesh assets (the models declared, read), 18. mesh assets on the GPU, 19. image views (each
-declared view's records, images, and sets), 20. render passes (the game's own), 21. audio thread (and the sound render
-thread, which renders the one-shot recipes' variations or reads them from the sound cache while the audio thread plays
-what is ready), 22. render thread, 23. control port (off unless `Engine:Control:Enabled`; last, so it stops first). Steam starts before the Vulkan instance, whose layers it adds. Every
+declared view's records, images, and sets), 20. render passes (the game's own), 21. audio thread (the music tracks'
+headers read first, on the main thread; the music thread, with tracks, and the sound render thread, which renders the one-shot recipes'
+variations or reads them from the sound cache, and reads the sounds from files, while the audio thread plays what is
+ready), 22. render thread, 23. control port (off unless `Engine:Control:Enabled`; last, so it stops first). Steam starts before the Vulkan instance, whose layers it adds. Every
 Vulkan object is made here, so starting or ending a match makes no Vulkan call and the render thread runs from start to
 exit.
 
@@ -372,7 +375,8 @@ presents while the main thread handles events and fixed steps. It does not draw 
 recording is cheap and the GPU works asynchronously anyway, and this keeps latency low. Physics uses Bepu's own worker
 threads inside the step (a quarter of the processors, 1 to 6 threads, so Bepu does not crowd out the voxel workers and
 the render thread). Sound has a thread of its own (`AudioService`), which alone makes OpenAL calls once it runs; the main
-thread hands it each iteration's sounds and the listener through `AudioExchange`. Voxel columns are generated on their own
+thread hands it each iteration's sounds, music commands, and the listener through `AudioExchange` and `MusicExchange`,
+and a music thread decodes the music ahead of it (`MusicStreamer`). Voxel columns are generated on their own
 background threads (`VoxelWorkers`, half of the processors by default, below normal priority, which on Linux changes
 nothing: every thread runs at the process's nice value); they hand finished columns to the main thread, which alone
 changes the live voxel world. The same threads free the memory of unloaded columns, ahead of any generation, so unloading
@@ -382,8 +386,8 @@ costs the main thread a few microseconds per column.
 steps run in reverse (loading, mods' `OnMatchEnded`, ECS, match UI, the world on the GPU, tint, save (the named save
 written), voxel physics, navigation, whose thread is given 5 s, voxels with their workers stopped and their memory freed,
 physics, then the session's socket). Then every run step whose initialisation started shuts down in reverse order: the
-control port (each connection given 1 s), the render thread (stopped, then the device drained), the audio thread (its
-sources and buffers freed), mods (`OnGameExit`, then `OnModUnloaded` in reverse load order), game, UI, renderer, settings
+control port (each connection given 1 s), the render thread (stopped, then the device drained), the audio thread (the sound render thread and
+the music thread stopped first, each given 2 s, then the audio thread, which frees its sources and buffers), mods (`OnGameExit`, then `OnModUnloaded` in reverse load order), game, UI, renderer, settings
 (`settings.json` written), audio, shader compiler, input, GPU memory, frame sync, swapchain, Vulkan context, window,
 Steam (the Steam API shut down), and network. If the render thread does not stop within 2 s, it is stuck inside a present
 (the window is hidden); the window and every Vulkan object are then left to the OS, and the other steps still run. The
@@ -1492,11 +1496,21 @@ logged and stays silent, and a stream whose generator throws is ended; the other
 the listener is under 0.002 is never started, and when every voice plays, a louder sound takes the quietest one-shot's voice.
 Once a second the mixer asks the device whether its output is still there and moves to the default output when it went.
 Sound is cosmetic and never sent over a session. Recipes need no determinism across machines (`MathF` is allowed), but every
-filter and resonator state is flushed below 1e-20 once a block, since .NET cannot flush denormal floats. Samples are mono
-16-bit. With no device, or `Engine:Audio:Enabled` false, no thread starts and every call does nothing. The engine's own
+filter and resonator state is flushed below 1e-20 once a block, since .NET cannot flush denormal floats. A recipe's
+samples are mono 16-bit (a sound from a file keeps its rate, and its two channels when kept stereo). With no device, or `Engine:Audio:Enabled` false, no thread starts and every call does nothing. The engine's own
 recipes are the menu's clicks and two test sounds (`EngineSounds`); a game registers its own in an `IRunStartup`. Rendering
 34 one-shots of 520 variations took 0.8 to 2.7 s at start in Release and 12 to 15 s in Debug, on the render thread, 26.7 MB
 of buffers.
+
+Sounds can also be read from files, and music streams from them (`docs/sound-files.md`). A `FileOneShotRecipe` (1 to 16
+files, each a variation) or `FileLoopRecipe` (one file, played while sustained, round its loop points) is a recipe like
+any other; the sound render thread reads its WAV or Ogg Vorbis files whole (at most 30 s, a loop 120 s) and the audio thread
+puts each into a buffer at its own rate, a stereo one kept stereo at the listener when the recipe says so. Music
+(`MusicPlayer`, `AudioService.Music`) is tracks declared by name, one heard at a time: a music thread decodes ahead
+into rings, the audio thread plays two decks of its own beside the voice pool and cross-fades them at equal power, and
+a loop goes round its points with no gap through a second decoder waiting at the loop's start. The volumes are the
+master (the listener's gain), and under it Effects (every voice of the pool) and Music (the decks). A file that cannot
+be read is logged at Error and plays nothing.
 
 ### Vulkan, shaders, threads, and GPU memory
 
@@ -1543,8 +1557,14 @@ Engine work that is known and not done:
   under one sizing rule with a player's UI scale (`docs/ui-toolkit.md`). Not built: gamepads (the research is in that
   file), IME composition (GLFW 3.4 has none), nine-slice images, a safe-area margin, rich text, right-to-left text, and
   drawing again only the elements that changed. The UI pass blends in linear light, so see-through UI shows more of the
-  world than its colours say (left as it is). Next in the order of work: sound files and music (WAV, and Ogg Vorbis with
-  NVorbis 0.10.5).
+  world than its colours say (left as it is).
+- **Sound files and music** (built 2026-10-11): sounds read from WAV and Ogg Vorbis files (NVorbis 1.0.0-rc.2), played
+  as one-shots or looping while sustained, round the loop points their files name; music streamed from files on a
+  thread of its own and cross-fading at equal power on two decks, the menu's track an option; Master, Music, and Effects
+  volumes on a Sound tab; the mesh sample's sounds and music made in code (`docs/sound-files.md`). Not built: EFX
+  filters and reverb, Doppler, playlists, a track's own volume, ducking, sounds from files past 120 s that are not
+  music, more than two channels, and Opus, FLAC, or MP3. Next in the order of work: physics materials, collision groups,
+  and gravity set by the game.
 - **Large maps** (built 2026-10-10): a map's size set in its generator's grid (up to ±160 km, up and down too), voxels of
   1 cm to 1 m, positions kept local to a match's origin with absolute types (`WorldPoint`, `VoxelCoord`) wherever
   they cross it, and moves of the origin following the camera (`OriginShiftSystem`, `OriginShifts`; the renderer,
@@ -1575,7 +1595,8 @@ Engine work that is known and not done:
   thread.
 - **Particles**: trails as ribbons, soft particles (fading where a sprite meets a surface), sprites at half resolution for
   heavy smoke, and blood-style decals.
-- **Sound**: filters by distance and occlusion (OpenAL's EFX), reverb by place, Doppler, music, and voices from recordings.
+- **Sound**: filters by distance and occlusion (OpenAL's EFX), reverb by place, Doppler, and voices (recordings play
+  from files since 2026-10-11, `docs/sound-files.md`).
 - **Skia's Vulkan backend** for the UI, and dirty rectangles narrower than whole rows.
 - **Steam on macOS arm64** (the package has no osx-arm64 build of the managed wrapper) and the two-account join test.
 

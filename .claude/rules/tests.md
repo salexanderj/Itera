@@ -145,7 +145,11 @@ Where tests live:
   (flow fields on small grids, the scanner with a floor 409 m down, the service, and its moving window,
   `NavigationWindowTests`: moves by tiles, the map's edge, a moved window against one placed there at the start, an edit
   past it, a reset during a move, a walker 2 km to its goal, no allocation), `Audio/` (`AudioMixerTests` with the one-shots across a move of the origin, `AudioServiceTests`,
-  `SynthesisTests`, `SoundCacheTests`), `Particles/`, `Commands/` (`MatchCommandsTests` too), `UI/` (`AimDotLayerTests`, `TextBlobsTests`,
+  `SynthesisTests`, `SoundCacheTests`; the files' readers, `WavReaderTests` over `WavBuilder`, `VorbisDecoderTests` and
+  `SoundFilesTests` over the Ogg fixtures `tools/sounds/make_sounds.py fixtures` made; `FileSoundTests` and
+  `FileLoopTests` through the mixer on `FakeAudioDevice`; `MusicTests` over `MusicHarness`, the music's parts pumped
+  round by round on in-memory files, `FakeDecoder`, a loop's join checked frame for frame; `OpenAlLoopbackTests` on
+  OpenAL Soft's loopback device), `Particles/`, `Commands/` (`MatchCommandsTests` too), `UI/` (`AimDotLayerTests`, `TextBlobsTests`,
   `DevConsoleTests`, `MenuLayerTests` and `MenuJoinPageTests` (the menu worked by what its elements read),
   `MenuPicturesTests` (every menu page drawn at 1280x720 and 2560x1440; `ITERA_UI_PICTURES` keeps them, for a look test),
   `EngineLayerBoundsTests` and `UiFontsTests` (the sizing rule), `RadialMenuTests`, `TextLineTests`; `Toolkit/`:
