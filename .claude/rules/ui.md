@@ -105,7 +105,10 @@ is open the game gets no input, and with `Engine:Ui:MenuPausesOffline` (false by
 held (`FixedStepAccumulator.Hold`, apart from the console's `pause`; a host's or a client's never wait). The mesh sample
 swaps it for its own (`SampleMenu`, a toolkit layer in a look of its own, with the engine's `SettingsPage` inside); its
 README lists what a game's menu must do (`AboveMatch`, `Visible` through joins and starts, following `MatchControl`,
-its text box's typing through `TextFocus`, the Settings page's key capture, the shade first in the flow).
+its text box's typing through `TextFocus`, the Settings page's key capture, the shade first in the flow). A game's tests
+of its menu move a `MatchControl` they made through the loop's states with `MatchControlStates` (a join connecting, a
+match starting and playing, its end), read what the menu asked for from `MatchControl.PendingStart` and `PendingLeave`,
+and give it `PlayerSettings.WithoutFile()`.
 
 The engine's main menu (`UI/Menu/MenuLayer`, a toolkit layer, run-wide, drawn over the HUD and under the console; its
 look `MenuLook`: the plain style at 32.4-unit text, with 3.24-unit outlines and 12.96-unit corners): a run starts at it unless

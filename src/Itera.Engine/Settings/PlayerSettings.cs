@@ -5,6 +5,7 @@ using Itera.Engine.Rendering;
 using Itera.Engine.UI.Toolkit;
 using Itera.Engine.Windowing;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Itera.Engine.Settings;
@@ -129,6 +130,25 @@ public sealed partial class PlayerSettings
             keys,
             toolkit
         ) { }
+
+    /// <summary>
+    /// The player's settings at <paramref name="options"/>' values (the engine's defaults when null), read from and
+    /// written to no file, applied to nothing but <paramref name="keys"/> and <paramref name="toolkit"/>: for a game's
+    /// tests of its menu or settings.
+    /// </summary>
+    public static PlayerSettings WithoutFile(
+        EngineOptions? options = null,
+        KeyBindings? keys = null,
+        UiToolkit? toolkit = null
+    ) =>
+        new(
+            options ?? new EngineOptions(),
+            CommandLineKeys.None,
+            null,
+            NullLogger<PlayerSettings>.Instance,
+            keys: keys,
+            toolkit: toolkit
+        );
 
     /// <param name="options">The options, whose values come first.</param>
     /// <param name="commandLine">The keys the command line gave, which win over the file.</param>

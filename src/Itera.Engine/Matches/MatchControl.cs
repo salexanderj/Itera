@@ -25,7 +25,9 @@ public enum MatchPhase
 /// <summary>
 /// The run's match, for run-wide services: the current one's services (null with none), its phase, the session role
 /// (offline with none), why the last one ended, and the requests to start or leave one, which <c>GameLoop</c> takes at
-/// the start of its next iteration. <c>GameLoop</c> alone starts and ends matches. Main thread.
+/// the start of its next iteration. <c>GameLoop</c> alone starts and ends matches; a game's tests put one they made into
+/// the loop's states with <see cref="MatchControlStates"/> and read a menu's requests with <see cref="PendingStart"/>
+/// and <see cref="PendingLeave"/>. Main thread.
 /// </summary>
 public sealed class MatchControl
 {
@@ -72,6 +74,12 @@ public sealed class MatchControl
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
         _leave = reason;
     }
+
+    /// <summary>The start asked for and not yet taken by the loop, or null (for a game's tests and tools).</summary>
+    public MatchStart? PendingStart => _start;
+
+    /// <summary>The leave's reason asked for and not yet taken by the loop, or null (for a game's tests and tools).</summary>
+    public string? PendingLeave => _leave;
 
     /// <summary>The leave asked for since the last call, or null.</summary>
     internal string? TakeLeave()

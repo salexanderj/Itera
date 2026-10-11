@@ -1,6 +1,6 @@
 ---
 name: scaffold
-description: "Steps, file lists, and templates for adding to Itera or a game on it: a system (engine or game), an option, a console command, a game message, a generator change, a model from glTF, the game's look and sun, the main camera's lens, a render pass of the game's own, an image view (a minimap, a screen in the world), a game's own on/off setting, a test that plays the real game, and a game without voxel terrain. Use before adding any of these, so every place they touch changes together; the checklist tests (ChecklistTests, ShippedSettingsTests, SystemOrderTests, WorldTests) fail when one is missed."
+description: "Steps, file lists, and templates for adding to Itera or a game on it: a system (engine or game), an option, a console command, a game message, a generator change, a model from glTF, the game's look and sun, the main camera's lens, a render pass of the game's own, an image view (a minimap, a screen in the world), a game's own on/off setting, a text box or a screen Escape closes, a HUD screen or panel on the UI toolkit, a page in the engine's menu, a game's own menu, a UI style, a test that plays the real game, and a game without voxel terrain. Use before adding any of these, so every place they touch changes together; the checklist tests (ChecklistTests, ShippedSettingsTests, SystemOrderTests, WorldTests) fail when one is missed."
 ---
 
 # Adding to Itera
@@ -238,10 +238,11 @@ A choice the player makes and the game keeps in `settings.json` (the starter's m
 1. In the game's `IRunStartup.Start`: `settings.RegisterSwitch(name, defaultValue)` (keep the `GameSwitch`), and a key
    for it if the player toggles it (`KeyBindings.Register(id, label, hint, InputBinding.Of(key))`; the Keybindings tab
    lists it after the movement keys). The starter's `Minimap.Declare` does both.
-2. The Settings page has no row for it: a frame system toggles it (`settings.SetSwitch(which, !settings.IsOn(which))`
-   when `settings.Keys.WasPressed(in input.Frame, key)` and the match's `PlayerInputBlock` is not `Blocked`), and the
-   code it controls reads `IsOn` (both allocate nothing). The file is written when the player next leaves the Settings
-   page or at the run's end.
+2. A row on the Settings page, if the player sets it there: `SettingsRows.AddSwitch(which, label, hint, tab)` in the
+   same `Start` (the engine's `SettingsRows.GameTab` or `GraphicsTab`, or a tab of the game's own). A key toggles it in a
+   frame system (`settings.SetSwitch(which, !settings.IsOn(which))` when `settings.Keys.WasPressed(in input.Frame, key)`
+   and the match's `PlayerInputBlock` is not `Blocked`), and the code it controls reads `IsOn` (both allocate nothing).
+   The file is written when the player next leaves the Settings page or at the run's end.
 3. Test it as the starter's `MinimapSystemTests` does (the key hides and shows it in the player's settings, and does
    nothing while the input is blocked); the engine's `PlayerSettingsTests` cover the file.
 
@@ -260,6 +261,77 @@ opens (`.claude/rules/ui.md`).
    `Initialize`). The newest added is asked first. The engine drops both at the match's end.
 3. Test them over the real `InputService` (`tests/Itera.Engine.Tests/Input/TextFocusTests` shows how) or a
    `HeadlessMatch` (`match.Input`).
+
+## A HUD screen or panel on the UI toolkit
+
+An inventory, a shop, a scoreboard, a dialogue box (`.claude/rules/ui.md`, the toolkit's paragraph):
+
+1. The layer: a class deriving from `UiLayer` and `IMatchUiLayer` (or `IUiLayer` for a run-wide one), taking the run's
+   `UiToolkit` and `IFrameInput` in its constructor (`: base(toolkit, input)`), with `Visible` while it shows and
+   `Build(Ui ui)` declaring it every frame it shows:
+
+   ```csharp
+   protected override void Build(Ui ui)
+   {
+       using (ui.Column(Ui.Id("shop"), new UiBox { Panel = true, Padding = new UiEdges(32), Gap = 12,
+                                                   Anchor = UiAnchor.Screen(UiPoint.Centre) }))
+       {
+           ui.Text("Shop", UiText.Heading);
+           using (ui.Grid(Ui.Id("shop.items"), columns: 4, new UiBox { Gap = 8 }))
+               for (var i = 0; i < _items.Count; i++)
+                   if (ui.Area(Ui.Id(s_item, i), UiBox.Fixed(96, 96), version: _items[i].Version).Clicked)
+                       Buy(i);
+           if (ui.Button(Ui.Id("shop.close"), "Close").Clicked) Close();
+       }
+   }
+   ```
+
+   Sizes are units of a 1080-pixel-high screen. Ids are `Ui.Id("name")` (static readonly fields) or `Ui.Id(list, i)`.
+   Strings declared each frame must be kept (a field, made again only when they change), or the layer allocates.
+   `DrawArea(painter, element)` draws what an `Area` shows (an icon, a picture); give the area a `version` that changes
+   when its picture does.
+2. Its input: register it in the match's scope (`services.AddScoped<IMatchUiLayer, Shop>()`, after the engine's). A
+   layer that takes clicks implements `IPanelInput` and sets itself as the panel while it shows
+   (`input.SetPanel(this)`, `SetPanel(null)` as it closes): the pointer is freed and its buttons and the wheel reach it.
+   A screen Escape closes is an `IEscapeHandler` (the section above); a text box in it gets the typing when clicked.
+   Keyboard focus keys are the layer's own (`Keys`, a `UiKeys` from the game's bindings); the menu's reach only the menu.
+3. Tests, as `tests/Itera.Engine.Tests/UI/Toolkit/UiLayerTests` does: the layer drawn on a `UISurface` with a stub
+   `IFrameInput`, clicked by what its elements read (`layer.Ui.TryFind(label, out var element)`, `element.Rect`); its
+   ink inside its bounds at a few screen sizes (`LayerInk`); an idle frame allocating nothing (`SystemAllocation`); its
+   picture (`LayerPicture`, `ITERA_UI_PICTURES`). The console's `ui` prints it in a running game and `ui press LABEL`
+   clicks it. Choose see-through colours from a shot of the running game: the UI pass blends in linear light.
+
+## A page in the engine's menu, and Settings rows
+
+1. A page: a class implementing `IMenuPage` (`Title`, `Build(Ui ui)` declaring its content inside the menu's panel,
+   `Escape()` true when it closed something of its own), added in the game's `IRunStartup.Start` with
+   `pages.Add(label, hint, page, MenuPlace.Main)` (or `MenuPlace.InGame` over a match, or `MenuPlace.Both`; `Main` by
+   default; `MenuPages`, run-wide). Its button shows above
+   Settings; the menu adds the title and Back.
+2. Settings rows: `SettingsRows.AddSwitch` (the on/off setting's section above).
+3. Test it through the engine's menu as `MenuLayerTests.A_games_page_opens_from_its_button_and_its_switch_rows_show_on_their_tabs` does.
+
+## A game's own menu
+
+Copy `samples/Itera.MeshSample/SampleMenu.cs`; its README's "A game's own menu" lists what every menu must do
+(`AboveMatch`, `Visible` through joins and starts, following `MatchControl`, typing through `TextFocus`, the Settings
+page's key capture, the shade first in the flow).
+
+1. Register it after `AddIteraEngine`: `services.AddSingleton<IMenu, MyMenu>()` (the last `IMenu` is the run's).
+2. Settings: the engine's `SettingsPage` inside it (`Build`, then `Footer`), or the game's own rows over
+   `PlayerSettings`. With Steam, list the friends hosting (`SteamFriendList`, `Watching`) and answer `JoinRequests`.
+3. Tests, as `tests/Itera.MeshSample.Tests/SampleMenuTests` does: the menu built with a `MatchControl` the test moves
+   (`MatchControlStates`: a join connecting, a match playing, its end), what it asked for read from
+   `MatchControl.PendingStart` and `PendingLeave`, `PlayerSettings.WithoutFile()`; and one real match followed
+   (`HeadlessRun`). Pictures of every page at 1280x720 and 2560x1440, and shots of the running game, for a look test.
+
+## A UI style
+
+A look of the game's own for the toolkit's elements: a class deriving from `UiStyle` (`samples/Itera.MeshSample/
+SampleMenuStyle.cs`), its colours a `MenuStyle`, its body text in units (`base(bodyUnits, colours)`); override what
+differs (`CornerUnits`, `OutlineUnits`, `TextUnits`, `Bold`, `DefaultBox`, or a kind's drawing, `DrawButton` and the
+rest). Set it on one layer (`Ui.Style = new MyStyle()` in its constructor) or on every layer made after it
+(`UiToolkit.Style`). A part made for another style (the engine's `SettingsPage`) sizes its controls itself, so it fits.
 
 ## A test that plays the real game
 

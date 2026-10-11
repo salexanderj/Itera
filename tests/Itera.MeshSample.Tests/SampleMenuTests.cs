@@ -3,6 +3,7 @@ using System.Text;
 using Itera.Engine;
 using Itera.Engine.Input;
 using Itera.Engine.Matches;
+using Itera.Engine.Networking;
 using Itera.Engine.UI;
 using Itera.Engine.UI.Menu;
 using Itera.Engine.UI.Toolkit;
@@ -41,7 +42,7 @@ public sealed class SampleMenuTests : IDisposable
         Assert.Equal(["Play", "Join", "Settings", "Quit"], Buttons());
 
         Click("Play");
-        var start = EngineState.TakeStart(Matches);
+        var start = Matches.PendingStart;
         Assert.NotNull(start);
         Assert.Equal(SessionMode.Offline, start.Mode);
 
@@ -59,14 +60,14 @@ public sealed class SampleMenuTests : IDisposable
         Type(box, "nowhere");
         box.KeyDown(Key.Enter, false);
         Frame();
-        Assert.Null(EngineState.TakeStart(Matches));
+        Assert.Null(Matches.PendingStart);
         Assert.True(Menu.Ui.TryFind("'nowhere' is not host:port.", out _));
 
         // Ctrl+U clears the line.
         box.KeyDown(Key.U, true);
         Type(box, "127.0.0.1:47600");
         Click("Join", nth: 1);
-        var join = EngineState.TakeStart(Matches);
+        var join = Matches.PendingStart;
         Assert.NotNull(join);
         Assert.Equal(SessionMode.Join, join.Mode);
         Assert.Equal("127.0.0.1:47600", join.Address);
@@ -100,8 +101,8 @@ public sealed class SampleMenuTests : IDisposable
     [Fact]
     public void Over_a_match_escape_opens_it_resume_closes_it_and_leave_ends_the_match()
     {
-        EngineState.SetPhase(Matches, MatchPhase.Playing);
-        EngineState.SetStarted(Matches, 1);
+        MatchControlStates.Starting(Matches);
+        MatchControlStates.Playing(Matches);
         Frame();
         Assert.False(Menu.IsOpen);
 
@@ -127,31 +128,41 @@ public sealed class SampleMenuTests : IDisposable
         Assert.Equal(SamplePage.Main, Menu.Page);
 
         Click("Leave");
-        Assert.Equal("You left the match.", EngineState.TakeLeave(Matches));
+        Assert.Equal("You left the match.", Matches.PendingLeave);
 
         // The match ended: the bar again, with the reason at its foot.
-        EngineState.SetPhase(Matches, MatchPhase.Menu);
-        EngineState.SetLastEnd(Matches, "You left the match.");
+        MatchControlStates.Ended(Matches, "You left the match.");
         Frame();
         Assert.Equal(["Play", "Join", "Settings", "Quit"], Buttons());
         Assert.True(Menu.Ui.TryFind("You left the match.", out _));
     }
 
     [Fact]
-    public void While_a_join_connects_it_shows_where_to_and_cancel_or_escape_leaves()
+    public void While_a_join_connects_it_shows_how_far_and_cancel_leaves()
     {
-        EngineState.SetPhase(Matches, MatchPhase.Joining);
-        EngineState.SetJoinAddress(Matches, "127.0.0.1:47600");
+        MatchControlStates.Joining(Matches, "127.0.0.1:47600");
         Frame();
 
         Assert.True(Menu.IsOpen);
         Assert.True(Menu.Ui.TryFind("Connecting…", out _));
         Assert.True(Menu.Ui.TryFind("127.0.0.1:47600", out _));
+        MatchControlStates.JoinProgress(Matches, new JoinProgress(JoinStage.Downloading, 1 << 20, 3 << 20, null));
+        Frame();
+        Assert.True(Menu.Ui.TryFind("Downloading the host's world…", out _));
+
         Click("Cancel");
-        Assert.Equal("The join was cancelled.", EngineState.TakeLeave(Matches));
+        Assert.Equal("The join was cancelled.", Matches.PendingLeave);
+    }
+
+    [Fact]
+    public void Escape_while_a_join_connects_cancels_it()
+    {
+        MatchControlStates.Joining(Matches, "127.0.0.1:47600");
+        Frame();
 
         Menu.Escape();
-        Assert.Equal("The join was cancelled.", EngineState.TakeLeave(Matches));
+
+        Assert.Equal("The join was cancelled.", Matches.PendingLeave);
     }
 
     [Fact]
@@ -160,8 +171,9 @@ public sealed class SampleMenuTests : IDisposable
         Click("Settings");
         Assert.Equal(SamplePage.Settings, Menu.Page);
 
-        EngineState.SetStarted(Matches, 1);
-        EngineState.SetLastEnd(Matches, "The host refused the join.");
+        // A join that started and failed between two frames: a match counted, back at the menu with the reason.
+        MatchControlStates.Joining(Matches, "127.0.0.1:47600");
+        MatchControlStates.Ended(Matches, "The host refused the join.");
         Frame();
 
         Assert.Equal(SamplePage.Main, Menu.Page);

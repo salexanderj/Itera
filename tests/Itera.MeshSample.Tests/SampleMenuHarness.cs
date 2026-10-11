@@ -4,6 +4,7 @@ using Itera.Engine.Commands;
 using Itera.Engine.Input;
 using Itera.Engine.Matches;
 using Itera.Engine.Networking;
+using Itera.Engine.Settings;
 using Itera.Engine.UI;
 using Itera.Engine.UI.Menu;
 using Itera.Engine.UI.Toolkit;
@@ -49,7 +50,7 @@ internal sealed class SampleMenuHarness : IDisposable
             starts,
             Input,
             Window,
-            EngineState.SettingsWithoutFile(),
+            PlayerSettings.WithoutFile(),
             new SettingsRows(),
             Options.Create(options)
         );

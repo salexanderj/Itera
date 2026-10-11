@@ -48,19 +48,22 @@ Ordered by how many game types each blocks.
    or triggers, fixed solver settings; `VoxelColliders` freezes any dynamic body, a game's too, where no level-0 column
    is loaded.
 6. **Input, sound, the menu, and saves.** Keyboard and mouse only (gamepads are counted, not read; all devices feed one
-   player); a game gets no typed text; sound is procedural and mono (no file loading, no music path); the menu is sealed
-   and Escape always opens it; a save holds the edit log and 4 KB of the game's match data.
+   player); sound is procedural and mono (no file loading, no music path); a save holds the edit log and 4 KB of the
+   game's match data. When this was written a game got no typed text, the menu was sealed, and Escape always opened
+   it; since 2026-10-11 a game's text box takes the typing, its screens take Escape first, it swaps the menu for its
+   own or adds pages and Settings rows to the engine's, and a UI toolkit lays out, drives, and draws its screens
+   (`docs/ui-toolkit.md`).
 7. **Platforms.** Only Linux has run; Windows and macOS are untested, and macOS lacks a Vulkan loader. Vulkan 1.3 and BC
    textures are required.
 
-Possible from game code, with work: a UI toolkit (the engine gives drawing layers), dialogue and cutscenes, replication
-of players and bodies, and saving the game's own state.
+Possible from game code, with work: dialogue and cutscenes (on the UI toolkit since 2026-10-11), replication of players
+and bodies, and saving the game's own state.
 
 ## By game type
 
 | Fits now | Workable with effort | Blocked by the engine |
 |---|---|---|
-| Voxel survival or building, co-op shooter, tower defence, physics sandbox, voxel puzzle or platformer, turn-based tactics | Strategy and isometric games (an orthographic lens since 2026-10-10), story games (sound and UI workarounds), small lockstep games with their own simulation, games built on imported models | Racing, flight, space, open-world RPG, split screen, fighting games, more than 16 players |
+| Voxel survival or building, co-op shooter, tower defence, physics sandbox, voxel puzzle or platformer, turn-based tactics | Strategy and isometric games (an orthographic lens since 2026-10-10), story games (sound workarounds), small lockstep games with their own simulation, games built on imported models | Racing, flight, space, open-world RPG, split screen, fighting games, more than 16 players |
 
 ## Order of work
 
@@ -83,5 +86,14 @@ of players and bodies, and saving the game's own state.
 3. A map size the game sets, with origin shifting. Done 2026-10-10 (`docs/map-size-and-origin.md`; the starter's view
    is its whole map, 8 km over nine levels, with lighter haze; shadows past 200 m are an engine option for a low sun,
    `Engine:Renderer:DistantShadowMetres`, off by default).
-4. Gamepads, typed text, sound files and music, a menu a game can replace.
-5. Physics materials, collision groups, and gravity set by the game.
+4. Typed text, a menu a game can replace, and a UI toolkit (Lucy chose on 2026-10-11 to take sound and gamepads apart).
+   Done 2026-10-11: a game's text box takes the typing (whole code points), its screens take Escape before the menu,
+   the menu is a game's to swap or add to (pages, Settings rows), Steam joins and saves are public services, an offline
+   match may wait while the menu shows; the UI toolkit (`docs/ui-toolkit.md`), the engine's menu rebuilt on it under
+   one sizing rule with a player's UI scale, and the mesh sample's own menu on it; hooks for a game's tests of its menu
+   (`MatchControlStates`). Left for later: nine-slice images, a safe-area margin, rich text, right-to-left text, IME
+   composition (GLFW 3.4 has none), per-element redraw areas.
+5. Sound files and music: WAV (a reader of the engine's own) and Ogg Vorbis (NVorbis 0.10.5), with a music path.
+6. Physics materials, collision groups, and gravity set by the game.
+
+Gamepads come later (not a high priority, 2026-10-11); the research for them is in `docs/ui-toolkit.md`.

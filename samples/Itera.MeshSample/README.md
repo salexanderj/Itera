@@ -51,8 +51,10 @@ the run's), as `AddMeshSample` does: `services.AddSingleton<IMenu, SampleMenu>()
   answers `JoinRequests` (a friend's join asked for during a match waits for it, or for the match's end); the sample
   has Steam off.
 
-Its tests (`SampleMenuTests`, over `SampleMenuHarness`) click it by what its elements read; `EngineState` sets the run's
-match state the engine's loop alone sets. `SampleMenuPicturesTests` draws every page at 1280x720 and 2560x1440 into the
+Its tests (`SampleMenuTests`, over `SampleMenuHarness`) click it by what its elements read, with the engine's hooks for
+a game's tests: `MatchControlStates` puts the test's `MatchControl` into the loop's states (a join connecting, a match
+playing, its end), `MatchControl.PendingStart` and `PendingLeave` show what the menu asked for, and
+`PlayerSettings.WithoutFile` reads and writes no file. `SampleMenuPicturesTests` draws every page at 1280x720 and 2560x1440 into the
 folder `ITERA_UI_PICTURES` names. The UI pass blends the UI over the picture in linear light, so a see-through panel
 looks lighter over the world than in those pictures: take a shot of the running game (`game.py --port PORT shot`)
 before settling a colour.

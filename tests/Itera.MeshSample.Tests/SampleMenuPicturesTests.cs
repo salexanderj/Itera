@@ -25,16 +25,14 @@ public sealed class SampleMenuPicturesTests
         menu.Picture("settings-keys");
         menu.Menu.Escape();
         menu.Frame();
-        EngineState.SetPhase(menu.Matches, MatchPhase.Joining);
-        EngineState.SetJoinAddress(menu.Matches, "127.0.0.1:47600");
+        MatchControlStates.Joining(menu.Matches, "127.0.0.1:47600");
         menu.Picture("joining");
-        EngineState.SetPhase(menu.Matches, MatchPhase.Playing);
-        EngineState.SetStarted(menu.Matches, 1);
+        MatchControlStates.Starting(menu.Matches);
+        MatchControlStates.Playing(menu.Matches);
         menu.Frame();
         menu.Menu.Escape();
         menu.Picture("in-game");
-        EngineState.SetPhase(menu.Matches, MatchPhase.Menu);
-        EngineState.SetLastEnd(menu.Matches, "The host left: the host quit.");
+        MatchControlStates.Ended(menu.Matches, "The host left: the host quit.");
         menu.Picture("main-after-match");
     }
 }

@@ -7,8 +7,9 @@ paths:
 
 - `tests/Itera.Modding.Tests`, `tests/Itera.Engine.Tests`, `tests/Game.Tests` (the game's own), and
   `tests/Itera.MeshSample.Tests` (the sample without voxels, played through `HeadlessMatch`; its own menu clicked by
-  label, `SampleMenuTests` over `SampleMenuHarness`, with `EngineState` setting the run's match state a game's tests
-  cannot reach, and its pages drawn by `SampleMenuPicturesTests`), with subfolders that
+  label, `SampleMenuTests` over `SampleMenuHarness`, with the engine's hooks for a game's tests: `MatchControlStates`,
+  `MatchControl.PendingStart` and `PendingLeave`, `PlayerSettings.WithoutFile`; its pages drawn by
+  `SampleMenuPicturesTests`), with subfolders that
   mirror `src/`. `tests/Shared/` holds `SystemAllocation`, `ArchStartup`, `SerialCollectionDefinition`,
   `RunsLongAttribute` and `LongFirstCollectionOrderer`, `xunit.runner.json`, `VoxelLoading` (load a test's voxel world),
   `FakeTransport` (an in-memory session transport: no sockets, no clocks), `HostileValues` and `Watchdog` (hostile field
@@ -139,7 +140,7 @@ Where tests live:
   push constants (`UiPassTests`, `UpscalePassTests`, `LoadingPassTests`, `ParticlePassTests`, with the pool's origin), `ScreenshotTests`,
   `ShaderReloadTests`.
 - Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `LoopbackTests`, `SteamTransportTests`,
-  `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests` and `SaveFilesTests` (a temporary folder), `Matches/JoinRequestsTests`, `Navigation/`
+  `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests` and `SaveFilesTests` (a temporary folder), `Matches/JoinRequestsTests`, `Matches/MatchControlStatesTests` (the hooks for a game's menu tests against a real match), `Navigation/`
   (flow fields on small grids, the scanner with a floor 409 m down, the service, and its moving window,
   `NavigationWindowTests`: moves by tiles, the map's edge, a moved window against one placed there at the start, an edit
   past it, a reset during a move, a walker 2 km to its goal, no allocation), `Audio/` (`AudioMixerTests` with the one-shots across a move of the origin, `AudioServiceTests`,

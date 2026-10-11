@@ -13,7 +13,8 @@ paths:
   in `GameLoop`; a match's start, join, and end in `Matches/MatchFlow.cs` (no window: `MatchFlowTests` drives it); a
   match without a window or GPU for tests and tools in `Matches/HeadlessMatch.cs` (`HeadlessRun`, `HeadlessMatch`, over
   `MatchFlow`); a match's services, step list, and fixed step (`RunFixedStep`) in `Matches/MatchServices.cs` (`MatchStart`,
-  `MatchContext`, `MatchControl`, `IRunStartup` for the game's run-wide registries); the transports a session takes
+  `MatchContext`, `MatchControl` with `MatchControlStates` for a game's tests of its menu, `IRunStartup` for the game's
+  run-wide registries); the transports a session takes
   through `ISessionTransports`. Folders:
   - `Assets/`: mesh assets, models read from glTF files at the run's "mesh assets" step, with a skinned model's rig and
     clips (`.claude/rules/mesh-assets.md`).

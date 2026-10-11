@@ -1369,8 +1369,8 @@ has no navigation.
   (SIL Open Font License 1.1, its licence beside it in `src/Itera.Engine/UI/Fonts/`), so text looks the same on every
   platform. One sizing rule sizes the UI: a unit is a pixel of a 1080-pixel-high screen, scaled with the screen's height
   and the player's UI scale (75 to 150 %), so the menu, the console, the stats line, and the loading list keep their share
-  of the screen at every size (their text, `Engine:Ui:FontPixels` units, is 12 px at 720 and 24 px at 1440, never under
-  10).
+  of the screen at every size: the console's, stats line's, and loading list's text is `Engine:Ui:FontPixels` units (12
+  px at 720, 24 px at 1440, never under 10), and the menu's 32.4 units (3 % of the height).
 - The main menu (`MenuLayer`, a layer of the UI toolkit) is the run's: Play Offline, Host Game, Join Game, Settings, and
   Quit, with a join page of the Steam friends who host and an address box, and, over a match at Escape, Resume, Settings,
   Leave Match, and Quit. The settings (volume, mouse sensitivity, field of view, the UI scale, dynamic render scaling,
@@ -1538,6 +1538,13 @@ Engine work that is known and not done:
   lights, and shadowed point lights (each with the choices offered in `docs/rendering-extension.md`). A low sun's shadow
   maps cost more (the starter's start view at 2560x1440: 0.15 ms at the engine's sun, 0.19 ms at 30 degrees, 0.36 ms at
   15, 0.40 ms at 5; their longer reach adds 0.01 to 0.03 ms of that); at night they cost 0.015 ms.
+- **Typed text, a menu a game replaces, and the UI toolkit** (built 2026-10-11): a game's text box and Escape screens,
+  its own menu or pages and Settings rows in the engine's, and a toolkit that lays out, drives, and draws its screens
+  under one sizing rule with a player's UI scale (`docs/ui-toolkit.md`). Not built: gamepads (the research is in that
+  file), IME composition (GLFW 3.4 has none), nine-slice images, a safe-area margin, rich text, right-to-left text, and
+  drawing again only the elements that changed. The UI pass blends in linear light, so see-through UI shows more of the
+  world than its colours say (left as it is). Next in the order of work: sound files and music (WAV, and Ogg Vorbis with
+  NVorbis 0.10.5).
 - **Large maps** (built 2026-10-10): a map's size set in its generator's grid (up to ±160 km, up and down too), voxels of
   1 cm to 1 m, positions kept local to a match's origin with absolute types (`WorldPoint`, `VoxelCoord`) wherever
   they cross it, and moves of the origin following the camera (`OriginShiftSystem`, `OriginShifts`; the renderer,
