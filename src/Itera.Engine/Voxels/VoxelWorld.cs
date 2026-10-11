@@ -700,9 +700,11 @@ public sealed partial class VoxelWorld : IDisposable
     /// <summary>
     /// The layers of a resident column that can hold a surface, as runs from a first layer to before an end (counted from
     /// the grid's floor at its level), bottom first, into <paramref name="runs"/> (cleared first): each layer that holds
-    /// more than one fill or whose fill differs from the layer above it (a surface on a layer's top face belongs to the
-    /// blocks below it), with one layer each side. Every other layer is one fill between two layers of the same: all
-    /// air or all solid. False when the column is not resident. Main thread; allocates nothing once the list has grown.
+    /// more than one fill, whose fill differs from the layer above it (a surface on a layer's top face belongs to the
+    /// blocks below it), or differs from the same layer of the resident column past its +x or +z side or corner (its
+    /// blocks own the faces between its voxels and those), with one layer each side. Every other layer is one fill
+    /// between two layers of the same: all air or all solid. False when the column is not resident. Main thread;
+    /// allocates nothing once the list has grown.
     /// </summary>
     internal bool CollectSurfaceLayers(ColumnKey key, List<(int First, int End)> runs)
     {
@@ -712,14 +714,24 @@ public sealed partial class VoxelWorld : IDisposable
             return false;
         }
 
-        // Beyond one layer past the stored ones, every layer is the fill below or above, the same as its neighbours.
+        // Beyond one layer past the stored ones (its and its neighbours'), every layer is the fill below or above, the
+        // same as its neighbours.
+        TryGetResident(key with { X = key.X + 1 }, out var east);
+        TryGetResident(key with { Z = key.Z + 1 }, out var north);
+        TryGetResident(new ColumnKey(key.Level, key.X + 1, key.Z + 1), out var corner);
         var count = column.LayerCount;
-        var from = Math.Max(column.First - 1, 0);
-        var to = Math.Min(column.End, count - 1);
+        var (from, to) = Reach(Reach(Reach((column.First - 1, column.End), east), north), corner);
+        (from, to) = (Math.Max(from, 0), Math.Min(to, count - 1));
         for (var layer = from; layer <= to; layer++)
         {
             var state = column.LayerAt(layer);
-            if (state.Kind != ChildKind.Handle && (layer + 1 >= count || state == column.LayerAt(layer + 1)))
+            if (
+                state.Kind != ChildKind.Handle
+                && (layer + 1 >= count || state == column.LayerAt(layer + 1))
+                && Same(east, layer, state)
+                && Same(north, layer, state)
+                && Same(corner, layer, state)
+            )
             {
                 continue;
             }
@@ -737,6 +749,22 @@ public sealed partial class VoxelWorld : IDisposable
         }
 
         return true;
+    }
+
+    /// <summary>The layers from <paramref name="span"/>'s first to its last, widened to one past <paramref name="side"/>'s stored layers.</summary>
+    private static (int First, int Last) Reach((int First, int Last) span, Column? side) =>
+        side is null ? span : (Math.Min(span.First, side.First - 1), Math.Max(span.Last, side.End));
+
+    /// <summary>True when <paramref name="side"/> is not resident, or holds <paramref name="state"/> (one fill) at <paramref name="layer"/> too.</summary>
+    private static bool Same(Column? side, int layer, ChildState state)
+    {
+        if (side is null)
+        {
+            return true;
+        }
+
+        var theirs = side.LayerAt(layer);
+        return theirs.Kind != ChildKind.Handle && theirs == state;
     }
 
     /// <summary>Adds the key of every resident column to <paramref name="keys"/>. For a resync; allocates as the list grows.</summary>

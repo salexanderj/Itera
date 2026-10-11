@@ -110,8 +110,9 @@ one above (`Column.First`, `Below`, `Above`).
 - The generator says its range (`IChunkGenerator.DescribeRange`); by default the whole column, so a game's own
   generator works as before and costs as before. The heightfield base finds its range by halving the column: a block of
   layers described whole as one fill is that fill throughout, so it never describes the column layer by layer.
-- Mesh blocks only for the runs of layers that can hold a surface (`VoxelWorld.CollectSurfaceLayers`). A first version
-  kept blocks for the whole stored window; an edit 100 km up then widened a column's window to 7,813 layers and its mesh
+- Mesh blocks only for the runs of layers that can hold a surface (`VoxelWorld.CollectSurfaceLayers`: a layer of more
+  than one fill, or one whose fill differs from the layer above it or from the columns past its +x and +z sides, whose
+  faces with it its blocks own). A first version kept blocks for the whole stored window; an edit 100 km up then widened a column's window to 7,813 layers and its mesh
   column with it. A ball 60 m up over 1 cm voxels now keeps blocks for 11 of the 45 layers its column stores.
 - The level choice counts height: a column's distance is to the box of its blocks, so a camera high over the ground
   meshes no fine level under it. The starter's start, high, and far views draw as they did.

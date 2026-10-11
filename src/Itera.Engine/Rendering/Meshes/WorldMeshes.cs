@@ -655,7 +655,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         }
     }
 
-    private void AddColumn(VoxelWorld world, ColumnKey key)
+    private void AddColumn(VoxelWorld world, ColumnKey key, bool coverBehind = true)
     {
         if (_columns.ContainsKey(key))
         {
@@ -698,7 +698,17 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
                 }
             }
         }
+
+        // The columns behind it own the faces towards it: what it holds may need blocks of theirs.
+        if (coverBehind)
+        {
+            CoverSurfacesBehind(world, key);
+        }
     }
+
+    /// <summary>True when <paramref name="layer"/> of the column has blocks. For tests.</summary>
+    internal bool HasBlocks(ColumnKey key, int layer) =>
+        _columns.TryGetValue(key, out var column) && column.TryIndex(layer, 0, out _);
 
     /// <summary>How many layers of the column have blocks; 0 when it has none or is not followed. For tests.</summary>
     internal int BlockLayers(ColumnKey key) => _columns.TryGetValue(key, out var column) ? column.Layers : 0;
@@ -718,10 +728,32 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     }
 
     /// <summary>
-    /// An edit changed a layer of the column that was one fill: when its layers that can hold a surface are no longer all
-    /// among the column's blocks, the column is made again with blocks for them and meshed again, as one loaded.
+    /// An edit changed a layer of the column that was one fill: its layers that can hold a surface, and those of the
+    /// columns past its -x and -z sides and corner (whose blocks own the faces towards it), may no longer all be among
+    /// their blocks (<see cref="CoverSurfaces"/>).
     /// </summary>
     private void ColumnLayersChanged(VoxelWorld world, ColumnKey key)
+    {
+        CoverSurfaces(world, key);
+        CoverSurfacesBehind(world, key);
+    }
+
+    /// <summary>
+    /// The columns past <paramref name="key"/>'s -x and -z sides and corner, whose blocks own the faces towards it: what
+    /// it holds may give them layers that can hold a surface (<see cref="CoverSurfaces"/>).
+    /// </summary>
+    private void CoverSurfacesBehind(VoxelWorld world, ColumnKey key)
+    {
+        CoverSurfaces(world, key with { X = key.X - 1 });
+        CoverSurfaces(world, key with { Z = key.Z - 1 });
+        CoverSurfaces(world, new ColumnKey(key.Level, key.X - 1, key.Z - 1));
+    }
+
+    /// <summary>
+    /// When the column's layers that can hold a surface are no longer all among its blocks, the column is made again with
+    /// blocks for them and meshed again, as one loaded.
+    /// </summary>
+    private void CoverSurfaces(VoxelWorld world, ColumnKey key)
     {
         if (
             _columns.TryGetValue(key, out var column)
@@ -729,7 +761,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         )
         {
             RemoveColumn(key);
-            AddColumn(world, key);
+            AddColumn(world, key, coverBehind: false);
         }
     }
 

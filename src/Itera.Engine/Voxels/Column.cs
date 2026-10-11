@@ -91,9 +91,12 @@ internal sealed class Column
     {
         if (_count == 0)
         {
-            Grow(1);
-            _layers[0] = LayerAt(layer);
-            (First, _count) = (layer, 1);
+            // With nothing stored, First is where the state below gives way to the state above: the layers from it to
+            // the new one keep the state of their side.
+            var (first, end, state) = layer < First ? (layer, First, Below) : (First, layer + 1, Above);
+            Grow(end - first);
+            _layers.AsSpan(0, end - first).Fill(state);
+            (First, _count) = (first, end - first);
         }
         else if (layer < First)
         {

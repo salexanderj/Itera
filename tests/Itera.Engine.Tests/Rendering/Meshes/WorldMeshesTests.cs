@@ -814,6 +814,46 @@ public sealed class WorldMeshesTests : IDisposable
     }
 
     /// <summary>
+    /// A stone box set 40 m up, flush against the first voxels of the column past the middle one's +x side, changes only
+    /// that column; the middle column, whose blocks own the faces between its voxels and the box's, is made again with
+    /// blocks for that layer.
+    /// </summary>
+    [Fact]
+    public void A_box_flush_with_the_next_column_gives_this_one_blocks_for_its_layer()
+    {
+        var grid = new VoxelGrid(10);
+        var at = new Vector3(6.4f, 2, 0.64f);
+        using var world = TestWorlds.Load(new Voxels.BoundaryGenerator(grid), at, radiusMetres: 30);
+        using var targets = new FakeTargets();
+        using var meshes = NewMeshes(targets, levels: 1);
+        meshes.BeginMatch(world, new VoxelModels(world), new NoVoxelTintMap());
+        var view = LookingDown(at);
+        var middle = new ColumnKey(0, 0, 0);
+        var layer = (grid.ToVoxel(4_000) >> VoxelConstants.ChunkShift) - grid.MinChunkY;
+        var frame = 0;
+        void Step()
+        {
+            world.Update(0);
+            var slot = frame++ % FrameSync.FramesInFlight;
+            targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
+        }
+
+        for (var i = 0; i < 5; i++)
+        {
+            Step();
+        }
+
+        Assert.False(meshes.HasBlocks(middle, layer));
+
+        world.Apply(
+            VoxelEdit.Box(new VoxelCoord(1_280, 4_000, 0), new VoxelCoord(100, 100, 100), VoxelEditOperation.Set, 3)
+        );
+        Step();
+
+        Assert.True(meshes.HasBlocks(middle, layer));
+    }
+
+    /// <summary>
     /// A column's distance counts its height (its blocks' layers round its ground): over a heightfield, from 60 m up no
     /// level-0 block is drawn under the camera, where from 2.5 m over the ground they are, the same columns across.
     /// </summary>

@@ -809,7 +809,8 @@ it was 4 x 10^13 (5 TB at one bit each).
   generator's range, `IChunkGenerator.DescribeRange`, and the layers its edits reach), with one fill below it and one
   above it; its mesh column keeps blocks (about 4 KB a layer) only for the runs of layers that can hold a surface
   (`VoxelWorld.CollectSurfaceLayers`: a layer of more than one fill, or one whose fill differs from the layer above
-  it, and a layer each side). Measured 2026-10-10: 64 columns of the hills test generator stored 111 layers in a world 12
+  it or from the same layer of the column past its +x or +z side or corner, whose faces with it its blocks own, and a
+  layer each side). Measured 2026-10-10: 64 columns of the hills test generator stored 111 layers in a world 12
   layers tall and in one 25,000 layers tall; a ball set 100 km up widened its column to 7,813 stored layers (62 KB of
   chunk state) and two runs that can hold a surface; a ball 60 m up over 1 cm voxels left blocks for 11 of the 45
   layers the column stores; a ray 100 km down took 0.6 ms in Debug. The grid

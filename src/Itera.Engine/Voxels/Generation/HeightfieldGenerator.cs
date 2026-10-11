@@ -80,8 +80,10 @@ public abstract class HeightfieldGenerator : IChunkGenerator
     /// The layers that may hold more than one fill: below them the deep material, above them air. A layer's description
     /// goes from the deep material through mixed to air as it rises (the ground's), with the layers a feature touches
     /// mixed; so a block of layers described whole as one fill is that fill throughout, and the first and last mixed
-    /// layers are found by halving the column, not by describing each of its layers. With none mixed, the deep material
-    /// ends where the first layer of air begins.
+    /// layers are found by halving the column, not by describing each of its layers. The range always holds the ground's
+    /// own mixed layers, or, where the ground has none in the column (it lies past the column's floor or top), the place
+    /// where its deep material gives way to air: so a feature alone (a cave under ground over the column's top) leaves
+    /// the layers between it and the ground described, not taken for the state of its side.
     /// </summary>
     public void DescribeRange(
         ColumnKey column,
@@ -97,15 +99,20 @@ public abstract class HeightfieldGenerator : IChunkGenerator
         var count = column.LayerCount(Grid);
         below = ChunkFill.Uniform(Layers.DeepMaterial);
         above = ChunkFill.Air;
-        first = FirstMixed(column, at, ground, 0, count - 1);
-        if (first < 0)
+        int groundFirst = FirstMixed(column, at, ground, 0, count - 1, groundOnly: true),
+            groundLast;
+        if (groundFirst >= 0)
         {
-            // No layer mixed: air from the first layer described as air, the deep material below it.
+            groundLast = LastMixed(column, at, ground, groundFirst, count - 1, groundOnly: true);
+        }
+        else
+        {
+            // The ground's deep material ends where its first layer of air begins.
             var boundary = count;
             for (var (low, high) = (0, count - 1); low <= high; )
             {
                 var middle = (low + high) / 2;
-                if (DescribeBlock(column, at, ground, middle, middle).Kind == ChunkFillKind.Air)
+                if (DescribeBlock(column, at, ground, middle, middle, groundOnly: true).Kind == ChunkFillKind.Air)
                 {
                     (boundary, high) = (middle, middle - 1);
                 }
@@ -115,27 +122,44 @@ public abstract class HeightfieldGenerator : IChunkGenerator
                 }
             }
 
-            (first, last) = (boundary, boundary - 1);
+            (groundFirst, groundLast) = (boundary, boundary - 1);
+        }
+
+        first = FirstMixed(column, at, ground, 0, count - 1, groundOnly: false);
+        if (first < 0)
+        {
+            (first, last) = (groundFirst, groundLast);
             return;
         }
 
-        last = LastMixed(column, at, ground, first, count - 1);
+        last = Math.Max(LastMixed(column, at, ground, first, count - 1, groundOnly: false), groundLast);
+        first = Math.Min(first, groundFirst);
     }
 
-    /// <summary>What the layers from <paramref name="first"/> to <paramref name="last"/> hold, described as one block.</summary>
-    private ChunkFill DescribeBlock(ColumnKey column, GridLevel at, ColumnGround ground, int first, int last)
+    /// <summary>
+    /// What the layers from <paramref name="first"/> to <paramref name="last"/> hold, described as one block: with the
+    /// features, or the ground's alone when <paramref name="groundOnly"/>.
+    /// </summary>
+    private ChunkFill DescribeBlock(
+        ColumnKey column,
+        GridLevel at,
+        ColumnGround ground,
+        int first,
+        int last,
+        bool groundOnly = false
+    )
     {
         var minY = at.SampleAt(column.Chunk(first, Grid).Y << VoxelConstants.ChunkShift);
         var maxY = at.SampleAt(
             (column.Chunk(last, Grid).Y << VoxelConstants.ChunkShift) + VoxelConstants.ChunkSize - 1
         );
-        return ground.Describe(minY, maxY);
+        return groundOnly ? ground.DescribeGround(minY, maxY) : ground.Describe(minY, maxY);
     }
 
     /// <summary>The lowest mixed layer from <paramref name="first"/> to <paramref name="last"/>, or -1.</summary>
-    private int FirstMixed(ColumnKey column, GridLevel at, ColumnGround ground, int first, int last)
+    private int FirstMixed(ColumnKey column, GridLevel at, ColumnGround ground, int first, int last, bool groundOnly)
     {
-        if (first > last || DescribeBlock(column, at, ground, first, last).Kind != ChunkFillKind.Mixed)
+        if (first > last || DescribeBlock(column, at, ground, first, last, groundOnly).Kind != ChunkFillKind.Mixed)
         {
             return -1;
         }
@@ -146,14 +170,14 @@ public abstract class HeightfieldGenerator : IChunkGenerator
         }
 
         var middle = first + (last - first) / 2;
-        var low = FirstMixed(column, at, ground, first, middle);
-        return low >= 0 ? low : FirstMixed(column, at, ground, middle + 1, last);
+        var low = FirstMixed(column, at, ground, first, middle, groundOnly);
+        return low >= 0 ? low : FirstMixed(column, at, ground, middle + 1, last, groundOnly);
     }
 
     /// <summary>The highest mixed layer from <paramref name="first"/> to <paramref name="last"/>, or -1.</summary>
-    private int LastMixed(ColumnKey column, GridLevel at, ColumnGround ground, int first, int last)
+    private int LastMixed(ColumnKey column, GridLevel at, ColumnGround ground, int first, int last, bool groundOnly)
     {
-        if (first > last || DescribeBlock(column, at, ground, first, last).Kind != ChunkFillKind.Mixed)
+        if (first > last || DescribeBlock(column, at, ground, first, last, groundOnly).Kind != ChunkFillKind.Mixed)
         {
             return -1;
         }
@@ -164,8 +188,8 @@ public abstract class HeightfieldGenerator : IChunkGenerator
         }
 
         var middle = first + (last - first) / 2;
-        var high = LastMixed(column, at, ground, middle + 1, last);
-        return high >= 0 ? high : LastMixed(column, at, ground, first, middle);
+        var high = LastMixed(column, at, ground, middle + 1, last, groundOnly);
+        return high >= 0 ? high : LastMixed(column, at, ground, first, middle, groundOnly);
     }
 
     /// <inheritdoc />
@@ -359,7 +383,7 @@ public abstract class HeightfieldGenerator : IChunkGenerator
         /// its lowest voxel's bottom lies at or above the ground everywhere, so no voxel holds part of it, and the deep
         /// material only when its highest voxel's top lies at or below the ground everywhere, so every voxel is full.
         /// </summary>
-        private ChunkFill DescribeGround(int minY, int maxY)
+        public ChunkFill DescribeGround(int minY, int maxY)
         {
             var edge = _level.Edge;
             var bottom = minY - (edge >> 1);

@@ -284,6 +284,35 @@ public sealed class ChunkTreeTests : IDisposable
     }
 
     /// <summary>
+    /// A column that stores no layer widens from where the state below gives way to the state above: the layers between
+    /// that place and a new one keep the state of their side.
+    /// </summary>
+    [Fact]
+    public void A_column_storing_no_layer_widens_from_its_boundary()
+    {
+        var column = new Column();
+        column.Reset(new ColumnKey(0, 0, 0), VoxelGrid.Unit);
+        column.Install(40, [], ChildState.Uniform(Stone), ChildState.Empty);
+
+        column.Widen(43) = ChildState.Uniform(7);
+
+        Assert.Equal((40, 44), (column.First, column.End));
+        Assert.Equal(
+            [ChildState.Empty, ChildState.Empty, ChildState.Empty, ChildState.Uniform(7)],
+            column.Stored.ToArray()
+        );
+        Assert.Equal(ChildState.Uniform(Stone), column.LayerAt(39));
+
+        column.ClearStored();
+        column.Install(40, [], ChildState.Uniform(Stone), ChildState.Empty);
+        column.Widen(37) = ChildState.Empty;
+
+        Assert.Equal((37, 40), (column.First, column.End));
+        Assert.Equal([ChildState.Empty, ChildState.Uniform(Stone), ChildState.Uniform(Stone)], column.Stored.ToArray());
+        Assert.Equal(ChildState.Empty, column.LayerAt(40));
+    }
+
+    /// <summary>
     /// A column stores only its window of layers: below it the state below, above it the state above; storing a layer
     /// outside widens the window, the layers between taking the state of their side.
     /// </summary>

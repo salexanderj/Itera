@@ -274,10 +274,9 @@ internal sealed class ColumnJob
                 continue;
             }
 
-            (first, last) =
-                first > last
-                    ? (Math.Max(low, 0), Math.Min(high, _columnLayers - 1))
-                    : (Math.Min(first, Math.Max(low, 0)), Math.Max(last, Math.Min(high, _columnLayers - 1)));
+            // An empty range is (boundary, boundary - 1): widened the same way, it keeps the layers between the boundary
+            // and the edit, which DescribeLayers then describes.
+            (first, last) = (Math.Min(first, Math.Max(low, 0)), Math.Max(last, Math.Min(high, _columnLayers - 1)));
         }
 
         return (first, last);
