@@ -16,6 +16,7 @@ public sealed class MatchCommandsTests
     private readonly RecordingOutput _output = new();
     private readonly MatchControl _matches = new();
     private readonly ConsoleCommands _commands;
+    private readonly MatchCommands _starts;
 
     public MatchCommandsTests()
     {
@@ -28,7 +29,19 @@ public sealed class MatchCommandsTests
         steam.Initialize();
         var options = new EngineOptions();
         options.Voxels.Seed = 3;
-        new MatchCommands(_commands, _matches, steam, Options.Create(options)).Register();
+        _starts = new MatchCommands(_commands, _matches, steam, Options.Create(options));
+        _starts.Register();
+    }
+
+    [Fact]
+    public void A_start_from_a_save_names_it_or_the_options_save_and_refuses_a_name_no_save_has()
+    {
+        Assert.Equal("my farm", _starts.OfflineStart(saveName: "my farm").SaveName);
+        Assert.Equal("castle", _starts.HostStart(saveName: "castle").SaveName);
+        // The options name none here.
+        Assert.Null(_starts.OfflineStart().SaveName);
+        Assert.Throws<ArgumentException>(() => _starts.OfflineStart(saveName: "../outside"));
+        Assert.Throws<ArgumentException>(() => _starts.HostStart(saveName: " padded"));
     }
 
     [Fact]

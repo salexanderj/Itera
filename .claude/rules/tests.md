@@ -137,13 +137,13 @@ Where tests live:
   push constants (`UiPassTests`, `UpscalePassTests`, `LoadingPassTests`, `ParticlePassTests`, with the pool's origin), `ScreenshotTests`,
   `ShaderReloadTests`.
 - Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `LoopbackTests`, `SteamTransportTests`,
-  `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests` (a temporary folder), `Navigation/`
+  `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests` and `SaveFilesTests` (a temporary folder), `Matches/JoinRequestsTests`, `Navigation/`
   (flow fields on small grids, the scanner with a floor 409 m down, the service, and its moving window,
   `NavigationWindowTests`: moves by tiles, the map's edge, a moved window against one placed there at the start, an edit
   past it, a reset during a move, a walker 2 km to its goal, no allocation), `Audio/` (`AudioMixerTests` with the one-shots across a move of the origin, `AudioServiceTests`,
   `SynthesisTests`, `SoundCacheTests`), `Particles/`, `Commands/` (`MatchCommandsTests` too), `UI/` (`AimDotLayerTests`, `TextBlobsTests`,
   `DevConsoleTests`, `MenuLayerTests`, `MenuJoinPageTests`, `RadialMenuTests`, `TextLineTests`), `Input/`
-  (`MenuInputTests`, `KeyBindingsTests`, `KeyboardFocusTests`, `InputInjectionTests`), `Settings/`, `Loading/`,
+  (`MenuInputTests`, `KeyBindingsTests`, `KeyboardFocusTests`, `InputInjectionTests`, `TextFocusTests`), `Settings/`, `Loading/`,
   `Control/`, `EngineStepsTests` (the start-up steps), `ModLoaderIntegrationTests` (loads the real sample mod and
   checks that it unloads), and `ModDispatcherTests` (a throwing mod isolated, callbacks timed).
 

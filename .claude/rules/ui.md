@@ -54,7 +54,18 @@ game's own after them (`ModelsLoadingTask` waits for a list of models to reach t
 `LoadingLayer` lists the tasks, and it fades out over 0.3 s. After `reset` it covers the picture again
 (`LoadingScreen.BeginAgain`, from the loop when `VoxelWorld.LastReset` moves) and frees the pointer.
 
-The main menu (`UI/Menu/MenuLayer`, run-wide, drawn over the HUD and under the console): a run starts at it unless
+The menu is the run's `IMenu` (a UI layer drawn over the HUD and under the console, and the `IMenuInput` the input
+service sends a menu's input to): the engine's `MenuLayer` unless a game registers its own `IMenu` singleton after
+`AddIteraEngine`, which then takes its place among the layers and in the loop. What a menu does goes through public
+services, so a game's own menu loses nothing: `MatchControl` and `MatchCommands` (starts, with a save's name too;
+leave; the phase and why the last match ended), `WindowService.RequestExit`, `PlayerSettings`, `SteamFriendList` (the
+loop updates it whatever menu shows; a menu sets `Watching` while it lists the friends hosting), `JoinRequests` (a
+friend's Steam "Join game": with no match it joins at once, during one it waits as `Pending` for the menu to ask,
+`Accept` or `Decline`, and goes with that match), and `SaveFiles` (the data folder's saves, newest first). While a menu
+is open the game gets no input, and with `Engine:Ui:MenuPausesOffline` (false by default) an offline match's steps are
+held (`FixedStepAccumulator.Hold`, apart from the console's `pause`; a host's or a client's never wait).
+
+The engine's main menu (`UI/Menu/MenuLayer`, run-wide, drawn over the HUD and under the console): a run starts at it unless
 `Engine:Session:Mode` names a match (Offline, Host, or Join; the default is `Menu`). The main page has Play Offline,
 Host Game (a friends-only Steam lobby when Steam runs, else UDP on `Engine:Session:Port`), Join Game (the friends who
 host, and an address box: host:port, lobby:ID, or steam:ID), Settings, and Quit, with why the last match ended. In a
@@ -96,7 +107,7 @@ registered later that clash with another action keep the file's (`KeyBindings` u
 ### Files in `src/Itera.Engine`
 
   - `UI/`: the surface and its layers (console, stats line, `LoadingLayer`), the font (`UiFonts`, from `UI/Fonts/`,
-    copied to `Fonts/`), `TextBlobs`, `TextLine`, `TextEntry`, and the menu in `UI/Menu/` (`MenuLayer`, `MenuLayer.Settings.cs`,
+    copied to `Fonts/`), `TextBlobs`, `TextLine`, `TextEntry`, and the menu in `UI/Menu/` (`IMenu`, `MenuLayer`, `MenuLayer.Settings.cs`,
     `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`), `CentredMessageLayer`, `Amounts`.
   - `Input/`: snapshots per frame and per fixed step (`InputSnapshot`: `InputService.Frame` and `InputService.Tick`), `PointerCapture`, `IKeyboardFocus`, `IMenuInput` (`UiPointer`,
     `CapturingBinding`), `IFrameInput` and `InputService` (`SetDrawnPointer`, `SetPanel`, `SetTextFocus`,

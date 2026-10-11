@@ -17,7 +17,7 @@ paths:
   through `ISessionTransports`. Folders:
   - `Assets/`: mesh assets, models read from glTF files at the run's "mesh assets" step, with a skinned model's rig and
     clips (`.claude/rules/mesh-assets.md`).
-  - `Saves/` (`SaveService`), `Modding/` (mod loading: `ModLoader`, `ModLoadContext`, `ModDispatcher`), `Diagnostics/`
+  - `Saves/` (`SaveService`, `SaveFiles`), `Modding/` (mod loading: `ModLoader`, `ModLoadContext`, `ModDispatcher`), `Diagnostics/`
     (Serilog setup `LoggingServiceCollectionExtensions`, the session header `SessionInfo`, loop stats `FrameStats`, GPU
     pass times `GpuTimings`, `ConsoleLogBuffer`, crash logging, `ControlLog`), `Time/` (`GameClock`,
     `FixedStepAccumulator`), `Loading/` (`LoadingScreen`, `ILoadingTask`, `LoadingProgress`,
@@ -38,8 +38,8 @@ its `IChunkGenerator` and calls `AddIteraVoxels()` before its own loading tasks)
 and `ValidateOnBuild`, then `GameLoop.Run()`. A game with voxel terrain registers an `IChunkGenerator` and calls
 `AddIteraVoxels()` (the voxel models, the loose bodies, the character mover, and the play area are the core's, and read
 the world when there is one); a game without it plays matches with no world (`MatchServices.Terrain` is null; its
-`Voxels` and the other terrain members throw). `IVoxelPalette` (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable), and
-`MenuStyle` (plain) have engine defaults it may replace. Its own GPU passes are `IRenderPass` singletons it registers
+`Voxels` and the other terrain members throw). `IVoxelPalette` (grey), `IVoxelTintMap` (none), `IVoxelPassability` (nothing passable),
+`MenuStyle` (plain), and `IMenu` (the engine's `MenuLayer`; `.claude/rules/ui.md`) have engine defaults it may replace. Its own GPU passes are `IRenderPass` singletons it registers
 (`.claude/rules/rendering.md`, "Passes a game adds"), and its image views (a minimap, a camera's screen) are declared
 in its `IRunStartup` (`RenderViews`, "Image views" there), as are its own on/off settings (`PlayerSettings.RegisterSwitch`,
 `.claude/rules/ui.md`). `tests/Itera.Engine.Tests/Matches/EngineComposition.cs` is the

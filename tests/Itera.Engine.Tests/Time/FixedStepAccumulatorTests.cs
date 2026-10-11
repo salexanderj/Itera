@@ -186,4 +186,55 @@ public sealed class FixedStepAccumulatorTests
 
         return steps;
     }
+
+    [Fact]
+    public void Held_no_step_runs_not_even_one_owed_and_no_time_waits()
+    {
+        var accumulator = new FixedStepAccumulator(Step, 8);
+        accumulator.StepWhilePaused(2);
+        accumulator.Hold(true);
+        accumulator.Add(Step * 5);
+
+        Assert.False(accumulator.TryConsumeStep(out _));
+        Assert.Equal(Step, accumulator.SecondsUntilNextStep);
+        Assert.Equal(0.999999f, accumulator.Alpha);
+
+        accumulator.Hold(false);
+        Assert.True(accumulator.TryConsumeStep(out _));
+        Assert.True(accumulator.TryConsumeStep(out _));
+        Assert.False(accumulator.TryConsumeStep(out _));
+    }
+
+    [Fact]
+    public void Letting_go_runs_on_from_now_and_never_resumes_a_pause()
+    {
+        var accumulator = new FixedStepAccumulator(Step, 8);
+        accumulator.Add(Step * 0.9f);
+        accumulator.Hold(true);
+        accumulator.Add(Step * 10);
+        accumulator.Hold(false);
+
+        // No burst of the held time, nor the part of a step that waited before the hold.
+        accumulator.Add(Step * 0.5f);
+        Assert.False(accumulator.TryConsumeStep(out _));
+
+        accumulator.Pause();
+        accumulator.Hold(true);
+        accumulator.Hold(false);
+        Assert.True(accumulator.Paused);
+        accumulator.Add(Step * 3);
+        Assert.False(accumulator.TryConsumeStep(out _));
+    }
+
+    [Fact]
+    public void A_new_match_starts_not_held()
+    {
+        var accumulator = new FixedStepAccumulator(Step, 8);
+        accumulator.Hold(true);
+        accumulator.Restart();
+        accumulator.Add(Step);
+
+        Assert.False(accumulator.Held);
+        Assert.True(accumulator.TryConsumeStep(out _));
+    }
 }

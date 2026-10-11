@@ -43,6 +43,8 @@ public sealed class MenuJoinPageTests : IDisposable
     private readonly AudioService _audio = MenuLayerTests.QueuingAudio();
     private readonly PointerInput _pointer = new();
     private readonly MenuLayer _menu;
+    private readonly SteamFriendList _friends;
+    private readonly JoinRequests _joins;
     private readonly UISurface _surface;
     private ulong _frame;
 
@@ -57,15 +59,19 @@ public sealed class MenuJoinPageTests : IDisposable
         _steam.Initialize();
         var commands = new ConsoleCommands(() => SessionRole.Offline, NullLogger<ConsoleCommands>.Instance);
         var options = Options.Create(new EngineOptions());
+        var starts = new MatchCommands(commands, _matches, _steam, options);
+        _friends = new SteamFriendList(_steam, MatchKey, NullLogger<SteamFriendList>.Instance);
+        _joins = new JoinRequests(_friends, _matches, starts);
         _menu = new MenuLayer(
             _fonts,
             MenuStyle.Plain,
             _matches,
-            new MatchCommands(commands, _matches, _steam, options),
+            starts,
             _pointer,
             _window,
             _steam,
-            new SteamFriendList(_steam, MatchKey, NullLogger<SteamFriendList>.Instance),
+            _friends,
+            _joins,
             new PlayerSettings(new EngineOptions(), CommandLineKeys.None, null, NullLogger<PlayerSettings>.Instance),
             _audio,
             options
@@ -79,6 +85,7 @@ public sealed class MenuJoinPageTests : IDisposable
     {
         _surface.Dispose();
         _menu.Dispose();
+        _joins.Dispose();
         _fonts.Dispose();
         _window.Dispose();
         _audio.Dispose();
@@ -95,6 +102,7 @@ public sealed class MenuJoinPageTests : IDisposable
         Frame();
 
         Assert.Equal(MenuView.Join, _menu.View);
+        Assert.True(_friends.Watching);
         Assert.Equal(["Join", "Other version", "Join", "Back"], _menu.Buttons);
         Click(RowJoin(0));
         var join = _matches.TakeStart()!;
@@ -205,7 +213,12 @@ public sealed class MenuJoinPageTests : IDisposable
         _pointer.Pointer = new UiPointer(at, false, false, false, 0);
     }
 
-    private UiDraw Frame() => _surface.Draw(new FrameTime(1 / 60f, _frame / 60.0, _frame++, 0), Width, Height);
+    /// <summary>One iteration and frame: the loop updates the friend list, then the menu draws.</summary>
+    private UiDraw Frame()
+    {
+        _friends.Update(_frame / 60.0);
+        return _surface.Draw(new FrameTime(1 / 60f, _frame / 60.0, _frame++, 0), Width, Height);
+    }
 
     private sealed class PointerInput : IFrameInput
     {

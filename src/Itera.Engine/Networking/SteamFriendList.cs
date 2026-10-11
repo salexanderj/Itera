@@ -33,9 +33,10 @@ public sealed record FriendHost(
 /// The friends who host a game of this app that this player may join a friend playing
 /// this game in a lobby (Steam's game played, or the host's rich presence), with the lobby's players, limit, and match
 /// key (written by the host's <see cref="SessionService"/>), and the friend's picture. Read again when asked
-/// (<see cref="MarkStale"/>: the join page opens), every 5 s while the join page shows, and when Steam reports a change.
-/// A friend's "Join game" from the Steam overlay while the game runs becomes <see cref="JoinRequested"/>. Without Steam
-/// the list is empty. Main thread.
+/// (<see cref="MarkStale"/>: the join page opens), every 5 s while a menu lists them (<see cref="Watching"/>), and when
+/// Steam reports a change. A friend's "Join game" from the Steam overlay while the game runs becomes
+/// <see cref="JoinRequested"/> (<see cref="Matches.JoinRequests"/> takes it). The loop updates it, whatever menu the
+/// game shows. Without Steam the list is empty. Main thread.
 /// </summary>
 public sealed partial class SteamFriendList : ISteamFriendsListener
 {
@@ -87,8 +88,17 @@ public sealed partial class SteamFriendList : ISteamFriendsListener
     /// </summary>
     public event Action<string, string>? JoinRequested;
 
-    /// <summary>Reads the list again at the next <see cref="Update"/>.</summary>
+    /// <summary>Reads the list again at the next <see cref="Update(double)"/>.</summary>
     public void MarkStale() => _stale = true;
+
+    /// <summary>True while a menu lists the friends hosting (the join page shows): the list is kept fresh.</summary>
+    public bool Watching { get; set; }
+
+    /// <summary>
+    /// Takes Steam's reports, and keeps the list fresh while <see cref="Watching"/>. The loop calls it once an
+    /// iteration.
+    /// </summary>
+    public void Update(double nowSeconds) => Update(nowSeconds, Watching);
 
     /// <summary>
     /// Takes Steam's reports (once Steam runs), and while <paramref name="watching"/> (the join page shows) reads the

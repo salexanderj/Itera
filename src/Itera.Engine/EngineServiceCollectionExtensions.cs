@@ -190,6 +190,8 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<SteamTransport>();
         services.TryAddSingleton<ISessionTransports, SessionTransports>();
         services.TryAddSingleton<SteamFriendList>();
+        services.TryAddSingleton<JoinRequests>();
+        services.TryAddSingleton<SaveFiles>();
         services.TryAddScoped<SaveService>();
         services.TryAddScoped<SessionService>();
         services.TryAddSingleton<UiFonts>();
@@ -213,7 +215,9 @@ public static class EngineServiceCollectionExtensions
         // The menu over the match's layers, and the console over the menu. A game gives the menu its own look.
         services.TryAddSingleton(MenuStyle.Plain);
         services.TryAddSingleton<MenuLayer>();
-        services.AddSingleton<IUiLayer>(sp => sp.GetRequiredService<MenuLayer>());
+        // The engine's menu, unless the game registers its own IMenu after this (the last registered is the one used).
+        services.TryAddSingleton<IMenu>(sp => sp.GetRequiredService<MenuLayer>());
+        services.AddSingleton<IUiLayer>(sp => sp.GetRequiredService<IMenu>());
         services.TryAddSingleton<ConsoleLayer>();
         services.AddSingleton<IUiLayer>(sp => sp.GetRequiredService<ConsoleLayer>());
         // The aim dot, the first of a match's layers (the HUD's lowest; the game's are registered after the engine's).

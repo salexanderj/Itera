@@ -42,17 +42,18 @@ public enum MenuView
 }
 
 /// <summary>
-/// The menu: over the loading screen's ring when no match is played (the main menu, the
-/// join and settings pages, a join's progress, a match's start), and over the match when Escape opens it or a friend's
-/// "Join game" asks first. Its buttons ask <see cref="MatchControl"/> for matches (<see cref="MatchCommands"/>' starts)
-/// and the window to close; the join page lists the friends who host (<see cref="SteamFriendList"/>). While it is open
+/// The engine's menu (<see cref="IMenu"/>; a game may swap it for its own): over the loading screen's ring when no match
+/// is played (the main menu, the join and settings pages, a join's progress, a match's start), and over the match when
+/// Escape opens it or a friend's "Join game" asks first (<see cref="JoinRequests"/>). Its buttons ask
+/// <see cref="MatchControl"/> for matches (<see cref="MatchCommands"/>' starts) and the window to close; the join page
+/// lists the friends who host (<see cref="SteamFriendList"/>). While it is open
 /// it takes the pointer and the game gets no input (<see cref="IMenuInput"/>); it draws again only when what it shows
 /// changes (a page, the button under the pointer, the text typed, a join's progress, the friends), and its update
 /// allocates nothing otherwise. It clicks softly as the pointer comes onto a button, a switch, or a slider, and more
 /// fully as a button or switch is pressed, or Enter joins from the address box (<see cref="EngineSounds.MenuHover"/> and <see cref="EngineSounds.MenuPress"/>, played at the listener). Its look is
 /// the game's <see cref="MenuStyle"/>. Main thread.
 /// </summary>
-public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
+public sealed partial class MenuLayer : IMenu, IDisposable
 {
     /// <summary>The longest address that can be typed.</summary>
     public const int MaxAddressLength = 120;
@@ -78,7 +79,8 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
     private bool _inGame;
     private bool _inGameSettings;
     private bool _addressFocused;
-    private (string Name, string Address)? _confirm;
+    private readonly JoinRequests _joins;
+    private int _joinsVersion = -1;
     private IReadOnlyList<FriendHost> _rows = [];
     private int _rowScroll;
     private WheelSteps _rowWheel;
@@ -124,6 +126,7 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
         WindowService window,
         SteamService steam,
         SteamFriendList friends,
+        JoinRequests joins,
         PlayerSettings settings,
         AudioService audio,
         IOptions<EngineOptions> options
@@ -139,9 +142,9 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
         _window = window;
         _steam = steam;
         _friends = friends;
+        _joins = joins;
         _title = options.Value.Application.Name;
         _addressEntry = new TextEntry(MaxAddressLength, PressJoinAddress);
-        friends.JoinRequested += OnJoinRequested;
     }
 
     /// <summary>What the menu shows now: its page with no match, a match's join or start, or the menu over a match.</summary>
@@ -149,7 +152,7 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
         _matches.Phase == MatchPhase.Menu ? _page
         : _matches.Phase == MatchPhase.Joining ? MenuView.Joining
         : _matches.Phase == MatchPhase.Starting ? MenuView.Starting
-        : _confirm is not null ? MenuView.Confirm
+        : _joins.Pending is not null ? MenuView.Confirm
         : _inGame ? (_inGameSettings ? MenuView.Settings : MenuView.InGame)
         : MenuView.None;
 
@@ -189,7 +192,7 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
                 _inGame = false;
                 break;
             case MenuView.Confirm:
-                _confirm = null;
+                _joins.Decline();
                 break;
             case MenuView.Settings when _matches.Phase != MatchPhase.Menu:
                 _inGameSettings = false;
@@ -217,8 +220,17 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
     {
         FollowMatches();
         var view = View;
-        // Steam's reports are taken in a match too, where a friend's "Join game" asks first.
-        _friends.Update(time.TotalSeconds, view == MenuView.Join);
+        // The loop takes Steam's reports; the list is kept fresh while the join page shows.
+        _friends.Watching = view == MenuView.Join;
+        if (_joins.Version != _joinsVersion)
+        {
+            // A friend's "Join game" came or was answered: the question shows or goes.
+            _joinsVersion = _joins.Version;
+            _laidOutView = MenuView.None;
+            _dirty = true;
+            view = View;
+        }
+
         if (view == MenuView.None)
         {
             // Opened again, the menu clicks for the pointer only once it moves.
@@ -316,7 +328,6 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
         }
 
         _disposed = true;
-        _friends.JoinRequested -= OnJoinRequested;
         foreach (var (_, image) in _avatars.Values)
         {
             image.Dispose();
@@ -344,8 +355,8 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
     }
 
     /// <summary>
-    /// A match that started or ended changes the page: the menu over a match closes, an end shows the main menu, and a
-    /// question about a friend's join is dropped.
+    /// A match that started or ended changes the page: the menu over a match closes, and an end shows the main menu (a
+    /// friend's join asked about in it goes with it, <see cref="JoinRequests.Pending"/>).
     /// </summary>
     private void FollowMatches()
     {
@@ -355,7 +366,9 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
             return;
         }
 
-        if (!hasMatch && _seenMatch)
+        // A match started (also one that failed before a frame saw it, as a friend's join can) or ended: the main page
+        // is what shows when no match is played again.
+        if ((!hasMatch && _seenMatch) || _matches.Started != _seenStarted)
         {
             _page = MenuView.Main;
         }
@@ -365,25 +378,6 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
         _lastEnd = _matches.LastEnd;
         _inGame = false;
         _inGameSettings = false;
-        _confirm = null;
-        _dirty = true;
-    }
-
-    /// <summary>
-    /// A friend's "Join game" from Steam: with no match it joins at once; in a match it asks first.
-    /// </summary>
-    private void OnJoinRequested(string name, string address)
-    {
-        if (_matches.Phase == MatchPhase.Menu)
-        {
-            _matches.RequestStart(_starts.JoinStart(address));
-            _page = MenuView.Main;
-        }
-        else
-        {
-            _confirm = (name.Length > 0 ? name : "a friend", address);
-        }
-
         _dirty = true;
     }
 
@@ -540,6 +534,8 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
                 // Typing goes to the address box at once; a click elsewhere takes it away.
                 _addressFocused = true;
                 _rowScroll = 0;
+                // Read at the loop's next update of the list, before this page's first frame.
+                _friends.Watching = true;
                 _friends.MarkStale();
                 break;
             case MenuAction.OpenSettings:
@@ -615,16 +611,12 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
                 _inGame = false;
                 break;
             case MenuAction.ConfirmJoin:
-                if (_confirm is { } confirm)
-                {
-                    // The match now ends first (its save written), then the join starts.
-                    _matches.RequestStart(_starts.JoinStart(confirm.Address));
-                    _confirm = null;
-                }
+                // The match now ends first (its save written), then the join starts.
+                _joins.Accept();
 
                 break;
             case MenuAction.Stay:
-                _confirm = null;
+                _joins.Decline();
                 break;
             case MenuAction.Quit:
                 _window.RequestExit("Quit in the menu");
@@ -907,7 +899,7 @@ public sealed partial class MenuLayer : IUiLayer, IMenuInput, IDisposable
         {
             MenuView.Joining => _status,
             MenuView.Starting => "Starting…",
-            MenuView.Confirm when _confirm is { } confirm => $"Leave this match and join {confirm.Name}?",
+            MenuView.Confirm when _joins.Pending is { } confirm => $"Leave this match and join {confirm.Name}?",
             _ => null,
         };
         if (line is not null)

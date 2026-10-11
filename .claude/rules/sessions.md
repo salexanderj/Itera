@@ -60,8 +60,10 @@ joins with `Address=lobby:ID` or `steam:ID`; the host accepts only its lobby's m
 lobby data gives its players (`itera_players`), limit
 (`itera_max`), and match key (`itera_match`: protocol, the match identity's id and version, step rate; `SessionProtocol.MatchKey`,
 `ISessionTransport.SetLobbyData`). The menu's join page lists the friends who host (`SteamFriendList`, through a second
-listener, `ISteamFriendsListener`), with "Other version" where the match key differs. A friend's "Join game" in the
-Steam overlay joins from the menu, and asks first during a match.
+listener, `ISteamFriendsListener`; the loop updates it whatever menu shows, and keeps it fresh while a menu sets
+`Watching`), with "Other version" where the match key differs. A friend's "Join game" in the Steam overlay
+(`JoinRequests`) joins at once with no match, and during a match waits for the menu to ask (`Pending`, `Accept`,
+`Decline`).
 
 Named saves (`Engine:Save:Name`, `SaveService`): a host or offline game starts from `Saves/NAME.save` in the data
 folder when it exists (its seed and match settings, a game's match data among them, replace the options'; another step

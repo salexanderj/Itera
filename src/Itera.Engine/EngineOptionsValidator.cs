@@ -277,7 +277,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
     }
 
     // One rule on every platform: the characters a file name may hold differ between Windows, Linux, and macOS.
-    private static bool IsSaveName(string value) =>
+    internal static bool IsSaveName(string value) =>
         value.Length > 0 && value[0] != ' ' && value[^1] != ' ' && IsFolderName(value.Replace(' ', '_'));
 
     private static bool IsFolderName(string? value)

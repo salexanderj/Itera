@@ -89,7 +89,8 @@ public sealed partial class GameLoop
     private readonly ParticleEmitter _particles;
     private readonly SystemTimes _systemTimes;
     private readonly MatchCommands _matchCommands;
-    private readonly MenuLayer _menu;
+    private readonly IMenu _menu;
+    private readonly SteamFriendList _friends;
     private readonly PlayerSettings _playerSettings;
     private readonly SettingsCommands _settingsCommands;
     private bool _loopEnded;
@@ -190,7 +191,9 @@ public sealed partial class GameLoop
         ParticleEmitter particles,
         SystemTimes systemTimes,
         MatchCommands matchCommands,
-        MenuLayer menu,
+        IMenu menu,
+        SteamFriendList friends,
+        JoinRequests joinRequests,
         PlayerSettings playerSettings,
         SettingsCommands settingsCommands
     )
@@ -258,6 +261,9 @@ public sealed partial class GameLoop
         _systemTimes = systemTimes;
         _matchCommands = matchCommands;
         _menu = menu;
+        _friends = friends;
+        // Made with the loop, so a friend's Steam join is taken whatever menu the game shows (it answers the list's events).
+        ArgumentNullException.ThrowIfNull(joinRequests);
         _steps = new EngineSteps(CreateSteps(), logger);
         _flow = new MatchFlow(
             scopes,
@@ -674,7 +680,11 @@ public sealed partial class GameLoop
 
         // The control port's requests too: its commands, its waits, and what they wait for.
         _control.RunPending(_clock.TotalSeconds, _frameIndex);
+        // Steam's friends and their joins, whatever menu the game shows.
+        _friends.Update(_clock.TotalSeconds);
         _flow.StartWorldWhenShown(_frameIndex);
+        // The menu over an offline match holds its steps where the game asks for that; the console's pause is apart.
+        _accumulator.Hold(MenuHoldsSteps(_options.Ui.MenuPausesOffline, _menu.IsOpen, _matches.Role, _matches.Phase));
         var fixedSteps = playing is not null ? RunFixedSteps(deltaSeconds, playing) : 0;
         AfterFixedSteps(fixedSteps);
         if (!_window.Graphics)
@@ -1059,6 +1069,13 @@ public sealed partial class GameLoop
     /// on this thread and is whole. Another exception of the loop may have left it half changed, so it is not saved.
     /// </summary>
     internal static bool SavesAtEnd(bool loopEnded, bool renderThreadFault) => loopEnded || renderThreadFault;
+
+    /// <summary>
+    /// True when the menu holds the match's steps: the game asks for it (<c>Engine:Ui:MenuPausesOffline</c>), the menu is
+    /// open, and an offline match is played (a host's or a client's never waits, as its peers would stall).
+    /// </summary>
+    internal static bool MenuHoldsSteps(bool menuPausesOffline, bool menuOpen, SessionRole role, MatchPhase phase) =>
+        menuPausesOffline && menuOpen && role == SessionRole.Offline && phase == MatchPhase.Playing;
 
     [LoggerMessage(
         Level = LogLevel.Warning,

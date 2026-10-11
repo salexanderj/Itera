@@ -58,6 +58,7 @@ public sealed class MenuLayerTests : IDisposable
         options.Application.Name = "Sample Game";
         options.Voxels.Seed = 4;
         var starts = new MatchCommands(commands, _matches, steam, Options.Create(options));
+        var friends = new SteamFriendList(steam, "test", NullLogger<SteamFriendList>.Instance);
         _menu = new MenuLayer(
             _fonts,
             MenuStyle.Plain,
@@ -66,7 +67,8 @@ public sealed class MenuLayerTests : IDisposable
             _pointer,
             _window,
             steam,
-            new SteamFriendList(steam, "test", NullLogger<SteamFriendList>.Instance),
+            friends,
+            new JoinRequests(friends, _matches, starts),
             Settings,
             _audio,
             Options.Create(options)
@@ -275,6 +277,20 @@ public sealed class MenuLayerTests : IDisposable
 
         Assert.Equal(MenuView.InGame, _menu.View);
         Assert.Contains("Leave Match", _menu.Buttons);
+    }
+
+    [Fact]
+    public void A_match_that_started_and_failed_before_a_frame_saw_it_leaves_the_main_page_showing()
+    {
+        Click(MainButton(3));
+        Assert.Equal(MenuView.Settings, _menu.View);
+
+        // A friend's join started and failed within one iteration: the match counted, and back at the menu.
+        _matches.Started++;
+        _matches.LastEnd = "The host refused the join.";
+        Frame();
+
+        Assert.Equal(MenuView.Main, _menu.View);
     }
 
     [Fact]

@@ -6,7 +6,8 @@ namespace Itera.Engine.Time;
 /// Converts variable loop time into fixed simulation steps. The main loop calls <see cref="Add"/> once per iteration; it
 /// wakes at least once per fixed step, and more often when frames or window events arrive. The console's time commands
 /// (offline only) pause the steps, run a number of them while paused, and scale the time they take
-/// (<see cref="Pause"/>, <see cref="StepWhilePaused"/>, <see cref="SetTimeScale"/>).
+/// (<see cref="Pause"/>, <see cref="StepWhilePaused"/>, <see cref="SetTimeScale"/>); the menu over an offline match holds
+/// them apart from that (<see cref="Hold"/>).
 /// </summary>
 public sealed class FixedStepAccumulator
 {
@@ -54,6 +55,13 @@ public sealed class FixedStepAccumulator
     public int StepsOwed { get; private set; }
 
     /// <summary>
+    /// True while the steps are held (the menu open over an offline match, <c>Engine:Ui:MenuPausesOffline</c>): none run,
+    /// not even those owed while paused, and no time waits. Apart from <see cref="Paused"/>, so letting go never resumes a
+    /// match the console paused. A new match starts not held (<see cref="Restart"/>).
+    /// </summary>
+    public bool Held { get; private set; }
+
+    /// <summary>
     /// Game time per second of loop time: 1, or what <see cref="SetTimeScale"/> set for the match (a new match starts at
     /// 1, so a scale set offline never reaches a session).
     /// </summary>
@@ -64,13 +72,15 @@ public sealed class FixedStepAccumulator
     /// paused with none owed, so the loop still wakes.
     /// </summary>
     public float SecondsUntilNextStep =>
-        Paused ? (StepsOwed > 0 ? 0f : StepSeconds) : Math.Max(0f, StepSeconds - _accumulated) / TimeScale;
+        Held ? StepSeconds
+        : Paused ? (StepsOwed > 0 ? 0f : StepSeconds)
+        : Math.Max(0f, StepSeconds - _accumulated) / TimeScale;
 
     /// <summary>
-    /// Fraction of a step accumulated but not yet consumed, in [0, 1); nearly 1 while paused, so frames show the last step
-    /// run.
+    /// Fraction of a step accumulated but not yet consumed, in [0, 1); nearly 1 while paused or held, so frames show the
+    /// last step run.
     /// </summary>
-    public float Alpha => Paused ? 0.999999f : Math.Clamp(_accumulated / StepSeconds, 0f, 0.999999f);
+    public float Alpha => Paused || Held ? 0.999999f : Math.Clamp(_accumulated / StepSeconds, 0f, 0.999999f);
 
     /// <summary>
     /// A match starts: its first step is tick 0, and no time is waiting, so the time its start took is not caught up in a
@@ -83,8 +93,21 @@ public sealed class FixedStepAccumulator
         LastDropped = 0;
         Tick = 0;
         Paused = false;
+        Held = false;
         StepsOwed = 0;
         TimeScale = 1;
+    }
+
+    /// <summary>Holds the steps (<see cref="Held"/>) or lets them go again, from now with no time waiting.</summary>
+    public void Hold(bool held)
+    {
+        if (held == Held)
+        {
+            return;
+        }
+
+        Held = held;
+        _accumulated = 0;
     }
 
     /// <summary>Stops the steps until <see cref="Resume"/>; steps owed are dropped.</summary>
@@ -129,7 +152,7 @@ public sealed class FixedStepAccumulator
     /// </summary>
     public void Add(float deltaSeconds)
     {
-        if (!Paused)
+        if (!Paused && !Held)
         {
             _accumulated += Math.Max(0f, deltaSeconds) * TimeScale;
         }
@@ -147,6 +170,12 @@ public sealed class FixedStepAccumulator
     /// </summary>
     public bool TryConsumeStep(out FixedStepTime time)
     {
+        if (Held)
+        {
+            time = default;
+            return false;
+        }
+
         if (Paused)
         {
             if (StepsOwed == 0 || _stepsThisIteration >= MaxStepsPerIteration)

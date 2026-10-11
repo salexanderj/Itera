@@ -737,6 +737,8 @@ public sealed partial class ControlService : IDisposable
                 {
                     writer.WriteNumber("tick", time.Tick);
                     writer.WriteBoolean("paused", time.Paused);
+                    // The menu over an offline match holding the steps (Engine:Ui:MenuPausesOffline), apart from the pause.
+                    writer.WriteBoolean("held", time.Held);
                     writer.WriteNumber("time_scale", time.TimeScale);
                 }
 

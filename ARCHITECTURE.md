@@ -146,7 +146,7 @@ Rules:
 
 | Folder | Contents |
 |---|---|
-| `Time/` | `GameClock` (clamped frame delta), `FixedStepAccumulator` (60 Hz steps, capped per frame) |
+| `Time/` | `GameClock` (clamped frame delta), `FixedStepAccumulator` (60 Hz steps, capped per frame; paused by the console, held by the menu over an offline match) |
 | `Windowing/` | `WindowService`: creates the GLFW window, pumps events, exposes framebuffer size, refresh rate, and exit request |
 | `Input/` | `InputService` (collects key, button, movement, and scroll events into one `InputSnapshot` per frame and one per fixed step), `InputAccumulator`, `PointerCapture` (a left click locks the pointer for mouse look; Escape goes to the menu at once and frees it), `IPanelInput` (a panel that takes the free pointer), `ITextInput` (where typing goes: the console, the menu's text box, or a game's, `SetTextFocus`), `IEscapeHandler` (a game's screen that Escape closes before the menu opens), `IKeyboardFocus` (the console takes the keys while open), `IMenuInput` and `UiPointer` (the menu), `KeyBindings`, `KeyAction`, and `InputBinding` (the actions a game registers and the Settings page's rebinding), `ITickInput` and `IFrameInput` (what fixed and frame systems read) |
 | `Rendering/` | `VulkanContext`, `DeviceRequirements`, `VulkanSwapchain`, `SwapchainState`, `FrameSync`, `FrameRenderer` (fence wait, acquire, barriers, recording the passes, submit, present, recreate), `GpuTimer`, `CameraView` (with its `CameraProjection`) and `RenderView` (the camera, its lens, and the atmosphere of the frame being built), `Atmosphere`, `RenderThread`, `FrameExchange` (hands each frame from the main thread to the render thread), `DebugLines` and `DebugLinePass`, `UiPass`, `RenderScale` and `UpscalePass`, `SmaaPass` and `SmaaTextures`, `FrameImages`, `DynamicRenderScale`, `LoadingPass`, `ParticlePass`, `Screenshots`, `ScreenshotPass`, `ScreenshotEncoder`, `DepthTarget`, `ShadowCascades`, `IWorldOnGpu`, `ModelInstances` (the models frame systems ask to draw this frame, each with its `ModelShadow`), `MeshInstances` (the mesh assets they ask to draw, and the posed ones' skinning matrices), `PointLights` (event lights), `RenderPasses` (a game's own passes, `IRenderPass`, at five stages of the frame), `RenderViews` and `RenderViewPass` (image views: views a game draws into images, which the HUD and mesh materials show), `RenderLook` and `LookTuning` (the look a game sets each frame, and the console's `look` over it), `SunPath` (how much light the sun gives round the horizon) |
@@ -173,13 +173,13 @@ Rules:
 | `Voxels/Generation/` | The world generation toolkit (see "World generation") |
 | `Navigation/` | `NavigationService` (its window, `NavArea`), `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`, `INavGridSource` (the game's part), `FlowFieldBuilder` and `FlowField`, `NavGridScanner`, `NavigationDebugLines` |
 | `Networking/` | `SessionService` (hosting or joining; `.Host.cs`, `.Client.cs`), `ISessionTransport` with `NetworkService` (LiteNetLib) and `SteamTransport` over `ISteamPlatform`, `SteamService`, `SteamAddress`, `SteamLaunchArguments`, `SteamFriendList`, `SessionProtocol` (message kinds, `MessageWriter`, `MessageReader`), `MatchSettings` and `ISessionGameHandler`, `GameMessageHandler`, `SessionAddress`, `NetLoggerAdapter`, and the helpers `NetEntities`, `PlayerIds`, `TickRing`, and `JitterPlayback` |
-| `UI/` | `UISurface` (the UI's pixels: a Skia CPU surface that draws its layers when one changes and reports the rows that changed), `IUiLayer`, `IMatchUiLayer`, `ConsoleLayer` and `DevConsole`, `StatsLayer`, `AimDotLayer`, `LoadingLayer`, `CentredMessageLayer`, `TextBlobs`, `TextLine`, `TextEntry` (a text box's typing), `UiFonts`, `Amounts`, `WheelSteps`, and `Menu/` (`MenuLayer`, the join and settings pages, `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`) |
+| `UI/` | `UISurface` (the UI's pixels: a Skia CPU surface that draws its layers when one changes and reports the rows that changed), `IUiLayer`, `IMatchUiLayer`, `ConsoleLayer` and `DevConsole`, `StatsLayer`, `AimDotLayer`, `LoadingLayer`, `CentredMessageLayer`, `TextBlobs`, `TextLine`, `TextEntry` (a text box's typing), `UiFonts`, `Amounts`, `WheelSteps`, and `Menu/` (`IMenu`, `MenuLayer`, the join and settings pages, `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`) |
 | `Commands/` | `ConsoleCommands` (name, usage, help, scope, owner), `CommandLine`, `EngineCommands`, `MatchCommands`, `SettingsCommands`, `ParticleCommands`, `SoundCommands` |
 | `Control/` | `ControlService` (the control port), `ControlRequest`, `InputScript` |
 | `Modding/` | `ModLoader`, `ModLoadContext`, `ModDispatcher`, `HostSharedAssemblies`, `LoadedMod`, `ModContext` |
 | `Diagnostics/` | `LoggingServiceCollectionExtensions` (`AddIteraLogging`, Serilog sinks), `LogSession`, `LogPaths`, `LogRetention`, `SessionInfo`, `FrameStats`, `GpuTimings`, `ConsoleLogBuffer`, `ControlLog`, `UnhandledExceptionLogger` |
-| `Matches/` | `MatchFlow` (a match's start, join, and end), `MatchStart`, `MatchContext`, `MatchServices` (a match's services and steps), `MatchControl`, `WarmUps`, `IRunStartup` |
-| `Saves/`, `Settings/` | `SaveService`; `PlayerSettings` (the menu's settings and a game's own on/off switches, `GameSwitch`, kept in `settings.json`) and `CommandLineKeys` (the keys the command line gave, which win over the file) |
+| `Matches/` | `MatchFlow` (a match's start, join, and end), `MatchStart`, `MatchContext`, `MatchServices` (a match's services and steps), `MatchControl`, `JoinRequests` (a friend's Steam join, whatever menu shows), `WarmUps`, `IRunStartup` |
+| `Saves/`, `Settings/` | `SaveService`, `SaveFiles` (the saves a menu offers); `PlayerSettings` (the menu's settings and a game's own on/off switches, `GameSwitch`, kept in `settings.json`) and `CommandLineKeys` (the keys the command line gave, which win over the file) |
 | root | `EngineOptions`, `EngineOptionsValidator`, `UnknownOptionKeys`, `EngineServiceCollectionExtensions` (`AddIteraEngine`), `VoxelServiceCollectionExtensions` (`AddIteraVoxels`), `EngineSteps`, `GameLoop`, `ExitSignalPolicy` |
 
 ## 4. Runtime model
@@ -481,7 +481,7 @@ A game is an executable that registers the engine, then itself, and runs `GameLo
   once they rest, as there is no grid to settle into) as usual, and `WorldMeshes` meshes and draws its voxel models
   alone.
 - These have engine defaults that a game may replace: `IVoxelPalette` (grey), `IVoxelTintMap` (none),
-  `IVoxelPassability` (nothing passable), `MenuStyle` (plain), and, for navigation, nothing (without an `INavGridSource`
+  `IVoxelPassability` (nothing passable), `MenuStyle` (plain), `IMenu` (the engine's `MenuLayer`), and, for navigation, nothing (without an `INavGridSource`
   there is no navigation). A game adds an `IAtmosphereSource` for its sky, an `INavGridSource` for walkers,
   `ILoadingTask`s, `IMatchUiLayer`s for its HUD, `ISessionGameHandler`s for its messages, `IRenderPass`es for its own
   GPU work ("A game adds passes of its own", below), and console commands; its `IRunStartup` declares its models, its
@@ -1372,7 +1372,10 @@ has no navigation.
   Steam friends who host and an address box, and, over a match at Escape, Resume, Settings, Leave Match, and Quit. The
   settings (volume, mouse sensitivity, field of view, dynamic render scaling, shadows, anti-aliasing, VSync, full screen,
   and the keybindings) apply at once and live in `settings.json`, below the command line. A game gives the menu its look
-  (`MenuStyle`).
+  (`MenuStyle`), or swaps it for its own (`IMenu`), which reaches the run through the same public services: matches
+  (`MatchControl`, `MatchCommands`), quitting, the player's settings, the Steam friends hosting (`SteamFriendList`,
+  which the loop updates) and their joins (`JoinRequests`), and the saves (`SaveFiles`). With
+  `Engine:Ui:MenuPausesOffline` the menu holds an offline match's steps while open.
 - A game's own text box takes the typing while it holds it (`IFrameInput.SetTextFocus`, `TextEntry`): every key but `
   and the characters go to it, none to the game. Characters come from GLFW's own callback as whole code points, since
   Silk.NET's `KeyChar` cuts one past U+FFFF to 16 bits. Escape goes to the console, the menu when open, the game's text

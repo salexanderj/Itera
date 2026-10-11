@@ -537,7 +537,7 @@ def main():
                      help="run the line as a script: wait and screenshot hold the commands after them; reply when done")
     sub.add_argument("--timeout", type=float, default=120, help="seconds a script may take (default 120)")
     sub.add_argument("line", nargs="+")
-    add("status", cmd_status, "frames, clock, steps (tick, paused, time scale), loading, role, camera, entities, player")
+    add("status", cmd_status, "frames, clock, steps (tick, paused, held by the menu, time scale), loading, role, camera, entities, player")
     sub = add("query", cmd_query, "the match's entities as JSON: ID[:VERSION] or player (its components), a component's "
                                   "name (the entities with it), or nothing (the archetypes)")
     sub.add_argument("what", nargs="?")

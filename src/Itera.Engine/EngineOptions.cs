@@ -698,7 +698,7 @@ public sealed class SaveSettings
     public static string Folder(ApplicationSettings application) => Path.Combine(application.DataDirectory(), "Saves");
 }
 
-/// <summary>The UI drawn over the picture: the console and the stats line.</summary>
+/// <summary>The UI drawn over the picture: its font, the stats line, and whether the menu holds an offline match.</summary>
 public sealed class UiSettings
 {
     /// <summary>Configuration section name.</summary>
@@ -709,6 +709,13 @@ public sealed class UiSettings
 
     /// <summary>Starts with the stats line shown (the <c>stats</c> command and F1 turn it on and off).</summary>
     public bool Stats { get; set; }
+
+    /// <summary>
+    /// The menu, while open over an offline match, holds its steps (bodies, characters, clips, and time stop), so the game
+    /// waits for the player. False: the match goes on behind it. Hosted and joined matches never wait, as peers would
+    /// stall.
+    /// </summary>
+    public bool MenuPausesOffline { get; set; }
 }
 
 /// <summary>The in-game console: ` opens and closes it.</summary>

@@ -47,28 +47,46 @@ public sealed class MatchCommands(
 
     /// <summary>
     /// The match hosted from the menu or the console: through Steam when it runs, so friends see it, else over UDP on the
-    /// options' port.
+    /// options' port. It starts from and writes <paramref name="saveName"/> (a <see cref="Saves.SaveFiles"/> name), or
+    /// the options' save (<c>Engine:Save:Name</c>) without one.
     /// </summary>
-    public MatchStart HostStart(ulong? seed = null, SessionTransportKind? transport = null) =>
+    /// <exception cref="ArgumentException">A save name no match can start from (<c>Engine:Save:Name</c>'s rule).</exception>
+    public MatchStart HostStart(ulong? seed = null, SessionTransportKind? transport = null, string? saveName = null) =>
         new(
             SessionMode.Host,
             transport ?? (steam.IsAvailable ? SessionTransportKind.Steam : SessionTransportKind.Direct),
             null,
             seed ?? options.Value.Voxels.Seed,
-            options.Value.Save.Name,
+            CheckedSaveName(saveName) ?? options.Value.Save.Name,
             FromCommandLine: false
         );
 
-    /// <summary>The match played offline from the menu or the console.</summary>
-    public MatchStart OfflineStart(ulong? seed = null) =>
+    /// <summary>
+    /// The match played offline from the menu or the console, starting from and writing <paramref name="saveName"/> (a
+    /// <see cref="Saves.SaveFiles"/> name), or the options' save (<c>Engine:Save:Name</c>) without one.
+    /// </summary>
+    /// <exception cref="ArgumentException">A save name no match can start from (<c>Engine:Save:Name</c>'s rule).</exception>
+    public MatchStart OfflineStart(ulong? seed = null, string? saveName = null) =>
         new(
             SessionMode.Offline,
             SessionTransportKind.Direct,
             null,
             seed ?? options.Value.Voxels.Seed,
-            options.Value.Save.Name,
+            CheckedSaveName(saveName) ?? options.Value.Save.Name,
             FromCommandLine: false
         );
+
+    /// <summary>
+    /// <paramref name="saveName"/>, or null; a name that is no save's (a path, a character some platform's file names
+    /// refuse) throws, so typed text never writes outside the saves' folder.
+    /// </summary>
+    private static string? CheckedSaveName(string? saveName) =>
+        saveName is null || EngineOptionsValidator.IsSaveName(saveName)
+            ? saveName
+            : throw new ArgumentException(
+                $"'{saveName}' is not a save's name: 1 to 64 letters, digits, spaces (not first or last), '-', or '_'.",
+                nameof(saveName)
+            );
 
     /// <summary>The match that joins <paramref name="address"/>: through Steam for <c>lobby:</c> and <c>steam:</c>.</summary>
     public MatchStart JoinStart(string address) =>

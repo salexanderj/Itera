@@ -76,7 +76,8 @@ lists the game's). Commonly used:
   `DynamicRenderScaling=false` with `RenderScale=0.75`, `DynamicScalingThreshold=60`, `AntiAliasing=false` (SMAA, which
   runs only with `MsaaSamples=1`), `ShaderSourceDirectory=$PWD/src/Itera.Engine/Rendering/Shaders` (then `shaders
   reload`; a game's own shaders, `Game/`, come from `Shaders/Game/` beside the executable, or with
-  `GameShaderSourceDirectory=$PWD/src/Game/Shaders` from the repository, which `game.py start` gives when the folder exists), all under `Engine:Renderer`; `--Engine:Window:VSync=false`, `--Engine:Ui:Stats=true`.
+  `GameShaderSourceDirectory=$PWD/src/Game/Shaders` from the repository, which `game.py start` gives when the folder exists), all under `Engine:Renderer`; `--Engine:Window:VSync=false`, `--Engine:Ui:Stats=true`,
+  `--Engine:Ui:MenuPausesOffline=true` (the menu holds an offline match's steps while open).
 - No window: `--Engine:Window:Mode=Offscreen` draws at `Engine:Window:Width` x `Height` (1280x720) into a headless
   surface (`VK_EXT_headless_surface`; its UNORM images are viewed as sRGB, so the picture is the window's), capped at
   `Engine:Window:OffscreenFps` (240) frames a second; nothing shows on the desktop, a locked screen changes nothing, and

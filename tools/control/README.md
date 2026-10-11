@@ -16,7 +16,7 @@ tools/control/game.py gpu [--frames 240] [--timeout 30]   # each GPU pass's time
 tools/control/game.py input "capture on" "hold W 1" "look 200 0" "click left 0.5" [--timeout 60]
 tools/control/game.py wait loaded | frames N | ticks N | seconds N | log PATTERN [--timeout S]
 tools/control/game.py log [--new] [--level debug] [--tail 40]
-tools/control/game.py status                # frames, clock, steps (tick, paused, time scale), loading, role, origin, camera (absolute),
+tools/control/game.py status                # frames, clock, steps (tick, paused, held by the menu, time scale), loading, role, origin, camera (absolute),
                                             # entities, and the player's position, velocity, contact, and mode
 tools/control/game.py stop                  # quit, then SIGTERM after 10 s, then SIGKILL
 tools/control/game.py restart [same options as start]
