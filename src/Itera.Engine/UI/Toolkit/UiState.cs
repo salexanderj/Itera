@@ -19,6 +19,7 @@ namespace Itera.Engine.UI.Toolkit;
 /// <param name="Changed">A slider's value was moved (<see cref="Value"/>).</param>
 /// <param name="Value">A slider's value, moved by a drag or a key when <see cref="Changed"/>; else the value given.</param>
 /// <param name="Typing">A text box has the typing (<see cref="Ui.Typing"/>).</param>
+/// <param name="RightClicked">The right button came up over it after going down on it.</param>
 public readonly record struct UiState(
     int Id,
     SKRect Rect,
@@ -29,5 +30,6 @@ public readonly record struct UiState(
     bool Dragging = false,
     bool Changed = false,
     float Value = 0,
-    bool Typing = false
+    bool Typing = false,
+    bool RightClicked = false
 );

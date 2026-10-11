@@ -52,6 +52,9 @@ public sealed unsafe partial class UISurface : IDisposable
         _logger = logger;
     }
 
+    /// <summary>The layers drawn, in order (later on top): the run's under the match's, the match's, the run's over them.</summary>
+    public IReadOnlyList<IUiLayer> Layers => _layers;
+
     public int Width { get; private set; }
 
     public int Height { get; private set; }

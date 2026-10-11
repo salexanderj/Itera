@@ -205,7 +205,7 @@ control port's `run` runs commands outside any script, so `wait` there fails (th
 lists the commands (`ConsoleCommands`):
 
 - Engine: `help`, `clear`, `play` [SEED], `host` [SEED] [steam|direct], `join` ADDRESS, `leave`, `settings` (volume,
-  sensitivity, fov, scaling, threshold, shadows, aa off|smaa|2x|4x|8x, vsync, fullscreen; a test run that changes them
+  sensitivity, fov, uiscale 0.75 to 1.5, scaling, threshold, shadows, aa off|smaa|2x|4x|8x, vsync, fullscreen; a test run that changes them
   writes the data folder's `settings.json`: give render options on the command line instead, or run with the agent data
   folder, `--Engine:Application:DataFolder=<DataFolder>-agent`), `lines`, `shadows`, `scale` (the run's only), `aa` (on,
   off, edges, weights, auto; the run's only), `lights` (test N: N warm lights round the camera for ten minutes; clear),
@@ -226,8 +226,9 @@ lists the commands (`ConsoleCommands`):
   [move DX DY DZ] (the match's origin, which positions are measured from, and the camera's place from it and in the
   world; move moves it by whole metres, and everything with it, so nothing in the world moves: for checking that
   nothing does; a move of `Engine:Origin:ShiftMetres` or more leaves the camera that far out, so the next step follows
-  it back; the run's only), `stats`,
-  `screenshot` [SCALE] [noui] [PATH.png] (a PNG at PATH.png or in the data folder's
+  it back; the run's only), `stats`, `ui` [press LABEL] (the toolkit layers shown, an element a line: kind, id, text,
+  rectangle, state; press clicks the element reading LABEL, as a click on its middle would, for working a UI by what
+  it says), `screenshot` [SCALE] [noui] [PATH.png] (a PNG at PATH.png or in the data folder's
   `Screenshots/`), `wait` (loaded, view (the view's world loaded and on the GPU, as the loading screen waits for), ticks
   N, frames N, or seconds N of real time, then an optional timeout in seconds), `shaders` [reload] (the folder shaders
   compile from; reload compiles them again), `quit` [CODE] (the exit code, 0 to 255), `ecs` (counts, list COMPONENT [N],

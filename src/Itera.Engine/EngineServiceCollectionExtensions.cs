@@ -202,6 +202,7 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<TimeCommands>();
         services.TryAddSingleton<MatchCommands>();
         services.TryAddSingleton<SettingsCommands>();
+        services.TryAddSingleton<UiCommands>();
         services.TryAddSingleton<ParticleCommands>();
         services.TryAddSingleton<SoundCommands>();
         // The loading screen and the engine's loading tasks of each match, shown in this order: Sounds, then the terrain's

@@ -61,7 +61,7 @@ public sealed class SettingsCommandsTests : IDisposable
         Run("settings");
 
         Assert.Equal(
-            "volume 0.10, sensitivity 0.10, fov 90, scaling on, threshold 120, shadows on, aa 4x, vsync on, fullscreen off",
+            "volume 0.10, sensitivity 0.10, fov 90, uiscale 1.00, scaling on, threshold 120, shadows on, aa 4x, vsync on, fullscreen off",
             Last()
         );
         Assert.False(File.Exists(FilePath));
@@ -153,6 +153,18 @@ public sealed class SettingsCommandsTests : IDisposable
         Assert.Equal(PlayerSettings.MostFieldOfView, _settings.FieldOfViewDegrees);
         Assert.Equal(PlayerSettings.LeastSensitivity, _settings.MouseSensitivity);
         Assert.Equal(DynamicRenderScale.MostThreshold, _view.ScalingThreshold);
+    }
+
+    [Fact]
+    public void The_ui_scale_is_set_within_its_range_and_kept()
+    {
+        Run("settings uiscale 1.2");
+        Assert.Equal(1.2f, _settings.UiScale, 3);
+        Run("settings uiscale 3");
+        Assert.Equal(PlayerSettings.MostUiScale, _settings.UiScale);
+        Assert.Contains("uiscale 1.50", Last(), StringComparison.Ordinal);
+        using var file = JsonDocument.Parse(File.ReadAllBytes(FilePath));
+        Assert.Equal(1.5, file.RootElement.GetProperty("UiScale").GetDouble(), 3);
     }
 
     [Theory]

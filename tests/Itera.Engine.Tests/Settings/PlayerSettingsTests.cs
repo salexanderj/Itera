@@ -3,6 +3,9 @@ using Itera.Engine.Audio;
 using Itera.Engine.Input;
 using Itera.Engine.Rendering;
 using Itera.Engine.Settings;
+using Itera.Engine.UI;
+using Itera.Engine.UI.Menu;
+using Itera.Engine.UI.Toolkit;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Silk.NET.Input;
@@ -526,6 +529,39 @@ public sealed class PlayerSettingsTests : IDisposable
     }
 
     /// <summary>The settings with the file read, as the run's <c>settings file</c> step does.</summary>
+    [Fact]
+    public void The_ui_scale_comes_from_the_options_then_the_file_within_its_range_and_reaches_the_toolkit()
+    {
+        var options = new EngineOptions();
+        options.Ui.Scale = 1.25f;
+        Assert.Equal(1.25f, Create(options).UiScale);
+
+        File.WriteAllText(FilePath, """{ "UiScale": 9 }""");
+        using var fonts = new UiFonts(Options.Create(options), NullLogger<UiFonts>.Instance);
+        using var toolkit = new UiToolkit(
+            fonts,
+            MenuStyle.Plain,
+            Options.Create(options),
+            NullLogger<UiToolkit>.Instance
+        );
+        var settings = new PlayerSettings(
+            options,
+            CommandLineKeys.None,
+            FilePath,
+            NullLogger<PlayerSettings>.Instance,
+            toolkit: toolkit
+        );
+        settings.Initialize();
+        settings.Apply();
+        Assert.Equal(PlayerSettings.MostUiScale, settings.UiScale);
+        Assert.Equal(PlayerSettings.MostUiScale, toolkit.Scale);
+
+        settings.SetUiScale(0.8f);
+        settings.Save();
+        Assert.Equal(0.8f, toolkit.Scale);
+        Assert.Equal(0.8f, Create(new EngineOptions()).UiScale, 3);
+    }
+
     private PlayerSettings Create(EngineOptions options, CommandLineKeys? keys = null, KeyBindings? bindings = null)
     {
         var settings = new PlayerSettings(

@@ -65,8 +65,11 @@ public abstract class UiLayer : IUiLayer, IDisposable
 
     public bool Dirty { get; private set; }
 
-    /// <summary>The navigation keys pressed this frame (Tab, the arrows, Enter); none by default.</summary>
-    protected virtual UiKeys Keys => UiKeys.None;
+    /// <summary>
+    /// The navigation keys pressed this frame (Tab, the arrows, Enter, Space): the menu's (<see cref="IFrameInput.MenuKeys"/>)
+    /// for a layer that is the run's menu (<see cref="Menu.IMenu"/>); none for another, whose game gives its own.
+    /// </summary>
+    protected virtual UiKeys Keys => this is Menu.IMenu && _input is not null ? _input.MenuKeys : UiKeys.None;
 
     /// <summary>Draws the layer again at the next frame, whatever changed: what an area shows came from elsewhere.</summary>
     public void Invalidate() => _invalidated = true;

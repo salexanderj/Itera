@@ -93,6 +93,7 @@ public sealed partial class GameLoop
     private readonly SteamFriendList _friends;
     private readonly PlayerSettings _playerSettings;
     private readonly SettingsCommands _settingsCommands;
+    private readonly UiCommands _uiCommands;
     private bool _loopEnded;
     private readonly MatchFlow _flow;
     private double _noMatchStart;
@@ -195,10 +196,12 @@ public sealed partial class GameLoop
         SteamFriendList friends,
         JoinRequests joinRequests,
         PlayerSettings playerSettings,
-        SettingsCommands settingsCommands
+        SettingsCommands settingsCommands,
+        UiCommands uiCommands
     )
     {
         _settingsCommands = settingsCommands;
+        _uiCommands = uiCommands;
         _playerSettings = playerSettings;
         _services = services;
         _logger = logger;
@@ -542,6 +545,7 @@ public sealed partial class GameLoop
         _services.GetRequiredService<TimeCommands>().Register();
         _matchCommands.Register();
         _settingsCommands.Register();
+        _uiCommands.Register();
         _particleCommands.Register();
         _soundCommands.Register();
         _input.SetKeyboardFocus(_console);

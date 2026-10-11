@@ -54,23 +54,28 @@ public sealed class PanelInputTests : IDisposable
     }
 
     [Fact]
-    public void A_left_click_and_the_wheel_go_to_the_panel_and_other_buttons_reach_the_game_without_capturing()
+    public void The_left_and_right_buttons_and_the_wheel_go_to_the_panel_and_other_buttons_reach_the_game_without_capturing()
     {
         _input.SetPanel(_panel);
         _input.InjectPointer(new Vector2(320, 200));
         _input.HandleMouseDown(MouseButton.Left);
         _input.HandleMouseDown(MouseButton.Right);
+        _input.HandleMouseDown(MouseButton.Middle);
         _input.HandleScroll(-3);
         _input.Update();
         _input.BeginFrame();
         _input.BeginTick();
 
-        Assert.Equal(new UiPointer(new Vector2(320, 200), true, true, false, -3), _input.MenuPointer);
+        Assert.Equal(
+            new UiPointer(new Vector2(320, 200), true, true, false, -3, RightPressed: true),
+            _input.MenuPointer
+        );
         Assert.False(_input.PointerCaptured);
         Assert.False(_input.Tick.WasPressed(MouseButton.Left));
+        Assert.False(_input.Frame.WasPressed(MouseButton.Right));
         // Another button reaches the game, as a key would (the panel's own toggle on a mouse button closes it);
         // with the pointer free, the game takes no attack from it.
-        Assert.True(_input.Frame.WasPressed(MouseButton.Right));
+        Assert.True(_input.Frame.WasPressed(MouseButton.Middle));
         Assert.Equal(0, _input.Frame.Scroll);
 
         _input.HandleMouseUp(MouseButton.Left);

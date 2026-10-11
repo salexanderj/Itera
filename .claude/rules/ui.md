@@ -64,8 +64,14 @@ at Error and shows nothing until one does not. `Ui.Dump()` prints the layout one
 rectangle, state), for tests and agents; tests pin rectangles with `FixedTextMeasurer` and draw a layer alone with
 `LayerPicture` (`ITERA_UI_PICTURES` names a folder `UiLayerTests` keeps its page's picture in). A HUD layer gets the
 pointer's button and the wheel only while a panel is set (`SetPanel`), as the menu and panels do, and no pointer while
-the game's input is blocked (the menu open); navigation keys reach a layer through its `Keys`. `Invalidate()` redraws a
-layer whatever its UI says (what an area shows came from elsewhere).
+the game's input is blocked (the menu open); navigation keys reach a layer through its `Keys`: the run's menu (an
+`IMenu` toolkit layer) gets `IFrameInput.MenuKeys`, Tab, Shift+Tab, the arrows, Enter, and Space collected while it is
+open (its text box keeps all but Tab). The right button reaches menus and panels (`UiPointer.RightPressed`,
+`UiState.RightClicked`). `Invalidate()` redraws a layer whatever its UI says (what an area shows came from elsewhere).
+The UI scale is the player's (`PlayerSettings.UiScale`, 0.75 to 1.5, `"UiScale"` in `settings.json`, `settings uiscale`;
+`Engine:Ui:Scale` its default), handed to `UiToolkit.Scale`. The console's `ui` prints every toolkit layer shown, an
+element a line, and `ui press LABEL` clicks the element reading LABEL (`UiCommands`), so a tool or agent works a UI by
+what it says.
 
 The stats line (F1, `stats`, `Engine:Ui:Stats`) shows frames per second, frame and GPU time, the render scale, fixed
 steps per second, the session, and the living particles.

@@ -61,6 +61,8 @@ public enum UiMarks
 /// <param name="Wheel">The wheel's steps since the last frame, positive away from the player.</param>
 /// <param name="Keys">The navigation keys pressed since the last frame.</param>
 /// <param name="Seconds">The time, in seconds, for tweens.</param>
+/// <param name="RightPressed">The right button went down since the last frame.</param>
+/// <param name="RightReleased">The right button came up since the last frame.</param>
 public readonly record struct UiInput(
     Vector2 At = default,
     bool PointerShown = false,
@@ -69,10 +71,23 @@ public readonly record struct UiInput(
     bool Released = false,
     float Wheel = 0,
     UiKeys Keys = UiKeys.None,
-    double Seconds = 0
+    double Seconds = 0,
+    bool RightPressed = false,
+    bool RightReleased = false
 )
 {
     /// <summary>The input from the engine's pointer as a menu or a panel reads it, with <paramref name="keys"/> and the time.</summary>
     public static UiInput From(in UiPointer source, bool shown, UiKeys keys, double seconds) =>
-        new(source.Position, shown, source.Down, source.Pressed, source.Released, source.Scroll, keys, seconds);
+        new(
+            source.Position,
+            shown,
+            source.Down,
+            source.Pressed,
+            source.Released,
+            source.Scroll,
+            keys,
+            seconds,
+            source.RightPressed,
+            source.RightReleased
+        );
 }

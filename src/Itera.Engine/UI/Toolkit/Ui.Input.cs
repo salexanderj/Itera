@@ -31,6 +31,8 @@ public sealed partial class Ui
     private int _hovered;
     private int _pressed;
     private int _clicked;
+    private int _rightPressed;
+    private int _rightClicked;
     private int _changed;
     private float _changedValue;
     private int _focused;
@@ -152,6 +154,7 @@ public sealed partial class Ui
     private void Match(in UiInput input)
     {
         _clicked = 0;
+        _rightClicked = 0;
         _changed = 0;
         _entered = 0;
         // Only a pointer seen before that moves comes onto an element: not one shown again, nor a layout moving under it.
@@ -194,6 +197,17 @@ public sealed partial class Ui
             }
 
             _pressed = 0;
+        }
+
+        if (input.RightPressed && input.PointerShown)
+        {
+            _rightPressed = hovered;
+        }
+
+        if (input.RightReleased)
+        {
+            _rightClicked = _rightPressed != 0 && _rightPressed == hovered ? _rightPressed : 0;
+            _rightPressed = 0;
         }
 
         if (input.Wheel != 0 && input.PointerShown)
@@ -344,6 +358,11 @@ public sealed partial class Ui
         if (_focused != before)
         {
             _reveal = RevealLayouts;
+            if (_typing != _focused)
+            {
+                // The focus left the text box by a key: the typing goes with it.
+                _typing = 0;
+            }
         }
 
         if ((keys & UiKeys.Press) != 0 && focused >= 0)
@@ -462,7 +481,8 @@ public sealed partial class Ui
             Dragging: id == _pressed,
             Changed: changed,
             Value: changed ? _changedValue : node.Value,
-            Typing: id == _typing
+            Typing: id == _typing,
+            RightClicked: id == _rightClicked
         );
     }
 

@@ -2,8 +2,8 @@ namespace Itera.Engine.Input;
 
 /// <summary>
 /// A game's panel that takes the free pointer while it shows (such as a map screen), set with
-/// <see cref="IFrameInput.SetPanel"/>: the pointer is freed as it opens, its left clicks and the wheel go to
-/// <see cref="IFrameInput.MenuPointer"/> and never capture the pointer, other buttons do nothing, and Escape goes to the
+/// <see cref="IFrameInput.SetPanel"/>: the pointer is freed as it opens, its left and right clicks and the wheel go to
+/// <see cref="IFrameInput.MenuPointer"/> and never capture the pointer, other buttons reach the game, and Escape goes to the
 /// panel rather than the menu. Keys still reach the game, so walking goes on. Clearing the panel captures the pointer
 /// again when it was captured as the panel opened. The menu and the console, when open, come first. Main thread.
 /// </summary>

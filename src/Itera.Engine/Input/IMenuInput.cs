@@ -29,17 +29,22 @@ public interface IMenuInput
 
 /// <summary>
 /// The pointer as the menu reads it in a frame: where it is in the frame's pixels (the framebuffer's, which the UI is
-/// drawn in), whether the left button is down, went down, or came up since the last frame, and the wheel's steps.
+/// drawn in), whether the left button is down, went down, or came up since the last frame, the wheel's steps, and the
+/// right button's going down and coming up.
 /// </summary>
 /// <param name="Position">Where the pointer is, in framebuffer pixels from the top left.</param>
 /// <param name="Down">The left button is held.</param>
 /// <param name="Pressed">The left button went down since the last frame.</param>
 /// <param name="Released">The left button came up since the last frame.</param>
 /// <param name="Scroll">Wheel steps since the last frame, positive away from the user.</param>
+/// <param name="RightPressed">The right button went down since the last frame.</param>
+/// <param name="RightReleased">The right button came up since the last frame.</param>
 public readonly record struct UiPointer(
     System.Numerics.Vector2 Position,
     bool Down,
     bool Pressed,
     bool Released,
-    float Scroll
+    float Scroll,
+    bool RightPressed = false,
+    bool RightReleased = false
 );

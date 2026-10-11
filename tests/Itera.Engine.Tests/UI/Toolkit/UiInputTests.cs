@@ -413,6 +413,31 @@ public sealed class UiInputTests
     }
 
     [Fact]
+    public void A_right_click_is_a_release_of_the_right_button_over_the_element_it_went_down_on()
+    {
+        Frame(new UiInput(new Vector2(10, 10), true, RightPressed: true));
+        Assert.False(_play.RightClicked);
+        Frame(new UiInput(new Vector2(10, 12), true, RightReleased: true));
+        Assert.True(_play.RightClicked);
+
+        Frame(new UiInput(new Vector2(10, 10), true, RightPressed: true));
+        Frame(new UiInput(new Vector2(10, 60), true, RightReleased: true));
+        Assert.False(_play.RightClicked);
+        Assert.False(_quit.RightClicked);
+    }
+
+    [Fact]
+    public void Tab_out_of_a_text_box_takes_the_typing_with_the_focus()
+    {
+        Frame(new UiInput(new Vector2(10, 130), true, Pressed: true, Released: true));
+        Assert.Same(_entry, _ui.Typing);
+
+        Frame(new UiInput(Keys: UiKeys.Next));
+        Assert.True(_play.Focused);
+        Assert.Null(_ui.Typing);
+    }
+
+    [Fact]
     public void A_frame_of_input_allocates_nothing()
     {
         var inputs = new[]

@@ -49,7 +49,7 @@ public sealed class MenuInputTests : IDisposable
         _input.BeginFrame();
         _input.BeginTick();
 
-        Assert.Equal(new UiPointer(new Vector2(120, 80), true, true, false, 2), _input.MenuPointer);
+        Assert.Equal(new UiPointer(new Vector2(120, 80), true, true, false, 2, RightPressed: true), _input.MenuPointer);
         Assert.False(_input.PointerCaptured);
         Assert.False(_input.Tick.WasPressed(MouseButton.Left));
         Assert.False(_input.Tick.WasPressed(MouseButton.Right));
@@ -276,6 +276,56 @@ public sealed class MenuInputTests : IDisposable
         _input.Update();
         Assert.False(_input.PointerCaptured);
         Assert.False(_input.DrawnPointerOn);
+    }
+
+    [Fact]
+    public void While_the_menu_is_open_navigation_keys_reach_its_focus_and_its_text_box_keeps_all_but_tab()
+    {
+        _menu.IsOpen = true;
+        _input.HandleKeyDown(Key.Tab, null);
+        _input.HandleKeyDown(Key.Down, null);
+        _input.HandleKeyDown(Key.ShiftLeft, null);
+        _input.HandleKeyDown(Key.Tab, null);
+        _input.HandleKeyUp(Key.ShiftLeft);
+        _input.HandleKeyDown(Key.Space, null);
+        _input.BeginFrame();
+        Assert.Equal(
+            Itera.Engine.UI.Toolkit.UiKeys.Next
+                | Itera.Engine.UI.Toolkit.UiKeys.Down
+                | Itera.Engine.UI.Toolkit.UiKeys.Previous
+                | Itera.Engine.UI.Toolkit.UiKeys.Press,
+            _input.MenuKeys
+        );
+        _input.BeginFrame();
+        Assert.Equal(Itera.Engine.UI.Toolkit.UiKeys.None, _input.MenuKeys);
+
+        var box = new TypedFocus();
+        _menu.TextFocus = box;
+        _input.HandleKeyDown(Key.Enter, null);
+        _input.HandleKeyDown(Key.Tab, null);
+        _input.BeginFrame();
+        Assert.Equal([Key.Enter], box.Keys);
+        Assert.Equal(Itera.Engine.UI.Toolkit.UiKeys.Next, _input.MenuKeys);
+
+        // With the menu shut the keys are the game's.
+        _menu.IsOpen = false;
+        _menu.TextFocus = null;
+        _input.HandleKeyDown(Key.Tab, null);
+        _input.BeginFrame();
+        Assert.Equal(Itera.Engine.UI.Toolkit.UiKeys.None, _input.MenuKeys);
+    }
+
+    [Fact]
+    public void While_the_menu_is_open_the_right_button_reaches_its_pointer()
+    {
+        _menu.IsOpen = true;
+        _input.HandleMouseDown(MouseButton.Right);
+        _input.BeginFrame();
+        Assert.True(_input.MenuPointer.RightPressed);
+        _input.HandleMouseUp(MouseButton.Right);
+        _input.BeginFrame();
+        Assert.True(_input.MenuPointer.RightReleased);
+        Assert.False(_input.MenuPointer.RightPressed);
     }
 
     /// <summary>Captures the pointer as the control port does, with no window.</summary>

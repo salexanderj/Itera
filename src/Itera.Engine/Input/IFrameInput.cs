@@ -51,6 +51,12 @@ public interface IFrameInput
     /// </summary>
     void ClearPanel(IPanelInput panel) { }
 
+    /// <summary>
+    /// The navigation keys pressed for the menu in this frame (<see cref="UI.Toolkit.UiKeys"/>: Tab and Shift+Tab, the
+    /// arrows, Enter, Space), collected while it is open, after its text box (which keeps all but Tab); none otherwise.
+    /// </summary>
+    UI.Toolkit.UiKeys MenuKeys => UI.Toolkit.UiKeys.None;
+
     /// <summary>The game's text box that takes the typing (<see cref="SetTextFocus"/>), or null.</summary>
     ITextInput? TextFocus => null;
 

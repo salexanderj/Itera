@@ -2,6 +2,7 @@ using System.Text.Json;
 using Itera.Engine.Audio;
 using Itera.Engine.Input;
 using Itera.Engine.Rendering;
+using Itera.Engine.UI.Toolkit;
 using Itera.Engine.Windowing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -48,6 +49,7 @@ public sealed partial class PlayerSettings
     private const string GameKey = "Game";
     private const string VSyncKey = "VSync";
     private const string FullscreenKey = "Fullscreen";
+    private const string UiScaleKey = "UiScale";
 
     /// <summary>
     /// Frame blending's switch, a setting until 2026-10-05; frame blending left with the raymarcher on 2026-10-06.
@@ -85,6 +87,7 @@ public sealed partial class PlayerSettings
         RetiredFrameBlendKey,
         VSyncKey,
         FullscreenKey,
+        UiScaleKey,
         KeysKey,
         GameKey,
     };
@@ -95,6 +98,7 @@ public sealed partial class PlayerSettings
     private readonly AudioService? _audio;
     private readonly RenderView? _view;
     private readonly WindowService? _window;
+    private readonly UiToolkit? _toolkit;
     private readonly ILogger<PlayerSettings> _logger;
     private readonly HashSet<string> _fromCommandLine = new(StringComparer.Ordinal);
     private readonly Dictionary<string, JsonElement> _file = new(StringComparer.Ordinal);
@@ -111,6 +115,7 @@ public sealed partial class PlayerSettings
         RenderView view,
         WindowService window,
         KeyBindings keys,
+        UiToolkit toolkit,
         ILogger<PlayerSettings> logger
     )
         : this(
@@ -121,7 +126,8 @@ public sealed partial class PlayerSettings
             audio,
             view,
             window,
-            keys
+            keys,
+            toolkit
         ) { }
 
     /// <param name="options">The options, whose values come first.</param>
@@ -132,6 +138,7 @@ public sealed partial class PlayerSettings
     /// <param name="view">Takes the render scaling, shadows, and anti-aliasing; null for none.</param>
     /// <param name="window">Goes full screen; null for none.</param>
     /// <param name="keys">The keybindings, read from and written to the file's <c>"Keys"</c>; null for the defaults.</param>
+    /// <param name="toolkit">Takes the UI scale; null for none.</param>
     internal PlayerSettings(
         EngineOptions options,
         CommandLineKeys commandLine,
@@ -140,10 +147,13 @@ public sealed partial class PlayerSettings
         AudioService? audio = null,
         RenderView? view = null,
         WindowService? window = null,
-        KeyBindings? keys = null
+        KeyBindings? keys = null,
+        UiToolkit? toolkit = null
     )
     {
         _path = path;
+        _toolkit = toolkit;
+        UiScale = Math.Clamp(options.Ui.Scale, LeastUiScale, MostUiScale);
         Keys = keys ?? new KeyBindings();
         _audio = audio;
         _view = view;
@@ -173,6 +183,7 @@ public sealed partial class PlayerSettings
         Remember(commandLine, MsaaSamplesKey, "Engine:Renderer:MsaaSamples");
         Remember(commandLine, VSyncKey, "Engine:Window:VSync");
         Remember(commandLine, FullscreenKey, "Engine:Window:Fullscreen");
+        Remember(commandLine, UiScaleKey, "Engine:Ui:Scale");
     }
 
     /// <summary>The file's values over the options', for every setting the command line did not give. Once, before the window.</summary>
@@ -187,6 +198,15 @@ public sealed partial class PlayerSettings
 
     /// <summary>The master volume, 0 to 1.</summary>
     public float Volume { get; private set; }
+
+    /// <summary>The least UI scale.</summary>
+    public const float LeastUiScale = 0.75f;
+
+    /// <summary>The most UI scale.</summary>
+    public const float MostUiScale = 1.5f;
+
+    /// <summary>The UI's size, <see cref="LeastUiScale"/> to <see cref="MostUiScale"/>: the toolkit's units grow with it.</summary>
+    public float UiScale { get; private set; }
 
     /// <summary>Mouse look: degrees the camera turns per pixel of mouse movement.</summary>
     public float MouseSensitivity { get; private set; }
@@ -326,12 +346,27 @@ public sealed partial class PlayerSettings
             _audio.Volume = Volume;
         }
 
+        if (_toolkit is not null)
+        {
+            _toolkit.Scale = UiScale;
+        }
+
         if (_view is not null)
         {
             _view.DynamicScaling = DynamicScaling;
             _view.ScalingThreshold = ScalingThreshold;
             _view.Shadows = Shadows;
             _view.AntiAliasing = AntiAliasing;
+        }
+    }
+
+    /// <summary>Sets the UI's size, kept within <see cref="LeastUiScale"/> and <see cref="MostUiScale"/>; at once.</summary>
+    public void SetUiScale(float scale)
+    {
+        if (Change(UiScaleKey, UiScale, Math.Clamp(scale, LeastUiScale, MostUiScale), out var value))
+        {
+            UiScale = value;
+            Apply();
         }
     }
 
@@ -488,6 +523,7 @@ public sealed partial class PlayerSettings
                 WriteNumber(writer, MsaaSamplesKey, MsaaSamples);
                 WriteBoolean(writer, VSyncKey, VSync);
                 WriteBoolean(writer, FullscreenKey, Fullscreen);
+                WriteNumber(writer, UiScaleKey, UiScale);
                 Keys.Write(writer);
                 WriteGame(writer);
                 foreach (var (key, value) in _file)
@@ -571,6 +607,7 @@ public sealed partial class PlayerSettings
         MsaaSamples = AntiAliasModes.SnapSamples((int)Read(MsaaSamplesKey, MsaaSamples, 1, 8));
         VSync = Read(VSyncKey, VSync);
         Fullscreen = Read(FullscreenKey, Fullscreen);
+        UiScale = Read(UiScaleKey, UiScale, LeastUiScale, MostUiScale);
         if (_file.TryGetValue(KeysKey, out var keys))
         {
             Keys.Load(keys);

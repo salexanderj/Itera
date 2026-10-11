@@ -70,7 +70,15 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
     private bool _uiDown;
     private bool _uiPressed;
     private bool _uiReleased;
+    private bool _uiRightDown;
+    private bool _uiRightPressed;
+    private bool _uiRightReleased;
     private float _uiScroll;
+
+    /// <summary>The menu's navigation keys pressed since the last frame, and the frame's (<see cref="MenuKeys"/>).</summary>
+    private UI.Toolkit.UiKeys _menuKeys;
+    private UI.Toolkit.UiKeys _frameMenuKeys;
+    private bool _shiftHeld;
     private UiPointer _uiPointer;
     private bool _gameInputBlocked;
     private bool _dropNextCharacter;
@@ -202,6 +210,9 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
             SetPanel(null);
         }
     }
+
+    /// <inheritdoc />
+    public UI.Toolkit.UiKeys MenuKeys => _frameMenuKeys;
 
     /// <inheritdoc />
     public ITextInput? TextFocus => _text;
@@ -442,10 +453,22 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
         var frame = _accumulator.TakeFrame(_captured);
         _frame = _gameInputBlocked ? default : frame;
         var position = _drawn ? _drawnPosition : FramebufferPointer();
-        _uiPointer = new UiPointer(position, _uiDown, _uiPressed, _uiReleased, _uiScroll);
+        _uiPointer = new UiPointer(
+            position,
+            _uiDown,
+            _uiPressed,
+            _uiReleased,
+            _uiScroll,
+            _uiRightPressed,
+            _uiRightReleased
+        );
         _uiPressed = false;
         _uiReleased = false;
+        _uiRightPressed = false;
+        _uiRightReleased = false;
         _uiScroll = 0;
+        _frameMenuKeys = _menu is { IsOpen: true } ? _menuKeys : UI.Toolkit.UiKeys.None;
+        _menuKeys = UI.Toolkit.UiKeys.None;
     }
 
     /// <summary>
@@ -619,6 +642,11 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
             _controlHeld = true;
         }
 
+        if (key is Key.ShiftLeft or Key.ShiftRight)
+        {
+            _shiftHeld = true;
+        }
+
         if (key == Key.GraveAccent && _focus is { Enabled: true })
         {
             if (_graveHeld)
@@ -669,10 +697,21 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
             return;
         }
 
-        if (key != Key.Escape && _menu?.TextFocus is { } text)
+        if (key != Key.Escape && _menu?.TextFocus is { } text && key != Key.Tab)
         {
-            // The menu's text box takes the keys (` still opens the console).
+            // The menu's text box takes the keys but Tab (` still opens the console).
             Type(text, key, keyboard);
+            return;
+        }
+
+        if (
+            _menu is { IsOpen: true }
+            && MenuKey(key, _shiftHeld) is var navigation
+            && navigation != UI.Toolkit.UiKeys.None
+        )
+        {
+            // The menu's keyboard focus: Tab, the arrows, Enter, Space.
+            _menuKeys |= navigation;
             return;
         }
 
@@ -726,6 +765,11 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
             _controlHeld = false;
         }
 
+        if (key is Key.ShiftLeft or Key.ShiftRight)
+        {
+            _shiftHeld = false;
+        }
+
         if (key == Key.GraveAccent)
         {
             _graveHeld = false;
@@ -747,6 +791,19 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
             _text?.KeyUp(key);
         }
     }
+
+    /// <summary>A key's navigation for a menu's keyboard focus (Shift+Tab goes back); none for any other key.</summary>
+    internal static UI.Toolkit.UiKeys MenuKey(Key key, bool shift) =>
+        key switch
+        {
+            Key.Tab => shift ? UI.Toolkit.UiKeys.Previous : UI.Toolkit.UiKeys.Next,
+            Key.Left => UI.Toolkit.UiKeys.Left,
+            Key.Right => UI.Toolkit.UiKeys.Right,
+            Key.Up => UI.Toolkit.UiKeys.Up,
+            Key.Down => UI.Toolkit.UiKeys.Down,
+            Key.Enter or Key.KeypadEnter or Key.Space => UI.Toolkit.UiKeys.Press,
+            _ => UI.Toolkit.UiKeys.None,
+        };
 
     /// <summary>True while a game's text box and screens may take keys: the menu is shut and the game's input not blocked.</summary>
     private bool GameTakesInput => _menu is not { IsOpen: true } && !_gameInputBlocked;
@@ -947,24 +1004,38 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
             _uiDown = true;
             _uiPressed = true;
         }
+        else if (button == MouseButton.Right)
+        {
+            _uiRightDown = true;
+            _uiRightPressed = true;
+        }
 
         return true;
     }
 
     /// <summary>
     /// A button went down while a game's panel is set (and the menu and the console closed): the panel takes the left
-    /// button's click; another reaches the game, as a key would (the panel's own toggle bound to a mouse button closes
-    /// it), and the free pointer is not captured by it.
+    /// and right buttons' clicks; another reaches the game, as a key would (the panel's own toggle bound to a mouse
+    /// button closes it), and the free pointer is not captured by it.
     /// </summary>
     private bool PanelTakesClick(MouseButton button)
     {
-        if (_panel is null || button != MouseButton.Left)
+        if (_panel is null || button is not (MouseButton.Left or MouseButton.Right))
         {
             return false;
         }
 
-        _uiDown = true;
-        _uiPressed = true;
+        if (button == MouseButton.Left)
+        {
+            _uiDown = true;
+            _uiPressed = true;
+        }
+        else
+        {
+            _uiRightDown = true;
+            _uiRightPressed = true;
+        }
+
         return true;
     }
 
@@ -993,6 +1064,12 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
         {
             _uiDown = false;
             _uiReleased = true;
+        }
+
+        if (button == MouseButton.Right && _uiRightDown)
+        {
+            _uiRightDown = false;
+            _uiRightReleased = true;
         }
 
         _accumulator.ButtonUp(button);
