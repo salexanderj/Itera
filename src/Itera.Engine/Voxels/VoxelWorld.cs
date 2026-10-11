@@ -406,7 +406,7 @@ public sealed partial class VoxelWorld : IDisposable
         // workers free them, and each waiting free holds a job.
         for (var job = _maxInFlight + _levels * perLevel; job > 0; job--)
         {
-            _jobPool.Push(new ColumnJob(Grid.MaxLayers));
+            _jobPool.Push(new ColumnJob());
         }
 
         _workers.Start();
@@ -680,22 +680,6 @@ public sealed partial class VoxelWorld : IDisposable
     /// <summary>The voxel memory, for reading resident columns (the GPU upload). Main thread.</summary>
     internal VoxelMemory ReadMemory => Memory;
 
-    /// <summary>
-    /// The chunk states of a resident column, bottom layer first, or false when it is not resident. Valid until the
-    /// next <see cref="Update"/>, <see cref="Apply"/>, or <see cref="ApplySequenced"/>. Main thread.
-    /// </summary>
-    internal bool TryGetResidentLayers(ColumnKey key, out ReadOnlySpan<ChildState> layers)
-    {
-        if (TryGetResident(key, out var column))
-        {
-            layers = column.Layers;
-            return true;
-        }
-
-        layers = default;
-        return false;
-    }
-
     /// <summary>Adds the key of every resident column to <paramref name="keys"/>. For a resync; allocates as the list grows.</summary>
     internal void CollectResidentColumns(List<ColumnKey> keys)
     {
@@ -786,9 +770,9 @@ public sealed partial class VoxelWorld : IDisposable
 
     private void Install(Column column, ColumnJob job)
     {
-        job.Layers.CopyTo(column.Layers);
-        job.Layers.Clear();
-        _mixedChunks += CountMixed(column.Layers);
+        column.Install(job.First, job.Layers, job.Below, job.Above);
+        job.ClearLayers();
+        _mixedChunks += CountMixed(column.Stored);
         column.State = ColumnState.Resident;
         column.Job = null;
         _pending--;
@@ -1031,11 +1015,11 @@ public sealed partial class VoxelWorld : IDisposable
         else
         {
             // Walking the trees to free them costs about 0.3 ms per column, so a worker does it.
-            _mixedChunks -= CountMixed(column.Layers);
+            _mixedChunks -= CountMixed(column.Stored);
             _residentByLevel[column.Key.Level]--;
-            var job = _jobPool.Count > 0 ? _jobPool.Pop() : new ColumnJob(Grid.MaxLayers);
-            job.ResetForFree(column.Key, column.Layers);
-            column.Layers.Clear();
+            var job = _jobPool.Count > 0 ? _jobPool.Pop() : new ColumnJob();
+            job.ResetForFree(column.Key, column.Stored);
+            column.ClearStored();
             Workers.Enqueue(job);
             _changes.Add(new VoxelChange(VoxelChangeKind.ColumnUnloaded, column.Key, -1, -1));
             _stats.Unloaded++;
@@ -1082,9 +1066,9 @@ public sealed partial class VoxelWorld : IDisposable
 
             var wanted = _wanted[level];
             var key = wanted.Keys[wanted.Cursor++];
-            var column = _columnPool.Count > 0 ? _columnPool.Pop() : new Column(Grid.MaxLayers);
+            var column = _columnPool.Count > 0 ? _columnPool.Pop() : new Column();
             column.Reset(key, Grid);
-            var job = _jobPool.Count > 0 ? _jobPool.Pop() : new ColumnJob(Grid.MaxLayers);
+            var job = _jobPool.Count > 0 ? _jobPool.Pop() : new ColumnJob();
             job.Reset(key, Grid, _seed, _edits.Count);
             _edits.CollectForColumn(key, 0, job.Edits);
             _edits.CollectPieces(job.Edits, job.Pieces);

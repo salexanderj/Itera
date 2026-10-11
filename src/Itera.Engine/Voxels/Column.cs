@@ -11,15 +11,17 @@ internal enum ColumnState : byte
 }
 
 /// <summary>
-/// The stack of chunks at one (level, x, z): the unit of streaming. Each layer is a chunk state: empty, one material,
-/// or a root node in <see cref="VoxelMemory"/>. Most layers are all air or all stone and cost nothing but their entry.
-/// Pooled and reused; owned by the main thread.
+/// The stack of chunks at one (level, x, z): the unit of streaming. Each layer (counted from the grid's floor at the
+/// column's level, <see cref="VoxelGrid.MinChunkYAt"/>) is a chunk state: empty, one material, or a root node in
+/// <see cref="VoxelMemory"/>. Only a window of layers is stored (<see cref="First"/>, <see cref="Stored"/>): those the
+/// generator says may hold more than one fill, and those edits reached; every layer below it is <see cref="Below"/> and
+/// every layer above it <see cref="Above"/>, one material or air each, so a column's memory follows its ground and
+/// edits, not its world's height. Pooled and reused; owned by the main thread.
 /// </summary>
 internal sealed class Column
 {
-    private readonly ChildState[] _layers;
-
-    private int _layerCount;
+    private ChildState[] _layers = new ChildState[16];
+    private int _count;
     private int _firstChunkY;
 
     /// <summary>Which column this is.</summary>
@@ -40,30 +42,109 @@ internal sealed class Column
     /// <summary>True while a large edit that reaches it waits to be applied (<c>VoxelWorld.ApplyPendingEdits</c>).</summary>
     public bool EditsPending { get; set; }
 
-    /// <summary>The chunk state of each layer, bottom first.</summary>
-    public Span<ChildState> Layers => _layers.AsSpan(0, _layerCount);
+    /// <summary>How many layers the column has in its world: from the grid's floor to its top at its level.</summary>
+    public int LayerCount { get; private set; }
 
-    /// <param name="layerCapacity">The most layers a column of its world has (<see cref="VoxelGrid.MaxLayers"/>).</param>
-    public Column(int layerCapacity) => _layers = new ChildState[layerCapacity];
+    /// <summary>The first stored layer.</summary>
+    public int First { get; private set; }
 
-    /// <summary>Makes this object stand for a new, pending column of a world of <paramref name="grid"/>.</summary>
+    /// <summary>The layer after the last stored one.</summary>
+    public int End => First + _count;
+
+    /// <summary>The chunk state of every layer below the stored ones: empty or one material.</summary>
+    public ChildState Below { get; private set; }
+
+    /// <summary>The chunk state of every layer above the stored ones: empty or one material.</summary>
+    public ChildState Above { get; private set; }
+
+    /// <summary>The stored layers' chunk states, bottom first: layer <see cref="First"/> + i at i.</summary>
+    public Span<ChildState> Stored => _layers.AsSpan(0, _count);
+
+    /// <summary>Makes this object stand for a new, pending column of a world of <paramref name="grid"/>, storing nothing.</summary>
     public void Reset(ColumnKey key, VoxelGrid grid)
     {
         Key = key;
-        _layerCount = key.LayerCount(grid);
-        if (_layerCount > _layers.Length)
-        {
-            throw new InvalidOperationException(
-                $"A column of {_layerCount} layers does not fit a pool's column of {_layers.Length}."
-            );
-        }
-
+        LayerCount = key.LayerCount(grid);
         _firstChunkY = grid.MinChunkYAt(key.Level);
         State = ColumnState.Pending;
         Job = null;
         AppliedEdit = 0;
         EditsPending = false;
-        _layers.AsSpan().Clear();
+        _layers.AsSpan(0, _count).Clear();
+        _count = 0;
+        First = 0;
+        Below = ChildState.Empty;
+        Above = ChildState.Empty;
+    }
+
+    /// <summary>The chunk state of <paramref name="layer"/>: stored, or the state below or above the stored ones.</summary>
+    public ChildState LayerAt(int layer) =>
+        layer < First ? Below
+        : layer < First + _count ? _layers[layer - First]
+        : Above;
+
+    /// <summary>
+    /// The chunk state of <paramref name="layer"/> to change, stored first if it was not (the window widened to it, the
+    /// layers between taking the state below or above).
+    /// </summary>
+    public ref ChildState Widen(int layer)
+    {
+        if (_count == 0)
+        {
+            Grow(1);
+            _layers[0] = LayerAt(layer);
+            (First, _count) = (layer, 1);
+        }
+        else if (layer < First)
+        {
+            var added = First - layer;
+            Grow(_count + added);
+            _layers.AsSpan(0, _count).CopyTo(_layers.AsSpan(added));
+            _layers.AsSpan(0, added).Fill(Below);
+            (First, _count) = (layer, _count + added);
+        }
+        else if (layer >= First + _count)
+        {
+            var added = layer - (First + _count) + 1;
+            Grow(_count + added);
+            _layers.AsSpan(_count, added).Fill(Above);
+            _count += added;
+        }
+
+        return ref _layers[layer - First];
+    }
+
+    /// <summary>Makes room for <paramref name="count"/> stored layers, keeping those stored.</summary>
+    private void Grow(int count)
+    {
+        if (count > _layers.Length)
+        {
+            var grown = new ChildState[Math.Max(count, _layers.Length * 2)];
+            _layers.AsSpan(0, _count).CopyTo(grown);
+            _layers = grown;
+        }
+    }
+
+    /// <summary>
+    /// Takes the generated window: <paramref name="layers"/> from layer <paramref name="first"/>, with
+    /// <paramref name="below"/> and <paramref name="above"/> round it. The column stores nothing before.
+    /// </summary>
+    public void Install(int first, ReadOnlySpan<ChildState> layers, ChildState below, ChildState above)
+    {
+        _count = 0;
+        Grow(layers.Length);
+        layers.CopyTo(_layers);
+        _count = layers.Length;
+        First = first;
+        Below = below;
+        Above = above;
+    }
+
+    /// <summary>Stores nothing more: the layers' trees were handed on (to a free job).</summary>
+    public void ClearStored()
+    {
+        _layers.AsSpan(0, _count).Clear();
+        _count = 0;
     }
 
     /// <summary>The material of a level-0 voxel inside this column.</summary>
@@ -71,7 +152,7 @@ internal sealed class Column
     {
         var level = Key.Level;
         var layer = (voxel.Y >> (VoxelConstants.ChunkShift + level)) - _firstChunkY;
-        if ((uint)layer >= (uint)_layerCount)
+        if ((uint)layer >= (uint)LayerCount)
         {
             return VoxelConstants.Air;
         }
@@ -79,7 +160,7 @@ internal sealed class Column
         const int mask = VoxelConstants.ChunkSize - 1;
         return ChunkTree.ReadVoxel(
             memory,
-            _layers[layer],
+            LayerAt(layer),
             (voxel.X >> level) & mask,
             (voxel.Y >> level) & mask,
             (voxel.Z >> level) & mask
@@ -91,7 +172,7 @@ internal sealed class Column
     {
         var level = Key.Level;
         var layer = (voxel.Y >> (VoxelConstants.ChunkShift + level)) - _firstChunkY;
-        if ((uint)layer >= (uint)_layerCount)
+        if ((uint)layer >= (uint)LayerCount)
         {
             return VoxelDensity.Empty;
         }
@@ -99,7 +180,7 @@ internal sealed class Column
         const int mask = VoxelConstants.ChunkSize - 1;
         return ChunkTree.ReadDensity(
             memory,
-            _layers[layer],
+            LayerAt(layer),
             (voxel.X >> level) & mask,
             (voxel.Y >> level) & mask,
             (voxel.Z >> level) & mask
@@ -123,7 +204,7 @@ internal sealed class Column
         stored = false;
         var level = Key.Level;
         var layer = (voxel.Y >> (VoxelConstants.ChunkShift + level)) - _firstChunkY;
-        if ((uint)layer >= (uint)_layerCount)
+        if ((uint)layer >= (uint)LayerCount)
         {
             return false;
         }
@@ -132,7 +213,7 @@ internal sealed class Column
         int x = (voxel.X >> level) & mask,
             y = (voxel.Y >> level) & mask,
             z = (voxel.Z >> level) & mask;
-        var brick = ChunkTree.GetBrick(memory, _layers[layer], x >> 3, y >> 3, z >> 3);
+        var brick = ChunkTree.GetBrick(memory, LayerAt(layer), x >> 3, y >> 3, z >> 3);
         if (brick.Kind != ChildKind.Handle)
         {
             material = brick.Material;
@@ -150,7 +231,7 @@ internal sealed class Column
     /// <summary>Adds this column's mixed chunks, nodes, and stored bricks to the totals.</summary>
     public void Count(VoxelMemory memory, ref int mixedChunks, ref int nodes, ref int bricks)
     {
-        foreach (var layer in Layers)
+        foreach (var layer in Stored)
         {
             if (layer.Kind == ChildKind.Handle)
             {

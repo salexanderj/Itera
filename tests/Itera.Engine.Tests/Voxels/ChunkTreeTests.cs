@@ -209,17 +209,17 @@ public sealed class ChunkTreeTests : IDisposable
     [Fact]
     public void A_column_reads_voxels_through_its_layers()
     {
-        var column = new Column(VoxelGrid.Unit.MaxLayers);
+        var column = new Column();
         var key = new ColumnKey(0, -2, 3);
         column.Reset(key, VoxelGrid.Unit);
         var layer = 10 - VoxelGrid.Unit.MinChunkY;
-        column.Layers[layer - 1] = ChildState.Uniform(Stone);
-        column.Layers[layer] = ChunkTree.Encode(_memory, TestChunk(), false, out _);
+        column.Widen(layer - 1) = ChildState.Uniform(Stone);
+        column.Widen(layer) = ChunkTree.Encode(_memory, TestChunk(), false, out _);
 
         var min = key.Chunk(layer, VoxelGrid.Unit).MinVoxel;
         Assert.Equal(Stone, column.ReadVoxel(_memory, new VoxelCoord(min.X, min.Y - 1, min.Z)));
         Assert.Equal(
-            ChunkTree.ReadVoxel(_memory, column.Layers[layer], 5, 6, 7),
+            ChunkTree.ReadVoxel(_memory, column.LayerAt(layer), 5, 6, 7),
             column.ReadVoxel(_memory, new VoxelCoord(min.X + 5, min.Y + 6, min.Z + 7))
         );
         Assert.Equal(
@@ -232,7 +232,7 @@ public sealed class ChunkTreeTests : IDisposable
             bricks = 0;
         column.Count(_memory, ref mixed, ref nodes, ref bricks);
         Assert.Equal(1, mixed);
-        foreach (var state in column.Layers)
+        foreach (var state in column.Stored)
         {
             ChunkTree.Free(_memory, state, ChunkTree.RootDepth);
         }
@@ -283,12 +283,45 @@ public sealed class ChunkTreeTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// A column stores only its window of layers: below it the state below, above it the state above; storing a layer
+    /// outside widens the window, the layers between taking the state of their side.
+    /// </summary>
     [Fact]
-    public void A_column_or_job_too_small_for_a_worlds_columns_is_refused()
+    public void A_column_stores_its_window_and_widens_either_way()
     {
-        var key = new ColumnKey(0, 0, 0);
+        var column = new Column();
+        column.Reset(new ColumnKey(0, 0, 0), VoxelGrid.Unit);
+        var mixed = ChunkTree.Encode(_memory, TestChunk(), false, out _);
+        column.Install(40, [ChildState.Uniform(Stone), mixed], ChildState.Uniform(Stone), ChildState.Empty);
 
-        Assert.Throws<InvalidOperationException>(() => new Column(2).Reset(key, VoxelGrid.Unit));
-        Assert.Throws<InvalidOperationException>(() => new ColumnJob(2).Reset(key, VoxelGrid.Unit, 1, 0));
+        Assert.Equal((40, 42, VoxelGrid.Unit.MaxLayers), (column.First, column.End, column.LayerCount));
+        Assert.Equal(ChildState.Uniform(Stone), column.LayerAt(0));
+        Assert.Equal(mixed, column.LayerAt(41));
+        Assert.Equal(ChildState.Empty, column.LayerAt(90));
+
+        column.Widen(45) = ChildState.Uniform(7);
+        column.Widen(37) = ChildState.Empty;
+
+        Assert.Equal((37, 46), (column.First, column.End));
+        Assert.Equal(
+            [
+                ChildState.Empty,
+                ChildState.Uniform(Stone),
+                ChildState.Uniform(Stone),
+                ChildState.Uniform(Stone),
+                mixed,
+                ChildState.Empty,
+                ChildState.Empty,
+                ChildState.Empty,
+                ChildState.Uniform(7),
+            ],
+            column.Stored.ToArray()
+        );
+        Assert.Equal(ChildState.Uniform(Stone), column.LayerAt(36));
+        Assert.Equal(ChildState.Empty, column.LayerAt(46));
+        ChunkTree.Free(_memory, mixed, ChunkTree.RootDepth);
+        column.ClearStored();
+        Assert.Equal(0, _memory.UsedBytes);
     }
 }

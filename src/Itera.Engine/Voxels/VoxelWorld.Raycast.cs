@@ -197,14 +197,14 @@ public sealed partial class VoxelWorld
         }
 
         var layer = (y >> VoxelConstants.ChunkShift) - Grid.MinChunkY;
-        if ((uint)layer >= (uint)column.Layers.Length)
+        if ((uint)layer >= (uint)column.LayerCount)
         {
             return VoxelConstants.ChunkSize;
         }
 
         return ChunkTree.Probe(
             memory,
-            column.Layers[layer],
+            column.LayerAt(layer),
             x & (VoxelConstants.ChunkSize - 1),
             y & (VoxelConstants.ChunkSize - 1),
             z & (VoxelConstants.ChunkSize - 1),
@@ -231,7 +231,7 @@ public sealed partial class VoxelWorld
             }
 
             var layer = (y >> (VoxelConstants.ChunkShift + level)) - Grid.MinChunkYAt(level);
-            if ((uint)layer >= (uint)column.Layers.Length)
+            if ((uint)layer >= (uint)column.LayerCount)
             {
                 material = VoxelConstants.Air;
                 return VoxelConstants.ChunkSize;
@@ -240,7 +240,7 @@ public sealed partial class VoxelWorld
             const int mask = VoxelConstants.ChunkSize - 1;
             var size = ChunkTree.Probe(
                 memory,
-                column.Layers[layer],
+                column.LayerAt(layer),
                 (x >> level) & mask,
                 (y >> level) & mask,
                 (z >> level) & mask,

@@ -265,10 +265,9 @@ public sealed partial class VoxelWorld
                     continue;
                 }
 
-                var layers = column.Layers;
                 for (var cy = y0 >> Shift; cy <= y1 >> Shift; cy++)
                 {
-                    var chunk = layers[cy - Grid.MinChunkYAt(level)];
+                    var chunk = column.LayerAt(cy - Grid.MinChunkYAt(level));
                     if (chunk.IsEmpty)
                     {
                         continue;

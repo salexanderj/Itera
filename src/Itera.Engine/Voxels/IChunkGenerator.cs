@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace Itera.Engine.Voxels;
 
 /// <summary>How much of a chunk a generator knows without filling it.</summary>
@@ -54,6 +56,56 @@ public interface IChunkGenerator
     /// answers must be exact; when unsure, answer mixed. Only mixed layers are filled.
     /// </summary>
     void DescribeColumn(ColumnKey column, ulong seed, Span<ChunkFill> layers);
+
+    /// <summary>
+    /// The layers of a column that may hold more than one fill, from <paramref name="first"/> to
+    /// <paramref name="last"/> (counted as <see cref="DescribeColumn"/> counts them): every layer below them is
+    /// <paramref name="below"/> and every layer above them <paramref name="above"/>, each air or one material, exactly
+    /// (when unsure, widen the range). Only these layers are described and stored, so a world's height costs memory only
+    /// where its ground is. By default the whole column, as <see cref="DescribeColumn"/> describes it. Any thread.
+    /// </summary>
+    void DescribeRange(
+        ColumnKey column,
+        ulong seed,
+        out int first,
+        out int last,
+        out ChunkFill below,
+        out ChunkFill above
+    )
+    {
+        first = 0;
+        last = column.LayerCount(Grid) - 1;
+        below = ChunkFill.Air;
+        above = ChunkFill.Air;
+    }
+
+    /// <summary>
+    /// Describes the layers from <paramref name="first"/> of a column, <paramref name="layers"/>' length of them, as
+    /// <see cref="DescribeColumn"/> describes every layer. By default through <see cref="DescribeColumn"/> (over a
+    /// pooled array of the whole column's layers when only some are asked for). Any thread.
+    /// </summary>
+    void DescribeLayers(ColumnKey column, ulong seed, int first, Span<ChunkFill> layers)
+    {
+        var count = column.LayerCount(Grid);
+        if (first == 0 && layers.Length == count)
+        {
+            DescribeColumn(column, seed, layers);
+            return;
+        }
+
+        var all = ArrayPool<ChunkFill>.Shared.Rent(count);
+        try
+        {
+            var span = all.AsSpan(0, count);
+            span.Clear();
+            DescribeColumn(column, seed, span);
+            span.Slice(first, layers.Length).CopyTo(layers);
+        }
+        finally
+        {
+            ArrayPool<ChunkFill>.Shared.Return(all);
+        }
+    }
 
     /// <summary>
     /// Writes all 128^3 materials of a chunk into <paramref name="voxels"/>, index <c>x + 128y + 16384z</c>, including

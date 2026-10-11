@@ -87,14 +87,13 @@ public sealed partial class VoxelWorld
                     continue;
                 }
 
-                var layers = column.Layers;
                 for (var cy = 0; cy < chunksY; cy++)
                 {
                     var layer = firstChunkY + cy - Grid.MinChunkYAt(level);
-                    if ((uint)layer < (uint)layers.Length)
+                    if ((uint)layer < (uint)column.LayerCount)
                     {
                         var index = cx | (cy << 1) | (cz << 2);
-                        chunks[index] = layers[layer];
+                        chunks[index] = column.LayerAt(layer);
                         readable |= 1 << index;
                     }
                 }
@@ -313,7 +312,7 @@ public sealed partial class VoxelWorld
             return false;
         }
 
-        cell = ChunkTree.GetCell(memory, column.Layers[chunk.Layer(Grid)], bx & 3, by & 3, bz & 3);
+        cell = ChunkTree.GetCell(memory, column.LayerAt(chunk.Layer(Grid)), bx & 3, by & 3, bz & 3);
         return true;
     }
 

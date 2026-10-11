@@ -29,17 +29,11 @@ internal enum ColumnJobResult : byte
 /// </summary>
 internal sealed class ColumnJob
 {
-    private readonly ChildState[] _layers;
-    private readonly ChunkFill[] _fills;
+    private ChildState[] _layers = new ChildState[16];
+    private ChunkFill[] _fills = new ChunkFill[16];
     private int _layerCount;
+    private int _columnLayers;
     private volatile bool _cancelled;
-
-    /// <param name="layerCapacity">The most layers a column of its world has (<see cref="VoxelGrid.MaxLayers"/>).</param>
-    public ColumnJob(int layerCapacity)
-    {
-        _layers = new ChildState[layerCapacity];
-        _fills = new ChunkFill[layerCapacity];
-    }
 
     /// <summary>The column to generate.</summary>
     public ColumnKey Key { get; private set; }
@@ -56,8 +50,21 @@ internal sealed class ColumnJob
     /// <summary>The pieces the piece edits in <see cref="Edits"/> put back.</summary>
     public List<VoxelPiece> Pieces { get; } = [];
 
-    /// <summary>The generated chunk state of each layer, bottom first. Valid when <see cref="Result"/> is done.</summary>
+    /// <summary>
+    /// The generated chunk state of each stored layer, bottom first, from layer <see cref="First"/>: the generator's
+    /// range (<see cref="IChunkGenerator.DescribeRange"/>) and every layer the job's edits reach. Valid when
+    /// <see cref="Result"/> is done.
+    /// </summary>
     public Span<ChildState> Layers => _layers.AsSpan(0, _layerCount);
+
+    /// <summary>The first stored layer.</summary>
+    public int First { get; private set; }
+
+    /// <summary>The chunk state of every layer below the stored ones.</summary>
+    public ChildState Below { get; private set; }
+
+    /// <summary>The chunk state of every layer above the stored ones.</summary>
+    public ChildState Above { get; private set; }
 
     /// <summary>How the job ended.</summary>
     public ColumnJobResult Result { get; private set; }
@@ -78,22 +85,19 @@ internal sealed class ColumnJob
     public void Reset(ColumnKey key, VoxelGrid grid, ulong seed, long snapshotSequence) =>
         Reset(key, key.LayerCount(grid), seed, snapshotSequence);
 
-    private void Reset(ColumnKey key, int layerCount, ulong seed, long snapshotSequence)
+    private void Reset(ColumnKey key, int columnLayers, ulong seed, long snapshotSequence)
     {
-        if (layerCount > _layers.Length)
-        {
-            throw new InvalidOperationException(
-                $"A column of {layerCount} layers does not fit a pool's job of {_layers.Length}."
-            );
-        }
-
         Key = key;
-        _layerCount = layerCount;
+        _layers.AsSpan(0, _layerCount).Clear();
+        _layerCount = 0;
+        _columnLayers = columnLayers;
+        First = 0;
+        Below = ChildState.Empty;
+        Above = ChildState.Empty;
         Seed = seed;
         SnapshotSequence = snapshotSequence;
         Edits.Clear();
         Pieces.Clear();
-        _layers.AsSpan().Clear();
         Result = ColumnJobResult.None;
         ElapsedTicks = 0;
         FilledLayers = 0;
@@ -105,8 +109,29 @@ internal sealed class ColumnJob
     public void ResetForFree(ColumnKey key, ReadOnlySpan<ChildState> layers)
     {
         Reset(key, layers.Length, 0, 0);
+        Store(layers.Length);
         layers.CopyTo(_layers);
         IsFree = true;
+    }
+
+    /// <summary>Empties the stored layers once a column took them. Main thread.</summary>
+    public void ClearLayers()
+    {
+        _layers.AsSpan(0, _layerCount).Clear();
+        _layerCount = 0;
+    }
+
+    /// <summary>Makes room for <paramref name="count"/> stored layers and stores that many, empty.</summary>
+    private void Store(int count)
+    {
+        if (count > _layers.Length)
+        {
+            _layers = new ChildState[Math.Max(count, _layers.Length * 2)];
+            _fills = new ChunkFill[_layers.Length];
+        }
+
+        _layers.AsSpan(0, count).Clear();
+        _layerCount = count;
     }
 
     /// <summary>Asks the worker to drop the job. Main thread.</summary>
@@ -155,10 +180,21 @@ internal sealed class ColumnJob
             return ColumnJobResult.Cancelled;
         }
 
+        // The generator's range, widened to the layers the edits reach.
+        var grid = generator.Grid;
+        generator.DescribeRange(Key, Seed, out var first, out var last, out var below, out var above);
+        (first, last) = WithEdits(grid, Math.Max(first, 0), Math.Min(last, _columnLayers - 1));
+        Below = State(below);
+        Above = State(above);
+        First = Math.Min(first, _columnLayers);
+        Store(Math.Max(last - first + 1, 0));
         var layers = Layers;
         var fills = _fills.AsSpan(0, layers.Length);
         fills.Clear();
-        generator.DescribeColumn(Key, Seed, fills);
+        if (layers.Length > 0)
+        {
+            generator.DescribeLayers(Key, Seed, First, fills);
+        }
 
         for (var layer = 0; layer < layers.Length; layer++)
         {
@@ -168,7 +204,7 @@ internal sealed class ColumnJob
                 return ColumnJobResult.Cancelled;
             }
 
-            var chunk = Key.Chunk(layer, generator.Grid);
+            var chunk = Key.Chunk(First + layer, grid);
             var fill = fills[layer];
             var edited = HasEdits(chunk, generator.Grid);
             if (fill.Kind != ChunkFillKind.Mixed && !edited)
@@ -222,6 +258,34 @@ internal sealed class ColumnJob
 
         return ColumnJobResult.Done;
     }
+
+    /// <summary>The layers from <paramref name="first"/> to <paramref name="last"/> widened to every layer the edits reach.</summary>
+    private (int First, int Last) WithEdits(VoxelGrid grid, int first, int last)
+    {
+        var level = Key.Level;
+        var floor = grid.MinChunkYAt(level);
+        foreach (var edit in Edits)
+        {
+            edit.GetBounds(out var min, out var end);
+            var low = (grid.ToVoxel(min.Y) >> (VoxelConstants.ChunkShift + level)) - floor;
+            var high = (grid.ToVoxel(end.Y - 1) >> (VoxelConstants.ChunkShift + level)) - floor;
+            if (high < 0 || low > _columnLayers - 1)
+            {
+                continue;
+            }
+
+            (first, last) =
+                first > last
+                    ? (Math.Max(low, 0), Math.Min(high, _columnLayers - 1))
+                    : (Math.Min(first, Math.Max(low, 0)), Math.Max(last, Math.Min(high, _columnLayers - 1)));
+        }
+
+        return (first, last);
+    }
+
+    /// <summary>The chunk state of a whole layer of <paramref name="fill"/>: air or one material.</summary>
+    private static ChildState State(ChunkFill fill) =>
+        fill.Kind == ChunkFillKind.Uniform ? ChildState.Uniform(fill.Material) : ChildState.Empty;
 
     private VoxelPiece FindPiece(long sequence)
     {

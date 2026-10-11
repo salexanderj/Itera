@@ -361,16 +361,15 @@ public sealed partial class VoxelWorld
                 }
 
                 var key = column.Key;
-                var layers = column.Layers;
                 var layerOffset = Grid.MinChunkYAt(level);
                 var first = Math.Max(0, (min.Y >> shift) - layerOffset);
-                var last = Math.Min(layers.Length - 1, ((end.Y - 1) >> shift) - layerOffset);
+                var last = Math.Min(column.LayerCount - 1, ((end.Y - 1) >> shift) - layerOffset);
                 for (var layer = first; layer <= last; layer++)
                 {
                     VoxelEditing.CountInWorldChunk(
                         Memory,
                         Grid,
-                        layers[layer],
+                        column.LayerAt(layer),
                         key.Chunk(layer, Grid),
                         in edit,
                         counts
@@ -574,22 +573,28 @@ public sealed partial class VoxelWorld
         var key = column.Key;
         var shift = VoxelConstants.ChunkShift + key.Level;
         var layerOffset = Grid.MinChunkYAt(key.Level);
-        var layers = column.Layers;
         var first = Math.Max(0, (min.Y >> shift) - layerOffset);
-        var last = Math.Min(layers.Length - 1, ((end.Y - 1) >> shift) - layerOffset);
+        var last = Math.Min(column.LayerCount - 1, ((end.Y - 1) >> shift) - layerOffset);
         for (var layer = first; layer <= last; layer++)
         {
-            var wasMixed = layers[layer].Kind == ChildKind.Handle;
-            layers[layer] = VoxelEditing.ApplyToWorldChunk(
+            var before = column.LayerAt(layer);
+            var wasMixed = before.Kind == ChildKind.Handle;
+            var after = VoxelEditing.ApplyToWorldChunk(
                 Memory,
                 Grid,
-                layers[layer],
+                before,
                 key.Chunk(layer, Grid),
                 in edit,
                 in view,
                 _changedBricks,
                 out var count
             );
+            // A layer outside the stored ones is stored once the edit changes it (the column's window widens).
+            if (after != before || layer >= column.First && layer < column.End)
+            {
+                column.Widen(layer) = after;
+            }
+
             if (count > ChunkChangeBricks)
             {
                 // Which blocks of 4x4x4 bricks hold a changed brick (brick cells are x + 16y + 256z).
@@ -612,7 +617,7 @@ public sealed partial class VoxelWorld
 
             if (count > 0)
             {
-                var isMixed = layers[layer].Kind == ChildKind.Handle;
+                var isMixed = after.Kind == ChildKind.Handle;
                 _mixedChunks += (isMixed ? 1 : 0) - (wasMixed ? 1 : 0);
             }
         }
