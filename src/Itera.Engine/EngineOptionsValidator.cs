@@ -165,6 +165,9 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         );
         Range(failures, "Physics:LinearDamping", physics.LinearDamping, 0, 1);
         Range(failures, "Physics:AngularDamping", physics.AngularDamping, 0, 1);
+        Range(failures, "Physics:Gravity:X", physics.Gravity.X, -GravitySettings.Most, GravitySettings.Most);
+        Range(failures, "Physics:Gravity:Y", physics.Gravity.Y, -GravitySettings.Most, GravitySettings.Most);
+        Range(failures, "Physics:Gravity:Z", physics.Gravity.Z, -GravitySettings.Most, GravitySettings.Most);
 
         var particles = options.Particles;
         Range(failures, "Particles:Capacity", particles.Capacity, 16_384, 1_048_576);

@@ -211,7 +211,8 @@ public static class GameServiceCollectionExtensions
                 sp.GetRequiredService<ConsoleCommands>(),
                 name => BenchmarkViews.Place(views, name),
                 sp.GetService<IMovementMode>(),
-                sp.GetRequiredService<OriginShifts>()
+                sp.GetRequiredService<OriginShifts>(),
+                sp.GetRequiredService<PhysicsWorld>()
             );
         });
         services.AddScoped<IFixedUpdateSystem>(sp => new StandInSystem(

@@ -110,7 +110,7 @@ public sealed class PhysicsSolverTests
 
         // Without constraints, once over the step; with them, once a substep of a quarter of it.
         var keep = MathF.Pow(0.5f, Step);
-        var once = PhysicsWorld.Gravity.Y * Step * keep;
+        var once = PhysicsWorld.DefaultGravity.Y * Step * keep;
         var substep = Step / 4;
         var sum = 0f;
         for (var k = 1; k <= 4; k++)
@@ -118,7 +118,7 @@ public sealed class PhysicsSolverTests
             sum += MathF.Pow(0.5f, k * substep);
         }
 
-        var substeps = PhysicsWorld.Gravity.Y * substep * sum;
+        var substeps = PhysicsWorld.DefaultGravity.Y * substep * sum;
         Assert.Equal(once, Velocity(physics, free).Y, 5);
         Assert.Equal(substeps, Velocity(physics, a).Y, 4);
         Assert.Equal(substeps, Velocity(physics, b).Y, 4);

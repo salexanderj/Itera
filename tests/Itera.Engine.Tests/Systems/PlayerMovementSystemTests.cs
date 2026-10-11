@@ -224,6 +224,32 @@ public sealed class PlayerMovementSystemTests : IDisposable
     }
 
     [Fact]
+    public void Under_half_the_matchs_gravity_a_jump_rises_twice_as_high_and_lasts_twice_as_long()
+    {
+        var options = new EngineOptions();
+        options.Physics.Gravity.Y = -PhysicsWorld.StandardGravity / 2;
+        using var physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance, Options.Create(options));
+        using var world = World.Create();
+        using var system = Create(world, new Vector3(0, 1.6f, 0), physics: physics);
+        Run(world, system, 30, default);
+        var ground = Read(world).Position.Feet.Y;
+
+        var highest = ground;
+        var airborne = 0;
+        for (var i = 0; i < 240; i++)
+        {
+            Run(world, system, 1, new PlayerCommand { Buttons = i == 0 ? PlayerButtons.Jump : PlayerButtons.None });
+            highest = Math.Max(highest, Read(world).Position.Feet.Y);
+            airborne += Read(world).Contact.Grounded ? 0 : 1;
+        }
+
+        Assert.Equal(0.5f, physics.GravityShare, 5);
+        // 1.1 m and about 40 steps under the character's own gravity (20 m/s² up and down at 6.6 m/s).
+        Assert.InRange(highest - ground, 2.17f, 2.23f);
+        Assert.InRange(airborne, 76, 84);
+    }
+
+    [Fact]
     public void A_player_on_a_60_degree_ramp_slides_down_it_and_cannot_jump()
     {
         using var voxels = LoadWorld(new RampGenerator(), new Vector3(0.5f, 1, 0));
@@ -768,7 +794,8 @@ public sealed class PlayerMovementSystemTests : IDisposable
         VoxelCharacterMover? mover = null,
         ConsoleCommands? commands = null,
         Func<string, (WorldPoint Eye, float Yaw, float Pitch)?>? places = null,
-        IMovementMode? mode = null
+        IMovementMode? mode = null,
+        PhysicsWorld? physics = null
     )
     {
         var system = new PlayerMovementSystem(
@@ -778,7 +805,8 @@ public sealed class PlayerMovementSystemTests : IDisposable
             NullLogger<PlayerMovementSystem>.Instance,
             commands,
             places,
-            mode
+            mode,
+            physics: physics
         );
         system.Initialize();
         CreatePlayer(world, eye, yaw, flying);

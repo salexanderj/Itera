@@ -36,12 +36,27 @@ public sealed partial class PhysicsWorld
     /// it touches the voxels, the game's statics, other bodies, and characters' stand-ins; where the voxel world round
     /// it is not loaded it is frozen until it is, unless <see cref="PhysicsMarks.KeepsMovingUnloaded"/>; it moves with
     /// the match's origin. Remove it with <see cref="RemoveBody"/> (not <c>Simulation.Bodies.Remove</c>, which would leave
-    /// its record to the next body that takes its handle). Its shape stays the caller's. Main thread, between steps.
+    /// its record to the next body that takes its handle). It falls by <paramref name="gravityScale"/> of the match's
+    /// gravity (<see cref="SetGravityScale"/>). Its shape stays the caller's. Main thread, between steps.
     /// </summary>
-    public BodyHandle AddBody(in BodyDescription description, in PhysicsBodySettings settings = default)
+    public BodyHandle AddBody(
+        in BodyDescription description,
+        in PhysicsBodySettings settings = default,
+        float gravityScale = 1
+    )
     {
+        if (!float.IsFinite(gravityScale))
+        {
+            throw new ArgumentOutOfRangeException(nameof(gravityScale), gravityScale, "A gravity scale is finite.");
+        }
+
         var body = Simulation.Bodies.Add(description);
         _kinds.Set(body, BodyKind.Loose, marks: settings.Marks);
+        if (gravityScale != 1)
+        {
+            _kinds.SetGravityScale(body, gravityScale);
+        }
+
         return body;
     }
 

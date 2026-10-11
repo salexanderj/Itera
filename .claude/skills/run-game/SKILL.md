@@ -96,7 +96,8 @@ lists the game's). Commonly used:
   axis before `OriginShiftSystem` moves the origin to it (the Debug log's `Origin: moved to ...` lines; the control
   port's `status` gives the origin and the camera's absolute place).
 - Other systems: `--Engine:Physics:SettleSeconds` (0.5 to 60), `MaxLooseBodies` (1 to 1024), `Substeps` (1; 1 to 8),
-  `VelocityIterations` (8; 1 to 32), `LinearDamping` and `AngularDamping` (0.03; 0 to 1), `CollisionCentimetres`
+  `VelocityIterations` (8; 1 to 32), `LinearDamping` and `AngularDamping` (0.03; 0 to 1), `Gravity:X`, `Gravity:Y`, `Gravity:Z` (0, -9.81, 0; each -100
+  to 100), `CollisionCentimetres`
   (the character mover's cells without voxel terrain, 1 to 10, default 10);
   `--Engine:Particles:Enabled=false` (`Capacity` 16,384 to 1,048,576); `--Engine:Audio:Enabled=false` (`Volume` 0 to
   1, default 0.1; `MusicVolume` and `EffectsVolume` 0 to 1 under it, default 1; `MaxVoices` 8 to 254; `MenuMusic` the track the
@@ -237,7 +238,7 @@ lists the commands (`ConsoleCommands`):
   show ID[:VERSION]|player: the match's entities and their components' fields, `EcsInspector`), `pause`, `resume`,
   `step` [N] (pauses, then N fixed steps), `timescale` [X] (0.05 to 16 for the match; offline only, as are pause,
   resume, and step; pause and step refuse while the match loads), `physics` (the match's bodies, statics, solver, damping, and gravity; solver ITERATIONS
-  SUBSTEPS, damping LINEAR ANGULAR for the match), `particles` (on, off, recipes, test NAME [COUNT], pull
+  SUBSTEPS, damping LINEAR ANGULAR, gravity X Y Z for the match), `particles` (on, off, recipes, test NAME [COUNT], pull
   NAME [COUNT], stress NAME BURSTS, stress off), `sound` (on, off, volume V, recipes, files (the sounds read from
   files, each file's channels, rate, length, and problems), test NAME [LEVEL], play NAME (at the listener; a stream or file loop for 4 s), wav NAME [LEVEL] (with a level,
   that level's variations a file each, or 8 s of a stream at it), wav all into `Sounds/`), `music` (what plays: the decks' tracks and gains, underruns, and what the music thread decoded

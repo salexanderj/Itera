@@ -128,6 +128,21 @@ substep exactly as before; with more, Bepu integrates a body with constraints on
 the step, so each lane's own duration is used (damping as e^(t ln(1 - share))). `PushOn` reads a stand-in's push with
 the gravity, damping, and substeps the last step ran with, per substep while bodies touched it.
 
+## Gravity
+
+`Engine:Physics:Gravity` (`X`, `Y`, `Z`: 0, -9.81, 0; each -100 to 100) is the match's gravity on every dynamic body
+(`PhysicsWorld.Gravity`, `DefaultGravity`); a game changes it during a match with `SetGravity`, which wakes every
+sleeping body, and the console with `physics gravity X Y Z`. Each body falls by a share of it (`SetGravityScale`, or
+`AddBody`'s `gravityScale`: 1 by default, 0 floats, negative rises; it wakes the body), kept in its record; while every
+body's share is 1 (`BodyKinds.ScaledBodies` is 0) the integrator reads none, and otherwise reads each active lane's from
+its record through `ActiveSet.IndexToHandle` (`IntegrationSettings.Kinds`, `Bodies`). `GravityShare` is the gravity's
+strength over the Earth's (`StandardGravity`, 9.81; exactly 1 at the default): `PlayerMovementSystem`, given the match's
+`PhysicsWorld`, makes characters fall by their own `MovementStats.Gravity` times it (sliding too), and keeps a jump's
+launch speed of their own gravity, so under less gravity they jump higher (half gravity: twice the height and the time);
+a movement mode is given the stats with the scaled gravity. Down stays -Y for characters, the mover, and the terrain.
+`PushOn` takes the stand-in's share. A floating ball (share 0) at rest settles into a floating sphere of voxels with
+terrain: a game makes floaters as its own bodies (`AddBody`).
+
 ## Mesh colliders and the shared ray
 
 A game's static triangle colliders (`MeshColliders`, scoped to the match): `Add(asset, transform, tagsOf)` registers a

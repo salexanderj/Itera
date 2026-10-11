@@ -44,9 +44,9 @@ public sealed partial class PhysicsWorld : IDisposable
         _logger = logger;
         _settings = options?.Value.Physics ?? new PhysicsSettings();
         _threads = _settings.Threads;
-        _integration = new IntegrationSettings
+        _integration = new IntegrationSettings(_kinds)
         {
-            Gravity = Gravity,
+            Gravity = new Vector3(_settings.Gravity.X, _settings.Gravity.Y, _settings.Gravity.Z),
             LinearDamping = _settings.LinearDamping,
             AngularDamping = _settings.AngularDamping,
             Substeps = _settings.Substeps,
@@ -56,8 +56,20 @@ public sealed partial class PhysicsWorld : IDisposable
     /// <summary>Bepu's worker threads asked for; 0 for <see cref="ThreadCount"/> of the processors.</summary>
     private readonly int _threads;
 
-    /// <summary>Gravity applied to every dynamic body, in metres per second squared.</summary>
-    public static Vector3 Gravity => new(0f, -9.81f, 0f);
+    /// <summary>The Earth's gravity, the default: 9.81 metres per second squared, down.</summary>
+    public static Vector3 DefaultGravity => new(0f, -StandardGravity, 0f);
+
+    /// <summary>The strength of the Earth's gravity, metres per second squared: what <see cref="GravityShare"/> is a share of.</summary>
+    public const float StandardGravity = 9.81f;
+
+    /// <summary>The match's gravity on every dynamic body, metres per second squared (<see cref="SetGravity"/>).</summary>
+    public Vector3 Gravity => _integration.Gravity;
+
+    /// <summary>
+    /// The match's gravity's strength as a share of the Earth's (<see cref="StandardGravity"/>): exactly 1 at the default.
+    /// Characters fall by their own gravity times it.
+    /// </summary>
+    public float GravityShare => _integration.Gravity.Length() / StandardGravity;
 
     /// <summary>The share of its linear velocity a body loses each second (<see cref="SetDamping"/>).</summary>
     public float LinearDamping => _integration.LinearDamping;
@@ -143,6 +155,7 @@ public sealed partial class PhysicsWorld : IDisposable
             new PoseIntegratorCallbacks(_integration),
             new SolveDescription(_settings.VelocityIterations, _settings.Substeps)
         );
+        _integration.Bodies = _simulation.Bodies;
 
         LogInitialized(threadCount);
     }
@@ -187,6 +200,47 @@ public sealed partial class PhysicsWorld : IDisposable
         solver.SubstepCount = substeps;
         _integration.Substeps = substeps;
     }
+
+    /// <summary>
+    /// Sets the match's gravity on every dynamic body (metres per second squared, each part finite), from the next step
+    /// on, and wakes every sleeping body, so none rests where it no longer would. Main thread, between steps.
+    /// </summary>
+    public void SetGravity(Vector3 gravity)
+    {
+        if (!float.IsFinite(gravity.X + gravity.Y + gravity.Z))
+        {
+            throw new ArgumentOutOfRangeException(nameof(gravity), gravity, "Gravity is finite.");
+        }
+
+        _integration.Gravity = gravity;
+        var sets = Simulation.Bodies.Sets;
+        for (var i = 1; i < sets.Length; i++)
+        {
+            if (sets[i].Allocated)
+            {
+                Simulation.Awakener.AwakenSet(i);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Sets the share of the match's gravity <paramref name="body"/> falls by (1 for all of it, 0 to float, negative to
+    /// rise; finite), and wakes it. Main thread, between steps.
+    /// </summary>
+    public void SetGravityScale(BodyHandle body, float scale)
+    {
+        if (!float.IsFinite(scale))
+        {
+            throw new ArgumentOutOfRangeException(nameof(scale), scale, "A gravity scale is finite.");
+        }
+
+        _kinds.SetGravityScale(body, scale);
+        var reference = Simulation.Bodies[body];
+        reference.Awake = true;
+    }
+
+    /// <summary>The share of the match's gravity <paramref name="body"/> falls by.</summary>
+    public float GravityScaleOf(BodyHandle body) => _kinds.GravityScale(body.Value);
 
     /// <summary>
     /// Sets the shares of their speed (<paramref name="linear"/>) and spin (<paramref name="angular"/>) bodies lose each
@@ -295,12 +349,14 @@ public sealed partial class PhysicsWorld : IDisposable
 
     /// <summary>
     /// The change of velocity bodies gave a stand-in in the last step of <paramref name="stepSeconds"/>: its velocity less
-    /// the velocity it was placed with, after the gravity and damping that step ran with (once a substep while bodies
-    /// touched it, as Bepu integrates a body with constraints). Times the character's mass, it is the hit's impulse.
+    /// the velocity it was placed with, after the gravity (times the stand-in's share) and damping that step ran with
+    /// (once a substep while bodies touched it, as Bepu integrates a body with constraints). Times the character's mass,
+    /// it is the hit's impulse.
     /// </summary>
     public Vector3 PushOn(BodyHandle body, Vector3 placedVelocity, float stepSeconds)
     {
         var reference = Simulation.Bodies[body];
+        var gravity = _stepGravity * _kinds.GravityScale(body.Value);
         var keep = Math.Clamp(1 - _stepLinearDamping, 0, 1);
         Vector3 expected;
         if (_stepSubsteps > 1 && reference.Constraints.Count > 0)
@@ -316,11 +372,11 @@ public sealed partial class PhysicsWorld : IDisposable
                 sum += power;
             }
 
-            expected = placedVelocity * MathF.Pow(keep, stepSeconds) + _stepGravity * (substep * sum);
+            expected = placedVelocity * MathF.Pow(keep, stepSeconds) + gravity * (substep * sum);
         }
         else
         {
-            expected = (placedVelocity + _stepGravity * stepSeconds) * MathF.Pow(keep, stepSeconds);
+            expected = (placedVelocity + gravity * stepSeconds) * MathF.Pow(keep, stepSeconds);
         }
 
         return reference.Velocity.Linear - expected;

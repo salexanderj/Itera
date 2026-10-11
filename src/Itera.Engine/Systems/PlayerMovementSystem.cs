@@ -130,6 +130,9 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     private readonly ConsoleCommands? _commands;
     private readonly Func<string, (WorldPoint Eye, float Yaw, float Pitch)?>? _places;
     private readonly IMovementMode? _mode;
+
+    /// <summary>The match's physics, whose gravity's share of the Earth's characters fall by; none for all of their own.</summary>
+    private readonly PhysicsWorld? _physics;
     private readonly OriginShifts? _shifts;
     private bool _localWaiting;
     private Request _request;
@@ -149,6 +152,10 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     /// asks <c>OriginShiftSystem</c> to move the origin there at the next step's start, before the jump, so a jump of any
     /// distance lands exactly; none in a test that leaves the origin.
     /// </param>
+    /// <param name="physics">
+    /// The match's physics: characters fall by their own gravity times its gravity's share of the Earth's
+    /// (<see cref="PhysicsWorld.GravityShare"/>); none for their own gravity alone.
+    /// </param>
     public PlayerMovementSystem(
         World world,
         VoxelCharacterMover mover,
@@ -157,12 +164,14 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         ConsoleCommands? commands = null,
         Func<string, (WorldPoint Eye, float Yaw, float Pitch)?>? places = null,
         IMovementMode? mode = null,
-        OriginShifts? shifts = null
+        OriginShifts? shifts = null,
+        PhysicsWorld? physics = null
     )
         : base(world)
     {
         _mode = mode;
         _shifts = shifts;
+        _physics = physics;
         ArgumentNullException.ThrowIfNull(mover);
         ArgumentNullException.ThrowIfNull(area);
         _commands = commands;
@@ -210,6 +219,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             Mode = _mode,
             World = World,
             Seconds = step.StepSeconds,
+            GravityShare = _physics?.GravityShare ?? 1,
             CameraFound = camera.Found,
             CameraPosition = camera.Position,
         };
@@ -625,6 +635,10 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         public IMovementMode? Mode;
         public World World;
         public float Seconds;
+
+        /// <summary>The match's gravity as a share of the Earth's: each character falls by its own gravity times it.</summary>
+        public float GravityShare;
+
         public bool CameraFound;
         public Vector3 CameraPosition;
 
@@ -685,7 +699,20 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             if (
                 Mode is not null
                 && Mode.Steer(
-                    new MovementModeInput(entity, World, command, size, position.Feet, v, contact, stats, Seconds),
+                    new MovementModeInput(
+                        entity,
+                        World,
+                        command,
+                        size,
+                        position.Feet,
+                        v,
+                        contact,
+                        stats with
+                        {
+                            Gravity = stats.Gravity * GravityShare,
+                        },
+                        Seconds
+                    ),
                     ref taken
                 )
             )
@@ -724,7 +751,9 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
 
         /// <summary>
         /// The engine's walking: the horizontal velocity turned towards the command's, a slide down steep ground, the
-        /// loose bodies' push, a jump from walkable ground, and gravity. Returns the velocity to move by.
+        /// loose bodies' push, a jump from walkable ground, and gravity (the character's own times the match's share). A
+        /// jump leaves at the speed that reaches its height under the character's own gravity, so under less it rises
+        /// higher (half gravity, twice the height and time). Returns the velocity to move by.
         /// </summary>
         private readonly Vector3 Steer(
             in PlayerCommand command,
@@ -755,9 +784,10 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
                 horizontal = length <= limit ? wanted : horizontal + change * (limit / length);
             }
 
+            var fall = stats.Gravity * GravityShare;
             if (contact.Steep)
             {
-                horizontal += contact.Downhill * (stats.Gravity * SlideShare * Seconds);
+                horizontal += contact.Downhill * (fall * SlideShare * Seconds);
             }
 
             // A loose body's push, after steering, so it moves the player at least this step.
@@ -771,10 +801,10 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             {
                 // The height grows with the square of the speed.
                 // Gravity is taken off before each step's move, so half a step of it is added back to reach the height.
-                vy = MathF.Sqrt(2 * stats.Gravity * stats.JumpHeight) + stats.Gravity * Seconds / 2;
+                vy = MathF.Sqrt(2 * stats.Gravity * stats.JumpHeight) + fall * Seconds / 2;
             }
 
-            vy = MathF.Max(vy - stats.Gravity * Seconds, -stats.MaxFall);
+            vy = MathF.Max(vy - fall * Seconds, -stats.MaxFall);
             return new Vector3(horizontal.X, vy, horizontal.Y);
         }
     }

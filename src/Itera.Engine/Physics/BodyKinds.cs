@@ -38,6 +38,12 @@ internal struct BodyRecord
 
     /// <summary>Which body this is of all that took the handle: 0 for none recorded, else a count over the match.</summary>
     public long Born;
+
+    /// <summary>The share of the match's gravity it falls by (1 for all of it).</summary>
+    public float GravityScale;
+
+    /// <summary>A body never recorded: a loose body at level 0, in no ragdoll, falling by all of gravity.</summary>
+    public static BodyRecord Default => new() { GravityScale = 1 };
 }
 
 /// <summary>What the engine keeps for one static, by its handle.</summary>
@@ -66,13 +72,19 @@ internal sealed class BodyKinds
     /// <summary>The level of a game's static, which bodies of every level touch.</summary>
     public const int AnyLevel = byte.MaxValue;
 
-    private static readonly BodyRecord s_defaultBody;
+    private static readonly BodyRecord s_defaultBody = BodyRecord.Default;
     private static readonly StaticRecord s_defaultStatic;
 
-    private BodyRecord[] _bodies = new BodyRecord[256];
+    private BodyRecord[] _bodies = NewBodies(256);
     private StaticRecord[] _statics = new StaticRecord[256];
     private int _highestBody = -1;
     private long _born;
+
+    /// <summary>Bodies whose gravity scale is not 1: while there are none, the integrator reads no scales.</summary>
+    public int ScaledBodies { get; private set; }
+
+    /// <summary>The share of the match's gravity the body with handle value <paramref name="handle"/> falls by.</summary>
+    public float GravityScale(int handle) => Body(handle).GravityScale;
 
     /// <summary>The record of the body with handle value <paramref name="handle"/>; the default when none is kept.</summary>
     public ref readonly BodyRecord Body(int handle) =>
@@ -119,6 +131,7 @@ internal sealed class BodyKinds
     )
     {
         ref var record = ref BodySlot(body.Value);
+        Rescale(record.GravityScale, 1);
         record = new BodyRecord
         {
             Kind = kind,
@@ -127,7 +140,16 @@ internal sealed class BodyKinds
             Ragdoll = ragdoll,
             Marks = marks,
             Born = ++_born,
+            GravityScale = 1,
         };
+    }
+
+    /// <summary>Sets the share of the match's gravity a recorded body falls by. Main thread, between steps.</summary>
+    public void SetGravityScale(BodyHandle body, float scale)
+    {
+        ref var record = ref BodySlot(body.Value);
+        Rescale(record.GravityScale, scale);
+        record.GravityScale = scale;
     }
 
     /// <summary>Sets the voxel level a body collides with now, its base level kept. Main thread, between steps.</summary>
@@ -144,7 +166,8 @@ internal sealed class BodyKinds
     {
         if ((uint)body.Value < (uint)_bodies.Length)
         {
-            _bodies[body.Value] = default;
+            Rescale(_bodies[body.Value].GravityScale, 1);
+            _bodies[body.Value] = BodyRecord.Default;
         }
     }
 
@@ -193,10 +216,25 @@ internal sealed class BodyKinds
     {
         if (handle >= _bodies.Length)
         {
-            Array.Resize(ref _bodies, Math.Max(_bodies.Length * 2, handle + 1));
+            var old = _bodies.Length;
+            Array.Resize(ref _bodies, Math.Max(old * 2, handle + 1));
+            _bodies.AsSpan(old).Fill(BodyRecord.Default);
         }
 
         _highestBody = Math.Max(_highestBody, handle);
         return ref _bodies[handle];
+    }
+
+    /// <summary>Counts a body whose scale goes from <paramref name="from"/> to <paramref name="to"/>.</summary>
+    private void Rescale(float from, float to)
+    {
+        ScaledBodies += (to != 1 ? 1 : 0) - (from != 1 ? 1 : 0);
+    }
+
+    private static BodyRecord[] NewBodies(int length)
+    {
+        var bodies = new BodyRecord[length];
+        bodies.AsSpan().Fill(BodyRecord.Default);
+        return bodies;
     }
 }

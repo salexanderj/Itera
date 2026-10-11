@@ -619,11 +619,31 @@ public sealed class PhysicsSettings
     /// <summary>The share of its spin a body loses each second, 0 to 1.</summary>
     public float AngularDamping { get; set; } = 0.03f;
 
+    /// <summary>
+    /// The match's gravity on every body, in metres per second squared, each part -100 to 100 (the Earth's, 9.81 down, by
+    /// default). Characters fall by it as a share of 9.81 times their own gravity, and particles by it times their own
+    /// share. A game may change it during a match (<c>PhysicsWorld.SetGravity</c>).
+    /// </summary>
+    public GravitySettings Gravity { get; set; } = new();
+
     /// <summary>The most <see cref="Substeps"/>.</summary>
     public const int MostSubsteps = 8;
 
     /// <summary>The most <see cref="VelocityIterations"/>.</summary>
     public const int MostVelocityIterations = 32;
+}
+
+/// <summary>A gravity vector of the options (<see cref="PhysicsSettings.Gravity"/>), in metres per second squared.</summary>
+public sealed class GravitySettings
+{
+    public float X { get; set; }
+
+    public float Y { get; set; } = -9.81f;
+
+    public float Z { get; set; }
+
+    /// <summary>The most a part may be, either way.</summary>
+    public const float Most = 100;
 }
 
 /// <summary>What this game does in a session.</summary>

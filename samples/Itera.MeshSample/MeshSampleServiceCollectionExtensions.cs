@@ -124,7 +124,8 @@ public static class MeshSampleServiceCollectionExtensions
             sp.GetRequiredService<ILogger<PlayerMovementSystem>>(),
             sp.GetRequiredService<ConsoleCommands>(),
             mode: sp.GetService<IMovementMode>(),
-            shifts: sp.GetRequiredService<OriginShifts>()
+            shifts: sp.GetRequiredService<OriginShifts>(),
+            physics: sp.GetRequiredService<PhysicsWorld>()
         ));
         services.AddScoped<IFixedUpdateSystem>(sp => new StandInSystem(
             sp.GetRequiredService<EcsWorld>().World,

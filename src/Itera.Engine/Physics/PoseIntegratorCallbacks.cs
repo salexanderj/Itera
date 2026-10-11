@@ -7,11 +7,17 @@ namespace Itera.Engine.Physics;
 
 /// <summary>
 /// What the integrator applies to every dynamic body, which a game may change between steps (<see cref="PhysicsWorld"/>):
-/// gravity, the shares of speed and spin a body loses each second, and the solver's substeps. Written on the main
-/// thread between steps; read by Bepu as it integrates.
+/// gravity, each body's share of it (<see cref="BodyKinds"/>), the shares of speed and spin a body loses each second,
+/// and the solver's substeps. Written on the main thread between steps; read by Bepu as it integrates.
 /// </summary>
-internal sealed class IntegrationSettings
+internal sealed class IntegrationSettings(BodyKinds kinds)
 {
+    /// <summary>The bodies' records, for each body's share of gravity.</summary>
+    public BodyKinds Kinds { get; } = kinds;
+
+    /// <summary>The simulation's bodies, once it exists: an active lane's body by its index.</summary>
+    public Bodies? Bodies { get; set; }
+
     /// <summary>Gravity, in metres per second squared.</summary>
     public Vector3 Gravity;
 
@@ -29,13 +35,15 @@ internal sealed class IntegrationSettings
 /// Applies gravity and damping to every dynamic body, from <see cref="IntegrationSettings"/>. With one substep every body
 /// is integrated once over the step, and the step's values are worked out once (<see cref="PrepareForIntegration"/>);
 /// with more, Bepu integrates a body with constraints once a substep and one without once over the step, so each lane's
-/// own duration is used.
+/// own duration is used. While some body falls by a share of gravity other than 1, each lane's share is read from its
+/// record; with none, nothing is read.
 /// </summary>
 internal struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
 {
     private readonly IntegrationSettings _settings;
     private float _preparedDt;
     private bool _substepped;
+    private bool _scaled;
     private Vector3Wide _gravityWide;
     private Vector3Wide _gravityWideDt;
     private Vector<float> _linearDampingDt;
@@ -48,6 +56,7 @@ internal struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
         _settings = settings;
         _preparedDt = 0;
         _substepped = false;
+        _scaled = false;
         _gravityWide = default;
         _gravityWideDt = default;
         _linearDampingDt = default;
@@ -71,6 +80,7 @@ internal struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
         var angular = MathHelper.Clamp(1 - settings.AngularDamping, 0, 1);
         _preparedDt = dt;
         _substepped = settings.Substeps > 1;
+        _scaled = settings.Kinds.ScaledBodies > 0 && settings.Bodies is not null;
         _linearDampingDt = new Vector<float>(MathF.Pow(linear, dt));
         _angularDampingDt = new Vector<float>(MathF.Pow(angular, dt));
         _gravityWideDt = Vector3Wide.Broadcast(settings.Gravity * dt);
@@ -94,13 +104,38 @@ internal struct PoseIntegratorCallbacks : IPoseIntegratorCallbacks
     {
         if (!_substepped)
         {
-            velocity.Linear = (velocity.Linear + _gravityWideDt) * _linearDampingDt;
+            if (!_scaled)
+            {
+                velocity.Linear = (velocity.Linear + _gravityWideDt) * _linearDampingDt;
+            }
+            else
+            {
+                Vector3Wide.Scale(_gravityWideDt, Scales(bodyIndices, integrationMask), out var scaled);
+                velocity.Linear = (velocity.Linear + scaled) * _linearDampingDt;
+            }
+
             velocity.Angular *= _angularDampingDt;
             return;
         }
 
-        Vector3Wide.Scale(_gravityWide, dt, out var gravityDt);
+        var lane = _scaled ? dt * Scales(bodyIndices, integrationMask) : dt;
+        Vector3Wide.Scale(_gravityWide, lane, out var gravityDt);
         velocity.Linear = (velocity.Linear + gravityDt) * Vector.Exp(_linearDampingLog * dt);
         velocity.Angular *= Vector.Exp(_angularDampingLog * dt);
+    }
+
+    /// <summary>Each lane's body's share of gravity; 1 for a lane with no body.</summary>
+    private readonly Vector<float> Scales(Vector<int> bodyIndices, Vector<int> integrationMask)
+    {
+        var settings = _settings;
+        var handles = settings.Bodies!.ActiveSet.IndexToHandle;
+        Span<float> lanes = stackalloc float[Vector<float>.Count];
+        for (var i = 0; i < lanes.Length; i++)
+        {
+            var index = bodyIndices[i];
+            lanes[i] = integrationMask[i] != 0 && index >= 0 ? settings.Kinds.GravityScale(handles[index].Value) : 1;
+        }
+
+        return new Vector<float>(lanes);
     }
 }

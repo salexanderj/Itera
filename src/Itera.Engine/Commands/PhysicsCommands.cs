@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using Itera.Engine.Matches;
 using Itera.Engine.Physics;
 
@@ -7,7 +8,8 @@ namespace Itera.Engine.Commands;
 /// <summary>
 /// The console's <c>physics</c> command (<see cref="CommandScope.Local"/>: each game's own physics): the match's bodies
 /// and statics, its solver's iterations and substeps, its damping, and its gravity; and for this match, the solver's
-/// iterations and substeps (<see cref="PhysicsWorld.SetSolver"/>) and the damping (<see cref="PhysicsWorld.SetDamping"/>).
+/// iterations and substeps (<see cref="PhysicsWorld.SetSolver"/>), the damping (<see cref="PhysicsWorld.SetDamping"/>),
+/// and the gravity (<see cref="PhysicsWorld.SetGravity"/>).
 /// </summary>
 public sealed class PhysicsCommands(ConsoleCommands commands, MatchControl matches)
 {
@@ -16,8 +18,8 @@ public sealed class PhysicsCommands(ConsoleCommands commands, MatchControl match
     {
         commands.Register(
             "physics",
-            "[solver ITERATIONS SUBSTEPS|damping LINEAR ANGULAR]",
-            "Physics: the match's bodies and statics, solver, damping, and gravity; solver sets its velocity iterations (1 to 32) and substeps (1 to 8), damping the shares of speed and spin bodies lose each second (0 to 1), for this match.",
+            "[solver ITERATIONS SUBSTEPS|damping LINEAR ANGULAR|gravity X Y Z]",
+            "Physics: the match's bodies and statics, solver, damping, and gravity; solver sets its velocity iterations (1 to 32) and substeps (1 to 8), damping the shares of speed and spin bodies lose each second (0 to 1), gravity its gravity (m/s², each part -100 to 100; characters fall by its strength's share of 9.81), for this match.",
             CommandScope.Local,
             Physics
         );
@@ -77,6 +79,26 @@ public sealed class PhysicsCommands(ConsoleCommands commands, MatchControl match
             return;
         }
 
+        if (context.Is(0, "gravity") && context.Count == 4)
+        {
+            if (
+                context.TryGetFloat(1, out var x)
+                && context.TryGetFloat(2, out var y)
+                && context.TryGetFloat(3, out var z)
+                && MathF.Max(MathF.Abs(x), MathF.Max(MathF.Abs(y), MathF.Abs(z))) <= GravitySettings.Most
+            )
+            {
+                physics.SetGravity(new Vector3(x, y, z));
+                Print(context, physics);
+            }
+            else
+            {
+                context.PrintUsage();
+            }
+
+            return;
+        }
+
         context.PrintUsage();
     }
 
@@ -89,7 +111,7 @@ public sealed class PhysicsCommands(ConsoleCommands commands, MatchControl match
             all += bodies.Sets[i].Allocated ? bodies.Sets[i].Count : 0;
         }
 
-        var gravity = PhysicsWorld.Gravity;
+        var gravity = physics.Gravity;
         context.Print(
             string.Create(
                 CultureInfo.InvariantCulture,
