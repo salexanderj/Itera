@@ -53,9 +53,9 @@ public sealed class ScenarioTests
         match.Step(60);
 
         var (position, contact) = Player(match.World);
-        var ground = GameGenerator.SurfaceHeight(0, 0, 1) / (float)VoxelConstants.CentimetresPerMetre;
+        var ground = GameGenerator.SurfaceHeight(0, 0, 1) / (double)VoxelConstants.CentimetresPerMetre;
         Assert.True(contact.Grounded);
-        Assert.Equal(ground, position.Feet.Y, 0.15f);
+        Assert.Equal(ground, Origin(match).ToWorld(position.Feet).Y, 0.15);
     }
 
     [Fact]
@@ -74,11 +74,11 @@ public sealed class ScenarioTests
         Assert.True(fox.Posed);
         Assert.Equal(24, fox.Joints);
         // The start pose looks along -z from over the middle.
-        var at = Vector3.Transform(Vector3.Zero, fox.Transform);
-        var ground = GameGenerator.SurfaceHeight(0, -400, 1) / (float)VoxelConstants.CentimetresPerMetre;
-        Assert.Equal(0, at.X, 1e-4f);
-        Assert.Equal(ground, at.Y, 1e-4f);
-        Assert.Equal(-FoxSystem.AheadMetres, at.Z, 1e-4f);
+        var at = Origin(match).ToWorld(Vector3.Transform(Vector3.Zero, fox.Transform));
+        var ground = GameGenerator.SurfaceHeight(0, -400, 1) / (double)VoxelConstants.CentimetresPerMetre;
+        Assert.Equal(0, at.X, 1e-4);
+        Assert.Equal(ground, at.Y, 1e-4);
+        Assert.Equal(-FoxSystem.AheadMetres, at.Z, 1e-4);
     }
 
     [Fact]
@@ -124,13 +124,9 @@ public sealed class ScenarioTests
         Assert.Equal(FoxSystem.CircleMetres, flat.Length(), 1e-3f);
         Assert.InRange(Vector3.Distance(start, placement.Position), 1.5f, 2.5f);
         // On the ground: within a voxel of where a ray down finds it.
-        var ground =
-            GameGenerator.SurfaceHeight(
-                (int)MathF.Round(placement.Position.X * 100),
-                (int)MathF.Round(placement.Position.Z * 100),
-                1
-            ) / 100;
-        Assert.Equal((float)ground, placement.Position.Y, 0.15f);
+        var at = Origin(match).ToWorld(placement.Position);
+        var ground = GameGenerator.SurfaceHeight((int)Math.Round(at.X * 100), (int)Math.Round(at.Z * 100), 1) / 100.0;
+        Assert.Equal(ground, at.Y, 0.15);
     }
 
     [Fact]
@@ -180,17 +176,17 @@ public sealed class ScenarioTests
     }
 
     /// <summary>
-    /// The origin following the player (moved to its feet's whole metres every 100 steps, as the engine will move it with
-    /// the camera) changes nothing in the world: the fox on its circle and four balls that rest and are settled across
-    /// the shifts come out where they do in a match whose origin never moves, and the player's walk within a millimetre
-    /// (that match rounds the feet to floats 30 to 40 m from its origin, about a micrometre a step, which the followed
-    /// one, its feet near its origin, does not: 0.3 mm over the walk when measured).
+    /// The origin following the camera every 8 m (<c>Engine:Origin:ShiftMetres</c>, against 512, where the walk never
+    /// moves it) changes nothing in the world: the fox on its circle and four balls that rest and are settled across
+    /// the moves come out where they do in a match whose origin stays, and the player's walk within a millimetre (that
+    /// match rounds the feet to floats 30 to 40 m from its origin, about a micrometre a step, which the followed one,
+    /// its feet near its origin, does not: 0.3 mm over the walk when measured).
     /// </summary>
     [Fact]
-    public void A_walk_with_the_origin_following_the_player_keeps_to_one_without_a_shift()
+    public void A_walk_with_the_origin_following_the_camera_keeps_to_one_without_a_move()
     {
-        var still = WalkWithBalls(follow: false);
-        var followed = WalkWithBalls(follow: true);
+        var still = WalkWithBalls(shiftMetres: 512);
+        var followed = WalkWithBalls(shiftMetres: 8);
 
         Assert.Equal(0, still.Shifts);
         Assert.True(followed.Shifts >= 4, $"The origin moved {followed.Shifts} times.");
@@ -211,17 +207,21 @@ public sealed class ScenarioTests
     }
 
     /// <summary>
-    /// Drops four balls and lets them come to rest (a ball rolling across a shift goes its own way by centimetres, as
-    /// any small change sends it), then walks forward for 600 steps, reading the feet and the fox (absolute) every 100
-    /// steps and, when <paramref name="follow"/>, moving the origin to the feet, while the balls settle.
+    /// Drops four balls and lets them come to rest (a ball rolling across a move of the origin goes its own way by
+    /// centimetres, as any small change sends it), then walks forward for 600 steps, reading the feet and the fox
+    /// (absolute) every 100 steps, while the balls settle; the origin follows the camera every
+    /// <paramref name="shiftMetres"/>.
     /// </summary>
-    private static Walked WalkWithBalls(bool follow)
+    private static Walked WalkWithBalls(double shiftMetres)
     {
-        using var provider = GameComposition.Build(s_options);
+        var options = new Dictionary<string, string?>(s_options)
+        {
+            ["Engine:Origin:ShiftMetres"] = shiftMetres.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
+        using var provider = GameComposition.Build(options);
         using var match = new HeadlessRun(provider).Play(seed: 1);
         Assert.True(match.WaitUntilLoaded());
         var origin = match.Services.GetRequiredService<WorldOrigin>();
-        var shifts = match.Services.GetRequiredService<OriginShifts>();
         var output = new Output();
         match.Step(30);
         var edits = match.Match.Voxels.EditCount;
@@ -229,20 +229,17 @@ public sealed class ScenarioTests
         match.Step(150);
 
         var walked = new Walked([], [], [], 0);
+        var moves = origin.Moves;
         match.Input.InjectKey(Key.W, true);
         for (var block = 0; block < 6; block++)
         {
             match.Step(100);
-            var feet = origin.ToWorld(Player(match.World).Position.Feet);
-            walked.Feet.Add(feet);
+            walked.Feet.Add(origin.ToWorld(Player(match.World).Position.Feet));
             walked.Fox.Add(origin.ToWorld(Fox(match.World).Placement.Position));
-            if (follow && shifts.ShiftTo(feet))
-            {
-                walked = walked with { Shifts = walked.Shifts + 1 };
-            }
         }
 
         match.Input.InjectKey(Key.W, false);
+        walked = walked with { Shifts = (int)(origin.Moves - moves) };
         match.Step(60 * 5);
         for (var sequence = edits + 1; sequence <= match.Match.Voxels.EditCount; sequence++)
         {
@@ -254,6 +251,53 @@ public sealed class ScenarioTests
     }
 
     private sealed record Walked(List<WorldPoint> Feet, List<WorldPoint> Fox, List<VoxelCoord> Settled, int Shifts);
+
+    /// <summary>
+    /// A flight of 2.8 km across the play area at 500 m/s: <c>tp</c> 1.4 km out moves the origin there first, so the
+    /// camera lands exactly; then the origin follows the camera (<c>OriginShiftSystem</c>) each time it is 512 m out, so
+    /// it never gets much further (512 m and a frame's 8.3 m), and the camera ends where 336 frames of flight take it,
+    /// within a centimetre (its floats near the origin round each frame's move by at most 31 micrometres).
+    /// </summary>
+    [Fact]
+    public void A_flight_across_the_play_area_keeps_the_origin_near_the_camera()
+    {
+        using var provider = GameComposition.Build(s_options);
+        using var match = new HeadlessRun(provider).Play(seed: 1);
+        Assert.True(match.WaitUntilLoaded());
+        var origin = Origin(match);
+        var commands = provider.GetRequiredService<ConsoleCommands>();
+        var output = new Output();
+        commands.Execute("fly on; flyspeed 500", output);
+        match.Step(1);
+        commands.Execute("tp -1400 40 0 -90 0", output);
+        match.Step(1);
+
+        Assert.Empty(output.Failures);
+        Assert.Equal(new WorldPoint(-1_400, 40, 0), origin.Metres);
+        var start = origin.ToWorld(Camera(match.World).Position);
+        Assert.True(start.DistanceTo(new WorldPoint(-1_400, 40, 0)) < 1e-4, $"Landed at {start}.");
+
+        var moves = origin.Moves;
+        var farthest = 0f;
+        match.Input.InjectKey(Key.W, true);
+        for (var frame = 0; frame < 336; frame++)
+        {
+            match.Step(1);
+            var local = Camera(match.World).Position;
+            farthest = Math.Max(farthest, Math.Max(Math.Abs(local.X), Math.Max(Math.Abs(local.Y), Math.Abs(local.Z))));
+        }
+
+        match.Input.InjectKey(Key.W, false);
+        var end = origin.ToWorld(Camera(match.World).Position);
+
+        Assert.True(origin.Moves - moves >= 5, $"The origin moved {origin.Moves - moves} times.");
+        Assert.True(farthest < 512 + 8.4f, $"The camera went {farthest} m from the origin.");
+        var flown = 336 * (500.0 / 60);
+        Assert.True(
+            end.DistanceTo(new WorldPoint(-1_400 + flown, 40, 0)) < 0.01,
+            $"The flight ended at {end.X:R},{end.Y:R},{end.Z:R}, not {-1_400 + flown:R},40,0."
+        );
+    }
 
     /// <summary>
     /// The boulder nearest the start (seed 1): the player
@@ -284,22 +328,24 @@ public sealed class ScenarioTests
         match.Input.InjectKey(Key.Space, false);
         var grabbed = Climb(match.World).State == ClimbState.Climbing;
         match.Input.InjectKey(Key.W, true);
-        var highest = 0f;
+        var origin = Origin(match);
+        var highest = 0.0;
         for (var step = 0; step < 600 && Climb(match.World).State != ClimbState.Free; step++)
         {
             match.Step(1);
-            highest = Math.Max(highest, Player(match.World).Position.Feet.Y);
+            highest = Math.Max(highest, origin.ToWorld(Player(match.World).Position.Feet).Y);
         }
 
         match.Input.InjectKey(Key.W, false);
         match.Step(60);
         var (position, contact) = Player(match.World);
+        var feet = origin.ToWorld(position.Feet);
 
         Assert.Empty(output.Failures);
         Assert.True(grabbed, $"No grab at {foot} by the boulder at {middle}.");
         Assert.True(highest - ground > 1, $"Climbed to {highest:F2} m from ground at {ground:F2} m.");
         Assert.True(contact.Grounded);
-        Assert.True(position.Feet.Y - ground > 1, $"Stands at {position.Feet} by the boulder at {middle}.");
+        Assert.True(feet.Y - ground > 1, $"Stands at {feet} by the boulder at {middle}.");
     }
 
     /// <summary>
@@ -361,6 +407,16 @@ public sealed class ScenarioTests
         }
 
         throw new InvalidOperationException("No boulder near the start.");
+    }
+
+    /// <summary>The match's origin, which the starter's start pose puts at its eye.</summary>
+    private static WorldOrigin Origin(HeadlessMatch match) => match.Services.GetRequiredService<WorldOrigin>();
+
+    private static CameraPose Camera(World world)
+    {
+        var found = default(CameraPose);
+        world.Query(new QueryDescription().WithAll<CameraPose, ActiveCamera>(), (ref CameraPose pose) => found = pose);
+        return found;
     }
 
     private static Climber Climb(World world)

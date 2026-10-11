@@ -4,6 +4,7 @@ using Arch.System;
 using Itera.Engine.Assets;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
+using Itera.Engine.Maths;
 using Itera.MeshSample.Components;
 using Itera.Modding;
 
@@ -16,12 +17,12 @@ namespace Itera.MeshSample.Systems;
 /// Reads and writes <see cref="SampleFox"/> and <see cref="MeshPlacement"/>; the engine's <c>MeshDrawSystem</c> draws
 /// it.
 /// </summary>
-public sealed class SampleFoxSystem(World world, MeshAssets assets)
+public sealed class SampleFoxSystem(World world, MeshAssets assets, WorldOrigin origin)
     : BaseSystem<World, FixedStepTime>(world),
         IFixedUpdateSystem
 {
     /// <summary>The middle of its circle, in metres.</summary>
-    public static Vector3 Middle { get; } = new(-4, 0, 1);
+    public static WorldPoint Middle { get; } = new(-4, 0, 1);
 
     public const float CircleMetres = 3;
 
@@ -42,12 +43,12 @@ public sealed class SampleFoxSystem(World world, MeshAssets assets)
         }
 
         var walk = assets[index].Rig?.FindClip("Walk") ?? -1;
-        World.Create(new SampleFox(), Placement(0, null), DrawnMesh.Of(index), MeshAnimator.Playing(walk));
+        World.Create(new SampleFox(), Placement(origin, 0, null), DrawnMesh.Of(index), MeshAnimator.Playing(walk));
     }
 
     public override void Update(in FixedStepTime step)
     {
-        var job = new Walk { Turn = Speed / CircleMetres * step.StepSeconds };
+        var job = new Walk { Turn = Speed / CircleMetres * step.StepSeconds, Origin = origin };
         World.InlineQuery<Walk, SampleFox, MeshPlacement>(in s_fox, ref job);
     }
 
@@ -55,9 +56,10 @@ public sealed class SampleFoxSystem(World world, MeshAssets assets)
     /// On the circle at <paramref name="angle"/>, facing along it (the fox's head is along +z), with the last step's
     /// pose before it.
     /// </summary>
-    private static MeshPlacement Placement(float angle, MeshPlacement? before)
+    private static MeshPlacement Placement(WorldOrigin origin, float angle, MeshPlacement? before)
     {
-        var at = Middle + new Vector3(MathF.Cos(angle), 0, MathF.Sin(angle)) * CircleMetres;
+        // Round the middle, an absolute point, local to the match's origin.
+        var at = origin.ToLocal(Middle) + new Vector3(MathF.Cos(angle), 0, MathF.Sin(angle)) * CircleMetres;
         // Going round with the angle: the way is (-sin, 0, cos), a turn about +y from +z of atan2(-sin, cos).
         var facing = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.Atan2(-MathF.Sin(angle), MathF.Cos(angle)));
         var placement = MeshPlacement.At(at, facing);
@@ -73,11 +75,12 @@ public sealed class SampleFoxSystem(World world, MeshAssets assets)
     private struct Walk : IForEach<SampleFox, MeshPlacement>
     {
         public float Turn;
+        public WorldOrigin Origin;
 
         public readonly void Update(ref SampleFox fox, ref MeshPlacement placement)
         {
             fox.Angle += Turn;
-            placement = Placement(fox.Angle, placement);
+            placement = Placement(Origin, fox.Angle, placement);
         }
     }
 }

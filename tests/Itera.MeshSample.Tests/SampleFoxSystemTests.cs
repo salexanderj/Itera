@@ -32,7 +32,7 @@ public sealed class SampleFoxSystemTests
     public void It_walks_round_its_circle_facing_the_way_it_goes()
     {
         using var world = World.Create();
-        using var system = new SampleFoxSystem(world, _assets);
+        using var system = new SampleFoxSystem(world, _assets, AtMiddle.Origin);
         system.Initialize();
         var start = Placement(world).Position;
 
@@ -44,9 +44,10 @@ public sealed class SampleFoxSystemTests
         var placement = Placement(world);
         var angle = SampleFoxSystem.Speed / SampleFoxSystem.CircleMetres;
         var expected =
-            SampleFoxSystem.Middle + new Vector3(MathF.Cos(angle), 0, MathF.Sin(angle)) * SampleFoxSystem.CircleMetres;
+            AtMiddle.Local(SampleFoxSystem.Middle)
+            + new Vector3(MathF.Cos(angle), 0, MathF.Sin(angle)) * SampleFoxSystem.CircleMetres;
         var way = new Vector3(-MathF.Sin(angle), 0, MathF.Cos(angle));
-        Assert.Equal(SampleFoxSystem.Middle + Vector3.UnitX * SampleFoxSystem.CircleMetres, start);
+        Assert.Equal(AtMiddle.Local(SampleFoxSystem.Middle) + Vector3.UnitX * SampleFoxSystem.CircleMetres, start);
         Assert.True(Vector3.Distance(expected, placement.Position) < 1e-3f, $"At {placement.Position}.");
         Assert.True(Vector3.Distance(way, Vector3.Transform(Vector3.UnitZ, placement.Orientation)) < 1e-3f);
         Assert.True(placement.PreviousPosition != placement.Position);
@@ -56,7 +57,7 @@ public sealed class SampleFoxSystemTests
     public void A_mesh_the_console_placed_with_a_clip_is_left_alone()
     {
         using var world = World.Create();
-        using var system = new SampleFoxSystem(world, _assets);
+        using var system = new SampleFoxSystem(world, _assets, AtMiddle.Origin);
         system.Initialize();
         var placed = world.Create(
             MeshPlacement.At(new Vector3(20, 0, 20), Quaternion.Identity),
@@ -74,7 +75,7 @@ public sealed class SampleFoxSystemTests
     public void Without_its_model_declared_the_start_stops()
     {
         using var world = World.Create();
-        using var system = new SampleFoxSystem(world, new MeshAssets(NullLogger<MeshAssets>.Instance));
+        using var system = new SampleFoxSystem(world, new MeshAssets(NullLogger<MeshAssets>.Instance), AtMiddle.Origin);
 
         var error = Assert.Throws<InvalidOperationException>(system.Initialize);
         Assert.Contains(SampleRunStartup.Fox, error.Message, StringComparison.Ordinal);
@@ -84,7 +85,7 @@ public sealed class SampleFoxSystemTests
     public void A_step_allocates_nothing()
     {
         using var world = World.Create();
-        using var system = new SampleFoxSystem(world, _assets);
+        using var system = new SampleFoxSystem(world, _assets, AtMiddle.Origin);
         system.Initialize();
 
         Assert.Equal(0, SystemAllocation.BytesAllocated(system, Step));

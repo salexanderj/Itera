@@ -198,7 +198,7 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
   `VoxelWorld.Grid.Edge(k)` cm across (`VoxelGrid`, its generator's), a model's voxel its own unit (`VoxelModels`; 1 cm
   by default): code where the two meet uses those, never a level's 2^k. Positions kept in metres (`System.Numerics`'
   `Vector3`, `Matrix4x4`; `Silk.NET.Maths` only at Silk.NET API edges) are local, from the match's origin
-  (`WorldOrigin`, whole metres); a point that crosses it (a start pose, `tp`, the play area) is an absolute
+  (`WorldOrigin`, whole metres); a point that crosses it (a start pose, `tp`, the play area, a message) is an absolute
   `WorldPoint` (doubles). They meet only through `WorldOrigin`, in doubles: a local float becomes centimetres or cells
   only as floor((local + origin) * scale). What every peer must
   compute alike from a seed (world generation, posed bodies) uses `DeterministicMath` and `Rotation`, never

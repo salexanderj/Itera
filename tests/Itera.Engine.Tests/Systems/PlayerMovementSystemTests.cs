@@ -2,9 +2,14 @@ using System.Numerics;
 using Arch.Core;
 using Itera.Engine.Commands;
 using Itera.Engine.Components;
+using Itera.Engine.Diagnostics;
+using Itera.Engine.Ecs;
+using Itera.Engine.Matches;
 using Itera.Engine.Maths;
 using Itera.Engine.Networking;
+using Itera.Engine.Particles;
 using Itera.Engine.Physics;
+using Itera.Engine.Rendering;
 using Itera.Engine.Systems;
 using Itera.Engine.Voxels;
 using Itera.Modding;
@@ -582,6 +587,66 @@ public sealed class PlayerMovementSystemTests : IDisposable
         var pose = default(CameraPose);
         world.Query(new QueryDescription().WithAll<CameraPose, FlyCamera>(), (ref CameraPose camera) => pose = camera);
         Assert.Equal(new Vector3(20, 6, -4), pose.Position);
+    }
+
+    /// <summary>
+    /// A tp 600 m out asks for the origin there; the next step moves it before the jump, and the jump moves the active
+    /// camera (a game's, with no fly camera's component) with the player, so a second step before any frame keeps the
+    /// origin where the jump went instead of following the camera back.
+    /// </summary>
+    [Fact]
+    public void A_far_tp_moves_the_origin_first_and_a_second_step_before_a_frame_keeps_it()
+    {
+        var options = Options.Create(new EngineOptions { Physics = { Threads = 1 } });
+        using var ecs = new EcsWorld(NullLogger<EcsWorld>.Instance, new SystemTimes());
+        using var physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance, options);
+        physics.Initialize();
+        using var models = new VoxelModels();
+        var shifts = new OriginShifts(
+            _voxels.Origin,
+            physics,
+            ecs,
+            models,
+            new PointLights(),
+            new ParticleEmitter(options, NullLogger<ParticleEmitter>.Instance),
+            [],
+            NullLogger<OriginShifts>.Instance,
+            _voxels,
+            options: options
+        );
+        var world = ecs.World;
+        var commands = NewCommands();
+        var output = new RecordingOutput();
+        using var origin = new OriginShiftSystem(world, shifts);
+        using var movement = new PlayerMovementSystem(
+            world,
+            _mover,
+            _area,
+            NullLogger<PlayerMovementSystem>.Instance,
+            commands,
+            shifts: shifts
+        );
+        origin.Initialize();
+        movement.Initialize();
+        CreatePlayer(world, new Vector3(0, 1.6f, 0));
+        var camera = world.Create(new CameraPose { Position = new Vector3(0, 1.6f, 0) }, new ActiveCamera());
+
+        commands.Execute("tp 600 5 0", output);
+        for (var step = 0; step < 2; step++)
+        {
+            origin.Update(in Step);
+            movement.Update(in Step);
+        }
+
+        Assert.Empty(output.Errors);
+        Assert.Equal(new VoxelCoord(60_000, 500, 0), _voxels.Origin.Centimetres);
+        Assert.Equal(Vector3.Zero, world.Get<CameraPose>(camera).Position);
+        // Near the jump's end: past this test world's 51 m map, the next step falls through air.
+        var feet = Read(world).Position.Feet;
+        Assert.True(
+            Vector3.Distance(new Vector3(0, -CharacterSize.ForHeight(1.7f).EyeMetres, 0), feet) < 0.05f,
+            $"{feet}"
+        );
     }
 
     [Fact]

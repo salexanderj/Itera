@@ -15,6 +15,7 @@ public sealed class SystemOrderTests
 {
     private static readonly string[] s_fixedOrder =
     [
+        "OriginShiftSystem",
         "PlayerSpawnSystem",
         "FoxSystem",
         "MapResetSystem",

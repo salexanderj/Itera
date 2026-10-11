@@ -54,22 +54,32 @@ public static class MeshSampleServiceCollectionExtensions
     }
 
     /// <summary>
-    /// The fixed systems, in their run order: the yard and the player at the start, the fox (its pose before the clips
+    /// The fixed systems, in their run order: the origin moved to the camera when it has gone far (first, before any
+    /// system reads a position); the yard and the player at the start, the fox (its pose before the clips
     /// move on); the console's cleanup and reset, and its balls; the player's input; what the last physics step did;
     /// the player's move and climb; the stand-ins and the loose bodies; and the clips moved on.
     /// </summary>
     private static void AddFixedSystems(IServiceCollection services)
     {
+        // First: the origin moves to the camera, when it has gone far, before any system of the step reads a position.
+        services.AddScoped<IFixedUpdateSystem>(sp => new OriginShiftSystem(
+            sp.GetRequiredService<EcsWorld>().World,
+            sp.GetRequiredService<OriginShifts>()
+        ));
         services.AddScoped<IFixedUpdateSystem>(sp => new YardSystem(
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<MeshAssets>(),
             sp.GetRequiredService<MeshColliders>(),
             sp.GetRequiredService<YardColliders>()
         ));
-        services.AddScoped<IFixedUpdateSystem>(sp => new SampleSpawnSystem(sp.GetRequiredService<EcsWorld>().World));
+        services.AddScoped<IFixedUpdateSystem>(sp => new SampleSpawnSystem(
+            sp.GetRequiredService<EcsWorld>().World,
+            sp.GetRequiredService<WorldOrigin>()
+        ));
         services.AddScoped<IFixedUpdateSystem>(sp => new SampleFoxSystem(
             sp.GetRequiredService<EcsWorld>().World,
-            sp.GetRequiredService<MeshAssets>()
+            sp.GetRequiredService<MeshAssets>(),
+            sp.GetRequiredService<WorldOrigin>()
         ));
         services.AddScoped<IFixedUpdateSystem>(sp => new MapResetSystem(
             sp.GetRequiredService<EcsWorld>().World,
@@ -108,7 +118,8 @@ public static class MeshSampleServiceCollectionExtensions
             sp.GetRequiredService<PlayArea>(),
             sp.GetRequiredService<ILogger<PlayerMovementSystem>>(),
             sp.GetRequiredService<ConsoleCommands>(),
-            mode: sp.GetService<IMovementMode>()
+            mode: sp.GetService<IMovementMode>(),
+            shifts: sp.GetRequiredService<OriginShifts>()
         ));
         services.AddScoped<IFixedUpdateSystem>(sp => new StandInSystem(
             sp.GetRequiredService<EcsWorld>().World,
@@ -143,11 +154,11 @@ public static class MeshSampleServiceCollectionExtensions
             null,
             sp.GetRequiredService<PlayerInputBlock>(),
             sp.GetRequiredService<PlayerSettings>(),
-            SampleSpawnSystem.StartPose
+            SampleSpawnSystem.StartPoseIn(sp.GetRequiredService<WorldOrigin>())
         ));
         services.AddScoped<IFrameUpdateSystem>(sp =>
         {
-            var start = SampleSpawnSystem.StartPose;
+            var start = SampleSpawnSystem.StartPoseIn(sp.GetRequiredService<WorldOrigin>());
             return new DebugFlyCameraSystem(
                 sp.GetRequiredService<EcsWorld>().World,
                 sp.GetRequiredService<IFrameInput>(),
@@ -177,13 +188,15 @@ public static class MeshSampleServiceCollectionExtensions
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<CollisionSources>(),
             sp.GetRequiredService<YardColliders>(),
-            sp.GetRequiredService<AimHighlight>()
+            sp.GetRequiredService<AimHighlight>(),
+            sp.GetRequiredService<WorldOrigin>()
         ));
         // The yard camera asked for each frame (any place in the frame group: it reads nothing the others write).
         services.AddScoped<IFrameUpdateSystem>(sp => new YardCameraSystem(
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<YardCamera>(),
-            sp.GetRequiredService<RenderViews>()
+            sp.GetRequiredService<RenderViews>(),
+            sp.GetRequiredService<WorldOrigin>()
         ));
         services.AddScoped<IFrameUpdateSystem>(sp => new LooseBodyModelSystem(
             sp.GetRequiredService<EcsWorld>().World,

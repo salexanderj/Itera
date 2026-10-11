@@ -87,6 +87,9 @@ lists the game's). Commonly used:
   under 1 s in Release. A host and a client both without graphics play a session on 127.0.0.1 (`--Engine:Session:Port`
   to keep off a running game's). `game.py start --headless` adds it. `--Engine:Physics:Threads=1` (1 to 16; 0, the
   default, a quarter of the processors) makes physics repeat run to run.
+- The origin: `--Engine:Origin:ShiftMetres` (512, 8 to 4096): how far the camera goes from the match's origin on any
+  axis before `OriginShiftSystem` moves the origin to it (the Debug log's `Origin: moved to ...` lines; the control
+  port's `status` gives the origin and the camera's absolute place).
 - Other systems: `--Engine:Physics:SettleSeconds` (0.5 to 60), `MaxLooseBodies` (1 to 1024), `CollisionCentimetres`
   (the character mover's cells without voxel terrain, 1 to 10, default 10);
   `--Engine:Particles:Enabled=false` (`Capacity` 16,384 to 1,048,576); `--Engine:Audio:Enabled=false` (`Volume` 0 to
@@ -217,7 +220,8 @@ lists the commands (`ConsoleCommands`):
   behind it, by default the view distance each way; off gives the camera's own lens back; the run's only), `origin`
   [move DX DY DZ] (the match's origin, which positions are measured from, and the camera's place from it and in the
   world; move moves it by whole metres, and everything with it, so nothing in the world moves: for checking that
-  nothing does; the run's only), `stats`,
+  nothing does; a move of `Engine:Origin:ShiftMetres` or more leaves the camera that far out, so the next step follows
+  it back; the run's only), `stats`,
   `screenshot` [SCALE] [noui] [PATH.png] (a PNG at PATH.png or in the data folder's
   `Screenshots/`), `wait` (loaded, view (the view's world loaded and on the GPU, as the loading screen waits for), ticks
   N, frames N, or seconds N of real time, then an optional timeout in seconds), `shaders` [reload] (the folder shaders
@@ -231,7 +235,8 @@ lists the commands (`ConsoleCommands`):
   it is), `flyspeed`, `camera` (first or third), `pos` (the player's eye and look, the fly camera's while it flies, as
   `Game:World:CameraPose` takes it: absolute metres from the map's middle, whatever the match's origin), `tp` (x y z
   [yaw pitch], absolute too, a pasted pose, or a place the game names: the starter's
-  benchmark views, `start`, `start-low`, `down`, `up`, `high`, and `far`), `settle` (how long a ball rests before it
+  benchmark views, `start`, `start-low`, `down`, `up`, `high`, and `far`; a jump 512 m or more from the origin moves the
+  origin there first, so it lands exactly), `settle` (how long a ball rests before it
   goes back into the grid), `cleanup` (removes every loose body and clears the particles), `reset` (the world as the
   seed made it, every edit undone, then `cleanup`; the loading screen covers the picture while the view is generated
   again, on clients too), `balls` [COUNT] [RADIUS] [MATERIAL] (balls dropped 3 m in front of the camera, of the game's

@@ -1,5 +1,6 @@
 using System.Numerics;
 using Itera.Engine.Matches;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering;
 using Itera.MeshSample.Systems;
 using Itera.Modding;
@@ -37,10 +38,10 @@ public sealed class YardCameraSystemTests
         Assert.Equal((YardCamera.ViewName, YardCamera.Width, YardCamera.Height), (info.Name, info.Width, info.Height));
         Assert.Equal(camera.View, views.ViewOnMaterial(Yard.Screen, Yard.ScreenMaterial));
         Assert.True(views.Asked(camera.View, out var asked));
-        Assert.Equal(YardCamera.Camera, asked);
+        Assert.Equal(YardCamera.CameraIn(AtMiddle.Origin), asked);
         Assert.False(asked.Orthographic);
         // It looks from over the south-west corner down at the middle (0, 0, -3).
-        var towards = Vector3.Normalize(new Vector3(0, 0, -3) - YardCamera.Position);
+        var towards = Vector3.Normalize(new Vector3(0, 0, -3) - AtMiddle.Local(YardCamera.Position));
         Assert.True(Vector3.Distance(towards, asked.Forward) < 1e-4f, $"Forward {asked.Forward}, expected {towards}.");
         Assert.True(Vector3.Dot(asked.Up, Vector3.UnitY) > 0.8f);
     }
@@ -54,7 +55,8 @@ public sealed class YardCameraSystemTests
         using var system = new YardCameraSystem(
             match.World,
             provider.GetRequiredService<YardCamera>(),
-            provider.GetRequiredService<RenderViews>()
+            provider.GetRequiredService<RenderViews>(),
+            match.Services.GetRequiredService<WorldOrigin>()
         );
 
         Assert.Equal(0, SystemAllocation.BytesAllocated(system, Time));

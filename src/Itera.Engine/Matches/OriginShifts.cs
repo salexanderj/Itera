@@ -10,6 +10,7 @@ using Itera.Engine.Physics;
 using Itera.Engine.Rendering;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Itera.Engine.Matches;
 
@@ -39,7 +40,7 @@ public sealed partial class OriginShifts
     ];
 
     /// <summary>The farthest the origin may go from the map's middle on any axis, in metres: the edit format's reach.</summary>
-    public const double MostMetres = 167_772.16;
+    public const double MostMetres = WorldOrigin.MostMetres;
 
     private static readonly QueryDescription s_cameras = new QueryDescription().WithAll<CameraPose>();
     private static readonly QueryDescription s_characters = new QueryDescription().WithAll<CharacterPosition>();
@@ -57,6 +58,8 @@ public sealed partial class OriginShifts
     private readonly VoxelWorld? _voxels;
     private readonly AudioService? _audio;
     private readonly RenderView? _view;
+    private WorldPoint _requested;
+    private bool _hasRequest;
 
     /// <param name="origin">The match's origin.</param>
     /// <param name="physics">The match's Bepu simulation.</param>
@@ -69,6 +72,7 @@ public sealed partial class OriginShifts
     /// <param name="voxels">The match's voxel world; none without terrain.</param>
     /// <param name="audio">The run's sound; none in a test without it.</param>
     /// <param name="view">The run's frame view, whose camera moves too; none in a test without it.</param>
+    /// <param name="options">The engine's options, for <c>Engine:Origin:ShiftMetres</c>; none for 512 m.</param>
     public OriginShifts(
         WorldOrigin origin,
         PhysicsWorld physics,
@@ -80,7 +84,8 @@ public sealed partial class OriginShifts
         ILogger<OriginShifts> logger,
         VoxelWorld? voxels = null,
         AudioService? audio = null,
-        RenderView? view = null
+        RenderView? view = null,
+        IOptions<EngineOptions>? options = null
     )
     {
         Origin = origin;
@@ -94,10 +99,61 @@ public sealed partial class OriginShifts
         _voxels = voxels;
         _audio = audio;
         _view = view;
+        ShiftMetres = options?.Value.Origin.ShiftMetres ?? new OriginSettings().ShiftMetres;
+    }
+
+    /// <summary>How far, in metres along any axis, a point may lie from the origin before <see cref="Follow(Vector3)"/> moves it there.</summary>
+    public double ShiftMetres { get; }
+
+    /// <summary>
+    /// Moves the origin to <paramref name="local"/> (a local position: the active camera's, each step) when it lies
+    /// <see cref="ShiftMetres"/> or more from it along any axis; false when the origin stays.
+    /// </summary>
+    public bool Follow(Vector3 local) =>
+        (Math.Abs(local.X) >= ShiftMetres || Math.Abs(local.Y) >= ShiftMetres || Math.Abs(local.Z) >= ShiftMetres)
+        && ShiftTo(Origin.ToWorld(local));
+
+    /// <summary>
+    /// Moves the origin to <paramref name="point"/> (an absolute point: where the console's <c>tp</c> goes) when it lies
+    /// <see cref="ShiftMetres"/> or more from it along any axis, so the point is local and small; false when the origin
+    /// stays.
+    /// </summary>
+    public bool Follow(in WorldPoint point)
+    {
+        var at = Origin.Metres;
+        return (
+                Math.Abs(point.X - at.X) >= ShiftMetres
+                || Math.Abs(point.Y - at.Y) >= ShiftMetres
+                || Math.Abs(point.Z - at.Z) >= ShiftMetres
+            ) && ShiftTo(point);
+    }
+
+    /// <summary>
+    /// Asks that the origin follow <paramref name="point"/> (as <see cref="Follow(in WorldPoint)"/>) at the next step's
+    /// start, where <c>OriginShiftSystem</c> moves it before any system reads a position: for a jump the step will
+    /// make (<c>tp</c>), so the camera, still where it was, does not move the origin back first. A later request
+    /// replaces it; a game without that system never moves the origin for one.
+    /// </summary>
+    public void RequestFollow(in WorldPoint point)
+    {
+        _requested = point;
+        _hasRequest = true;
+    }
+
+    /// <summary>The point <see cref="RequestFollow"/> asked for since the last call, which this clears.</summary>
+    public bool TakeRequest(out WorldPoint point)
+    {
+        point = _requested;
+        var had = _hasRequest;
+        _hasRequest = false;
+        return had;
     }
 
     /// <summary>The match's origin.</summary>
     public WorldOrigin Origin { get; }
+
+    /// <summary>True where the origin may move now: between steps and frames, or in the first fixed system's update.</summary>
+    internal bool MayMove => _ecs.OriginMayMove;
 
     /// <summary>
     /// Moves the origin to the whole metres nearest <paramref name="centre"/> and everything kept in local positions with
@@ -117,7 +173,7 @@ public sealed partial class OriginShifts
             throw new ArgumentException($"The origin cannot move to {centre}.", nameof(centre));
         }
 
-        var to = new VoxelCoord(WholeMetres(centre.X), WholeMetres(centre.Y), WholeMetres(centre.Z));
+        var to = WorldOrigin.WholeMetres(centre);
         if (to == Origin.Centimetres)
         {
             return false;
@@ -156,10 +212,6 @@ public sealed partial class OriginShifts
 
         return true;
     }
-
-    /// <summary>The whole metres nearest <paramref name="metres"/>, in centimetres.</summary>
-    private static int WholeMetres(double metres) =>
-        (int)Math.Round(metres, MidpointRounding.AwayFromZero) * VoxelConstants.CentimetresPerMetre;
 
     /// <summary>Moves the engine's components' local positions (<see cref="ShiftedComponents"/>) by -<paramref name="metres"/>.</summary>
     private static void ShiftComponents(World world, Vector3 metres)

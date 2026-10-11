@@ -11,12 +11,14 @@ using Itera.Engine.Ecs;
 using Itera.Engine.Input;
 using Itera.Engine.Loading;
 using Itera.Engine.Matches;
+using Itera.Engine.Maths;
 using Itera.Engine.Networking;
 using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.Shaders;
 using Itera.Engine.Time;
 using Itera.Engine.UI;
 using Itera.Engine.Windowing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -91,6 +93,7 @@ public sealed partial class ControlService : IDisposable
     private readonly Func<SessionRole> _role;
     private readonly Func<bool> _playing;
     private readonly Func<World?> _world;
+    private readonly Func<WorldOrigin?> _origin;
     private readonly FixedStepAccumulator? _time;
     private readonly Action _wake;
     private readonly ILogger<ControlService> _logger;
@@ -133,7 +136,8 @@ public sealed partial class ControlService : IDisposable
             logger,
             () => matches.Phase == MatchPhase.Playing,
             () => matches.Current?.Ecs.World,
-            time
+            time,
+            () => matches.Current?.Services.GetService<WorldOrigin>()
         ) { }
 
     /// <summary>For tests: a <paramref name="port"/> of 0 lets the system pick one, which <see cref="Port"/> then names.</summary>
@@ -153,11 +157,13 @@ public sealed partial class ControlService : IDisposable
         ILogger<ControlService> logger,
         Func<bool>? playing = null,
         Func<World?>? world = null,
-        FixedStepAccumulator? time = null
+        FixedStepAccumulator? time = null,
+        Func<WorldOrigin?>? origin = null
     )
     {
         _playing = playing ?? (() => true);
         _world = world ?? (() => null);
+        _origin = origin ?? (() => null);
         _time = time;
         _screenshots = screenshots;
         _shaderReloads = shaderReloads;
@@ -710,6 +716,11 @@ public sealed partial class ControlService : IDisposable
     private void Status(ControlRequest request, double now, ulong frames)
     {
         var camera = _view.Camera;
+        var origin = _origin();
+        // Absolute, as pos prints it; the components below are local to the origin.
+        var cameraAt =
+            origin?.ToWorld(camera.Position) ?? new WorldPoint(camera.Position.X, camera.Position.Y, camera.Position.Z);
+        var originAt = origin?.Metres ?? default;
         var role = _role();
         var loading = _loading.Phase;
         request.Complete(
@@ -730,10 +741,15 @@ public sealed partial class ControlService : IDisposable
                 }
 
                 writer.WriteNumber("render_scale", _view.RenderScale);
+                writer.WriteStartArray("origin");
+                writer.WriteNumberValue(originAt.X);
+                writer.WriteNumberValue(originAt.Y);
+                writer.WriteNumberValue(originAt.Z);
+                writer.WriteEndArray();
                 writer.WriteStartArray("camera_position");
-                writer.WriteNumberValue(Math.Round(camera.Position.X, 3));
-                writer.WriteNumberValue(Math.Round(camera.Position.Y, 3));
-                writer.WriteNumberValue(Math.Round(camera.Position.Z, 3));
+                writer.WriteNumberValue(Math.Round(cameraAt.X, 3));
+                writer.WriteNumberValue(Math.Round(cameraAt.Y, 3));
+                writer.WriteNumberValue(Math.Round(cameraAt.Z, 3));
                 writer.WriteEndArray();
                 var forward = camera.Forward;
                 writer.WriteStartArray("camera_forward");

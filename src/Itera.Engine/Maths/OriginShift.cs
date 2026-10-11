@@ -28,6 +28,18 @@ public readonly record struct OriginShift(VoxelCoord From, VoxelCoord To)
 }
 
 /// <summary>
+/// Where a game's match starts, for its first origin: the match's origin starts on the whole metres nearest
+/// <see cref="Start"/>, so what turns the game's start into local positions as it is made (systems, their cameras) gets
+/// small floats from the first step. Registered in the match's scope by a game whose start may lie far from the map's
+/// middle (the starter's <c>StartPose</c>); without one the origin starts at the middle.
+/// </summary>
+public interface IOriginStart
+{
+    /// <summary>Where the match starts, absolute.</summary>
+    WorldPoint Start { get; }
+}
+
+/// <summary>
 /// Something of the game's that keeps local positions outside the engine's components (a component of its own, a
 /// service's list) and moves them when the origin moves (<c>OriginShifts</c>). Registered in the match's scope; called on
 /// the main thread after the engine has moved its own, between steps or in the first fixed system; it makes no

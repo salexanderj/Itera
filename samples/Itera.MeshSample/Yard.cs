@@ -1,14 +1,15 @@
 using System.Numerics;
 using Itera.Engine.Assets;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering.GpuData;
 
 namespace Itera.MeshSample;
 
 /// <summary>A piece of the yard: a mesh asset by name, where its own origin stands, and its uniform scale.</summary>
 /// <param name="Asset">The asset's name (<see cref="Yard"/>'s).</param>
-/// <param name="Position">Where the asset's origin stands, in metres.</param>
+/// <param name="Position">Where the asset's origin stands, an absolute point (metres from the map's middle).</param>
 /// <param name="Scale">Its uniform scale.</param>
-public readonly record struct YardPiece(string Asset, Vector3 Position, float Scale = 1);
+public readonly record struct YardPiece(string Asset, WorldPoint Position, float Scale = 1);
 
 /// <summary>
 /// The sample's world, all built in code: a 60 m square of flat ground (a grey-green checker of 1 m squares), cubes of
@@ -47,17 +48,17 @@ public static class Yard
     /// </summary>
     public static IReadOnlyList<YardPiece> Pieces { get; } =
     [
-        new(Ground, Vector3.Zero),
-        new(Block, new Vector3(-7, 0, -4), 1),
-        new(Block, new Vector3(-4, 0, -6), 2),
-        new(Block, new Vector3(0, 0, -8), 3),
-        new(Block, new Vector3(5, 0, -10), 4),
-        new(GentleRamp, new Vector3(-16, 0, -2)),
-        new(SteepRamp, new Vector3(10, 0, 0)),
-        new(Glass, new Vector3(2, 0, 1)),
-        new(Amber, new Vector3(6, 0, -3)),
-        new(Amber, new Vector3(7.5f, 0, -2.5f)),
-        new(Screen, new Vector3(-5, 0, -12)),
+        new(Ground, WorldPoint.Zero),
+        new(Block, new WorldPoint(-7, 0, -4), 1),
+        new(Block, new WorldPoint(-4, 0, -6), 2),
+        new(Block, new WorldPoint(0, 0, -8), 3),
+        new(Block, new WorldPoint(5, 0, -10), 4),
+        new(GentleRamp, new WorldPoint(-16, 0, -2)),
+        new(SteepRamp, new WorldPoint(10, 0, 0)),
+        new(Glass, new WorldPoint(2, 0, 1)),
+        new(Amber, new WorldPoint(6, 0, -3)),
+        new(Amber, new WorldPoint(7.5, 0, -2.5)),
+        new(Screen, new WorldPoint(-5, 0, -12)),
     ];
 
     /// <summary>The surface tags of each of the yard's materials: the stone's climbable.</summary>

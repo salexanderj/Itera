@@ -5,6 +5,7 @@ using Arch.System;
 using Itera.Engine.Commands;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
+using Itera.Engine.Matches;
 using Itera.Engine.Maths;
 using Itera.Engine.Physics;
 using Itera.Modding;
@@ -115,7 +116,13 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         EyeSmoothing
     >();
 
-    private static readonly QueryDescription s_flyCameras = new QueryDescription().WithAll<CameraPose, FlyCamera>();
+    /// <summary>
+    /// The cameras a jump moves: the fly camera, and the active one (which <c>OriginShiftSystem</c> follows, so a step
+    /// before the next frame does not find it where it was).
+    /// </summary>
+    private static readonly QueryDescription s_jumpCameras = new QueryDescription()
+        .WithAll<CameraPose>()
+        .WithAny<FlyCamera, ActiveCamera>();
 
     private readonly VoxelCharacterMover _mover;
     private readonly PlayArea _area;
@@ -123,6 +130,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     private readonly ConsoleCommands? _commands;
     private readonly Func<string, (WorldPoint Eye, float Yaw, float Pitch)?>? _places;
     private readonly IMovementMode? _mode;
+    private readonly OriginShifts? _shifts;
     private bool _localWaiting;
     private Request _request;
 
@@ -136,6 +144,11 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     /// lacks.
     /// </param>
     /// <param name="mode">A game's own way of moving, offered each walking player's step first; none for the engine's alone.</param>
+    /// <param name="shifts">
+    /// The match's origin moves: <c>tp</c> to an eye far from the origin (as far as <c>Engine:Origin:ShiftMetres</c>)
+    /// asks <c>OriginShiftSystem</c> to move the origin there at the next step's start, before the jump, so a jump of any
+    /// distance lands exactly; none in a test that leaves the origin.
+    /// </param>
     public PlayerMovementSystem(
         World world,
         VoxelCharacterMover mover,
@@ -143,11 +156,13 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         ILogger<PlayerMovementSystem> logger,
         ConsoleCommands? commands = null,
         Func<string, (WorldPoint Eye, float Yaw, float Pitch)?>? places = null,
-        IMovementMode? mode = null
+        IMovementMode? mode = null,
+        OriginShifts? shifts = null
     )
         : base(world)
     {
         _mode = mode;
+        _shifts = shifts;
         ArgumentNullException.ThrowIfNull(mover);
         ArgumentNullException.ThrowIfNull(area);
         _commands = commands;
@@ -168,7 +183,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         EcsChecks.RequireAll<CharacterPosition>(in s_crouchers);
         EcsChecks.RequireAll<LocalPlayer, PlayerCommand, CharacterSize, CharacterPosition>(in s_local);
         EcsChecks.RequireAll<CharacterVelocity, CharacterContact, EyeSmoothing>(in s_local);
-        EcsChecks.RequireAll<CameraPose>(in s_flyCameras);
+        EcsChecks.RequireAll<CameraPose>(in s_jumpCameras);
         RegisterCommands();
     }
 
@@ -374,7 +389,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         >(in s_local, ref job);
         if (_request.Teleport)
         {
-            World.InlineQuery<Apply, CameraPose>(in s_flyCameras, ref job);
+            World.InlineQuery<Apply, CameraPose>(in s_jumpCameras, ref job);
         }
 
         _request = default;
@@ -485,6 +500,9 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             return;
         }
 
+        // The origin moves to a far eye at the next step's start (OriginShiftSystem), before the jump, so the eye is local
+        // and small.
+        _shifts?.RequestFollow(eye);
         _request.Teleport = true;
         _request.Eye = eye;
         _request.Angles = angles;

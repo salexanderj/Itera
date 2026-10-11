@@ -28,7 +28,8 @@ Ordered by how many game types each blocks.
    voxel world, its characters and loose bodies over the game's mesh colliders; the box remains, now sized by the game
    in its generator's grid (`VoxelGrid.Sized`: up to ±160 km across and 128 layers of chunks, by default ±512 m and -51
    to +102 m at 10 cm voxels, 2026-10-10); the view reaches 2 km at most; positions are measured from a match's origin
-   (`WorldOrigin`, with absolute `WorldPoint`s where they cross it), but nothing moves it from the map's middle yet.
+   (`WorldOrigin`, with absolute `WorldPoint`s where they cross it), which follows the camera (`OriginShiftSystem`,
+   2026-10-10).
    Blocks open worlds, flight, space, and long race tracks.
 3. **Rendering is open to a game, except for split screen, HDR, and some lights.** When this was written the pass list
    was fixed in `FrameRenderer.Record`, `IFrameRenderer` and `PipelineFactory` were internal, only particles blended,

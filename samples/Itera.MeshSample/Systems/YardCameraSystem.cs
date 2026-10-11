@@ -1,6 +1,7 @@
 using Arch.Core;
 using Arch.System;
 using Itera.Engine.Ecs;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering;
 using Itera.Modding;
 
@@ -8,9 +9,9 @@ namespace Itera.MeshSample.Systems;
 
 /// <summary>
 /// Asks for the yard camera's image view every frame (frame group; <see cref="RenderViews.Draw"/>), from its fixed
-/// camera (<see cref="YardCamera.Camera"/>), so the yard's screen shows it. Reads and writes no components.
+/// camera (<see cref="YardCamera.CameraIn"/>), so the yard's screen shows it. Reads and writes no components.
 /// </summary>
-public sealed class YardCameraSystem(World world, YardCamera camera, RenderViews views)
+public sealed class YardCameraSystem(World world, YardCamera camera, RenderViews views, WorldOrigin origin)
     : BaseSystem<World, FrameTime>(world),
         IFrameUpdateSystem
 {
@@ -18,7 +19,7 @@ public sealed class YardCameraSystem(World world, YardCamera camera, RenderViews
     {
         if (camera.View >= 0)
         {
-            views.Draw(camera.View, YardCamera.Camera);
+            views.Draw(camera.View, YardCamera.CameraIn(origin));
         }
     }
 }

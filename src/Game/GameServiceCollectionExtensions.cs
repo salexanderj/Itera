@@ -113,6 +113,8 @@ public static class GameServiceCollectionExtensions
                     .EyeMetres
             )
         );
+        // The match's origin starts at the start (the engine's WorldOrigin reads it).
+        services.AddScoped<IOriginStart>(sp => sp.GetRequiredService<StartPose>());
         // The run-wide registries, made once at the engine's "game" step: the movement keys first, then the engine's stock
         // particle effects.
         services.AddSingleton<StockEffects>();
@@ -128,7 +130,8 @@ public static class GameServiceCollectionExtensions
     }
 
     /// <summary>
-    /// The fixed systems, in their run order: the player made at the start, and the fox (made at the start, then moved
+    /// The fixed systems, in their run order: the origin moved to the camera when it has gone far (first, before any
+    /// system reads a position); the player made at the start, and the fox (made at the start, then moved
     /// round and its clip chosen); the console's cleanup and reset (the systems after them put things back in the same
     /// step) and its balls; the player's input; what the last physics step did; the player's move (it reads the physics'
     /// pushes, and stand-ins are placed after it); the stand-ins and the loose bodies; the mesh assets' clips moved on,
@@ -136,6 +139,11 @@ public static class GameServiceCollectionExtensions
     /// </summary>
     private static void AddFixedSystems(IServiceCollection services, BenchmarkSettings? benchmark)
     {
+        // First: the origin moves to the camera, when it has gone far, before any system of the step reads a position.
+        services.AddScoped<IFixedUpdateSystem>(sp => new OriginShiftSystem(
+            sp.GetRequiredService<EcsWorld>().World,
+            sp.GetRequiredService<OriginShifts>()
+        ));
         services.AddScoped<IFixedUpdateSystem>(sp => new PlayerSpawnSystem(
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<IOptions<PlayerOptions>>().Value,
@@ -202,7 +210,8 @@ public static class GameServiceCollectionExtensions
                 sp.GetRequiredService<ILogger<PlayerMovementSystem>>(),
                 sp.GetRequiredService<ConsoleCommands>(),
                 name => BenchmarkViews.Place(views, name),
-                sp.GetService<IMovementMode>()
+                sp.GetService<IMovementMode>(),
+                sp.GetRequiredService<OriginShifts>()
             );
         });
         services.AddScoped<IFixedUpdateSystem>(sp => new StandInSystem(

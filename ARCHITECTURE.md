@@ -747,8 +747,11 @@ and compares runs from the log lines, which keep their form.
   settling ball reads 150 km out are those it reads at the middle, bit for bit (`FarFromTheMiddleTests`, on a world
   moved there, `TranslatedGenerator`), the origin there. `VoxelCoord.FromMetres` and `ToMetres` went for that reason.
   Mesh colliders keep an absolute anchor each (whole metres) with their triangles from it; the mover's cells, the voxel
-  colliders' statics, and the loose bodies' pivots are worked out in absolute doubles and posed locally. The origin
-  moves only when asked (`OriginShifts.ShiftTo`, to whole metres): every body and static in Bepu, the engine's
+  colliders' statics, and the loose bodies' pivots are worked out in absolute doubles and posed locally. A match's
+  first origin is where its game starts it (`IOriginStart`, the starter's start eye); then `OriginShiftSystem`, first
+  in a game's fixed systems, moves it to the camera's whole metres once the camera is `Engine:Origin:ShiftMetres` (512)
+  out on any axis, so a local float near the camera rounds by at most about 30 micrometres, and a far `tp` moves it to
+  the jump's end first. A move (`OriginShifts.ShiftTo`, to whole metres) shifts every body and static in Bepu, the engine's
   components that keep positions (current and previous together, so the blend between steps holds), the world's
   streaming centres, retired models, light flashes, and queued particles move the other way, then the game's
   `IOriginShiftHandler`s; it happens between steps and frames or in the first fixed system's update, so a step sees
@@ -761,8 +764,11 @@ and compares runs from the log lines, which keep their form.
   from the view's absolute place and snapping the shadow maps' texels in absolute terms; the particles' GPU pool and
   the sounds playing move with it (`.claude/rules/rendering.md`, "Under a moved origin"). Pictures of the starter's
   start, far, high, and down views before and after the console's `origin move 300 0 -200` differed in 7 to 15 of
-  921,600 pixels, each on a silhouette's edge (2026-10-10); resting debris kept its place. Until the origin follows the
-  camera on its own (open work), the local floats are as precise as a map's middle allows: about 0.1 mm at 707 m.
+  921,600 pixels, each on a silhouette's edge (2026-10-10); resting debris kept its place. A flight of 2.8 km at
+  500 m/s moved the origin 5 times and ended within a centimetre of where its 336 frames should take it; a walk with the
+  origin following every 8 m matched one where it stayed within a millimetre. Peers keep their own origins, so a
+  game's message carries a position absolute (`MessageWriter.WritePosition`: 1/64 cm to ±335 km); a host steps the
+  bodies near a far client in its own origin's floats (1 mm at 10 km, 8 mm at 100 km).
 - **Positions in metres use `System.Numerics`** (`Vector3`, `Matrix4x4`, `Quaternion`), which Bepu takes directly.
   `Silk.NET.Maths` stays at the edges of Silk.NET APIs (window and swapchain sizes).
 - **Anything every peer must compute alike** uses `DeterministicMath` (below), never `System.Random` or platform maths.
@@ -811,8 +817,8 @@ it was 4 x 10^13 (5 TB at one bit each).
   about a tenth of a voxel, which meets none of the 10 sub-rows an edit measures a voxel on each way, changes nothing),
   walls and caves come in voxel steps, and a piece lifted from the ground, read a centimetre at a time, keeps the
   voxels' steps. The limit is one of storage and streaming: positions in metres are floats from the match's origin, which
-  stays at the map's middle, so they step coarser far from it (about 1 mm at 8 km, 1.6 cm at 160 km) until the origin
-  moves with the camera (open work), and navigation keeps heights within ±327.67 m. Code where the world and a model meet uses the
+  follows the camera, so they keep their precision anywhere on the map (a host's bodies near a far client excepted),
+  and navigation keeps heights within ±327.67 m (open work). Code where the world and a model meet uses the
   grid's and the model's units, never a level's 2^k.
 - A column (the chunks at one x, z) is the unit of streaming. Level k (voxels of `Edge(k)` cm, chunks of 128 of them)
   loads the columns whose nearest point is within the level-0 streaming radius * 2^k of a streaming centre
@@ -1462,8 +1468,9 @@ Engine work that is known and not done:
   15, 0.40 ms at 5; their longer reach adds 0.01 to 0.03 ms of that); at night they cost 0.015 ms.
 - **Large maps** (under way): built, a map's size set in its generator's grid (up to ±160 km and 128 layers), voxels of
   1 cm to 1 m, positions kept local to a match's origin with absolute types (`WorldPoint`, `VoxelCoord`) wherever
-  they cross it, and moves of the origin (`OriginShifts`; the renderer, particles, and sound follow them). Not built:
-  the origin following the camera on its own (with a warm-up of its first move), views past 2 km, a nav grid that moves
+  they cross it, and moves of the origin following the camera (`OriginShiftSystem`, `OriginShifts`; the renderer,
+  particles, and sound follow them), positions in messages absolute. Not built: the starter's 8 km map, views past
+  2 km, a nav grid that moves
   with the players (it covers a game's area and keeps heights within ±327.67 m), and columns that hold only the layers
   with ground or edits, so a map's height costs memory only where something is.
 - **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no

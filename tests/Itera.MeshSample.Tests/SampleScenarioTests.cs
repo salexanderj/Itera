@@ -159,7 +159,11 @@ public sealed class SampleScenarioTests
         match.Step(60);
 
         var after = Fox(match.World);
-        Assert.Equal(SampleFoxSystem.CircleMetres, Vector3.Distance(after, SampleFoxSystem.Middle), 1e-3f);
+        Assert.Equal(
+            SampleFoxSystem.CircleMetres,
+            Vector3.Distance(after, AtMiddle.Local(SampleFoxSystem.Middle)),
+            1e-3f
+        );
         Assert.Equal(SampleFoxSystem.Speed, Vector3.Distance(before, after), 0.05f);
     }
 

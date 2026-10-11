@@ -46,7 +46,11 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   climbing past its top pulls up onto it where the body has room (up, then over the edge, through the mover); a wall
   that ends lets go. `pos` and `tp` are its commands (`tp` takes x y z [yaw pitch],
   the form `pos` prints, `CameraPoseText`, or a game's named places with their eye, yaw, and pitch: the starter's are its
-  benchmark views; all absolute, metres from the map's middle whatever the match's origin, `WorldPoint`).
+  benchmark views; all absolute, metres from the map's middle whatever the match's origin, `WorldPoint`); a `tp` to an
+  eye `Engine:Origin:ShiftMetres` or more from the origin asks `OriginShiftSystem` to move the origin there at the next
+  step's start (`OriginShifts.RequestFollow`), before the jump, so a jump of any length lands exactly; the jump moves
+  the fly camera and the active camera with the player, so a second step before the next frame does not follow the
+  camera back.
 - `PlayerCameraSystem` (frame) puts the active camera at the eye between the last two steps, looking where the command
   looks plus the mouse since the step, or behind the right shoulder (`ThirdPersonCamera`: 2.5 m back, 1.5 to 5 m by the
   wheel, pulled in by voxels); it makes the camera entity from a start pose (`CameraRules.CreateCamera`).
@@ -60,8 +64,15 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
 - `ToolAim` (static) gives where the local player aims from and along, and the first voxel a tool's ray meets past
   passable voxels.
 
+The origin: `OriginShiftSystem` (fixed, first, so the whole step runs in one origin) moves the match's origin to the
+active camera's whole metres once the camera is `Engine:Origin:ShiftMetres` (512) or more from it on any axis, or to
+the point a jump asked for (`tp`; then the camera is not read that step), through `OriginShifts`
+(`.claude/rules/engine.md`); its `Initialize` moves the origin a metre and back, so the first move in play does not
+compile the code; registered anywhere but first, it throws at the first step. A game that leaves it out keeps its
+first origin.
+
 The world and bodies: `StreamingCentreSystem` (fixed, last) centres streaming on the local player's eye (or the active
-camera while flying), round remote players on a host, and round loose bodies; `MapResetSystem` (fixed, first) runs
+camera while flying), round remote players on a host, and round loose bodies; `MapResetSystem` (fixed, after the origin and the game's spawns) runs
 `cleanup` (every loose body and particle) and `reset` (the world back to the seed's, counted in `WorldResets` for a
 game's systems to put their things back; without voxel terrain, the clean-up and the count only); the physics systems,
 `LooseBodySystem`'s rest handler without terrain (`ILooseBodyRest`) among them, are in `.claude/rules/physics.md`;

@@ -41,7 +41,12 @@ method) and `SessionService.BeginMessage`; the engine drops a message that trave
 Helpers: `NetEntities` (the ids a host gives the entities it sends, with a byte kind a game defines, checked alive at
 every lookup; `PlayerIds`, each session slot's player id; the `NetEntity` component), `TickRing` (the last 16 values by
 sender tick), and `JitterPlayback` (a few ticks' delay for smooth playback). Player and body replication is a game's
-today (Zorf TD's is in its archive). Each game makes its own particles and sounds. Test a game's messages with damaged
+today (Zorf TD's is in its archive). Each peer keeps its own origin (`.claude/rules/engine.md`), so a position in a
+message is absolute: `MessageWriter.WritePosition` writes a `WorldPoint` as three int32 in 1/64 cm (0.16 mm, to
+±335 km; `SessionProtocol.PositionStepsPerMetre`), `WriteLocalPosition` a local one through the peer's origin, and
+`MessageReader.ReadPosition` and `ReadLocalPosition` read them (any twelve bytes are a finite point within reach, or
+refused); the engine's own messages carry no positions. A host simulates every body in its own origin, so bodies near
+a client far from the host's camera step in coarser floats (1 mm at 10 km, 8 mm at 100 km). Each game makes its own particles and sounds. Test a game's messages with damaged
 bodies and hostile values in every field (`HostileValues`, `Watchdog` in `tests/Shared`).
 
 The commands that work only on the host are listed in the `run-game` skill.

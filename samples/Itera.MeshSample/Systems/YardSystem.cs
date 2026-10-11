@@ -24,10 +24,15 @@ public sealed class YardSystem(World world, MeshAssets assets, MeshColliders col
         foreach (var piece in Yard.Pieces)
         {
             var index = assets.Find(piece.Asset);
-            var placement = MeshPlacement.At(piece.Position, Quaternion.Identity, piece.Scale);
+            // Drawn local to the match's origin; its collider placed from its absolute point.
+            var placement = MeshPlacement.At(
+                colliders.Origin.ToLocal(piece.Position),
+                Quaternion.Identity,
+                piece.Scale
+            );
             World.Create(placement, DrawnMesh.Of(index));
-            var transform = Matrix4x4.CreateScale(piece.Scale) * Matrix4x4.CreateTranslation(piece.Position);
-            yard.Add(colliders.Add(assets[index], in transform, Yard.TagsOf), piece);
+            var scale = Matrix4x4.CreateScale(piece.Scale);
+            yard.Add(colliders.Add(assets[index], piece.Position, in scale, Yard.TagsOf), piece);
         }
     }
 

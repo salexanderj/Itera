@@ -153,6 +153,8 @@ public static class EngineServiceCollectionExtensions
         services.TryAddScoped<EcsWorld>();
         // The match's origin, which every local position of the match (the ECS's, the physics', the renderer's) is measured
         // from: one for the world, the colliders, and the mover.
+        // It starts where the game's match starts (its IOriginStart, read at the match's "origin" step, once the session has
+        // settled the seed), else at the map's middle.
         services.TryAddScoped<WorldOrigin>();
         // What moves the origin and everything kept in local positions with it (the game's IOriginShiftHandlers last).
         services.TryAddScoped<OriginShifts>();

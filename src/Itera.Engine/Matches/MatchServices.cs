@@ -3,6 +3,7 @@ using Itera.Engine.Commands;
 using Itera.Engine.Diagnostics;
 using Itera.Engine.Ecs;
 using Itera.Engine.Loading;
+using Itera.Engine.Maths;
 using Itera.Engine.Modding;
 using Itera.Engine.Navigation;
 using Itera.Engine.Networking;
@@ -165,6 +166,18 @@ public sealed partial class MatchServices
     }
 
     /// <summary>
+    /// Puts the match's first origin where the game's match starts (its <see cref="IOriginStart"/>, which may read the
+    /// seed the session settled), before anything keeps a local position; without one it stays at the map's middle.
+    /// </summary>
+    private void StartOrigin()
+    {
+        if (_scope.GetService<IOriginStart>() is { } start)
+        {
+            _scope.GetRequiredService<WorldOrigin>().StartAt(start.Start);
+        }
+    }
+
+    /// <summary>
     /// The match's other steps, once the session has settled the match (at once offline or hosting; after the download
     /// when joining). The voxel world starts from the match's seed; the joined world step loads the host's edits (or the
     /// named save's) into it, and without terrain only reads what the host sent; navigation starts with the seed and
@@ -177,7 +190,11 @@ public sealed partial class MatchServices
     /// </summary>
     internal IReadOnlyList<EngineStep> CreateWorldSteps(MatchGpu gpu, Func<double> now)
     {
-        var steps = new List<EngineStep> { new("physics", Physics.Initialize, Physics.Dispose) };
+        var steps = new List<EngineStep>
+        {
+            new("origin", StartOrigin, () => { }),
+            new("physics", Physics.Initialize, Physics.Dispose),
+        };
         if (Terrain is { } terrain)
         {
             steps.Add(new("voxels", () => InitializeVoxels(terrain.Voxels), terrain.Voxels.Dispose));

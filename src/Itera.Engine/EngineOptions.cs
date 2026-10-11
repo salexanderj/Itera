@@ -30,6 +30,9 @@ public sealed class EngineOptions
     /// <summary>Camera settings.</summary>
     public CameraSettings Camera { get; set; } = new();
 
+    /// <summary>The match's origin, which positions are measured from (<c>Engine:Origin</c>).</summary>
+    public OriginSettings Origin { get; set; } = new();
+
     /// <summary>Loose bodies (<c>Engine:Physics</c>).</summary>
     public PhysicsSettings Physics { get; set; } = new();
 
@@ -507,6 +510,17 @@ public sealed class CameraSettings
     /// flight), in metres: it must clear the game's ground along a 100 m circle round the origin.
     /// </summary>
     public double CircleHeightMetres { get; set; } = 20;
+}
+
+/// <summary>The match's origin, which positions are measured from (<c>OriginShifts</c>).</summary>
+public sealed class OriginSettings
+{
+    /// <summary>
+    /// How far, in metres along any axis, the active camera may go from the match's origin before the origin moves to
+    /// it (<c>OriginShiftSystem</c>): 512 by default, 8 to 4096. Floats near the camera stay fine (a step of 31
+    /// micrometres just under 512 m, 61 just over).
+    /// </summary>
+    public double ShiftMetres { get; set; } = 512;
 }
 
 /// <summary>Loose bodies: pieces of voxels that Bepu moves until they rest and go back into the grid.</summary>

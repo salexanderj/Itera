@@ -71,7 +71,8 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
    `FoxRoute.Centre`) and in the positions listed in the game's `ChecklistTests`, which fails for a vector field in
    neither of its lists; an engine component's goes in `OriginShifts`' moves and `ShiftedComponents`
    (`OriginShiftsTests`). A place the system knows in absolute terms is a `WorldPoint`, made local through the match's
-   `WorldOrigin`.
+   `WorldOrigin` when it is used (a local kept from the start goes stale at the first move). The game's first origin is
+   its `IOriginStart` (the starter's `StartPose`), and `OriginShiftSystem` comes first in its fixed systems.
 
 ## An option
 
@@ -105,7 +106,9 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 1. A kind byte of 64 or more (`SessionProtocol`; below 64 is the engine's), and the way it may travel (host to
    clients, clients to host, or both).
 2. A handler in the match's scope: `GameMessageHandler` for one kind, or an `ISessionGameHandler`
-   (`.claude/rules/sessions.md`); sending through `SessionService.BeginMessage`.
+   (`.claude/rules/sessions.md`); sending through `SessionService.BeginMessage`. A position goes absolute, since each
+   peer has its own origin: `writer.WriteLocalPosition(origin, local)` and `reader.ReadLocalPosition(origin)` with the
+   match's `WorldOrigin` (or `WritePosition` and `ReadPosition` for a `WorldPoint`), never a local `Vector3` as floats.
 3. Tests in `tests/Game.Tests` that send damaged bodies and hostile values in every field, each row under the
    `Watchdog` (`HostileValues`, `Watchdog` in `tests/Shared`).
 4. A change to the engine's own messages raises `SessionProtocol.Version` and pins the new fingerprint in

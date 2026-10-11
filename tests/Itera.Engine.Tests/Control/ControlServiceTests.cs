@@ -10,6 +10,7 @@ using Itera.Engine.Control;
 using Itera.Engine.Diagnostics;
 using Itera.Engine.Input;
 using Itera.Engine.Loading;
+using Itera.Engine.Maths;
 using Itera.Engine.Networking;
 using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.Shaders;
@@ -497,6 +498,22 @@ public sealed class ControlServiceTests : IDisposable
     }
 
     [Fact]
+    public void Status_gives_the_origin_and_the_camera_absolute()
+    {
+        var view = new RenderView(Options.Create(new EngineOptions()));
+        view.SetCamera(CameraView.Default with { Position = new Vector3(1.5f, 2, -3.25f) });
+        var origin = new WorldOrigin();
+        origin.StartAt(new WorldPoint(150_000, 20, -400));
+        var service = Start(view: view, origin: origin);
+        using var client = Connect(service);
+
+        var reply = Ask(client, """{"op":"status"}""");
+
+        Assert.Equal([150_000.0, 20, -400], Doubles(reply.GetProperty("origin")));
+        Assert.Equal([150_001.5, 22, -403.25], Doubles(reply.GetProperty("camera_position")));
+    }
+
+    [Fact]
     public void Status_without_a_living_player_leaves_the_player_out()
     {
         using var world = World.Create();
@@ -525,7 +542,16 @@ public sealed class ControlServiceTests : IDisposable
 
     private static float[] Floats(JsonElement array) => [.. array.EnumerateArray().Select(e => e.GetSingle())];
 
-    private ControlService Create(bool enabled, int port, Func<World?>? world = null, FixedStepAccumulator? time = null)
+    private static double[] Doubles(JsonElement array) => [.. array.EnumerateArray().Select(e => e.GetDouble())];
+
+    private ControlService Create(
+        bool enabled,
+        int port,
+        Func<World?>? world = null,
+        FixedStepAccumulator? time = null,
+        RenderView? view = null,
+        WorldOrigin? origin = null
+    )
     {
         _service = new ControlService(
             enabled,
@@ -534,7 +560,7 @@ public sealed class ControlServiceTests : IDisposable
             _log,
             _loading,
             _gpu,
-            new RenderView(Options.Create(new EngineOptions())),
+            view ?? new RenderView(Options.Create(new EngineOptions())),
             new Screenshots(Path.Combine(Path.GetTempPath(), "itera-test-screenshots")),
             new ShaderReloads(new ShaderCompiler(NullLogger<ShaderCompiler>.Instance, Path.GetTempPath())),
             _input,
@@ -542,14 +568,20 @@ public sealed class ControlServiceTests : IDisposable
             () => { },
             _serviceLogger,
             world: world,
-            time: time
+            time: time,
+            origin: () => origin
         );
         return _service;
     }
 
-    private ControlService Start(Func<World?>? world = null, FixedStepAccumulator? time = null)
+    private ControlService Start(
+        Func<World?>? world = null,
+        FixedStepAccumulator? time = null,
+        RenderView? view = null,
+        WorldOrigin? origin = null
+    )
     {
-        var service = Create(enabled: true, port: 0, world, time);
+        var service = Create(enabled: true, port: 0, world, time, view, origin);
         service.Initialize();
         Assert.True(service.Listening);
         return service;

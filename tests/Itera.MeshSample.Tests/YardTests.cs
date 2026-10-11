@@ -90,13 +90,13 @@ public sealed class YardTests
         foreach (var piece in Yard.Pieces.Where(piece => piece.Asset != Yard.Ground))
         {
             var asset = _assets[_assets.Find(piece.Asset)];
-            var min = piece.Position + asset.BoundsMin * piece.Scale - new Vector3(room);
-            var max = piece.Position + asset.BoundsMax * piece.Scale + new Vector3(room);
+            var min = AtMiddle.Local(piece.Position) + asset.BoundsMin * piece.Scale - new Vector3(room);
+            var max = AtMiddle.Local(piece.Position) + asset.BoundsMax * piece.Scale + new Vector3(room);
             for (var step = 0; step < 360; step++)
             {
                 var angle = step * MathF.PI / 180;
                 var at =
-                    SampleFoxSystem.Middle
+                    AtMiddle.Local(SampleFoxSystem.Middle)
                     + new Vector3(MathF.Cos(angle), 0, MathF.Sin(angle)) * SampleFoxSystem.CircleMetres;
                 var inside = at.X > min.X && at.X < max.X && at.Z > min.Z && at.Z < max.Z;
                 Assert.False(inside, $"The fox's circle passes within {room} m of {piece.Asset} at {piece.Position}.");
@@ -145,8 +145,8 @@ public sealed class YardTests
             {
                 var asset = _assets[_assets.Find(piece.Asset)];
                 return (
-                    Min: piece.Position + asset.BoundsMin * piece.Scale,
-                    Max: piece.Position + asset.BoundsMax * piece.Scale
+                    Min: AtMiddle.Local(piece.Position) + asset.BoundsMin * piece.Scale,
+                    Max: AtMiddle.Local(piece.Position) + asset.BoundsMax * piece.Scale
                 );
             })
             .ToList();

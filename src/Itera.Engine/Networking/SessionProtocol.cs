@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
 using System.Globalization;
+using System.Numerics;
 using System.Text;
+using Itera.Engine.Maths;
 using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Networking;
@@ -112,6 +114,15 @@ internal static class SessionProtocol
 
     /// <summary>The longest string in a message, in UTF-8 bytes.</summary>
     public const int MaxStringBytes = 512;
+
+    /// <summary>
+    /// A position's steps a metre in a message (<see cref="MessageWriter.WritePosition"/>): 1/64 cm, 0.16 mm, so three
+    /// int32 reach ±335 km, past the farthest map (±160 km).
+    /// </summary>
+    public const int PositionStepsPerMetre = 6400;
+
+    /// <summary>The farthest a position in a message may lie from the map's middle on any axis, in metres.</summary>
+    public const double MaxPositionMetres = (double)int.MaxValue / PositionStepsPerMetre;
 
     /// <summary>Bytes of join payload per <see cref="MessageKind.JoinChunk"/>.</summary>
     public const int JoinChunkBytes = 16 * 1024;
@@ -313,6 +324,25 @@ public sealed class MessageWriter
 
     public void WriteFloat(float value) => BinaryPrimitives.WriteSingleLittleEndian(Take(4), value);
 
+    /// <summary>
+    /// An absolute position as three int32 in 1/64 cm (<see cref="SessionProtocol.PositionStepsPerMetre"/>), the same
+    /// whatever either peer's origin; throws when it is not finite or lies past
+    /// <see cref="SessionProtocol.MaxPositionMetres"/>. A game's messages use it (the engine's own carry no positions).
+    /// </summary>
+    public void WritePosition(in WorldPoint point)
+    {
+        WriteInt(PositionSteps(point.X, nameof(point)));
+        WriteInt(PositionSteps(point.Y, nameof(point)));
+        WriteInt(PositionSteps(point.Z, nameof(point)));
+    }
+
+    /// <summary>A local position (from <paramref name="origin"/>, this peer's) as <see cref="WritePosition"/> writes it.</summary>
+    public void WriteLocalPosition(WorldOrigin origin, Vector3 local)
+    {
+        ArgumentNullException.ThrowIfNull(origin);
+        WritePosition(origin.ToWorld(local));
+    }
+
     /// <summary>A non-negative number in 1 to 5 bytes, 7 bits each, low first (as <c>BinaryWriter.Write7BitEncodedInt</c>).</summary>
     public void WriteVarInt(int value)
     {
@@ -339,6 +369,14 @@ public sealed class MessageWriter
 
         BinaryPrimitives.WriteUInt16LittleEndian(Take(2), (ushort)count);
         Encoding.UTF8.GetBytes(value, Take(count));
+    }
+
+    private static int PositionSteps(double metres, string name)
+    {
+        var steps = Math.Round(metres * SessionProtocol.PositionStepsPerMetre);
+        return Math.Abs(steps) <= int.MaxValue
+            ? (int)steps
+            : throw new ArgumentException($"A message cannot carry a position at {metres} m.", name);
     }
 
     private Span<byte> Take(int count)
@@ -413,6 +451,30 @@ public ref struct MessageReader(ReadOnlySpan<byte> data)
 
     public float ReadFloat() => BinaryPrimitives.ReadSingleLittleEndian(Take(4));
 
+    /// <summary>
+    /// A position <see cref="MessageWriter.WritePosition"/> wrote: absolute, within
+    /// <see cref="SessionProtocol.MaxPositionMetres"/> on every axis, which may lie off the map; an axis of
+    /// <see cref="int.MinValue"/>, which the writer never writes, is refused.
+    /// </summary>
+    public WorldPoint ReadPosition()
+    {
+        var x = ReadPositionSteps();
+        var y = ReadPositionSteps();
+        var z = ReadPositionSteps();
+        return new WorldPoint(
+            (double)x / SessionProtocol.PositionStepsPerMetre,
+            (double)y / SessionProtocol.PositionStepsPerMetre,
+            (double)z / SessionProtocol.PositionStepsPerMetre
+        );
+    }
+
+    /// <summary>A position <see cref="ReadPosition"/> reads, local to <paramref name="origin"/> (this peer's).</summary>
+    public Vector3 ReadLocalPosition(WorldOrigin origin)
+    {
+        ArgumentNullException.ThrowIfNull(origin);
+        return origin.ToLocal(ReadPosition());
+    }
+
     /// <summary>Everything not read yet.</summary>
     public ReadOnlySpan<byte> ReadRest() => Take(Remaining);
 
@@ -423,6 +485,12 @@ public ref struct MessageReader(ReadOnlySpan<byte> data)
         {
             throw Invalid(string.Create(CultureInfo.InvariantCulture, $"The message has {Remaining} bytes too many."));
         }
+    }
+
+    private int ReadPositionSteps()
+    {
+        var steps = ReadInt();
+        return steps != int.MinValue ? steps : throw Invalid("A position is out of range.");
     }
 
     private ReadOnlySpan<byte> Take(int count)

@@ -21,7 +21,8 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
   the game's `IOriginShiftHandler`).
 - The player starts at the world's middle, its eye a person's height over the ground or a boulder there
   (`GameGenerator.SurfaceHeight`), looking along -z (`StartPose`; `Game:World:CameraPose` sets another, which must lie in
-  the play area). `PlayerSpawnSystem` makes it with the engine's components and a `Climber`; the engine's systems
+  the play area). The match's first origin is the start eye's whole metres (`StartPose` is the game's `IOriginStart`),
+  and `OriginShiftSystem` moves it with the camera from there. `PlayerSpawnSystem` makes it with the engine's components and a `Climber`; the engine's systems
   move it (W A S D, Shift, Space, Ctrl to crouch, Tab for third person; the console's `fly` for the fly camera).
 - Climbing (the engine's `ClimbingMode`, registered as the game's `IMovementMode` with the tag it climbs; stone, the
   boulders, tagged climbable by `GameSurfaceTags`):
@@ -48,7 +49,8 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
 
 Registered in `GameServiceCollectionExtensions` in run order; `tests/Game.Tests/SystemOrderTests` checks the order.
 
-- Fixed: `PlayerSpawnSystem` (makes the player at the start), `FoxSystem` (puts the fox at the start, then moves it and
+- Fixed: `OriginShiftSystem` (the origin moves to the camera when it has gone 512 m, before any other system of the
+  step), `PlayerSpawnSystem` (makes the player at the start), `FoxSystem` (puts the fox at the start, then moves it and
   chooses its clip), `MapResetSystem` (`cleanup`, `reset`), `DebugBallSystem` (`balls`), `PlayerInputSystem`,
   `PhysicsReadSystem`, `PlayerMovementSystem`, `StandInSystem`, `LooseBodySystem`, `MeshAnimatorSystem` (the clips moved
   on, after every system that chooses one), `StreamingCentreSystem`.
@@ -76,4 +78,4 @@ goes in this order where its comments say why, with a behaviour test and a zero-
   SharpGLTF's own world matrices; its compressed textures made from its image), `BenchmarkViewsTests`, and
   `ScenarioTests` (the starter played without a window through `HeadlessMatch`; the fox read, drawn posed, its clip
   moving with the steps, walking its circle; the boulder nearest the start climbed onto; a walk with the origin
-  following the player against one without).
+  following the camera every 8 m against one where it stays; a flight of 2.8 km, the origin following the camera).

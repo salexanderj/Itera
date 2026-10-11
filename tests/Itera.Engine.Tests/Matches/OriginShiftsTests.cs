@@ -257,6 +257,27 @@ public sealed class OriginShiftsTests : IDisposable
     }
 
     [Fact]
+    public void Following_a_point_moves_the_origin_only_once_it_is_shift_metres_out()
+    {
+        Assert.Equal(512, _shifts.ShiftMetres);
+
+        // A local point (the camera's) and an absolute one (a tp's) under 512 m away on every axis leave it.
+        Assert.False(_shifts.Follow(new Vector3(511.9f, -511.9f, 0)));
+        Assert.False(_shifts.Follow(new WorldPoint(-511.9, 0, 511.9)));
+        Assert.Equal(0, _origin.Moves);
+
+        Assert.True(_shifts.Follow(new Vector3(0, 0, -512)));
+        Assert.Equal(new VoxelCoord(0, 0, -51_200), _origin.Centimetres);
+
+        // An absolute point is measured from where the origin is now.
+        Assert.False(_shifts.Follow(new WorldPoint(0, 0, -1_000)));
+        Assert.True(_shifts.Follow(new WorldPoint(150_000.4, 20, -1_000)));
+        Assert.Equal(new VoxelCoord(15_000_000, 2_000, -100_000), _origin.Centimetres);
+        var local = _origin.ToLocal(new WorldPoint(150_000.4, 20, -1_000));
+        Assert.Equal((0.4f, 0f, 0f), (local.X, local.Y, local.Z));
+    }
+
+    [Fact]
     public void A_shift_allocates_nothing()
     {
         // Something of each kind it moves: components, a body and a static, a flash, a queued burst, an attractor, and a

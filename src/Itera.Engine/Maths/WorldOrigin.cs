@@ -24,6 +24,42 @@ public sealed class WorldOrigin
     /// <summary>How many times the origin has moved this match.</summary>
     public long Moves { get; private set; }
 
+    /// <summary>The farthest the origin may lie from the map's middle on any axis, in metres: the edit format's reach.</summary>
+    public const double MostMetres = 167_772.16;
+
+    /// <summary>
+    /// Puts the origin on the whole metres nearest <paramref name="start"/>, where the match starts
+    /// (<see cref="IOriginStart"/>): a match's first origin, set at its "origin" step, before anything keeps a local
+    /// position; it counts as no move.
+    /// </summary>
+    /// <exception cref="ArgumentException">The point is not finite or lies past <see cref="MostMetres"/>.</exception>
+    /// <exception cref="InvalidOperationException">The origin has moved already.</exception>
+    internal void StartAt(in WorldPoint start)
+    {
+        if (
+            !start.IsFinite
+            || Math.Abs(start.X) > MostMetres
+            || Math.Abs(start.Y) > MostMetres
+            || Math.Abs(start.Z) > MostMetres
+        )
+        {
+            throw new ArgumentException($"A match cannot start its origin at {start}.", nameof(start));
+        }
+
+        if (Moves > 0)
+        {
+            throw new InvalidOperationException("The origin starts only before it has moved.");
+        }
+
+        Centimetres = WholeMetres(start);
+    }
+
+    /// <summary>The whole metres nearest <paramref name="point"/> (halves away from zero), in centimetres.</summary>
+    internal static VoxelCoord WholeMetres(in WorldPoint point) => new(Whole(point.X), Whole(point.Y), Whole(point.Z));
+
+    private static int Whole(double metres) =>
+        (int)Math.Round(metres, MidpointRounding.AwayFromZero) * VoxelConstants.CentimetresPerMetre;
+
     /// <summary>The local position of the absolute point <paramref name="point"/>.</summary>
     public Vector3 ToLocal(in WorldPoint point)
     {

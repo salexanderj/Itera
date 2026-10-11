@@ -14,8 +14,11 @@ namespace Game;
 /// <param name="Eye">The eye, an absolute point.</param>
 /// <param name="Yaw">The yaw, in radians.</param>
 /// <param name="Pitch">The pitch, in radians.</param>
-public sealed record StartPose(WorldPoint Eye, float Yaw, float Pitch)
+public sealed record StartPose(WorldPoint Eye, float Yaw, float Pitch) : IOriginStart
 {
+    /// <summary>Where the match starts: the eye, which the match's first origin is put on the whole metres nearest.</summary>
+    public WorldPoint Start => Eye;
+
     /// <summary>The start for <paramref name="options"/> in the world of <paramref name="seed"/>.</summary>
     public static StartPose For(WorldOptions options, ulong seed, float eyeMetres)
     {

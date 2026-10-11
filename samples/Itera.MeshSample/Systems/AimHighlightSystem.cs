@@ -3,6 +3,7 @@ using Arch.Core;
 using Arch.System;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
+using Itera.Engine.Maths;
 using Itera.Engine.Physics;
 using Itera.Engine.Systems;
 using Itera.Modding;
@@ -22,7 +23,8 @@ public sealed class AimHighlightSystem(
     World world,
     CollisionSources collisions,
     YardColliders yard,
-    AimHighlight highlight
+    AimHighlight highlight,
+    WorldOrigin origin
 ) : BaseSystem<World, FrameTime>(world), IFrameUpdateSystem
 {
     /// <summary>How far from the eye a block is in reach, in metres.</summary>
@@ -52,7 +54,7 @@ public sealed class AimHighlightSystem(
                 // A block is a cube from its place to its place plus its scale.
                 highlight.Show(
                     Matrix4x4.CreateScale(piece.Scale + 2 * RimMetres)
-                        * Matrix4x4.CreateTranslation(piece.Position - new Vector3(RimMetres))
+                        * Matrix4x4.CreateTranslation(origin.ToLocal(piece.Position) - new Vector3(RimMetres))
                 );
                 return;
             }

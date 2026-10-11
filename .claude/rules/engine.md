@@ -58,8 +58,14 @@ sets it), and then the game's
 `IOriginShiftHandler`s in their registration order (the starter's `FoxRouteShift`). It moves only between steps and
 frames, or in the first fixed system's update (`EcsWorld.OriginMayMove`; a move asked anywhere else throws, and asking
 for the place it is at returns false wherever it is asked), so every system of a step or a frame sees one origin; it allocates nothing but its Debug line. A position far from the new origin rounds to its
-floats there. Mods are not told. Nothing moves it on its own yet (ARCHITECTURE.md's open work): tests and the
-console's run-only `origin move DX DY DZ` (`EngineCommands`, with `origin` printing it and the camera's place) do. The
-renderer, the particles' GPU pool, and the sound follow it (`.claude/rules/rendering.md`, "Under a moved origin").
+floats there. Mods are not told. A match's first origin is where the game's match starts: its `IOriginStart` (the
+starter's `StartPose`, its eye), read at the match's first step, "origin", once the session has settled the seed; with
+none, the map's middle. Then `OriginShiftSystem` (`.claude/rules/systems.md`) follows the active camera:
+`OriginShifts.Follow` moves the origin to the camera's whole metres once it is `Engine:Origin:ShiftMetres` (512; 8 to
+4096) out on any axis, and a jump the next step makes (`tp`) asks first (`RequestFollow`), so the origin goes to the
+jump's end, not back to the camera still where it was. The console's run-only `origin move DX DY DZ` (`EngineCommands`,
+with `origin` printing it and the camera's place) moves it too. The renderer, the particles' GPU pool, and the sound
+follow it (`.claude/rules/rendering.md`, "Under a moved origin"); positions in messages are absolute
+(`.claude/rules/sessions.md`).
 
 The other folders are in their areas' files in `.claude/rules/`.
