@@ -17,6 +17,7 @@ namespace Itera.Engine.UI.Toolkit;
 public sealed partial class UiToolkit : IDisposable
 {
     private readonly AudioService? _audio;
+    private readonly UiFonts _fonts;
     private readonly ILogger<UiToolkit> _logger;
     private int _hoverRecipe = -1;
     private int _pressRecipe = -1;
@@ -36,11 +37,11 @@ public sealed partial class UiToolkit : IDisposable
         ArgumentNullException.ThrowIfNull(options);
         _logger = logger;
         _audio = audio;
+        _fonts = fonts;
         Typefaces = new UiTypefaces(() => fonts.Mono);
         Measurer = new UiTextMeasurer(Typefaces);
         Painter = new UiPainter(Typefaces);
         Style = new UiStyle(options.Value.Ui.FontPixels, colours);
-        Scale = options.Value.Ui.Scale;
     }
 
     /// <summary>The UI's typefaces, with fallbacks for characters they lack.</summary>
@@ -55,8 +56,15 @@ public sealed partial class UiToolkit : IDisposable
     /// <summary>The style a layer starts with; a layer may set its own (<see cref="Ui.Style"/>).</summary>
     public UiStyle Style { get; set; }
 
-    /// <summary>The UI scale, 0.75 to 1.5: units grow with it (<see cref="UnitPixels"/>).</summary>
-    public float Scale { get; set; }
+    /// <summary>
+    /// The UI scale, 0.75 to 1.5: units grow with it (<see cref="UnitPixels"/>), here and in the layers that size their
+    /// text by <see cref="UiFonts"/> (the console, the stats line, the loading list), which keeps it.
+    /// </summary>
+    public float Scale
+    {
+        get => _fonts.UiScale;
+        set => _fonts.UiScale = value;
+    }
 
     /// <summary>The recipe played as the pointer comes onto an element; null for none.</summary>
     public string? HoverSound
@@ -81,7 +89,7 @@ public sealed partial class UiToolkit : IDisposable
     }
 
     /// <summary>Screen pixels a unit on a screen <paramref name="screenHeight"/> pixels high (<see cref="Ui.UnitPixelsFor"/>).</summary>
-    public float UnitPixels(float screenHeight) => Ui.UnitPixelsFor(screenHeight, Scale);
+    public float UnitPixels(float screenHeight) => _fonts.UnitPixels(screenHeight);
 
     /// <summary>A UI for a layer: the toolkit's measurer, and its style.</summary>
     public Ui CreateUi() => new(Measurer, Style);

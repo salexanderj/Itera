@@ -173,6 +173,45 @@ public sealed class UiInputTests
         Assert.Equal(cells[5], _ui.Focused);
     }
 
+    /// <summary>A page whose button opens the next page with its box typing: the box is declared only from then.</summary>
+    [Fact]
+    public void Typing_started_for_a_box_the_next_layout_declares_reaches_it()
+    {
+        var other = new TextEntry(40);
+        var page = 0;
+        void Page(UiInput input)
+        {
+            _ui.Begin(1920, 1080, 1, input with { Seconds = _seconds });
+            if (page == 0 && _ui.Button(Play, "Play", box: UiBox.Fixed(200, 40)).Clicked)
+            {
+                page = 1;
+                _ui.StartTyping(Name);
+            }
+            else if (page == 1)
+            {
+                _ui.TextBox(Name, other, "");
+            }
+
+            _ui.End();
+        }
+
+        Page(default);
+        Page(new UiInput(new Vector2(10, 10), true, Pressed: true, Released: true));
+        Assert.Equal(1, page);
+        Assert.Null(_ui.Typing);
+        Page(new UiInput(new Vector2(10, 10), true));
+        Assert.Same(other, _ui.Typing);
+
+        // A start for a box no layout declares is dropped after the next one.
+        _ui.StopTyping();
+        page = 2;
+        _ui.StartTyping(Name);
+        Page(default);
+        page = 1;
+        Page(default);
+        Assert.Null(_ui.Typing);
+    }
+
     [Fact]
     public void A_text_box_takes_the_typing_when_pressed_and_loses_it_on_a_press_elsewhere()
     {

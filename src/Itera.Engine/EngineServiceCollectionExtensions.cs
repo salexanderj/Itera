@@ -218,6 +218,9 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton(MenuStyle.Plain);
         // What toolkit layers share (the engine's menu among them, and a game's).
         services.TryAddSingleton<UiToolkit>();
+        // What a game adds to the engine's menu: its pages and its Settings rows.
+        services.TryAddSingleton<MenuPages>();
+        services.TryAddSingleton<SettingsRows>();
         services.TryAddSingleton<MenuLayer>();
         // The engine's menu, unless the game registers its own IMenu after this (the last registered is the one used).
         services.TryAddSingleton<IMenu>(sp => sp.GetRequiredService<MenuLayer>());

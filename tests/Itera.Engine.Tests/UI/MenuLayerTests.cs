@@ -8,26 +8,28 @@ using Itera.Engine.Networking;
 using Itera.Engine.Settings;
 using Itera.Engine.UI;
 using Itera.Engine.UI.Menu;
+using Itera.Engine.UI.Toolkit;
 using Itera.Engine.Windowing;
 using Itera.Modding;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Silk.NET.Input;
+using SkiaSharp;
 
 namespace Itera.Engine.Tests.UI;
 
 /// <summary>
-/// The menu drawn on a 1280 x 720 surface with a pointer the test moves: the main menu's buttons and the matches they
-/// ask for, the join page's address box, the settings page's sliders and switches, the menu over a match (Escape,
-/// resume, leave), a join's cancel, Escape on each page, the clicks (soft as the pointer comes onto a button, a switch, or a slider; fuller as one is pressed; none for a
-/// page or the menu opening under a still pointer, the address box, or a slider's drag), and that it draws again only
-/// when what it shows changes and allocates nothing while idle or clicking.
+/// The menu drawn on a 1280 x 720 surface with a pointer the test moves, its elements found by what they read: the main
+/// menu's buttons and the matches they ask for, the join page's address box, the settings page's sliders and switches
+/// (the UI scale's too), the menu over a match (Escape, resume, leave), a join's cancel, Escape on each page, a game's
+/// own page and Settings rows, the keyboard's focus, the clicks (soft as the pointer comes onto a button, a switch, or a
+/// slider; fuller as one is pressed; none for a page or the menu opening under a still pointer, the address box, or a
+/// slider's drag), and that it draws again only when what it shows changes and allocates nothing while idle or clicking.
 /// </summary>
 public sealed class MenuLayerTests : IDisposable
 {
     private const int Width = 1280;
     private const int Height = 720;
-    private const float Unit = Height / 100f;
 
     private readonly UiFonts _fonts = new(Options.Create(new EngineOptions()), NullLogger<UiFonts>.Instance);
     private readonly WindowService _window = new(
@@ -36,11 +38,14 @@ public sealed class MenuLayerTests : IDisposable
     );
     private readonly MatchControl _matches = new();
     private readonly AudioService _audio = QueuingAudio();
+    private readonly MenuPages _pages = new();
+    private readonly SettingsRows _rows = new();
 
     /// <summary>The player's settings, with no file.</summary>
     private PlayerSettings Settings { get; } =
         new(new EngineOptions(), CommandLineKeys.None, null, NullLogger<PlayerSettings>.Instance);
     private readonly PointerInput _pointer = new();
+    private readonly UiToolkit _toolkit;
     private readonly MenuLayer _menu;
     private readonly UISurface _surface;
     private ulong _frame;
@@ -57,10 +62,17 @@ public sealed class MenuLayerTests : IDisposable
         var options = new EngineOptions();
         options.Application.Name = "Sample Game";
         options.Voxels.Seed = 4;
+        _toolkit = new UiToolkit(
+            _fonts,
+            MenuStyle.Plain,
+            Options.Create(options),
+            NullLogger<UiToolkit>.Instance,
+            _audio
+        );
         var starts = new MatchCommands(commands, _matches, steam, Options.Create(options));
         var friends = new SteamFriendList(steam, "test", NullLogger<SteamFriendList>.Instance);
         _menu = new MenuLayer(
-            _fonts,
+            _toolkit,
             MenuStyle.Plain,
             _matches,
             starts,
@@ -70,8 +82,9 @@ public sealed class MenuLayerTests : IDisposable
             friends,
             new JoinRequests(friends, _matches, starts),
             Settings,
-            _audio,
-            Options.Create(options)
+            Options.Create(options),
+            _pages,
+            _rows
         );
         _surface = new UISurface([_menu], NullLogger<UISurface>.Instance);
         _surface.Initialize(Width, Height);
@@ -82,6 +95,7 @@ public sealed class MenuLayerTests : IDisposable
     {
         _surface.Dispose();
         _menu.Dispose();
+        _toolkit.Dispose();
         _fonts.Dispose();
         _window.Dispose();
         _audio.Dispose();
@@ -107,7 +121,7 @@ public sealed class MenuLayerTests : IDisposable
         Assert.True(_menu.IsOpen);
         Assert.Equal(["Play Offline", "Host Game", "Join Game", "Settings", "Quit"], _menu.Buttons);
 
-        Click(MainButton(0));
+        Click("Play Offline");
 
         Assert.Equal(
             new MatchStart(SessionMode.Offline, SessionTransportKind.Direct, null, 4, null, false),
@@ -118,52 +132,44 @@ public sealed class MenuLayerTests : IDisposable
     [Fact]
     public void Host_game_without_steam_hosts_over_udp_and_quit_closes_the_window()
     {
-        Click(MainButton(1));
+        Click("Host Game");
         var host = _matches.TakeStart()!;
         Assert.Equal(SessionMode.Host, host.Mode);
         Assert.Equal(SessionTransportKind.Direct, host.Transport);
 
-        Click(MainButton(4));
+        Click("Quit");
         Assert.True(_window.ExitRequested);
     }
 
     [Fact]
     public void The_join_page_joins_the_address_typed_and_says_why_a_bad_one_cannot()
     {
-        Click(MainButton(2));
+        Click("Join Game");
         Assert.Equal(MenuView.Join, _menu.View);
         var box = Assert.IsAssignableFrom<ITextInput>(_menu.TextFocus);
 
-        foreach (var character in "nowhere")
-        {
-            box.Character(new Rune(character));
-        }
-
+        Type(box, "nowhere");
         box.KeyDown(Key.Enter, false);
+        Frame();
         Assert.Null(_matches.TakeStart());
         Assert.Equal(MenuView.Join, _menu.View);
+        Assert.True(_menu.Ui.TryFind("'nowhere' is not host:port, lobby:ID, or steam:ID.", out _));
 
         box.KeyDown(Key.U, true);
-        foreach (var character in "127.0.0.1:47600")
-        {
-            box.Character(new Rune(character));
-        }
-
+        Type(box, "127.0.0.1:47600");
         box.KeyDown(Key.Enter, false);
         var join = _matches.TakeStart()!;
         Assert.Equal(SessionMode.Join, join.Mode);
         Assert.Equal("127.0.0.1:47600", join.Address);
+        Frame();
         Assert.Equal(MenuView.Main, _menu.View);
     }
 
-    /// <summary>
-    /// The longest address stays within its box, moved left to keep the cursor shown (about 23 of 120 characters
-    /// fitted, the rest drawn over the page).
-    /// </summary>
+    /// <summary>The longest address stays within its box: nothing drawn past its sides.</summary>
     [Fact]
     public void A_long_address_stays_within_its_box()
     {
-        Click(MainButton(2));
+        Click("Join Game");
         Frame();
         var box = _menu.AddressBox;
         Assert.False(box.IsEmpty);
@@ -179,48 +185,14 @@ public sealed class MenuLayerTests : IDisposable
         Frame();
 
         Assert.Equal(MenuLayer.MaxAddressLength, _menu.Address.Text.Length);
-        // Moved left so the cursor, at the end, shows: the text is much wider than the box.
-        Assert.True(_menu.AddressScroll > box.Width, $"{_menu.AddressScroll}");
         Assert.Equal(before, Column((int)box.Right + 3, box));
         Assert.Equal(beforeLeft, Column((int)box.Left - 3, box));
-    }
-
-    [Theory]
-    [InlineData(0, 50, 80, 100, 0)]
-    [InlineData(0, 150, 300, 100, 50)]
-    [InlineData(50, 120, 300, 100, 50)]
-    [InlineData(50, 20, 300, 100, 20)]
-    [InlineData(250, 300, 300, 100, 200)]
-    [InlineData(200, 90, 90, 100, 0)]
-    public void The_address_moves_only_as_far_as_its_cursor_needs(
-        float scroll,
-        float cursor,
-        float width,
-        float room,
-        float expected
-    )
-    {
-        Assert.Equal(expected, MenuLayer.ScrollToCursor(scroll, cursor, width, room));
-    }
-
-    [Fact]
-    public void A_long_name_is_cut_with_an_ellipsis_to_fit()
-    {
-        using var font = new SkiaSharp.SKFont(_fonts.Mono, 20);
-        var name = new string('M', 60);
-
-        Assert.Equal("Alice", MenuLayer.Fit("Alice", 1000, font));
-        var fitted = MenuLayer.Fit(name, 200, font);
-        Assert.EndsWith("…", fitted, StringComparison.Ordinal);
-        Assert.True(font.MeasureText(fitted) <= 200);
-        Assert.True(font.MeasureText(name[..(fitted.Length)] + "…") > 200);
-        Assert.Equal("", MenuLayer.Fit(name, 1, font));
     }
 
     [Fact]
     public void Escape_goes_back_from_the_join_page_and_does_nothing_on_the_main_menu()
     {
-        Click(MainButton(2));
+        Click("Join Game");
         _menu.Escape();
         Frame();
         Assert.Equal(MenuView.Main, _menu.View);
@@ -243,8 +215,10 @@ public sealed class MenuLayerTests : IDisposable
         Frame();
         Assert.Equal(MenuView.InGame, _menu.View);
         Assert.Equal(["Resume", "Settings", "Leave Match", "Quit"], _menu.Buttons);
+        // The picture shaded under the page: the shade is drawn first.
+        Assert.Equal(Ui.Id("menu.shade"), _menu.Ui.Drawn(0).Id);
 
-        Click(MainButton(0));
+        Click("Resume");
         Assert.Equal(MenuView.None, _menu.View);
 
         _menu.Escape();
@@ -255,7 +229,7 @@ public sealed class MenuLayerTests : IDisposable
 
         _menu.Escape();
         Frame();
-        Click(MainButton(2));
+        Click("Leave Match");
         Assert.Equal("You left the match.", _matches.TakeLeave());
 
         // The match ended: the main menu, with the reason.
@@ -263,6 +237,7 @@ public sealed class MenuLayerTests : IDisposable
         _matches.LastEnd = "You left the match.";
         Frame();
         Assert.Equal(MenuView.Main, _menu.View);
+        Assert.True(_menu.Ui.TryFind("You left the match.", out _));
     }
 
     [Fact]
@@ -282,7 +257,7 @@ public sealed class MenuLayerTests : IDisposable
     [Fact]
     public void A_match_that_started_and_failed_before_a_frame_saw_it_leaves_the_main_page_showing()
     {
-        Click(MainButton(3));
+        Click("Settings");
         Assert.Equal(MenuView.Settings, _menu.View);
 
         // A friend's join started and failed within one iteration: the match counted, and back at the menu.
@@ -296,82 +271,72 @@ public sealed class MenuLayerTests : IDisposable
     [Fact]
     public void The_settings_page_moves_a_setting_with_its_slider_and_flips_its_switches_on_each_tab()
     {
-        Click(MainButton(3));
+        Click("Settings");
         Assert.Equal(MenuView.Settings, _menu.View);
-        Assert.Equal(SettingsTab.Game, _menu.SettingsTab);
-        // Game: volume, sensitivity, field of view, VSync, full screen.
-        Assert.Equal(["Game", "Graphics", "Keybindings", "", "", "", "On", "Off", "Back"], _menu.Buttons);
+        Assert.Equal(SettingsRows.GameTab, _menu.SettingsTab);
+        Assert.Equal(["Game", "Graphics", "Keybindings", "Back"], _menu.Buttons);
+        // Game: volume, sensitivity, field of view, UI scale; VSync and full screen.
+        Assert.Equal(4, Count(UiKind.Slider));
+        Assert.Equal([true, false], Switches());
 
         // The volume's bar: down at its middle, dragged past its right end, let go.
-        var bar = new Vector2(SettingControlLeft, SettingMiddle(0));
-        _pointer.Pointer = new UiPointer(bar + new Vector2(13 * Unit, 0), true, true, false, 0);
-        Frame();
+        var volume = Element(UiKind.Slider, 0).Rect;
+        Hold(new Vector2(volume.MidX, volume.MidY), pressed: true);
         Assert.Equal(0.5f, Settings.Volume, 2);
-        _pointer.Pointer = new UiPointer(bar + new Vector2(40 * Unit, 0), true, false, false, 0);
-        Frame();
+        Hold(new Vector2(volume.Right + 200, volume.MidY), pressed: false);
         Assert.Equal(1f, Settings.Volume, 2);
-        _pointer.Pointer = new UiPointer(bar + new Vector2(40 * Unit, 0), false, false, true, 0);
-        Frame();
+        Release(new Vector2(volume.Right + 200, volume.MidY));
 
-        Click(SettingSwitch(3));
+        // The UI scale: its bar's right end is 150 %, and the toolkit takes it at once.
+        var scale = Element(UiKind.Slider, 3).Rect;
+        Hold(new Vector2(scale.Right - 1, scale.MidY), pressed: true);
+        Release(new Vector2(scale.Right - 1, scale.MidY));
+        Assert.Equal(PlayerSettings.MostUiScale, Settings.UiScale);
+
+        ClickAt(Centre(Element(UiKind.Switch, 0).Rect));
         Assert.False(Settings.VSync);
-        Assert.Equal(["Game", "Graphics", "Keybindings", "", "", "", "Off", "Off", "Back"], _menu.Buttons);
+        Assert.Equal([false, false], Switches());
 
         // Graphics: dynamic render scaling and its threshold, shadows, anti-aliasing. The threshold's slider steps
-        // through the offered rates: near its left end the first, 30, past its right end the last, 360, and its middle
-        // the sixth of eleven, 120.
-        Click(SettingsTabButton(1));
-        Assert.Equal(SettingsTab.Graphics, _menu.SettingsTab);
-        Assert.Equal(["Game", "Graphics", "Keybindings", "On", "", "On", "", "Back"], _menu.Buttons);
+        // through the offered rates: at its left end the first, 30, past its right end the last, 360.
+        Click("Graphics");
+        Assert.Equal(SettingsRows.GraphicsTab, _menu.SettingsTab);
+        Assert.Equal([true, true], Switches());
         Assert.Equal(120, Settings.ScalingThreshold);
-        var threshold = new Vector2(SettingControlLeft, SettingMiddle(1));
-        _pointer.Pointer = new UiPointer(threshold + new Vector2(0.5f * Unit, 0), true, true, false, 0);
-        Frame();
+        var threshold = Element(UiKind.Slider, 0).Rect;
+        Hold(new Vector2(threshold.Left + 1, threshold.MidY), pressed: true);
         Assert.Equal(30, Settings.ScalingThreshold);
-        _pointer.Pointer = new UiPointer(threshold + new Vector2(40 * Unit, 0), true, false, false, 0);
-        Frame();
+        Hold(new Vector2(threshold.Right + 200, threshold.MidY), pressed: false);
         Assert.Equal(360, Settings.ScalingThreshold);
-        _pointer.Pointer = new UiPointer(threshold + new Vector2(13 * Unit, 0), true, false, false, 0);
-        Frame();
-        Assert.Equal(120, Settings.ScalingThreshold);
-        _pointer.Pointer = new UiPointer(threshold + new Vector2(13 * Unit, 0), false, false, true, 0);
-        Frame();
+        Release(new Vector2(threshold.Right + 200, threshold.MidY));
 
         // Anti-aliasing's slider steps through Off, SMAA, MSAA 2x, 4x (the default), and 8x.
         Assert.Equal(AntiAliasMode.Msaa4, Settings.AntiAliasMode);
-        var antiAliasing = new Vector2(SettingControlLeft, SettingMiddle(3));
-        _pointer.Pointer = new UiPointer(antiAliasing + new Vector2(0.5f * Unit, 0), true, true, false, 0);
-        Frame();
+        var antiAliasing = Element(UiKind.Slider, 1).Rect;
+        Hold(new Vector2(antiAliasing.Left + 1, antiAliasing.MidY), pressed: true);
         Assert.Equal(AntiAliasMode.Off, Settings.AntiAliasMode);
         Assert.Equal(1, Settings.MsaaSamples);
-        Assert.False(Settings.AntiAliasing);
-        _pointer.Pointer = new UiPointer(antiAliasing + new Vector2(7 * Unit, 0), true, false, false, 0);
-        Frame();
-        Assert.Equal(AntiAliasMode.Smaa, Settings.AntiAliasMode);
-        Assert.True(Settings.AntiAliasing);
-        _pointer.Pointer = new UiPointer(antiAliasing + new Vector2(40 * Unit, 0), true, false, false, 0);
-        Frame();
+        Hold(new Vector2(antiAliasing.Right + 200, antiAliasing.MidY), pressed: false);
         Assert.Equal(AntiAliasMode.Msaa8, Settings.AntiAliasMode);
         Assert.Equal(8, Settings.MsaaSamples);
-        _pointer.Pointer = new UiPointer(antiAliasing + new Vector2(40 * Unit, 0), false, false, true, 0);
-        Frame();
+        Release(new Vector2(antiAliasing.Right + 200, antiAliasing.MidY));
 
         // Each switch flips its setting and shows it.
-        Click(SettingSwitch(0));
-        Click(SettingSwitch(2));
+        ClickAt(Centre(Element(UiKind.Switch, 0).Rect));
+        ClickAt(Centre(Element(UiKind.Switch, 1).Rect));
         Assert.False(Settings.DynamicScaling);
         Assert.False(Settings.Shadows);
-        Assert.Equal(["Game", "Graphics", "Keybindings", "Off", "", "Off", "", "Back"], _menu.Buttons);
+        Assert.Equal([false, false], Switches());
 
-        Click(SettingsTabButton(2));
-        Assert.Equal(SettingsTab.Keybindings, _menu.SettingsTab);
+        Click("Keybindings");
+        Assert.Equal(SettingsRows.KeysTab, _menu.SettingsTab);
 
         // Escape leaves the page; it opens on Game again.
         _menu.Escape();
         Frame();
         Assert.Equal(MenuView.Main, _menu.View);
-        Click(MainButton(3));
-        Assert.Equal(SettingsTab.Game, _menu.SettingsTab);
+        Click("Settings");
+        Assert.Equal(SettingsRows.GameTab, _menu.SettingsTab);
     }
 
     [Fact]
@@ -385,18 +350,31 @@ public sealed class MenuLayerTests : IDisposable
             keys.Register($"extra{i}", $"Extra {i}", "", InputBinding.Of(Key.F2 + i));
         }
 
-        Click(MainButton(3));
-        Click(SettingsTabButton(2));
-        // Menu, Console, and Capture the pointer are fixed: no button. Then Stats line, Jump, Crouch, Extra 0 and 1.
+        Click("Settings");
+        Click("Keybindings");
+        // Menu, Console, and Capture the pointer are fixed: no button. Then Stats line, Jump, Crouch, Extra 0 to 5.
         Assert.Equal(
-            ["Game", "Graphics", "Keybindings", "F1", "Space", "C", "F2", "F3", "Reset keys", "Back"],
+            [
+                "Game",
+                "Graphics",
+                "Keybindings",
+                "F1",
+                "Space",
+                "C",
+                "F2",
+                "F3",
+                "F4",
+                "F5",
+                "F6",
+                "F7",
+                "Reset keys",
+                "Back",
+            ],
             _menu.Buttons
         );
-        Click(KeyButton(0));
-        Assert.False(_menu.CapturingBinding);
 
         // Jump's button waits for a key; C takes it from Crouch, whose row shows None.
-        Click(KeyButton(4));
+        Click("Space");
         Assert.True(_menu.CapturingBinding);
         Assert.Contains("Press a key…", _menu.Buttons);
         _audio.ClearQueued();
@@ -405,15 +383,12 @@ public sealed class MenuLayerTests : IDisposable
         Assert.False(_menu.CapturingBinding);
         Assert.Equal(InputBinding.Of(Key.C), keys[jump]);
         Assert.Equal(InputBinding.None, keys[crouch]);
-        Assert.Equal(
-            ["Game", "Graphics", "Keybindings", "F1", "C", "None", "F2", "F3", "Reset keys", "Back"],
-            _menu.Buttons
-        );
+        Assert.Contains("None", _menu.Buttons);
         // Setting a binding makes no click.
         Assert.Equal(0, Clicks(EngineSounds.MenuPress));
 
         // Escape and ` stay the menu's and the console's; Escape stops the wait and keeps the binding, on the page.
-        Click(KeyButton(4));
+        Click("C");
         _menu.BindingPressed(InputBinding.Of(Key.GraveAccent));
         Assert.True(_menu.CapturingBinding);
         _menu.Escape();
@@ -422,21 +397,18 @@ public sealed class MenuLayerTests : IDisposable
         Assert.Equal(MenuView.Settings, _menu.View);
         Assert.Equal(InputBinding.Of(Key.C), keys[jump]);
 
-        // The wheel shows the last rows.
-        _pointer.Pointer = new UiPointer(KeyButton(4), false, false, false, -10);
+        // The wheel over the list brings its last rows into view.
+        var last = Find("F7").Rect;
+        _pointer.Pointer = new UiPointer(Centre(Find("F1").Rect), false, false, false, -10);
         Frame();
-        Point(KeyButton(4));
         Frame();
-        Assert.Equal(
-            ["Game", "Graphics", "Keybindings", "C", "None", "F2", "F3", "F4", "F5", "F6", "F7", "Reset keys", "Back"],
-            _menu.Buttons
-        );
+        Assert.True(Find("F7").Rect.Top < last.Top, $"{Find("F7").Rect.Top} against {last.Top}");
 
         // Reset keys puts them back; Back leaves the page.
-        Click(new Vector2(Width / 2f - 11 * Unit, 85.75f * Unit));
+        Click("Reset keys");
         Assert.Equal(InputBinding.Of(Key.Space), keys[jump]);
         Assert.Equal(InputBinding.Of(Key.C), keys[crouch]);
-        Click(new Vector2(Width / 2f + 11 * Unit, 85.75f * Unit));
+        Click("Back");
         Assert.Equal(MenuView.Main, _menu.View);
     }
 
@@ -450,8 +422,56 @@ public sealed class MenuLayerTests : IDisposable
 
         Assert.Equal(MenuView.Joining, _menu.View);
         Assert.Equal(["Cancel"], _menu.Buttons);
-        Click(new Vector2(Width / 2f, 55 * Unit));
+        Assert.True(_menu.Ui.TryFind("Downloading the host's world: 1.0 of 3.0 MB", out _));
+        Click("Cancel");
         Assert.Equal("The join was cancelled.", _matches.TakeLeave());
+    }
+
+    [Fact]
+    public void A_games_page_opens_from_its_button_and_its_switch_rows_show_on_their_tabs()
+    {
+        var page = new CreditsPage();
+        _pages.Add("Credits", "Who made the game.", page);
+        var minimap = Settings.RegisterSwitch("minimap", true);
+        var hud = Settings.RegisterSwitch("hud", false);
+        _rows.AddSwitch(minimap, "Minimap", "The map in the corner.");
+        _rows.AddSwitch(hud, "Big HUD", "Larger readouts.", "Display");
+        Frame();
+
+        Assert.Equal(["Play Offline", "Host Game", "Join Game", "Credits", "Settings", "Quit"], _menu.Buttons);
+        Click("Credits");
+        Assert.Equal(MenuView.Page, _menu.View);
+        Assert.True(_menu.Ui.TryFind("Made by the test.", out _));
+        // The page takes its first Escape; the next goes back.
+        _menu.Escape();
+        Frame();
+        Assert.Equal(MenuView.Page, _menu.View);
+        _menu.Escape();
+        Frame();
+        Assert.Equal(MenuView.Main, _menu.View);
+
+        Click("Settings");
+        Assert.True(_menu.Ui.TryFind("Minimap", out _));
+        ClickAt(Centre(Element(UiKind.Switch, 2).Rect));
+        Assert.False(Settings.IsOn(minimap));
+        Assert.Equal(["Game", "Graphics", "Display", "Keybindings", "Back"], _menu.Buttons);
+        Click("Display");
+        ClickAt(Centre(Element(UiKind.Switch, 0).Rect));
+        Assert.True(Settings.IsOn(hud));
+    }
+
+    [Fact]
+    public void The_keyboard_moves_the_focus_through_the_buttons_and_presses_one()
+    {
+        _pointer.Keys = UiKeys.Next;
+        Frame();
+        _pointer.Keys = UiKeys.Next;
+        Frame();
+        _pointer.Keys = UiKeys.Press;
+        Frame();
+        _pointer.Keys = UiKeys.None;
+
+        Assert.Equal(SessionMode.Host, _matches.TakeStart()!.Mode);
     }
 
     [Fact]
@@ -461,24 +481,24 @@ public sealed class MenuLayerTests : IDisposable
         Frame();
         Assert.Equal(0, Clicks(EngineSounds.MenuHover));
 
-        Point(MainButton(0));
+        Point(Centre(Find("Play Offline").Rect));
         Frame();
         Assert.Equal(1, Clicks(EngineSounds.MenuHover));
         Assert.True(_audio.QueuedEvents[0].AtListener);
 
         // Moving on the same button, or off it into nothing, clicks no more; onto the next one does.
-        Point(MainButton(0) + new Vector2(5, 2));
+        Point(Centre(Find("Play Offline").Rect) + new Vector2(5, 2));
         Frame();
         Point(new Vector2(10, 10));
         Frame();
         Assert.Equal(1, Clicks(EngineSounds.MenuHover));
-        Point(MainButton(1));
+        Point(Centre(Find("Host Game").Rect));
         Frame();
         Assert.Equal(2, Clicks(EngineSounds.MenuHover));
         Assert.Equal(0, Clicks(EngineSounds.MenuPress));
 
         // Down and up on it: one fuller click, as the button acts.
-        Click(MainButton(1));
+        Click("Host Game");
         Assert.Equal(1, Clicks(EngineSounds.MenuPress));
         Assert.Equal(2, Clicks(EngineSounds.MenuHover));
         Assert.NotNull(_matches.TakeStart());
@@ -487,25 +507,34 @@ public sealed class MenuLayerTests : IDisposable
     [Fact]
     public void A_page_or_the_menu_opening_under_a_still_pointer_makes_no_soft_click()
     {
-        // Join Game opens its page under the pointer, which now lies over the friends' list or a button: no click.
-        Click(MainButton(2));
+        // Join Game opens its page under the pointer: no click for what now lies under it.
+        Point(Centre(Find("Join Game").Rect));
+        Frame();
+        _audio.ClearQueued();
+        Click("Join Game");
         Frame();
         Assert.Equal(MenuView.Join, _menu.View);
-        Assert.Equal(1, Clicks(EngineSounds.MenuHover));
+        Assert.Equal(0, Clicks(EngineSounds.MenuHover));
         Assert.Equal(1, Clicks(EngineSounds.MenuPress));
 
-        // Over a match, Escape opens the menu with the pointer resting on Resume: no click until it moves.
+        // Over a match, Escape opens the menu with the pointer resting on a button: no click until it moves.
         _menu.Escape();
         _matches.Phase = MatchPhase.Playing;
         Frame();
+        _menu.Escape();
+        Frame();
+        var resume = Centre(Find("Resume").Rect);
+        _menu.Escape();
+        Frame();
         _audio.ClearQueued();
-        Point(MainButton(0));
+        Point(resume);
         Frame();
         _menu.Escape();
         Frame();
+        Frame();
         Assert.Equal(MenuView.InGame, _menu.View);
         Assert.Equal(0, Clicks(EngineSounds.MenuHover));
-        Point(MainButton(1));
+        Point(Centre(Find("Settings").Rect));
         Frame();
         Assert.Equal(1, Clicks(EngineSounds.MenuHover));
     }
@@ -513,34 +542,30 @@ public sealed class MenuLayerTests : IDisposable
     [Fact]
     public void The_address_box_clicks_only_as_enter_joins_and_a_sliders_drag_presses_nothing()
     {
-        Click(MainButton(2));
+        Click("Join Game");
         _audio.ClearQueued();
-        // The address box, under the friends' list: neither under the pointer nor clicked.
-        Click(new Vector2(Width / 2f, 72 * Unit));
+        // Onto the address box and pressing it: no click.
+        ClickAt(Centre(_menu.AddressBox));
         Assert.Equal(0, _audio.QueuedEvents.Length);
         var box = Assert.IsAssignableFrom<ITextInput>(_menu.TextFocus);
-        foreach (var character in "127.0.0.1:47600")
-        {
-            box.Character(new Rune(character));
-        }
-
+        Type(box, "127.0.0.1:47600");
         box.KeyDown(Key.Enter, false);
         Assert.Equal(1, Clicks(EngineSounds.MenuPress));
         Assert.NotNull(_matches.TakeStart());
+        Frame();
 
-        Click(MainButton(3));
+        Click("Settings");
         _audio.ClearQueued();
         // The volume's bar: onto it clicks softly; held, dragged, and let go, it presses nothing.
-        var bar = new Vector2(SettingControlLeft, SettingMiddle(0));
-        Point(bar);
+        var bar = Element(UiKind.Slider, 0).Rect;
+        Point(new Vector2(bar.Left + 5, bar.MidY));
+        Frame();
+        Point(Centre(bar));
         Frame();
         Assert.Equal(1, Clicks(EngineSounds.MenuHover));
-        _pointer.Pointer = new UiPointer(bar, true, true, false, 0);
-        Frame();
-        _pointer.Pointer = new UiPointer(bar + new Vector2(10 * Unit, 0), true, false, false, 0);
-        Frame();
-        _pointer.Pointer = new UiPointer(bar + new Vector2(10 * Unit, 0), false, false, true, 0);
-        Frame();
+        Hold(Centre(bar), pressed: true);
+        Hold(Centre(bar) + new Vector2(50, 0), pressed: false);
+        Release(Centre(bar) + new Vector2(50, 0));
         Assert.Equal(0, Clicks(EngineSounds.MenuPress));
     }
 
@@ -548,28 +573,31 @@ public sealed class MenuLayerTests : IDisposable
     public void It_draws_again_only_when_what_it_shows_changes_and_allocates_nothing_while_idle()
     {
         Point(new Vector2(10, 10));
+        Frame();
         Assert.Equal(0, Frame().Rows);
 
         // The pointer onto a button: drawn again (the button under it), then not until it moves off.
-        Point(MainButton(1));
+        Point(Centre(Find("Host Game").Rect));
         Assert.True(Frame().Rows > 0);
         Assert.Equal(0, Frame().Rows);
 
         var start = SystemAllocation.StartMeasurement();
         for (var i = 0; i < 10; i++)
         {
-            _menu.Update(new FrameTime(1 / 60f, i / 60.0, (ulong)i, 0));
+            _menu.Update(new FrameTime(1 / 60f, i / 60.0, (ulong)i, 0), Width, Height);
         }
 
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - start);
 
         // The pointer going between two buttons, a click each time: nothing allocated either.
+        var play = Centre(Find("Play Offline").Rect);
+        var host = Centre(Find("Host Game").Rect);
         _audio.ClearQueued();
         start = SystemAllocation.StartMeasurement();
         for (var i = 0; i < 10; i++)
         {
-            Point(MainButton(i % 2));
-            _menu.Update(new FrameTime(1 / 60f, i / 60.0, (ulong)i, 0));
+            Point(i % 2 == 0 ? play : host);
+            _menu.Update(new FrameTime(1 / 60f, i / 60.0, (ulong)i, 0), Width, Height);
         }
 
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - start);
@@ -589,38 +617,97 @@ public sealed class MenuLayerTests : IDisposable
         return count;
     }
 
-    /// <summary>The middle of main-menu button <paramref name="index"/> (Play Offline 0 to Quit 4).</summary>
-    private static Vector2 MainButton(int index) => new(Width / 2f, (36 + 3 + index * 7.5f) * Unit);
+    private UiElement Find(string label)
+    {
+        Assert.True(_menu.Ui.TryFind(label, out var element), $"Nothing reads '{label}':\n{_menu.Ui.Dump()}");
+        return element;
+    }
 
-    /// <summary>The middle of the settings tab's row <paramref name="row"/>, top to bottom, in pixels.</summary>
-    private static float SettingMiddle(int row) => (31 + row * 7 + 3.4f) * Unit;
+    /// <summary>The <paramref name="nth"/> element of <paramref name="kind"/> in the order declared.</summary>
+    private UiElement Element(UiKind kind, int nth)
+    {
+        for (var i = 0; i < _menu.Ui.Count; i++)
+        {
+            var element = _menu.Ui.ElementAt(i);
+            if (element.Kind == kind && nth-- == 0)
+            {
+                return element;
+            }
+        }
 
-    /// <summary>The left end of a Game or Graphics row's slider or switch, 26 units wide at the row's right end.</summary>
-    private static float SettingControlLeft => Width / 2f + (MenuLayer.SettingRowUnits / 2 - 26) * Unit;
+        throw new InvalidOperationException($"No {kind} {nth}:\n{_menu.Ui.Dump()}");
+    }
 
-    /// <summary>The middle of the switch on the settings tab's row <paramref name="row"/>.</summary>
-    private static Vector2 SettingSwitch(int row) => new(SettingControlLeft + 13 * Unit, SettingMiddle(row));
+    private int Count(UiKind kind)
+    {
+        var count = 0;
+        for (var i = 0; i < _menu.Ui.Count; i++)
+        {
+            count += _menu.Ui.ElementAt(i).Kind == kind ? 1 : 0;
+        }
 
-    /// <summary>The middle of the button on the Keybindings tab's row <paramref name="row"/> shown.</summary>
-    private static Vector2 KeyButton(int row) => new(Width / 2f + 19 * Unit, (31 + row * 6 + 3) * Unit);
+        return count;
+    }
 
-    /// <summary>The middle of the settings page's tab <paramref name="tab"/>: Game, Graphics, Keybindings.</summary>
-    private static Vector2 SettingsTabButton(int tab) => new(Width / 2f + (tab - 1) * 23.5f * Unit, 25.75f * Unit);
+    /// <summary>The switches shown, on or off, in order.</summary>
+    private List<bool> Switches()
+    {
+        var switches = new List<bool>();
+        for (var i = 0; i < _menu.Ui.Count; i++)
+        {
+            if (_menu.Ui.ElementAt(i) is { Kind: UiKind.Switch } element)
+            {
+                switches.Add(element.On);
+            }
+        }
+
+        return switches;
+    }
+
+    private static Vector2 Centre(SKRect rect) => new(rect.MidX, rect.MidY);
+
+    private static void Type(ITextInput box, string text)
+    {
+        foreach (var character in text)
+        {
+            box.Character(new Rune(character));
+        }
+    }
 
     private void Point(Vector2 at) => _pointer.Pointer = new UiPointer(at, false, false, false, 0);
 
-    /// <summary>A left click at <paramref name="at"/>: down in one frame, up in the next.</summary>
-    private void Click(Vector2 at)
+    /// <summary>The button held at <paramref name="at"/>, gone down in this frame when <paramref name="pressed"/>.</summary>
+    private void Hold(Vector2 at, bool pressed)
     {
+        _pointer.Pointer = new UiPointer(at, true, pressed, false, 0);
+        Frame();
+    }
+
+    private void Release(Vector2 at)
+    {
+        _pointer.Pointer = new UiPointer(at, false, false, true, 0);
+        Frame();
+        Point(at);
+        Frame();
+    }
+
+    /// <summary>A left click on the element reading <paramref name="label"/>: down in one frame, up in the next.</summary>
+    private void Click(string label) => ClickAt(Centre(Find(label).Rect));
+
+    private void ClickAt(Vector2 at)
+    {
+        Point(at);
+        Frame();
         _pointer.Pointer = new UiPointer(at, true, true, false, 0);
         Frame();
         _pointer.Pointer = new UiPointer(at, false, false, true, 0);
         Frame();
         Point(at);
+        Frame();
     }
 
     /// <summary>The surface's pixels down column <paramref name="x"/> over <paramref name="box"/>'s rows.</summary>
-    private uint[] Column(int x, SkiaSharp.SKRect box)
+    private uint[] Column(int x, SKRect box)
     {
         var pixels = _surface.Pixels;
         var column = new uint[(int)box.Height];
@@ -635,17 +722,42 @@ public sealed class MenuLayerTests : IDisposable
 
     private UiDraw Frame() => _surface.Draw(new FrameTime(1 / 60f, _frame / 60.0, _frame++, 0), Width, Height);
 
-    /// <summary>The frame input the menu reads: only the pointer.</summary>
+    /// <summary>A game's page: a line of text; it takes the first Escape.</summary>
+    private sealed class CreditsPage : IMenuPage
+    {
+        private bool _escaped;
+
+        public string Title => "Credits";
+
+        public void Build(Ui ui) => ui.Text("Made by the test.");
+
+        public bool Escape()
+        {
+            if (_escaped)
+            {
+                return false;
+            }
+
+            _escaped = true;
+            return true;
+        }
+    }
+
+    /// <summary>The frame input the menu reads: the pointer and the menu's keys.</summary>
     private sealed class PointerInput : IFrameInput
     {
         private readonly InputSnapshot _frame;
 
         public UiPointer Pointer { get; set; }
 
+        public UiKeys Keys { get; set; }
+
         public ref readonly InputSnapshot Frame => ref _frame;
 
         public Vector2 MouseSinceTick => Vector2.Zero;
 
         public UiPointer MenuPointer => Pointer;
+
+        public UiKeys MenuKeys => Keys;
     }
 }

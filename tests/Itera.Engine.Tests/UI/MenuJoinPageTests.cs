@@ -8,10 +8,12 @@ using Itera.Engine.Settings;
 using Itera.Engine.Tests.Networking;
 using Itera.Engine.UI;
 using Itera.Engine.UI.Menu;
+using Itera.Engine.UI.Toolkit;
 using Itera.Engine.Windowing;
 using Itera.Modding;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using SkiaSharp;
 
 namespace Itera.Engine.Tests.UI;
 
@@ -19,13 +21,13 @@ namespace Itera.Engine.Tests.UI;
 /// The menu with Steam (<see cref="FakeSteamNetwork"/>): the join page lists the friends who host with a Join button
 /// each (another version's disabled), a row's Join joins the friend's lobby through Steam, Host Game hosts through
 /// Steam, and a friend's "Join game" joins at once from the menu but asks first during a match (Join or Stay). Another
-/// version's button makes no click, under the pointer or pressed.
+/// version's button makes no click, under the pointer or pressed. The wheel scrolls the friends' rows, a part of a turn
+/// as far as that part of a step.
 /// </summary>
 public sealed class MenuJoinPageTests : IDisposable
 {
     private const int Width = 1280;
     private const int Height = 720;
-    private const float Unit = Height / 100f;
     private const ulong Me = 76_561_198_000_000_020;
     private const ulong Alice = 76_561_198_000_000_021;
     private const ulong Bob = 76_561_198_000_000_022;
@@ -42,6 +44,7 @@ public sealed class MenuJoinPageTests : IDisposable
     private readonly MatchControl _matches = new();
     private readonly AudioService _audio = MenuLayerTests.QueuingAudio();
     private readonly PointerInput _pointer = new();
+    private readonly UiToolkit _toolkit;
     private readonly MenuLayer _menu;
     private readonly SteamFriendList _friends;
     private readonly JoinRequests _joins;
@@ -62,8 +65,9 @@ public sealed class MenuJoinPageTests : IDisposable
         var starts = new MatchCommands(commands, _matches, _steam, options);
         _friends = new SteamFriendList(_steam, MatchKey, NullLogger<SteamFriendList>.Instance);
         _joins = new JoinRequests(_friends, _matches, starts);
+        _toolkit = new UiToolkit(_fonts, MenuStyle.Plain, options, NullLogger<UiToolkit>.Instance, _audio);
         _menu = new MenuLayer(
-            _fonts,
+            _toolkit,
             MenuStyle.Plain,
             _matches,
             starts,
@@ -73,7 +77,6 @@ public sealed class MenuJoinPageTests : IDisposable
             _friends,
             _joins,
             new PlayerSettings(new EngineOptions(), CommandLineKeys.None, null, NullLogger<PlayerSettings>.Instance),
-            _audio,
             options
         );
         _surface = new UISurface([_menu], NullLogger<UISurface>.Instance);
@@ -86,6 +89,7 @@ public sealed class MenuJoinPageTests : IDisposable
         _surface.Dispose();
         _menu.Dispose();
         _joins.Dispose();
+        _toolkit.Dispose();
         _fonts.Dispose();
         _window.Dispose();
         _audio.Dispose();
@@ -98,7 +102,7 @@ public sealed class MenuJoinPageTests : IDisposable
         var alice = Host(Alice, "Alice", MatchKey);
         Host(Bob, "Bob", "21;test;1;60");
 
-        Click(MainButton(2));
+        Click("Join Game");
         Frame();
 
         Assert.Equal(MenuView.Join, _menu.View);
@@ -111,7 +115,8 @@ public sealed class MenuJoinPageTests : IDisposable
         Assert.Equal($"lobby:{alice}", join.Address);
 
         // Another version's button does nothing, and makes no click.
-        Click(MainButton(2));
+        Frame();
+        Click("Join Game");
         Frame();
         _audio.ClearQueued();
         Click(RowJoin(1));
@@ -122,7 +127,7 @@ public sealed class MenuJoinPageTests : IDisposable
     [Fact]
     public void Host_game_with_steam_hosts_through_steam()
     {
-        Click(MainButton(1));
+        Click("Host Game");
 
         Assert.Equal(SessionTransportKind.Steam, _matches.TakeStart()!.Transport);
     }
@@ -159,7 +164,7 @@ public sealed class MenuJoinPageTests : IDisposable
         _me.RequestJoin(Alice, "lobby:109775240000000005");
         _steam.RunCallbacks();
         Frame();
-        Click(new Vector2(Width / 2f, 55 * Unit));
+        Click("Join");
         Assert.Equal("lobby:109775240000000005", _matches.TakeStart()!.Address);
         Assert.Equal(MenuView.None, _menu.View);
     }
@@ -178,34 +183,58 @@ public sealed class MenuJoinPageTests : IDisposable
         return lobby;
     }
 
-    /// <summary>Small turns of the wheel move the friends' rows once they add up to a step.</summary>
+    /// <summary>The wheel over the friends' rows scrolls them; a quarter turn a quarter as far as a whole one.</summary>
     [Fact]
-    public void Small_wheel_turns_on_the_join_page_add_up()
+    public void The_wheel_scrolls_the_friends_rows_by_parts_of_a_step()
     {
         for (var i = 0; i < 8; i++)
         {
             Host(Alice + 10 + (ulong)i, "Friend " + i, MatchKey);
         }
 
-        Click(MainButton(2));
+        Click("Join Game");
+        Frame();
         Frame();
         Assert.Equal(MenuView.Join, _menu.View);
+        var first = RowJoinRect(0).Top;
+        var over = new Vector2(RowJoinRect(0).MidX, RowJoinRect(1).MidY);
 
-        for (var i = 0; i < 4; i++)
-        {
-            _pointer.Pointer = new UiPointer(new Vector2(Width / 2f, Height / 2f), false, false, false, -0.25f);
-            Frame();
-            Assert.Equal(i < 3 ? 0 : 1, _menu.RowScroll);
-        }
+        _pointer.Pointer = new UiPointer(over, false, false, false, -0.25f);
+        Frame();
+        _pointer.Pointer = new UiPointer(over, false, false, false, 0);
+        Frame();
+        var quarter = first - RowJoinRect(0).Top;
+        Assert.True(quarter > 0, $"A quarter turn moved the rows {quarter} pixels.");
+
+        _pointer.Pointer = new UiPointer(over, false, false, false, -0.75f);
+        Frame();
+        _pointer.Pointer = new UiPointer(over, false, false, false, 0);
+        Frame();
+        Assert.Equal(4 * quarter, first - RowJoinRect(0).Top, 2);
     }
 
-    private static Vector2 MainButton(int index) => new(Width / 2f, (36 + 3 + index * 7.5f) * Unit);
+    /// <summary>Row <paramref name="row"/>'s Join button, as last laid out.</summary>
+    private SKRect RowJoinRect(int row) => _menu.Ui.Rect(Ui.Id(Ui.Id("menu.friend.join"), row));
 
     /// <summary>The middle of row <paramref name="row"/>'s Join button.</summary>
-    private static Vector2 RowJoin(int row) => new(Width / 2f + 24.5f * Unit, (27 + row * 7.5f + 3.4f) * Unit);
+    private Vector2 RowJoin(int row)
+    {
+        var rect = RowJoinRect(row);
+        Assert.False(rect.IsEmpty, $"No row {row}:\n{_menu.Ui.Dump()}");
+        return new Vector2(rect.MidX, rect.MidY);
+    }
+
+    /// <summary>A click on the first element reading <paramref name="label"/>.</summary>
+    private void Click(string label)
+    {
+        Assert.True(_menu.Ui.TryFind(label, out var element), $"Nothing reads '{label}':\n{_menu.Ui.Dump()}");
+        Click(new Vector2(element.Rect.MidX, element.Rect.MidY));
+    }
 
     private void Click(Vector2 at)
     {
+        _pointer.Pointer = new UiPointer(at, false, false, false, 0);
+        Frame();
         _pointer.Pointer = new UiPointer(at, true, true, false, 0);
         Frame();
         _pointer.Pointer = new UiPointer(at, false, false, true, 0);
@@ -231,5 +260,7 @@ public sealed class MenuJoinPageTests : IDisposable
         public Vector2 MouseSinceTick => Vector2.Zero;
 
         public UiPointer MenuPointer => Pointer;
+
+        public UiKeys MenuKeys => UiKeys.None;
     }
 }

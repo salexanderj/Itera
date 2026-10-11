@@ -15,17 +15,21 @@ namespace Itera.Engine.UI;
 /// The stats line in the top-right corner: frames per second, the frame time (mean and longest), the GPU time of the
 /// last frame, fixed steps per second, and the session (the role, the players on a host, the round trip on a client).
 /// It changes every <see cref="IntervalSeconds"/>. Off unless <c>Engine:Ui:Stats</c> is set; its key
-/// (<see cref="KeyBindings.Stats"/>, F1 by default) and the <c>stats</c> command turn it on and off. It allocates only when its text changes.
+/// (<see cref="KeyBindings.Stats"/>, F1 by default) and the <c>stats</c> command turn it on and off. Its text and margins
+/// follow the UI's sizing rule (<see cref="LayerFont"/>). It allocates only when its text changes.
 /// </summary>
 public sealed class StatsLayer : IUiLayer, IDisposable
 {
     /// <summary>How often the numbers change, in seconds.</summary>
     public const double IntervalSeconds = 0.5;
 
-    private const float Margin = 8f;
-    private const float Padding = 6f;
+    /// <summary>The space between the line's box and the screen's corner, in units.</summary>
+    private const float MarginUnits = 8f;
 
-    private readonly UiFonts _fonts;
+    /// <summary>The space round the text in its box, in units.</summary>
+    private const float PaddingUnits = 6f;
+
+    private readonly LayerFont _font;
     private readonly GpuTimings _gpu;
     private readonly FrameStats _stats;
     private readonly MatchControl _matches;
@@ -33,7 +37,6 @@ public sealed class StatsLayer : IUiLayer, IDisposable
     private readonly IFrameInput _input;
     private readonly KeyBindings _keys;
     private readonly RenderView? _view;
-    private SKFont? _font;
     private SKPaint? _text;
     private SKPaint? _backing;
     private string _line = "";
@@ -62,7 +65,7 @@ public sealed class StatsLayer : IUiLayer, IDisposable
         _keys = keys ?? new KeyBindings();
         _view = view;
         _particles = particles;
-        _fonts = fonts;
+        _font = new LayerFont(fonts);
         _gpu = gpu;
         _stats = stats;
         _matches = matches;
@@ -90,6 +93,12 @@ public sealed class StatsLayer : IUiLayer, IDisposable
 
     /// <summary>The line as last drawn, for tests.</summary>
     public string Line => _line;
+
+    public void Update(in FrameTime time, int width, int height)
+    {
+        Fit(height);
+        Update(in time);
+    }
 
     public void Update(in FrameTime time)
     {
@@ -123,7 +132,7 @@ public sealed class StatsLayer : IUiLayer, IDisposable
                 _gpu.Enabled ? _gpu.LastFrameMilliseconds : -1,
                 steps / elapsed
             );
-            _lineWidth = Font.MeasureText(_line);
+            _lineWidth = _font.Font.MeasureText(_line);
             _dirty = true;
         }
 
@@ -136,26 +145,28 @@ public sealed class StatsLayer : IUiLayer, IDisposable
 
     public SKRectI Bounds(int width, int height)
     {
-        var lineHeight = LineHeight;
-        var right = width - Margin;
-        var left = right - _lineWidth - 2 * Padding;
-        return SKRectI.Ceiling(new SKRect(left, Margin, right, Margin + lineHeight + 2 * Padding));
+        Fit(height);
+        return SKRectI.Ceiling(Box(width), outwards: true);
     }
 
     public void Draw(SKCanvas canvas, int width, int height)
     {
         _dirty = false;
-        var box = new SKRect(
-            width - Margin - _lineWidth - 2 * Padding,
-            Margin,
-            width - Margin,
-            Margin + LineHeight + 2 * Padding
-        );
+        Fit(height);
+        var box = Box(width);
         _backing ??= new SKPaint { Color = new SKColor(0, 0, 0, 160) };
         _text ??= new SKPaint { Color = new SKColor(230, 230, 230), IsAntialias = true };
         canvas.DrawRect(box, _backing);
-        var metrics = Font.Metrics;
-        canvas.DrawText(_line, box.Left + Padding, box.Top + Padding - metrics.Ascent, SKTextAlign.Left, Font, _text);
+        var font = _font.Font;
+        var padding = _font.Whole(PaddingUnits);
+        canvas.DrawText(
+            _line,
+            box.Left + padding,
+            box.Top + padding - font.Metrics.Ascent,
+            SKTextAlign.Left,
+            font,
+            _text
+        );
     }
 
     public void Dispose()
@@ -166,14 +177,35 @@ public sealed class StatsLayer : IUiLayer, IDisposable
         }
 
         _disposed = true;
-        _font?.Dispose();
+        _font.Dispose();
         _text?.Dispose();
         _backing?.Dispose();
     }
 
-    private SKFont Font => _font ??= new SKFont(_fonts.Mono, _fonts.Pixels);
+    /// <summary>The line's box in the top-right corner of a screen <paramref name="width"/> pixels wide.</summary>
+    private SKRect Box(int width)
+    {
+        var margin = _font.Whole(MarginUnits);
+        var padding = _font.Whole(PaddingUnits);
+        var metrics = _font.Font.Metrics;
+        var right = width - margin;
+        return new SKRect(
+            right - _lineWidth - 2 * padding,
+            margin,
+            right,
+            margin + metrics.Descent - metrics.Ascent + 2 * padding
+        );
+    }
 
-    private float LineHeight => Font.Metrics.Descent - Font.Metrics.Ascent;
+    /// <summary>The font sized for the screen; the line measured again when its size changed.</summary>
+    private void Fit(int height)
+    {
+        if (_font.Fit(height))
+        {
+            _lineWidth = _font.Font.MeasureText(_line);
+            _dirty = true;
+        }
+    }
 
     private string Compose(double fps, double meanMs, double longestMs, double gpuMs, double stepsPerSecond)
     {

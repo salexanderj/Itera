@@ -52,7 +52,11 @@ and a `UiBox` (sizes that fit, are fixed, grow from their content by weight, or 
 an anchor over the rest, a panel, `Blocks` to stop the pointer reaching what lies under it), texts set
 by `UiText` (a role the style sizes, a tone it colours, wrapping, the most lines). The layout runs as flexbox and Clay
 do; text wraps or is cut with an ellipsis; units are pixels of a 1080-pixel-high screen, scaled with the screen's height
-and `Engine:Ui:Scale` (`Ui.UnitPixelsFor`), text never under 10 px. Each element returns its `UiState` from the input
+and the UI scale (`Ui.UnitPixelsFor`), text never under 10 px. The same rule sizes the layers that draw their own text
+(the console, the stats line, the loading list, `CentredMessageLayer`): `UiFonts.Pixels(height)` is
+`Engine:Ui:FontPixels` units (18) of it, so 12 px at 720 and 24 px at 1440, and `LayerFont` keeps a layer's font at that
+size, resized when the screen or the scale changes, with margins in whole pixels (`Whole`). The screen's height is the
+framebuffer's, so a Retina Mac's doubled pixels count. Each element returns its `UiState` from the input
 matched against the last layout (hover, a click when released on the element pressed, a slider dragged also off it,
 the wheel to the innermost scroll area, keyboard focus by Tab and the arrows with Enter or Space to press, a text box's
 typing given through `SetTextFocus`); `Ui.Tween` eases values kept by id. Each kind is drawn by `UiStyle`, every part of
@@ -62,14 +66,17 @@ holds the measurer, painter, style, scale, and the clicks (`menu-hover`, `menu-p
 when a hash of its result changes, allocating nothing for an unchanged page; a declaration that throws is logged once
 at Error and shows nothing until one does not. `Ui.Dump()` prints the layout one element a line (kind, id, text,
 rectangle, state), for tests and agents; tests pin rectangles with `FixedTextMeasurer` and draw a layer alone with
-`LayerPicture` (`ITERA_UI_PICTURES` names a folder `UiLayerTests` keeps its page's picture in). A HUD layer gets the
+`LayerPicture` (`ITERA_UI_PICTURES` names a folder `UiLayerTests` keeps its page's picture in, and `MenuPicturesTests` every menu
+page's at two sizes). A HUD layer gets the
 pointer's button and the wheel only while a panel is set (`SetPanel`), as the menu and panels do, and no pointer while
 the game's input is blocked (the menu open); navigation keys reach a layer through its `Keys`: the run's menu (an
 `IMenu` toolkit layer) gets `IFrameInput.MenuKeys`, Tab, Shift+Tab, the arrows, Enter, and Space collected while it is
 open (its text box keeps all but Tab). The right button reaches menus and panels (`UiPointer.RightPressed`,
 `UiState.RightClicked`). `Invalidate()` redraws a layer whatever its UI says (what an area shows came from elsewhere).
 The UI scale is the player's (`PlayerSettings.UiScale`, 0.75 to 1.5, `"UiScale"` in `settings.json`, `settings uiscale`;
-`Engine:Ui:Scale` its default), handed to `UiToolkit.Scale`. The console's `ui` prints every toolkit layer shown, an
+`Engine:Ui:Scale` its default), handed to `UiToolkit.Scale`, which keeps it in `UiFonts.UiScale` for every layer.
+`Ui.StartTyping(id)` gives a text box the typing from the layout that declares it, this one or the next (a page
+that opens with its box typing). The console's `ui` prints every toolkit layer shown, an
 element a line, and `ui press LABEL` clicks the element reading LABEL (`UiCommands`), so a tool or agent works a UI by
 what it says.
 
@@ -95,18 +102,24 @@ friend's Steam "Join game": with no match it joins at once, during one it waits 
 is open the game gets no input, and with `Engine:Ui:MenuPausesOffline` (false by default) an offline match's steps are
 held (`FixedStepAccumulator.Hold`, apart from the console's `pause`; a host's or a client's never wait).
 
-The engine's main menu (`UI/Menu/MenuLayer`, run-wide, drawn over the HUD and under the console): a run starts at it unless
+The engine's main menu (`UI/Menu/MenuLayer`, a toolkit layer, run-wide, drawn over the HUD and under the console; its
+look `MenuLook`: the plain style at 32.4-unit text, with 3.24-unit outlines and 12.96-unit corners): a run starts at it unless
 `Engine:Session:Mode` names a match (Offline, Host, or Join; the default is `Menu`). The main page has Play Offline,
 Host Game (a friends-only Steam lobby when Steam runs, else UDP on `Engine:Session:Port`), Join Game (the friends who
 host, and an address box: host:port, lobby:ID, or steam:ID), Settings, and Quit, with why the last match ended. In a
 match, Escape opens it at once over the shaded picture and frees the pointer (Resume, Settings, Leave Match, Quit);
 the match goes on behind it. While a menu shows, the game gets no input and a click never captures the pointer
 (`IMenuInput`, `InputService.MenuPointer`); the address box takes the keys (`TextLine`). Escape goes back a page,
-resumes, or cancels a join, and does nothing on the main page. Its look is a game's `MenuStyle` (the engine's default
+resumes, or cancels a join, and does nothing on the main page. A game adds pages to it (`MenuPages.Add(label, hint,
+IMenuPage, MenuPlace)`: a button on the main page or the one over a match, before Settings, opening a panel with the
+page's title, its `Build`, and Back; the page's `Escape` takes Escape first) and Settings rows (`SettingsRows`, below). Its look is a game's `MenuStyle` (the engine's default
 is `MenuStyle.Plain`). It clicks with `menu-hover` as the pointer moves onto a control and `menu-press` as a button acts.
 
-The Settings page (`MenuLayer.Settings.cs`) has three tabs. Game: volume, mouse sensitivity (0.02 to 0.5 degrees a
-pixel), field of view (60 to 120 degrees across 16:9), VSync, and full screen (`Engine:Window:Fullscreen`). Graphics:
+The Settings page (`SettingsPage`, a toolkit part a game's own menu shows inside its own: `Build`, then `Footer` for
+Back, beside Reset keys on Keybindings; `CapturingBinding`, `BindingPressed`, and `Escape` for its key capture) has
+three tabs, and a game's own (`SettingsRows`). Game: volume, mouse sensitivity (0.02 to 0.5 degrees a pixel), field of
+view (60 to 120 degrees across 16:9), UI scale (75 to 150 %, in steps of 5), VSync, and full screen
+(`Engine:Window:Fullscreen`). Graphics:
 dynamic render scaling, the dynamic scaling threshold, shadows, and anti-aliasing (a slider through Off, SMAA, MSAA 2x,
 4x, and 8x; `AntiAliasMode`, kept as `AntiAliasing` and `MsaaSamples` in `settings.json`).
 Keybindings (`KeyBindings`,
@@ -128,7 +141,9 @@ that uses them writes its data folder's file (the player's, unless it runs with 
 `<DataFolder>-agent`); give render options on the command line instead. A game's own on/off settings are
 `GameSwitch`es its `IRunStartup` registers once a run (`PlayerSettings.RegisterSwitch(name, default)`, then `IsOn` and
 `SetSwitch`, which allocate nothing); `settings.json` keeps them in a `"Game"` object, with any entry this run did not
-register kept as it was. The Settings page has no row for them: the game sets one itself, as the starter's M key does
+register kept as it was. A game shows one on the Settings page with
+`SettingsRows.AddSwitch(switch, label, hint, tab)` (after the engine's rows on Game or Graphics, or on a tab it names,
+before Keybindings), or sets it itself, as the starter's M key does
 (`MinimapSystem`: its own `KeyBindings` row, read with `PlayerSettings.Keys.WasPressed` while the match's
 `PlayerInputBlock` lets input through). `SetSwitch` marks the settings changed; the file is written when the player next
 leaves the Settings page, or at the run's end. Bindings read from the file or
@@ -136,11 +151,11 @@ registered later that clash with another action keep the file's (`KeyBindings` u
 
 ### Files in `src/Itera.Engine`
 
-  - `UI/`: the surface and its layers (console, stats line, `LoadingLayer`), the font (`UiFonts`, from `UI/Fonts/`,
-    copied to `Fonts/`), `TextBlobs`, `TextLine`, `TextEntry`, the toolkit in `UI/Toolkit/` (`Ui` with its layout,
+  - `UI/`: the surface and its layers (console, stats line, `LoadingLayer`), the font and the sizing rule (`UiFonts`, from
+    `UI/Fonts/`, copied to `Fonts/`; `LayerFont`), `TextBlobs`, `TextLine`, `TextEntry`, the toolkit in `UI/Toolkit/` (`Ui` with its layout,
     input, and dump, `UiBox`, `UiSize`, `UiText`, `UiState`, `UiElement`, `UiInput`, `UiStyle`, `UiPainter`,
-    `UiTypefaces`, `UiToolkit`, `UiLayer`), and the menu in `UI/Menu/` (`IMenu`, `MenuLayer`, `MenuLayer.Settings.cs`,
-    `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`), `CentredMessageLayer`, `Amounts`.
+    `UiTypefaces`, `UiToolkit`, `UiLayer`), and the menu in `UI/Menu/` (`IMenu`, `MenuLayer`, `MenuPages` with
+    `IMenuPage`, `SettingsPage`, `SettingsRows`, `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`), `CentredMessageLayer`, `Amounts`.
   - `Input/`: snapshots per frame and per fixed step (`InputSnapshot`: `InputService.Frame` and `InputService.Tick`), `PointerCapture`, `IKeyboardFocus`, `IMenuInput` (`UiPointer`,
     `CapturingBinding`), `IFrameInput` and `InputService` (`SetDrawnPointer`, `SetPanel`, `SetTextFocus`,
     `AddEscapeHandler`), `IPanelInput`, `ITextInput`, `IEscapeHandler`, `KeyBindings`, `InputBinding`.

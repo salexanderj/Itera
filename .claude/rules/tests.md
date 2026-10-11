@@ -142,7 +142,9 @@ Where tests live:
   `NavigationWindowTests`: moves by tiles, the map's edge, a moved window against one placed there at the start, an edit
   past it, a reset during a move, a walker 2 km to its goal, no allocation), `Audio/` (`AudioMixerTests` with the one-shots across a move of the origin, `AudioServiceTests`,
   `SynthesisTests`, `SoundCacheTests`), `Particles/`, `Commands/` (`MatchCommandsTests` too), `UI/` (`AimDotLayerTests`, `TextBlobsTests`,
-  `DevConsoleTests`, `MenuLayerTests`, `MenuJoinPageTests`, `RadialMenuTests`, `TextLineTests`; `Toolkit/`:
+  `DevConsoleTests`, `MenuLayerTests` and `MenuJoinPageTests` (the menu worked by what its elements read),
+  `MenuPicturesTests` (every menu page drawn at 1280x720 and 2560x1440; `ITERA_UI_PICTURES` keeps them, for a look test),
+  `EngineLayerBoundsTests` and `UiFontsTests` (the sizing rule), `RadialMenuTests`, `TextLineTests`; `Toolkit/`:
   `UiLayoutTests` pinning rectangles with `FixedTextMeasurer`, `UiInputTests`, `UiLayerTests` through `UISurface` and
   `LayerPicture`), `Input/`
   (`MenuInputTests`, `KeyBindingsTests`, `KeyboardFocusTests`, `InputInjectionTests`, `TextFocusTests`), `Settings/`, `Loading/`,

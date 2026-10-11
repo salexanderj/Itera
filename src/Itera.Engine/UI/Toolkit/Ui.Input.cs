@@ -39,6 +39,8 @@ public sealed partial class Ui
     private bool _focusShown;
     private int _reveal;
     private int _typing;
+    private int _startTyping;
+    private int _startLayouts;
     private int _entered;
     private System.Numerics.Vector2 _lastPointer;
     private bool _pointerSeen;
@@ -88,7 +90,23 @@ public sealed partial class Ui
     }
 
     /// <summary>Takes the typing away from the text box that has it.</summary>
-    public void StopTyping() => _typing = 0;
+    public void StopTyping()
+    {
+        _typing = 0;
+        _startTyping = 0;
+    }
+
+    /// <summary>
+    /// Gives the typing (and the focus) to text box <paramref name="id"/>, as a press on it would: from the layout that
+    /// declares it, this one or the next (a page that shows it from the next frame).
+    /// </summary>
+    public void StartTyping(int id)
+    {
+        _typing = id;
+        _focused = id;
+        _startTyping = id;
+        _startLayouts = _building ? 2 : 1;
+    }
 
     /// <summary>
     /// Forgets the pointer: nothing hovered or pressed, and the next pointer seen does not count as moving onto what it
@@ -175,6 +193,7 @@ public sealed partial class Ui
             _focusShown = false;
             _reveal = 0;
             _typing = over >= 0 && _hits[over].Kind == UiKind.TextBox ? hovered : 0;
+            _startTyping = 0;
             if (hovered != 0)
             {
                 _focused = hovered;
@@ -521,6 +540,17 @@ public sealed partial class Ui
                     AddHit(i);
                 }
             }
+        }
+
+        if (_startTyping != 0 && Declared(_startTyping) != 0)
+        {
+            _typing = _startTyping;
+            _focused = _startTyping;
+            _startTyping = 0;
+        }
+        else if (_startTyping != 0 && --_startLayouts <= 0)
+        {
+            _startTyping = 0;
         }
 
         _hovered = Declared(_hovered);

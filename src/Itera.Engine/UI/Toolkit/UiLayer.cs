@@ -124,8 +124,12 @@ public abstract class UiLayer : IUiLayer, IDisposable
 
     public void Update(in FrameTime time) => Update(in time, _width, _height);
 
+    /// <summary>Called at each frame's start, shown or not, before <see cref="Visible"/> is read (a menu following the matches).</summary>
+    protected virtual void BeforeUpdate(in FrameTime time) { }
+
     public void Update(in FrameTime time, int width, int height)
     {
+        BeforeUpdate(in time);
         var resized = width != _width || height != _height;
         _width = width;
         _height = height;

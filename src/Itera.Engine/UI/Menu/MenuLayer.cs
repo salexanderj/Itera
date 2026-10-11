@@ -1,11 +1,10 @@
 using System.Globalization;
-using System.Numerics;
-using Itera.Engine.Audio;
 using Itera.Engine.Commands;
 using Itera.Engine.Input;
 using Itera.Engine.Matches;
 using Itera.Engine.Networking;
 using Itera.Engine.Settings;
+using Itera.Engine.UI.Toolkit;
 using Itera.Engine.Windowing;
 using Itera.Modding;
 using Microsoft.Extensions.Options;
@@ -19,7 +18,7 @@ public enum MenuView
     /// <summary>Nothing: a match is played.</summary>
     None,
 
-    /// <summary>The main menu: play offline, host, join, settings, quit.</summary>
+    /// <summary>The main menu: play offline, host, join, a game's pages, settings, quit.</summary>
     Main,
 
     /// <summary>Joining a game: the friends who host one (through Steam), and the address box.</summary>
@@ -34,26 +33,30 @@ public enum MenuView
     /// <summary>A match's world starts.</summary>
     Starting,
 
-    /// <summary>The menu over a match (Escape): resume, settings, leave the match, quit.</summary>
+    /// <summary>The menu over a match (Escape): resume, a game's pages, settings, leave the match, quit.</summary>
     InGame,
 
     /// <summary>A friend's "Join game" from Steam during a match: leave this match and join, or stay.</summary>
     Confirm,
+
+    /// <summary>A game's page (<see cref="MenuPages"/>).</summary>
+    Page,
 }
 
 /// <summary>
-/// The engine's menu (<see cref="IMenu"/>; a game may swap it for its own): over the loading screen's ring when no match
-/// is played (the main menu, the join and settings pages, a join's progress, a match's start), and over the match when
-/// Escape opens it or a friend's "Join game" asks first (<see cref="JoinRequests"/>). Its buttons ask
+/// The engine's menu (<see cref="IMenu"/>; a game may swap it for its own, or add to it with <see cref="MenuPages"/> and
+/// <see cref="SettingsRows"/>), a toolkit layer (<see cref="UiLayer"/>): over the loading screen's ring when no match is
+/// played (the main menu, the join and settings pages, a join's progress, a match's start), and over the shaded match
+/// when Escape opens it or a friend's "Join game" asks first (<see cref="JoinRequests"/>). Its buttons ask
 /// <see cref="MatchControl"/> for matches (<see cref="MatchCommands"/>' starts) and the window to close; the join page
-/// lists the friends who host (<see cref="SteamFriendList"/>). While it is open
-/// it takes the pointer and the game gets no input (<see cref="IMenuInput"/>); it draws again only when what it shows
-/// changes (a page, the button under the pointer, the text typed, a join's progress, the friends), and its update
-/// allocates nothing otherwise. It clicks softly as the pointer comes onto a button, a switch, or a slider, and more
-/// fully as a button or switch is pressed, or Enter joins from the address box (<see cref="EngineSounds.MenuHover"/> and <see cref="EngineSounds.MenuPress"/>, played at the listener). Its look is
-/// the game's <see cref="MenuStyle"/>. Main thread.
+/// lists the friends who host (<see cref="SteamFriendList"/>); the Settings page is <see cref="SettingsPage"/>. While it
+/// is open it takes the pointer and the keyboard's navigation keys, and the game gets no input
+/// (<see cref="IMenuInput"/>); the band at the bottom says what the element under the pointer (or with the focus)
+/// does, or why something cannot be done, and the main page why the last match ended. Its look is the game's
+/// <see cref="MenuStyle"/>, its body text 32.4 units (3 % of the reference screen's height), its title 2.5 times that;
+/// it clicks as the toolkit's layers do. Main thread.
 /// </summary>
-public sealed partial class MenuLayer : IMenu, IDisposable
+public sealed class MenuLayer : UiLayer, IMenu
 {
     /// <summary>The longest address that can be typed.</summary>
     public const int MaxAddressLength = 120;
@@ -61,65 +64,68 @@ public sealed partial class MenuLayer : IMenu, IDisposable
     /// <summary>Friends' rows the join page shows at once; the wheel scrolls through more.</summary>
     public const int VisibleRows = 5;
 
-    private readonly UiFonts _fonts;
-    private readonly MenuStyle _style;
+    /// <summary>The menu's body text, in units: 3 % of the reference screen's height.</summary>
+    public const float BodyUnits = 32.4f;
+
+    private const float ButtonWidth = 367.2f;
+    private const float ButtonHeight = 64.8f;
+    private const float Gap = 16.2f;
+    private const float BandHeight = 75.6f;
+    private const float FriendRowHeight = 81;
+    private const float FriendsWidth = 691.2f;
+
+    private static readonly int s_shade = Ui.Id("menu.shade");
+    private static readonly int s_band = Ui.Id("menu.band");
+    private static readonly int s_play = Ui.Id("menu.play");
+    private static readonly int s_host = Ui.Id("menu.host");
+    private static readonly int s_join = Ui.Id("menu.join");
+    private static readonly int s_settings = Ui.Id("menu.settings");
+    private static readonly int s_quit = Ui.Id("menu.quit");
+    private static readonly int s_back = Ui.Id("menu.back");
+    private static readonly int s_cancel = Ui.Id("menu.cancel");
+    private static readonly int s_resume = Ui.Id("menu.resume");
+    private static readonly int s_leave = Ui.Id("menu.leave");
+    private static readonly int s_confirmJoin = Ui.Id("menu.confirm.join");
+    private static readonly int s_stay = Ui.Id("menu.confirm.stay");
+    private static readonly int s_friends = Ui.Id("menu.friends");
+    private static readonly int s_friendJoin = Ui.Id("menu.friend.join");
+    private static readonly int s_avatar = Ui.Id("menu.friend.avatar");
+    private static readonly int s_address = Ui.Id("menu.address");
+    private static readonly int s_joinAddress = Ui.Id("menu.address.join");
+    private static readonly int s_gamePage = Ui.Id("menu.page");
+
     private readonly MatchControl _matches;
     private readonly MatchCommands _starts;
-    private readonly IFrameInput _input;
     private readonly WindowService _window;
     private readonly SteamService _steam;
     private readonly SteamFriendList _friends;
+    private readonly JoinRequests _joins;
     private readonly PlayerSettings _settings;
-    private readonly AudioService _audio;
+    private readonly SettingsPage _settingsPage;
+    private readonly MenuPages _pages;
+    private readonly MenuStyle _colours;
     private readonly string _title;
-    private readonly List<Element> _elements = [];
+    private readonly TextEntry _address;
+    private readonly Dictionary<int, string> _hints = [];
+    private readonly Dictionary<int, ulong> _avatarFriends = [];
     private readonly Dictionary<ulong, (FriendAvatar Source, SKImage Image)> _avatars = [];
-    private readonly TextEntry _addressEntry;
+    private readonly Dictionary<ulong, (FriendHost Host, string Players, string Hint)> _hostTexts = [];
     private MenuView _page = MenuView.Main;
     private bool _inGame;
     private bool _inGameSettings;
-    private bool _addressFocused;
-    private readonly JoinRequests _joins;
-    private int _joinsVersion = -1;
-    private IReadOnlyList<FriendHost> _rows = [];
-    private int _rowScroll;
-    private WheelSteps _rowWheel;
-
-    /// <summary>How far the address's text is moved left in its box, in pixels, so its cursor shows.</summary>
-    private float _addressScroll;
-    private int _friendsVersion = -1;
-    private int _settingsVersion = -1;
-    private int _dragging = -1;
-    private MenuView _laidOutView = MenuView.None;
-    private int _laidOutWidth;
-    private int _laidOutHeight;
-    private int _width;
-    private int _height;
-    private int _hover = -1;
-    private int _pressed = -1;
-    private Vector2 _lastPointer;
-    private bool _pointerSeen;
-    private int _hoverSound = -1;
-    private int _pressSound = -1;
-    private int _seenStarted;
-    private bool _seenMatch;
-    private int _addressVersion = -1;
-    private (JoinStage Stage, long Tenths) _joinShown = (JoinStage.Failed, -1);
-    private string _status = "";
+    private MenuPage? _gamePage;
     private string? _notice;
     private string? _lastEnd;
-    private bool _dirty = true;
-    private SKFont? _font;
-    private SKFont? _titleFont;
-    private float _fontPixels;
-    private SKPaint? _fill;
-    private SKPaint? _stroke;
-    private SKPaint? _text;
+    private int _seenStarted;
+    private bool _seenMatch;
+    private (JoinStage Stage, long Tenths) _joinShown = (JoinStage.Failed, -1);
+    private string _status = "";
+    private (JoinRequest? Request, string Text) _confirmText;
     private bool _disposed;
 
     public MenuLayer(
-        UiFonts fonts,
-        MenuStyle style,
+        UiToolkit toolkit,
+        MenuStyle colours,
         MatchControl matches,
         MatchCommands starts,
         IFrameInput input,
@@ -128,23 +134,26 @@ public sealed partial class MenuLayer : IMenu, IDisposable
         SteamFriendList friends,
         JoinRequests joins,
         PlayerSettings settings,
-        AudioService audio,
-        IOptions<EngineOptions> options
+        IOptions<EngineOptions> options,
+        MenuPages? pages = null,
+        SettingsRows? rows = null
     )
+        : base(toolkit, input)
     {
-        _settings = settings;
-        _audio = audio;
-        _fonts = fonts;
-        _style = style;
+        ArgumentNullException.ThrowIfNull(options);
+        _colours = colours;
         _matches = matches;
         _starts = starts;
-        _input = input;
         _window = window;
         _steam = steam;
         _friends = friends;
         _joins = joins;
+        _settings = settings;
+        _pages = pages ?? new MenuPages();
+        _settingsPage = new SettingsPage(settings, rows);
         _title = options.Value.Application.Name;
-        _addressEntry = new TextEntry(MaxAddressLength, PressJoinAddress);
+        _address = new TextEntry(MaxAddressLength, PressJoinAddress);
+        Ui.Style = new MenuLook(colours);
     }
 
     /// <summary>What the menu shows now: its page with no match, a match's join or start, or the menu over a match.</summary>
@@ -153,33 +162,60 @@ public sealed partial class MenuLayer : IMenu, IDisposable
         : _matches.Phase == MatchPhase.Joining ? MenuView.Joining
         : _matches.Phase == MatchPhase.Starting ? MenuView.Starting
         : _joins.Pending is not null ? MenuView.Confirm
-        : _inGame ? (_inGameSettings ? MenuView.Settings : MenuView.InGame)
+        : _inGame
+            ? (
+                _inGameSettings ? MenuView.Settings
+                : _gamePage is not null ? MenuView.Page
+                : MenuView.InGame
+            )
         : MenuView.None;
 
     public bool IsOpen => View != MenuView.None;
 
-    public ITextInput? TextFocus => View == MenuView.Join && _addressFocused ? _addressEntry : null;
+    public override bool Visible => IsOpen;
 
     /// <summary>Over the HUD; the console is drawn over it (registered after it).</summary>
-    public bool AboveMatch => true;
+    public override bool AboveMatch => true;
 
-    public bool Visible => IsOpen;
+    /// <summary>The address box while it has the typing on the join page.</summary>
+    public ITextInput? TextFocus => View == MenuView.Join ? Ui.Typing : null;
 
-    public bool Dirty => _dirty;
+    /// <summary>True while the Settings page waits for a key or mouse button to bind.</summary>
+    public bool CapturingBinding => View == MenuView.Settings && _settingsPage.CapturingBinding;
+
+    /// <summary>The Settings page's tab shown.</summary>
+    public string SettingsTab => _settingsPage.Tab;
 
     /// <summary>The address box's text, for tests.</summary>
-    public TextLine Address => _addressEntry.Line;
+    public TextLine Address => _address.Line;
 
     /// <summary>The labels of the buttons shown, in order, for tests.</summary>
-    public IEnumerable<string> Buttons =>
-        _elements.Where(e => e.Action is not MenuAction.AddressBox).Select(e => e.Label);
+    public IEnumerable<string> Buttons
+    {
+        get
+        {
+            for (var i = 0; i < Ui.Count; i++)
+            {
+                var element = Ui.ElementAt(i);
+                if (element.Kind == UiKind.Button && element.Text is { } label)
+                {
+                    yield return label;
+                }
+            }
+        }
+    }
+
+    /// <summary>The address box as last laid out; empty when the page has none (tests).</summary>
+    internal SKRect AddressBox => Ui.Rect(s_address);
+
+    public void BindingPressed(InputBinding binding) => _settingsPage.BindingPressed(binding);
 
     public void Escape()
     {
         if (CapturingBinding)
         {
             // Waiting for a key to bind: Escape keeps the binding it had.
-            StopBinding();
+            _settingsPage.Escape();
             return;
         }
 
@@ -194,453 +230,562 @@ public sealed partial class MenuLayer : IMenu, IDisposable
             case MenuView.Confirm:
                 _joins.Decline();
                 break;
-            case MenuView.Settings when _matches.Phase != MatchPhase.Menu:
-                _inGameSettings = false;
-                _settings.Save();
-                break;
             case MenuView.Settings:
-                _page = MenuView.Main;
-                _settings.Save();
+                LeaveSettings();
                 break;
             case MenuView.Join:
                 _page = MenuView.Main;
                 break;
+            case MenuView.Page when _gamePage is { } page:
+                if (!page.Page.Escape())
+                {
+                    LeavePage();
+                }
+
+                break;
             case MenuView.Joining:
-                Activate(MenuAction.Cancel, -1);
+                _matches.RequestLeave("The join was cancelled.");
                 return;
             default:
                 return;
         }
 
         _notice = null;
-        _dirty = true;
     }
 
-    public void Update(in FrameTime time)
+    protected override void BeforeUpdate(in FrameTime time) => FollowMatches();
+
+    /// <summary>The address box's typing goes through the menu's input (<see cref="TextFocus"/>), not the game's.</summary>
+    protected override void GiveTyping(TextEntry? entry, TextEntry? before) { }
+
+    protected override bool StillTyping(TextEntry entry) => true;
+
+    protected override void Build(Ui ui)
     {
-        FollowMatches();
         var view = View;
         // The loop takes Steam's reports; the list is kept fresh while the join page shows.
         _friends.Watching = view == MenuView.Join;
-        if (_joins.Version != _joinsVersion)
+        var overMatch = _matches.Phase != MatchPhase.Menu;
+        if (overMatch && view is MenuView.InGame or MenuView.Settings or MenuView.Confirm or MenuView.Page)
         {
-            // A friend's "Join game" came or was answered: the question shows or goes.
-            _joinsVersion = _joins.Version;
-            _laidOutView = MenuView.None;
-            _dirty = true;
-            view = View;
+            // Over the match: the picture shaded, so the menu reads. In the flow, declared first, so it draws under the
+            // page (anchored elements draw over the flow).
+            ui.Area(s_shade, UiBox.Fill, UiMarks.Passive);
         }
 
-        if (view == MenuView.None)
+        switch (view)
         {
-            // Opened again, the menu clicks for the pointer only once it moves.
-            _pointerSeen = false;
-            return;
+            case MenuView.Main:
+                Main(ui);
+                break;
+            case MenuView.InGame:
+                InGame(ui);
+                break;
+            case MenuView.Join:
+                Join(ui);
+                break;
+            case MenuView.Settings:
+                Settings(ui);
+                break;
+            case MenuView.Page:
+                GamePage(ui);
+                break;
+            case MenuView.Joining:
+                Joining(ui);
+                break;
+            case MenuView.Starting:
+                Message(ui, "Starting…");
+                break;
+            case MenuView.Confirm:
+                Confirm(ui);
+                break;
         }
 
-        if (view == MenuView.Join && _friends.Version != _friendsVersion)
-        {
-            _friendsVersion = _friends.Version;
-            _laidOutView = MenuView.None;
-        }
-
-        if (view != _laidOutView || _width != _laidOutWidth || _height != _laidOutHeight)
-        {
-            Layout(view, _width, _height);
-        }
-
-        if (view == MenuView.Joining)
-        {
-            ShowJoin();
-        }
-
-        if (_addressEntry.Line.Version != _addressVersion)
-        {
-            _addressVersion = _addressEntry.Line.Version;
-            _dirty = true;
-        }
-
-        FollowSettings();
-
-        var pointer = _input.MenuPointer;
-        if (view == MenuView.Join && pointer.Scroll != 0)
-        {
-            Scroll(pointer.Scroll);
-        }
-        else if (view == MenuView.Settings && _settingsTab == SettingsTab.Keybindings && pointer.Scroll != 0)
-        {
-            ScrollKeys(pointer.Scroll);
-        }
-
-        Point(in pointer);
+        Band(ui, view);
     }
 
-    public SKRectI Bounds(int width, int height) => new(0, 0, width, height);
-
-    public void Draw(SKCanvas canvas, int width, int height)
+    protected override void DrawArea(UiPainter painter, in UiElement element)
     {
-        _width = width;
-        _height = height;
-        var view = View;
-        // A switch flipped in this frame's update shows its new state now.
-        FollowSettings();
-        if (view != _laidOutView || width != _laidOutWidth || height != _laidOutHeight)
+        ArgumentNullException.ThrowIfNull(painter);
+        if (element.Id == s_shade || element.Id == s_band)
         {
-            Layout(view, width, height);
+            painter.Fill(element.Rect, _colours.Shade);
         }
-
-        var unit = height / 100f;
-        Paints(unit);
-        if (_matches.Phase != MatchPhase.Menu && view is MenuView.InGame or MenuView.Settings or MenuView.Confirm)
+        else if (_avatarFriends.TryGetValue(element.Id, out var friend))
         {
-            // Over the match: the picture shaded, so the menu reads.
-            _fill!.Color = _style.Shade;
-            canvas.DrawRect(0, 0, width, height, _fill);
+            if (AvatarImage(friend) is { } image)
+            {
+                painter.Canvas.DrawImage(image, element.Rect, new SKSamplingOptions(SKFilterMode.Linear));
+            }
+            else
+            {
+                painter.Fill(element.Rect, _colours.Field);
+            }
         }
-        if (view is MenuView.Join or MenuView.Settings && _matches.Phase == MatchPhase.Menu)
-        {
-            // Over the ring: a panel under the list, so the rows read.
-            _fill!.Color = _style.Shade;
-            var keys = view == MenuView.Settings && _settingsTab == SettingsTab.Keybindings;
-            var bottom = keys ? 90 : 86;
-            // The Game and Graphics tabs' rows are wider than the rest (SettingRowUnits).
-            var panelWidth = (view == MenuView.Settings && !keys ? SettingRowUnits + 8 : 72) * unit;
-            var panel = new SKRect((width - panelWidth) / 2, 9 * unit, (width + panelWidth) / 2, bottom * unit);
-            canvas.DrawRoundRect(panel, 1.5f * unit, 1.5f * unit, _fill);
-        }
-
-        DrawTitleAndLines(canvas, view, width, unit);
-        for (var i = 0; i < _elements.Count; i++)
-        {
-            DrawElement(canvas, _elements[i], i == _hover, unit);
-        }
-
-        DrawHint(canvas, width, height, unit);
-        // Last: a layout made here marks the menu changed, and it is drawn now.
-        _dirty = false;
     }
 
-    public void Dispose()
+    protected override void Dispose(bool disposing)
     {
-        if (_disposed)
+        if (!_disposed && disposing)
         {
-            return;
+            foreach (var (_, image) in _avatars.Values)
+            {
+                image.Dispose();
+            }
+
+            _avatars.Clear();
         }
 
         _disposed = true;
-        foreach (var (_, image) in _avatars.Values)
-        {
-            image.Dispose();
-        }
-
-        _avatars.Clear();
-        _font?.Dispose();
-        _titleFont?.Dispose();
-        _fill?.Dispose();
-        _stroke?.Dispose();
-        _text?.Dispose();
+        base.Dispose(disposing);
     }
 
-    /// <summary>A setting or a binding changed: the page is laid out again (a switch's label) and drawn.</summary>
-    private void FollowSettings()
+    private void Main(Ui ui)
     {
-        if (_settings.Version != _settingsVersion)
+        using (Page(ui))
         {
-            _settingsVersion = _settings.Version;
-            _laidOutView = MenuView.None;
-            _dirty = true;
-        }
+            PageTitle(ui, _title);
+            var steam = _steam.IsAvailable;
+            if (Button(ui, s_play, "Play Offline", "Plays alone."))
+            {
+                _matches.RequestStart(_starts.OfflineStart());
+            }
 
-        FollowKeys();
+            if (
+                Button(
+                    ui,
+                    s_host,
+                    "Host Game",
+                    steam
+                        ? "Hosts through Steam: friends join from their Join Game."
+                        : "Steam is not running: hosts on UDP; others join by address."
+                )
+            )
+            {
+                _matches.RequestStart(_starts.HostStart());
+            }
+
+            if (Button(ui, s_join, "Join Game", "Joins a friend's game."))
+            {
+                _page = MenuView.Join;
+                // Typing goes to the address box at once; a click elsewhere takes it away.
+                Ui.StartTyping(s_address);
+                Ui.ScrollTo(s_friends, 0);
+                _friends.Watching = true;
+                _friends.MarkStale();
+            }
+
+            GamePageButtons(ui, MenuPlace.Main);
+            SettingsButton(ui);
+            QuitButton(ui);
+        }
     }
 
-    /// <summary>
-    /// A match that started or ended changes the page: the menu over a match closes, and an end shows the main menu (a
-    /// friend's join asked about in it goes with it, <see cref="JoinRequests.Pending"/>).
-    /// </summary>
-    private void FollowMatches()
+    private void InGame(Ui ui)
     {
-        var hasMatch = _matches.Phase != MatchPhase.Menu;
-        if (hasMatch == _seenMatch && _matches.Started == _seenStarted && _matches.LastEnd == _lastEnd)
+        using (Page(ui))
+        {
+            PageTitle(ui, "Menu");
+            if (Button(ui, s_resume, "Resume", "Back to the game (Escape)."))
+            {
+                _inGame = false;
+            }
+
+            GamePageButtons(ui, MenuPlace.InGame);
+            SettingsButton(ui);
+            if (Button(ui, s_leave, "Leave Match", "Ends this match and goes back to the main menu."))
+            {
+                _matches.RequestLeave("You left the match.");
+                _inGame = false;
+            }
+
+            QuitButton(ui);
+        }
+    }
+
+    private void GamePageButtons(Ui ui, MenuPlace place)
+    {
+        var pages = _pages.Pages;
+        for (var i = 0; i < pages.Count; i++)
+        {
+            var page = pages[i];
+            if (page.Place != place && page.Place != MenuPlace.Both)
+            {
+                continue;
+            }
+
+            if (Button(ui, Ui.Id(s_gamePage, i), page.Label, page.Hint))
+            {
+                _gamePage = page;
+                if (_matches.Phase == MatchPhase.Menu)
+                {
+                    _page = MenuView.Page;
+                }
+            }
+        }
+    }
+
+    private void SettingsButton(Ui ui)
+    {
+        if (!Button(ui, s_settings, "Settings", "Sound, the mouse, the screen, the picture, and the keys."))
         {
             return;
         }
 
-        // A match started (also one that failed before a frame saw it, as a friend's join can) or ended: the main page
-        // is what shows when no match is played again.
-        if ((!hasMatch && _seenMatch) || _matches.Started != _seenStarted)
+        _settingsPage.Opened();
+        if (_matches.Phase == MatchPhase.Menu)
+        {
+            _page = MenuView.Settings;
+        }
+        else
+        {
+            _inGameSettings = true;
+        }
+    }
+
+    private void QuitButton(Ui ui)
+    {
+        if (Button(ui, s_quit, "Quit", "Closes the game."))
+        {
+            _window.RequestExit("Quit in the menu");
+        }
+    }
+
+    private void Settings(Ui ui)
+    {
+        using (Panel(ui))
+        {
+            Title(ui, "Settings");
+            _settingsPage.Build(ui);
+            if (_settingsPage.Footer(ui))
+            {
+                LeaveSettings();
+            }
+        }
+    }
+
+    private void LeaveSettings()
+    {
+        _settings.Save();
+        if (_matches.Phase == MatchPhase.Menu)
         {
             _page = MenuView.Main;
         }
+        else
+        {
+            _inGameSettings = false;
+        }
+    }
 
-        _seenMatch = hasMatch;
-        _seenStarted = _matches.Started;
-        _lastEnd = _matches.LastEnd;
-        _inGame = false;
-        _inGameSettings = false;
-        _dirty = true;
+    private void GamePage(Ui ui)
+    {
+        if (_gamePage is not { } page)
+        {
+            return;
+        }
+
+        using (Panel(ui))
+        {
+            Title(ui, page.Page.Title);
+            page.Page.Build(ui);
+            if (Button(ui, s_back, "Back", ""))
+            {
+                LeavePage();
+            }
+        }
+    }
+
+    private void LeavePage()
+    {
+        _gamePage = null;
+        if (_matches.Phase == MatchPhase.Menu)
+        {
+            _page = MenuView.Main;
+        }
     }
 
     /// <summary>
-    /// The pointer: the element under it, and a click (down and up on one element) activates that element. The pointer
-    /// moving onto an element clicks softly; a page changing or the menu opening under a still pointer does not.
+    /// The join page: a row for each friend hosting (the wheel scrolls past <see cref="VisibleRows"/>), each with its
+    /// picture, name, players, and Join; then the address box with Join and Back.
     /// </summary>
-    private void Point(in UiPointer pointer)
+    private void Join(Ui ui)
     {
-        var moved = _pointerSeen && pointer.Position != _lastPointer;
-        _lastPointer = pointer.Position;
-        _pointerSeen = true;
-        if (_dragging >= 0)
+        using (Panel(ui))
         {
-            // A slider follows the pointer while the button is held on it, also off its bar.
-            Drag(_dragging, pointer.Position.X);
-            if (!pointer.Down || pointer.Released)
+            Title(ui, "Join Game");
+            var hosts = _friends.Hosts;
+            PruneAvatars(hosts);
+            if (!_friends.Available || hosts.Count == 0)
             {
-                _dragging = -1;
+                var empty = !_friends.Available
+                    ? "Steam is not running: no friends to list."
+                    : "No friends are hosting a game now.";
+                ui.Text(empty, UiText.Body with { Tone = UiTone.Dim });
             }
 
-            return;
-        }
-
-        var hover = -1;
-        for (var i = 0; i < _elements.Count; i++)
-        {
-            if (_elements[i].Enabled && _elements[i].Rect.Contains(pointer.Position.X, pointer.Position.Y))
+            using (
+                ui.Scroll(
+                    s_friends,
+                    new UiBox
+                    {
+                        Width = UiSize.Fixed(FriendsWidth),
+                        // Room for the rows shown at once, also while fewer or none are: the address box stays put.
+                        Height = UiSize.Fixed(VisibleRows * FriendRowHeight),
+                    }
+                )
+            )
             {
-                hover = i;
-                break;
-            }
-        }
-
-        if (hover != _hover)
-        {
-            if (hover >= 0 && moved && !IsAddressBox(hover))
-            {
-                Click(EngineSounds.MenuHover, ref _hoverSound);
-            }
-
-            _hover = hover;
-            _dirty = true;
-        }
-
-        if (pointer.Pressed && hover >= 0 && _elements[hover].Action == MenuAction.Slider)
-        {
-            _dragging = _elements[hover].Row;
-            Drag(_dragging, pointer.Position.X);
-            return;
-        }
-
-        if (pointer.Pressed)
-        {
-            _pressed = hover;
-            if (View == MenuView.Join && _addressFocused != (hover >= 0 && IsAddressBox(hover)))
-            {
-                // A click elsewhere takes the typing away from the box, one on it gives it back.
-                _addressFocused = hover >= 0 && IsAddressBox(hover);
-                _dirty = true;
-            }
-        }
-
-        if (pointer.Released)
-        {
-            var pressed = _pressed;
-            _pressed = -1;
-            if (pressed >= 0 && pressed == hover)
-            {
-                if (!IsAddressBox(pressed))
+                for (var i = 0; i < hosts.Count; i++)
                 {
-                    Click(EngineSounds.MenuPress, ref _pressSound);
+                    FriendRow(ui, i, hosts[i]);
+                }
+            }
+
+            ui.Text("Or type a host's address:");
+            _hints[s_address] = "host:port over UDP, or lobby:ID or steam:ID through Steam.";
+            ui.TextBox(
+                s_address,
+                _address,
+                "127.0.0.1:47600",
+                UiBox.Sized(UiSize.Fixed(475.2f), UiSize.Fixed(ButtonHeight))
+            );
+            using (ui.Row(0, new UiBox { Gap = 2 * Gap }))
+            {
+                if (Button(ui, s_joinAddress, "Join", "Joins the address typed.", 226.8f))
+                {
+                    JoinAddress();
                 }
 
-                Activate(_elements[pressed].Action, _elements[pressed].Row);
+                if (Button(ui, s_back, "Back", "", 226.8f))
+                {
+                    _page = MenuView.Main;
+                }
             }
         }
     }
 
-    private bool IsAddressBox(int index) => _elements[index].Action == MenuAction.AddressBox;
-
-    /// <summary>
-    /// Plays the menu's click <paramref name="name"/> where the listener is. <paramref name="id"/> keeps its recipe's id
-    /// once found; with no such recipe (the audio not started, as in tests) nothing plays.
-    /// </summary>
-    private void Click(string name, ref int id)
+    private void FriendRow(Ui ui, int index, FriendHost host)
     {
-        if (id < 0 && !_audio.Recipes.TryFind(name, out id))
+        var texts = HostTexts(host);
+        using (
+            ui.Row(
+                0,
+                new UiBox
+                {
+                    Width = UiSize.Grow(),
+                    Height = UiSize.Fixed(FriendRowHeight),
+                    Gap = Gap,
+                    AlignY = UiAlign.Centre,
+                }
+            )
+        )
         {
-            id = -1;
+            var avatar = Ui.Id(s_avatar, index);
+            _avatarFriends[avatar] = host.SteamId;
+            var version = host.Avatar is null
+                ? 0
+                : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(host.Avatar);
+            ui.Area(avatar, UiBox.Fixed(62.6f, 62.6f), UiMarks.Passive, version);
+            ui.Text(host.Name, box: new UiBox { Width = UiSize.Grow() });
+            if (host.MaxPlayers > 0)
+            {
+                ui.Text(texts.Players, UiText.Body with { Tone = UiTone.Dim });
+            }
+
+            var join = Ui.Id(s_friendJoin, index);
+            _hints[join] = texts.Hint;
+            var marks = host.OtherVersion ? UiMarks.Disabled : UiMarks.None;
+            var label = host.OtherVersion ? "Other version" : "Join";
+            if (ui.Button(join, label, box: UiBox.Fixed(162, 57), marks: marks).Clicked)
+            {
+                var lobby = host.Lobby.ToString(CultureInfo.InvariantCulture);
+                _matches.RequestStart(_starts.JoinStart(SteamAddress.LobbyPrefix + lobby));
+                _page = MenuView.Main;
+            }
+        }
+    }
+
+    /// <summary>A friend's players and hint, made again only when the friend's entry changes.</summary>
+    private (string Players, string Hint) HostTexts(FriendHost host)
+    {
+        if (_hostTexts.TryGetValue(host.SteamId, out var known) && ReferenceEquals(known.Host, host))
+        {
+            return (known.Players, known.Hint);
+        }
+
+        var players = string.Create(CultureInfo.InvariantCulture, $"{host.Players}/{host.MaxPlayers}");
+        var hint = host.OtherVersion
+            ? $"{host.Name} plays another version of the game."
+            : $"Joins {host.Name}'s game through Steam.";
+        _hostTexts[host.SteamId] = (host, players, hint);
+        return (players, hint);
+    }
+
+    private void Joining(Ui ui)
+    {
+        ShowJoin();
+        using (LinePage(ui, _status))
+        {
+            if (Button(ui, s_cancel, "Cancel", "Stops joining."))
+            {
+                _matches.RequestLeave("The join was cancelled.");
+            }
+        }
+    }
+
+    private void Confirm(Ui ui)
+    {
+        if (_joins.Pending is not { } request)
+        {
             return;
         }
 
-        _audio.Play(new SoundEvent { Recipe = id, AtListener = true });
+        if (!ReferenceEquals(_confirmText.Request, request))
+        {
+            _confirmText = (request, $"Leave this match and join {request.Name}?");
+        }
+
+        using (LinePage(ui, _confirmText.Text))
+        {
+            if (Button(ui, s_confirmJoin, "Join", "Ends this match and joins."))
+            {
+                // The match now ends first (its save written), then the join starts.
+                _joins.Accept();
+            }
+
+            if (Button(ui, s_stay, "Stay", "Stays in this match (Escape)."))
+            {
+                _joins.Decline();
+            }
+        }
+    }
+
+    private static void Message(Ui ui, string text)
+    {
+        using (LinePage(ui, text)) { }
+    }
+
+    /// <summary>A page of one line, 46 % down, with its buttons (declared in the scope) from 52 % down.</summary>
+    private static UiScope LinePage(Ui ui, string line)
+    {
+        var page = Page(ui);
+        ui.Space(UiBox.Sized(UiSize.Fit, UiSize.Fixed(206.5f)));
+        ui.Text(line);
+        ui.Space(UiBox.Sized(UiSize.Fit, UiSize.Fixed(22.8f)));
+        return page;
+    }
+
+    /// <summary>
+    /// The band at the bottom: a notice (a bad address), the key a binding waits for, else what the element under the
+    /// pointer (or with the focus) does; over it on the main menu, why the last match ended.
+    /// </summary>
+    private void Band(Ui ui, MenuView view)
+    {
+        var (text, tone) =
+            _notice is not null ? (_notice, UiTone.Warning)
+            : view == MenuView.Settings && _settingsPage.Notice is { } waiting ? (waiting, UiTone.Normal)
+            : HintOf(Ui.Hovered) is { Length: > 0 } hovered ? (hovered, UiTone.Dim)
+            : Ui.FocusShown && HintOf(Ui.Focused) is { Length: > 0 } focused ? (focused, UiTone.Dim)
+            : (null, UiTone.Normal);
+        if (view == MenuView.Main && _lastEnd is not null)
+        {
+            ui.Text(
+                _lastEnd,
+                UiText.Body with
+                {
+                    Tone = UiTone.Warning,
+                    Align = UiAlign.Centre,
+                },
+                new UiBox { Anchor = UiAnchor.Screen(UiPoint.Bottom, 0, -BandHeight - 4) }
+            );
+        }
+
+        if (text is null)
+        {
+            return;
+        }
+
+        using (
+            ui.Stack(
+                0,
+                new UiBox
+                {
+                    Width = UiSize.Grow(),
+                    Height = UiSize.Fixed(BandHeight),
+                    AlignX = UiAlign.Centre,
+                    AlignY = UiAlign.Centre,
+                    Anchor = UiAnchor.Screen(UiPoint.Bottom),
+                }
+            )
+        )
+        {
+            ui.Area(s_band, UiBox.Fill, UiMarks.Passive);
+            ui.Text(text, UiText.Body with { Tone = tone, Align = UiAlign.Centre });
+        }
+    }
+
+    private string? HintOf(int id) =>
+        id == 0 ? null
+        : _hints.TryGetValue(id, out var hint) ? hint
+        : _settingsPage.HintOf(id);
+
+    /// <summary>A page over the ring or the match: a column across the screen, its children centred, from 22 % down.</summary>
+    private static UiScope Page(Ui ui) =>
+        ui.Column(0, UiBox.Fill with { AlignX = UiAlign.Centre, Padding = new UiEdges(0, 241.4f, 0, 0), Gap = Gap });
+
+    /// <summary>A page's title, with the room under it the menu had before the toolkit (its buttons from 36 % down).</summary>
+    private static void PageTitle(Ui ui, string title)
+    {
+        Title(ui, title);
+        ui.Space(UiBox.Fixed(0, 9.3f));
+    }
+
+    /// <summary>A page on a panel: centred across the screen, from 9 % down.</summary>
+    private static UiScope Panel(Ui ui) =>
+        ui.Column(
+            0,
+            new UiBox
+            {
+                Panel = true,
+                Padding = new UiEdges(43.2f, 25.9f, 43.2f, 43.2f),
+                Gap = Gap,
+                AlignX = UiAlign.Centre,
+                Anchor = UiAnchor.Screen(UiPoint.Top, 0, 97.2f),
+            }
+        );
+
+    private static void Title(Ui ui, string title) => ui.Text(title, UiText.Title);
+
+    /// <summary>A button of the menu's size, its hint kept for the band; true when clicked.</summary>
+    private bool Button(Ui ui, int id, string label, string hint, float width = ButtonWidth)
+    {
+        _hints[id] = hint;
+        return ui.Button(id, label, box: UiBox.Fixed(width, ButtonHeight)).Clicked;
     }
 
     /// <summary>Enter in the address box: it clicks as the Join button does, and joins.</summary>
     private void PressJoinAddress()
     {
-        Click(EngineSounds.MenuPress, ref _pressSound);
+        Toolkit.PlayPress();
         JoinAddress();
-    }
-
-    /// <summary>The first friend's row the join page shows (tests).</summary>
-    internal int RowScroll => _rowScroll;
-
-    /// <summary>How far the address's text is moved left in its box, in pixels, as last drawn (tests).</summary>
-    internal float AddressScroll => _addressScroll;
-
-    /// <summary>The address box as last laid out; empty when the page has none (tests).</summary>
-    internal SKRect AddressBox
-    {
-        get
-        {
-            foreach (var element in _elements)
-            {
-                if (element.Action == MenuAction.AddressBox)
-                {
-                    return element.Rect;
-                }
-            }
-
-            return SKRect.Empty;
-        }
-    }
-
-    /// <summary>The wheel on the join page moves the friends' rows.</summary>
-    private void Scroll(float steps)
-    {
-        var most = Math.Max(0, _rows.Count - VisibleRows);
-        var scroll = Math.Clamp(_rowScroll - _rowWheel.Take(steps), 0, most);
-        if (scroll != _rowScroll)
-        {
-            _rowScroll = scroll;
-            _laidOutView = MenuView.None;
-            _dirty = true;
-        }
-    }
-
-    private void Activate(MenuAction action, int row)
-    {
-        _notice = null;
-        _dirty = true;
-        switch (action)
-        {
-            case MenuAction.PlayOffline:
-                _matches.RequestStart(_starts.OfflineStart());
-                break;
-            case MenuAction.Host:
-                _matches.RequestStart(_starts.HostStart());
-                break;
-            case MenuAction.OpenJoin:
-                _page = MenuView.Join;
-                // Typing goes to the address box at once; a click elsewhere takes it away.
-                _addressFocused = true;
-                _rowScroll = 0;
-                // Read at the loop's next update of the list, before this page's first frame.
-                _friends.Watching = true;
-                _friends.MarkStale();
-                break;
-            case MenuAction.OpenSettings:
-                _settingsTab = SettingsTab.Game;
-                _bindAction = -1;
-                _keyScroll = 0;
-                if (_matches.Phase == MatchPhase.Menu)
-                {
-                    _page = MenuView.Settings;
-                }
-                else
-                {
-                    _inGameSettings = true;
-                }
-
-                break;
-            case MenuAction.Back:
-                _bindAction = -1;
-                if (View == MenuView.Settings)
-                {
-                    _settings.Save();
-                }
-
-                if (_matches.Phase == MatchPhase.Menu)
-                {
-                    _page = MenuView.Main;
-                }
-                else
-                {
-                    _inGameSettings = false;
-                }
-
-                break;
-            case MenuAction.Toggle:
-                Toggle(row);
-                break;
-            case MenuAction.Tab:
-                _settingsTab = (SettingsTab)row;
-                _bindAction = -1;
-                _laidOutView = MenuView.None;
-                break;
-            case MenuAction.Bind:
-                StartBinding(row);
-                break;
-            case MenuAction.ResetKeys:
-                _bindAction = -1;
-                Keys.ResetAll();
-                _laidOutView = MenuView.None;
-                break;
-            case MenuAction.JoinFriend:
-                if (row >= 0 && row < _rows.Count)
-                {
-                    var lobby = _rows[row].Lobby.ToString(CultureInfo.InvariantCulture);
-                    _matches.RequestStart(_starts.JoinStart(SteamAddress.LobbyPrefix + lobby));
-                    _page = MenuView.Main;
-                }
-
-                break;
-            case MenuAction.JoinAddress:
-                JoinAddress();
-                break;
-            case MenuAction.AddressBox:
-                _addressFocused = true;
-                break;
-            case MenuAction.Cancel:
-                _matches.RequestLeave("The join was cancelled.");
-                break;
-            case MenuAction.Resume:
-                _inGame = false;
-                break;
-            case MenuAction.Leave:
-                _matches.RequestLeave("You left the match.");
-                _inGame = false;
-                break;
-            case MenuAction.ConfirmJoin:
-                // The match now ends first (its save written), then the join starts.
-                _joins.Accept();
-
-                break;
-            case MenuAction.Stay:
-                _joins.Decline();
-                break;
-            case MenuAction.Quit:
-                _window.RequestExit("Quit in the menu");
-                break;
-        }
     }
 
     /// <summary>Joins the address typed, or says why it cannot.</summary>
     private void JoinAddress()
     {
-        var address = _addressEntry.Line.Text.Trim();
+        var address = _address.Line.Text.Trim();
         if (!SessionAddress.TryParse(address, out _, out _) && !SteamAddress.TryParse(address, out _, out _))
         {
             _notice =
                 address.Length == 0
                     ? "Type the host's address: host:port (or lobby:ID, steam:ID)."
                     : $"'{address}' is not host:port, lobby:ID, or steam:ID.";
-            _dirty = true;
             return;
         }
 
+        _notice = null;
         _matches.RequestStart(_starts.JoinStart(address));
         _page = MenuView.Main;
-        _dirty = true;
     }
 
     /// <summary>The join's line, composed again only when its stage or its tenth of a megabyte changes.</summary>
@@ -664,157 +809,44 @@ public sealed partial class MenuLayer : IMenu, IDisposable
                 $"Downloading the host's world: {tenths / 10.0:F1} of {progress.TotalBytes / (1024.0 * 1024.0):F1} MB"
             ),
         };
-        _dirty = true;
     }
 
-    /// <summary>The elements of <paramref name="view"/> on a <paramref name="width"/> x <paramref name="height"/> surface.</summary>
-    private void Layout(MenuView view, int width, int height)
+    /// <summary>
+    /// A match that started (also one that failed before a frame saw it) or ended changes the page: the menu over a match
+    /// closes, and an end shows the main menu (a friend's join asked about in it goes with it).
+    /// </summary>
+    private void FollowMatches()
     {
-        _laidOutView = view;
-        _laidOutWidth = width;
-        _laidOutHeight = height;
-        _elements.Clear();
-        _hover = -1;
-        _pressed = -1;
-        _dirty = true;
-        if (width <= 0 || height <= 0)
+        var hasMatch = _matches.Phase != MatchPhase.Menu;
+        if (hasMatch == _seenMatch && _matches.Started == _seenStarted && _matches.LastEnd == _lastEnd)
         {
             return;
         }
 
-        var unit = height / 100f;
-        var y = 36 * unit;
-        switch (view)
+        if ((!hasMatch && _seenMatch) || _matches.Started != _seenStarted)
         {
-            case MenuView.Main:
-                var steam = _steam.IsAvailable;
-                Button(ref y, width, unit, "Play Offline", MenuAction.PlayOffline, true, "Plays alone.");
-                Button(
-                    ref y,
-                    width,
-                    unit,
-                    "Host Game",
-                    MenuAction.Host,
-                    true,
-                    steam
-                        ? "Hosts through Steam: friends join from their Join Game."
-                        : "Steam is not running: hosts on UDP; others join by address."
-                );
-                Button(ref y, width, unit, "Join Game", MenuAction.OpenJoin, true, "Joins a friend's game.");
-                Button(
-                    ref y,
-                    width,
-                    unit,
-                    "Settings",
-                    MenuAction.OpenSettings,
-                    true,
-                    "Sound, the mouse, the screen, the picture, and the keys."
-                );
-                Button(ref y, width, unit, "Quit", MenuAction.Quit, true, "Closes the game.");
-                break;
-            case MenuView.Join:
-                LayoutJoin(width, unit);
-                break;
-            case MenuView.Settings:
-                LayoutSettings(width, unit);
-                break;
-            case MenuView.Joining:
-                y = 52 * unit;
-                Button(ref y, width, unit, "Cancel", MenuAction.Cancel, true, "Stops joining.");
-                break;
-            case MenuView.InGame:
-                Button(ref y, width, unit, "Resume", MenuAction.Resume, true, "Back to the game (Escape).");
-                Button(
-                    ref y,
-                    width,
-                    unit,
-                    "Settings",
-                    MenuAction.OpenSettings,
-                    true,
-                    "Sound, the mouse, the screen, the picture, and the keys."
-                );
-                Button(
-                    ref y,
-                    width,
-                    unit,
-                    "Leave Match",
-                    MenuAction.Leave,
-                    true,
-                    "Ends this match and goes back to the main menu."
-                );
-                Button(ref y, width, unit, "Quit", MenuAction.Quit, true, "Closes the game.");
-                break;
-            case MenuView.Confirm:
-                y = 52 * unit;
-                Button(ref y, width, unit, "Join", MenuAction.ConfirmJoin, true, "Ends this match and joins.");
-                Button(ref y, width, unit, "Stay", MenuAction.Stay, true, "Stays in this match (Escape).");
-                break;
-        }
-    }
-
-    /// <summary>
-    /// The join page: a row for each friend hosting (up to <see cref="VisibleRows"/>, the wheel for more), each with its
-    /// Join button, then the address box with Join and Back.
-    /// </summary>
-    private void LayoutJoin(int width, float unit)
-    {
-        _rows = _friends.Hosts;
-        _rowScroll = Math.Clamp(_rowScroll, 0, Math.Max(0, _rows.Count - VisibleRows));
-        PruneAvatars();
-        var rowWidth = 64 * unit;
-        var left = (width - rowWidth) / 2;
-        var shown = Math.Min(VisibleRows, _rows.Count - _rowScroll);
-        for (var i = 0; i < shown; i++)
-        {
-            var row = _rowScroll + i;
-            var host = _rows[row];
-            var top = (27 + i * 7.5f) * unit;
-            var button = new SKRect(left + rowWidth - 15 * unit, top + 0.75f * unit, left + rowWidth, top + 6 * unit);
-            _elements.Add(
-                new Element(
-                    button,
-                    host.OtherVersion ? "Other version" : "Join",
-                    MenuAction.JoinFriend,
-                    !host.OtherVersion,
-                    host.OtherVersion
-                        ? $"{host.Name} plays another version of the game."
-                        : $"Joins {host.Name}'s game through Steam.",
-                    row
-                )
-            );
+            _page = MenuView.Main;
+            _gamePage = null;
         }
 
-        var y = 69 * unit;
-        Field(ref y, width, unit);
-        var w = 21 * unit;
-        var h = 6 * unit;
-        var gap = 2 * unit;
-        _elements.Add(
-            new Element(
-                new SKRect(width / 2f - gap / 2 - w, y, width / 2f - gap / 2, y + h),
-                "Join",
-                MenuAction.JoinAddress,
-                true,
-                "Joins the address typed."
-            )
-        );
-        _elements.Add(
-            new Element(
-                new SKRect(width / 2f + gap / 2, y, width / 2f + gap / 2 + w, y + h),
-                "Back",
-                MenuAction.Back,
-                true,
-                ""
-            )
-        );
+        _seenMatch = hasMatch;
+        _seenStarted = _matches.Started;
+        _lastEnd = _matches.LastEnd;
+        _inGame = false;
+        _inGameSettings = false;
     }
 
     /// <summary>Frees the pictures of friends no longer listed.</summary>
-    private void PruneAvatars()
+    private void PruneAvatars(IReadOnlyList<FriendHost> hosts)
     {
+        if (_avatars.Count <= hosts.Count)
+        {
+            return;
+        }
+
         foreach (var friend in _avatars.Keys.ToList())
         {
-            if (!_rows.Any(row => row.SteamId == friend))
+            if (!hosts.Any(host => host.SteamId == friend))
             {
                 _avatars[friend].Image.Dispose();
                 _avatars.Remove(friend);
@@ -822,163 +854,25 @@ public sealed partial class MenuLayer : IMenu, IDisposable
         }
     }
 
-    private void Button(ref float y, int width, float unit, string label, MenuAction action, bool enabled, string hint)
-    {
-        var w = 34 * unit;
-        var h = 6 * unit;
-        var left = (width - w) / 2;
-        _elements.Add(new Element(new SKRect(left, y, left + w, y + h), label, action, enabled, hint));
-        y += h + 1.5f * unit;
-    }
-
-    private void Field(ref float y, int width, float unit)
-    {
-        var w = 44 * unit;
-        var h = 6 * unit;
-        var left = (width - w) / 2;
-        _elements.Add(
-            new Element(
-                new SKRect(left, y, left + w, y + h),
-                "",
-                MenuAction.AddressBox,
-                true,
-                "host:port over UDP, or lobby:ID or steam:ID through Steam."
-            )
-        );
-        y += h + 2 * unit;
-    }
-
-    private void Paints(float unit)
-    {
-        var pixels = Math.Max(12, 3 * unit);
-        if (_font is null || Math.Abs(pixels - _fontPixels) > 0.01f)
-        {
-            _fontPixels = pixels;
-            _font?.Dispose();
-            _titleFont?.Dispose();
-            _font = new SKFont(_fonts.Mono, pixels);
-            _titleFont = new SKFont(_fonts.Mono, Math.Max(20, 7.5f * unit)) { Embolden = true };
-        }
-
-        _fill ??= new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill };
-        _stroke ??= new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke };
-        _text ??= new SKPaint { IsAntialias = true };
-        _stroke.StrokeWidth = Math.Max(1.5f, 0.3f * unit);
-    }
-
-    private void DrawTitleAndLines(SKCanvas canvas, MenuView view, int width, float unit)
-    {
-        var title = view switch
-        {
-            MenuView.Main => _title,
-            MenuView.Join => "Join Game",
-            MenuView.Settings => "Settings",
-            MenuView.InGame => "Menu",
-            _ => null,
-        };
-        if (title is not null)
-        {
-            _text!.Color = _style.Text;
-            var top = view is MenuView.Join or MenuView.Settings ? 19 * unit : 30 * unit;
-            canvas.DrawText(title, width / 2f, top, SKTextAlign.Center, _titleFont!, _text);
-        }
-
-        if (view == MenuView.Join)
-        {
-            DrawJoinPage(canvas, width, unit);
-            return;
-        }
-
-        if (view == MenuView.Settings)
-        {
-            DrawSettingNames(canvas, width, unit);
-            return;
-        }
-
-        string? line = view switch
-        {
-            MenuView.Joining => _status,
-            MenuView.Starting => "Starting…",
-            MenuView.Confirm when _joins.Pending is { } confirm => $"Leave this match and join {confirm.Name}?",
-            _ => null,
-        };
-        if (line is not null)
-        {
-            DrawLine(canvas, line, _style.Text, width, 46 * unit);
-        }
-    }
-
-    /// <summary>The join page's lines and rows: why no friend is listed, else each friend's picture, name, and players.</summary>
-    private void DrawJoinPage(SKCanvas canvas, int width, float unit)
-    {
-        var rowWidth = 64 * unit;
-        var left = (width - rowWidth) / 2;
-        var font = _font!;
-        string? empty =
-            !_friends.Available ? "Steam is not running: no friends to list."
-            : _rows.Count == 0 ? "No friends are hosting a game now."
-            : null;
-        if (empty is not null)
-        {
-            DrawLine(canvas, empty, _style.TextDim, width, 36 * unit);
-        }
-
-        var shown = Math.Min(VisibleRows, _rows.Count - _rowScroll);
-        for (var i = 0; i < shown; i++)
-        {
-            var host = _rows[_rowScroll + i];
-            var top = (27 + i * 7.5f) * unit;
-            var middle = top + 3.4f * unit;
-            var baseline = middle - (font.Metrics.Ascent + font.Metrics.Descent) / 2;
-            var picture = new SKRect(left, top + 0.5f * unit, left + 5.8f * unit, top + 6.3f * unit);
-            if (AvatarImage(host) is { } image)
-            {
-                canvas.DrawImage(image, picture, new SKSamplingOptions(SKFilterMode.Linear));
-            }
-            else
-            {
-                _fill!.Color = _style.Field;
-                canvas.DrawRect(picture, _fill);
-            }
-
-            // The name up to the players' count, cut with an ellipsis where it is longer.
-            var nameLeft = picture.Right + 1.5f * unit;
-            var nameRight = left + rowWidth - 16.5f * unit;
-            if (host.MaxPlayers > 0)
-            {
-                _text!.Color = _style.TextDim;
-                var players = string.Create(CultureInfo.InvariantCulture, $"{host.Players}/{host.MaxPlayers}");
-                canvas.DrawText(players, nameRight, baseline, SKTextAlign.Right, font, _text);
-                nameRight -= font.MeasureText(players) + 1.5f * unit;
-            }
-
-            _text!.Color = _style.Text;
-            var name = Fit(host.Name, nameRight - nameLeft, font);
-            canvas.DrawText(name, nameLeft, baseline, SKTextAlign.Left, font, _text);
-        }
-
-        if (_rows.Count > VisibleRows)
-        {
-            var more = string.Create(
-                CultureInfo.InvariantCulture,
-                $"{_rowScroll + 1}-{_rowScroll + shown} of {_rows.Count} (wheel)"
-            );
-            DrawLine(canvas, more, _style.TextDim, width, 65 * unit);
-        }
-
-        _text!.Color = _style.Text;
-        canvas.DrawText("Or type a host's address:", width / 2f, 67.5f * unit, SKTextAlign.Center, font, _text);
-    }
-
     /// <summary>A friend's picture as an image, made once from its pixels.</summary>
-    private SKImage? AvatarImage(FriendHost host)
+    private SKImage? AvatarImage(ulong friend)
     {
-        if (host.Avatar is not { } avatar)
+        FriendAvatar? avatar = null;
+        foreach (var host in _friends.Hosts)
+        {
+            if (host.SteamId == friend)
+            {
+                avatar = host.Avatar;
+                break;
+            }
+        }
+
+        if (avatar is null)
         {
             return null;
         }
 
-        if (_avatars.TryGetValue(host.SteamId, out var known) && ReferenceEquals(known.Source, avatar))
+        if (_avatars.TryGetValue(friend, out var known) && ReferenceEquals(known.Source, avatar))
         {
             return known.Image;
         }
@@ -988,220 +882,30 @@ public sealed partial class MenuLayer : IMenu, IDisposable
         var image = SKImage.FromPixelCopy(info, avatar.Rgba);
         if (image is null)
         {
-            _avatars.Remove(host.SteamId);
+            _avatars.Remove(friend);
             return null;
         }
 
-        _avatars[host.SteamId] = (avatar, image);
+        _avatars[friend] = (avatar, image);
         return image;
     }
 
-    private void DrawElement(SKCanvas canvas, Element element, bool hover, float unit)
-    {
-        var corner = 1.2f * unit;
-        if (element.Action == MenuAction.AddressBox)
-        {
-            _fill!.Color = _style.Field;
-            canvas.DrawRoundRect(element.Rect, corner, corner, _fill);
-            _stroke!.Color = _addressFocused ? _style.ButtonHover : _style.Ink;
-            canvas.DrawRoundRect(element.Rect, corner, corner, _stroke);
-            DrawAddress(canvas, element.Rect, unit);
-            return;
-        }
-
-        if (element.Action == MenuAction.Slider)
-        {
-            // The bar, filled to the setting's share of its range.
-            _fill!.Color = _style.Field;
-            canvas.DrawRoundRect(element.Rect, corner, corner, _fill);
-            var (least, most) = SliderRange(element.Row);
-            var share = Math.Clamp((SliderValue(element.Row) - least) / (most - least), 0, 1);
-            var filled = new SKRect(
-                element.Rect.Left,
-                element.Rect.Top,
-                element.Rect.Left + share * element.Rect.Width,
-                element.Rect.Bottom
-            );
-            _fill.Color = hover || _dragging == element.Row ? _style.ButtonHover : _style.Button;
-            canvas.DrawRoundRect(filled, corner, corner, _fill);
-            _stroke!.Color = _style.Ink;
-            canvas.DrawRoundRect(element.Rect, corner, corner, _stroke);
-            return;
-        }
-
-        // The tab shown is drawn sunk, as a text box is.
-        _fill!.Color =
-            !element.Enabled ? _style.ButtonDisabled
-            : hover ? _style.ButtonHover
-            : element.Selected ? _style.Field
-            : _style.Button;
-        canvas.DrawRoundRect(element.Rect, corner, corner, _fill);
-        _stroke!.Color = _style.Ink;
-        canvas.DrawRoundRect(element.Rect, corner, corner, _stroke);
-        _text!.Color =
-            !element.Enabled ? _style.TextDim
-            : hover ? _style.ButtonTextHover
-            : element.Selected ? _style.Text
-            : _style.ButtonText;
-        var baseline = element.Rect.MidY - (_font!.Metrics.Ascent + _font.Metrics.Descent) / 2;
-        canvas.DrawText(element.Label, element.Rect.MidX, baseline, SKTextAlign.Center, _font, _text);
-    }
-
     /// <summary>
-    /// The address within its box: clipped to it, and moved left as the cursor goes past the box's right side, so the
-    /// cursor always shows (a long address would otherwise be drawn over the page).
+    /// The engine's plain look at the menu's text size, with the menu's outlines (3.24 units), corners (12.96 units),
+    /// and narrow label margins in its fixed-size buttons, as the menu drew them before the toolkit.
     /// </summary>
-    private void DrawAddress(SKCanvas canvas, SKRect box, float unit)
+    private sealed class MenuLook(MenuStyle colours) : UiStyle(MenuLayer.BodyUnits, colours)
     {
-        var font = _font!;
-        var left = box.Left + 1.5f * unit;
-        var room = box.Width - 3 * unit;
-        var baseline = box.MidY - (font.Metrics.Ascent + font.Metrics.Descent) / 2;
-        var text = _addressEntry.Line.Text;
-        if (text.Length == 0 && !_addressFocused)
-        {
-            _addressScroll = 0;
-            _text!.Color = _style.TextDim;
-            canvas.DrawText("127.0.0.1:47600", left, baseline, SKTextAlign.Left, font, _text);
-            return;
-        }
+        public override float OutlineUnits => 3.24f;
 
-        var cursor = font.MeasureText(text.AsSpan(0, _addressEntry.Line.Cursor));
-        _addressScroll = ScrollToCursor(_addressScroll, cursor, font.MeasureText(text), room);
-        canvas.Save();
-        canvas.ClipRect(new SKRect(box.Left + 0.5f * unit, box.Top, box.Right - 0.5f * unit, box.Bottom));
-        _text!.Color = _style.Text;
-        canvas.DrawText(text, left - _addressScroll, baseline, SKTextAlign.Left, font, _text);
-        if (_addressFocused)
-        {
-            var x = left + cursor - _addressScroll;
-            _stroke!.Color = _style.Text;
-            canvas.DrawLine(x, box.Top + 1.2f * unit, x, box.Bottom - 1.2f * unit, _stroke);
-        }
+        public override float CornerUnits => 12.96f;
 
-        canvas.Restore();
-    }
-
-    /// <summary>
-    /// How far a line of text of <paramref name="width"/> is moved left in a box with <paramref name="room"/> for it, from
-    /// <paramref name="scroll"/>, so the cursor at <paramref name="cursor"/> (both from the text's start) shows: only as
-    /// far as it must, and never so far that room is left empty after the text's end.
-    /// </summary>
-    internal static float ScrollToCursor(float scroll, float cursor, float width, float room)
-    {
-        if (cursor - scroll > room)
-        {
-            scroll = cursor - room;
-        }
-
-        if (cursor < scroll)
-        {
-            scroll = cursor;
-        }
-
-        return Math.Clamp(scroll, 0, Math.Max(0, width - room));
-    }
-
-    /// <summary>
-    /// <paramref name="text"/> when it fits <paramref name="room"/> in <paramref name="font"/>, else its longest start that
-    /// fits with an ellipsis after it (a friend's long name).
-    /// </summary>
-    internal static string Fit(string text, float room, SKFont font)
-    {
-        if (font.MeasureText(text) <= room)
-        {
-            return text;
-        }
-
-        const string ellipsis = "…";
-        var fits = 0;
-        var most = text.Length;
-        while (fits < most)
-        {
-            var middle = (fits + most + 1) / 2;
-            if (font.MeasureText(string.Concat(text.AsSpan(0, middle), ellipsis)) <= room)
-            {
-                fits = middle;
-            }
-            else
-            {
-                most = middle - 1;
-            }
-        }
-
-        return fits > 0 || font.MeasureText(ellipsis) <= room ? string.Concat(text.AsSpan(0, fits), ellipsis) : "";
-    }
-
-    /// <summary>
-    /// The band at the bottom: a notice, else what the button under the pointer does; over it on the main menu, why the
-    /// last match ended.
-    /// </summary>
-    private void DrawHint(SKCanvas canvas, int width, int height, float unit)
-    {
-        var top = height - 7 * unit;
-        if (View == MenuView.Main && _lastEnd is not null)
-        {
-            DrawLine(canvas, _lastEnd, _style.Warning, width, top - 2.5f * unit);
-        }
-
-        var (text, colour) =
-            _notice is not null ? (_notice, _style.Warning)
-            : CapturingBinding ? (_bindHint, _style.Text)
-            : _hover >= 0 && _elements[_hover].Hint.Length > 0 ? (_elements[_hover].Hint, _style.TextDim)
-            : (null, default);
-        if (text is null)
-        {
-            return;
-        }
-
-        _fill!.Color = _style.Shade;
-        canvas.DrawRect(0, top, width, 7 * unit, _fill);
-        DrawLine(canvas, text, colour, width, top + 4.4f * unit);
-    }
-
-    /// <summary>A line of text centred on <paramref name="baseline"/>; one wider than the window is drawn smaller, to fit.</summary>
-    private void DrawLine(SKCanvas canvas, string text, SKColor colour, int width, float baseline)
-    {
-        _text!.Color = colour;
-        var fit = Math.Min(1, 0.96f * width / Math.Max(1, _font!.MeasureText(text)));
-        canvas.Save();
-        canvas.Scale(fit, fit, width / 2f, baseline);
-        canvas.DrawText(text, width / 2f, baseline, SKTextAlign.Center, _font, _text);
-        canvas.Restore();
-    }
-
-    /// <summary>One thing the menu shows that the pointer can click; <paramref name="Row"/> names a friend's row.</summary>
-    private sealed record Element(
-        SKRect Rect,
-        string Label,
-        MenuAction Action,
-        bool Enabled,
-        string Hint,
-        int Row = -1,
-        bool Selected = false
-    );
-
-    /// <summary>What an element does.</summary>
-    private enum MenuAction
-    {
-        PlayOffline,
-        Host,
-        OpenJoin,
-        OpenSettings,
-        Quit,
-        Back,
-        JoinFriend,
-        JoinAddress,
-        AddressBox,
-        Cancel,
-        Resume,
-        Leave,
-        ConfirmJoin,
-        Stay,
-        Slider,
-        Toggle,
-        Tab,
-        Bind,
-        ResetKeys,
+        public override UiBox DefaultBox(UiKind kind) =>
+            kind == UiKind.Button
+                ? base.DefaultBox(kind) with
+                {
+                    Padding = new UiEdges(BodyUnits / 4, 0),
+                }
+                : base.DefaultBox(kind);
     }
 }

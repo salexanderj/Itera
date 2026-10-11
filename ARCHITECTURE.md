@@ -173,7 +173,7 @@ Rules:
 | `Voxels/Generation/` | The world generation toolkit (see "World generation") |
 | `Navigation/` | `NavigationService` (its window, `NavArea`), `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`, `INavGridSource` (the game's part), `FlowFieldBuilder` and `FlowField`, `NavGridScanner`, `NavigationDebugLines` |
 | `Networking/` | `SessionService` (hosting or joining; `.Host.cs`, `.Client.cs`), `ISessionTransport` with `NetworkService` (LiteNetLib) and `SteamTransport` over `ISteamPlatform`, `SteamService`, `SteamAddress`, `SteamLaunchArguments`, `SteamFriendList`, `SessionProtocol` (message kinds, `MessageWriter`, `MessageReader`), `MatchSettings` and `ISessionGameHandler`, `GameMessageHandler`, `SessionAddress`, `NetLoggerAdapter`, and the helpers `NetEntities`, `PlayerIds`, `TickRing`, and `JitterPlayback` |
-| `UI/` | `UISurface` (the UI's pixels: a Skia CPU surface that draws its layers when one changes and reports the rows that changed), `IUiLayer`, `IMatchUiLayer`, `ConsoleLayer` and `DevConsole`, `StatsLayer`, `AimDotLayer`, `LoadingLayer`, `CentredMessageLayer`, `TextBlobs`, `TextLine`, `TextEntry` (a text box's typing), `UiFonts`, `Amounts`, `WheelSteps`, `Toolkit/` (a UI described in code: `Ui`'s layout, input, focus, and dump; `UiStyle`, `UiPainter`, `UiToolkit`, `UiLayer`), and `Menu/` (`IMenu`, `MenuLayer`, the join and settings pages, `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`) |
+| `UI/` | `UISurface` (the UI's pixels: a Skia CPU surface that draws its layers when one changes and reports the rows that changed), `IUiLayer`, `IMatchUiLayer`, `ConsoleLayer` and `DevConsole`, `StatsLayer`, `AimDotLayer`, `LoadingLayer`, `CentredMessageLayer`, `TextBlobs`, `TextLine`, `TextEntry` (a text box's typing), `UiFonts` (the font and the UI's sizing rule) and `LayerFont`, `Amounts`, `WheelSteps`, `Toolkit/` (a UI described in code: `Ui`'s layout, input, focus, and dump; `UiStyle`, `UiPainter`, `UiToolkit`, `UiLayer`), and `Menu/` (`IMenu`, `MenuLayer` on the toolkit, `MenuPages` and `IMenuPage` (a game's pages in it), `SettingsPage` (the Settings page as a part a game's menu shows too) and `SettingsRows` (a game's switches on it), `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`) |
 | `Commands/` | `ConsoleCommands` (name, usage, help, scope, owner), `CommandLine`, `EngineCommands`, `MatchCommands`, `SettingsCommands`, `ParticleCommands`, `SoundCommands` |
 | `Control/` | `ControlService` (the control port), `ControlRequest`, `InputScript` |
 | `Modding/` | `ModLoader`, `ModLoadContext`, `ModDispatcher`, `HostSharedAssemblies`, `LoadedMod`, `ModContext` |
@@ -1367,12 +1367,16 @@ has no navigation.
 - The stats line (`StatsLayer`, F1, `stats`, `Engine:Ui:Stats`) shows frames per second, frame time, the last frame's GPU
   time, the render scale, fixed steps per second, the session, and the living particles. The font is JetBrains Mono Regular
   (SIL Open Font License 1.1, its licence beside it in `src/Itera.Engine/UI/Fonts/`), so text looks the same on every
-  platform.
-- The main menu (`MenuLayer`) is the run's: Play Offline, Host Game, Join Game, Settings, and Quit, with a join page of the
-  Steam friends who host and an address box, and, over a match at Escape, Resume, Settings, Leave Match, and Quit. The
-  settings (volume, mouse sensitivity, field of view, dynamic render scaling, shadows, anti-aliasing, VSync, full screen,
-  and the keybindings) apply at once and live in `settings.json`, below the command line. A game gives the menu its look
-  (`MenuStyle`), or swaps it for its own (`IMenu`), which reaches the run through the same public services: matches
+  platform. One sizing rule sizes the UI: a unit is a pixel of a 1080-pixel-high screen, scaled with the screen's height
+  and the player's UI scale (75 to 150 %), so the menu, the console, the stats line, and the loading list keep their share
+  of the screen at every size (their text, `Engine:Ui:FontPixels` units, is 12 px at 720 and 24 px at 1440, never under
+  10).
+- The main menu (`MenuLayer`, a layer of the UI toolkit) is the run's: Play Offline, Host Game, Join Game, Settings, and
+  Quit, with a join page of the Steam friends who host and an address box, and, over a match at Escape, Resume, Settings,
+  Leave Match, and Quit. The settings (volume, mouse sensitivity, field of view, the UI scale, dynamic render scaling,
+  shadows, anti-aliasing, VSync, full screen, and the keybindings) apply at once and live in `settings.json`, below the
+  command line. A game gives the menu its look (`MenuStyle`), adds its own pages (`MenuPages`) and its switches to the
+  Settings page (`SettingsRows`), or swaps the menu for its own (`IMenu`, which can show the engine's `SettingsPage`), which reaches the run through the same public services: matches
   (`MatchControl`, `MatchCommands`), quitting, the player's settings, the Steam friends hosting (`SteamFriendList`,
   which the loop updates) and their joins (`JoinRequests`), and the saves (`SaveFiles`). With
   `Engine:Ui:MenuPausesOffline` the menu holds an offline match's steps while open.

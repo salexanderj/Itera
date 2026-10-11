@@ -1,4 +1,4 @@
-using Itera.Engine.Windowing;
+using Itera.Engine.UI.Toolkit;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SkiaSharp;
@@ -7,9 +7,11 @@ namespace Itera.Engine.UI;
 
 /// <summary>
 /// The UI's typeface: JetBrains Mono Regular (SIL Open Font License 1.1, <c>Fonts/OFL.txt</c>), shipped in
-/// <c>Fonts/</c> next to the executable so text looks the same on every platform, and the text size from
-/// <c>Engine:Ui:FontPixels</c>, times the screen's framebuffer pixels per window unit (<see cref="Scale"/>). Without the
-/// file the default typeface is used and a Warning logged.
+/// <c>Fonts/</c> next to the executable so text looks the same on every platform; and the UI's one sizing rule: a unit
+/// is a pixel of a screen <see cref="Ui.ReferenceHeight"/> pixels high, scaled with the screen's height and the UI scale
+/// (<see cref="UnitPixels"/>), and the text is <c>Engine:Ui:FontPixels</c> units high, never under
+/// <see cref="Ui.LeastTextPixels"/> (<see cref="Pixels"/>). The screen's height is its framebuffer's, so a Retina Mac's
+/// doubled pixels are counted. Without the font file the default typeface is used and a Warning logged.
 /// </summary>
 public sealed partial class UiFonts : IDisposable
 {
@@ -17,51 +19,39 @@ public sealed partial class UiFonts : IDisposable
     public const string MonoFileName = "JetBrainsMono-Regular.ttf";
 
     private readonly ILogger<UiFonts> _logger;
-    private readonly float _pixels;
-    private readonly Func<float?> _contentScale;
-    private float _scale;
+    private readonly float _units;
     private SKTypeface? _mono;
     private bool _ownsMono;
 
-    public UiFonts(IOptions<EngineOptions> options, ILogger<UiFonts> logger, WindowService? window = null)
-        : this(options, logger, () => window?.ContentScale) { }
-
-    /// <param name="options">The options, whose <c>Engine:Ui:FontPixels</c> is the text's height.</param>
+    /// <param name="options">The options: <c>Engine:Ui:FontPixels</c>, the text's height in units, and
+    /// <c>Engine:Ui:Scale</c>, the UI scale until the player's is set.</param>
     /// <param name="logger">Logger.</param>
-    /// <param name="contentScale">The screen's framebuffer pixels per window unit; null until the window exists.</param>
-    internal UiFonts(IOptions<EngineOptions> options, ILogger<UiFonts> logger, Func<float?> contentScale)
+    public UiFonts(IOptions<EngineOptions> options, ILogger<UiFonts> logger)
     {
+        ArgumentNullException.ThrowIfNull(options);
         _logger = logger;
-        _pixels = options.Value.Ui.FontPixels;
-        _contentScale = contentScale;
+        _units = options.Value.Ui.FontPixels;
+        UiScale = options.Value.Ui.Scale;
     }
-
-    /// <summary>Height of the UI's text in pixels: <c>Engine:Ui:FontPixels</c> times <see cref="Scale"/>.</summary>
-    public float Pixels => _pixels * Scale;
 
     /// <summary>
-    /// The screen's framebuffer pixels per window unit, so the console, the stats line, and the loading list keep their
-    /// size on a Retina Mac, where they were drawn at half. Read once the window
-    /// exists, and kept; 1 until then. The layers make their fonts at their first draw, after the window.
+    /// The UI scale, 0.75 to 1.5: every size grows with it. The player's (<c>PlayerSettings.UiScale</c>, through
+    /// <see cref="Toolkit.UiToolkit.Scale"/>); <c>Engine:Ui:Scale</c> until set.
     /// </summary>
-    public float Scale
-    {
-        get
-        {
-            if (_scale > 0)
-            {
-                return _scale;
-            }
+    public float UiScale { get; set; }
 
-            if (_contentScale() is not { } scale)
-            {
-                return 1;
-            }
+    /// <summary>The UI's text height in units (<c>Engine:Ui:FontPixels</c>).</summary>
+    public float TextUnits => _units;
 
-            _scale = scale;
-            return _scale;
-        }
-    }
+    /// <summary>Screen pixels a unit on a screen <paramref name="screenHeight"/> pixels high, at the UI scale.</summary>
+    public float UnitPixels(float screenHeight) => Ui.UnitPixelsFor(screenHeight, UiScale);
+
+    /// <summary>
+    /// The UI's text height in pixels on a screen <paramref name="screenHeight"/> pixels high, <paramref name="share"/>
+    /// times the base size, never under <see cref="Ui.LeastTextPixels"/>.
+    /// </summary>
+    public float Pixels(float screenHeight, float share = 1) =>
+        MathF.Max(Ui.LeastTextPixels, _units * share * UnitPixels(screenHeight));
 
     /// <summary>The monospaced typeface every layer draws text with.</summary>
     public SKTypeface Mono => _mono ??= Load();
@@ -88,12 +78,12 @@ public sealed partial class UiFonts : IDisposable
         }
 
         _ownsMono = true;
-        LogLoaded(typeface.FamilyName, Pixels);
+        LogLoaded(typeface.FamilyName, _units);
         return typeface;
     }
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "UI: font {Family}, {Pixels} px")]
-    private partial void LogLoaded(string family, float pixels);
+    [LoggerMessage(Level = LogLevel.Debug, Message = "UI: font {Family}, {Units} units high")]
+    private partial void LogLoaded(string family, float units);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "UI: no font at {Path}; the default typeface is used")]
     private partial void LogMissing(string path);

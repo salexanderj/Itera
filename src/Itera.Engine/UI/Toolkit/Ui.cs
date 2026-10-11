@@ -157,19 +157,19 @@ public sealed partial class Ui
     }
 
     /// <summary>Children one after another from left to right; close it with <c>using</c>.</summary>
-    public UiScope Row(int id = 0, in UiBox box = default) => Open(UiKind.Row, id, in box, 0);
+    public UiScope Row(int id = 0, scoped in UiBox box = default) => Open(UiKind.Row, id, in box, 0);
 
     /// <summary>Children one after another from top to bottom; close it with <c>using</c>.</summary>
-    public UiScope Column(int id = 0, in UiBox box = default) => Open(UiKind.Column, id, in box, 0);
+    public UiScope Column(int id = 0, scoped in UiBox box = default) => Open(UiKind.Column, id, in box, 0);
 
     /// <summary>Children over each other, each placed by the box's alignment; close it with <c>using</c>.</summary>
-    public UiScope Stack(int id = 0, in UiBox box = default) => Open(UiKind.Stack, id, in box, 0);
+    public UiScope Stack(int id = 0, scoped in UiBox box = default) => Open(UiKind.Stack, id, in box, 0);
 
     /// <summary>
     /// Children in rows of <paramref name="columns"/> equal cells, filled left to right, then down; each row as tall as
     /// its tallest child; children placed in their cells by the box's alignment. Close it with <c>using</c>.
     /// </summary>
-    public UiScope Grid(int id, int columns, in UiBox box = default)
+    public UiScope Grid(int id, int columns, scoped in UiBox box = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(columns);
         return Open(UiKind.Grid, id, in box, columns);
@@ -179,7 +179,7 @@ public sealed partial class Ui
     /// A column that shows what fits its own height and scrolls through the rest; give it a height (fixed, grown, or a
     /// share). Close it with <c>using</c>.
     /// </summary>
-    public UiScope Scroll(int id, in UiBox box = default) => Open(UiKind.Scroll, id, in box, 0);
+    public UiScope Scroll(int id, scoped in UiBox box = default) => Open(UiKind.Scroll, id, in box, 0);
 
     /// <summary>
     /// A row that takes the pointer as a whole, as a button does: hovered, pressed, clicked, and focused as one (its
@@ -187,7 +187,7 @@ public sealed partial class Ui
     /// inside it that take the pointer themselves come first; mark pictures and texts inside it
     /// <see cref="UiMarks.Passive"/> where they should not. Close it with <c>using</c>.
     /// </summary>
-    public UiScope Pressable(int id, in UiBox box = default, UiMarks marks = UiMarks.None)
+    public UiScope Pressable(int id, scoped in UiBox box = default, UiMarks marks = UiMarks.None)
     {
         var index = Add(UiKind.Pressable, id, in box, marks);
         _open = index;
@@ -421,7 +421,7 @@ public sealed partial class Ui
         _open = _nodes[index].Parent;
     }
 
-    private UiScope Open(UiKind kind, int id, in UiBox box, int columns)
+    private UiScope Open(UiKind kind, int id, scoped in UiBox box, int columns)
     {
         var index = Add(kind, id, in box);
         _nodes[index].Columns = columns;
@@ -430,7 +430,7 @@ public sealed partial class Ui
     }
 
     /// <summary>Appends an element to the container open now, with the style's defaults under its box.</summary>
-    private int Add(UiKind kind, int id, in UiBox box, UiMarks marks = UiMarks.None)
+    private int Add(UiKind kind, int id, scoped in UiBox box, UiMarks marks = UiMarks.None)
     {
         if (!_building)
         {
