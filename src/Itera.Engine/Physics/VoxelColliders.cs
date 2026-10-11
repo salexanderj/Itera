@@ -785,7 +785,7 @@ public sealed partial class VoxelColliders : IDisposable
             var edge = _voxels.Grid.Edge(key.Level);
             var corner = _voxels.Origin.ToLocal(new VoxelCoord(x0 * edge, y0 * edge, z0 * edge));
             cell.Static = simulation.Statics.Add(new StaticDescription(corner, Quaternion.Identity, shape));
-            _physics.Kinds.SetStatic(cell.Static, key.Level, _partMaterials[index]);
+            _physics.Kinds.SetStatic(cell.Static, key.Level, _partMaterials[index], _physics.VoxelLayer);
             cell.HasStatic = true;
             StaticCount++;
         }

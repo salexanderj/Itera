@@ -10,7 +10,8 @@ namespace Itera.Engine.Physics;
 /// Contact rules: a pair collides when one side is dynamic, except that a character's stand-in touches loose bodies of
 /// lifted pieces only (not the voxels, not other stand-ins), a body cut off a character touches the voxels only
 /// (<see cref="BodyKind.Cut"/>), and a body touches only the voxel statics of the level it collides with
-/// (<see cref="BodyKinds"/>). A pair's material is its two sides' (<see cref="BodyKinds.ContactOf"/>): friction the
+/// (<see cref="BodyKinds"/>); then a pair whose layers do not touch, or that shares a group other than 0, does not
+/// (<see cref="BodyKinds.LayersAllow"/>, <see cref="PhysicsLayers"/>). A pair's material is its two sides' (<see cref="BodyKinds.ContactOf"/>): friction the
 /// product of their square roots, the engine's contact springs (30 Hz, critically damped, 2 m/s) for all. A pair with a
 /// bouncy side (not a stand-in) that is touching, or will be by the step's end at its speeds with the match's gravity,
 /// is recorded for <see cref="PhysicsContacts"/>, which sets its bounce after the step; other pairs are not looked at
@@ -35,7 +36,11 @@ internal struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
         CollidableReference a,
         CollidableReference b,
         ref float speculativeMargin
-    )
+    ) => EngineAllows(a, b) && _kinds.LayersAllow(a, b);
+
+    /// <summary>The engine's own rules, before a game's layers and groups.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private readonly bool EngineAllows(CollidableReference a, CollidableReference b)
     {
         if (a.Mobility != CollidableMobility.Dynamic && b.Mobility != CollidableMobility.Dynamic)
         {

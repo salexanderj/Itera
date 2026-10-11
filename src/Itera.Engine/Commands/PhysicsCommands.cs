@@ -10,17 +10,23 @@ namespace Itera.Engine.Commands;
 /// The console's <c>physics</c> command (<see cref="CommandScope.Local"/>: each game's own physics): the match's bodies
 /// and statics, its solver's iterations and substeps, its damping, and its gravity; and for this match, the solver's
 /// iterations and substeps (<see cref="PhysicsWorld.SetSolver"/>), the damping (<see cref="PhysicsWorld.SetDamping"/>),
-/// and the gravity (<see cref="PhysicsWorld.SetGravity"/>); and the run's physics materials.
+/// and the gravity (<see cref="PhysicsWorld.SetGravity"/>); the run's physics materials; and the layers, which touch
+/// which (the match's table in a match, else the run's), and which the characters and the voxels are in.
 /// </summary>
-public sealed class PhysicsCommands(ConsoleCommands commands, MatchControl matches, PhysicsMaterials materials)
+public sealed class PhysicsCommands(
+    ConsoleCommands commands,
+    MatchControl matches,
+    PhysicsMaterials materials,
+    PhysicsLayers layers
+)
 {
     /// <summary>Adds the command to the registry. Once, at startup.</summary>
     public void Register()
     {
         commands.Register(
             "physics",
-            "[materials|solver ITERATIONS SUBSTEPS|damping LINEAR ANGULAR|gravity X Y Z]",
-            "Physics: the match's bodies and statics, solver, damping, gravity, and bounces; materials lists the run's physics materials; solver sets its velocity iterations (1 to 32) and substeps (1 to 8), damping the shares of speed and spin bodies lose each second (0 to 1), gravity its gravity (m/s², each part -100 to 100; characters fall by its strength's share of 9.81), for this match.",
+            "[materials|layers|solver ITERATIONS SUBSTEPS|damping LINEAR ANGULAR|gravity X Y Z]",
+            "Physics: the match's bodies and statics, solver, damping, gravity, and bounces; materials lists the run's physics materials; layers the collision layers and which touch; solver sets its velocity iterations (1 to 32) and substeps (1 to 8), damping the shares of speed and spin bodies lose each second (0 to 1), gravity its gravity (m/s², each part -100 to 100; characters fall by its strength's share of 9.81), for this match.",
             CommandScope.Local,
             Physics
         );
@@ -52,6 +58,12 @@ public sealed class PhysicsCommands(ConsoleCommands commands, MatchControl match
                 );
             }
 
+            return;
+        }
+
+        if (context.Is(0, "layers") && context.Count == 1)
+        {
+            PrintLayers(context, matches.Current?.Physics is { IsInitialized: true } match ? match : null);
             return;
         }
 
@@ -146,5 +158,48 @@ public sealed class PhysicsCommands(ConsoleCommands commands, MatchControl match
                 $"physics: {all} bodies ({bodies.ActiveSet.Count} awake), {physics.Simulation.Statics.Count} statics; solver {physics.VelocityIterations} iterations, {physics.Substeps} substep(s); damping {physics.LinearDamping:0.###} linear, {physics.AngularDamping:0.###} angular; gravity ({gravity.X:0.##}, {gravity.Y:0.##}, {gravity.Z:0.##}); {physics.Bounces} bounces set, {physics.ContactsDropped} contacts dropped"
             )
         );
+    }
+
+    /// <summary>Each layer, what it is for, and the layers it does not touch: the match's table, or the run's.</summary>
+    private void PrintLayers(CommandContext context, PhysicsWorld? match)
+    {
+        var characters = match?.CharacterLayer ?? layers.CharacterLayer;
+        var voxels = match?.VoxelLayer ?? layers.VoxelLayer;
+        for (var i = 0; i < layers.Count; i++)
+        {
+            var layer = new PhysicsLayerId((byte)i);
+            var line = new StringBuilder(layers.NameOf(layer));
+            if (layer == characters || layer == voxels)
+            {
+                line.Append(
+                    layer == characters && layer == voxels ? " (characters, voxels)"
+                    : layer == characters ? " (characters)"
+                    : " (voxels)"
+                );
+            }
+
+            var apart = new StringBuilder();
+            var count = 0;
+            for (var j = 0; j < layers.Count; j++)
+            {
+                var other = new PhysicsLayerId((byte)j);
+                if (!(match?.Touches(layer, other) ?? layers.Touches(layer, other)))
+                {
+                    apart.Append(count++ == 0 ? "" : ", ").Append(layers.NameOf(other));
+                }
+            }
+
+            line.Append(
+                count == 0 ? ": touches all"
+                : count == layers.Count ? ": touches none"
+                : ": touches all but "
+            );
+            if (count > 0 && count < layers.Count)
+            {
+                line.Append(apart);
+            }
+
+            context.Print(line.ToString());
+        }
     }
 }

@@ -46,6 +46,12 @@ internal struct BodyRecord
     /// <summary>Its physics material.</summary>
     public PhysicsMaterialId Material;
 
+    /// <summary>Its collision layer (<see cref="PhysicsLayers"/>).</summary>
+    public PhysicsLayerId Layer;
+
+    /// <summary>A game's group: bodies and statics of one group other than 0 never touch each other.</summary>
+    public int Group;
+
     /// <summary>A body never recorded: a loose body at level 0, in no ragdoll, falling by all of gravity.</summary>
     public static BodyRecord Default => new() { GravityScale = 1 };
 }
@@ -61,6 +67,12 @@ internal struct StaticRecord
 
     /// <summary>Its physics material.</summary>
     public PhysicsMaterialId Material;
+
+    /// <summary>Its collision layer (<see cref="PhysicsLayers"/>).</summary>
+    public PhysicsLayerId Layer;
+
+    /// <summary>A game's group: bodies and statics of one group other than 0 never touch each other.</summary>
+    public int Group;
 }
 
 /// <summary>
@@ -92,6 +104,49 @@ internal sealed class BodyKinds
 
     /// <summary>Each physics material's contact settings, by number (<see cref="PhysicsMaterials"/>; the engine's alone by default).</summary>
     public ContactMaterial[] Contacts { get; set; } = ContactMaterial.DefaultTable;
+
+    /// <summary>Which collision layers touch: row a holds bit b when a and b do (<see cref="PhysicsLayers"/>; all by default).</summary>
+    public uint[] Touches { get; set; } = NewTouches();
+
+    /// <summary>The layer the characters' stand-ins are in.</summary>
+    public PhysicsLayerId CharacterLayer { get; set; }
+
+    /// <summary>The layer the voxels' statics are in.</summary>
+    public PhysicsLayerId VoxelLayer { get; set; }
+
+    /// <summary>A table in which every layer touches every other.</summary>
+    public static uint[] NewTouches() => Enumerable.Repeat(uint.MaxValue, PhysicsLayers.MaxLayers).ToArray();
+
+    /// <summary>
+    /// True when the layers of <paramref name="a"/> and <paramref name="b"/> touch and they share no group other than 0.
+    /// Bepu's worker threads.
+    /// </summary>
+    public bool LayersAllow(CollidableReference a, CollidableReference b)
+    {
+        ReadLayer(a, out var layerA, out var groupA);
+        ReadLayer(b, out var layerB, out var groupB);
+        return (groupA == 0 || groupA != groupB) && (Touches[layerA] & (1u << layerB)) != 0;
+    }
+
+    /// <summary>True when the layer of the body with handle value <paramref name="handle"/> touches the characters'.</summary>
+    public bool TouchesCharacters(int handle) =>
+        (Touches[Body(handle).Layer.Value] & (1u << CharacterLayer.Value)) != 0;
+
+    private void ReadLayer(CollidableReference collidable, out int layer, out int group)
+    {
+        if (collidable.Mobility == CollidableMobility.Static)
+        {
+            ref readonly var record = ref Static(collidable.StaticHandle.Value);
+            layer = record.Layer.Value;
+            group = record.Group;
+        }
+        else
+        {
+            ref readonly var record = ref Body(collidable.BodyHandle.Value);
+            layer = record.Layer.Value;
+            group = record.Group;
+        }
+    }
 
     /// <summary>The contact settings of the material of <paramref name="collidable"/>'s record.</summary>
     public ref readonly ContactMaterial ContactOf(CollidableReference collidable)
@@ -141,7 +196,8 @@ internal sealed class BodyKinds
 
     /// <summary>
     /// Records a body anew: its kind, the voxel level it collides with (its base level too), the ragdoll it belongs to (0
-    /// for none), a game's marks, and its physics material; its share of gravity 1. Main thread, between steps.
+    /// for none), a game's marks, its physics material, its layer, and its group; its share of gravity 1. Main thread,
+    /// between steps.
     /// </summary>
     public void Set(
         BodyHandle body,
@@ -149,7 +205,9 @@ internal sealed class BodyKinds
         int level = 0,
         int ragdoll = 0,
         PhysicsMarks marks = PhysicsMarks.None,
-        PhysicsMaterialId material = default
+        PhysicsMaterialId material = default,
+        PhysicsLayerId layer = default,
+        int group = 0
     )
     {
         ref var record = ref BodySlot(body.Value);
@@ -164,7 +222,25 @@ internal sealed class BodyKinds
             Born = ++_born,
             GravityScale = 1,
             Material = material,
+            Layer = layer,
+            Group = group,
         };
+    }
+
+    /// <summary>Sets a body's layer and group. Main thread, between steps.</summary>
+    public void SetLayer(BodyHandle body, PhysicsLayerId layer, int group)
+    {
+        ref var record = ref BodySlot(body.Value);
+        record.Layer = layer;
+        record.Group = group;
+    }
+
+    /// <summary>Sets a static's layer and group. Main thread, between steps.</summary>
+    public void SetLayer(StaticHandle handle, PhysicsLayerId layer, int group)
+    {
+        ref var record = ref StaticSlot(handle.Value);
+        record.Layer = layer;
+        record.Group = group;
     }
 
     /// <summary>Sets a body's physics material. Main thread, between steps.</summary>
@@ -213,13 +289,23 @@ internal sealed class BodyKinds
         }
     }
 
-    /// <summary>Records the voxel level (and physics material) of a static anew. Main thread, between steps.</summary>
-    public void SetStatic(StaticHandle handle, int level, PhysicsMaterialId material = default) =>
+    /// <summary>
+    /// Records the voxel level (and physics material, layer, and group) of a static anew. Main thread, between steps.
+    /// </summary>
+    public void SetStatic(
+        StaticHandle handle,
+        int level,
+        PhysicsMaterialId material = default,
+        PhysicsLayerId layer = default,
+        int group = 0
+    ) =>
         StaticSlot(handle.Value) = new StaticRecord
         {
             Level = (byte)level,
             Born = ++_born,
             Material = material,
+            Layer = layer,
+            Group = group,
         };
 
     private ref StaticRecord StaticSlot(int handle)

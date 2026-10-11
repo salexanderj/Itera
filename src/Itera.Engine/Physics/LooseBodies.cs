@@ -234,8 +234,9 @@ public sealed partial class LooseBodies
                 break;
             }
 
-            // A body cut off a character is not read as voxels: characters pass through it.
-            if (loose.Cut)
+            // A body cut off a character is not read as voxels: characters pass through it, as through a body whose layer
+            // does not touch theirs.
+            if (loose.Cut || !_physics.TouchesCharacters(handle))
             {
                 continue;
             }
@@ -265,6 +266,11 @@ public sealed partial class LooseBodies
         var bodies = _physics.Simulation.Bodies;
         foreach (var handle in _pieces)
         {
+            if (!_physics.TouchesCharacters(handle))
+            {
+                continue;
+            }
+
             var bounds = bodies[handle].BoundingBox;
             var nearest = Vector3.Clamp(point, bounds.Min, bounds.Max);
             if (Vector3.DistanceSquared(nearest, point) <= distance * distance)

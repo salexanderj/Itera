@@ -188,6 +188,23 @@ next cell's edge, whatever its material); a bouncy one bounces where such a hop 
 pair that strikes while already touching (a ball rolling into a wall of the voxels it rolls on). `physics` prints the
 bounces set and the contacts dropped past the buffers.
 
+## Layers and groups
+
+A collision layer (`PhysicsLayerId`) is registered by name once a run, in the game's `IRunStartup` or a mod's, in
+`PhysicsLayers` (run-wide; at most 32, layer 0 `default`; the first match seals the names). Which layers touch is a
+table of pairs, the same both ways (`PhysicsLayers.SetTouches`; every pair touches until set apart), with the layer the
+characters' stand-ins are in (`CharacterLayer`) and the voxels' statics (`VoxelLayer`), the default unless set; each
+match copies them at its start and changes its own table with `PhysicsWorld.SetTouches` (which wakes every sleeping
+body; `Touches`). A body or static takes a layer and a group at `AddBody` and `AddStatic` (`PhysicsBodySettings.Layer`
+and `Group`), a mesh collider by its settings, or later by `SetLayer` (a body is woken; a static wakes every sleeping
+body), read by `LayerOf` and `GroupOf`; members of one group other than 0 never touch each other (a game's numbers).
+The narrow phase applies the engine's rules first (stand-ins, cut bodies, voxel levels), then the layers and groups
+(`BodyKinds.LayersAllow`): layers only take pairs away. A loose body whose layer does not touch the characters' is not
+read by the mover (`LooseBodies.CopyPoses`) and gets no stand-in (`AnyPieceNear`), so characters pass through it; the
+mover reads every mesh collider whatever its layer, so a gate of a layer balls do not touch still blocks players.
+`physics layers` prints each layer, the characters' and the voxels', and the layers it does not touch (the match's
+table in a match, else the run's).
+
 ## Mesh colliders and the shared ray
 
 A game's static triangle colliders (`MeshColliders`, scoped to the match): `Add(asset, transform, tagsOf)` registers a
@@ -210,7 +227,7 @@ ray (`ToolAim`) stays the terrain's own.
 ### Files in `src/Itera.Engine`
 
   - `Physics/`: the Bepu simulation and stand-ins (`PhysicsWorld`; a game's bodies and statics in `PhysicsWorld.Bodies.cs`;
-    the records by handle, `BodyKinds`; physics materials, `PhysicsMaterials`, and the bounces, `PhysicsContacts`), voxel box statics (`VoxelColliders`), loose bodies
+    the records by handle, `BodyKinds`; physics materials, `PhysicsMaterials`, the bounces, `PhysicsContacts`, and the layers, `PhysicsLayers`), voxel box statics (`VoxelColliders`), loose bodies
     (`LooseBodies`: table, rest, and removal; `.Pieces.cs` balls and lifted pieces; `.Parts.cs` cut parts and ragdolls;
     `.Hulls.cs` large hulls), loose bodies and solid models as voxels (`LooseBodyVoxels`, `SolidModelVoxels`,
     `SolidColumns`), the character mover (`VoxelCharacterMover`) and the mesh colliders as its cells (`MeshColumns`), a

@@ -187,10 +187,12 @@ public sealed partial class MeshColliders(
         }
 
         physics.CheckMaterial(settings.Material);
+        physics.CheckLayer(settings.Layer);
         found.Settings = settings;
         if (found.HasStatic)
         {
             physics.SetMaterial(found.Static, settings.Material);
+            physics.SetLayer(found.Static, settings.Layer, settings.Group);
         }
     }
 

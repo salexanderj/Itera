@@ -113,6 +113,9 @@ Where tests live:
   cleared material's static removed, a ball of its voxel material's, the mapping's rules, the build timed for one and
   three materials, no allocation; the ground a move reports in `GroundMaterialTests`: a mesh floor's collider material
   read as it is now and its tags, past the floor's edge, voxels' by their voxel material, none in the air, no
+  allocation; layers and groups in `PhysicsLayersTests`: the registry and its table both ways, the engine's rules
+  first, a ball through a wall of a layer it does not touch, a group falling through itself, a match's table change
+  waking a sleeper, the mover blocked by a gate of any layer and reading no body that does not touch characters, no
   allocation), mesh colliders (`MeshCollidersTests`: two-sided rays across buckets, tags, a ball that
   lands on a collider's Bepu static at any voxel level) and the shared ray (`CollisionSourcesTests`); the colliders as
   the mover's cells (`MeshColumnsTests`); the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves)

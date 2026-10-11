@@ -16,7 +16,10 @@ public enum PhysicsMarks : byte
     KeepsMovingUnloaded = 1,
 }
 
-/// <summary>A game's settings for a body or static of its own; the default is the engine's (its material, no marks).</summary>
+/// <summary>
+/// A game's settings for a body or static of its own; the default is the engine's (its material, the default layer, no
+/// group, no marks).
+/// </summary>
 public readonly record struct PhysicsBodySettings
 {
     /// <summary>A game's marks for it.</summary>
@@ -24,6 +27,12 @@ public readonly record struct PhysicsBodySettings
 
     /// <summary>Its physics material (<see cref="PhysicsMaterials"/>).</summary>
     public PhysicsMaterialId Material { get; init; }
+
+    /// <summary>Its collision layer (<see cref="PhysicsLayers"/>).</summary>
+    public PhysicsLayerId Layer { get; init; }
+
+    /// <summary>Its group: bodies and statics of one group other than 0 never touch each other (a game's numbers).</summary>
+    public int Group { get; init; }
 }
 
 public sealed partial class PhysicsWorld
@@ -54,8 +63,16 @@ public sealed partial class PhysicsWorld
         }
 
         CheckMaterial(settings.Material);
+        CheckLayer(settings.Layer);
         var body = Simulation.Bodies.Add(description);
-        _kinds.Set(body, BodyKind.Loose, marks: settings.Marks, material: settings.Material);
+        _kinds.Set(
+            body,
+            BodyKind.Loose,
+            marks: settings.Marks,
+            material: settings.Material,
+            layer: settings.Layer,
+            group: settings.Group
+        );
         if (gravityScale != 1)
         {
             _kinds.SetGravityScale(body, gravityScale);
@@ -85,9 +102,82 @@ public sealed partial class PhysicsWorld
     public StaticHandle AddStatic(in StaticDescription description, in PhysicsBodySettings settings = default)
     {
         CheckMaterial(settings.Material);
+        CheckLayer(settings.Layer);
         var handle = Simulation.Statics.Add(description);
-        _kinds.SetStatic(handle, BodyKinds.AnyLevel, settings.Material);
+        _kinds.SetStatic(handle, BodyKinds.AnyLevel, settings.Material, settings.Layer, settings.Group);
         return handle;
+    }
+
+    /// <summary>
+    /// Puts <paramref name="body"/> in <paramref name="layer"/> and <paramref name="group"/> (0 for none), from the next
+    /// step on, and wakes it. Main thread, between steps.
+    /// </summary>
+    public void SetLayer(BodyHandle body, PhysicsLayerId layer, int group = 0)
+    {
+        CheckLayer(layer);
+        _kinds.SetLayer(body, layer, group);
+        var reference = Simulation.Bodies[body];
+        reference.Awake = true;
+    }
+
+    /// <summary>
+    /// Puts a static in <paramref name="layer"/> and <paramref name="group"/> (0 for none), from the next step on, and
+    /// wakes every sleeping body (some may rest on it). Main thread, between steps.
+    /// </summary>
+    public void SetLayer(StaticHandle handle, PhysicsLayerId layer, int group = 0)
+    {
+        CheckLayer(layer);
+        _kinds.SetLayer(handle, layer, group);
+        WakeAll();
+    }
+
+    /// <summary>A body's layer.</summary>
+    public PhysicsLayerId LayerOf(BodyHandle body) => _kinds.Body(body.Value).Layer;
+
+    /// <summary>A static's layer.</summary>
+    public PhysicsLayerId LayerOf(StaticHandle handle) => _kinds.Static(handle.Value).Layer;
+
+    /// <summary>A body's group (0 for none).</summary>
+    public int GroupOf(BodyHandle body) => _kinds.Body(body.Value).Group;
+
+    /// <summary>A static's group (0 for none).</summary>
+    public int GroupOf(StaticHandle handle) => _kinds.Static(handle.Value).Group;
+
+    /// <summary>
+    /// Sets whether layers <paramref name="a"/> and <paramref name="b"/> touch in this match (either way round), from the
+    /// next step on, and wakes every sleeping body, so none rests on what it no longer touches. The run's table
+    /// (<see cref="PhysicsLayers.SetTouches"/>) is where each match starts. Main thread, between steps.
+    /// </summary>
+    public void SetTouches(PhysicsLayerId a, PhysicsLayerId b, bool touch)
+    {
+        CheckLayer(a);
+        CheckLayer(b);
+        PhysicsLayers.Set(_kinds.Touches, a, b, touch);
+        WakeAll();
+    }
+
+    /// <summary>True when layers <paramref name="a"/> and <paramref name="b"/> touch in this match.</summary>
+    public bool Touches(PhysicsLayerId a, PhysicsLayerId b) => PhysicsLayers.Touch(_kinds.Touches, a, b);
+
+    /// <summary>The layer the characters' stand-ins are in this match (<see cref="PhysicsLayers.CharacterLayer"/>).</summary>
+    public PhysicsLayerId CharacterLayer => _kinds.CharacterLayer;
+
+    /// <summary>The layer the voxels' statics are in this match (<see cref="PhysicsLayers.VoxelLayer"/>).</summary>
+    public PhysicsLayerId VoxelLayer => _kinds.VoxelLayer;
+
+    /// <summary>The run's collision layers, if it has a registry (a test's world may have none).</summary>
+    internal PhysicsLayers? Layers => _layers;
+
+    /// <summary>True when the body's layer touches the characters' (the mover reads it, and stand-ins are made for it).</summary>
+    internal bool TouchesCharacters(BodyHandle body) => _kinds.TouchesCharacters(body.Value);
+
+    /// <summary>Throws for a layer the run did not register.</summary>
+    internal void CheckLayer(PhysicsLayerId layer)
+    {
+        if (layer.Value >= (_layers?.Count ?? 1))
+        {
+            throw new ArgumentOutOfRangeException(nameof(layer), layer.Value, "No such physics layer.");
+        }
     }
 
     /// <summary>Sets <paramref name="body"/>'s physics material, from the next step on. Main thread, between steps.</summary>

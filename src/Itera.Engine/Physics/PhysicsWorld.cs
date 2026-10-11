@@ -28,6 +28,7 @@ public sealed partial class PhysicsWorld : IDisposable
     private readonly PhysicsSettings _settings;
     private readonly IntegrationSettings _integration;
     private readonly PhysicsMaterials? _materials;
+    private readonly PhysicsLayers? _layers;
     private PhysicsContacts? _contacts;
     private bool _disposed;
 
@@ -42,14 +43,17 @@ public sealed partial class PhysicsWorld : IDisposable
     /// quarter of the processors.
     /// </param>
     /// <param name="materials">The run's physics materials, sealed as the match begins; none for the engine's alone.</param>
+    /// <param name="layers">The run's collision layers, sealed as the match begins; none for the default alone.</param>
     public PhysicsWorld(
         ILogger<PhysicsWorld> logger,
         IOptions<EngineOptions>? options = null,
-        PhysicsMaterials? materials = null
+        PhysicsMaterials? materials = null,
+        PhysicsLayers? layers = null
     )
     {
         _logger = logger;
         _materials = materials;
+        _layers = layers;
         _settings = options?.Value.Physics ?? new PhysicsSettings();
         _threads = _settings.Threads;
         _integration = new IntegrationSettings(_kinds)
@@ -183,6 +187,9 @@ public sealed partial class PhysicsWorld : IDisposable
         _integration.Bodies = _simulation.Bodies;
         _contacts.Bodies = _simulation.Bodies;
         _kinds.Contacts = _materials?.Seal() ?? ContactMaterial.DefaultTable;
+        _kinds.Touches = _layers?.Seal() ?? BodyKinds.NewTouches();
+        _kinds.CharacterLayer = _layers?.CharacterLayer ?? PhysicsLayerId.Default;
+        _kinds.VoxelLayer = _layers?.VoxelLayer ?? PhysicsLayerId.Default;
 
         LogInitialized(threadCount);
     }
@@ -242,6 +249,12 @@ public sealed partial class PhysicsWorld : IDisposable
         }
 
         _integration.Gravity = gravity;
+        WakeAll();
+    }
+
+    /// <summary>Wakes every sleeping body.</summary>
+    private void WakeAll()
+    {
         var sets = Simulation.Bodies.Sets;
         for (var i = 1; i < sets.Length; i++)
         {
@@ -358,7 +371,7 @@ public sealed partial class PhysicsWorld : IDisposable
                 new BodyActivityDescription(-1)
             )
         );
-        _kinds.Set(body, BodyKind.StandIn);
+        _kinds.Set(body, BodyKind.StandIn, layer: _kinds.CharacterLayer);
         return body;
     }
 

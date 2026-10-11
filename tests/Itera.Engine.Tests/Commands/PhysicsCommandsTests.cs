@@ -9,7 +9,8 @@ namespace Itera.Engine.Tests.Commands;
 /// <summary>
 /// The console's <c>physics</c> (<see cref="PhysicsCommands"/>): with no match it says so; in one it prints the bodies,
 /// statics, solver, damping, and gravity, sets the solver and the damping for the match, and refuses values out of range;
-/// it lists the run's physics materials with the voxel materials mapped to them.
+/// it lists the run's physics materials with the voxel materials mapped to them, and the layers with those they do not
+/// touch, the run's table before a match and the match's in one.
 /// </summary>
 public sealed class PhysicsCommandsTests
 {
@@ -77,6 +78,37 @@ public sealed class PhysicsCommandsTests
                 "default: friction 1, bounciness 0",
                 "ice: friction 0.03, bounciness 0; voxels 7, 9",
                 "rubber: friction 1, bounciness 0.8",
+            ],
+            output.Lines
+        );
+    }
+
+    [Fact]
+    public void It_lists_the_layers_and_which_they_touch_in_the_run_then_in_the_match()
+    {
+        using var provider = EngineComposition.Build(terrain: false);
+        var commands = provider.GetRequiredService<ConsoleCommands>();
+        provider.GetRequiredService<PhysicsCommands>().Register();
+        var layers = provider.GetRequiredService<PhysicsLayers>();
+        var characters = layers.Register("characters");
+        var gate = layers.Register("gate");
+        layers.CharacterLayer = characters;
+        layers.SetTouches(gate, characters, false);
+        var output = new Output();
+
+        commands.Execute("physics layers", output);
+        using var match = new HeadlessRun(provider).Play(seed: 1);
+        match.Match.Physics.SetTouches(gate, gate, false);
+        commands.Execute("physics layers", output);
+
+        Assert.Equal(
+            [
+                "default (voxels): touches all",
+                "characters (characters): touches all but gate",
+                "gate: touches all but characters",
+                "default (voxels): touches all",
+                "characters (characters): touches all but gate",
+                "gate: touches all but characters, gate",
             ],
             output.Lines
         );
