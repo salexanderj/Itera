@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using BepuPhysics;
@@ -53,10 +54,10 @@ public sealed partial class PhysicsWorld : IDisposable
     /// <summary>What a body stands for: a thrown ball or lifted piece, a stand-in, or a body cut off a character.</summary>
     public BodyKind KindOf(BodyHandle body) => _kinds[body.Value];
 
-    /// <summary>The pool Bepu shapes and statics take their memory from. Throws before <see cref="Initialize"/>.</summary>
     /// <summary>True between <see cref="Initialize"/> and <see cref="Dispose"/>.</summary>
     internal bool IsInitialized => _pool is not null;
 
+    /// <summary>The pool Bepu shapes and statics take their memory from. Throws before <see cref="Initialize"/>.</summary>
     internal BufferPool Pool =>
         _pool ?? throw new InvalidOperationException("The physics world has not been initialised.");
 
@@ -130,6 +131,23 @@ public sealed partial class PhysicsWorld : IDisposable
     public void Step(float stepSeconds)
     {
         Simulation.Timestep(stepSeconds, _dispatcher);
+        CheckRecords();
+    }
+
+    /// <summary>
+    /// In Debug builds, that no body this world recorded was removed past <see cref="RemoveBody"/>: its record would pass
+    /// to the next body that takes its handle.
+    /// </summary>
+    [Conditional("DEBUG")]
+    private void CheckRecords()
+    {
+        var stale = _kinds.FirstStale(Simulation.Bodies);
+        if (stale >= 0)
+        {
+            throw new InvalidOperationException(
+                $"Body {stale} was removed without PhysicsWorld.RemoveBody: its record would pass to the next body that takes its handle."
+            );
+        }
     }
 
     /// <summary>
@@ -220,9 +238,8 @@ public sealed partial class PhysicsWorld : IDisposable
     public void RemoveStandIn(BodyHandle body)
     {
         var shape = Simulation.Bodies[body].Collidable.Shape;
-        Simulation.Bodies.Remove(body);
+        RemoveBody(body);
         Simulation.Shapes.Remove(shape);
-        _kinds.Set(body, BodyKind.Loose);
     }
 
     /// <summary>A box of (x, y, z) level-0 voxels of <paramref name="metres"/> each.</summary>

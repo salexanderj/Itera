@@ -102,7 +102,8 @@ Where tests live:
   posed against SharpGLTF's own world matrices); `RigClipTests` (step, linear, and cubic sampling); `MeshAssetsTests`,
   `TextureDecodeTests`, `MipChainTests`, `MeshTangentsTests`; a model's compressed textures (`CompressedTexturesTests`:
   read where they match, each mismatch decoded with a warning, the image's hash wherever the model keeps it).
-- `Itera.Engine.Tests/Physics/`: mesh colliders (`MeshCollidersTests`: two-sided rays across buckets, tags, a ball that
+- `Itera.Engine.Tests/Physics/`: a game's bodies and the records by handle (`PhysicsBodiesTests`: a reused handle
+  starts afresh, freezing and forgetting, `Holds`), mesh colliders (`MeshCollidersTests`: two-sided rays across buckets, tags, a ball that
   lands on a collider's Bepu static at any voxel level) and the shared ray (`CollisionSourcesTests`); the colliders as
   the mover's cells (`MeshColumnsTests`); the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves)
   and 10,000 random moves that never leave it inside a voxel, the same test bodies run on voxels and on triangles built

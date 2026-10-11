@@ -482,7 +482,6 @@ public sealed partial class LooseBodies
         }
 
         var simulation = _physics.Simulation;
-        _colliders?.Forget(body);
         if (loose.Ragdoll > 0 && _ragdolls.TryGetValue(loose.Ragdoll, out var members))
         {
             members.Remove(body);
@@ -493,8 +492,8 @@ public sealed partial class LooseBodies
             }
         }
 
-        // Bepu removes the body's joints with it.
-        simulation.Bodies.Remove(body);
+        // Bepu removes the body's joints with it; the voxel colliders forget it, and its record is reset.
+        _physics.RemoveBody(body);
         if (loose.Cut)
         {
             foreach (var model in loose.Owned)

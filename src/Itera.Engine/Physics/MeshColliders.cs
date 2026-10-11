@@ -473,8 +473,7 @@ public sealed partial class MeshColliders(
             return;
         }
 
-        physics.Kinds.ClearStatic(collider.Static);
-        physics.Simulation.Statics.Remove(collider.Static);
+        physics.RemoveStatic(collider.Static);
         physics.Simulation.Shapes.RemoveAndDispose(collider.Shape, physics.Pool);
     }
 

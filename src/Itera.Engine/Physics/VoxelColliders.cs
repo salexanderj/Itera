@@ -105,6 +105,8 @@ public sealed partial class VoxelColliders : IDisposable
         _voxels = voxels;
         _passable = MaterialSet.Passable(passability);
         _logger = logger;
+        // A body removed through the physics world is forgotten here first.
+        physics.BodyRemoving = Forget;
     }
 
     /// <summary>Statics built for bodies.</summary>
@@ -138,7 +140,7 @@ public sealed partial class VoxelColliders : IDisposable
     public int FrozenCount => _frozen.Count;
 
     /// <summary>
-    /// Called with a ragdoll's group (<see cref="BodyKinds.Group"/>) once all of its bodies thawed together, before the
+    /// Called with a ragdoll's group (<see cref="BodyKinds.Ragdoll"/>) once all of its bodies thawed together, before the
     /// step, so its joints come back (<see cref="LooseBodies"/> sets it).
     /// </summary>
     public Action<int>? GroupThawed { get; set; }
@@ -156,7 +158,8 @@ public sealed partial class VoxelColliders : IDisposable
 
     /// <summary>
     /// Forgets a body that is about to leave the simulation, so a frozen body's kept state does not pass to a new body
-    /// that reuses its handle. Call before <c>Bodies.Remove</c>.
+    /// that reuses its handle. <see cref="PhysicsWorld.RemoveBody"/> calls it; call it before a <c>Bodies.Remove</c> of
+    /// one's own.
     /// </summary>
     public void Forget(BodyHandle body) => _frozen.Remove(body);
 
@@ -340,7 +343,8 @@ public sealed partial class VoxelColliders : IDisposable
 
         if (level < 0)
         {
-            if (!frozen)
+            // A body a game keeps moving goes on, meeting no voxels until they load.
+            if (!frozen && (_physics.Kinds.Marks(handle.Value) & PhysicsMarks.KeepsMovingUnloaded) == 0)
             {
                 _freeze.Add(handle);
             }
@@ -381,7 +385,7 @@ public sealed partial class VoxelColliders : IDisposable
     }
 
     /// <summary>
-    /// Makes each ragdoll freeze and thaw as one (<see cref="BodyKinds.Group"/>): every body of a ragdoll one of whose
+    /// Makes each ragdoll freeze and thaw as one (<see cref="BodyKinds.Ragdoll"/>): every body of a ragdoll one of whose
     /// bodies is to freeze freezes with it, and a frozen ragdoll's bodies thaw only when all of them may, noting it in
     /// <see cref="_groups"/> for its joints. Walks the bodies once for each ragdoll concerned; that is rare.
     /// </summary>
@@ -391,7 +395,7 @@ public sealed partial class VoxelColliders : IDisposable
         var count = _freeze.Count;
         for (var i = 0; i < count; i++)
         {
-            var group = _physics.Kinds.Group(_freeze[i].Value);
+            var group = _physics.Kinds.Ragdoll(_freeze[i].Value);
             if (group == 0 || IndexOf(_freeze, group, i) >= 0)
             {
                 continue;
@@ -403,7 +407,7 @@ public sealed partial class VoxelColliders : IDisposable
         // Thawing: a ragdoll whose bodies do not all thaw now stays frozen.
         for (var i = _thaw.Count - 1; i >= 0; i--)
         {
-            var group = _physics.Kinds.Group(_thaw[i].Value);
+            var group = _physics.Kinds.Ragdoll(_thaw[i].Value);
             if (group == 0 || _groups.Contains(group))
             {
                 continue;
@@ -417,7 +421,7 @@ public sealed partial class VoxelColliders : IDisposable
 
         for (var i = _thaw.Count - 1; i >= 0; i--)
         {
-            var group = _physics.Kinds.Group(_thaw[i].Value);
+            var group = _physics.Kinds.Ragdoll(_thaw[i].Value);
             if (group != 0 && !_groups.Contains(group))
             {
                 _thaw.RemoveAt(i);
@@ -430,7 +434,7 @@ public sealed partial class VoxelColliders : IDisposable
     {
         for (var i = 0; i < before; i++)
         {
-            if (_physics.Kinds.Group(handles[i].Value) == group)
+            if (_physics.Kinds.Ragdoll(handles[i].Value) == group)
             {
                 return i;
             }
@@ -456,7 +460,7 @@ public sealed partial class VoxelColliders : IDisposable
             for (var i = 0; i < bodySet.Count; i++)
             {
                 var handle = bodySet.IndexToHandle[i];
-                if (_physics.Kinds.Group(handle.Value) != group)
+                if (_physics.Kinds.Ragdoll(handle.Value) != group)
                 {
                     continue;
                 }
@@ -809,10 +813,10 @@ public sealed partial class VoxelColliders : IDisposable
             return;
         }
 
-        // Removing a static wakes the bodies resting on it.
-        var simulation = _physics.Simulation;
-        simulation.Statics.Remove(cell.Static);
-        simulation.Shapes.RemoveAndDispose(cell.Shape, _physics.Pool);
+        // Removing a static wakes the bodies resting on it; its record is reset, so a static that takes its handle next
+        // is not of this level.
+        _physics.RemoveStatic(cell.Static);
+        _physics.Simulation.Shapes.RemoveAndDispose(cell.Shape, _physics.Pool);
         cell.HasStatic = false;
         StaticCount--;
         BoxCount -= cell.Boxes;

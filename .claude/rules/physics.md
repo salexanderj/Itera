@@ -98,6 +98,24 @@ that need more at once make chunks again at every read); making one allocates un
 triangles alone costs more than one over voxels, more so in small cells (columns are read one by one, voxels a brick's
 mask at a time; the figures are in ARCHITECTURE.md).
 
+## A game's own bodies and statics, and the records
+
+The engine keeps a record for each Bepu body and static by handle (`BodyKinds`: a body's `BodyKind`, the voxel level
+it collides with now and the one it was made for, its ragdoll, a game's `PhysicsMarks`, and `Born`, which of the bodies
+that took the handle it is; a static's voxel level); the narrow phase reads them on Bepu's worker threads, and they are
+written on the main thread between steps. A handle never recorded reads the default (a loose body at level 0, in no
+ragdoll; a static at level 0). Every removal resets its record (`PhysicsWorld.RemoveBody` and `RemoveStatic`, which
+`LooseBodies`, `RemoveStandIn`, `VoxelColliders`, and `MeshColliders` use), so a body or static that takes a removed
+one's handle starts afresh; in Debug builds `PhysicsWorld.Step` throws when a recorded body was removed past
+`RemoveBody`. A game adds its own with `PhysicsWorld.AddBody(description, settings)` (recorded as a loose body: it
+touches the voxels, the game's statics, bodies, and stand-ins; frozen where the voxels round it are not loaded, unless
+`PhysicsMarks.KeepsMovingUnloaded`; moved with the origin; not one of `LooseBodies`, so not counted, settled, or read by
+`PhysicsReadSystem`) and `AddStatic` (touched by bodies of every voxel level, as a mesh collider), removes them with
+`RemoveBody` and `RemoveStatic` (the shapes stay the game's), and tells a reused handle apart with `BornOf` and
+`Holds(body, born)`. `RemoveBody` first calls `BodyRemoving`, which the voxel colliders set to `Forget`. A body added
+straight through `Simulation.Bodies` has no record (it reads the default) and must not be removed past `RemoveBody`
+once recorded.
+
 ## Mesh colliders and the shared ray
 
 A game's static triangle colliders (`MeshColliders`, scoped to the match): `Add(asset, transform, tagsOf)` registers a
@@ -119,7 +137,8 @@ ray (`ToolAim`) stays the terrain's own.
 
 ### Files in `src/Itera.Engine`
 
-  - `Physics/`: the Bepu simulation and stand-ins (`PhysicsWorld`), voxel box statics (`VoxelColliders`), loose bodies
+  - `Physics/`: the Bepu simulation and stand-ins (`PhysicsWorld`; a game's bodies and statics in `PhysicsWorld.Bodies.cs`;
+    the records by handle, `BodyKinds`), voxel box statics (`VoxelColliders`), loose bodies
     (`LooseBodies`: table, rest, and removal; `.Pieces.cs` balls and lifted pieces; `.Parts.cs` cut parts and ragdolls;
     `.Hulls.cs` large hulls), loose bodies and solid models as voxels (`LooseBodyVoxels`, `SolidModelVoxels`,
     `SolidColumns`), the character mover (`VoxelCharacterMover`) and the mesh colliders as its cells (`MeshColumns`), a
