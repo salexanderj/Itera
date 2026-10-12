@@ -35,34 +35,11 @@ public sealed partial class VoxelObjects(
         kinds.Seal(world.Grid);
         var materials = new byte[VoxelConstants.ChunkVoxels];
         var densities = new byte[VoxelConstants.ChunkVoxels];
-        Span<ModelTree> trees = stackalloc ModelTree[VoxelModels.MaxLevels];
         _parts = new ObjectPartModel[kinds.Count][];
         var parts = 0;
         for (var k = 0; k < kinds.Count; k++)
         {
-            var kind = kinds[new VoxelObjectKindId((ushort)k)];
-            var made = new ObjectPartModel[kind.Parts.Length];
-            var unit = kind.UnitCentimetres;
-            for (var p = 0; p < kind.Parts.Length; p++)
-            {
-                var part = kind.Parts[p];
-                for (var level = 0; level < VoxelModels.MaxLevels; level++)
-                {
-                    part.Decode(level, materials, densities);
-                    trees[level] = models.Encode(materials, densities, part.SizeAt(level));
-                }
-
-                var model = models.Add(trees, part.Size, 0, unit, densities: true);
-                // From the kind's anchor to the part's corner, in metres.
-                var corner =
-                    new Vector3(
-                        part.Offset.X * unit - kind.AnchorCentimetres.X,
-                        part.Offset.Y * unit - kind.AnchorCentimetres.Y,
-                        part.Offset.Z * unit - kind.AnchorCentimetres.Z
-                    ) / VoxelConstants.CentimetresPerMetre;
-                made[p] = new ObjectPartModel(model, corner);
-            }
-
+            var made = MakeParts(models, kinds[new VoxelObjectKindId((ushort)k)], materials, densities);
             _parts[k] = made;
             parts += made.Length;
         }
@@ -79,6 +56,52 @@ public sealed partial class VoxelObjects(
     /// (unturned). Once <see cref="Initialize"/>d.
     /// </summary>
     public ReadOnlySpan<ObjectPartModel> PartsOf(VoxelObjectKindId kind) => _parts[kind.Value];
+
+    /// <summary>
+    /// Makes <paramref name="kind"/>'s parts into models of <paramref name="models"/>: three levels with densities, each
+    /// owning its own voxels past its border, with its box's corner from the kind's anchor; through two chunk-sized
+    /// buffers.
+    /// </summary>
+    internal static ObjectPartModel[] MakeParts(
+        VoxelModels models,
+        VoxelObjectKind kind,
+        Span<byte> materials,
+        Span<byte> densities
+    )
+    {
+        Span<ModelTree> trees = stackalloc ModelTree[VoxelModels.MaxLevels];
+        var made = new ObjectPartModel[kind.Parts.Length];
+        var unit = kind.UnitCentimetres;
+        for (var p = 0; p < kind.Parts.Length; p++)
+        {
+            var part = kind.Parts[p];
+            for (var level = 0; level < VoxelModels.MaxLevels; level++)
+            {
+                part.Decode(level, materials, densities);
+                trees[level] = models.Encode(materials, densities, part.SizeAt(level));
+            }
+
+            var model = models.Add(trees, part.Size, 0, unit, densities: true);
+            // It owns its own voxels, past its border of its neighbours'.
+            const int border = ObjectPart.BorderVoxels;
+            models.SetOwned(
+                model,
+                new VoxelCoord(border, border, border),
+                new VoxelCoord(border + part.OwnSize.X, border + part.OwnSize.Y, border + part.OwnSize.Z),
+                part.OpenLow
+            );
+            // From the kind's anchor to the corner of the part's box (its border's), in metres.
+            var corner =
+                new Vector3(
+                    (part.Offset.X - border) * unit - kind.AnchorCentimetres.X,
+                    (part.Offset.Y - border) * unit - kind.AnchorCentimetres.Y,
+                    (part.Offset.Z - border) * unit - kind.AnchorCentimetres.Z
+                ) / VoxelConstants.CentimetresPerMetre;
+            made[p] = new ObjectPartModel(model, corner);
+        }
+
+        return made;
+    }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Objects: {Kinds} kind(s) made into {Parts} part model(s)")]
     private partial void LogMade(int kinds, int parts);
@@ -101,7 +124,7 @@ public sealed partial class VoxelObjects(
     }
 }
 
-/// <summary>One part of a kind as a model: its handle, and its box's corner from the kind's anchor in metres.</summary>
+/// <summary>One part of a kind as a model: its handle, and its box's corner (its border's) from the kind's anchor in metres.</summary>
 public readonly record struct ObjectPartModel(int Model, Vector3 Corner);
 
 /// <summary>

@@ -226,22 +226,22 @@ public sealed class VoxelObjectKind
 
     internal static VoxelObjectKind Build(VoxelObjectKindId id, string name, VoxelObjectShape shape, int copiesUpTo)
     {
-        const int edge = VoxelConstants.ChunkSize;
+        const int own = ObjectPart.OwnVoxels;
         var size = shape.Size;
         var parts = new List<ObjectPart>();
-        for (var pz = 0; pz < size.Z; pz += edge)
+        for (var pz = 0; pz < size.Z; pz += own)
         {
-            for (var py = 0; py < size.Y; py += edge)
+            for (var py = 0; py < size.Y; py += own)
             {
-                for (var px = 0; px < size.X; px += edge)
+                for (var px = 0; px < size.X; px += own)
                 {
                     var offset = new VoxelCoord(px, py, pz);
-                    var partSize = new VoxelCoord(
-                        Math.Min(edge, size.X - px),
-                        Math.Min(edge, size.Y - py),
-                        Math.Min(edge, size.Z - pz)
+                    var ownSize = new VoxelCoord(
+                        Math.Min(own, size.X - px),
+                        Math.Min(own, size.Y - py),
+                        Math.Min(own, size.Z - pz)
                     );
-                    if (ObjectPart.TryBuild(shape, offset, partSize, out var part))
+                    if (ObjectPart.TryBuild(shape, offset, ownSize, out var part))
                     {
                         parts.Add(part);
                     }
@@ -252,6 +252,18 @@ public sealed class VoxelObjectKind
         if (parts.Count == 0)
         {
             throw new ArgumentException($"Object kind {name} has no solid voxel.", nameof(shape));
+        }
+
+        // A side with no part beyond it owns the faces against its border, which holds only air.
+        var offsets = parts.Select(part => part.Offset).ToHashSet();
+        foreach (var part in parts)
+        {
+            var at = part.Offset;
+            part.OpenLow = new VoxelCoord(
+                offsets.Contains(at with { X = at.X - own }) ? 0 : 1,
+                offsets.Contains(at with { Y = at.Y - own }) ? 0 : 1,
+                offsets.Contains(at with { Z = at.Z - own }) ? 0 : 1
+            );
         }
 
         var used = new bool[256];
@@ -324,21 +336,37 @@ public sealed class VoxelObjectKind
 /// </summary>
 internal sealed class ObjectPart
 {
+    /// <summary>The most voxels a part owns along each axis: 120, with its border 128, a chunk.</summary>
+    public const int OwnVoxels = VoxelConstants.ChunkSize - 2 * BorderVoxels;
+
+    /// <summary>
+    /// The voxels of its neighbours a part holds round its own at level 0 (2 at level 1, 1 at level 2), so its mesh meets
+    /// theirs: a multiple of the coarsest level's voxel, so every level's box starts at one corner.
+    /// </summary>
+    public const int BorderVoxels = 4;
+
     private const int Brick = VoxelConstants.BrickSize;
     private const int BrickVoxels = Brick * Brick * Brick;
 
-    private ObjectPart(VoxelCoord offset, VoxelCoord size, PartLevel[] levels)
+    private ObjectPart(VoxelCoord offset, VoxelCoord ownSize, PartLevel[] levels)
     {
         Offset = offset;
-        Size = size;
+        OwnSize = ownSize;
+        Size = new VoxelCoord(ownSize.X + 2 * BorderVoxels, ownSize.Y + 2 * BorderVoxels, ownSize.Z + 2 * BorderVoxels);
         Levels = levels;
     }
 
-    /// <summary>Its corner in the kind's voxels.</summary>
+    /// <summary>The corner of the voxels it owns, in the kind's voxels; its box starts <see cref="BorderVoxels"/> before it.</summary>
     public VoxelCoord Offset { get; }
 
-    /// <summary>Its box in the kind's voxels (level 0).</summary>
+    /// <summary>The voxels it owns along each axis (level 0).</summary>
+    public VoxelCoord OwnSize { get; }
+
+    /// <summary>Its box with its border, in the kind's voxels (level 0): its model's box.</summary>
     public VoxelCoord Size { get; }
+
+    /// <summary>1 on each axis whose low side has no part beyond it (it owns the faces against its border there).</summary>
+    public VoxelCoord OpenLow { get; set; }
 
     public PartLevel[] Levels { get; }
 
@@ -391,18 +419,45 @@ internal sealed class ObjectPart
         }
     }
 
-    public static bool TryBuild(VoxelObjectShape shape, VoxelCoord offset, VoxelCoord size, out ObjectPart part)
+    /// <summary>
+    /// The part owning <paramref name="ownSize"/> voxels from <paramref name="offset"/> of <paramref name="shape"/>, with its
+    /// border, at three levels; false when it owns no solid voxel.
+    /// </summary>
+    public static bool TryBuild(VoxelObjectShape shape, VoxelCoord offset, VoxelCoord ownSize, out ObjectPart part)
     {
         var levels = new PartLevel[VoxelModels.MaxLevels];
-        var any = false;
+        var corner = new VoxelCoord(offset.X - BorderVoxels, offset.Y - BorderVoxels, offset.Z - BorderVoxels);
+        var box = new VoxelCoord(
+            ownSize.X + 2 * BorderVoxels,
+            ownSize.Y + 2 * BorderVoxels,
+            ownSize.Z + 2 * BorderVoxels
+        );
         for (var level = 0; level < levels.Length; level++)
         {
-            levels[level] = PartLevel.Build(shape, offset, size, level);
-            any |= level == 0 && levels[0].Solid > 0;
+            levels[level] = PartLevel.Build(shape, corner, box, level);
         }
 
-        part = new ObjectPart(offset, size, levels);
-        return any;
+        part = new ObjectPart(offset, ownSize, levels);
+        return OwnsSolid(shape, offset, ownSize);
+    }
+
+    private static bool OwnsSolid(VoxelObjectShape shape, VoxelCoord offset, VoxelCoord ownSize)
+    {
+        for (var z = 0; z < ownSize.Z; z++)
+        {
+            for (var y = 0; y < ownSize.Y; y++)
+            {
+                for (var x = 0; x < ownSize.X; x++)
+                {
+                    if (shape.MaterialAt(offset.X + x, offset.Y + y, offset.Z + z) != VoxelConstants.Air)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

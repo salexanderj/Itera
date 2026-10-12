@@ -946,7 +946,13 @@ public sealed partial class GameLoop
     private void BeginMatchGpu(MatchServices match)
     {
         _origin = match.Services.GetRequiredService<WorldOrigin>();
-        _worldMeshes.BeginMatch(match.Terrain?.Voxels, match.Models, match.TintMap);
+        _worldMeshes.BeginMatch(
+            match.Terrain?.Voxels,
+            match.Models,
+            match.TintMap,
+            match.Terrain?.Placed,
+            match.Terrain?.Objects
+        );
         _worldOnGpu = true;
     }
 

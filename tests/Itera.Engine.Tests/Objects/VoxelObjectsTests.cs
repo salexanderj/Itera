@@ -34,7 +34,8 @@ public sealed class VoxelObjectsTests : IDisposable
 
     /// <summary>
     /// A tree of 5 cm voxels 300 voxels tall (15 m) is three parts, each a model of 5 cm voxels whose three trees hold the
-    /// part's levels, materials and densities, and whose corner lies where the part's does from the trunk's foot.
+    /// part's levels with its border, materials and densities, and whose corner lies where the part's border does from
+    /// the trunk's foot.
     /// </summary>
     [Fact]
     public void Each_part_is_a_model_of_its_kinds_voxels_with_densities_at_three_levels()
@@ -65,7 +66,9 @@ public sealed class VoxelObjectsTests : IDisposable
             Assert.Equal(VoxelModels.MaxLevels, _models.LevelCount(model));
             Assert.Equal(part.Size, _models.Size(model));
             Assert.Equal(0.20f, _models.VoxelMetres(model, 2), 6);
-            var corner = new Vector3(-1.5f, part.Offset.Y * 0.05f, -1.5f);
+            // Its box starts 4 voxels (20 cm) before the voxels it owns, its border.
+            var corner = new Vector3(-1.7f, (part.Offset.Y - 4) * 0.05f, -1.7f);
+            Assert.True(_models.IsPart(model));
             Assert.True(Vector3.Distance(corner, parts[p].Corner) < 1e-5f, $"Part {p} is at {parts[p].Corner}.");
             for (var level = 0; level < VoxelModels.MaxLevels; level++)
             {

@@ -56,6 +56,17 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
 - The match's identity (`GeneratorMatchIdentity`) carries the kinds' fingerprint after the generator's id where the
   world places objects, so games whose kinds differ do not join each other; the fingerprint holds the copies' rule
   (`ObjectCopies.RuleVersion`: raise it with any change to how copies are written). Saves do not record the kinds yet.
+- A kind's parts own at most 120 voxels a side (`ObjectPart.OwnVoxels`) and hold a border of their neighbours' 4 voxels
+  round them (`BorderVoxels`; 2 at level 1, 1 at level 2), so a part's model box is its own plus 8; each part model owns
+  the faces of its own voxels alone (`VoxelModels.SetOwned`, with `OpenLow` 1 on a side with no part beyond, which owns
+  the faces against its border; the mesher's owned window, `SurfaceNets.Mesh(samples, densities, ownedMin, ownedMax,
+  output)`), so parts meet with no seam and each face is made once.
+- Drawing (`WorldMeshes.Objects.cs`): each pass records the level-K columns it split below K (`CameraSplit`, whose columns
+  the near cascade and the image views share; `FarSplit`); an object's part models go into a pass's lists when a level-K
+  column under its reach is split there (an area is passed over when neither its column nor one round it is), at its own
+  voxels within level 0's reach times the mesh share, twice them within level 1's, else four times (the views: four
+  times), turned by `ObjectTurns.Rotation` about its anchor. Objects are gathered after the game's models and the retired
+  ones; a model list too full for a level's draws takes as many as fit.
 - Models may have a voxel size of their own (`VoxelModels.Add` with a unit; `UnitCentimetres`, `VoxelMetres`) and keep
   densities (`Encode(voxels, densities, extent)`, `DecodeDensities`, `HasDensities`), which the renderer meshes them with.
   `SolidModelVoxels.Add` and the cut parts' hulls and masses (`LooseBodies.TryCreate(parts)`) take the model's unit.

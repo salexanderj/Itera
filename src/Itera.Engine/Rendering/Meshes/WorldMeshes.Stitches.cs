@@ -115,6 +115,7 @@ public sealed partial class WorldMeshes
             const int Half = SurfaceNets.BlockSize / 2;
             job.Model = null;
             job.HasDensities = true;
+            job.Windowed = false;
             job.Column = column.Key;
             job.Owner = column;
             job.Index = index;

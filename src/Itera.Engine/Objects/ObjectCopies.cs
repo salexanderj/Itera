@@ -392,16 +392,22 @@ internal sealed class ObjectCopyGrid
 
         var voxels = new byte[VoxelConstants.ChunkVoxels];
         var densities = new byte[VoxelConstants.ChunkVoxels];
+        const int border = ObjectPart.BorderVoxels;
         foreach (var part in kind.Parts)
         {
+            // The voxels each part owns, past its border.
             part.Decode(0, voxels, densities);
-            for (var z = 0; z < part.Size.Z; z++)
+            for (var z = 0; z < part.OwnSize.Z; z++)
             {
-                for (var y = 0; y < part.Size.Y; y++)
+                for (var y = 0; y < part.OwnSize.Y; y++)
                 {
-                    for (var x = 0; x < part.Size.X; x++)
+                    for (var x = 0; x < part.OwnSize.X; x++)
                     {
-                        var material = voxels[x + VoxelConstants.ChunkSize * (y + VoxelConstants.ChunkSize * z)];
+                        var material = voxels[
+                            border
+                                + x
+                                + VoxelConstants.ChunkSize * (border + y + VoxelConstants.ChunkSize * (border + z))
+                        ];
                         if (material == VoxelConstants.Air)
                         {
                             continue;

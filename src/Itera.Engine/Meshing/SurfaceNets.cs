@@ -126,7 +126,42 @@ public sealed class SurfaceNets
     /// </summary>
     /// <exception cref="ArgumentException">A span's length is not <see cref="SampleCount"/>.</exception>
     public int Mesh(ReadOnlySpan<byte> samples, ReadOnlySpan<byte> densities, MeshBuffers output) =>
-        Mesh(samples, densities, default, output);
+        Mesh(samples, densities, default, default, s_wholeEnd, output);
+
+    /// <summary>
+    /// <see cref="Mesh(ReadOnlySpan{byte}, ReadOnlySpan{byte}, MeshBuffers)"/> owning only the edges whose lower voxel lies
+    /// in the block-local box from <paramref name="ownedMin"/> up to but not including <paramref name="ownedMax"/> (each
+    /// within 0 to <see cref="BlockSize"/>): for a model in parts that each read their neighbours' voxels round them, so the
+    /// faces between two parts are made once, by the part that holds their lower voxel. Vertices still come from every
+    /// cell a quad uses, the apron's too.
+    /// </summary>
+    /// <exception cref="ArgumentException">A span's length is not <see cref="SampleCount"/>.</exception>
+    public int Mesh(
+        ReadOnlySpan<byte> samples,
+        ReadOnlySpan<byte> densities,
+        VoxelCoord ownedMin,
+        VoxelCoord ownedMax,
+        MeshBuffers output
+    ) =>
+        Mesh(
+            samples,
+            densities,
+            default,
+            new VoxelCoord(
+                Math.Clamp(ownedMin.X, 0, BlockSize),
+                Math.Clamp(ownedMin.Y, 0, BlockSize),
+                Math.Clamp(ownedMin.Z, 0, BlockSize)
+            ),
+            new VoxelCoord(
+                Math.Clamp(ownedMax.X, 0, BlockSize),
+                Math.Clamp(ownedMax.Y, 0, BlockSize),
+                Math.Clamp(ownedMax.Z, 0, BlockSize)
+            ),
+            output
+        );
+
+    // The whole block, from its corner (VoxelCoord's default) to s_wholeEnd: what a block owns unless told otherwise.
+    private static readonly VoxelCoord s_wholeEnd = new(BlockSize, BlockSize, BlockSize);
 
     /// <summary>
     /// <see cref="Mesh(ReadOnlySpan{byte}, ReadOnlySpan{byte}, MeshBuffers)"/> for a block beside columns drawn one level
@@ -158,12 +193,26 @@ public sealed class SurfaceNets
             throw new ArgumentException("A block lies at 0 or 16 voxels in the coarser block.", nameof(coarseOffset));
         }
 
-        return Mesh(samples, densities, new Coarse(coarseSamples, coarseDensities, coarseOffset, sides), output);
+        return Mesh(
+            samples,
+            densities,
+            new Coarse(coarseSamples, coarseDensities, coarseOffset, sides),
+            default,
+            s_wholeEnd,
+            output
+        );
     }
 
     private static bool IsHalf(int offset) => offset is 0 or BlockSize / 2;
 
-    private int Mesh(ReadOnlySpan<byte> samples, ReadOnlySpan<byte> densities, in Coarse coarse, MeshBuffers output)
+    private int Mesh(
+        ReadOnlySpan<byte> samples,
+        ReadOnlySpan<byte> densities,
+        in Coarse coarse,
+        VoxelCoord ownedMin,
+        VoxelCoord ownedMax,
+        MeshBuffers output
+    )
     {
         ArgumentNullException.ThrowIfNull(output);
         if (samples.Length != SampleCount)
@@ -195,12 +244,12 @@ public sealed class SurfaceNets
         }
 
         NextGeneration();
-        for (var z = 0; z < BlockSize; z++)
+        for (var z = ownedMin.Z; z < ownedMax.Z; z++)
         {
-            for (var y = 0; y < BlockSize; y++)
+            for (var y = ownedMin.Y; y < ownedMax.Y; y++)
             {
                 var row = SampleIndex(Apron, y + Apron, z + Apron);
-                for (var x = 0; x < BlockSize; x++)
+                for (var x = ownedMin.X; x < ownedMax.X; x++)
                 {
                     var i = row + x;
                     var solid = samples[i] != 0;

@@ -280,11 +280,18 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     }
 
     /// <summary>
-    /// Starts following a match's world: its columns at the meshed levels, from empty, and its models (only the models
-    /// in a match without voxel terrain, <paramref name="world"/> null: no columns, no sky field); the first frame stages
-    /// the materials and the match's tint map. Main thread, no Vulkan call.
+    /// Starts following a match's world: its columns at the meshed levels, from empty, its models, and the objects its
+    /// world places (<paramref name="objects"/>, as <paramref name="objectModels"/>' models; only the models in a match without voxel terrain,
+    /// <paramref name="world"/> null: no columns, no sky field, no objects); the first frame stages the materials and the
+    /// match's tint map. Main thread, no Vulkan call.
     /// </summary>
-    public void BeginMatch(VoxelWorld? world, VoxelModels models, IVoxelTintMap tintMap)
+    public void BeginMatch(
+        VoxelWorld? world,
+        VoxelModels models,
+        IVoxelTintMap tintMap,
+        Objects.ObjectWorld? objects = null,
+        Objects.VoxelObjects? objectModels = null
+    )
     {
         ArgumentNullException.ThrowIfNull(models);
         ArgumentNullException.ThrowIfNull(tintMap);
@@ -303,6 +310,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
 
         _models = models;
         _tintMap = tintMap;
+        BeginObjects(objects, objectModels);
         _heap = new GpuRangeHeap((long)(_pass.HeapBytes / sizeof(uint)));
         // The heap's first ranges, lowest first: the materials and the tint map at the places MeshPass binds them.
         if (
@@ -340,6 +348,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     public void EndMatch()
     {
         EndSky();
+        EndObjects();
         // Jobs still with the workers come back to the pool when they finish.
         while (_waiting.TryDequeue(out var job))
         {
@@ -1459,6 +1468,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
                 block.InFlight = true;
                 job.Model = null;
                 job.HasDensities = true;
+                job.Windowed = false;
                 job.Column = key;
                 job.Owner = column;
                 job.Index = i;

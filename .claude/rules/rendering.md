@@ -275,7 +275,8 @@ after the cascades and the sky field's copy name it.
 
 The models (`VoxelModels`: loose bodies, and a game's bodies, parts, and items) are meshes too (`WorldMeshes.Models.cs`). Each level of each model is cut into 32-voxel blocks starting one voxel before
 its box (`ModelBlockShift`, since a block meshes only the faces whose lower voxel is in it), read with a 2-voxel apron
-of air from the decoded level (`ReadModelBlock`; with its densities where the model keeps them, `VoxelModels.HasDensities`), meshed on the same workers before the world's blocks, and kept in the
+of air from the decoded level (`ReadModelBlock`; with its densities where the model keeps them, `VoxelModels.HasDensities`;
+a part of an object owns only its own voxels' faces, `VoxelModels.SetOwned`, `.claude/rules/objects.md`), meshed on the same workers before the world's blocks, and kept in the
 mesh heap a range per block. A model counts as uploaded once all its blocks are in (`VoxelModels.SetUploaded`; cuts,
 loose bodies, and loading tasks wait for that); a replaced model (a wound) draws its old meshes until the new ones are
 all in (`VoxelModels.Revision` tells a new revision from the one being meshed); a removed model's ranges go the next

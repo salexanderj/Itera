@@ -20,7 +20,7 @@ namespace Itera.Engine.Tests.Rendering.Meshes;
 /// nothing per frame once up to date.
 /// </summary>
 [RunsLong]
-public sealed class WorldMeshesTests : IDisposable
+public sealed partial class WorldMeshesTests : IDisposable
 {
     private const double RadiusMetres = 4;
     private const int Levels = 2;
@@ -909,6 +909,73 @@ public sealed class WorldMeshesTests : IDisposable
         var steppedSpread = Spread(ModelVertices(stepped));
         Assert.True(smoothSpread < 0.1f, $"The smooth ball's vertices are up to {smoothSpread} voxels off its sphere.");
         Assert.True(steppedSpread > 3 * smoothSpread, $"The stepped ball's are up to {steppedSpread}.");
+    }
+
+    /// <summary>
+    /// An object kind two parts tall (each owning its voxels, with a border of the other's round it) meshes, both parts
+    /// together, into one closed surface at every level: each edge between them made once, so no seam shows where they
+    /// meet.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void An_objects_parts_mesh_into_one_closed_surface(int level)
+    {
+        var shape = new Itera.Engine.Objects.VoxelObjectShape(1, new VoxelCoord(40, 200, 40), default);
+        shape.FillEllipsoid(20, 100, 20, 15.3, 95.3, 15.3, 1);
+        var kinds = new Itera.Engine.Objects.VoxelObjectKinds();
+        var kind = kinds[kinds.Register("pillar", shape)];
+        var parts = Itera.Engine.Objects.VoxelObjects.MakeParts(
+            _models,
+            kind,
+            new byte[VoxelConstants.ChunkVoxels],
+            new byte[VoxelConstants.ChunkVoxels]
+        );
+        Assert.Equal(2, parts.Length);
+        Begin();
+        RunUntil(() => parts.All(part => _models.IsUploaded(part.Model)));
+
+        var edges = new Dictionary<(Vector3, Vector3), int>();
+        var corners = new Vector3[3];
+        foreach (var part in parts)
+        {
+            // The part's corner in the kind's voxels at this level.
+            var corner = part.Corner * 100 / (1 << level);
+            var slot = Frame(draws: [new(part.Model, level, Vector3.Zero, Quaternion.Identity, 0)]);
+            var words = MemoryMarshal.Cast<byte, uint>(_targets.Heap.AsSpan());
+            var indices = MemoryMarshal.Cast<byte, ushort>(_targets.Heap.AsSpan());
+            for (var i = 0; i < _meshes.Frame.ModelCamera.Commands; i++)
+            {
+                var command = _targets.ModelCommandsOf(slot, 0)[i];
+                var record = _targets.ModelDrawsOf(slot, 0)[
+                    (int)command.FirstInstance - MeshPass.ModelRecordBase(slot, 0)
+                ];
+                var block = new Vector3(record.Block & 0xFF, (record.Block >> 8) & 0xFF, (record.Block >> 16) & 0xFF);
+                for (var t = 0; t < command.IndexCount; t += 3)
+                {
+                    for (var c = 0; c < 3; c++)
+                    {
+                        var at = (int)record.VertexBase + MeshVertex.Words * indices[(int)command.FirstIndex + t + c];
+                        var vertex = new MeshVertex { PositionXY = words[at], PositionZMaterial = words[at + 1] };
+                        corners[c] = MeshVertex.DecodePosition(in vertex) + 32 * block - Vector3.One + corner;
+                    }
+
+                    for (var c = 0; c < 3; c++)
+                    {
+                        var key = (corners[c], corners[(c + 1) % 3]);
+                        edges[key] = edges.GetValueOrDefault(key) + 1;
+                    }
+                }
+            }
+        }
+
+        Assert.NotEmpty(edges);
+        Assert.All(edges, edge => Assert.Equal(1, edge.Value));
+        Assert.All(
+            edges,
+            edge => Assert.True(edges.ContainsKey((edge.Key.Item2, edge.Key.Item1)), $"No twin for {edge.Key}.")
+        );
     }
 
     /// <summary>The vertices of model <paramref name="model"/>'s level 0 as one frame draws them, in its voxels.</summary>

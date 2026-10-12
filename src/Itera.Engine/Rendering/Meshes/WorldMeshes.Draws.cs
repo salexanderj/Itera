@@ -161,6 +161,7 @@ public sealed unsafe partial class WorldMeshes
     private void SelectAll(in DrawLists lists)
     {
         _balance.Begin(_finestLevel);
+        BeginSplits();
         foreach (var column in _byLevel[_coarsestLevel])
         {
             Select(column.Key);
@@ -193,6 +194,7 @@ public sealed unsafe partial class WorldMeshes
                 continue;
             }
 
+            RecordSplit(key);
             column.DrawnUpload = Uploads;
             // Columns past the view distance are never meshed and draw nothing there.
             unmeshed += column.Wanted && !column.MeshedOnce ? 1 : 0;

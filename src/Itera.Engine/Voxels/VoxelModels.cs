@@ -603,6 +603,59 @@ public sealed class VoxelModels : IDisposable
     /// <summary>True when the model's trees keep densities and it is meshed with them.</summary>
     public bool HasDensities(int handle) => Get(handle).Densities;
 
+    /// <summary>
+    /// Makes a model one part of a larger whole whose neighbours' voxels lie round it in its own box (a border it reads
+    /// but does not draw): it owns the box of its level-0 voxels from <paramref name="ownedMin"/> up to but not including
+    /// <paramref name="ownedMax"/>, so the faces between parts are made once, by the part that holds their lower voxel.
+    /// On each axis whose <paramref name="openLow"/> is 1 (no neighbour there) it also owns the faces against the voxel
+    /// before <paramref name="ownedMin"/>; a coarser tree owns the same box halved per level. Before the model is meshed.
+    /// </summary>
+    public void SetOwned(int handle, VoxelCoord ownedMin, VoxelCoord ownedMax, VoxelCoord openLow)
+    {
+        ref var model = ref Get(handle);
+        model.Owned = true;
+        model.OwnedMin = ownedMin;
+        model.OwnedMax = ownedMax;
+        model.OpenLow = openLow;
+    }
+
+    /// <summary>
+    /// The box of tree <paramref name="tree"/>'s voxels the model owns the faces of (their lower voxel): from its first
+    /// voxel's low neighbour to its box's end for a whole model, or its part's own box (<see cref="SetOwned"/>).
+    /// </summary>
+    internal (VoxelCoord Min, VoxelCoord Max) OwnedAt(int handle, int tree)
+    {
+        ref readonly var model = ref Get(handle);
+        var cell = (1 << tree) - 1;
+        if (!model.Owned)
+        {
+            return (
+                new VoxelCoord(-1, -1, -1),
+                new VoxelCoord(
+                    (model.Size.X + cell) >> tree,
+                    (model.Size.Y + cell) >> tree,
+                    (model.Size.Z + cell) >> tree
+                )
+            );
+        }
+
+        return (
+            new VoxelCoord(
+                (model.OwnedMin.X >> tree) - model.OpenLow.X,
+                (model.OwnedMin.Y >> tree) - model.OpenLow.Y,
+                (model.OwnedMin.Z >> tree) - model.OpenLow.Z
+            ),
+            new VoxelCoord(
+                (model.OwnedMax.X + cell) >> tree,
+                (model.OwnedMax.Y + cell) >> tree,
+                (model.OwnedMax.Z + cell) >> tree
+            )
+        );
+    }
+
+    /// <summary>True when the model is a part that owns only a box of its voxels (<see cref="SetOwned"/>).</summary>
+    public bool IsPart(int handle) => Get(handle).Owned;
+
     /// <summary>The edge of the voxels of a model's tree <paramref name="tree"/> (counted from its base level), in metres.</summary>
     public float VoxelMetres(int handle, int tree)
     {
@@ -694,6 +747,10 @@ public sealed class VoxelModels : IDisposable
         public int BaseLevel;
         public int Unit;
         public bool Densities;
+        public bool Owned;
+        public VoxelCoord OwnedMin;
+        public VoxelCoord OwnedMax;
+        public VoxelCoord OpenLow;
         public VoxelCoord Size;
         public Levels<ChildState> Trees;
         public Levels<uint> Entries;

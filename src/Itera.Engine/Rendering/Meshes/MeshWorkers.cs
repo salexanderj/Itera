@@ -18,6 +18,18 @@ internal sealed class MeshJob
     /// </summary>
     public readonly byte[] Densities = new byte[SurfaceNets.SampleCount];
 
+    /// <summary>
+    /// True when the block owns only the edges whose lower voxel lies from <see cref="OwnedMin"/> up to but not including
+    /// <see cref="OwnedMax"/>, block-local (a part of a model in parts); else every edge of the block.
+    /// </summary>
+    public bool Windowed;
+
+    /// <summary>The low corner of the edges the block owns, when <see cref="Windowed"/>.</summary>
+    public VoxelCoord OwnedMin;
+
+    /// <summary>Past the high corner of the edges the block owns, when <see cref="Windowed"/>.</summary>
+    public VoxelCoord OwnedMax;
+
     /// <summary>True when <see cref="Densities"/> holds the block's densities (a block of the world, or of a model that keeps them).</summary>
     public bool HasDensities;
 
@@ -163,16 +175,25 @@ internal sealed class MeshWorkers : IDisposable
 
             try
             {
-                job.Triangles = job.IsStitch
-                    ? mesher.MeshTransition(
-                        job.Samples,
-                        job.Densities,
-                        job.CoarseSamples,
-                        job.CoarseDensities,
-                        job.CoarseOffset,
-                        job.Sides,
-                        job.Mesh
-                    )
+                job.Triangles =
+                    job.IsStitch
+                        ? mesher.MeshTransition(
+                            job.Samples,
+                            job.Densities,
+                            job.CoarseSamples,
+                            job.CoarseDensities,
+                            job.CoarseOffset,
+                            job.Sides,
+                            job.Mesh
+                        )
+                    : job.Windowed
+                        ? mesher.Mesh(
+                            job.Samples,
+                            job.HasDensities ? job.Densities : ReadOnlySpan<byte>.Empty,
+                            job.OwnedMin,
+                            job.OwnedMax,
+                            job.Mesh
+                        )
                     : mesher.Mesh(job.Samples, job.HasDensities ? job.Densities : ReadOnlySpan<byte>.Empty, job.Mesh);
             }
             catch (Exception exception)

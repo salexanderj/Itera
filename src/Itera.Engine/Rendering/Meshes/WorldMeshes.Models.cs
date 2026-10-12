@@ -176,6 +176,20 @@ public sealed unsafe partial class WorldMeshes
 
         job.Model = mesh;
         job.HasDensities = densities;
+        // A part owns the edges of its own box alone; the block's voxels start one before its 32 (ModelBlockShift).
+        job.Windowed = models.IsPart(handle);
+        if (job.Windowed)
+        {
+            var (ownedMin, ownedMax) = models.OwnedAt(handle, tree);
+            var origin = new VoxelCoord(
+                bx * SurfaceNets.BlockSize - ModelBlockShift,
+                by * SurfaceNets.BlockSize - ModelBlockShift,
+                bz * SurfaceNets.BlockSize - ModelBlockShift
+            );
+            job.OwnedMin = new VoxelCoord(ownedMin.X - origin.X, ownedMin.Y - origin.Y, ownedMin.Z - origin.Z);
+            job.OwnedMax = new VoxelCoord(ownedMax.X - origin.X, ownedMax.Y - origin.Y, ownedMax.Z - origin.Z);
+        }
+
         job.Owner = null;
         job.Revision = mesh.MeshingRevision;
         job.Tree = tree;
@@ -390,6 +404,8 @@ public sealed unsafe partial class WorldMeshes
             );
         }
 
+        GatherObjects(models);
+
         for (var v = 0; v < _viewCount; v++)
         {
             var target = _views[v];
@@ -417,9 +433,17 @@ public sealed unsafe partial class WorldMeshes
         return lists;
     }
 
+    // The lists a draw may go into (GatherModel's lists): the camera's, the near and far cascades', and each image view's.
+    private const int CameraList = 1;
+    private const int NearList = 2;
+    private const int FarList = 4;
+    private const int FirstViewList = 8;
+    private const int AllLists = -1;
+
     /// <summary>
-    /// Takes one model draw into the lists whose tests it passes: the camera's unless <paramref name="shadow"/> is
-    /// <see cref="ModelShadow.Only"/>, the cascades' unless it is <see cref="ModelShadow.None"/>.
+    /// Takes one model draw into the lists whose tests it passes, of those <paramref name="lists"/> allows (every one
+    /// unless told): the camera's unless <paramref name="shadow"/> is <see cref="ModelShadow.Only"/>, the cascades'
+    /// unless it is <see cref="ModelShadow.None"/>.
     /// </summary>
     private void GatherModel(
         VoxelModels models,
@@ -428,7 +452,8 @@ public sealed unsafe partial class WorldMeshes
         Vector3 corner,
         Quaternion turn,
         float tint,
-        ModelShadow shadow
+        ModelShadow shadow,
+        int lists = AllLists
     )
     {
         if (
@@ -454,15 +479,15 @@ public sealed unsafe partial class WorldMeshes
         var extent = new Vector3(size.X, size.Y, size.Z) * voxelMetres;
         var centre = corner + Vector3.Transform(extent * 0.5f, turn);
         var radius = extent.Length() * 0.5f;
-        var seen = shadow != ModelShadow.Only && _view.InView(centre, radius);
+        var seen = (lists & CameraList) != 0 && shadow != ModelShadow.Only && _view.InView(centre, radius);
         var casts = shadow != ModelShadow.None && _view.Shadows;
-        var near = casts && _view.NearCascade.Holds(centre, radius);
-        var far = casts && _view.FarCascade.Holds(centre, radius);
+        var near = (lists & NearList) != 0 && casts && _view.NearCascade.Holds(centre, radius);
+        var far = (lists & FarList) != 0 && casts && _view.FarCascade.Holds(centre, radius);
         var views = 0;
         // The views show the player's own body (Only) but not what the camera alone shows (None: the first-person arms).
         for (var v = 0; v < _viewCount && shadow != ModelShadow.None; v++)
         {
-            views |= _views[v].View.InView(centre, radius) ? 1 << v : 0;
+            views |= (lists & (FirstViewList << v)) != 0 && _views[v].View.InView(centre, radius) ? 1 << v : 0;
         }
 
         if (!seen && !near && !far && views == 0)
@@ -499,8 +524,8 @@ public sealed unsafe partial class WorldMeshes
 
     /// <summary>
     /// Writes list <paramref name="list"/>'s draws grouped by model level: for each level drawn and each of its blocks,
-    /// one command over that block's draws, which lie together in address order. A level whose draws do not fit is left
-    /// out (warned once a match).
+    /// one command over that block's draws, which lie together in address order. Of a level whose draws do not fit, as
+    /// many as fit go, the first gathered first (warned once a match).
     /// </summary>
     private MeshModelList WriteModelList(int slot, int list) =>
         WriteModelList(
@@ -574,8 +599,16 @@ public sealed unsafe partial class WorldMeshes
             var level = _models!.BaseLevel(first.Mesh.Handle) + first.Tree;
             if (written + blocks.Count * instances > mostRecords || commanded + blocks.Count > mostCommands)
             {
+                // As many of the level's draws as fit, the first gathered first, so no kind of object drops whole.
                 ReportModelListFull(list >= MeshPass.Lists, mostRecords, mostCommands);
-                continue;
+                var room = blocks.Count == 0 ? 0 : (mostRecords - written) / blocks.Count;
+                if (room <= 0 || commanded + blocks.Count > mostCommands)
+                {
+                    continue;
+                }
+
+                instances = room;
+                group = group[..room];
             }
 
             foreach (var block in blocks)

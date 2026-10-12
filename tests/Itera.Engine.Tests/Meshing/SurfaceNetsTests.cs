@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Itera.Engine.Meshing;
 using Itera.Engine.Rendering.GpuData;
+using Itera.Engine.Voxels;
 using Xunit.Abstractions;
 
 namespace Itera.Engine.Tests.Meshing;
@@ -669,6 +670,68 @@ public sealed class SurfaceNetsTests(ITestOutputHelper output)
         watch.Stop();
         output.WriteLine($"All air: {watch.Elapsed.TotalMilliseconds / calls:F4} ms per call");
         Assert.True(triangles > 0);
+    }
+
+    /// <summary>
+    /// A block meshed in owned windows that tile it (split along x at 13, along y at 20) makes, all told, exactly the
+    /// triangles of the whole block meshed at once: each edge once, by the window that holds its lower voxel.
+    /// </summary>
+    [Fact]
+    public void Owned_windows_that_tile_a_block_make_the_whole_blocks_triangles()
+    {
+        var samples = BlobsAndGround();
+        var whole = Triangles(samples, new VoxelCoord(0, 0, 0), new VoxelCoord(32, 32, 32));
+        var parts = new List<(Vector3, Vector3, Vector3)>();
+        foreach (
+            var (min, max) in (ReadOnlySpan<(VoxelCoord, VoxelCoord)>)
+                [
+                    (new VoxelCoord(0, 0, 0), new VoxelCoord(13, 20, 32)),
+                    (new VoxelCoord(13, 0, 0), new VoxelCoord(32, 20, 32)),
+                    (new VoxelCoord(0, 20, 0), new VoxelCoord(13, 32, 32)),
+                    (new VoxelCoord(13, 20, 0), new VoxelCoord(32, 32, 32)),
+                ]
+        )
+        {
+            parts.AddRange(Triangles(samples, min, max));
+        }
+
+        Assert.NotEmpty(whole);
+        Assert.Equal(whole.Count, parts.Count);
+        Assert.Equal(whole.Order(TriangleOrder.Instance), parts.Order(TriangleOrder.Instance));
+    }
+
+    private static List<(Vector3, Vector3, Vector3)> Triangles(byte[] samples, VoxelCoord min, VoxelCoord max)
+    {
+        var mesher = new SurfaceNets();
+        var mesh = new MeshBuffers();
+        mesher.Mesh(samples, default, min, max, mesh);
+        var triangles = new List<(Vector3, Vector3, Vector3)>();
+        for (var i = 0; i < mesh.IndexCount; i += 3)
+        {
+            triangles.Add(
+                (
+                    MeshVertex.DecodePosition(in mesh.Vertices[mesh.Indices[i]]),
+                    MeshVertex.DecodePosition(in mesh.Vertices[mesh.Indices[i + 1]]),
+                    MeshVertex.DecodePosition(in mesh.Vertices[mesh.Indices[i + 2]])
+                )
+            );
+        }
+
+        return triangles;
+    }
+
+    private sealed class TriangleOrder : IComparer<(Vector3, Vector3, Vector3)>
+    {
+        public static TriangleOrder Instance { get; } = new();
+
+        public int Compare((Vector3, Vector3, Vector3) a, (Vector3, Vector3, Vector3) b)
+        {
+            var c = Of(a.Item1).CompareTo(Of(b.Item1));
+            c = c != 0 ? c : Of(a.Item2).CompareTo(Of(b.Item2));
+            return c != 0 ? c : Of(a.Item3).CompareTo(Of(b.Item3));
+        }
+
+        private static (float, float, float) Of(Vector3 v) => (v.X, v.Y, v.Z);
     }
 
     private static byte[] BlobsAndGround()

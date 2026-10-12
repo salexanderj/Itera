@@ -341,7 +341,11 @@ public sealed partial class ObjectWorld(
     [LoggerMessage(Level = LogLevel.Debug, Message = "Objects: following {Areas} area(s) of resident columns afresh")]
     private partial void LogResync(int areas);
 
-    private sealed class Area
+    /// <summary>The kept areas, filled or waiting, for the renderer to walk. Main thread.</summary>
+    internal Dictionary<(int X, int Z), Area>.ValueCollection Areas => _areas.Values;
+
+    /// <summary>One kept area: a level-K column's square, the resident columns below K in it, and its objects once filled.</summary>
+    internal sealed class Area
     {
         public int X;
         public int Z;
