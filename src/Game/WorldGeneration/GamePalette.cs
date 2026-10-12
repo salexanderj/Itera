@@ -47,6 +47,43 @@ public sealed class GamePalette : IVoxelPalette
                 Patches: 0.4f,
                 Texture: "stone"
             ),
+            // Square plates split by thin dark cracks (no stretched bark).
+            GameMaterials.Bark => new(
+                new Vector3(0.1f, 0.075f, 0.055f),
+                new Vector3(0.1f, 0.075f, 0.055f),
+                VoxelPattern.Plates,
+                SizeCentimetres: 8,
+                Aspect: 1,
+                Accent: new Vector3(0.035f, 0.028f, 0.022f),
+                AccentShare: 0.6f,
+                Contrast: 0.45f,
+                Relief: 0.5f,
+                Patches: 0.3f,
+                Texture: "bark"
+            ),
+            // Soft clusters: low contrast and no relief.
+            GameMaterials.Leaves => new(
+                new Vector3(0.045f, 0.11f, 0.03f),
+                new Vector3(0.045f, 0.11f, 0.03f),
+                VoxelPattern.Clusters,
+                SizeCentimetres: 16,
+                Accent: new Vector3(0.09f, 0.15f, 0.04f),
+                AccentShare: 0.4f,
+                Contrast: 0.3f,
+                Relief: 0,
+                Patches: 0.4f,
+                Texture: "leaves"
+            ),
+            GameMaterials.Rock => new(
+                new Vector3(0.23f, 0.22f, 0.21f),
+                new Vector3(0.23f, 0.22f, 0.21f),
+                VoxelPattern.Mottle,
+                SizeCentimetres: 32,
+                Contrast: 0.5f,
+                Relief: 0.4f,
+                Patches: 0.4f,
+                Texture: "stone"
+            ),
             GameMaterials.Gravel => new(
                 new Vector3(0.16f, 0.13f, 0.1f),
                 new Vector3(0.16f, 0.13f, 0.1f),

@@ -1,0 +1,15 @@
+{
+  "texels": 1024,
+  "metres": 2.56,
+  "mean": [
+    0.079,
+    0.0596,
+    0.0438
+  ],
+  "site": "bake",
+  "asset": "bark",
+  "link": "baked by the game (materials bake)",
+  "licence": "the game\u0027s own (baked from its recipe)",
+  "maps": "all four",
+  "kuwahara": null
+}

@@ -5,10 +5,10 @@ using Itera.Engine.Voxels;
 namespace Game.Tests;
 
 /// <summary>
-/// The world: the same seed gives the same voxels in the same bounds (a pinned hash and grid: a change of either means
-/// <see cref="GameGenerator.Version"/> must rise, or a save or a session of the old world would not match), the middle
-/// as version 1 made it, the broad relief past 1 km inside the grid, the start on the ground with the eye a person's
-/// height over it, and every benchmark view over the ground.
+/// The world: the same seed gives the same voxels in the same bounds, and the same objects of the same kinds (pinned
+/// hashes and grid: a change of any means <see cref="GameGenerator.Version"/> must rise, or a save or a session of the old
+/// world would not match), the ground near the middle as version 1 made it, the broad relief past 1 km inside the grid,
+/// the start on the ground with the eye a person's height over it, and every benchmark view over the ground.
 /// </summary>
 public sealed class WorldTests
 {
@@ -22,7 +22,7 @@ public sealed class WorldTests
         // (2 km out at level 2).
         var grid = generator.Grid;
         Assert.Equal(
-            (2, 14497145286141956781UL, (10, -313, 312, -4, 7)),
+            (3, 14497145286141956781UL, (10, -313, 312, -4, 7)),
             (
                 generator.Version,
                 Hash(generator, [(0, 0), (3, -2), (-7, 5), (40, -30)]),
@@ -32,13 +32,59 @@ public sealed class WorldTests
     }
 
     /// <summary>
-    /// Within 1 km of the middle the world is version 1's, voxel for voxel (the hash version 1 pinned): the broad relief
-    /// starts past it, so the start and its views look as they did.
+    /// Within 1 km of the middle the generator fills the ground as version 1 did, voxel for voxel (the hash version 1
+    /// pinned): the broad relief starts past it. The objects (version 3) stand on it.
     /// </summary>
     [Fact]
     public void Near_the_middle_the_voxels_are_version_1s()
     {
         Assert.Equal(5789805400214179090UL, Hash(new GameGenerator(), [(0, 0), (3, -2), (-7, 5)]));
+    }
+
+    /// <summary>
+    /// The objects, pinned with the generator's version: the placements of seed 1 over a square 512 m across round the
+    /// middle and one in the broad relief, and every kind's shape (<c>VoxelObjectKind.Fingerprint</c>, which leaves
+    /// the engine's rules out), so a change of where objects stand or what they are comes with a new version.
+    /// </summary>
+    [Fact]
+    public void The_same_seed_places_the_same_objects()
+    {
+        var found = new List<Itera.Engine.Objects.ObjectPlacement>();
+        var forests = new GameForests();
+        forests.Find(1, -25_600, 25_600, -25_600, 25_600, found);
+        forests.Find(1, 200_000, 225_600, -12_800, 12_800, found);
+        var placements = 14695981039346656037UL;
+        foreach (var placement in found)
+        {
+            foreach (
+                var value in new[]
+                {
+                    placement.Id.Value,
+                    placement.Kind.Value,
+                    (ulong)(uint)placement.Anchor.X,
+                    (ulong)(uint)placement.Anchor.Y,
+                    (ulong)(uint)placement.Anchor.Z,
+                    (ulong)placement.Heading,
+                }
+            )
+            {
+                placements = (placements ^ value) * 1099511628211UL;
+            }
+        }
+
+        var kinds = new Itera.Engine.Objects.VoxelObjectKinds();
+        GameObjects.Register(kinds);
+        var shapes = 14695981039346656037UL;
+        for (var i = 0; i < kinds.Count; i++)
+        {
+            shapes =
+                (shapes ^ kinds[new Itera.Engine.Objects.VoxelObjectKindId((ushort)i)].Fingerprint) * 1099511628211UL;
+        }
+
+        Assert.Equal(
+            (3, 4459721786247094893UL, 12518079006946159418UL, 4053),
+            (new GameGenerator().Version, placements, shapes, found.Count)
+        );
     }
 
     /// <summary>

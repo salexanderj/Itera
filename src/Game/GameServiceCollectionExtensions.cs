@@ -98,6 +98,8 @@ public static class GameServiceCollectionExtensions
         services.AddSingleton<IChunkGenerator, GameGenerator>();
         services.AddIteraVoxels();
         services.AddSingleton<IVoxelPalette, GamePalette>();
+        // Characters and navigation pass through leaves.
+        services.AddSingleton<IVoxelPassability, GamePassability>();
         services.AddSingleton<IAtmosphereSource, GameAtmosphere>();
         // Stone (the boulders) is climbable, and the player climbs it (Space at a boulder; the engine's ClimbingMode).
         services.AddSingleton<IVoxelSurfaceTags, GameSurfaceTags>();

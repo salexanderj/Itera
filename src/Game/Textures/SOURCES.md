@@ -8,3 +8,5 @@ Every set is made by `tools/Textures` from the game's own recipe baked by the co
 | grass | 1024 | bake | grass: the game's recipe, baked | the game's own |
 | dirt | 1024 | bake | dirt: the game's recipe, baked | the game's own |
 | gravel | 1024 | bake | gravel: the game's recipe, baked | the game's own |
+| bark | 1024 | bake | bark: the game's recipe, baked | the game's own |
+| leaves | 1024 | bake | leaves: the game's recipe, baked | the game's own |

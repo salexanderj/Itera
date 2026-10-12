@@ -386,6 +386,96 @@ public sealed class ScenarioTests
     }
 
     /// <summary>
+    /// The broadleaf nearest the middle with nothing on the 3 m before it along -x (seed 1): the player walking at it
+    /// along +x stops at its trunk; a clear through the trunk from 30 to 60 cm over its foot has the world's owner find
+    /// its top cut off, log the top's removal, and drop it as a cut body.
+    /// </summary>
+    [Fact]
+    public void A_tree_stops_the_player_and_falls_when_cut_through()
+    {
+        var tree = FindTree();
+        using var provider = GameComposition.Build(s_options);
+        using var match = new HeadlessRun(provider).Play(seed: 1);
+        Assert.True(match.WaitUntilLoaded());
+        var commands = provider.GetRequiredService<ConsoleCommands>();
+        var output = new Output();
+        var anchor = tree.Anchor;
+        var startX = anchor.X / 100.0 - 2.5;
+        var ground = GameGenerator.Height(anchor.X - 250, anchor.Z, 1) / 100;
+        var eye = ground + CharacterSize.ForHeight(1.7f).EyeMetres;
+        // Looking along +x: a yaw of -90 degrees.
+        commands.Execute(
+            string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"tp {startX} {eye} {anchor.Z / 100.0} -90 0"
+            ),
+            output
+        );
+        match.Step(1);
+        Assert.True(match.WaitUntilLoaded());
+        match.Step(30);
+
+        match.Input.InjectKey(Key.W, true);
+        match.Step(90);
+        match.Input.InjectKey(Key.W, false);
+        match.Step(10);
+        var feet = Origin(match).ToWorld(Player(match.World).Position.Feet);
+        Assert.Empty(output.Failures);
+        Assert.InRange(feet.X, startX + 1, anchor.X / 100.0 - 0.3);
+
+        var voxels = match.Match.Voxels;
+        var before = voxels.EditCount;
+        voxels.Apply(
+            VoxelEdit.Box(
+                new VoxelCoord(anchor.X - 60, anchor.Y + 30, anchor.Z - 60),
+                new VoxelCoord(120, 30, 120),
+                VoxelEditOperation.Clear
+            )
+        );
+        var fallen = match.Match.Terrain!.Fallen;
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (fallen.Made == 0)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "Nothing fell.");
+            match.Step(1);
+            Thread.Sleep(1);
+        }
+
+        Assert.Equal(VoxelEditOperation.RemovePart, voxels.GetEdit(before + 2).Operation);
+        Assert.True(match.World.CountEntities(new QueryDescription().WithAll<LooseBody, CutPiece>()) >= 1);
+    }
+
+    /// <summary>
+    /// The broadleaf of seed 1 nearest the middle whose 3 m along -x hold no other object's trunk, stems, or rock.
+    /// </summary>
+    private static Itera.Engine.Objects.ObjectPlacement FindTree()
+    {
+        var found = new List<Itera.Engine.Objects.ObjectPlacement>();
+        new GameForests().Find(1, -15_000, 15_000, -15_000, 15_000, found);
+        static GameObjectKind KindOf(Itera.Engine.Objects.ObjectPlacement placement) =>
+            (GameObjectKind)(placement.Kind.Value / GameObjects.Shapes);
+        foreach (
+            var tree in found
+                .Where(p => KindOf(p) == GameObjectKind.Broadleaf)
+                .OrderBy(p => (double)p.Anchor.X * p.Anchor.X + (double)p.Anchor.Z * p.Anchor.Z)
+        )
+        {
+            var clear = found.TrueForAll(other =>
+                other.Id == tree.Id
+                || other.Anchor.X < tree.Anchor.X - 400
+                || other.Anchor.X > tree.Anchor.X + 100
+                || Math.Abs(other.Anchor.Z - tree.Anchor.Z) > GameObjects.SpreadCentimetres(KindOf(other)) + 80
+            );
+            if (clear)
+            {
+                return tree;
+            }
+        }
+
+        throw new InvalidOperationException("No broadleaf near the start.");
+    }
+
+    /// <summary>
     /// The boulder of seed 1 nearest the middle, out to 40 m (a point more than 1.5 m over the ground): its highest point,
     /// where its -x foot meets the ground along the row through it (a little out from it), and the ground's height there,
     /// in metres.

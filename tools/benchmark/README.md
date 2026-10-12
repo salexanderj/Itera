@@ -8,8 +8,9 @@ run the game in `src/Game` and find its data folder from `Engine:Application:Dat
 ## What the benchmark does
 
 With `--Engine:Benchmark:Enabled=true` the camera visits the game's fixed views of the seed's world (`BenchmarkViews`
-in `src/Game`; the starter's seven: `start`, `start-low`, `down`, and `up` at the start pose, `high` 40 m over the
-world's middle, `far` 200 m out along +x looking back, and `distant` 3,500 m out along +x looking back). At each it waits until every column is loaded and on the
+in `src/Game`; the starter's nine: `start`, `start-low`, `down`, and `up` at the start pose, `high` 40 m over the
+world's middle, `far` 200 m out along +x looking back, `distant` 3,500 m out along +x looking back, and `forest` and
+`forest-high` inside a forest at eye height and 40 m over it). At each it waits until every column is loaded and on the
 GPU, waits `SettleSeconds` (2), and measures for `MeasureSeconds` (8). Then it flies the automatic circle at 5 m/s for
 `FlightSeconds` (60) and exits. The log marks the start and end of each measurement. A game that changes its world or
 its views starts a new series: runs of other views do not compare.

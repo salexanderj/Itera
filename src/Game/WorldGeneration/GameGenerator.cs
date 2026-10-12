@@ -39,6 +39,7 @@ public sealed class GameGenerator()
     private static readonly FractalNoise s_hills = new([12800, 3200, 800, 200], [1, 0.35, 0.1, 0.03], 0x68696C6C73);
     private static readonly JitteredGrid s_boulders = new(1600, MaxBoulderRadius, 0x626F756C64, Margin: 100);
     private static readonly FractalNoise s_relief = new([200_000], [1], 0x72656C696566);
+    private static readonly GameForests s_forests = new();
 
     /// <summary>
     /// The world's grid: voxels of 10 cm, 8 km across (±4,006.4 m in whole 12.8 m columns), from 51.2 m below the
@@ -48,7 +49,10 @@ public sealed class GameGenerator()
 
     public override string Id => "game.world";
 
-    public override int Version => 2;
+    public override int Version => 3;
+
+    /// <summary>The trees, bushes, and rocks (<see cref="GameForests"/>).</summary>
+    public override Itera.Engine.Objects.IObjectPlacer Objects => s_forests;
 
     /// <summary>
     /// The ground's height at (x, z) in centimetres: about 6 m, up and down by up to 10 m in hills, and past 1 km from
@@ -104,6 +108,31 @@ public sealed class GameGenerator()
         }
 
         return top;
+    }
+
+    /// <summary>
+    /// True when a boulder lies within <paramref name="distance"/> of (x, z) across, in centimetres: its ball's footprint
+    /// and that much round it. Thread safe; allocates nothing for distances under 10 m.
+    /// </summary>
+    public static bool NearBoulder(int x, int z, int distance, ulong seed)
+    {
+        var capacity = s_boulders.Capacity(x - distance, x + distance, z - distance, z + distance);
+        Span<JitteredPoint> found = capacity <= 64 ? stackalloc JitteredPoint[64] : new JitteredPoint[capacity];
+        var count = s_boulders.Find(seed, BoulderChance, x - distance, x + distance, z - distance, z + distance, found);
+        for (var i = 0; i < count; i++)
+        {
+            var point = found[i];
+            var state = point.State;
+            var radius = DeterministicMath.NextRange(ref state, 100, MaxBoulderRadius) + distance;
+            double dx = x - point.X,
+                dz = z - point.Z;
+            if (dx * dx + dz * dz <= (double)radius * radius)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected override double HeightAt(int x, int z, ulong seed) => Height(x, z, seed);

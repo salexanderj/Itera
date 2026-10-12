@@ -1,0 +1,15 @@
+{
+  "texels": 1024,
+  "metres": 2.56,
+  "mean": [
+    0.0508,
+    0.111,
+    0.0301
+  ],
+  "site": "bake",
+  "asset": "leaves",
+  "link": "baked by the game (materials bake)",
+  "licence": "the game\u0027s own (baked from its recipe)",
+  "maps": "all four",
+  "kuwahara": null
+}

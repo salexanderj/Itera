@@ -17,4 +17,16 @@ public static class GameMaterials
 
     /// <summary>Gravel: the surface where the ground lies low (below 2 m).</summary>
     public const byte Gravel = 4;
+
+    /// <summary>Bark: the trees' trunks and branches, and the bushes' stems (<see cref="GameObjects"/>).</summary>
+    public const byte Bark = 5;
+
+    /// <summary>Leaves: the trees' crowns and the bushes; characters pass through them (<see cref="GamePassability"/>).</summary>
+    public const byte Leaves = 6;
+
+    /// <summary>
+    /// Rock: the rocks among the trees, drawn as stone is, but a material of its own, apart from the ground's (a far copy's
+    /// voxels are told apart by their material).
+    /// </summary>
+    public const byte Rock = 7;
 }

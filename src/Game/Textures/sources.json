@@ -22,5 +22,17 @@
     "site": "bake",
     "asset": "gravel",
     "texels": 1024
+  },
+  {
+    "set": "bark",
+    "site": "bake",
+    "asset": "bark",
+    "texels": 1024
+  },
+  {
+    "set": "leaves",
+    "site": "bake",
+    "asset": "leaves",
+    "texels": 1024
   }
 ]

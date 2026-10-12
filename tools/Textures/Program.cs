@@ -27,6 +27,16 @@ internal static class Program
 
     private static int Main(string[] args)
     {
+        // --data-folder NAME, anywhere: the bakes and downloads of another data folder than the game's (an agent's runs
+        // use theirs).
+        string? dataFolder = null;
+        var named = Array.IndexOf(args, "--data-folder");
+        if (named >= 0 && named + 1 < args.Length)
+        {
+            dataFolder = args[named + 1];
+            args = [.. args[..named], .. args[(named + 2)..]];
+        }
+
         if (args.Length >= 1 && args[0] == "model")
         {
             return ModelTextures.Run(args[1..]);
@@ -34,11 +44,13 @@ internal static class Program
 
         s_http.DefaultRequestHeaders.UserAgent.ParseAdd("Itera-texture-tool/1.0");
         var repo = FindRepository();
+        dataFolder ??= DataFolder(repo);
+
         var folder = Path.Combine(repo, "src", "Game", "Textures");
         var sources = ReadSources(Path.Combine(folder, "sources.json"));
         if (args.Length == 4 && args[0] == "--preview")
         {
-            return Preview(sources, args[1], float.Parse(args[2], CultureInfo.InvariantCulture), args[3]);
+            return Preview(sources, args[1], float.Parse(args[2], CultureInfo.InvariantCulture), args[3], dataFolder);
         }
 
         var wanted =
@@ -51,7 +63,7 @@ internal static class Program
 
         var cache = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            DataFolder(repo),
+            dataFolder,
             "TextureDownloads"
         );
         foreach (var source in wanted)
@@ -74,7 +86,7 @@ internal static class Program
     /// Kuwahara filter at <paramref name="radius"/> texels (0 for none), written as a PNG without compressing anything,
     /// to judge the filter quickly.
     /// </summary>
-    private static int Preview(List<Source> sources, string set, float radius, string output)
+    private static int Preview(List<Source> sources, string set, float radius, string output, string dataFolder)
     {
         var source = sources.FirstOrDefault(s => s.Set == set);
         if (source is null)
@@ -85,7 +97,7 @@ internal static class Program
 
         var cache = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            DataFolder(FindRepository()),
+            dataFolder,
             "TextureDownloads"
         );
         var maps = Download(source, cache);

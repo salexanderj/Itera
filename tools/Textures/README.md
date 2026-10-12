@@ -51,6 +51,7 @@ It also writes `SOURCES.md` there (every set's site, asset, link, and licence). 
 ```bash
 dotnet run -c Release --project tools/Textures                      # every set of sources.json
 dotnet run -c Release --project tools/Textures -- grass             # one set
+dotnet run -c Release --project tools/Textures -- --data-folder IteraGame-agent bark   # bakes and downloads of another data folder (also with --preview)
 ```
 
 `sources.json` lists `{ "set", "site" ("polyhaven", "ambientcg", or "bake"), "asset" (the site's id, or the bake's
