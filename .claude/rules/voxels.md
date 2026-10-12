@@ -22,7 +22,8 @@ loose body where level 0 is not loaded freezes in the air.
 ## World generation
 
 A world is made by its generator (`IChunkGenerator`, the game's): `DescribeColumn` says which layers of a column are air
-or one material, and `Fill` writes a chunk's materials and densities. Its grid (`IChunkGenerator.Grid`) sets the world's
+or one material, and `Fill` writes a chunk's materials and densities; `Objects` places its voxel objects
+(`.claude/rules/objects.md`). Its grid (`IChunkGenerator.Grid`) sets the world's
 voxel size, 1 cm to 1 m (`VoxelGrid.MostBaseCentimetres`; a coarse world suits terrain deformed in large strokes, at the
 cost of shapes under a voxel showing only as soft dips in the densities, walls in voxel steps, and the ground's 1 m
 steps in a piece lifted from it; an edit measures a voxel on at most 10 sub-rows each way, so one under about a tenth of

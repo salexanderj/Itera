@@ -144,6 +144,8 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         Range(failures, "Camera:FlySpeed", camera.FlySpeed, 0.1, 1000);
         Range(failures, "Camera:MouseSensitivity", camera.MouseSensitivity, 0.001, 10);
 
+        Range(failures, "Objects:HandOverLevel", options.Objects.HandOverLevel, 1, 9);
+
         var physics = options.Physics;
         Range(failures, "Physics:SettleSeconds", physics.SettleSeconds, 0.5, 60);
         Range(failures, "Physics:MaxLooseBodies", physics.MaxLooseBodies, 1, 1024);

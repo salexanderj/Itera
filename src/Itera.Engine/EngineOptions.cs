@@ -39,6 +39,9 @@ public sealed class EngineOptions
     /// <summary>Loose bodies (<c>Engine:Physics</c>).</summary>
     public PhysicsSettings Physics { get; set; } = new();
 
+    /// <summary>The voxel objects a world places (<c>Engine:Objects</c>).</summary>
+    public ObjectSettings Objects { get; set; } = new();
+
     /// <summary>The particles made by effects (<c>Engine:Particles</c>).</summary>
     public ParticleSettings Particles { get; set; } = new();
 
@@ -540,6 +543,17 @@ public sealed class CameraSettings
     /// flight), in metres: it must clear the game's ground along a 100 m circle round the origin.
     /// </summary>
     public double CircleHeightMetres { get; set; } = 20;
+}
+
+/// <summary>The voxel objects a world places (trees, bushes, rocks of finer voxels than the world's; <c>ObjectWorld</c>).</summary>
+public sealed class ObjectSettings
+{
+    /// <summary>
+    /// The level of the world from which objects are drawn as coarse copies in its voxels; nearer, where the world is
+    /// drawn finer than it, they are drawn as their own models. Objects are kept in areas a level-K column wide. 2 (about
+    /// 106 m in a world of 10 cm voxels with the engine's reaches); 1 to 9.
+    /// </summary>
+    public int HandOverLevel { get; set; } = 2;
 }
 
 /// <summary>The navigation grid (<c>NavigationService</c>).</summary>

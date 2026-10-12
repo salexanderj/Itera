@@ -48,6 +48,12 @@ public interface IChunkGenerator
     /// <summary>Names the generator in saves, for example "itera.test-terrain".</summary>
     string Id { get; }
 
+    /// <summary>
+    /// The objects its world places (trees, bushes, rocks of finer voxels than the world's), or null for none: a part of
+    /// what it makes, so a change to them raises <see cref="Version"/> as a change to its voxels does.
+    /// </summary>
+    Objects.IObjectPlacer? Objects => null;
+
     /// <summary>Changes whenever the same seed would give different voxels. Saves record it.</summary>
     int Version { get; }
 

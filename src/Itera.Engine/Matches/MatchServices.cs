@@ -205,7 +205,17 @@ public sealed partial class MatchServices
         {
             steps.Add(new("navigation", world.Navigation.Initialize, world.Navigation.Dispose));
             steps.Add(new("voxel physics", world.Colliders.Initialize, world.Colliders.Dispose));
-            steps.Add(new("objects", world.Objects.Initialize, () => { }));
+            steps.Add(
+                new(
+                    "objects",
+                    () =>
+                    {
+                        world.Objects.Initialize();
+                        world.Placed.Initialize();
+                    },
+                    () => { }
+                )
+            );
         }
 
         steps.Add(new("save", () => { }, () => Saves.Save(EndedCleanly, Session.Role, Session.Match)));

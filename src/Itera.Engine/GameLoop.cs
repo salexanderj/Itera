@@ -673,7 +673,7 @@ public sealed partial class GameLoop
         // Matches start and end here, between iterations' work, never during a step or a frame.
         _flow.HandleRequests(_frameIndex);
         var playing = _flow.Playing;
-        playing?.Terrain?.Voxels.Update(_clock.TotalSeconds);
+        playing?.Terrain?.Update(_clock.TotalSeconds);
         // Console commands run here, between fixed steps and outside any query, also while no frames are drawn. Those
         // given at start wait for the match's world and systems, which most of them need.
         _console.HoldStartup = playing is null;

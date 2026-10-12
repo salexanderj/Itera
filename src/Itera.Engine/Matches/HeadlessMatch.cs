@@ -127,7 +127,7 @@ public sealed class HeadlessMatch : IDisposable
                 return false;
             }
 
-            terrain.Voxels.Update(Seconds);
+            terrain.Update(Seconds);
             Thread.Sleep(1);
         }
 
@@ -141,7 +141,7 @@ public sealed class HeadlessMatch : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         for (var i = 0; i < ticks; i++)
         {
-            Match.Terrain?.Voxels.Update(Seconds);
+            Match.Terrain?.Update(Seconds);
             Input.BeginTick();
             Match.RunFixedStep(new FixedStepTime(_stepSeconds, Tick), _editColumns);
             Tick++;

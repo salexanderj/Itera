@@ -27,6 +27,18 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   step, after the voxel physics: three levels with densities (`VoxelModels.Add(levels, size, 0, unit, densities:
   true)`), each part's corner from the kind's anchor (`PartsOf`); `ObjectsLoadingTask` waits for them on the GPU (done once
   made without graphics).
+- A world places its objects through its generator (`IChunkGenerator.Objects`, an `IObjectPlacer`, null for none; thread
+  safe and pure like `Fill`, so a change to its placements raises the generator's `Version`): `Find(seed, box, found)`
+  adds every `ObjectPlacement` (its `ObjectId`, the same on every peer, `ObjectId.Of` a jittered point; its kind; its
+  anchor at absolute centimetres; its heading in steps of a turn over `ObjectPlacement.HeadingSteps`, 4,096) whose
+  anchor lies in a half-open box, in a fixed order. `ObjectWorld` (scoped, with voxel terrain; `MatchVoxels.Placed`)
+  keeps the objects of areas a level-K column wide (K: `Engine:Objects:HandOverLevel`, 2 by default, 1 to 9), each while
+  any of its columns below level K is resident, following the world's change list after the world's update each loop
+  iteration (`MatchVoxels.Update`) and filling at most `FillsPerUpdate` (8) areas an update, those nearest a streaming
+  centre first (a resync after the change list overflows keeps the areas still wanted); `Near(box, found)` gives the
+  objects whose kind's reach (`VoxelObjectKind.ReachCentimetres`, at any heading; `MostReachCentimetres`) meets a box
+  within the map, false where an area under it is not filled. A placer's unknown kind or heading, or an anchor outside
+  the area asked for, stops the fill. With a hand-over level at or past the world's levels, every streamed level counts.
 - Models may have a voxel size of their own (`VoxelModels.Add` with a unit; `UnitCentimetres`, `VoxelMetres`) and keep
   densities (`Encode(voxels, densities, extent)`, `DecodeDensities`, `HasDensities`), which the renderer meshes them with.
   `SolidModelVoxels.Add` and the cut parts' hulls and masses (`LooseBodies.TryCreate(parts)`) take the model's unit.

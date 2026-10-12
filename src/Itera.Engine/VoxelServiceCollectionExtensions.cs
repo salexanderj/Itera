@@ -16,8 +16,9 @@ public static class VoxelServiceCollectionExtensions
     /// <summary>
     /// Adds the voxel terrain to the engine (<see cref="EngineServiceCollectionExtensions.AddIteraEngine"/>), for a game
     /// that registers an <see cref="IChunkGenerator"/>: each match's <see cref="VoxelWorld"/> and <see cref="MatchVoxels"/>,
-    /// the colliders loose bodies meet it through (<see cref="VoxelColliders"/>), navigation over it, the benchmark's view
-    /// of it, and its loading tasks (World, Navigation, and Warm-up, after the engine's Sounds and before the game's own,
+    /// the colliders loose bodies meet it through (<see cref="VoxelColliders"/>), navigation over it, the object kinds'
+    /// models (<see cref="VoxelObjects"/>) and the objects its world places (<see cref="ObjectWorld"/>), the benchmark's view
+    /// of it, and its loading tasks (World, Objects, Navigation, and Warm-up, after the engine's Sounds and before the game's own,
     /// so a game calls this before it adds those). The voxel models, the loose bodies, the character mover, and the play
     /// area are the core's, which read the world when there is one. A second call adds nothing.
     /// </summary>
@@ -34,6 +35,7 @@ public static class VoxelServiceCollectionExtensions
         services.TryAddScoped<NavigationService>();
         services.TryAddScoped<IBenchmarkHost, EngineBenchmarkHost>();
         services.TryAddScoped<VoxelObjects>();
+        services.TryAddScoped<ObjectWorld>();
         services.AddScoped<ILoadingTask, WorldLoadingTask>();
         services.AddScoped<ILoadingTask, ObjectsLoadingTask>();
         services.AddScoped<ILoadingTask, NavigationLoadingTask>();

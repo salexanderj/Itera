@@ -65,8 +65,12 @@ public sealed class VoxelObjectKinds
         var kind = VoxelObjectKind.Build(id, name, shape);
         _kinds.Add(kind);
         _byName.Add(name, id);
+        MostReachCentimetres = Math.Max(MostReachCentimetres, kind.ReachCentimetres);
         return id;
     }
+
+    /// <summary>The farthest any kind reaches across from its anchor (<see cref="VoxelObjectKind.ReachCentimetres"/>); 0 with none.</summary>
+    public int MostReachCentimetres { get; private set; }
 
     /// <summary>The kind called <paramref name="name"/>, when one is registered.</summary>
     public bool TryFind(string name, out VoxelObjectKindId id) => _byName.TryGetValue(name, out id);
@@ -133,6 +137,22 @@ public sealed class VoxelObjectKind
         AnchorCentimetres = anchor;
         Parts = parts;
         Fingerprint = fingerprint;
+        // The farthest corner of its box across from the anchor, which a heading turns round the anchor.
+        long most = 0;
+        foreach (var x in (ReadOnlySpan<long>)[0, (long)size.X * unit])
+        {
+            foreach (var z in (ReadOnlySpan<long>)[0, (long)size.Z * unit])
+            {
+                long dx = x - anchor.X,
+                    dz = z - anchor.Z;
+                most = Math.Max(most, dx * dx + dz * dz);
+            }
+        }
+
+        var reach = Maths.DeterministicMath.SquareRoot(most);
+        ReachCentimetres = (long)reach * reach == most ? reach : reach + 1;
+        BottomCentimetres = -anchor.Y;
+        TopCentimetres = size.Y * unit - anchor.Y;
     }
 
     /// <summary>Its number.</summary>
@@ -149,6 +169,18 @@ public sealed class VoxelObjectKind
 
     /// <summary>The point placed on a placement's spot, in centimetres from the box's corner.</summary>
     public VoxelCoord AnchorCentimetres { get; }
+
+    /// <summary>
+    /// The farthest its box reaches across (in x and z) from its anchor at any heading, in centimetres, rounded up: a
+    /// placement's object lies within this of its anchor.
+    /// </summary>
+    public int ReachCentimetres { get; }
+
+    /// <summary>The bottom of its box from its anchor, in centimetres (below 0 when the box starts below the anchor).</summary>
+    public int BottomCentimetres { get; }
+
+    /// <summary>The top of its box from its anchor, in centimetres.</summary>
+    public int TopCentimetres { get; }
 
     /// <summary>How many parts it is: the 128-voxel cubes of its box that hold anything.</summary>
     public int PartCount => Parts.Length;
