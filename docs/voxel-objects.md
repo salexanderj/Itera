@@ -74,3 +74,19 @@ What the pictures showed:
   surface hides them, and costs about twice the GPU time.
 - **Damaged copies cost memory.** A damaged copy of one part at 4 cm costs about a part's meshes (an estimate: 2 to
   3 MB), so a hundred damaged trees near the player would take 200 to 300 MB of the heap.
+
+## The choices after the prototype
+
+Lucy, 2026-10-11, from the figures and pictures above:
+
+- **Hand-over at K=2.** Fine models reach about 106 m, and 40 cm copies take over past them.
+- **The starter's trees at 5 cm.** A kind may use any size under the world's voxel. At 2 cm a tree costs nearly twice
+  the world pass's budget, so 2 cm suits only small objects.
+- **Damaged objects share meshes.** A damaged object meshes again only the 32-voxel blocks an edit touched, and shares
+  the rest with its kind.
+- **The world pass stays within 4 ms with objects** in every starter view, forest views included, and the mesh heap
+  within its 512 MB.
+- **Far copies keep every coarse voxel the object touches,** from a coarse grid each kind keeps for each level, so thin
+  trunks stay and far crowns grow by up to one coarse voxel.
+- **Objects keep densities like the world's.** Kinds store how full each voxel is, models are meshed with them, and edits
+  change them by share, so smooth rocks and crowns show no rings.
