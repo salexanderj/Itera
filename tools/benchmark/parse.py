@@ -104,7 +104,8 @@ def summarise(start, end):
         "frames": frames,
         "upload_ms_per_frame": sum(s[4] * s[5] for s in samples) / frames,
         "uploaded_mb": sum(u[1] for u in mesh),
-        "heap_mb": mesh[-1][2] if mesh else 0,
+        # The heap from the last line inside the measurement: the next view's jump may free meshes just after its end.
+        "heap_mb": next((u[2] for u in reversed(mesh) if u[0] <= end), mesh[-1][2] if mesh else 0),
         "triangles": statistics.mean(u[3] for u in mesh) if mesh else 0,
         "shadow_triangles": statistics.mean(u[4] for u in mesh) if mesh else 0,
         # Per frame measured: a pass's average covers only the frames that ran it.

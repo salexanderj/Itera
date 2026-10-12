@@ -114,5 +114,13 @@ and bodies, and saving the game's own state.
    physics corner. Left for later: materials per mesh triangle and per lifted piece, a mover filtered by layer, impacts
    while a pair touches, mesh and swept triggers, rays by layer, gravity on the wire, and down other than -Y for
    characters. The plain step costs what it did; every body marked and bouncy, 7 to 11 % more while bodies touch.
+7. Voxel objects finer than the terrain (ARCHITECTURE.md's open work; Lucy's plan, 2026-10-11). Done 2026-10-12
+   (`docs/voxel-objects.md`): kinds of finer voxels built in code and placed by the generator; drawn as models near the
+   camera and as copies at their own size in the world's coarse levels, fading into each other; shaded as the ground;
+   met by characters, bodies, rays, and navigation; damaged by edits and cut into falling parts (save format 7,
+   protocol 39); the starter's forests and boulders. Left for later: lifts that take objects' voxels into the piece, a
+   support check when the ground is dug from under an object, felled parts that stay, objects that move, kinds read
+   from files, far forests past a kind's highest copied level, a hand-over level per kind, and the world pass looking
+   down over a forest from 40 m (4.72 ms against the 4 ms budget).
 
 Gamepads come later (not a high priority, 2026-10-11); the research for them is in `docs/ui-toolkit.md`.

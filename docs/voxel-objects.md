@@ -119,3 +119,48 @@ Lucy, 2026-10-12, after walking the starter's forests: whole areas of far object
 - **Shadows do not fade.** The cascades cast each object's one model level, chosen by its distance, whole, where its
   column split; elsewhere its copy casts. A shadow can change by up to a voxel where an object passes from one level to
   the next.
+
+## What it costs
+
+Measured 2026-10-12 on the RX 5700 XT in a Release build, offscreen at 2560x1440 with 4x MSAA, shadows on, and dynamic
+render scaling off, on a quiet machine: the starter's world version 4 (forests about 40 % of the map, boulders as
+objects), K=2, the benchmark's views (`tools/benchmark`). "Before the fades" is the build with true-size copies and no
+fades (507ef41); the fades draw an object's model over its copy out to about 143 m and two levels in each fade band.
+
+| View | World pass, ms, before the fades | World pass, ms, now | Models, ms, now (part of it) | Shadow maps, ms | Mesh heap, MB |
+|---|---|---|---|---|---|
+| start | 1.92 | 2.00 | 0.10 | 0.16 | 310 |
+| start-low | 2.04 | 2.12 | 0.10 | 0.16 | 310 |
+| down | 1.87 | 1.90 | 0.02 | 0.19 | 311 |
+| up | 1.20 | 1.27 | 0.09 | 0.13 | 311 |
+| high | 3.04 | 3.13 | 0.12 | 0.08 | 311 |
+| far | 2.22 | 2.31 | 0.19 | 0.18 | 332 |
+| distant | 2.24 | 2.45 | 0.37 | 0.23 | 278 |
+| forest | 3.39 | 3.87 | 1.29 | 0.26 | 303 |
+| forest-high | 4.55 | 4.72 | 0.86 | 0.25 | 304 |
+| the flight (mean) | 3.57 | 3.97 | 0.94 | 0.16 | 373 |
+
+- **The budget.** Every view but `forest-high` stays within the world pass's 4 ms. `forest-high`, 40 m over a forest
+  looking down, was over it before the fades too; Lucy accepted it (2026-10-12) as future performance work (ARCHITECTURE.md,
+  open work). Most of it is the world's own meshes there (the ground and the far copies), not the models.
+- **What the fades cost.** In the forest view the models drew 0.83 million triangles before the fades and 1.21 million
+  with them, and took 0.81 ms, then 1.54 ms while every model draw went through the shader that may discard a pixel,
+  and 1.29 ms once only the fading draws do (a shader that may discard keeps the depth test from running before it
+  shades; with no discard at all they took 1.04 ms).
+- **Loading.** The 20 kinds make 36 part models; the starter loads in 3.7 s (the world 3.7 s, the objects 0.8 s beside
+  it, the warm-up 2.1 s). Column jobs take 33 to 53 ms on average while the world loads (the copies' rule before 10d: 41
+  to 50 ms).
+- **Memory.** Voxel memory 177.5 MB at the start and 178.4 MB in the forest (154 MB with no objects in the prototype's
+  world); the mesh heap 278 to 373 MB of its 512 MB.
+- **The mover.** Walking among the forest's trees the player's movement takes 0.035 to 0.038 ms a step, as on open
+  ground at the start (0.040 ms); at most 1.1 ms in a step that reads a new stretch of objects.
+
+## Left for later
+
+- Lifts from objects (a lift takes only the world's voxels; an object's voxels in it just go).
+- A support check when the ground is dug from under an object: it floats.
+- Felled parts that stay: a cut part is a cut body, gone 30 to 60 s after it rests.
+- Objects that move, and kinds read from `.vox` or other files (kinds are built in code).
+- Far forests past a kind's highest copied level (a game's own canopy features), and a hand-over level per kind.
+- The world pass over its budget looking down over a forest (`forest-high`, 4.72 ms): GPU culling of the models, fewer
+  far copies' triangles, or a shorter hand-over fade would each cut some of it, unmeasured.

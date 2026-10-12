@@ -22,22 +22,19 @@ Itera with a pull from its remote, so:
   through `Engine:Application` (`Name`, `DataFolder` for logs, saves, and caches) and `Engine:Window:Title`.
 
 The engine streams a voxel world (`VoxelWorld`: columns at every level around streaming centres, generated on worker
-threads, with edits), draws it as triangle meshes through Vulkan, runs an Arch ECS world at 60 Hz, steps loose bodies in
-Bepu, plays procedural sound through OpenAL, draws its UI with Skia, carries sessions over LiteNetLib or Steam, saves a
-world as its seed plus its edit log, and loads mods from `Mods/`. Voxel terrain is optional: a game that registers
-no generator and does not call `AddIteraVoxels` plays matches without it, its characters and loose bodies moving over
-the mesh colliders it registers.
+threads, with edits) with voxel objects finer than it, draws it as triangle meshes through Vulkan, runs an Arch ECS
+world at 60 Hz, steps loose bodies in Bepu, plays sound through OpenAL, draws its UI with Skia, carries sessions over
+LiteNetLib or Steam, saves a world as its seed plus its edit log, and loads mods from `Mods/`. Voxel terrain is
+optional: a game that registers no generator and does not call `AddIteraVoxels` plays matches without it, its characters
+and loose bodies moving over the mesh colliders it registers.
 
 `ARCHITECTURE.md` holds the full description, the dependencies, the design decisions, and the open work. Read it before
 changing anything structural. `docs/` holds the write-ups behind decisions: `voxel-structures.md`, `edit-log-compaction.md`,
 `procedural-audio.md`, `anti-aliasing.md`, `rendering-redesign-brief.md` with `rendering-redesign.md` (the raster
-renderer's decisions and measurements), `rendering-extension.md` (what a game can change in the renderer, and why),
-`map-size-and-origin.md` (large maps, the floating origin, and why), `framework-plan.md` (how Itera became a framework),
-`framework-limits.md` (what kinds of game the engine blocks today, and the order of work), `ui-toolkit.md` (typed
-text, the menu a game replaces, and the UI toolkit), `sound-files.md` (sounds and music from files), and
-`physics-materials-and-groups.md` (gravity, materials, layers, triggers, and impacts a game sets), and `voxel-objects.md`
-(objects finer than the terrain). `docs/references/` holds
-notes on outside projects used as references.
+renderer), `rendering-extension.md`, `map-size-and-origin.md`, `framework-plan.md` (how Itera became a framework),
+`framework-limits.md` (what the engine blocks today, and the order of work), `ui-toolkit.md`, `sound-files.md`,
+`physics-materials-and-groups.md`, and `voxel-objects.md`. `docs/references/` holds notes on outside projects used as
+references.
 
 # How to work
 
@@ -66,8 +63,7 @@ notes on outside projects used as references.
     catches a missed one).
 - Builds, tests, and game runs:
   - Load the `run-game` skill before you start, drive, or check the game, and check a change the cheapest way that can
-    see it (its "Checking a change": tests, `HeadlessMatch` scenarios, runs with no graphics, offscreen screenshot sets,
-    and a window last).
+    see it (its "Checking a change").
   - Before you run or add tests, read `.claude/rules/tests.md`.
   - While `dotnet watch` runs, it builds into `bin/Debug` in place; no other build or test run may share it.
   - Runs you start use the data folder `<DataFolder>-agent` (`IteraGame-agent`): `tools/control/game.py` and
@@ -95,11 +91,10 @@ notes on outside projects used as references.
 
 ## Subagents
 
-- For read-only work that splits into independent parts (searching or reviewing many files, checking a list of
-  findings against the code, reading logs or reports, web research such as techniques, documentation, or claims to
-  verify), use Sonnet 5.5 subagents in parallel instead of doing it serially: the `reader` agent
-  (`.claude/agents/reader.md`, Sonnet at high effort, read-only, with web search and fetch). Give each one part and
-  everything it needs to know, since it starts without the conversation. Check a subagent's claims before acting on
+- For read-only work that splits into independent parts (searching or reviewing files, checking findings against the
+  code, reading logs, web research), use Sonnet 5.5 subagents in parallel instead of doing it serially: the `reader`
+  agent (`.claude/agents/reader.md`, Sonnet at high effort, read-only, with web search and fetch). Give each one part
+  and everything it needs to know, since it starts without the conversation. Check a subagent's claims before acting on
   them.
 - While a benchmark, test suite, or validation run is going, have readers review the change made so far (one part
   each: engine, shaders, game, tests and docs).
@@ -141,9 +136,9 @@ dotnet run -c Release --project tools/Textures -- model PATH.gltf   # a model's 
 ```
 
 Every run writes `~/.local/share/<DataFolder>/Logs/<datafolder>-<date>-<time>-<pid>.log` with Debug detail; read the
-newest file there first when a run misbehaves (the runs you start write theirs in `~/.local/share/IteraGame-agent/Logs/`).
-What a log holds, game options, the start-up log lines, exit codes, unattended runs, the console and its commands, and
-the control port are in the `run-game` skill.
+newest file there first when a run misbehaves (the runs you start write theirs in
+`~/.local/share/IteraGame-agent/Logs/`). The rest (options, the log's lines, exit codes, unattended runs, the console,
+the control port) is in the `run-game` skill.
 
 # Solution map
 
@@ -159,14 +154,12 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
 - `tests/`: xUnit, one project per `src/` project (`.claude/rules/tests.md`).
 - `samples/Itera.SampleMod`: the reference mod. Its build copies the output into
   `src/Game/bin/<Config>/net10.0/Mods/SampleMod/` and into the engine tests' `TestMods/`.
-- `samples/Itera.MeshSample`: a game without voxel terrain (mesh ground and blocks with colliders, the fox, climbing,
-  balls, its own render pass, a screen showing an image view, a physics corner of materials, a gate layer, a trigger
-  zone, and impact sounds); README there; tests in `tests/Itera.MeshSample.Tests`.
+- `samples/Itera.MeshSample`: a game without voxel terrain (mesh colliders, the fox, climbing, its own render pass, an
+  image view, a physics corner); README there; tests in `tests/Itera.MeshSample.Tests`.
 - `tools/control/`, `tools/benchmark/`, `tools/steam/`: READMEs there. They run the game in `src/Game` and read its data
   folder from its `appsettings.json` (`tools/benchmark/data_folder.py`).
-- `tools/Textures`: makes the world materials' texture sets (compressed DDS files and `set.json`) in
-  `src/Game/Textures/` from the bakes of the engine's recipes (or CC0 photographs) `sources.json` names, and with
-  `model PATH.gltf` a model's compressed textures; README there.
+- `tools/Textures`: the world materials' texture sets in `src/Game/Textures/` (from the engine's recipes' bakes or CC0
+  photographs) and a model's compressed textures; README there.
 
 # Conventions
 
@@ -193,12 +186,11 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
   run's in `GameLoop`, the match's in `MatchServices`. Every `Dispose` is idempotent.
 - Windowing, input, ECS, physics, the session, and mod callbacks run on the main thread (LiteNetLib's own thread only
   moves packets; its events wait for `SessionService.Poll`; the control port's threads only read requests and write
-  replies, and the main thread runs them in `ControlService.RunPending`). All Vulkan queue
-  work (fence waits, acquire, recording, submit, present, swapchain recreation) runs on the render
-  thread (`RenderThread`). From `RenderThread.Start` until it has stopped, the main thread makes no
-  Vulkan call except one on the memory of the frame slot it builds: `vkFlushMappedMemoryRanges` after
-  writing staging (`StagingBuffer.Flush`). It has no externally synchronized parameter, and does nothing on
-  coherent memory. It hands data to the render thread only through `FrameExchange`.
+  replies, and the main thread runs them in `ControlService.RunPending`). All Vulkan queue work (fence waits, acquire,
+  recording, submit, present, swapchain recreation) runs on the render thread (`RenderThread`). From
+  `RenderThread.Start` until it has stopped, the main thread makes no Vulkan call except one on the memory of the frame
+  slot it builds: `vkFlushMappedMemoryRanges` after writing staging (`StagingBuffer.Flush`). It hands data to the render
+  thread only through `FrameExchange`.
 - Units are metres and seconds. Voxel coordinates (`VoxelCoord`: voxels, edits, rays, saves) are absolute integers in
   centimetres (`VoxelConstants.CentimetresPerMetre`) from the map's middle. A world voxel at level k is
   `VoxelWorld.Grid.Edge(k)` cm across (`VoxelGrid`, its generator's), a model's voxel its own unit (`VoxelModels`; 1 cm

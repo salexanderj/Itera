@@ -1134,6 +1134,28 @@ A model is a small voxel volume drawn at any position and turn: a part of a char
 - Cost: 1,000 near goblin models (each 19 parts of 1 cm voxels at coarser levels with distance) added 1.07 ms to the world
   pass at the benchmark's `crowd-near` view and about 0.6 ms at `crowd-far`.
 
+### Voxel objects are volumes of their own, finer than the world
+
+Trees, bushes, rocks, and props are voxel objects (`Objects/`; `docs/voxel-objects.md` has the choices and
+measurements, `.claude/rules/objects.md` the details): each kind is a volume of voxels finer than the world's (5 cm in
+the starter's 10 cm world), built in code and registered at the run's start; the world's generator places them; they
+are never written into the world's fine levels.
+
+- Near the camera an object is drawn as its kind's part models, turned to its heading, at three levels by distance that
+  fade into each other by a screen-space dither; from a hand-over level K up (2 by default) the world's voxels hold a
+  copy of it at its own size, written by the column jobs, which the world draws as ground. The coarsest model fades out
+  over its copy across 30 m past the farthest point where a level-K column can split, and a column splits below K only
+  once its objects are known and their models are on the GPU, so the switch follows the distance and nothing goes
+  undrawn.
+- Objects are shaded as the world's surfaces (its materials, texture sets, and tint map), so a model and its copy
+  match.
+- Characters, bodies, rays, and navigation meet objects by their voxels (`ObjectColumns`, the objects' Bepu statics near
+  bodies, `ObjectRays`, `NavObjects`); edits damage them by share, the same live and on replay, and a part cut off is
+  removed by an edit of its own (`RemovePart`), the world's owner deciding the cut, and falls as a cut body each peer
+  makes.
+- Cost: the world pass stays within 4 ms in the starter's views but one, looking down over a forest from 40 m (4.72 ms),
+  left as future work.
+
 ### Characters move with Itera's own controller against the level-0 voxels; Bepu is for loose bodies
 
 Itera's narrow-phase filter makes no contacts between two collidables that are not dynamic (`NarrowPhaseCallbacks`;
@@ -1606,8 +1628,14 @@ Engine work that is known and not done:
   states for crowds sent by distance with dead reckoning). It should come back as engine systems or a documented pattern.
 - **An exact method for the joins between levels of detail**, closing the holes of a voxel or two where the levels disagree on
   which cells the surface crosses.
-- **Objects as their own voxel volumes**: trees, props, and towers as meshes of their own that break into pieces, GPU culling
-  when objects multiply the draws, simplified far meshes, and a view that reaches the map's edge.
+- **Voxel objects finer than the terrain** (built 2026-10-12): kinds of finer voxels placed by the generator, drawn as
+  models near the camera and as copies at their own size in the world's coarse levels with dithered fades between them,
+  met by characters, bodies, rays, and navigation, damaged by edits, and cut into falling parts; the starter's forests
+  and boulders (`docs/voxel-objects.md`). Not built: lifts that take objects' voxels into the piece, a support check
+  when the ground is dug from under an object, felled parts that stay, objects that move, kinds read from files, far
+  forests past a kind's highest copied level, and a hand-over level per kind. Performance to win back: the world pass
+  looking down over a forest from 40 m (the starter's `forest-high`, 4.72 ms against the 4 ms budget), where GPU
+  culling of the models, fewer far copies' triangles, or a shorter hand-over fade would each help.
 - **Underground play**: lighting without the sky, connectivity or occlusion culling for caves, layered navigation, and the
   levels chosen by three-dimensional distance. The sky field's rebuild after edits could be local with summaries kept with
   the columns.
