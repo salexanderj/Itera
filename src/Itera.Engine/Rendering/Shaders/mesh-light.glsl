@@ -16,8 +16,14 @@ const float SunSpreadTangent = 0.0349;
 const float ShadowSearchMetres = 12.0;
 const float ShadowMostTexels = 16.0;
 
-// Sixteen points in the unit disc, spread evenly (a Poisson disc): the filter's taps, and every other one the blocker
-// search's.
+// The blocker search's eight points: every 45 degrees round the disc, on its rim and at 0.4 of it in turn, so no side
+// is left out. (Every other point of ShadowDisc leaned to one side, a gap of 140 degrees with none: a small caster on
+// that side was missed, and a sharp lit notch cut into its soft shadow.)
+const vec2 ShadowSearch[8] = vec2[](
+    vec2(0.92388, 0.38268), vec2(0.15307, 0.36955), vec2(-0.38268, 0.92388), vec2(-0.36955, 0.15307),
+    vec2(-0.92388, -0.38268), vec2(-0.15307, -0.36955), vec2(0.38268, -0.92388), vec2(0.36955, -0.15307));
+
+// Sixteen points in the unit disc, spread evenly (a Poisson disc): the filter's taps.
 const vec2 ShadowDisc[16] = vec2[](
     vec2(-0.94201624, -0.39906216), vec2(0.94558609, -0.76890725), vec2(-0.09418410, -0.92938870),
     vec2(0.34495938, 0.29387760), vec2(-0.91588581, 0.45771432), vec2(-0.81544232, -0.87912464),
@@ -63,9 +69,9 @@ float cascadeLight(MeshLighting cascades, uint cascade, vec3 world, vec3 normal)
     float search = clamp(0.5 * ShadowSearchMetres * SunSpreadTangent / texel, 1.0, ShadowMostTexels);
     float blockers = 0.0;
     float count = 0.0;
-    for (int i = 0; i < 16; i += 2)
+    for (int i = 0; i < 8; i++)
     {
-        float depth = texture(shadowDepths, vec3(uv + ShadowDisc[i] * search * step, layer)).r;
+        float depth = texture(shadowDepths, vec3(uv + ShadowSearch[i] * search * step, layer)).r;
         if (depth < reference)
         {
             blockers += depth;
