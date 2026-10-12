@@ -105,7 +105,8 @@ Where tests live:
   pinned, a reset, the cap dropping the farthest copy and replaying it near, a mover far behind the changes, an area's
   copies going and coming back, a clear's count of what it takes for `IVoxelRemovals`, paint and fill, damaged parts'
   models against the kind's rule over their voxels across a part's border, the mover, rays, and statics meeting a dug
-  object, a bush painted to rock stopping a character, a second dig allocating nothing; `ObjectDamageMatchTests`: a body on a rock in a match of the engine's real
+  object, a bush painted to rock stopping a character, a damaged part's unmarked blocks reading what its kind's do (so
+  sharing their meshes is right), a second dig allocating nothing; `ObjectDamageMatchTests`: a body on a rock in a match of the engine's real
   composition, falling when the rock is dug away).
 - `Itera.Engine.Tests/Maths/` and `Animation/`: the deterministic maths and rotations, the octahedral encoding, the
   origin's conversions at up to ±160 km (`WorldOriginTests`), and skeletons, clips, aiming, and foot IK over a humanoid
@@ -171,7 +172,7 @@ Where tests live:
   in memory: the seams' stitched meshes, a full heap, the edits' latency, an image view's lists over `FakeViewLists`,
   the same blocks drawn local to a moved origin, a column cut by the map's edge or wider than the view still split, a
   ball set far over a heightfield's ground widening its column and drawn from blocks for its runs alone, no fine blocks
-  under a camera high over the ground),
+  under a camera high over the ground, a model sharing a base's meshes meshing only its marked block),
   `RenderViewsTests` (declaring, the cadence, panels), `Memory/GpuRangeHeapTests`, `GpuLayoutTests` (of
   `tests/Shared/GpuLayout`, also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`, `DeviceChoiceTests`,
   `RenderThreadTests` (a fake renderer), `RenderPassesTests` (a game's pass at every stage in `EngineComposition`, none

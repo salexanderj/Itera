@@ -1988,6 +1988,61 @@ public sealed partial class WorldMeshesTests : IDisposable
             MaxDistance = 100,
         };
 
+    /// <summary>
+    /// A model sharing a base's meshes for the blocks it does not mark (<see cref="VoxelModels.ShareBlocks"/>), a cube of
+    /// 80 voxels dented in its first block: it meshes that block alone and draws the base's meshes for the rest, so the
+    /// heap grows by that block's mesh; when it goes, the base keeps every mesh it had.
+    /// </summary>
+    [Fact]
+    public void A_model_sharing_a_bases_meshes_meshes_only_its_marked_blocks()
+    {
+        var size = new VoxelCoord(80, 80, 80);
+        var cube = CubeVoxels(80);
+        var basis = _models.Add([_models.Encode(cube)], size);
+        Begin();
+        RunUntilUpToDate();
+        RunUntil(() => _models.IsUploaded(basis));
+        var heap = _meshes.HeapUsedBytes;
+        var baseBlocks = _meshes.ModelBlocksOf(basis, 0).ToArray();
+
+        // A dent in its corner, read by block (0, 0, 0) alone: voxels 0 to 4 lie in no other block's reads.
+        var dented = (byte[])cube.Clone();
+        for (var z = 0; z < 2; z++)
+        {
+            for (var y = 0; y < 5; y++)
+            {
+                for (var x = 0; x < 5; x++)
+                {
+                    dented[x + (y << VoxelConstants.ChunkShift) + (z << (2 * VoxelConstants.ChunkShift))] = 0;
+                }
+            }
+        }
+
+        var copy = _models.Add([_models.Encode(dented)], size);
+        var changed = new[] { new bool[27] };
+        changed[0][0] = true;
+        _models.ShareBlocks(copy, basis, changed);
+        RunUntil(() => _models.IsUploaded(copy));
+
+        var copyBlocks = _meshes.ModelBlocksOf(copy, 0).ToArray();
+        Assert.Equal(baseBlocks.Length, copyBlocks.Length);
+        var own = Assert.Single(copyBlocks, block => !block.Shared);
+        Assert.Equal(MeshModelDraw.PackBlock(0, 0, 0), own.Block);
+        Assert.DoesNotContain(baseBlocks, block => block.RangeOffset == own.RangeOffset);
+        foreach (var block in copyBlocks.Where(block => block.Shared))
+        {
+            Assert.Contains(block with { Shared = false }, baseBlocks);
+        }
+
+        Assert.InRange(_meshes.HeapUsedBytes - heap, 1, 2L * own.RangeWords * sizeof(uint));
+
+        _models.RemoveAndFree(copy);
+        Frame();
+        Frame();
+        Assert.Equal(heap, _meshes.HeapUsedBytes);
+        Assert.Equal(baseBlocks, _meshes.ModelBlocksOf(basis, 0).ToArray());
+    }
+
     /// <summary>A model of one solid cube of <paramref name="size"/> voxels a side, at level 0 alone.</summary>
     private int AddCube(int size) => _models.Add([_models.Encode(CubeVoxels(size))], new VoxelCoord(size, size, size));
 

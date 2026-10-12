@@ -279,7 +279,10 @@ of air from the decoded level (`ReadModelBlock`; with its densities where the mo
 a part of an object owns only its own voxels' faces, `VoxelModels.SetOwned`, `.claude/rules/objects.md`), meshed on the same workers before the world's blocks, and kept in the
 mesh heap a range per block. A model counts as uploaded once all its blocks are in (`VoxelModels.SetUploaded`; cuts,
 loose bodies, and loading tasks wait for that); a replaced model (a wound) draws its old meshes until the new ones are
-all in (`VoxelModels.Revision` tells a new revision from the one being meshed); a removed model's ranges go the next
+all in (`VoxelModels.Revision` tells a new revision from the one being meshed); a model that shares a base model's meshes
+(`VoxelModels.ShareBlocks`: a damaged object's part its kind's part's) meshes only the blocks it marks, once the base is
+uploaded, and draws the base's meshes for the rest (`ModelBlock.Shared`, never freed with it; the blocks counted and read
+as `ModelBlocks` says); a removed model's ranges go the next
 frame; retired models stay drawn until no world block is pending (a frame without graphics, `GameLoop`'s or `HeadlessMatch`'s,
 removes them after it). Each frame `GameLoop` hands `ModelInstances` to
 `WorldMeshes.Upload`: the draws (and the retired models) whose bounding sphere is in view, or casts into a cascade as

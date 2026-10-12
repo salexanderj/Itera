@@ -28,6 +28,7 @@ internal sealed class DamagedObject : IObjectVoxelSource
         PartDirty = new bool[kind.Parts.Length];
         Models = new int[kind.Parts.Length];
         Array.Fill(Models, -1);
+        ChangedBlocks = new bool[kind.Parts.Length][][];
     }
 
     public ObjectPlacement Placement { get; }
@@ -48,6 +49,12 @@ internal sealed class DamagedObject : IObjectVoxelSource
 
     /// <summary>Each part's own model, made from its changed voxels, or -1 while it draws its kind's.</summary>
     public int[] Models { get; }
+
+    /// <summary>
+    /// Each part's blocks, per level, that the changes reach (<see cref="VoxelModels.ShareBlocks"/>: its model meshes those
+    /// and shares its kind's part's meshes for the rest), made with its model.
+    /// </summary>
+    public bool[][]?[] ChangedBlocks { get; }
 
     /// <summary>True while it waits in <c>ObjectDamage</c>'s queue of objects whose parts' models are to be made again.</summary>
     public bool Queued { get; set; }

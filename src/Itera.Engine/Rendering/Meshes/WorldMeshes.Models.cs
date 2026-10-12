@@ -23,7 +23,7 @@ namespace Itera.Engine.Rendering.Meshes;
 public sealed unsafe partial class WorldMeshes
 {
     /// <summary>Voxels a model's blocks start before its box (<c>mesh-data.glsl</c>'s <c>meshModelWorld</c> moves them back).</summary>
-    internal const int ModelBlockShift = 1;
+    internal const int ModelBlockShift = ModelBlocks.Shift;
 
     // A model level's voxels, decoded once to read its blocks: index x + 128y + 16384z; and its densities, for a model
     // that keeps them.
@@ -64,6 +64,13 @@ public sealed unsafe partial class WorldMeshes
         for (var p = 0; p < pending.Count; p++)
         {
             var handle = pending[p];
+            // A model that shares a base's meshes waits for them.
+            var shared = models.BaseOf(handle);
+            if (shared >= 0 && !models.IsUploaded(shared))
+            {
+                continue;
+            }
+
             var mesh = MeshOf(handle);
             var revision = models.Revision(handle);
             if (mesh.MeshingRevision != revision)
@@ -146,6 +153,12 @@ public sealed unsafe partial class WorldMeshes
         {
             mesh.NextTree++;
             mesh.NextBlock = 0;
+        }
+
+        // A block it shares with its base is the base's mesh (Swap adds it).
+        if (!models.MeshesBlock(handle, tree, block))
+        {
+            return;
         }
 
         var densities = models.HasDensities(handle);
@@ -310,6 +323,7 @@ public sealed unsafe partial class WorldMeshes
     /// </summary>
     private void Swap(VoxelModels models, ModelMesh mesh)
     {
+        AddSharedBlocks(models, mesh);
         FreeBlocks(mesh.Drawn);
         (mesh.Drawn, mesh.Next) = (mesh.Next, mesh.Drawn);
         mesh.Revision = mesh.MeshingRevision;
@@ -327,10 +341,43 @@ public sealed unsafe partial class WorldMeshes
         {
             foreach (var block in blocks)
             {
-                FreeRange(block.RangeOffset, block.RangeWords);
+                // A base's mesh stays the base's.
+                if (!block.Shared)
+                {
+                    FreeRange(block.RangeOffset, block.RangeWords);
+                }
             }
 
             blocks.Clear();
+        }
+    }
+
+    /// <summary>
+    /// Adds to a model that shares a base's meshes (<see cref="VoxelModels.ShareBlocks"/>) the base's drawn meshes of the
+    /// blocks it does not mesh itself, marked shared.
+    /// </summary>
+    private void AddSharedBlocks(VoxelModels models, ModelMesh mesh)
+    {
+        var shared = models.BaseOf(mesh.Handle);
+        if (shared < 0 || (uint)shared >= (uint)_modelMeshes.Length || _modelMeshes[shared] is not { } source)
+        {
+            return;
+        }
+
+        var size = models.Size(mesh.Handle);
+        for (var tree = 0; tree < mesh.Trees && tree < source.DrawnTrees; tree++)
+        {
+            var (countX, countY, _) = ModelBlocks.Counts(TreeSize(size, tree));
+            foreach (var block in source.Drawn[tree])
+            {
+                int bx = (int)(block.Block & 0xFF),
+                    by = (int)((block.Block >> 8) & 0xFF),
+                    bz = (int)(block.Block >> 16);
+                if (!models.MeshesBlock(mesh.Handle, tree, bx + countX * (by + countY * bz)))
+                {
+                    mesh.Next[tree].Add(block with { Shared = true });
+                }
+            }
         }
     }
 
@@ -360,6 +407,12 @@ public sealed unsafe partial class WorldMeshes
             _trackedModels.RemoveAt(_trackedModels.Count - 1);
         }
     }
+
+    /// <summary>The drawn meshes of level <paramref name="tree"/> of model <paramref name="handle"/>. For tests.</summary>
+    internal ReadOnlySpan<ModelBlock> ModelBlocksOf(int handle, int tree) =>
+        (uint)handle < (uint)_modelMeshes.Length && _modelMeshes[handle] is { } mesh
+            ? System.Runtime.InteropServices.CollectionsMarshal.AsSpan(mesh.Drawn[tree])
+            : default;
 
     /// <summary>Forgets every model's meshes: the match's heap goes with it.</summary>
     private void ClearModels()
@@ -754,5 +807,6 @@ internal readonly record struct ModelBlock(
     uint VertexBase,
     uint FirstIndex,
     int IndexCount,
-    uint Block
+    uint Block,
+    bool Shared = false
 );

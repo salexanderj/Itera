@@ -124,7 +124,10 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   rule (`PartLevel.Build`'s sampling; level 0 the kind's with the changed bricks
   over it, the coarser levels sampled again over each changed brick), a part whose border holds a changed brick with
   it, each a model of its own owning its kind's window (the old trees freed after `VoxelModels.Replace`), drawn once on
-  the GPU (`ObjectDamage.PartsOf`; the kind's until then). When an area fills, each of its objects replays the edits
+  the GPU (`ObjectDamage.PartsOf`; the kind's until then). It shares its kind's part's meshes for every 32-voxel block of
+  each level its changes do not reach (`VoxelModels.ShareBlocks` with `DamagedObject.ChangedBlocks`: a block none of whose
+  reads, apron included, holds a voxel of a changed brick, `ModelBlocks.Reading`), so a damaged part meshes, and holds
+  in the mesh heap, its changed blocks alone. When an area fills, each of its objects replays the edits
   since the last reset that reach it (`VoxelWorld.CollectEdits`, the log's columns under its reach), so damage made
   before it loaded, before the match (a save, a joiner's download), or while its copy was dropped, shows the same bit
   for bit; when an area drops, its objects' copies go. A reset drops every copy. At most `Engine:Objects:MostDamaged`

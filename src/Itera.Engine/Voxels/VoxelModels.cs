@@ -511,6 +511,38 @@ public sealed class VoxelModels : IDisposable
     }
 
     /// <summary>
+    /// Makes <paramref name="handle"/> share the meshes of <paramref name="baseHandle"/> (a model of the same box, unit,
+    /// levels, densities, and owned window) for each 32-voxel block of each level that <paramref name="changed"/> does not
+    /// mark (<c>changed[level][block]</c>, blocks as <see cref="ModelBlocks"/> counts them): the renderer meshes only the
+    /// marked blocks and draws the base's meshes for the rest, which it never frees with this model. The base stays
+    /// unchanged and live while this model is (a damaged object part's kind's part, <c>ObjectDamage</c>). The arrays stay
+    /// the caller's and are read at each meshing: change them, then <see cref="Replace"/>. Main thread.
+    /// </summary>
+    public void ShareBlocks(int handle, int baseHandle, bool[][] changed)
+    {
+        ArgumentNullException.ThrowIfNull(changed);
+        ref var model = ref Get(handle);
+        ref readonly var shared = ref Get(baseHandle);
+        if (shared.Size != model.Size || shared.Levels != model.Levels || shared.Unit != model.Unit)
+        {
+            throw new ArgumentException(
+                "A model shares meshes only with a model of its box, levels, and unit.",
+                nameof(baseHandle)
+            );
+        }
+
+        model.Base = baseHandle + 1;
+        model.Changed = changed;
+    }
+
+    /// <summary>The model whose meshes <paramref name="handle"/> shares (<see cref="ShareBlocks"/>), or -1.</summary>
+    internal int BaseOf(int handle) => Get(handle).Base - 1;
+
+    /// <summary>True when block <paramref name="block"/> of level <paramref name="tree"/> is meshed for this model itself.</summary>
+    internal bool MeshesBlock(int handle, int tree, int block) =>
+        Get(handle).Changed is not { } changed || changed[tree][block];
+
+    /// <summary>
     /// Gives a model new trees, as many levels as it has, such as a cut part's after <see cref="Apply"/>. A model on
     /// the GPU stays drawn from its old ranges until the uploader has copied the new trees, then those ranges are freed,
     /// so it never vanishes for a frame. The old trees are no longer read: the owner may free them now, unless they are
@@ -752,6 +784,10 @@ public sealed class VoxelModels : IDisposable
         public VoxelCoord OwnedMax;
         public VoxelCoord OpenLow;
         public VoxelCoord Size;
+
+        /// <summary>The model whose meshes it shares, plus one (0 for none), and its blocks that differ (per level).</summary>
+        public int Base;
+        public bool[][]? Changed;
         public Levels<ChildState> Trees;
         public Levels<uint> Entries;
         public Levels<uint> RangeOffsets;

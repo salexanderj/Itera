@@ -636,6 +636,7 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
             trees[level] = _models.Encode(_level, _levelDensities, size);
         }
 
+        var changed = MarkChangedBlocks(damaged, index, corner);
         var model = damaged.Models[index];
         if (model < 0)
         {
@@ -646,6 +647,8 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
                 new VoxelCoord(border + part.OwnSize.X, border + part.OwnSize.Y, border + part.OwnSize.Z),
                 part.OpenLow
             );
+            // Its kind's part's meshes for every block the changes do not reach.
+            _models.ShareBlocks(model, _kindModels.PartsOf(damaged.Placement.Kind)[index].Model, changed);
             damaged.Models[index] = model;
             return;
         }
@@ -662,6 +665,67 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         {
             _models.Free(new ModelTree(old[level]));
         }
+    }
+
+    /// <summary>
+    /// Marks, at each level of part <paramref name="index"/> (whose box starts at <paramref name="corner"/> of the kind),
+    /// the blocks whose reads hold a voxel of a changed brick: the rest read what the kind's part's do, and mesh as they do.
+    /// </summary>
+    private static bool[][] MarkChangedBlocks(DamagedObject damaged, int index, VoxelCoord corner)
+    {
+        var part = damaged.Kind.Parts[index];
+        var changed = damaged.ChangedBlocks[index];
+        if (changed is null)
+        {
+            changed = new bool[VoxelModels.MaxLevels][];
+            for (var level = 0; level < changed.Length; level++)
+            {
+                var (x, y, z) = ModelBlocks.Counts(part.SizeAt(level));
+                changed[level] = new bool[x * y * z];
+            }
+
+            damaged.ChangedBlocks[index] = changed;
+        }
+
+        foreach (var blocks in changed)
+        {
+            Array.Clear(blocks);
+        }
+
+        foreach (var key in damaged.Bricks)
+        {
+            int bx = ((key & 255) << 3) - corner.X,
+                by = (((key >> 8) & 255) << 3) - corner.Y,
+                bz = ((key >> 16) << 3) - corner.Z;
+            if (bx < 0 || by < 0 || bz < 0 || bx >= part.Size.X || by >= part.Size.Y || bz >= part.Size.Z)
+            {
+                continue;
+            }
+
+            const int last = VoxelConstants.BrickSize - 1;
+            for (var level = 0; level < changed.Length; level++)
+            {
+                var (countX, countY, countZ) = ModelBlocks.Counts(part.SizeAt(level));
+                var (x0, _) = ModelBlocks.Reading(bx >> level);
+                var (_, x1) = ModelBlocks.Reading((bx + last) >> level);
+                var (y0, _) = ModelBlocks.Reading(by >> level);
+                var (_, y1) = ModelBlocks.Reading((by + last) >> level);
+                var (z0, _) = ModelBlocks.Reading(bz >> level);
+                var (_, z1) = ModelBlocks.Reading((bz + last) >> level);
+                for (var z = Math.Max(0, z0); z <= Math.Min(countZ - 1, z1); z++)
+                {
+                    for (var y = Math.Max(0, y0); y <= Math.Min(countY - 1, y1); y++)
+                    {
+                        for (var x = Math.Max(0, x0); x <= Math.Min(countX - 1, x1); x++)
+                        {
+                            changed[level][x + countX * (y + countY * z)] = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        return changed;
     }
 
     [LoggerMessage(

@@ -505,6 +505,116 @@ public sealed class ObjectDamageTests : IDisposable
         Assert.InRange(Walk(), -2.6f, -1.6f);
     }
 
+    /// <summary>
+    /// Every block of a damaged part's model that its changes do not mark reads, at every level, the voxels and densities
+    /// its kind's part's model does there: it meshes as the kind's does, whose mesh the model shares.
+    /// </summary>
+    [Fact]
+    public void A_damaged_parts_unshared_blocks_are_those_its_changes_reach()
+    {
+        var scene = Make();
+        foreach (var edit in Edits())
+        {
+            scene.World.Apply(edit);
+        }
+
+        var wall = scene.Placements[3];
+        scene.World.Apply(
+            VoxelEdit.Sphere(new VoxelCoord(wall.Anchor.X + 94, 30, wall.Anchor.Z), 15, VoxelEditOperation.Clear)
+        );
+        for (var i = 0; i < 4; i++)
+        {
+            scene.Damage.Update();
+        }
+
+        var chunk = VoxelConstants.ChunkVoxels;
+        byte[] own = new byte[chunk],
+            ownDensities = new byte[chunk],
+            kind = new byte[chunk],
+            kindDensities = new byte[chunk];
+        var samples = new byte[4][];
+        for (var i = 0; i < samples.Length; i++)
+        {
+            samples[i] = new byte[VoxelWorld.BlockSampleEdge * VoxelWorld.BlockSampleEdge * VoxelWorld.BlockSampleEdge];
+        }
+
+        int marked = 0,
+            shared = 0;
+        foreach (var placement in scene.Placements)
+        {
+            if (scene.Damage.Find(placement.Id) is not { } damaged)
+            {
+                continue;
+            }
+
+            var parts = scene.KindModels.PartsOf(placement.Kind);
+            for (var p = 0; p < parts.Length; p++)
+            {
+                if (damaged.Models[p] < 0)
+                {
+                    continue;
+                }
+
+                var changed = damaged.ChangedBlocks[p]!;
+                var part = damaged.Kind.Parts[p];
+                for (var level = 0; level < VoxelModels.MaxLevels; level++)
+                {
+                    var size = part.SizeAt(level);
+                    Decode(scene.Models, damaged.Models[p], level, size, own, ownDensities);
+                    Decode(scene.Models, parts[p].Model, level, size, kind, kindDensities);
+                    var (countX, countY, countZ) = ModelBlocks.Counts(size);
+                    for (var b = 0; b < countX * countY * countZ; b++)
+                    {
+                        if (changed[level][b])
+                        {
+                            marked++;
+                            continue;
+                        }
+
+                        int bx = b % countX,
+                            by = b / countX % countY,
+                            bz = b / (countX * countY);
+                        Itera.Engine.Rendering.Meshes.WorldMeshes.ReadModelBlock(own, size, bx, by, bz, samples[0]);
+                        Itera.Engine.Rendering.Meshes.WorldMeshes.ReadModelBlock(kind, size, bx, by, bz, samples[1]);
+                        Itera.Engine.Rendering.Meshes.WorldMeshes.ReadModelBlock(
+                            ownDensities,
+                            size,
+                            bx,
+                            by,
+                            bz,
+                            samples[2]
+                        );
+                        Itera.Engine.Rendering.Meshes.WorldMeshes.ReadModelBlock(
+                            kindDensities,
+                            size,
+                            bx,
+                            by,
+                            bz,
+                            samples[3]
+                        );
+                        Assert.True(
+                            samples[0].AsSpan().SequenceEqual(samples[1])
+                                && samples[2].AsSpan().SequenceEqual(samples[3]),
+                            $"Object {placement.Id.Value} part {p} level {level} block ({bx}, {by}, {bz}) differs from its kind's but shares its mesh."
+                        );
+                        shared++;
+                    }
+                }
+            }
+        }
+
+        Assert.True(marked > 0 && shared > 0, $"{marked} blocks meshed again, {shared} shared.");
+
+        static void Decode(VoxelModels models, int model, int level, VoxelCoord size, byte[] voxels, byte[] densities)
+        {
+            Array.Clear(voxels);
+            Array.Clear(densities);
+            var tree = new ModelTree(models.Tree(model, level));
+            models.Decode(tree, voxels, size);
+            models.DecodeDensities(tree, densities, size);
+        }
+    }
+
     /// <summary>A second dig over voxels already damaged, and the models made again, allocate nothing.</summary>
     [Fact]
     public void A_second_dig_on_a_damaged_object_allocates_nothing()
