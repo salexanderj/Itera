@@ -140,6 +140,16 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   as any voxel does; a removed part's copy stays (`RemovePart` changes no world voxel). The rule is `ObjectEditing.RuleVersion`, hashed into the kinds' fingerprint (so the match's
   identity) with the copies' rule: raise it with any change to what an edit does to objects. The cap counts objects,
   not bytes (a copy is its changed bricks, 1 KB each, and its rebuilt parts' models).
+- Cuts are the world owner's (a session's host, or an offline game; a client follows the host's removals): each live
+  edit that takes voxels from an object marks it, and once an update `ObjectDamage` hands each marked object's snapshot
+  (`LabelSnapshot`: its kind and a copy of its changed bricks) to `ObjectLabeller`, a thread of its own, which splits the
+  object's solid voxels into pieces joined across faces (any material, leaves too) and keeps by the kind's rule
+  (`ObjectRoots`, `Register`'s fourth argument: `Ground`, the default, keeps the pieces holding a voxel at its foot, its
+  bottom at or below its anchor, and a kind with none keeps its largest; `Largest` keeps the largest piece, the first of
+  two as large). When the answer comes back and the object has not changed since (`DamagedObject.Revision`; else it is
+  asked again), each piece that falls is logged as a removal (`VoxelEdit.RemovePart` with the piece's first voxel in scan
+  order as its seed and its bounds turned into the world's centimetres as its box). The kinds' tables are made at the
+  "objects" step (`VoxelObjectKind.MakeTables`) for the thread to read them.
 - A part cut off an object goes by an edit of its own (`VoxelEditOperation.RemovePart`, `VoxelEdit.RemovePart(id,
   seed, box, size)`: the object's id in `Piece`, the kind's seed voxel in `Turn`, 16 bits an axis, below 1,024; a box
   of air where the part lay, for the log's index): the world's voxels never change (`VoxelEdit.ChangesWorld` false;

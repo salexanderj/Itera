@@ -304,6 +304,84 @@ public sealed class ObjectDamageTests : IDisposable
     }
 
     /// <summary>
+    /// The labeller splits a damaged object into pieces joined across faces: the trunk cut through has its top fall (it
+    /// holds no voxel at the foot), the stump stays; the plank, standing on nothing (its largest piece stays), cut into
+    /// two unequal halves has the smaller fall.
+    /// </summary>
+    [Fact]
+    public void The_labeller_finds_the_pieces_that_fall()
+    {
+        var scene = Make();
+        var edits = Edits().ToArray();
+        scene.World.Apply(edits[^2]);
+        var labeller = new ObjectLabeller();
+        var snapshot = labeller.Rent();
+        snapshot.Copy(scene.Damage.Find(scene.Placements[0].Id)!);
+
+        labeller.Label(snapshot);
+
+        var top = Assert.Single(snapshot.Falling);
+        Assert.Equal((44, 63), (top.Min.Y, top.Max.Y));
+        Assert.True(top.Seed.Y >= 44);
+
+        // A bar of the largest-piece rule, cut through at its seventh voxel: the six-voxel end falls.
+        var kinds = new VoxelObjectKinds();
+        var shape = new VoxelObjectShape(5, new VoxelCoord(20, 4, 4), new VoxelCoord(50, 0, 10));
+        shape.FillBox(0, 0, 0, 100, 20, 20, Rock);
+        var bar = kinds.Register("bar", shape, roots: ObjectRoots.Largest);
+        var damaged = new DamagedObject(new ObjectPlacement(new ObjectId(9), bar, default, 0), kinds[bar]);
+        for (var z = 0; z < 4; z++)
+        {
+            for (var y = 0; y < 4; y++)
+            {
+                damaged.Set(6, y, z, VoxelConstants.Air, VoxelDensity.Empty);
+            }
+        }
+
+        snapshot.Copy(damaged);
+        labeller.Label(snapshot);
+
+        var end = Assert.Single(snapshot.Falling);
+        Assert.Equal((0, 5), (end.Min.X, end.Max.X));
+        labeller.Dispose();
+    }
+
+    /// <summary>
+    /// On the world's owner a cut through the trunk is all it takes: the labeller finds the top, a removal of it is
+    /// logged, and it falls; a client following the host takes the host's edits, the removal among them, and labels
+    /// nothing of its own.
+    /// </summary>
+    [Fact]
+    public void A_cut_on_the_host_removes_the_piece_it_cuts_off()
+    {
+        var host = Make();
+        var client = Make();
+        client.World.FollowHost();
+        var cut = VoxelEdit.Box(new VoxelCoord(110, 200, -40), new VoxelCoord(80, 20, 80), VoxelEditOperation.Clear);
+
+        host.World.Apply(cut);
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (host.World.EditCount == 1)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "No removal was logged.");
+            host.Damage.Update();
+            Thread.Sleep(1);
+        }
+
+        Assert.Equal(VoxelEditOperation.RemovePart, host.World.GetEdit(2).Operation);
+        var fallen = Assert.Single(host.Damage.Fallen);
+        Assert.All(fallen.Voxels, voxel => Assert.True(voxel.Y >= 44));
+        for (var sequence = 1L; sequence <= host.World.EditCount; sequence++)
+        {
+            client.World.ApplySequenced(host.World.GetEdit(sequence));
+        }
+
+        client.Damage.Update();
+        Assert.Equal(0, client.Damage.Labelling);
+        AssertSame(host.Damage.Find(host.Placements[0].Id), client.Damage.Find(client.Placements[0].Id));
+    }
+
+    /// <summary>
     /// Removals from a host that name no object of the area, a seed of air, a seed outside the kind, or a box reaching no
     /// object change nothing.
     /// </summary>

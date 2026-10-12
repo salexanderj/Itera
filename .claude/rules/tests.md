@@ -103,12 +103,14 @@ Where tests live:
   (`ObjectDamageTests`: a turned box against the cubes it holds wholly or misses, damage made live against damage
   replayed when the area fills bit for bit (also across a reset), a dig past the map's edge changing nothing, the damage
   pinned (with and without a part's removal), a part removed whole and falling only live, a removal bound by its box and
-  never changing the world, hostile part removals, a saved log with a removal loading the same damage, a client following its host, a reset, the cap dropping the farthest copy and replaying it near, a mover far behind the changes, an area's
+  never changing the world, the labeller's pieces by each root rule, a cut on the host logging the removal it cuts
+  off (a client following labels nothing), hostile part removals, a saved log with a removal loading the same damage, a client following its host, a reset, the cap dropping the farthest copy and replaying it near, a mover far behind the changes, an area's
   copies going and coming back, a clear's count of what it takes for `IVoxelRemovals`, paint and fill, damaged parts'
   models against the kind's rule over their voxels across a part's border, the mover, rays, and statics meeting a dug
   object, a bush painted to rock stopping a character, a damaged part's unmarked blocks reading what its kind's do (so
   sharing their meshes is right), a second dig allocating nothing; `ObjectDamageMatchTests`: a body on a rock in a match of the engine's real
-  composition, falling when the rock is dug away; a trunk's top cut off falling as a body onto its stump).
+  composition, falling when the rock is dug away; a trunk's top cut off falling as a body onto its stump; a cut alone
+  dropping the top).
 - `Itera.Engine.Tests/Maths/` and `Animation/`: the deterministic maths and rotations, the octahedral encoding, the
   origin's conversions at up to ±160 km (`WorldOriginTests`), and skeletons, clips, aiming, and foot IK over a humanoid
   test skeleton (`HumanoidTestSkeleton`).

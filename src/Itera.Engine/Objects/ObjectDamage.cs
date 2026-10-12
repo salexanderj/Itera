@@ -59,6 +59,8 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
     private readonly List<ObjectPlacement> _near = [];
     private readonly List<VoxelEdit> _replay = [];
     private readonly Queue<DamagedObject> _changed = new();
+    private readonly List<DamagedObject> _toLabel = [];
+    private readonly ObjectLabeller _labeller = new();
     private readonly List<FallenPart> _fallen = [];
     private readonly Stack<List<FallenVoxel>> _spareVoxels = new();
     private readonly Stack<int> _flood = new();
@@ -114,8 +116,12 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
     {
         _world.ObjectEdits = this;
         _objects.Listener = this;
+        _labeller.Start();
         IsInitialized = true;
     }
+
+    /// <summary>The objects whose pieces the labeller looks at now or will. For tests.</summary>
+    internal int Labelling => _labeller.Pending + _toLabel.Count;
 
     /// <summary>The damage of the object <paramref name="id"/>, or null while it keeps its kind's voxels (or no copy).</summary>
     internal DamagedObject? Find(ObjectId id) => _damaged.GetValueOrDefault(id);
@@ -272,6 +278,8 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
             return;
         }
 
+        Label();
+
         for (var i = 0; i < RebuildsPerUpdate && _dropped.Count > 0; i++)
         {
             var nearest = NearestDropped(out var distance);
@@ -363,6 +371,8 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
             _objects.Listener = null;
         }
 
+        _labeller.Dispose();
+
         // The models go with the match's voxel memory.
         _damaged.Clear();
         _dropped.Clear();
@@ -415,7 +425,104 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
                 damaged.Queued = true;
                 _changed.Enqueue(damaged);
             }
+
+            // A removal made here, by the world's owner, may cut a piece off: the labeller looks.
+            if (_live && !_world.FollowsHost && edit.Operation != VoxelEditOperation.Paint && !damaged.NeedsLabel)
+            {
+                damaged.NeedsLabel = true;
+                _toLabel.Add(damaged);
+            }
         }
+    }
+
+    /// <summary>
+    /// Takes the labeller's answers, removing each piece that falls (a logged <see cref="VoxelEditOperation.RemovePart"/>)
+    /// of an object unchanged since it was asked; one changed since is asked again. Then asks for the objects edits took
+    /// voxels from since, one snapshot each at a time.
+    /// </summary>
+    private void Label()
+    {
+        while (_labeller.TryTake(out var snapshot))
+        {
+            var id = snapshot.Placement.Id;
+            if (_damaged.TryGetValue(id, out var damaged) && ReferenceEquals(damaged.Kind, snapshot.Kind))
+            {
+                damaged.Labelling = false;
+                if (damaged.Revision != snapshot.Revision)
+                {
+                    if (!damaged.NeedsLabel)
+                    {
+                        damaged.NeedsLabel = true;
+                        _toLabel.Add(damaged);
+                    }
+                }
+                else
+                {
+                    foreach (var piece in snapshot.Falling)
+                    {
+                        RemovePiece(in snapshot, in piece);
+                    }
+                }
+            }
+
+            _labeller.Return(snapshot);
+        }
+
+        for (var i = _toLabel.Count - 1; i >= 0; i--)
+        {
+            var damaged = _toLabel[i];
+            if (damaged.Labelling)
+            {
+                continue;
+            }
+
+            _toLabel.RemoveAt(i);
+            damaged.NeedsLabel = false;
+            if (!_damaged.TryGetValue(damaged.Placement.Id, out var kept) || !ReferenceEquals(kept, damaged))
+            {
+                // Its copy went since.
+                continue;
+            }
+
+            damaged.Labelling = true;
+            var snapshot = _labeller.Rent();
+            snapshot.Copy(damaged);
+            _labeller.Ask(snapshot);
+        }
+    }
+
+    /// <summary>Logs the removal of one falling piece, its box the piece's bounds turned into the world's centimetres.</summary>
+    private void RemovePiece(in LabelSnapshot snapshot, in FallingPiece piece)
+    {
+        var kind = snapshot.Kind;
+        var placement = snapshot.Placement;
+        var unit = kind.UnitCentimetres;
+        var offset = kind.AnchorCentimetres;
+        long x0 = long.MaxValue,
+            x1 = long.MinValue,
+            z0 = long.MaxValue,
+            z1 = long.MinValue;
+        for (var corner = 0; corner < 4; corner++)
+        {
+            var ox = (long)((corner & 1) == 0 ? piece.Min.X : piece.Max.X + 1) * unit - offset.X;
+            var oz = (long)((corner & 2) == 0 ? piece.Min.Z : piece.Max.Z + 1) * unit - offset.Z;
+            var (wx, wz) = ObjectTurns.FromObject(placement.Heading, ox, oz);
+            (x0, x1) = (Math.Min(x0, wx), Math.Max(x1, wx));
+            (z0, z1) = (Math.Min(z0, wz), Math.Max(z1, wz));
+        }
+
+        var anchor = placement.Anchor;
+        var low = new VoxelCoord(
+            (int)(anchor.X + x0 - 1),
+            anchor.Y + piece.Min.Y * unit - offset.Y,
+            (int)(anchor.Z + z0 - 1)
+        );
+        var size = new VoxelCoord(
+            (int)Math.Min(x1 - x0 + 2, VoxelConstants.MaxEditExtent),
+            Math.Min((piece.Max.Y + 1 - piece.Min.Y) * unit, VoxelConstants.MaxEditExtent),
+            (int)Math.Min(z1 - z0 + 2, VoxelConstants.MaxEditExtent)
+        );
+        _world.TryApply(VoxelEdit.RemovePart(placement.Id.Value, piece.Seed, low, size), VoxelEdit.NoMaker, out _);
     }
 
     /// <summary>
@@ -614,6 +721,7 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         _damaged.Clear();
         _dropped.Clear();
         _changed.Clear();
+        _toLabel.Clear();
         ReturnFallen();
     }
 

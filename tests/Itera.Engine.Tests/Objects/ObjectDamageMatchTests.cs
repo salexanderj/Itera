@@ -123,6 +123,47 @@ public sealed class ObjectDamageMatchTests
         Assert.InRange(start - end, 0.15f, 0.25f);
     }
 
+    /// <summary>
+    /// In a match a cut through the trunk is all it takes: the labeller finds the top cut off, its removal is logged, and
+    /// it falls as a cut body.
+    /// </summary>
+    [Fact]
+    public void A_cut_through_a_trunk_drops_its_top_by_itself()
+    {
+        var placements = new List<ObjectPlacement>();
+        using var provider = EngineComposition.Build(
+            new Dictionary<string, string?> { ["Engine:Physics:Threads"] = "1" },
+            services =>
+            {
+                services.Replace(ServiceDescriptor.Singleton<IChunkGenerator>(new PlacingGenerator(placements)));
+                services.AddSingleton<IRunStartup>(sp => new TrunkStartup(
+                    sp.GetRequiredService<VoxelObjectKinds>(),
+                    placements
+                ));
+            }
+        );
+        var run = new HeadlessRun(provider);
+        using var match = run.Play(seed: 5);
+        match.Match.Voxels.SetCenters([Vector3.Zero]);
+        Assert.True(match.WaitUntilLoaded());
+        var terrain = match.Match.Terrain!;
+        match.Step(2);
+
+        match.Match.Voxels.Apply(
+            VoxelEdit.Box(new VoxelCoord(-40, 150, -40), new VoxelCoord(80, 20, 80), VoxelEditOperation.Clear)
+        );
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (terrain.Fallen.Made == 0)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "Nothing fell.");
+            match.Step(1);
+            Thread.Sleep(1);
+        }
+
+        Assert.Equal(VoxelEditOperation.RemovePart, match.Match.Voxels.GetEdit(2).Operation);
+        Assert.Equal(1, match.World.CountEntities(new QueryDescription().WithAll<LooseBody, CutPiece>()));
+    }
+
     /// <summary>Registers a trunk 50 cm across and 3.2 m tall and places one at the map's middle.</summary>
     private sealed class TrunkStartup(VoxelObjectKinds kinds, List<ObjectPlacement> placements) : IRunStartup
     {

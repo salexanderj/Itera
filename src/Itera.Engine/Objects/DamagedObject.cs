@@ -59,6 +59,12 @@ internal sealed class DamagedObject : IObjectVoxelSource
     /// <summary>True while it waits in <c>ObjectDamage</c>'s queue of objects whose parts' models are to be made again.</summary>
     public bool Queued { get; set; }
 
+    /// <summary>True once an edit took voxels from it since its pieces were last asked for (<see cref="ObjectLabeller"/>).</summary>
+    public bool NeedsLabel { get; set; }
+
+    /// <summary>True while the labeller has a snapshot of it.</summary>
+    public bool Labelling { get; set; }
+
     /// <summary>The part models drawn for it this frame (<see cref="ObjectDamage.PartsOf"/>), made at the first draw.</summary>
     public ObjectPartModel[]? Drawn { get; set; }
 
