@@ -44,14 +44,26 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
 - Far copies (`ObjectCopies`, internal; made at the world's `Initialize`, before its workers start, which seals the
   kinds): from the hand-over level up, a kind is copied into the world's voxels at each level whose voxels are no wider
   than its `CopiesUpToCentimetres` (`Register`'s third argument; 0, the default, is half its box's widest side, so a
-  smaller thing is not copied where its copy would be one voxel or less). Each copy is a lattice over the kind's box
-  (`ObjectCopyGrid`, blocks a quarter of a world voxel, built once from per-block counts and box sums): a world voxel whose
-  sample point lies in a block takes the commonest material of the kind's voxels it could touch at any heading (within
-  half its diagonal across and half its edge up and down), else air, so every world voxel the object touches is solid
-  and a thin trunk stays. A column job at a copied level (`ColumnJob.Run`) asks the placer for the objects near the
-  column (`Find`, each worker its own list), widens its layers to the copies' heights (as the edits' are: an empty range
-  keeps its boundary), and writes the copies into the air of its mixed layers and its layers of air they reach, whole,
-  after the generator's fill and before the edits; a layer of one solid material keeps it. Headings turn through
+  smaller thing is not copied where its copy would be one voxel or less). A copy keeps its object's size at every level:
+  the kind keeps, for each copied level, a grid of blocks half a world voxel across over its box, each the mean density
+  of the kind's voxels in it (how much of it the kind fills, 0 to 255) and their commonest solid material
+  (`ObjectShareGrid`, made from the parts' voxels by `ObjectShareBuilder`, `VoxelObjectKind.SharesFrom`). A world voxel's
+  share of an object (`ObjectCopies.Shares`) is read at its eight half-size cubes' middles turned into the object: one
+  with nothing, or all full, within a block of each is that (`ObjectShareGrid.AroundAt`), else the mean of its 64
+  quarter-size cubes' middles (so a turned grid does not alias); a voxel whose middle has nothing within two blocks is
+  passed over (`AnyNear`); its material is that of the fullest of the eight. A thin upright part (a trunk, a pole) is
+  kept a voxel wide (`ObjectCopies.KeepThin`: a voxel with a share of at least a 64th, `ThinShare`, none of its eight
+  neighbours across greater, ties all kept, and some share above and below it, is made solid at `KeptShare`, 160), so
+  far trunks never vanish while caps and rims do not grow. A column job at a copied level (`ColumnJob.Run`) asks the
+  placer for the objects near the column (`Find`, each worker its own list), widens its layers to the copies' heights
+  (as the edits' are: an empty range keeps its boundary), and writes each object's shares over its box turned by its
+  heading and a voxel round it (`RangeOf`) into the air of its mixed layers and its layers of air they reach, after the
+  generator's fill and before the edits: from half (128) an air voxel turns solid of the object's material at its share
+  as its density, and under half an air voxel's density rises to the share, so the surface lies where the object's does;
+  ground stays, and where two objects fill one voxel the first in the placer's order keeps it. A layer of one solid
+  material keeps it. A copy's share under half beside the ground lifts the ground's surface by under a voxel where an
+  object meets it (a trunk's foot), also in a stitched seam just below the hand-over level, where the models are drawn
+  over it. Headings turn through
   `ObjectTurns` (cosines and sines of the deterministic series in 16-bit fixed point; `ToObject` for the world's
   integers, `Rotation` for drawing), so every peer writes the same voxels. `ObjectCopies.Materials` holds the kinds'
   materials.
@@ -157,10 +169,13 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   since, after a reset or a drop, is asked anew) and the object has not changed since (`DamagedObject.Revision`; else
   it is asked again), each piece that falls is logged as a removal (`VoxelEdit.RemovePart` with the piece's first voxel in scan
   order as its seed and its bounds turned into the world's centimetres as its box), then the clears of the far copies only
-  those pieces filled: at each level the kind is copied at, each world voxel in reach of the pieces whose copy holds the
-  object's material, with no voxel the object keeps within the copy rule's reach of its sample point (the kept voxels
-  counted in the copy grid's blocks, `ObjectCopyGrid.BlockCentimetres`, `MarginAcross`, `MarginUp`) and no neighbour's
-  copy there (the objects whose reach and a coarsest copied voxel meet the object's), is cleared by an edit of its own
+  those pieces filled: at each level the kind is copied at, the object's shares (`ObjectCopies.Shares` and `KeepThin`
+  over its whole `RangeOf`) as its copy was written (from the kind's grid, which the column jobs read) and as it would be
+  without the pieces (from a grid of the snapshot's voxels less the pieces', made by the kind's rule,
+  `ObjectShareBuilder`); each world voxel within a voxel of the pieces' box turned into the world, solid as written and
+  not without them, and solid in no neighbour's copy (the objects whose reach and a coarsest copied voxel meet the
+  object's, each read over its part of the box), is cleared (a voxel an earlier cut cleared may be cleared again) by an
+  edit of its own
   (`VoxelEditOperation.ClearCopies`, `VoxelEdit.ClearCopies(level, box, size, materials)`: one world level, in its
   `Material` byte, 1 to 9; the kind's materials below 128 as `ClearMaterials`' set; by sample point; objects, other
   levels, and navigation ignore it, `VoxelEdit.AppliesAtLevel`), in boxes of runs along x of one row. The kinds' tables

@@ -97,7 +97,9 @@ Where tests live:
   the scalar field, the field tint map with `VoxelTintSampler`, and the heightfield generator (every description against
   its filled voxels, a column's range and its layers standing for every layer, fills against a voxel-by-voxel reference, `HillsGenerator`).
 - `Itera.Engine.Tests/Objects/`: voxel objects over `PlacingGenerator` (flat stone placing a test's objects): kinds'
-  shapes and registry, models, `ObjectWorld`'s areas, far copies (a pinned hash), turns, and rays (`ObjectRaysTests`:
+  shapes and registry, models, `ObjectWorld`'s areas, far copies (`ObjectCopiesTests`: the shares summing to the
+  object's volume at four headings and voxels wholly inside solid, a thin trunk kept a voxel wide, a kind's share grids
+  those of its voxels, a column job's voxels the rule's; a pinned hash), turns, and rays (`ObjectRaysTests`:
   random rays against every solid voxel's box, a ray across stretches 40 m out, the shared ray, a tool's ray through a
   bush, the third-person camera pulled in by a trunk, the movement probes on a trunk, no allocation), and damage
   (`ObjectDamageTests`: a turned box against the cubes it holds wholly or misses, damage made live against damage

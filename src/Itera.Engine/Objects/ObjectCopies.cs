@@ -1,16 +1,17 @@
 using Itera.Engine.Maths;
 using Itera.Engine.Voxels;
-using Itera.Engine.Voxels.Generation;
 
 namespace Itera.Engine.Objects;
 
 /// <summary>
-/// A world's objects as coarse copies in its own voxels, from the hand-over level up (<c>Engine:Objects:HandOverLevel</c>):
-/// for each kind and each of those levels whose voxels are no wider than the kind's <see cref="VoxelObjectKind.CopiesUpToCentimetres"/>,
-/// a grid of the materials a world voxel there takes (<see cref="ObjectCopyGrid"/>); the column jobs find the objects near
-/// a column (<see cref="Find"/>) and write their copies into its chunks' air (<see cref="Stamp"/>), after the generator's
-/// fill and before the edits. Built on the main thread before the workers start; read by them all at once. Integers
-/// only, so every peer's copies are the same.
+/// A world's objects as coarse copies in its own voxels, from the hand-over level up (<c>Engine:Objects:HandOverLevel</c>),
+/// at their own size: for each kind and each of those levels whose voxels are no wider than the kind's
+/// <see cref="VoxelObjectKind.CopiesUpToCentimetres"/>, a grid of how much of each block half a world voxel across the
+/// kind fills (<see cref="ObjectShareGrid"/>); the column jobs find the objects near a column (<see cref="Find"/>) and
+/// write into its chunks' air how much of each world voxel each fills at its heading (<see cref="Shares"/>), its density,
+/// solid of the commonest material from a half, a thin upright part kept a voxel wide (<see cref="KeepThin"/>), after the
+/// generator's fill and before the edits (<see cref="Stamp"/>). Built on the main thread before the workers start; read
+/// by them all at once. Integers only, so every peer's copies are the same.
 /// </summary>
 internal sealed class ObjectCopies
 {
@@ -18,19 +19,34 @@ internal sealed class ObjectCopies
     /// The version of the rule that writes copies (the lattice, its margins, the turns, the air they fill): part of the
     /// kinds' fingerprint, so builds whose copies differ do not join each other. Raise it with any change to the copies.
     /// </summary>
-    public const int RuleVersion = 1;
+    public const int RuleVersion = 2;
+
+    /// <summary>The least share (of 255) a voxel of a thin upright part has to be kept: a 64th.</summary>
+    public const byte ThinShare = 4;
+
+    /// <summary>The share a kept voxel of a thin upright part is given: solid, a little over half.</summary>
+    public const byte KeptShare = 160;
+
+    [ThreadStatic]
+    private static byte[]? t_shares;
+
+    [ThreadStatic]
+    private static byte[]? t_materials;
+
+    [ThreadStatic]
+    private static byte[]? t_marks;
 
     private readonly IObjectPlacer _placer;
     private readonly VoxelObjectKinds _kinds;
     private readonly VoxelGrid _grid;
-    private readonly ObjectCopyGrid?[][] _copies;
+    private readonly ObjectShareGrid?[][] _copies;
     private readonly int[] _reaches;
 
     private ObjectCopies(
         IObjectPlacer placer,
         VoxelObjectKinds kinds,
         VoxelGrid grid,
-        ObjectCopyGrid?[][] copies,
+        ObjectShareGrid?[][] copies,
         int first,
         int last,
         MaterialSet materials,
@@ -74,7 +90,7 @@ internal sealed class ObjectCopies
         }
 
         kinds.Seal(grid);
-        var copies = new ObjectCopyGrid?[kinds.Count][];
+        var copies = new ObjectShareGrid?[kinds.Count][];
         var first = int.MaxValue;
         var last = -1;
         var materials = default(MaterialSet);
@@ -83,15 +99,17 @@ internal sealed class ObjectCopies
         {
             var kind = kinds[new VoxelObjectKindId((ushort)k)];
             materials = materials.Union(kind.Materials);
-            copies[k] = new ObjectCopyGrid?[levels];
-            for (var level = handOverLevel; level < levels; level++)
+            copies[k] = new ObjectShareGrid?[levels];
+            var count = 0;
+            while (handOverLevel + count < levels && grid.Edge(handOverLevel + count) <= kind.CopiesUpToCentimetres)
             {
-                if (grid.Edge(level) > kind.CopiesUpToCentimetres)
-                {
-                    break;
-                }
+                count++;
+            }
 
-                var copy = kind.CopyFor(grid.Edge(level));
+            var grids = count > 0 ? kind.SharesFrom(grid.Edge(handOverLevel), count) : [];
+            for (var level = handOverLevel; level < handOverLevel + count; level++)
+            {
+                var copy = grids[level - handOverLevel];
                 copies[k][level] = copy;
                 reaches[level] = Math.Max(reaches[level], copy.ReachAcrossCentimetres);
                 first = Math.Min(first, level);
@@ -115,7 +133,7 @@ internal sealed class ObjectCopies
     public bool CopiesAt(int level) => level >= FirstLevel && level <= LastLevel;
 
     /// <summary>The copy of <paramref name="kind"/> at <paramref name="level"/>, or null where it is not copied. Any thread.</summary>
-    public ObjectCopyGrid? GridFor(VoxelObjectKindId kind, int level) =>
+    public ObjectShareGrid? GridFor(VoxelObjectKindId kind, int level) =>
         level >= FirstLevel && level <= LastLevel ? _copies[kind.Value][level] : null;
 
     /// <summary>The world's grid.</summary>
@@ -209,57 +227,85 @@ internal sealed class ObjectCopies
 
     /// <summary>
     /// Writes the copies of <paramref name="placements"/> into the air of <paramref name="chunk"/>'s voxels (128^3 at index
-    /// <c>x + 128y + 16384z</c>), each voxel the material its sample point reads in its kind's copy at the chunk's level,
-    /// whole (<see cref="VoxelDensity.Full"/>). Returns how many voxels it wrote.
+    /// <c>x + 128y + 16384z</c>): each world voxel's share of each object (<see cref="Shares"/>, its thin upright parts
+    /// kept, <see cref="KeepThin"/>) from a half makes an air voxel solid of the object's material at that density, and
+    /// under a half raises an air voxel's density to it (so the surface lies where the object's does); ground and what
+    /// an object earlier in the list made solid stay. Each object's shares are worked out over the chunk's part of its
+    /// range and a voxel round it (all <see cref="KeepThin"/> reads), as over its whole range. Returns how many voxels it
+    /// changed (made solid, or raised). Any thread.
     /// </summary>
     public int Stamp(ChunkKey chunk, ReadOnlySpan<ObjectPlacement> placements, Span<byte> voxels, Span<byte> densities)
     {
         const int size = VoxelConstants.ChunkSize;
-        var level = new GridLevel(_grid, chunk.Level);
+        var edge = _grid.Edge(chunk.Level);
         var first = chunk.LevelOrigin;
         var written = 0;
         foreach (ref readonly var placement in placements)
         {
             var copy = _copies[placement.Kind.Value][chunk.Level]!;
-            var kind = _kinds[placement.Kind];
-            var anchor = placement.Anchor;
-            var across = copy.ReachAcrossCentimetres;
-            var (low, high) = HeightsOf(chunk.Level, in placement);
-            var (zStart, zEnd) = VoxelRows.Rows(
-                Clamp(anchor.Z - (long)across),
-                Clamp(anchor.Z + (long)across),
-                first.Z,
-                level
-            );
-            var (yStart, yEnd) = VoxelRows.Rows(Clamp(low), Clamp(high), first.Y, level);
-            var (xStart, xEnd) = VoxelRows.Rows(
-                Clamp(anchor.X - (long)across),
-                Clamp(anchor.X + (long)across),
-                first.X,
-                level
-            );
-            // ObjectTurns.ToObject, with what stays fixed along a row taken out of it.
-            long cos = ObjectTurns.Cos(placement.Heading),
-                sin = ObjectTurns.Sin(placement.Heading);
-            for (var z = zStart; z < zEnd; z++)
+            var (x0, y0, z0, sx, sy, sz) = RangeOf(copy, in placement, edge);
+            // The chunk's part of the range.
+            int fx = Math.Max(x0, first.X),
+                fy = Math.Max(y0, first.Y),
+                fz = Math.Max(z0, first.Z),
+                ex = Math.Min(x0 + sx, first.X + size),
+                ey = Math.Min(y0 + sy, first.Y + size),
+                ez = Math.Min(z0 + sz, first.Z + size);
+            if (fx >= ex || fy >= ey || fz >= ez)
             {
-                long dz = level.SampleAt(first.Z + z) - (long)anchor.Z;
-                long dzSin = dz * sin,
-                    dzCos = dz * cos;
-                for (var y = yStart; y < yEnd; y++)
+                continue;
+            }
+
+            // The chunk's part and a voxel round it within the range, so a thin part's neighbours past the chunk count too.
+            int cx0 = Math.Max(x0, fx - 1),
+                cy0 = Math.Max(y0, fy - 1),
+                cz0 = Math.Max(z0, fz - 1),
+                csx = Math.Min(x0 + sx, ex + 1) - cx0,
+                csy = Math.Min(y0 + sy, ey + 1) - cy0,
+                csz = Math.Min(z0 + sz, ez + 1) - cz0;
+            var count = csx * csy * csz;
+            var shares = Scratch(ref t_shares, count);
+            var materials = Scratch(ref t_materials, count);
+            var marks = Scratch(ref t_marks, count);
+            Shares(
+                copy,
+                _kinds[placement.Kind].AnchorCentimetres,
+                in placement,
+                edge,
+                cx0,
+                cy0,
+                cz0,
+                csx,
+                csy,
+                csz,
+                shares,
+                materials
+            );
+            KeepThin(shares, materials, csx, csy, csz, marks);
+            (x0, y0, z0, sx, sy) = (cx0, cy0, cz0, csx, csy);
+            for (var z = fz; z < ez; z++)
+            {
+                for (var y = fy; y < ey; y++)
                 {
-                    var oy = level.SampleAt(first.Y + y) - (long)anchor.Y + kind.AnchorCentimetres.Y;
-                    for (var x = xStart; x < xEnd; x++)
+                    for (var x = fx; x < ex; x++)
                     {
-                        long dx = level.SampleAt(first.X + x) - (long)anchor.X;
-                        var ox = (dx * cos + dzSin) >> ObjectTurns.Shift;
-                        var oz = (dzCos - dx * sin) >> ObjectTurns.Shift;
-                        var material = copy.At(ox + kind.AnchorCentimetres.X, oy, oz + kind.AnchorCentimetres.Z);
-                        var index = x + size * (y + size * z);
-                        if (material != VoxelConstants.Air && voxels[index] == VoxelConstants.Air)
+                        var at = x - x0 + sx * (y - y0 + sy * (z - z0));
+                        var share = shares[at];
+                        var index = x - first.X + size * (y - first.Y + size * (z - first.Z));
+                        if (share == 0 || voxels[index] != VoxelConstants.Air)
                         {
-                            voxels[index] = material;
-                            densities[index] = VoxelDensity.Full;
+                            continue;
+                        }
+
+                        if (share >= VoxelDensity.Solid && materials[at] != VoxelConstants.Air)
+                        {
+                            voxels[index] = materials[at];
+                            densities[index] = VoxelDensity.Fit(materials[at], share);
+                            written++;
+                        }
+                        else if (share > densities[index])
+                        {
+                            densities[index] = VoxelDensity.Fit(VoxelConstants.Air, share);
                             written++;
                         }
                     }
@@ -270,292 +316,278 @@ internal sealed class ObjectCopies
         return written;
     }
 
+    /// <summary>
+    /// The world voxels of one level a copy may fill round <paramref name="placement"/>: its box turned by its heading, and
+    /// a voxel round it, as absolute voxel indices of its corner and the count along each axis.
+    /// </summary>
+    internal static (int X, int Y, int Z, int SizeX, int SizeY, int SizeZ) RangeOf(
+        ObjectShareGrid copy,
+        in ObjectPlacement placement,
+        int edge
+    )
+    {
+        var anchor = placement.Anchor;
+        var box = copy.BoxCentimetres;
+        var offset = copy.Anchor;
+        long wx0 = long.MaxValue,
+            wx1 = long.MinValue,
+            wz0 = long.MaxValue,
+            wz1 = long.MinValue;
+        for (var corner = 0; corner < 4; corner++)
+        {
+            var (wx, wz) = ObjectTurns.FromObject(
+                placement.Heading,
+                ((corner & 1) == 0 ? 0 : box.X) - (long)offset.X,
+                ((corner & 2) == 0 ? 0 : box.Z) - (long)offset.Z
+            );
+            (wx0, wx1) = (Math.Min(wx0, wx), Math.Max(wx1, wx));
+            (wz0, wz1) = (Math.Min(wz0, wz), Math.Max(wz1, wz));
+        }
+
+        // A voxel past the turned box (the turns round to a centimetre or two).
+        var x0 = (int)DeterministicMath.FloorDivide(anchor.X + wx0 - edge, edge);
+        var x1 = (int)DeterministicMath.FloorDivide(anchor.X + wx1 + edge, edge);
+        var z0 = (int)DeterministicMath.FloorDivide(anchor.Z + wz0 - edge, edge);
+        var z1 = (int)DeterministicMath.FloorDivide(anchor.Z + wz1 + edge, edge);
+        var y0 = (int)DeterministicMath.FloorDivide((long)anchor.Y + copy.LowCentimetres, edge);
+        var y1 = (int)DeterministicMath.FloorDivide((long)anchor.Y + copy.HighCentimetres - 1, edge);
+        return (x0, y0, z0, x1 - x0 + 1, y1 - y0 + 1, z1 - z0 + 1);
+    }
+
+    /// <summary>
+    /// How much of each world voxel <paramref name="edge"/> centimetres across, from absolute voxel (x0, y0, z0),
+    /// <paramref name="sizeX"/> by <paramref name="sizeY"/> by <paramref name="sizeZ"/> (index <c>x + sizeX (y + sizeY z)</c>),
+    /// the object at <paramref name="placement"/> fills by <paramref name="grid"/> (its kind's, or a snapshot's), 0 to 255:
+    /// the blocks at the middles of the voxel's eight half-size cubes, turned into the object
+    /// (<see cref="ObjectTurns.ToObject"/>), read first; a voxel whose eight blocks have nothing, or all full, within a
+    /// block of them (<see cref="ObjectShareGrid.AroundAt"/>) is that, and one on the object's edge is the mean of the
+    /// blocks at the middles of its 64 quarter-size cubes (so a turned lattice does not alias); and the material of the fullest block of the first eight that holds one (the first of two as full), else
+    /// air. <paramref name="anchor"/> is the kind's anchor in its box. Any thread; allocates nothing.
+    /// </summary>
+    internal static void Shares(
+        ObjectShareGrid grid,
+        VoxelCoord anchor,
+        in ObjectPlacement placement,
+        int edge,
+        int x0,
+        int y0,
+        int z0,
+        int sizeX,
+        int sizeY,
+        int sizeZ,
+        Span<byte> shares,
+        Span<byte> materials
+    )
+    {
+        var at = placement.Anchor;
+        long cos = ObjectTurns.Cos(placement.Heading),
+            sin = ObjectTurns.Sin(placement.Heading);
+        // ObjectTurns.ToObject of a voxel's corner plus a sample's offset: the corner's products and the offset's, added
+        // before the shift, as ToObject's are, so the turned points are its own. Offsets 0 to 1 are the eighths' middles
+        // (a quarter and three quarters in), 2 to 5 the quarter cubes'.
+        Span<long> offsets = stackalloc long[6];
+        offsets[0] = edge / 4;
+        offsets[1] = edge * 3 / 4;
+        for (var k = 0; k < 4; k++)
+        {
+            offsets[2 + k] = Quarter(edge, k);
+        }
+
+        Span<long> offsetCos = stackalloc long[6];
+        Span<long> offsetSin = stackalloc long[6];
+        Span<long> rows = stackalloc long[6];
+        for (var k = 0; k < 6; k++)
+        {
+            offsetCos[k] = offsets[k] * cos;
+            offsetSin[k] = offsets[k] * sin;
+        }
+
+        long middleCos = edge / 2 * cos,
+            middleSin = edge / 2 * sin;
+        for (var z = 0; z < sizeZ; z++)
+        {
+            long dz = (long)(z0 + z) * edge - at.Z;
+            long zCos = dz * cos,
+                zSin = dz * sin;
+            for (var y = 0; y < sizeY; y++)
+            {
+                long oy = (long)(y0 + y) * edge - at.Y + anchor.Y;
+                for (var k = 0; k < 6; k++)
+                {
+                    rows[k] = grid.BlockOf(oy + offsets[k]);
+                }
+
+                var middleRow = oy + edge / 2;
+                for (var x = 0; x < sizeX; x++)
+                {
+                    long dx = (long)(x0 + x) * edge - at.X;
+                    long xCos = dx * cos,
+                        xSin = dx * sin;
+                    var i = x + sizeX * (y + sizeY * z);
+                    // Nothing of the object near the voxel's middle: none in it.
+                    var mx = ((xCos + middleCos + zSin + middleSin) >> ObjectTurns.Shift) + anchor.X;
+                    var mz = ((zCos + middleCos - xSin - middleSin) >> ObjectTurns.Shift) + anchor.Z;
+                    if (!grid.AnyNear(mx, middleRow, mz))
+                    {
+                        shares[i] = 0;
+                        materials[i] = VoxelConstants.Air;
+                        continue;
+                    }
+
+                    int sum = 0,
+                        best = 0;
+                    bool empty = true,
+                        full = true;
+                    var material = VoxelConstants.Air;
+                    for (var corner = 0; corner < 8; corner++)
+                    {
+                        int kx = corner & 1,
+                            ky = (corner >> 1) & 1,
+                            kz = corner >> 2;
+                        var share = grid.ReadBlock(
+                            grid.BlockOf(
+                                ((xCos + offsetCos[kx] + zSin + offsetSin[kz]) >> ObjectTurns.Shift) + anchor.X
+                            ),
+                            rows[ky],
+                            grid.BlockOf(
+                                ((zCos + offsetCos[kz] - xSin - offsetSin[kx]) >> ObjectTurns.Shift) + anchor.Z
+                            ),
+                            out var held,
+                            out var around
+                        );
+                        sum += share;
+                        empty &= around == ObjectShareGrid.Empty;
+                        full &= around == ObjectShareGrid.Full;
+                        if (held != VoxelConstants.Air && share > best)
+                        {
+                            best = share;
+                            material = held;
+                        }
+                    }
+
+                    materials[i] = material;
+                    if (empty || full)
+                    {
+                        // Nothing, or all full, within a block of every eighth: the voxel holds that.
+                        shares[i] = empty ? (byte)0 : VoxelDensity.Full;
+                        continue;
+                    }
+
+                    // On the object's edge: the 64 quarter-size cubes' middles.
+                    sum = 0;
+                    for (var cube = 0; cube < 64; cube++)
+                    {
+                        int qx = 2 + (cube & 3),
+                            qy = 2 + ((cube >> 2) & 3),
+                            qz = 2 + (cube >> 4);
+                        sum += grid.ReadBlock(
+                            grid.BlockOf(
+                                ((xCos + offsetCos[qx] + zSin + offsetSin[qz]) >> ObjectTurns.Shift) + anchor.X
+                            ),
+                            rows[qy],
+                            grid.BlockOf(
+                                ((zCos + offsetCos[qz] - xSin - offsetSin[qx]) >> ObjectTurns.Shift) + anchor.Z
+                            ),
+                            out _,
+                            out _
+                        );
+                    }
+
+                    shares[i] = (byte)(sum / 64);
+                }
+            }
+        }
+    }
+
+    // The middle of quarter k (0 to 3) of a voxel edge centimetres across, from its low side.
+    private static int Quarter(int edge, int k) => (edge * (2 * k + 1)) / 8;
+
+    /// <summary>
+    /// Keeps a thin upright part (a trunk, a pole) at least a voxel wide in <paramref name="shares"/>: each voxel with a
+    /// material whose share is at least <see cref="ThinShare"/>, with none of its eight neighbours across greater (ties
+    /// all kept) and some share in the voxels above and below it, is made at least <see cref="KeptShare"/>, solid. Caps,
+    /// rims, and broad parts are left as they are. <paramref name="marks"/> is scratch of the same size. Any thread;
+    /// allocates nothing.
+    /// </summary>
+    internal static void KeepThin(
+        Span<byte> shares,
+        ReadOnlySpan<byte> materials,
+        int sizeX,
+        int sizeY,
+        int sizeZ,
+        Span<byte> marks
+    )
+    {
+        var count = sizeX * sizeY * sizeZ;
+        marks[..count].Clear();
+        for (var z = 0; z < sizeZ; z++)
+        {
+            for (var y = 1; y < sizeY - 1; y++)
+            {
+                for (var x = 0; x < sizeX; x++)
+                {
+                    var i = x + sizeX * (y + sizeY * z);
+                    var share = shares[i];
+                    if (
+                        share < ThinShare
+                        || share >= KeptShare
+                        || materials[i] == VoxelConstants.Air
+                        || shares[i - sizeX] == 0
+                        || shares[i + sizeX] == 0
+                    )
+                    {
+                        continue;
+                    }
+
+                    var greatest = true;
+                    for (var dz = -1; dz <= 1 && greatest; dz++)
+                    {
+                        for (var dx = -1; dx <= 1; dx++)
+                        {
+                            int nx = x + dx,
+                                nz = z + dz;
+                            if (
+                                (dx != 0 || dz != 0)
+                                && (uint)nx < (uint)sizeX
+                                && (uint)nz < (uint)sizeZ
+                                && shares[nx + sizeX * (y + sizeY * nz)] > share
+                            )
+                            {
+                                greatest = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    marks[i] = greatest ? (byte)1 : (byte)0;
+                }
+            }
+        }
+
+        for (var i = 0; i < count; i++)
+        {
+            if (marks[i] != 0)
+            {
+                shares[i] = KeptShare;
+            }
+        }
+    }
+
+    /// <summary>This thread's scratch of at least <paramref name="count"/> bytes.</summary>
+    private static Span<byte> Scratch(ref byte[]? array, int count)
+    {
+        if (array is null || array.Length < count)
+        {
+            array = new byte[Math.Max(count, 2 * (array?.Length ?? 1024))];
+        }
+
+        return array.AsSpan(0, count);
+    }
+
     // The centimetres a placement's copy at the level reaches from bottom to top, inclusive.
     private (long Low, long High) HeightsOf(int level, in ObjectPlacement placement)
     {
         var copy = _copies[placement.Kind.Value][level]!;
         return ((long)placement.Anchor.Y + copy.LowCentimetres, (long)placement.Anchor.Y + copy.HighCentimetres - 1);
-    }
-
-    private static int Clamp(long centimetres) => (int)Math.Clamp(centimetres, int.MinValue / 2, int.MaxValue / 2);
-}
-
-/// <summary>
-/// A kind's copy for world voxels of one size: on a lattice of blocks over the kind's box (in the kind's voxels from its
-/// box's corner), the material a world voxel whose sample point lies in a block takes, at any heading: the commonest of
-/// the kind's solid voxels a world voxel there could touch (those within half its diagonal across, half its edge up and
-/// down), or air where it could touch none. So every world voxel the object touches is solid, and a thin trunk is kept;
-/// the copy reaches past the object by up to about a world voxel. Read-only once built.
-/// </summary>
-internal sealed class ObjectCopyGrid
-{
-    private readonly byte[] _materials;
-    private readonly int _sizeX;
-    private readonly int _sizeY;
-    private readonly int _sizeZ;
-    private readonly int _marginAcross;
-    private readonly int _marginUp;
-    private readonly int _block;
-
-    private ObjectCopyGrid(
-        byte[] materials,
-        int sizeX,
-        int sizeY,
-        int sizeZ,
-        int marginAcross,
-        int marginUp,
-        int block,
-        VoxelCoord anchor
-    )
-    {
-        _materials = materials;
-        _sizeX = sizeX;
-        _sizeY = sizeY;
-        _sizeZ = sizeZ;
-        _marginAcross = marginAcross;
-        _marginUp = marginUp;
-        _block = block;
-        // The lattice's box from the anchor: what any heading turns its cells within.
-        long x0 = -marginAcross * (long)block - anchor.X,
-            x1 = (sizeX - marginAcross) * (long)block - anchor.X,
-            z0 = -marginAcross * (long)block - anchor.Z,
-            z1 = (sizeZ - marginAcross) * (long)block - anchor.Z;
-        var most = 0L;
-        foreach (var x in (ReadOnlySpan<long>)[x0, x1])
-        {
-            foreach (var z in (ReadOnlySpan<long>)[z0, z1])
-            {
-                most = Math.Max(most, x * x + z * z);
-            }
-        }
-
-        ReachAcrossCentimetres = DeterministicMath.SquareRoot(most) + 1;
-        LowCentimetres = -marginUp * block - anchor.Y;
-        HighCentimetres = (sizeY - marginUp) * block - anchor.Y;
-    }
-
-    /// <summary>How far across from the kind's anchor any of the copy's voxels lies, at any heading, rounded up.</summary>
-    public int ReachAcrossCentimetres { get; }
-
-    /// <summary>A block's edge, in centimetres: whole voxels of the kind.</summary>
-    public int BlockCentimetres => _block;
-
-    /// <summary>The blocks across, and up and down, a world voxel whose sample point lies in a block may touch.</summary>
-    public int MarginAcross => _marginAcross;
-
-    public int MarginUp => _marginUp;
-
-    /// <summary>The lowest centimetre of the copy from the kind's anchor.</summary>
-    public int LowCentimetres { get; }
-
-    /// <summary>The centimetre past the highest of the copy from the kind's anchor.</summary>
-    public int HighCentimetres { get; }
-
-    /// <summary>Half the diagonal of a square <paramref name="edge"/> across, rounded up.</summary>
-    public static int HalfAcross(int edge) => DeterministicMath.SquareRoot((long)edge * edge / 2) + 1;
-
-    /// <summary>
-    /// The material at (<paramref name="x"/>, <paramref name="y"/>, <paramref name="z"/>), centimetres in the kind's box
-    /// from its corner; air outside the lattice.
-    /// </summary>
-    public byte At(long x, long y, long z)
-    {
-        var bx = DeterministicMath.FloorDivide(x, _block) + _marginAcross;
-        var by = DeterministicMath.FloorDivide(y, _block) + _marginUp;
-        var bz = DeterministicMath.FloorDivide(z, _block) + _marginAcross;
-        return (ulong)bx < (ulong)_sizeX && (ulong)by < (ulong)_sizeY && (ulong)bz < (ulong)_sizeZ
-            ? _materials[bx + _sizeX * (by + (long)_sizeY * bz)]
-            : VoxelConstants.Air;
-    }
-
-    /// <summary>The copy of <paramref name="kind"/> for world voxels <paramref name="edge"/> centimetres across.</summary>
-    public static ObjectCopyGrid Build(VoxelObjectKind kind, int edge)
-    {
-        var unit = kind.UnitCentimetres;
-        var halfAcross = HalfAcross(edge);
-        var halfUp = (edge + 1) / 2;
-        // Blocks a quarter of the world's voxel, in whole voxels of the kind.
-        var per = Math.Max(1, edge / 4 / unit);
-        var block = per * unit;
-        var blocksX = (kind.Size.X + per - 1) / per;
-        var blocksY = (kind.Size.Y + per - 1) / per;
-        var blocksZ = (kind.Size.Z + per - 1) / per;
-
-        // Each material's voxels in each block.
-        var materials = kind.Materials;
-        var list = new List<byte>();
-        for (var m = 1; m < 256; m++)
-        {
-            if (materials.Contains((byte)m))
-            {
-                list.Add((byte)m);
-            }
-        }
-
-        var slot = new int[256];
-        for (var i = 0; i < list.Count; i++)
-        {
-            slot[list[i]] = i;
-        }
-
-        var cells = (long)blocksX * blocksY * blocksZ;
-        var counts = new int[list.Count][];
-        for (var i = 0; i < list.Count; i++)
-        {
-            counts[i] = new int[cells];
-        }
-
-        var voxels = new byte[VoxelConstants.ChunkVoxels];
-        var densities = new byte[VoxelConstants.ChunkVoxels];
-        const int border = ObjectPart.BorderVoxels;
-        foreach (var part in kind.Parts)
-        {
-            // The voxels each part owns, past its border.
-            part.Decode(0, voxels, densities);
-            for (var z = 0; z < part.OwnSize.Z; z++)
-            {
-                for (var y = 0; y < part.OwnSize.Y; y++)
-                {
-                    for (var x = 0; x < part.OwnSize.X; x++)
-                    {
-                        var material = voxels[
-                            border
-                                + x
-                                + VoxelConstants.ChunkSize * (border + y + VoxelConstants.ChunkSize * (border + z))
-                        ];
-                        if (material == VoxelConstants.Air)
-                        {
-                            continue;
-                        }
-
-                        var b =
-                            (part.Offset.X + x) / per
-                            + blocksX * ((part.Offset.Y + y) / per + (long)blocksY * ((part.Offset.Z + z) / per));
-                        counts[slot[material]][b]++;
-                    }
-                }
-            }
-        }
-
-        // The blocks a world voxel whose sample point lies in a block may touch: within this many blocks of it.
-        var marginAcross = (halfAcross + block - 1) / block;
-        var marginUp = (halfUp + block - 1) / block;
-        var sizeX = blocksX + 2 * marginAcross;
-        var sizeY = blocksY + 2 * marginUp;
-        var sizeZ = blocksZ + 2 * marginAcross;
-        var sums = new long[list.Count][];
-        for (var i = 0; i < list.Count; i++)
-        {
-            sums[i] = PrefixSums(counts[i], blocksX, blocksY, blocksZ);
-        }
-
-        var copy = new byte[(long)sizeX * sizeY * sizeZ];
-        for (var lz = 0; lz < sizeZ; lz++)
-        {
-            for (var ly = 0; ly < sizeY; ly++)
-            {
-                for (var lx = 0; lx < sizeX; lx++)
-                {
-                    // The block this lattice cell stands for, and the blocks within the margins of it.
-                    int bx = lx - marginAcross,
-                        by = ly - marginUp,
-                        bz = lz - marginAcross;
-                    var best = 0L;
-                    byte material = VoxelConstants.Air;
-                    for (var i = 0; i < list.Count; i++)
-                    {
-                        var count = BoxSum(
-                            sums[i],
-                            blocksX,
-                            blocksY,
-                            blocksZ,
-                            bx - marginAcross,
-                            bx + marginAcross,
-                            by - marginUp,
-                            by + marginUp,
-                            bz - marginAcross,
-                            bz + marginAcross
-                        );
-                        if (count > best)
-                        {
-                            best = count;
-                            material = list[i];
-                        }
-                    }
-
-                    copy[lx + sizeX * (ly + (long)sizeY * lz)] = material;
-                }
-            }
-        }
-
-        return new ObjectCopyGrid(copy, sizeX, sizeY, sizeZ, marginAcross, marginUp, block, kind.AnchorCentimetres);
-    }
-
-    // Sums of the counts over every box from block (0, 0, 0) to (x, y, z) exclusive: (blocks + 1)^3 entries.
-    private static long[] PrefixSums(int[] counts, int sizeX, int sizeY, int sizeZ)
-    {
-        int strideY = sizeX + 1,
-            strideZ = (sizeX + 1) * (sizeY + 1);
-        var sums = new long[(long)strideZ * (sizeZ + 1)];
-        for (var z = 1; z <= sizeZ; z++)
-        {
-            for (var y = 1; y <= sizeY; y++)
-            {
-                for (var x = 1; x <= sizeX; x++)
-                {
-                    var count = counts[x - 1 + sizeX * (y - 1 + (long)sizeY * (z - 1))];
-                    var i = x + strideY * y + (long)strideZ * z;
-                    sums[i] =
-                        count
-                        + sums[i - 1]
-                        + sums[i - strideY]
-                        + sums[i - strideZ]
-                        - sums[i - 1 - strideY]
-                        - sums[i - 1 - strideZ]
-                        - sums[i - strideY - strideZ]
-                        + sums[i - 1 - strideY - strideZ];
-                }
-            }
-        }
-
-        return sums;
-    }
-
-    // The counts over blocks x0..x1, y0..y1, z0..z1 (inclusive), clipped to the box.
-    private static long BoxSum(
-        long[] sums,
-        int sizeX,
-        int sizeY,
-        int sizeZ,
-        int x0,
-        int x1,
-        int y0,
-        int y1,
-        int z0,
-        int z1
-    )
-    {
-        x0 = Math.Max(x0, 0);
-        y0 = Math.Max(y0, 0);
-        z0 = Math.Max(z0, 0);
-        x1 = Math.Min(x1, sizeX - 1);
-        y1 = Math.Min(y1, sizeY - 1);
-        z1 = Math.Min(z1, sizeZ - 1);
-        if (x0 > x1 || y0 > y1 || z0 > z1)
-        {
-            return 0;
-        }
-
-        int strideY = sizeX + 1,
-            strideZ = (sizeX + 1) * (sizeY + 1);
-        long Sum(int x, int y, int z) => sums[x + strideY * y + (long)strideZ * z];
-        return Sum(x1 + 1, y1 + 1, z1 + 1)
-            - Sum(x0, y1 + 1, z1 + 1)
-            - Sum(x1 + 1, y0, z1 + 1)
-            - Sum(x1 + 1, y1 + 1, z0)
-            + Sum(x0, y0, z1 + 1)
-            + Sum(x0, y1 + 1, z0)
-            + Sum(x1 + 1, y0, z0)
-            - Sum(x0, y0, z0);
     }
 }

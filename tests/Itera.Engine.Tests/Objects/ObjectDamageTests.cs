@@ -434,20 +434,23 @@ public sealed class ObjectDamageTests : IDisposable
     }
 
     /// <summary>
-    /// A cut through the trunk of a world that copies its objects from level 2 up: with the top's removal, the host clears
-    /// the far voxels (40 and 80 cm) only the top filled, and keeps those the stump still reaches; so they stay once the
-    /// columns load again, and a client following the host gets the same.
+    /// A cut through the trunk 1 to 1.2 m up, in a world that copies its objects from level 2 up: with the top's removal,
+    /// the host clears the far voxels (40 and 80 cm) only the top filled (bark round the trunk's axis 1.8 m up, where the
+    /// trunk ran on above and below, then none), and keeps those the stump still fills (bark round it 60 cm up at 40 cm;
+    /// at 80 cm the stump is a foot and a cap, which the thin parts' rule keeps nothing of); so they stay once the columns
+    /// load again, and a client following the host gets the same.
     /// </summary>
     [Fact]
     public void A_cut_on_the_host_clears_the_far_copies_only_its_piece_filled()
     {
         var host = Make(copies: true);
-        var top = new VoxelCoord(150, 290, 0);
+        var top = new VoxelCoord(150, 180, 0);
         var stump = new VoxelCoord(150, 60, 0);
-        Assert.All(s_copiedLevels, level => Assert.Equal(Bark, Material(host.World, top, level)));
+        Assert.All(s_copiedLevels, level => Assert.True(BarkRound(host.World, top, level)));
+        Assert.True(BarkRound(host.World, stump, 2));
 
         host.World.Apply(
-            VoxelEdit.Box(new VoxelCoord(110, 200, -40), new VoxelCoord(80, 20, 80), VoxelEditOperation.Clear)
+            VoxelEdit.Box(new VoxelCoord(110, 100, -40), new VoxelCoord(80, 20, 80), VoxelEditOperation.Clear)
         );
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (host.World.EditCount == 1)
@@ -482,14 +485,28 @@ public sealed class ObjectDamageTests : IDisposable
 
         void AssertFar(VoxelWorld world)
         {
-            Assert.All(s_copiedLevels, level => Assert.Equal(VoxelConstants.Air, Material(world, top, level)));
-            Assert.All(s_copiedLevels, level => Assert.Equal(Bark, Material(world, stump, level)));
+            Assert.All(s_copiedLevels, level => Assert.False(BarkRound(world, top, level)));
+            Assert.True(BarkRound(world, stump, 2));
         }
 
-        static byte Material(VoxelWorld world, VoxelCoord point, int level)
+        // True when a world voxel of the level whose cube lies within a voxel of the point, across, is bark.
+        static bool BarkRound(VoxelWorld world, VoxelCoord point, int level)
         {
-            Assert.True(world.TryGetMaterial(point, level, out var material));
-            return material;
+            var edge = world.Grid.Edge(level);
+            for (var dz = -edge; dz <= edge; dz += edge)
+            {
+                for (var dx = -edge; dx <= edge; dx += edge)
+                {
+                    var at = new VoxelCoord(point.X + dx, point.Y, point.Z + dz);
+                    Assert.True(world.TryGetMaterial(at, level, out var material));
+                    if (material == Bark)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
     }
 

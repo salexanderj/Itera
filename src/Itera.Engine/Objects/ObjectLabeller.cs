@@ -139,10 +139,8 @@ internal sealed class ObjectLabeller : IDisposable
     // A plain object: the thread waits on it (Monitor.Wait), which System.Threading.Lock does not offer.
     private readonly object _lock = new();
     private readonly Stack<int> _flood = new();
-    private readonly List<int> _kept = [];
     private ulong[] _seen = [];
     private ulong[] _falling = [];
-    private long[] _sums = [];
     private Thread? _thread;
     private bool _stopping;
     private bool _disposed;
@@ -314,10 +312,12 @@ internal sealed class ObjectLabeller : IDisposable
     }
 
     /// <summary>
-    /// The clears of the far copies only the falling pieces fill: at each level the kind is copied at, each world voxel
-    /// in reach of the pieces whose copy holds the object's material, that no voxel the object keeps lies within the copy
-    /// rule's reach of (<see cref="ObjectCopyGrid"/>: the blocks round its sample point's), and no other object's copy
-    /// fills, is cleared, in boxes of runs along x and z of one layer.
+    /// The clears of the far copies only the falling pieces fill: at each level the kind is copied at, the object's shares
+    /// of the world voxels as its copy was written (<see cref="ObjectCopies.Shares"/> and <see cref="ObjectCopies.KeepThin"/>
+    /// from the kind's grid, which the column jobs read) and as it would be written without the pieces (from a grid of the
+    /// snapshot's voxels less theirs, <see cref="ObjectShareBuilder"/>, by the kind's rule); each world voxel within a voxel
+    /// of the pieces' box solid as written, not without them, and solid in no neighbour's copy, is cleared, in boxes of runs
+    /// along x of one row. (A voxel an earlier cut cleared may be cleared again.)
     /// </summary>
     private void ClearCopies(LabelSnapshot snapshot)
     {
@@ -326,8 +326,6 @@ internal sealed class ObjectLabeller : IDisposable
         var count = size.X * size.Y * size.Z;
         var copies = snapshot.Copies!;
         var placement = snapshot.Placement;
-        var unit = kind.UnitCentimetres;
-        var offset = kind.AnchorCentimetres;
 
         // The voxels that fall, by the pieces' floods from their seeds again.
         if (_falling.Length * 64L < count)
@@ -351,29 +349,6 @@ internal sealed class ObjectLabeller : IDisposable
 
         (_seen, _falling) = (_falling, _seen);
 
-        // The voxels it keeps.
-        _kept.Clear();
-        for (var z = 0; z < size.Z; z++)
-        {
-            for (var y = 0; y < size.Y; y++)
-            {
-                for (var x = 0; x < size.X; x++)
-                {
-                    var at = x + size.X * (y + size.Y * z);
-                    if ((_falling[at >> 6] & (1UL << (at & 63))) != 0)
-                    {
-                        continue;
-                    }
-
-                    snapshot.Voxel(x, y, z, out var material, out _);
-                    if (material != VoxelConstants.Air)
-                    {
-                        _kept.Add(at);
-                    }
-                }
-            }
-        }
-
         // The materials a clear names: the kind's, those a set holds.
         Span<byte> materials = stackalloc byte[VoxelEdit.MaterialSetSize];
         var materialCount = 0;
@@ -385,12 +360,45 @@ internal sealed class ObjectLabeller : IDisposable
             }
         }
 
-        if (materialCount == 0)
+        // The levels the kind is copied at.
+        var first = -1;
+        var levels = 0;
+        for (var level = copies.FirstLevel; level <= copies.LastLevel; level++)
+        {
+            if (copies.GridFor(placement.Kind, level) is not null)
+            {
+                first = first < 0 ? level : first;
+                levels++;
+            }
+        }
+
+        if (materialCount == 0 || levels == 0)
         {
             return;
         }
 
-        // The pieces' box, in the kind's centimetres from its anchor.
+        // The object's share grids without the pieces, from its voxels as they stand; as written, the kind's.
+        var grid = copies.Grid;
+        var without = new ObjectShareBuilder(size, kind.UnitCentimetres, grid.Edge(first), kind.Materials);
+        for (var z = 0; z < size.Z; z++)
+        {
+            for (var y = 0; y < size.Y; y++)
+            {
+                for (var x = 0; x < size.X; x++)
+                {
+                    var at = x + size.X * (y + size.Y * z);
+                    if ((_falling[at >> 6] & (1UL << (at & 63))) == 0)
+                    {
+                        snapshot.Voxel(x, y, z, out var material, out var density);
+                        without.Add(x, y, z, material, density);
+                    }
+                }
+            }
+        }
+
+        var withoutGrids = without.Finish(levels, kind.AnchorCentimetres);
+
+        // The pieces' box, in the kind's voxels.
         int x0 = int.MaxValue,
             y0 = int.MaxValue,
             z0 = int.MaxValue,
@@ -403,19 +411,13 @@ internal sealed class ObjectLabeller : IDisposable
             (x1, y1, z1) = (Math.Max(x1, piece.Max.X), Math.Max(y1, piece.Max.Y), Math.Max(z1, piece.Max.Z));
         }
 
-        var grid = copies.Grid;
-        for (var level = copies.FirstLevel; level <= copies.LastLevel; level++)
+        for (var i = 0; i < levels; i++)
         {
-            if (copies.GridFor(placement.Kind, level) is not { } copy)
-            {
-                continue;
-            }
-
             ClearLevel(
                 snapshot,
-                copy,
-                grid,
-                level,
+                copies.GridFor(placement.Kind, first + i)!,
+                withoutGrids[i],
+                first + i,
                 new VoxelCoord(x0, y0, z0),
                 new VoxelCoord(x1, y1, z1),
                 materials[..materialCount]
@@ -423,11 +425,15 @@ internal sealed class ObjectLabeller : IDisposable
         }
     }
 
-    /// <summary>The clears of one level's copies, from the pieces' box in the kind's voxels.</summary>
-    private void ClearLevel(
+    /// <summary>
+    /// The clears of one level's copies: the world voxels within a voxel of the pieces' box (in the kind's voxels) the
+    /// object's copy holds as written (<paramref name="with"/>, the kind's grid) and not without them
+    /// (<paramref name="without"/>), and no neighbour's copy holds.
+    /// </summary>
+    private static void ClearLevel(
         LabelSnapshot snapshot,
-        ObjectCopyGrid copy,
-        VoxelGrid grid,
+        ObjectShareGrid with,
+        ObjectShareGrid without,
         int level,
         VoxelCoord low,
         VoxelCoord high,
@@ -435,59 +441,27 @@ internal sealed class ObjectLabeller : IDisposable
     )
     {
         var kind = snapshot.Kind;
-        var size = kind.Size;
         var unit = kind.UnitCentimetres;
         var offset = kind.AnchorCentimetres;
         var placement = snapshot.Placement;
         var anchor = placement.Anchor;
-        var edge = grid.Edge(level);
-        var block = copy.BlockCentimetres;
-        var per = block / unit;
-        int blocksX = (size.X + per - 1) / per,
-            blocksY = (size.Y + per - 1) / per,
-            blocksZ = (size.Z + per - 1) / per;
+        var copies = snapshot.Copies!;
+        var edge = copies.Grid.Edge(level);
 
-        // The voxels it keeps in each block, summed over every box from block (0, 0, 0).
-        var cells = (blocksX + 1) * (blocksY + 1) * (blocksZ + 1);
-        if (_sums.Length < cells)
-        {
-            _sums = new long[cells];
-        }
-        else
-        {
-            Array.Clear(_sums, 0, cells);
-        }
+        // The object's shares over its whole range, as its copy is written (so the thin parts' rule agrees).
+        var (rx, ry, rz, sx, sy, sz) = ObjectCopies.RangeOf(with, in placement, edge);
+        var count = sx * sy * sz;
+        var before = new byte[count];
+        var after = new byte[count];
+        var beforeMaterials = new byte[count];
+        var afterMaterials = new byte[count];
+        var marks = new byte[count];
+        ObjectCopies.Shares(with, offset, in placement, edge, rx, ry, rz, sx, sy, sz, before, beforeMaterials);
+        ObjectCopies.KeepThin(before, beforeMaterials, sx, sy, sz, marks);
+        ObjectCopies.Shares(without, offset, in placement, edge, rx, ry, rz, sx, sy, sz, after, afterMaterials);
+        ObjectCopies.KeepThin(after, afterMaterials, sx, sy, sz, marks);
 
-        int sx = blocksX + 1,
-            sy = blocksY + 1;
-        foreach (var at in _kept)
-        {
-            int x = at % size.X,
-                y = at / size.X % size.Y,
-                z = at / (size.X * size.Y);
-            _sums[x / per + 1 + sx * (y / per + 1 + sy * (z / per + 1))]++;
-        }
-
-        for (var z = 1; z <= blocksZ; z++)
-        {
-            for (var y = 1; y <= blocksY; y++)
-            {
-                for (var x = 1; x <= blocksX; x++)
-                {
-                    var i = x + sx * (y + sy * z);
-                    _sums[i] +=
-                        _sums[i - 1]
-                        + _sums[i - sx]
-                        + _sums[i - sx * sy]
-                        - _sums[i - 1 - sx]
-                        - _sums[i - 1 - sx * sy]
-                        - _sums[i - sx - sx * sy]
-                        + _sums[i - 1 - sx - sx * sy];
-                }
-            }
-        }
-
-        // The world voxels in reach of the pieces: their box turned into the world, and the copy's reach round it.
+        // The world voxels in reach of the pieces: their box turned into the world, and a voxel round it.
         long wx0 = long.MaxValue,
             wx1 = long.MinValue,
             wz0 = long.MaxValue,
@@ -501,43 +475,82 @@ internal sealed class ObjectLabeller : IDisposable
             (wz0, wz1) = (Math.Min(wz0, wz), Math.Max(wz1, wz));
         }
 
-        var across = ObjectCopyGrid.HalfAcross(edge) + block;
-        var up = (edge + 1) / 2 + block;
-        var ix0 = (int)Maths.DeterministicMath.FloorDivide(anchor.X + wx0 - across, edge);
-        var ix1 = (int)Maths.DeterministicMath.FloorDivide(anchor.X + wx1 + across, edge);
-        var iz0 = (int)Maths.DeterministicMath.FloorDivide(anchor.Z + wz0 - across, edge);
-        var iz1 = (int)Maths.DeterministicMath.FloorDivide(anchor.Z + wz1 + across, edge);
-        var iy0 = (int)Maths.DeterministicMath.FloorDivide((long)anchor.Y + low.Y * unit - offset.Y - up, edge);
-        var iy1 = (int)Maths.DeterministicMath.FloorDivide((long)anchor.Y + (high.Y + 1) * unit - offset.Y + up, edge);
-        var level0 = new GridLevel(grid, level);
-        int mA = copy.MarginAcross,
-            mU = copy.MarginUp;
+        var ix0 = Math.Max(rx, (int)Maths.DeterministicMath.FloorDivide(anchor.X + wx0, edge) - 1);
+        var ix1 = Math.Min(rx + sx - 1, (int)Maths.DeterministicMath.FloorDivide(anchor.X + wx1, edge) + 1);
+        var iz0 = Math.Max(rz, (int)Maths.DeterministicMath.FloorDivide(anchor.Z + wz0, edge) - 1);
+        var iz1 = Math.Min(rz + sz - 1, (int)Maths.DeterministicMath.FloorDivide(anchor.Z + wz1, edge) + 1);
+        var iy0 = Math.Max(
+            ry,
+            (int)Maths.DeterministicMath.FloorDivide((long)anchor.Y + low.Y * unit - offset.Y, edge) - 1
+        );
+        var iy1 = Math.Min(
+            ry + sy - 1,
+            (int)Maths.DeterministicMath.FloorDivide((long)anchor.Y + (high.Y + 1) * unit - offset.Y, edge) + 1
+        );
+        // The neighbours' copies at this level, each over its part of the examined box and a voxel round it (all the thin
+        // parts' rule reads), where its range meets the box.
+        var neighbours =
+            new List<(int X, int Y, int Z, int SizeX, int SizeY, int SizeZ, byte[] Shares, byte[] Materials)>();
+        var kinds = snapshot.Kinds!;
+        foreach (var other in snapshot.Neighbours)
+        {
+            if (other.Id == placement.Id || copies.GridFor(other.Kind, level) is not { } theirs)
+            {
+                continue;
+            }
+
+            var range = ObjectCopies.RangeOf(theirs, in other, edge);
+            int nx0 = Math.Max(range.X, ix0 - 1),
+                ny0 = Math.Max(range.Y, iy0 - 1),
+                nz0 = Math.Max(range.Z, iz0 - 1),
+                nsx = Math.Min(range.X + range.SizeX, ix1 + 2) - nx0,
+                nsy = Math.Min(range.Y + range.SizeY, iy1 + 2) - ny0,
+                nsz = Math.Min(range.Z + range.SizeZ, iz1 + 2) - nz0;
+            if (nsx <= 0 || nsy <= 0 || nsz <= 0)
+            {
+                continue;
+            }
+
+            var cells = nsx * nsy * nsz;
+            var shares = new byte[cells];
+            var theirMaterials = new byte[cells];
+            var theirMarks = new byte[cells];
+            ObjectCopies.Shares(
+                theirs,
+                kinds[other.Kind].AnchorCentimetres,
+                in other,
+                edge,
+                nx0,
+                ny0,
+                nz0,
+                nsx,
+                nsy,
+                nsz,
+                shares,
+                theirMaterials
+            );
+            ObjectCopies.KeepThin(shares, theirMaterials, nsx, nsy, nsz, theirMarks);
+            neighbours.Add((nx0, ny0, nz0, nsx, nsy, nsz, shares, theirMaterials));
+        }
+
         for (var y = iy0; y <= iy1; y++)
         {
-            var py = level0.SampleAt(y);
             for (var z = iz0; z <= iz1; z++)
             {
-                var pz = level0.SampleAt(z);
                 var runStart = int.MinValue;
                 for (var x = ix0; x <= ix1 + 1; x++)
                 {
-                    var cleared =
-                        x <= ix1
-                        && Cleared(
-                            snapshot,
-                            copy,
-                            level,
-                            level0.SampleAt(x),
-                            py,
-                            pz,
-                            sx,
-                            sy,
-                            blocksX,
-                            blocksY,
-                            blocksZ,
-                            mA,
-                            mU
-                        );
+                    var cleared = false;
+                    if (x <= ix1)
+                    {
+                        var at = x - rx + sx * (y - ry + sy * (z - rz));
+                        cleared =
+                            before[at] >= VoxelDensity.Solid
+                            && beforeMaterials[at] != VoxelConstants.Air
+                            && after[at] < VoxelDensity.Solid
+                            && !HeldByNeighbour(neighbours, x, y, z);
+                    }
+
                     if (cleared && runStart == int.MinValue)
                     {
                         runStart = x;
@@ -559,92 +572,32 @@ internal sealed class ObjectLabeller : IDisposable
         }
     }
 
-    /// <summary>
-    /// True when the world voxel sampled at (px, py, pz), absolute centimetres, holds the object's copy, the object keeps no
-    /// voxel within the copy rule's reach of it, and no other object's copy fills it.
-    /// </summary>
-    private bool Cleared(
-        LabelSnapshot snapshot,
-        ObjectCopyGrid copy,
-        int level,
-        int px,
-        int py,
-        int pz,
-        int sx,
-        int sy,
-        int blocksX,
-        int blocksY,
-        int blocksZ,
-        int mA,
-        int mU
+    /// <summary>True when a neighbour's copy holds world voxel (x, y, z) solid (from half, of a material, as it is written).</summary>
+    private static bool HeldByNeighbour(
+        List<(int X, int Y, int Z, int SizeX, int SizeY, int SizeZ, byte[] Shares, byte[] Materials)> neighbours,
+        int x,
+        int y,
+        int z
     )
     {
-        var kind = snapshot.Kind;
-        var offset = kind.AnchorCentimetres;
-        var placement = snapshot.Placement;
-        var anchor = placement.Anchor;
-        var (ox, oz) = ObjectTurns.ToObject(placement.Heading, px - (long)anchor.X, pz - (long)anchor.Z);
-        long kx = ox + offset.X,
-            ky = py - (long)anchor.Y + offset.Y,
-            kz = oz + offset.Z;
-        if (copy.At(kx, ky, kz) == VoxelConstants.Air)
+        foreach (var (nx, ny, nz, sx, sy, sz, shares, materials) in neighbours)
         {
-            return false;
-        }
-
-        // The voxels it keeps in the blocks round the sample point's.
-        var block = copy.BlockCentimetres;
-        var bx = Maths.DeterministicMath.FloorDivide(kx, block);
-        var by = Maths.DeterministicMath.FloorDivide(ky, block);
-        var bz = Maths.DeterministicMath.FloorDivide(kz, block);
-        var x0 = (int)Math.Clamp(bx - mA, 0, blocksX);
-        var x1 = (int)Math.Clamp(bx + mA + 1, 0, blocksX);
-        var y0 = (int)Math.Clamp(by - mU, 0, blocksY);
-        var y1 = (int)Math.Clamp(by + mU + 1, 0, blocksY);
-        var z0 = (int)Math.Clamp(bz - mA, 0, blocksZ);
-        var z1 = (int)Math.Clamp(bz + mA + 1, 0, blocksZ);
-        if (x0 < x1 && y0 < y1 && z0 < z1)
-        {
-            var kept =
-                _sums[x1 + sx * (y1 + sy * z1)]
-                - _sums[x0 + sx * (y1 + sy * z1)]
-                - _sums[x1 + sx * (y0 + sy * z1)]
-                - _sums[x1 + sx * (y1 + sy * z0)]
-                + _sums[x0 + sx * (y0 + sy * z1)]
-                + _sums[x0 + sx * (y1 + sy * z0)]
-                + _sums[x1 + sx * (y0 + sy * z0)]
-                - _sums[x0 + sx * (y0 + sy * z0)];
-            if (kept > 0)
-            {
-                return false;
-            }
-        }
-
-        // Another object's copy there keeps it.
-        var copies = snapshot.Copies!;
-        var kinds = snapshot.Kinds!;
-        foreach (var other in snapshot.Neighbours)
-        {
-            if (other.Id == placement.Id || copies.GridFor(other.Kind, level) is not { } theirs)
-            {
-                continue;
-            }
-
-            var otherKind = kinds[other.Kind];
-            var (tx, tz) = ObjectTurns.ToObject(other.Heading, px - (long)other.Anchor.X, pz - (long)other.Anchor.Z);
+            int lx = x - nx,
+                ly = y - ny,
+                lz = z - nz;
             if (
-                theirs.At(
-                    tx + otherKind.AnchorCentimetres.X,
-                    py - (long)other.Anchor.Y + otherKind.AnchorCentimetres.Y,
-                    tz + otherKind.AnchorCentimetres.Z
-                ) != VoxelConstants.Air
+                (uint)lx < (uint)sx
+                && (uint)ly < (uint)sy
+                && (uint)lz < (uint)sz
+                && shares[lx + sx * (ly + sy * lz)] >= VoxelDensity.Solid
+                && materials[lx + sx * (ly + sy * lz)] != VoxelConstants.Air
             )
             {
-                return false;
+                return true;
             }
         }
 
-        return true;
+        return false;
     }
 
     /// <summary>One piece from voxel index <paramref name="start"/>: its voxels, whether it holds a root voxel, and its bounds.</summary>

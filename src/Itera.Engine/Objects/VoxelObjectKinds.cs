@@ -359,18 +359,51 @@ public sealed class VoxelObjectKind : IObjectVoxelSource
         );
     }
 
-    private readonly Dictionary<int, ObjectCopyGrid> _copies = [];
+    private readonly Dictionary<(int Edge, int Count), ObjectShareGrid[]> _shares = [];
 
-    /// <summary>Its copy for world voxels <paramref name="edge"/> centimetres across, made at the first ask. Main thread.</summary>
-    internal ObjectCopyGrid CopyFor(int edge)
+    /// <summary>
+    /// Its share grids for world voxels <paramref name="edge"/> centimetres across and each twice as wide, <paramref name="count"/>
+    /// of them (<see cref="ObjectShareGrid"/>), from its parts' own voxels, made at the first ask. Main thread.
+    /// </summary>
+    internal ObjectShareGrid[] SharesFrom(int edge, int count)
     {
-        if (!_copies.TryGetValue(edge, out var copy))
+        if (!_shares.TryGetValue((edge, count), out var grids))
         {
-            copy = ObjectCopyGrid.Build(this, edge);
-            _copies.Add(edge, copy);
+            var builder = new ObjectShareBuilder(Size, UnitCentimetres, edge, Materials);
+            var voxels = new byte[VoxelConstants.ChunkVoxels];
+            var densities = new byte[VoxelConstants.ChunkVoxels];
+            const int border = ObjectPart.BorderVoxels;
+            foreach (var part in Parts)
+            {
+                // The voxels each part owns, past its border.
+                part.Decode(0, voxels, densities);
+                for (var z = 0; z < part.OwnSize.Z; z++)
+                {
+                    for (var y = 0; y < part.OwnSize.Y; y++)
+                    {
+                        for (var x = 0; x < part.OwnSize.X; x++)
+                        {
+                            var index =
+                                border
+                                + x
+                                + VoxelConstants.ChunkSize * (border + y + VoxelConstants.ChunkSize * (border + z));
+                            builder.Add(
+                                part.Offset.X + x,
+                                part.Offset.Y + y,
+                                part.Offset.Z + z,
+                                voxels[index],
+                                densities[index]
+                            );
+                        }
+                    }
+                }
+            }
+
+            grids = builder.Finish(count, AnchorCentimetres);
+            _shares.Add((edge, count), grids);
         }
 
-        return copy;
+        return grids;
     }
 
     internal static VoxelObjectKind Build(

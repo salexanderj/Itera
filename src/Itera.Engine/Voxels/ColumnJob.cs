@@ -263,7 +263,7 @@ internal sealed class ColumnJob
                 && !edited
             )
             {
-                // A layer of air the copies reach in height but write nothing into stays air.
+                // A layer of air the copies reach in height but change nothing in stays air.
                 layers[layer] = ChildState.Uniform(VoxelConstants.Air);
                 continue;
             }
