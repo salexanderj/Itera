@@ -15,7 +15,8 @@ Sessions (`Engine:Session`, `SessionService`): `Mode=Host` listens on UDP port 4
 `Address=host:port` joins it. A match is a DI scope of its own (`MatchServices`), started after the run's steps, so
 the window is open; the loading screen's ring shows `Joining ...` and the download (`SessionService.PollJoin`). The
 client says hello; the host answers with the match (seed, step rate, and identity: `IMatchIdentity`, the generator's id
-and version with voxel terrain, else the application's name) and its edit log with the pieces, sent
+and version with voxel terrain, with the object kinds' fingerprint where the world places objects, else the
+application's name) and its edit log with the pieces, sent
 from its polls as the transport has room (`ISessionTransport.ReliableRoom`), and the client's world is built from the
 host's seed whatever its own options say; a game may send match data of its own in the welcome and refuse a client
 whose rules differ (`ISessionMatchData`: its hash). A game without voxel terrain sends a payload of the edit log's

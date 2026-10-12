@@ -139,10 +139,18 @@ internal sealed class ColumnJob
 
     /// <summary>
     /// Generates the column: describes it, fills each mixed or edited layer's materials into <paramref name="scratch"/>
-    /// and densities into <paramref name="densities"/>, replays the edits, and encodes it. Worker thread. Never passes
-    /// the memory budget; on failure it frees what it made.
+    /// and densities into <paramref name="densities"/>, writes the copies of the objects that reach into it at its level
+    /// (<paramref name="copies"/>, null for none, found into the worker's <paramref name="placements"/>), replays the
+    /// edits, and encodes it. Worker thread. Never passes the memory budget; on failure it frees what it made.
     /// </summary>
-    public void Run(IChunkGenerator generator, VoxelMemory memory, Span<byte> scratch, Span<byte> densities)
+    public void Run(
+        IChunkGenerator generator,
+        VoxelMemory memory,
+        Span<byte> scratch,
+        Span<byte> densities,
+        Objects.ObjectCopies? copies = null,
+        List<Objects.ObjectPlacement>? placements = null
+    )
     {
         var start = Stopwatch.GetTimestamp();
         if (IsFree)
@@ -152,7 +160,7 @@ internal sealed class ColumnJob
         }
         else
         {
-            Result = Generate(generator, memory, scratch, densities);
+            Result = Generate(generator, memory, scratch, densities, copies, placements);
         }
 
         ElapsedTicks = Stopwatch.GetTimestamp() - start;
@@ -172,7 +180,9 @@ internal sealed class ColumnJob
         IChunkGenerator generator,
         VoxelMemory memory,
         Span<byte> scratch,
-        Span<byte> densities
+        Span<byte> densities,
+        Objects.ObjectCopies? copies,
+        List<Objects.ObjectPlacement>? placements
     )
     {
         if (_cancelled)
@@ -180,10 +190,23 @@ internal sealed class ColumnJob
             return ColumnJobResult.Cancelled;
         }
 
-        // The generator's range, widened to the layers the edits reach.
+        // The objects whose copies reach into the column at its level.
         var grid = generator.Grid;
+        ReadOnlySpan<Objects.ObjectPlacement> objects = default;
+        if (copies is not null && placements is not null && copies.CopiesAt(Key.Level))
+        {
+            copies.Find(Key, Seed, placements);
+            objects = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(placements);
+        }
+
+        // The generator's range, widened to the layers the edits and the objects' copies reach.
         generator.DescribeRange(Key, Seed, out var first, out var last, out var below, out var above);
         (first, last) = WithEdits(grid, Math.Max(first, 0), Math.Min(last, _columnLayers - 1));
+        if (!objects.IsEmpty)
+        {
+            (first, last) = WithObjects(grid, copies!, objects, first, last);
+        }
+
         Below = State(below);
         Above = State(above);
         First = Math.Min(first, _columnLayers);
@@ -207,7 +230,12 @@ internal sealed class ColumnJob
             var chunk = Key.Chunk(First + layer, grid);
             var fill = fills[layer];
             var edited = HasEdits(chunk, generator.Grid);
-            if (fill.Kind != ChunkFillKind.Mixed && !edited)
+            // Copies go into air only: a layer of one solid material keeps it.
+            var copied =
+                !objects.IsEmpty
+                && !(fill.Kind == ChunkFillKind.Uniform && fill.Material != VoxelConstants.Air)
+                && copies!.Touches(chunk, objects);
+            if (fill.Kind != ChunkFillKind.Mixed && !edited && !copied)
             {
                 layers[layer] = ChildState.Uniform(
                     fill.Kind == ChunkFillKind.Uniform ? fill.Material : VoxelConstants.Air
@@ -226,6 +254,18 @@ internal sealed class ColumnJob
             {
                 scratch[..VoxelConstants.ChunkVoxels].Fill(fill.Material);
                 densities[..VoxelConstants.ChunkVoxels].Fill(VoxelDensity.Default(fill.Material));
+            }
+
+            if (
+                copied
+                && copies!.Stamp(chunk, objects, scratch, densities) == 0
+                && fill.Kind != ChunkFillKind.Mixed
+                && !edited
+            )
+            {
+                // A layer of air the copies reach in height but write nothing into stays air.
+                layers[layer] = ChildState.Uniform(VoxelConstants.Air);
+                continue;
             }
 
             if (edited)
@@ -280,6 +320,37 @@ internal sealed class ColumnJob
         }
 
         return (first, last);
+    }
+
+    /// <summary>The layers from <paramref name="first"/> to <paramref name="last"/> widened to every layer the objects' copies reach.</summary>
+    private (int First, int Last) WithObjects(
+        VoxelGrid grid,
+        Objects.ObjectCopies copies,
+        ReadOnlySpan<Objects.ObjectPlacement> objects,
+        int first,
+        int last
+    )
+    {
+        var (low, high) = copies.Heights(Key.Level, objects);
+        if (low > high)
+        {
+            return (first, last);
+        }
+
+        var height = grid.ColumnCentimetres(Key.Level);
+        var floor = grid.MinChunkYAt(Key.Level);
+        var lowLayer = Maths.DeterministicMath.FloorDivide(low, height) - floor;
+        var highLayer = Maths.DeterministicMath.FloorDivide(high, height) - floor;
+        if (highLayer < 0 || lowLayer > _columnLayers - 1)
+        {
+            return (first, last);
+        }
+
+        // As the edits' (WithEdits): an empty range keeps its boundary, so the layers between it and the copies are
+        // described too.
+        var bottom = (int)Math.Max(lowLayer, 0);
+        var top = (int)Math.Min(highLayer, _columnLayers - 1);
+        return (Math.Min(first, bottom), Math.Max(last, top));
     }
 
     /// <summary>The chunk state of a whole layer of <paramref name="fill"/>: air or one material.</summary>

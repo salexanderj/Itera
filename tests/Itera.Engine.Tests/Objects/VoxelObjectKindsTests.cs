@@ -171,6 +171,28 @@ public sealed class VoxelObjectKindsTests
         Assert.Equal(0UL, new VoxelObjectKinds().Fingerprint);
     }
 
+    /// <summary>
+    /// A kind is copied far away up to half its box's widest side unless it says how far; a negative reach is refused;
+    /// and the fingerprint stands for how far a kind is copied too.
+    /// </summary>
+    [Fact]
+    public void A_kinds_copies_reach_half_its_widest_side_unless_it_says_and_count_in_the_fingerprint()
+    {
+        var kinds = new VoxelObjectKinds();
+        var rock = kinds.Register("rock", Ball(5, 10));
+        var far = kinds.Register("far rock", Ball(5, 10), copiesUpToCentimetres: 200);
+
+        Assert.Equal(25, kinds[rock].CopiesUpToCentimetres);
+        Assert.Equal(200, kinds[far].CopiesUpToCentimetres);
+        Assert.Throws<ArgumentOutOfRangeException>(() => kinds.Register("bad", Ball(5, 10), -1));
+
+        var near = new VoxelObjectKinds();
+        near.Register("rock", Ball(5, 10));
+        var farther = new VoxelObjectKinds();
+        farther.Register("rock", Ball(5, 10), copiesUpToCentimetres: 300);
+        Assert.NotEqual(near.Fingerprint, farther.Fingerprint);
+    }
+
     /// <summary>A ball of leaves <paramref name="voxels"/> voxels across in voxels of <paramref name="unit"/>, standing on its bottom.</summary>
     private static VoxelObjectShape Ball(int unit, int voxels)
     {

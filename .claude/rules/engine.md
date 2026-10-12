@@ -8,7 +8,7 @@ paths:
 
 - `src/Itera.Engine`: everything not game specific. Composition in `EngineServiceCollectionExtensions.AddIteraEngine`,
   and the voxel terrain's in `VoxelServiceCollectionExtensions.AddIteraVoxels`; the match's identity a joining game must
-  share in `Matches/MatchIdentity.cs` (`IMatchIdentity`: the generator's with terrain, else the application's name);
+  share in `Matches/MatchIdentity.cs` (`IMatchIdentity`: the generator's with terrain, and its object kinds', else the application's name);
   options checks in `EngineOptionsValidator`; the run's initialisation order (one step list), main loop, and shutdown
   in `GameLoop`; a match's start, join, and end in `Matches/MatchFlow.cs` (no window: `MatchFlowTests` drives it); a
   match without a window or GPU for tests and tools in `Matches/HeadlessMatch.cs` (`HeadlessRun`, `HeadlessMatch`, over

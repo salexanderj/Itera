@@ -19,6 +19,7 @@ internal sealed class VoxelWorkers : IDisposable
     private readonly Queue<ColumnJob> _finished = new();
     private readonly object _queuedLock = new();
     private readonly object _finishedLock = new();
+    private readonly Objects.ObjectCopies? _copies;
     private volatile bool _stopping;
     private volatile ExceptionDispatchInfo? _fault;
     private int _running;
@@ -26,11 +27,18 @@ internal sealed class VoxelWorkers : IDisposable
     /// <param name="generator">The world's generator; called from every worker at once.</param>
     /// <param name="memory">Where chunks are stored.</param>
     /// <param name="threadCount">Worker threads, at least one.</param>
-    public VoxelWorkers(IChunkGenerator generator, VoxelMemory memory, int threadCount)
+    /// <param name="copies">The world's objects' copies, which the jobs write; null for none.</param>
+    public VoxelWorkers(
+        IChunkGenerator generator,
+        VoxelMemory memory,
+        int threadCount,
+        Objects.ObjectCopies? copies = null
+    )
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(threadCount);
         _generator = generator;
         _memory = memory;
+        _copies = copies;
         _threads = new Thread[threadCount];
     }
 
@@ -151,6 +159,7 @@ internal sealed class VoxelWorkers : IDisposable
         {
             var scratch = new byte[VoxelConstants.ChunkVoxels];
             var densities = new byte[VoxelConstants.ChunkVoxels];
+            var placements = _copies is null ? null : new List<Objects.ObjectPlacement>(256);
             while (true)
             {
                 lock (_queuedLock)
@@ -168,7 +177,7 @@ internal sealed class VoxelWorkers : IDisposable
                     job = _frees.Count > 0 ? _frees.Dequeue() : _queued.Dequeue();
                 }
 
-                job.Run(_generator, _memory, scratch, densities);
+                job.Run(_generator, _memory, scratch, densities, _copies, placements);
                 lock (_finishedLock)
                 {
                     _finished.Enqueue(job);

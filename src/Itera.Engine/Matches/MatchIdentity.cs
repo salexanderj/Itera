@@ -1,3 +1,5 @@
+using System.Globalization;
+using Itera.Engine.Objects;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Options;
 
@@ -19,10 +21,17 @@ public interface IMatchIdentity
     int Version { get; }
 }
 
-/// <summary>A voxel world's match identity: its generator's id and version.</summary>
-public sealed class GeneratorMatchIdentity(IChunkGenerator generator) : IMatchIdentity
+/// <summary>
+/// A voxel world's match identity: its generator's id and version, and when it places objects, the fingerprint of the
+/// run's object kinds (<see cref="VoxelObjectKinds.Fingerprint"/>) after its id: games whose kinds differ build other
+/// objects from the same seed.
+/// </summary>
+public sealed class GeneratorMatchIdentity(IChunkGenerator generator, VoxelObjectKinds? kinds = null) : IMatchIdentity
 {
-    public string Id => generator.Id;
+    public string Id =>
+        generator.Objects is not null && kinds is { Count: > 0 }
+            ? string.Create(CultureInfo.InvariantCulture, $"{generator.Id}+objects-{kinds.Fingerprint:x16}")
+            : generator.Id;
 
     public int Version => generator.Version;
 }

@@ -36,14 +36,18 @@ public sealed class VoxelObjectKinds
     public VoxelObjectKind this[VoxelObjectKindId id] => _kinds[id.Value];
 
     /// <summary>
-    /// Registers the kind <paramref name="name"/> of <paramref name="shape"/>'s voxels and returns its number. The shape
-    /// is read now and not kept. Throws for a name registered already, a full registry, a shape with no solid voxel, or
-    /// once sealed.
+    /// Registers the kind <paramref name="name"/> of <paramref name="shape"/>'s voxels and returns its number. Far away it
+    /// is drawn as a coarse copy in the world's voxels, at the levels whose voxels are no wider than
+    /// <paramref name="copiesUpToCentimetres"/> (0: half the widest of its box's sides, so a tree 6 m wide and 9 m tall is
+    /// copied in voxels up to 4.5 m; a smaller thing past them is not drawn at all). The shape is read now and not kept.
+    /// Throws for a name registered already, a full registry, a shape with no solid voxel, a negative reach, or once
+    /// sealed.
     /// </summary>
-    public VoxelObjectKindId Register(string name, VoxelObjectShape shape)
+    public VoxelObjectKindId Register(string name, VoxelObjectShape shape, int copiesUpToCentimetres = 0)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(shape);
+        ArgumentOutOfRangeException.ThrowIfNegative(copiesUpToCentimetres);
         if (IsSealed)
         {
             throw new InvalidOperationException(
@@ -62,7 +66,7 @@ public sealed class VoxelObjectKinds
         }
 
         var id = new VoxelObjectKindId((ushort)_kinds.Count);
-        var kind = VoxelObjectKind.Build(id, name, shape);
+        var kind = VoxelObjectKind.Build(id, name, shape, copiesUpToCentimetres);
         _kinds.Add(kind);
         _byName.Add(name, id);
         MostReachCentimetres = Math.Max(MostReachCentimetres, kind.ReachCentimetres);
@@ -76,14 +80,20 @@ public sealed class VoxelObjectKinds
     public bool TryFind(string name, out VoxelObjectKindId id) => _byName.TryGetValue(name, out id);
 
     /// <summary>
-    /// A number that stands for every kind's name and voxels, in their order: peers whose kinds differ build different
+    /// A number that stands for every kind's name and voxels, in their order, and the engine's rule for their copies in
+    /// the world's voxels (<see cref="ObjectCopies.RuleVersion"/>): peers whose kinds or rules differ build different
     /// worlds. 0 with no kinds.
     /// </summary>
     public ulong Fingerprint
     {
         get
         {
-            ulong hash = 0;
+            if (_kinds.Count == 0)
+            {
+                return 0;
+            }
+
+            var hash = (ulong)ObjectCopies.RuleVersion;
             foreach (var kind in _kinds)
             {
                 hash = Maths.DeterministicMath.Hash(hash, kind.Fingerprint);
@@ -127,10 +137,14 @@ public sealed class VoxelObjectKind
         VoxelCoord size,
         VoxelCoord anchor,
         ObjectPart[] parts,
-        ulong fingerprint
+        ulong fingerprint,
+        int copiesUpTo,
+        MaterialSet materials
     )
     {
         Id = id;
+        CopiesUpToCentimetres = copiesUpTo;
+        Materials = materials;
         Name = name;
         UnitCentimetres = unit;
         Size = size;
@@ -182,15 +196,35 @@ public sealed class VoxelObjectKind
     /// <summary>The top of its box from its anchor, in centimetres.</summary>
     public int TopCentimetres { get; }
 
+    /// <summary>The widest world voxels it is copied into far away, in centimetres.</summary>
+    public int CopiesUpToCentimetres { get; }
+
+    /// <summary>Its voxels' materials.</summary>
+    internal MaterialSet Materials { get; }
+
     /// <summary>How many parts it is: the 128-voxel cubes of its box that hold anything.</summary>
     public int PartCount => Parts.Length;
 
-    /// <summary>A number that stands for its name and voxels.</summary>
+    /// <summary>A number that stands for its name, voxels, and how far it is copied.</summary>
     public ulong Fingerprint { get; }
 
     internal ObjectPart[] Parts { get; }
 
-    internal static VoxelObjectKind Build(VoxelObjectKindId id, string name, VoxelObjectShape shape)
+    private readonly Dictionary<int, ObjectCopyGrid> _copies = [];
+
+    /// <summary>Its copy for world voxels <paramref name="edge"/> centimetres across, made at the first ask. Main thread.</summary>
+    internal ObjectCopyGrid CopyFor(int edge)
+    {
+        if (!_copies.TryGetValue(edge, out var copy))
+        {
+            copy = ObjectCopyGrid.Build(this, edge);
+            _copies.Add(edge, copy);
+        }
+
+        return copy;
+    }
+
+    internal static VoxelObjectKind Build(VoxelObjectKindId id, string name, VoxelObjectShape shape, int copiesUpTo)
     {
         const int edge = VoxelConstants.ChunkSize;
         var size = shape.Size;
@@ -220,6 +254,23 @@ public sealed class VoxelObjectKind
             throw new ArgumentException($"Object kind {name} has no solid voxel.", nameof(shape));
         }
 
+        var used = new bool[256];
+        foreach (var material in shape.Materials)
+        {
+            used[material] = true;
+        }
+
+        var materials = new List<byte>();
+        for (var m = 1; m < used.Length; m++)
+        {
+            if (used[m])
+            {
+                materials.Add((byte)m);
+            }
+        }
+
+        var widest = Math.Max(size.X, Math.Max(size.Y, size.Z)) * shape.UnitCentimetres;
+        var copied = copiesUpTo > 0 ? copiesUpTo : widest / 2;
         return new VoxelObjectKind(
             id,
             name,
@@ -227,7 +278,9 @@ public sealed class VoxelObjectKind
             size,
             shape.AnchorCentimetres,
             [.. parts],
-            FingerprintOf(name, shape)
+            Maths.DeterministicMath.Hash(FingerprintOf(name, shape), (ulong)copied),
+            copied,
+            MaterialSet.Of([.. materials])
         );
     }
 

@@ -123,14 +123,27 @@ public sealed partial class VoxelWorld : IDisposable
     private IntervalStats _stats;
     private double _statsStart = double.NaN;
 
+    private readonly Objects.VoxelObjectKinds? _kinds;
+    private readonly int _objectHandOverLevel;
+
     public VoxelWorld(
         IOptions<EngineOptions> options,
         IChunkGenerator generator,
         ILogger<VoxelWorld> logger,
         WarmUps? warmUps = null,
-        WorldOrigin? origin = null
+        WorldOrigin? origin = null,
+        Objects.VoxelObjectKinds? kinds = null
     )
-        : this(options.Value.Voxels, options.Value.Logging.StatsIntervalSeconds, generator, logger, warmUps, origin) { }
+        : this(
+            options.Value.Voxels,
+            options.Value.Logging.StatsIntervalSeconds,
+            generator,
+            logger,
+            warmUps,
+            origin,
+            kinds,
+            options.Value.Objects.HandOverLevel
+        ) { }
 
     /// <param name="settings">Streaming radius, memory budget, worker threads, and seed.</param>
     /// <param name="statsIntervalSeconds">Seconds between stats lines; zero or less disables them.</param>
@@ -138,15 +151,21 @@ public sealed partial class VoxelWorld : IDisposable
     /// <param name="logger">Logger.</param>
     /// <param name="warmUps">What the run has warmed up already; null to warm up the edit code every time.</param>
     /// <param name="origin">The match's origin, which local positions are measured from; null for the map's middle.</param>
+    /// <param name="kinds">The run's object kinds, whose copies the generator's objects get in the coarser levels; null for none.</param>
+    /// <param name="objectHandOverLevel">The first level holding the objects' copies (<c>Engine:Objects:HandOverLevel</c>).</param>
     internal VoxelWorld(
         VoxelSettings settings,
         double statsIntervalSeconds,
         IChunkGenerator generator,
         ILogger<VoxelWorld> logger,
         WarmUps? warmUps = null,
-        WorldOrigin? origin = null
+        WorldOrigin? origin = null,
+        Objects.VoxelObjectKinds? kinds = null,
+        int objectHandOverLevel = 2
     )
     {
+        _kinds = kinds;
+        _objectHandOverLevel = objectHandOverLevel;
         Origin = origin ?? new WorldOrigin();
         _warmUps = warmUps;
         _settings = settings;
@@ -302,6 +321,9 @@ public sealed partial class VoxelWorld : IDisposable
     /// </summary>
     public WorldOrigin Origin { get; }
 
+    /// <summary>The copies its objects get in its coarser levels, once initialised; null with no objects.</summary>
+    internal Objects.ObjectCopies? Copies { get; private set; }
+
     /// <summary>Resident columns at <paramref name="level"/>.</summary>
     public int ResidentColumnsAt(int level) => _residentByLevel[level];
 
@@ -381,7 +403,9 @@ public sealed partial class VoxelWorld : IDisposable
         var threads =
             _settings.WorkerThreads > 0 ? _settings.WorkerThreads : Math.Max(1, Environment.ProcessorCount / 2);
         _memory = new VoxelMemory((long)_settings.MemoryBudgetMegabytes << 20);
-        _workers = new VoxelWorkers(_generator, _memory, threads);
+        // The objects' copies are made before the workers start, which read them all at once.
+        Copies = Objects.ObjectCopies.Create(_generator.Objects, _kinds, Grid, _objectHandOverLevel, _levels);
+        _workers = new VoxelWorkers(_generator, _memory, threads, Copies);
         _maxInFlight = threads * JobsPerWorker;
 
         // Room for one centre's columns at every level, so the first streaming pass does not grow these: as many as the

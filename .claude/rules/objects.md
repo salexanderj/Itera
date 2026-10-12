@@ -39,6 +39,23 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   objects whose kind's reach (`VoxelObjectKind.ReachCentimetres`, at any heading; `MostReachCentimetres`) meets a box
   within the map, false where an area under it is not filled. A placer's unknown kind or heading, or an anchor outside
   the area asked for, stops the fill. With a hand-over level at or past the world's levels, every streamed level counts.
+- Far copies (`ObjectCopies`, internal; made at the world's `Initialize`, before its workers start, which seals the
+  kinds): from the hand-over level up, a kind is copied into the world's voxels at each level whose voxels are no wider
+  than its `CopiesUpToCentimetres` (`Register`'s third argument; 0, the default, is half its box's widest side, so a
+  smaller thing is not copied where its copy would be one voxel or less). Each copy is a lattice over the kind's box
+  (`ObjectCopyGrid`, blocks a quarter of a world voxel, built once from per-block counts and box sums): a world voxel whose
+  sample point lies in a block takes the commonest material of the kind's voxels it could touch at any heading (within
+  half its diagonal across and half its edge up and down), else air, so every world voxel the object touches is solid
+  and a thin trunk stays. A column job at a copied level (`ColumnJob.Run`) asks the placer for the objects near the
+  column (`Find`, each worker its own list), widens its layers to the copies' heights (as the edits' are: an empty range
+  keeps its boundary), and writes the copies into the air of its mixed layers and its layers of air they reach, whole,
+  after the generator's fill and before the edits; a layer of one solid material keeps it. Headings turn through
+  `ObjectTurns` (cosines and sines of the deterministic series in 16-bit fixed point; `ToObject` for the world's
+  integers, `Rotation` for drawing), so every peer writes the same voxels. `ObjectCopies.Materials` holds the kinds'
+  materials.
+- The match's identity (`GeneratorMatchIdentity`) carries the kinds' fingerprint after the generator's id where the
+  world places objects, so games whose kinds differ do not join each other; the fingerprint holds the copies' rule
+  (`ObjectCopies.RuleVersion`: raise it with any change to how copies are written). Saves do not record the kinds yet.
 - Models may have a voxel size of their own (`VoxelModels.Add` with a unit; `UnitCentimetres`, `VoxelMetres`) and keep
   densities (`Encode(voxels, densities, extent)`, `DecodeDensities`, `HasDensities`), which the renderer meshes them with.
   `SolidModelVoxels.Add` and the cut parts' hulls and masses (`LooseBodies.TryCreate(parts)`) take the model's unit.

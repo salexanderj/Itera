@@ -149,7 +149,7 @@ public static class EngineServiceCollectionExtensions
         // What a match is, as a joining game must share it: the voxel world's generator when the game has one.
         services.TryAddSingleton<IMatchIdentity>(sp =>
             sp.GetService<IChunkGenerator>() is { } generator
-                ? new GeneratorMatchIdentity(generator)
+                ? new GeneratorMatchIdentity(generator, sp.GetRequiredService<Objects.VoxelObjectKinds>())
                 : new ApplicationMatchIdentity(sp.GetRequiredService<IOptions<EngineOptions>>())
         );
         services.TryAddScoped<EcsWorld>();
