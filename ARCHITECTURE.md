@@ -175,6 +175,7 @@ Rules:
 | `Physics/` | `PhysicsWorld` (Bepu simulation, pool, thread dispatcher, shared voxel box shapes, characters' stand-ins; a game's bodies, statics, and trigger zones), callbacks, `BodyKinds` (the records by handle), `PhysicsMaterials`, `PhysicsLayers`, `PhysicsContacts` (bounces and impact events), `PhysicsTriggers`, `TriggerOverlap`, `VoxelColliders`, `LooseBodies`, `LooseBodyVoxels`, `SolidModelVoxels` and `SolidColumns`, `VoxelCharacterMover`, `MeshColliders` (a game's static triangle colliders, also Bepu mesh statics), `MeshColumns` (the colliders as the mover's cells), `CollisionSources` (the ray over the terrain and the colliders), `SurfaceHit` |
 | `Voxels/` | `VoxelWorld` (streaming, edits, change list, stats, `Raycast`, collision queries, block reads), `VoxelGrid` and `GridLevel`, `VoxelDensity`, `IVoxelPassability`, `VoxelBoxes`, `VoxelMemory` (native block pools), `BrickCodec`, `ChunkTree`, `Column`, `VoxelEditing` and `VoxelEdit`, `VoxelPiece` and `PieceRuns`, `VoxelModels` (small voxel volumes drawn at any position and turn), `EditLog` and `EditLogSerializer`, `VoxelChangeLog`, `IChunkGenerator`, `VoxelWorkers` and `ColumnJob`, `LevelDistances`, `StreamingCentre`, `VoxelConstants` |
 | `Voxels/Generation/` | The world generation toolkit (see "World generation") |
+| `Objects/` | Voxel objects finer than the terrain: a kind's voxels (`VoxelObjectShape`), the run's kinds (`VoxelObjectKinds`), and a match's models of them (`VoxelObjects`, `ObjectsLoadingTask`; `docs/voxel-objects.md`) |
 | `Navigation/` | `NavigationService` (its window, `NavArea`), `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`, `INavGridSource` (the game's part), `FlowFieldBuilder` and `FlowField`, `NavGridScanner`, `NavigationDebugLines` |
 | `Networking/` | `SessionService` (hosting or joining; `.Host.cs`, `.Client.cs`), `ISessionTransport` with `NetworkService` (LiteNetLib) and `SteamTransport` over `ISteamPlatform`, `SteamService`, `SteamAddress`, `SteamLaunchArguments`, `SteamFriendList`, `SessionProtocol` (message kinds, `MessageWriter`, `MessageReader`), `MatchSettings` and `ISessionGameHandler`, `GameMessageHandler`, `SessionAddress`, `NetLoggerAdapter`, and the helpers `NetEntities`, `PlayerIds`, `TickRing`, and `JitterPlayback` |
 | `UI/` | `UISurface` (the UI's pixels: a Skia CPU surface that draws its layers when one changes and reports the rows that changed), `IUiLayer`, `IMatchUiLayer`, `ConsoleLayer` and `DevConsole`, `StatsLayer`, `AimDotLayer`, `LoadingLayer`, `CentredMessageLayer`, `TextBlobs`, `TextLine`, `TextEntry` (a text box's typing), `UiFonts` (the font and the UI's sizing rule) and `LayerFont`, `Amounts`, `WheelSteps`, `Toolkit/` (a UI described in code: `Ui`'s layout, input, focus, and dump; `UiStyle`, `UiPainter`, `UiToolkit`, `UiLayer`), and `Menu/` (`IMenu`, `MenuLayer` on the toolkit, `MenuPages` and `IMenuPage` (a game's pages in it), `SettingsPage` (the Settings page as a part a game's menu shows too) and `SettingsRows` (a game's switches on it), `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`) |
@@ -221,7 +222,8 @@ A match's, `MatchServices`: first the session (offline and hosting settle the ma
 `SessionService.PollJoin` carries the join on once a loop iteration while the menu shows its progress, until the host's
 edit log is downloaded), then, once a frame saying "Starting…" has been shown, physics, voxels (memory and worker
 threads, for the match's seed; the edit warm-up once per run), joined world (a client loads the host's edits, a named
-save its own), navigation, voxel physics, save (written at the match's end), tint (the match's tint map for the
+save its own), navigation, voxel physics, objects (the object kinds' models, `VoxelObjects`), save (written at the
+match's end), tint (the match's tint map for the
 particles' colours), world on the GPU (`WorldMeshes.BeginMatch`), match UI (the match's console commands, which go when
 it ends, and the HUD layers), ECS world and systems, mods (`IGameMod.OnMatchStarted`), and loading (the loading screen
 takes the match's tasks). The session settles the match before anything reads the seed (`SessionService.Match` throws
@@ -801,7 +803,7 @@ it was 4 x 10^13 (5 TB at one bit each).
   and an air voxel's 0 to 127, so everything that reads materials sees the same world and the density only places the
   drawn surface within a voxel. A brick keeps a block of one byte per voxel only when some voxel's density is not its
   material's default (air empty, solid full). The generator gives the ground's density from its height; edits change
-  voxels by the share they cover. Models keep only materials.
+  voxels by the share they cover. Models keep only materials, except an object kind's, which keep densities too.
 - The tree was compared with deeper 64-trees, OpenVDB, NanoVDB, and sparse voxel DAGs and kept
   (`docs/voxel-structures.md`). The chunk tree is already a 64-tree over bricks the size of VDB's leaves. NanoVDB's
   fixed-size nodes would take 1.5 to 5.5 times the memory, its tree cannot change after building, and its GPU build tools
@@ -1000,7 +1002,7 @@ holds the decisions, the measurements, and the history of how it replaced a raym
   `SurfaceNets`: naive Surface Nets, one vertex per cell, at the mean of the points where the density crosses one half
   along the cell's crossing edges, a normal from a 4 x 4 x 4 gradient of the densities, an openness from the mean density
   round each of the cell's corners blended to the vertex's place, and the material that most of the cell's surface corners
-  have (a model's blocks at their materials' default densities). A block owns the edges whose lower voxel it holds, so
+  have (a model's blocks at their materials' default densities, unless it keeps densities, as an object kind's does). A block owns the edges whose lower voxel it holds, so
   blocks side by side meet exactly. Each vertex also carries how many of its cell's surface corners are each of the mesh's
   eight most common materials (`Weights`), which the fragment shader blends across a border by height. The levels from
   `Engine:Renderer:MeshFinestLevel` to the coarsest streamed are meshed. `WorldMeshes` follows the voxel change list,
@@ -1107,7 +1109,8 @@ holds the decisions, the measurements, and the history of how it replaced a raym
 A model is a small voxel volume drawn at any position and turn: a part of a character's body, a loose body's piece, an item.
 
 - `VoxelModels` (main thread) holds each model as one chunk tree per level (up to 3) in a voxel memory (the world's with
-  terrain, its own without), with a voxel unit of its own (1 cm in the starter), until its owner frees it. `WorldMeshes.Models.cs` meshes each level of each model as it
+  terrain, its own without), with a voxel unit of its own (1 cm in the starter; an object kind's its own), meshed with
+  densities where it keeps them (an object kind's), until its owner frees it. `WorldMeshes.Models.cs` meshes each level of each model as it
   does the world: the level is cut into 32-voxel blocks starting one voxel before its box, each block read with a 2-voxel
   apron of air and meshed on the same workers, before the world's blocks, and kept in the mesh heap in a range of its own. A
   model counts as uploaded (`VoxelModels.SetUploaded`) once all its blocks are in; loading tasks wait for that. A replaced

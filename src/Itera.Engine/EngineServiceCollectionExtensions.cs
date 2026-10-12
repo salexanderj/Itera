@@ -206,6 +206,7 @@ public static class EngineServiceCollectionExtensions
         // The run's physics materials, registered by the game's startup and sealed as the first match begins.
         services.TryAddSingleton<PhysicsMaterials>();
         services.TryAddSingleton<PhysicsLayers>();
+        services.TryAddSingleton<Objects.VoxelObjectKinds>();
         services.TryAddSingleton<MatchCommands>();
         services.TryAddSingleton<SettingsCommands>();
         services.TryAddSingleton<UiCommands>();

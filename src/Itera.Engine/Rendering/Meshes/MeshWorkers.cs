@@ -12,10 +12,13 @@ internal sealed class MeshJob
 {
     public readonly byte[] Samples = new byte[SurfaceNets.SampleCount];
 
-    /// <summary>The samples' densities, read with them for a block of the world; a model's block has only materials.</summary>
+    /// <summary>
+    /// The samples' densities, read with them for a block of the world or of a model that keeps densities (an object
+    /// kind's); other models' blocks have only materials.
+    /// </summary>
     public readonly byte[] Densities = new byte[SurfaceNets.SampleCount];
 
-    /// <summary>True when <see cref="Densities"/> holds the block's densities (a block of the world).</summary>
+    /// <summary>True when <see cref="Densities"/> holds the block's densities (a block of the world, or of a model that keeps them).</summary>
     public bool HasDensities;
 
     /// <summary>

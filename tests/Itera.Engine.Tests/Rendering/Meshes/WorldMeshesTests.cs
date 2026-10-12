@@ -866,6 +866,74 @@ public sealed class WorldMeshesTests : IDisposable
         Assert.True(low.X < 0.5f && low.Y < 0.5f && low.Z < 0.5f);
     }
 
+    /// <summary>
+    /// A ball whose model keeps its densities (an object kind's, <see cref="VoxelModels.HasDensities"/>) is meshed with
+    /// them: its vertices lie on a sphere within a tenth of a voxel, where the same ball's materials alone put them in
+    /// voxel steps several times as far off.
+    /// </summary>
+    [Fact]
+    public void A_model_that_keeps_densities_is_meshed_with_them()
+    {
+        var shape = new Itera.Engine.Objects.VoxelObjectShape(1, new VoxelCoord(40, 40, 40), default);
+        shape.FillEllipsoid(20, 20, 20, 15.3, 15.3, 15.3, 1);
+        var materials = new byte[VoxelConstants.ChunkVoxels];
+        var densities = new byte[VoxelConstants.ChunkVoxels];
+        for (var z = 0; z < 40; z++)
+        {
+            for (var y = 0; y < 40; y++)
+            {
+                for (var x = 0; x < 40; x++)
+                {
+                    var i = x + VoxelConstants.ChunkSize * (y + VoxelConstants.ChunkSize * z);
+                    materials[i] = shape.MaterialAt(x, y, z);
+                    densities[i] = shape.DensityAt(x, y, z);
+                }
+            }
+        }
+
+        var size = new VoxelCoord(40, 40, 40);
+        var smooth = _models.Add([_models.Encode(materials, densities, size)], size, 0, 1, densities: true);
+        var stepped = _models.Add([_models.Encode(materials, size)], size);
+        Begin();
+        RunUntil(() => _models.IsUploaded(smooth) && _models.IsUploaded(stepped));
+
+        static float Spread(List<Vector3> vertices)
+        {
+            var centre = vertices.Aggregate(Vector3.Zero, (sum, v) => sum + v) / vertices.Count;
+            var radii = vertices.Select(v => Vector3.Distance(v, centre)).ToList();
+            var mean = radii.Average();
+            return radii.Max(r => MathF.Abs(r - mean));
+        }
+
+        var smoothSpread = Spread(ModelVertices(smooth));
+        var steppedSpread = Spread(ModelVertices(stepped));
+        Assert.True(smoothSpread < 0.1f, $"The smooth ball's vertices are up to {smoothSpread} voxels off its sphere.");
+        Assert.True(steppedSpread > 3 * smoothSpread, $"The stepped ball's are up to {steppedSpread}.");
+    }
+
+    /// <summary>The vertices of model <paramref name="model"/>'s level 0 as one frame draws them, in its voxels.</summary>
+    private List<Vector3> ModelVertices(int model)
+    {
+        var slot = Frame(draws: [new(model, 0, new Vector3(-0.2f, 1.6f, -0.2f), Quaternion.Identity, 0)]);
+        var words = MemoryMarshal.Cast<byte, uint>(_targets.Heap.AsSpan());
+        var indices = MemoryMarshal.Cast<byte, ushort>(_targets.Heap.AsSpan());
+        var vertices = new List<Vector3>();
+        for (var i = 0; i < _meshes.Frame.ModelCamera.Commands; i++)
+        {
+            var command = _targets.ModelCommandsOf(slot, 0)[i];
+            var record = _targets.ModelDrawsOf(slot, 0)[(int)command.FirstInstance - MeshPass.ModelRecordBase(slot, 0)];
+            var block = new Vector3(record.Block & 0xFF, (record.Block >> 8) & 0xFF, (record.Block >> 16) & 0xFF);
+            for (var t = 0; t < command.IndexCount; t++)
+            {
+                var at = (int)record.VertexBase + MeshVertex.Words * indices[(int)command.FirstIndex + t];
+                var vertex = new MeshVertex { PositionXY = words[at], PositionZMaterial = words[at + 1] };
+                vertices.Add(MeshVertex.DecodePosition(in vertex) + 32 * block - Vector3.One);
+            }
+        }
+
+        return vertices;
+    }
+
     /// <summary>A replaced model draws its old mesh until the new one is in, and stays counted as uploaded.</summary>
     [Fact]
     public void A_replaced_model_keeps_its_old_mesh_until_the_new_one_is_in()

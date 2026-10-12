@@ -9,7 +9,8 @@ namespace Itera.Engine.Rendering.Meshes;
 
 /// <summary>
 /// The models (<see cref="VoxelModels"/>) on the GPU: each level of each model is meshed as the world is, in blocks of
-/// 32 voxels with a 2-voxel apron of air round the model's box, on the mesh workers, and each block's mesh goes into a
+/// 32 voxels with a 2-voxel apron of air round the model's box, on the mesh workers (with its densities where it keeps
+/// them, <see cref="VoxelModels.HasDensities"/>, else its materials' defaults), and each block's mesh goes into a
 /// heap range of its own. A block meshes the faces whose lower voxel is in it, so a model's blocks start one voxel before
 /// its box (<see cref="ModelBlockShift"/>): block b covers voxels 32 b - 1 to 32 b + 30, and the faces on the box's low
 /// sides fall in block 0. A model counts as uploaded once every block of every level is in the heap; a replaced model
@@ -24,8 +25,10 @@ public sealed unsafe partial class WorldMeshes
     /// <summary>Voxels a model's blocks start before its box (<c>mesh-data.glsl</c>'s <c>meshModelWorld</c> moves them back).</summary>
     internal const int ModelBlockShift = 1;
 
-    // A model level's voxels, decoded once to read its blocks: index x + 128y + 16384z.
+    // A model level's voxels, decoded once to read its blocks: index x + 128y + 16384z; and its densities, for a model
+    // that keeps them.
     private byte[] _modelVoxels = [];
+    private byte[] _modelDensities = [];
     private int _decodedHandle = -1;
     private int _decodedRevision;
     private int _decodedTree = -1;
@@ -145,9 +148,16 @@ public sealed unsafe partial class WorldMeshes
             mesh.NextBlock = 0;
         }
 
+        var densities = models.HasDensities(handle);
         if (_decodedHandle != handle || _decodedRevision != mesh.MeshingRevision || _decodedTree != tree)
         {
-            models.Decode(new ModelTree(models.Tree(handle, tree)), _modelVoxels, size);
+            var decoded = new ModelTree(models.Tree(handle, tree));
+            models.Decode(decoded, _modelVoxels, size);
+            if (densities)
+            {
+                models.DecodeDensities(decoded, _modelDensities, size);
+            }
+
             _decodedHandle = handle;
             _decodedRevision = mesh.MeshingRevision;
             _decodedTree = tree;
@@ -158,8 +168,14 @@ public sealed unsafe partial class WorldMeshes
         var bz = block / (blocksX * blocksY);
         var job = _freeJobs.Pop();
         ReadModelBlock(_modelVoxels, size, bx, by, bz, job.Samples);
+        if (densities)
+        {
+            // Outside the box is air of no density, as the samples there.
+            ReadModelBlock(_modelDensities, size, bx, by, bz, job.Densities);
+        }
+
         job.Model = mesh;
-        job.HasDensities = false;
+        job.HasDensities = densities;
         job.Owner = null;
         job.Revision = mesh.MeshingRevision;
         job.Tree = tree;

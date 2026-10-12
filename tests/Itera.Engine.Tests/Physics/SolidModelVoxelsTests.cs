@@ -71,27 +71,30 @@ public sealed class SolidModelVoxelsTests : IDisposable
     }
 
     /// <summary>
-    /// On a world of 1 cm voxels and one of 10 cm, where a model's voxel of 1, 2, or 4 cm is a share of a world voxel
-    /// (0.4 for 4 cm in 10), the solid's cells are the world voxels whose centres land on its voxels.
+    /// On a world of 1 cm voxels and one of 10 cm, where a model's voxel of 1, 2, or 4 cm, or of an object kind's 3 or 5
+    /// cm, is a share of a world voxel (0.4 for 4 cm in 10), the solid's cells are the world voxels whose centres land on
+    /// its voxels.
     /// </summary>
     [Theory]
-    [InlineData(0f, 0, 1)]
-    [InlineData(0.3f, 1, 1)]
-    [InlineData(1.2f, 2, 1)]
-    [InlineData(2.9f, 2, 1)]
-    [InlineData(-2f, 1, 1)]
-    [InlineData(0f, 2, 10)]
-    [InlineData(0.7f, 2, 10)]
-    [InlineData(-1.9f, 0, 10)]
-    public void Queries_match_a_voxel_by_voxel_walk(float yaw, int level, int worldCentimetres)
+    [InlineData(0f, 0, 1, 1)]
+    [InlineData(0.3f, 1, 1, 1)]
+    [InlineData(1.2f, 2, 1, 1)]
+    [InlineData(2.9f, 2, 1, 1)]
+    [InlineData(-2f, 1, 1, 1)]
+    [InlineData(0f, 2, 10, 1)]
+    [InlineData(0.7f, 2, 10, 1)]
+    [InlineData(-1.9f, 0, 10, 1)]
+    [InlineData(0.4f, 0, 10, 5)]
+    [InlineData(-1.1f, 1, 10, 3)]
+    public void Queries_match_a_voxel_by_voxel_walk(float yaw, int level, int worldCentimetres, int unit)
     {
         var chunk = Lopsided(out var size);
         var solids = new SolidModelVoxels(worldCentimetres);
         var pivot = new Vector3(size.X * 0.4f, 1.3f, size.Z * 0.55f);
-        var id = solids.Add(SolidColumns.Build(chunk, size), level, pivot);
+        var id = solids.Add(SolidColumns.Build(chunk, size), level, pivot, unit);
         var at = new Vector3(37.3f, 251.6f, -12.8f) / worldCentimetres;
         solids.SetPoseInCells(id, at.X, at.Y, at.Z, yaw);
-        var scale = (1 << level) / (float)worldCentimetres;
+        var scale = (unit << level) / (float)worldCentimetres;
         var reach = Math.Max(4, (int)(size.X * scale * 1.5f));
         int windowX = (int)at.X - 64,
             windowZ = (int)at.Z - 64;

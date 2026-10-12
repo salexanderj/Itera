@@ -82,7 +82,7 @@ only where every voxel is wholly so (the voxels' edges are tested, not their sam
   to the centimetre along x: a 10 cm voxel's cubic centimetres), its density with it, and the material follows the
   density across one half (`VoxelEditing.Densities.cs`: `ApplyToWorldChunk`, the dense `ApplyToRegion` with densities,
   `CountInWorldChunk`); a clear takes that share of what is solid in the voxel, so one repeated on a spot keeps
-  taking. Lifts, paints, and pieces keep to sample points. Models keep only materials and the sample-point rules
+  taking. Lifts, paints, and pieces keep to sample points. Models keep materials (and an object kind's, densities: `.claude/rules/objects.md`) and the sample-point rules
   (`ApplyToChunk`, `CountInChunk`).
 - The voxel world is its seed plus its edit log (the edits since its last reset: `VoxelEditOperation.Reset`, an empty
   box after which no earlier edit counts; readers of the log must handle it). `VoxelWorld` is main thread only; columns

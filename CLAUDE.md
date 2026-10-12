@@ -35,7 +35,8 @@ renderer's decisions and measurements), `rendering-extension.md` (what a game ca
 `map-size-and-origin.md` (large maps, the floating origin, and why), `framework-plan.md` (how Itera became a framework),
 `framework-limits.md` (what kinds of game the engine blocks today, and the order of work), `ui-toolkit.md` (typed
 text, the menu a game replaces, and the UI toolkit), `sound-files.md` (sounds and music from files), and
-`physics-materials-and-groups.md` (gravity, materials, layers, triggers, and impacts a game sets). `docs/references/` holds
+`physics-materials-and-groups.md` (gravity, materials, layers, triggers, and impacts a game sets), and `voxel-objects.md`
+(objects finer than the terrain). `docs/references/` holds
 notes on outside projects used as references.
 
 # How to work
@@ -78,6 +79,7 @@ notes on outside projects used as references.
   - Mesh assets (models read from glTF files, their materials, textures, rigs, and clips): `.claude/rules/mesh-assets.md`.
   - The voxel world, edits, streaming, and world generation: `.claude/rules/voxels.md`.
   - Loose bodies, ragdolls, the character mover, and Bepu: `.claude/rules/physics.md`.
+  - Voxel objects finer than the terrain (trees, rocks, props): `.claude/rules/objects.md`.
   - The engine's components and systems (the player, cameras, streaming, the benchmark): `.claude/rules/systems.md`.
   - Poses, clips, and foot IK: `.claude/rules/animation.md`.
   - Particles: `.claude/rules/particles.md`.

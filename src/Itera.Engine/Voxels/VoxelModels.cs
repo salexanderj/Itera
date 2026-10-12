@@ -30,6 +30,9 @@ public sealed class VoxelModels : IDisposable
     /// <summary>Levels a model may have: 0 to 2.</summary>
     public const int MaxLevels = 3;
 
+    /// <summary>The widest a model's level-0 voxels may be, in centimetres.</summary>
+    public const int MostUnitCentimetres = 100;
+
     /// <summary>
     /// The edge of a model's voxels at level 0, in centimetres: characters' parts, items, and loose bodies' pieces
     /// (a lift reads its piece a centimetre at a time). A model may be given another unit (<see cref="UnitCentimetres(int)"/>).
@@ -182,6 +185,22 @@ public sealed class VoxelModels : IDisposable
     }
 
     /// <summary>
+    /// <see cref="Encode(ReadOnlySpan{byte}, VoxelCoord)"/> with each voxel's density (<see cref="VoxelDensity"/>: how
+    /// much of it is solid, 128 to 255 for a solid voxel and 0 to 127 for air, at the same index as its material), for
+    /// a model meshed with densities as the world is: its surface lies where the density crosses one half, so a smooth
+    /// shape shows no voxel steps. Any thread, as the other encodes.
+    /// </summary>
+    public ModelTree Encode(ReadOnlySpan<byte> voxels, ReadOnlySpan<byte> densities, VoxelCoord extent)
+    {
+        if (voxels.Length != VoxelConstants.ChunkVoxels || densities.Length != VoxelConstants.ChunkVoxels)
+        {
+            throw new ArgumentException("A model level is a whole chunk of voxels and of densities.", nameof(voxels));
+        }
+
+        return new ModelTree(ChunkTree.Encode(Memory, voxels, densities, extent, mayExceedBudget: true, out _));
+    }
+
+    /// <summary>
     /// A copy of <paramref name="tree"/>, so edits to either leave the other alone: a character's own copy of a part it
     /// was cut in. The owner frees it (<see cref="Free"/>). Main thread.
     /// </summary>
@@ -270,6 +289,21 @@ public sealed class VoxelModels : IDisposable
     }
 
     /// <summary>
+    /// Writes a tree's densities into <paramref name="densities"/> for the bricks that reach into the box from (0, 0, 0)
+    /// to <paramref name="extent"/> (a voxel whose density was never given reads its material's default), leaving the
+    /// rest as it was.
+    /// </summary>
+    public void DecodeDensities(ModelTree tree, Span<byte> densities, VoxelCoord extent)
+    {
+        if (densities.Length < VoxelConstants.ChunkVoxels)
+        {
+            throw new ArgumentException("A model level is a whole chunk of densities.", nameof(densities));
+        }
+
+        ChunkTree.DecodeDensities(Memory, tree.State, densities, extent);
+    }
+
+    /// <summary>
     /// Frees a tree the caller made (<see cref="Encode(ReadOnlySpan{byte})"/>, <see cref="Copy"/>) and no model waits to upload: after
     /// <see cref="Remove"/>, or <see cref="Replace"/> with other trees. Main thread.
     /// </summary>
@@ -351,6 +385,34 @@ public sealed class VoxelModels : IDisposable
         }
 
         return Add(states[..levels.Length], size, baseLevel);
+    }
+
+    /// <summary>
+    /// <see cref="Add(ReadOnlySpan{ModelTree}, VoxelCoord, int)"/> for a model whose level-0 voxels are
+    /// <paramref name="unitCentimetres"/> across (1 to <see cref="MostUnitCentimetres"/>; its tree <c>i</c>'s are that
+    /// times 2^(base + i)), meshed with the densities its trees keep when <paramref name="densities"/> is true (trees
+    /// made by <see cref="Encode(ReadOnlySpan{byte}, ReadOnlySpan{byte}, VoxelCoord)"/>).
+    /// </summary>
+    public int Add(
+        ReadOnlySpan<ModelTree> levels,
+        VoxelCoord size,
+        int baseLevel,
+        int unitCentimetres,
+        bool densities = false
+    )
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(unitCentimetres, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(unitCentimetres, MostUnitCentimetres);
+        CheckLevels(levels.Length, baseLevel);
+        Span<ChildState> states = stackalloc ChildState[MaxLevels];
+        for (var level = 0; level < levels.Length; level++)
+        {
+            states[level] = levels[level].State;
+        }
+
+        var handle = Add(states[..levels.Length], size, baseLevel, unitCentimetres);
+        _models[handle].Densities = densities;
+        return handle;
     }
 
     /// <summary>
@@ -538,6 +600,9 @@ public sealed class VoxelModels : IDisposable
     /// <summary>The edge of a model's level-0 voxels in centimetres: <see cref="Centimetres"/> unless it was given another.</summary>
     public int UnitCentimetres(int handle) => Get(handle).Unit;
 
+    /// <summary>True when the model's trees keep densities and it is meshed with them.</summary>
+    public bool HasDensities(int handle) => Get(handle).Densities;
+
     /// <summary>The edge of the voxels of a model's tree <paramref name="tree"/> (counted from its base level), in metres.</summary>
     public float VoxelMetres(int handle, int tree)
     {
@@ -628,6 +693,7 @@ public sealed class VoxelModels : IDisposable
         public int Levels;
         public int BaseLevel;
         public int Unit;
+        public bool Densities;
         public VoxelCoord Size;
         public Levels<ChildState> Trees;
         public Levels<uint> Entries;

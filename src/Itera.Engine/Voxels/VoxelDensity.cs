@@ -8,7 +8,8 @@ namespace Itera.Engine.Voxels;
 /// an air voxel's 0 to 127, so everything that reads materials (rays, colliders, the mover, navigation) sees the same
 /// world, and the density only places the drawn surface within a voxel. The mesher puts the surface where the density
 /// between two voxels' centres crosses one half. A voxel whose density was never given has its material's
-/// <see cref="Default"/>: air empty, solid full. Models (characters, items) keep only materials.
+/// <see cref="Default"/>: air empty, solid full. Models (characters, items) keep only materials, except an object
+/// kind's, which keep densities too.
 /// </summary>
 public static class VoxelDensity
 {

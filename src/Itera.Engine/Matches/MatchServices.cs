@@ -181,12 +181,12 @@ public sealed partial class MatchServices
     /// The match's other steps, once the session has settled the match (at once offline or hosting; after the download
     /// when joining). The voxel world starts from the match's seed; the joined world step loads the host's edits (or the
     /// named save's) into it, and without terrain only reads what the host sent; navigation starts with the seed and
-    /// every edit so far; the save step writes the named save when the match ends, while physics and the world still
+    /// every edit so far; the object kinds' models are made once the world's memory exists; the save step writes the named save when the match ends, while physics and the world still
     /// exist; the world goes to the GPU; the match's console commands (registered as the HUD layers and systems are made)
     /// and HUD layers come before the systems; the mods hear of the match once its systems exist; the loading screen
     /// waits for the match's tasks. ECS comes after physics and voxels so a system's <c>Initialize</c> can use them, and
     /// its shutdown waits for character builds before the world's memory is freed. Without terrain the voxels,
-    /// navigation, and voxel physics steps are left out, and no world goes to the GPU.
+    /// navigation, voxel physics, and objects steps are left out, and no world goes to the GPU.
     /// </summary>
     internal IReadOnlyList<EngineStep> CreateWorldSteps(MatchGpu gpu, Func<double> now)
     {
@@ -205,6 +205,7 @@ public sealed partial class MatchServices
         {
             steps.Add(new("navigation", world.Navigation.Initialize, world.Navigation.Dispose));
             steps.Add(new("voxel physics", world.Colliders.Initialize, world.Colliders.Dispose));
+            steps.Add(new("objects", world.Objects.Initialize, () => { }));
         }
 
         steps.Add(new("save", () => { }, () => Saves.Save(EndedCleanly, Session.Role, Session.Match)));

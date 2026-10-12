@@ -177,7 +177,8 @@ makes a column whose runs no longer cover its surfaces again and meshes it), rea
 (`src/Itera.Engine/Meshing/`: naive Surface Nets, one vertex per cell, at the mean of the points where the density
 (`VoxelDensity`) crosses one half along the cell's crossing edges; normals from a 4x4x4 gradient of the densities;
 openness from the mean density round each of the cell's corners, blended to the vertex's place, so it follows the
-surface and not the cell; a model's blocks at their materials' default densities; the material most of the cell's
+surface and not the cell; a model's blocks at their materials' default densities unless it keeps densities (an object
+kind's); the material most of the cell's
 surface corners have (solid corners beside an air corner, so a one-voxel skin shows),
 a block owning the edges whose lower voxel is in it, so blocks meet exactly). It follows the change list (columns,
 bricks, and chunks changed) and meshes a column only while it can be drawn (`IsWanted`), the columns nearest the view
@@ -274,7 +275,7 @@ after the cascades and the sky field's copy name it.
 
 The models (`VoxelModels`: loose bodies, and a game's bodies, parts, and items) are meshes too (`WorldMeshes.Models.cs`). Each level of each model is cut into 32-voxel blocks starting one voxel before
 its box (`ModelBlockShift`, since a block meshes only the faces whose lower voxel is in it), read with a 2-voxel apron
-of air from the decoded level (`ReadModelBlock`), meshed on the same workers before the world's blocks, and kept in the
+of air from the decoded level (`ReadModelBlock`; with its densities where the model keeps them, `VoxelModels.HasDensities`), meshed on the same workers before the world's blocks, and kept in the
 mesh heap a range per block. A model counts as uploaded once all its blocks are in (`VoxelModels.SetUploaded`; cuts,
 loose bodies, and loading tasks wait for that); a replaced model (a wound) draws its old meshes until the new ones are
 all in (`VoxelModels.Revision` tells a new revision from the one being meshed); a removed model's ranges go the next

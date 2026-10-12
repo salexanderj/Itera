@@ -30,17 +30,20 @@ public sealed class SolidModelVoxels
     public int Count { get; private set; }
 
     /// <summary>
-    /// Adds a solid of <paramref name="columns"/> whose voxels are <paramref name="level"/>'s, turning about
+    /// Adds a solid of <paramref name="columns"/> whose voxels are <paramref name="level"/>'s of a model whose level-0
+    /// voxels are <paramref name="unitCentimetres"/> across (<see cref="VoxelModels.UnitCentimetres"/>), turning about
     /// <paramref name="pivot"/> (in its own voxels, from its box's corner), and returns its id. It blocks nothing until
     /// <see cref="SetPose"/> places it.
     /// </summary>
-    public int Add(SolidColumns columns, int level, Vector3 pivot)
+    public int Add(SolidColumns columns, int level, Vector3 pivot, int unitCentimetres = VoxelModels.Centimetres)
     {
         ArgumentNullException.ThrowIfNull(columns);
         ArgumentOutOfRangeException.ThrowIfNegative(level);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(level, VoxelModels.MaxLevels - 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(unitCentimetres, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(unitCentimetres, VoxelModels.MostUnitCentimetres);
         // How many world voxels across one of the model's voxels is: 0.4 for 4 cm voxels in a world of 10 cm.
-        var solid = new Solid(columns, VoxelModels.LevelCentimetres(level) / (float)_worldVoxelCentimetres, pivot);
+        var solid = new Solid(columns, (unitCentimetres << level) / (float)_worldVoxelCentimetres, pivot);
         for (var i = 0; i < _solids.Count; i++)
         {
             if (_solids[i] is null)

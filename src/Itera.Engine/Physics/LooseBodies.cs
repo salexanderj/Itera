@@ -568,7 +568,8 @@ public sealed partial class LooseBodies
 /// A model for a loose body made of several (<see cref="LooseBodies.TryCreate(ReadOnlySpan{LoosePart}, float, Vector3, float, out BodyHandle)"/>):
 /// the model, its finest tree (whose blocking voxels make its hull) and box in that tree's voxels, where its box's corner
 /// lies in the world (metres) and its turn there, whether the body owns it (removes it and frees its trees when it goes)
-/// or shares it (a character kind's part), and the tree's level: 0 (1 cm voxels) for most, 2 (4 cm) for a giant's part.
+/// or shares it (a character kind's part), and the tree's level: 0 (the model's own voxels, 1 cm for most) for most, 2
+/// (four times them, 4 cm) for a giant's part.
 /// </summary>
 public readonly record struct LoosePart(
     int Model,

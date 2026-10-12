@@ -1,6 +1,7 @@
 using Itera.Engine.Loading;
 using Itera.Engine.Matches;
 using Itera.Engine.Navigation;
+using Itera.Engine.Objects;
 using Itera.Engine.Physics;
 using Itera.Engine.Systems;
 using Itera.Engine.Voxels;
@@ -32,7 +33,9 @@ public static class VoxelServiceCollectionExtensions
         services.TryAddScoped<VoxelColliders>();
         services.TryAddScoped<NavigationService>();
         services.TryAddScoped<IBenchmarkHost, EngineBenchmarkHost>();
+        services.TryAddScoped<VoxelObjects>();
         services.AddScoped<ILoadingTask, WorldLoadingTask>();
+        services.AddScoped<ILoadingTask, ObjectsLoadingTask>();
         services.AddScoped<ILoadingTask, NavigationLoadingTask>();
         services.AddScoped<ILoadingTask, EditWarmUpLoadingTask>();
         return services;

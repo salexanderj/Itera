@@ -36,7 +36,8 @@ When the match's origin moves, `PhysicsWorld.Shift` moves every body (awake, asl
 whole metres it moved, writing their poses and the broad phase's bounds alone: nothing wakes, and velocities, joints,
 and contacts, which are relative, keep (`OriginShifts`, `.claude/rules/engine.md`).
 Solid models that are not loose bodies (`SolidModelVoxels`, `SolidColumns`) are solid to the mover alone, placed each
-step at an absolute point (`SetPose` takes a `WorldPoint`: a local position with the match's origin).
+step at an absolute point (`SetPose` takes a `WorldPoint`: a local position with the match's origin), their voxels the
+model's unit at their level (`Add`'s unit, 1 cm by default). Cut parts are hulled and weighed in their model's voxels.
 
 Without voxel terrain (the core registers `VoxelModels`, `LooseBodies`, and `LooseBodyVoxels` either way): the models
 keep their trees in their own memory (with terrain, the world's, where a lifted piece lies), freed when the match

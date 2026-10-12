@@ -193,6 +193,46 @@ public sealed class LooseBodiesTests : IDisposable
         Assert.InRange(Position(body).Y, 2.305f - 0.01f, 2.305f + 0.005f);
     }
 
+    /// <summary>
+    /// A part of a model of 5 cm voxels (an object kind's) is hulled and weighed in them: a cube 10 voxels a side is
+    /// 50 cm across, and at 2000 kg per cubic metre weighs 250 kg.
+    /// </summary>
+    [Fact]
+    public void A_part_of_5_cm_voxels_is_hulled_and_weighed_in_them()
+    {
+        var voxels = new byte[VoxelConstants.ChunkVoxels];
+        for (var z = 0; z < 10; z++)
+        {
+            for (var y = 0; y < 10; y++)
+            {
+                for (var x = 0; x < 10; x++)
+                {
+                    voxels[x + VoxelConstants.ChunkSize * (y + VoxelConstants.ChunkSize * z)] = BoxesGenerator.Stone;
+                }
+            }
+        }
+
+        var size = new VoxelCoord(10, 10, 10);
+        var tree = _models.Encode(voxels);
+        var model = _models.Add([tree], size, 0, 5);
+        var part = new LoosePart(model, tree, size, new Vector3(-0.25f, 3, -0.25f), Quaternion.Identity, false);
+        Assert.True(_bodies.TryCreate([part], 2000, Vector3.Zero, 0, out var body));
+
+        var reference = _physics.Simulation.Bodies[body];
+        Assert.Equal(250, 1 / reference.LocalInertia.InverseMass, 0.5);
+        var compound = _physics.Simulation.Shapes.GetShape<Compound>(reference.Collidable.Shape.Index);
+        var hull = _physics.Simulation.Shapes.GetShape<ConvexHull>(compound.Children[0].ShapeIndex.Index);
+        var most = 0f;
+        for (var i = 0; i < hull.Points.Length * Vector<float>.Count; i++)
+        {
+            hull.GetPoint(i, out var point);
+            most = MathF.Max(most, MathF.Max(MathF.Abs(point.X), MathF.Max(MathF.Abs(point.Y), MathF.Abs(point.Z))));
+        }
+
+        // The cube's corners are 25 cm from its middle along each axis.
+        Assert.Equal(0.25f, most, 3);
+    }
+
     [Fact]
     public void Support_points_are_the_farthest_points_in_each_direction()
     {

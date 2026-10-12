@@ -277,7 +277,7 @@ public sealed partial class LooseBodies
         var level = _voxels is not null && _voxels.Levels > coarseLevel ? coarseLevel : 0;
         foreach (ref readonly var part in parts)
         {
-            var coarse = VoxelModels.LevelCentimetres(part.Level) >= VoxelColliders.CoarsePartCentimetres;
+            var coarse = CellCentimetres(in part) >= VoxelColliders.CoarsePartCentimetres;
             level = Math.Min(level, coarse ? coarseLevel : 0);
         }
 
@@ -378,7 +378,7 @@ public sealed partial class LooseBodies
     private bool TryBuildPartHull(in LoosePart part, out ConvexHull hull, out Vector3 centre, out long voxels)
     {
         var pool = _physics.Pool;
-        var key = new SharedPart(part.Tree.State, part.Size, part.Level);
+        var key = new SharedPart(part.Tree.State, part.Size, CellCentimetres(in part));
         var cell = CellMetres(in part);
         if (!part.Owned && _sharedHulls.TryGetValue(key, out var shared))
         {
@@ -473,11 +473,19 @@ public sealed partial class LooseBodies
     )]
     private partial void LogRejoined(int ragdoll, int joints);
 
-    /// <summary>A shared part's tree and size: what its hull depends on.</summary>
-    private readonly record struct SharedPart(ChildState Tree, VoxelCoord Size, int Level);
+    /// <summary>A shared part's tree, size, and voxels' edge in centimetres: what its hull depends on.</summary>
+    private readonly record struct SharedPart(ChildState Tree, VoxelCoord Size, int CellCentimetres);
 
-    /// <summary>The edge of one of <paramref name="part"/>'s model voxels, in metres: 1 cm at level 0, 4 cm at level 2.</summary>
-    private static float CellMetres(in LoosePart part) => VoxelModels.LevelMetres(part.Level);
+    /// <summary>
+    /// The edge of one of <paramref name="part"/>'s model voxels, in centimetres: its model's unit at level 0 (1 cm for
+    /// most, 5 cm for an object kind of 5 cm voxels), four times it at level 2; a part with no model (a test's, -1) is of
+    /// 1 cm voxels.
+    /// </summary>
+    private int CellCentimetres(in LoosePart part) =>
+        (part.Model >= 0 ? _models.UnitCentimetres(part.Model) : VoxelModels.Centimetres) << part.Level;
+
+    /// <summary>The edge of one of <paramref name="part"/>'s model voxels, in metres (<see cref="CellCentimetres"/>).</summary>
+    private float CellMetres(in LoosePart part) => CellCentimetres(in part) / (float)VoxelConstants.CentimetresPerMetre;
 
     /// <summary>A shared part's hull corners (from its model's corner, metres) and its blocking voxels.</summary>
     private sealed record SharedHull(Vector3[] Corners, long Voxels);

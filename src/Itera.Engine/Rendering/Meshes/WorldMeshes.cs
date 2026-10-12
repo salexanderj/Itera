@@ -240,6 +240,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         _palette.Prepare();
         _materials = new MeshMaterial[MeshPass.MaterialCount];
         _modelVoxels = new byte[VoxelConstants.ChunkVoxels];
+        _modelDensities = new byte[VoxelConstants.ChunkVoxels];
         for (var i = 1; i < _materials.Length; i++)
         {
             var look = _palette.Look((byte)i);
