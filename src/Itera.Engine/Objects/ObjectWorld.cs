@@ -58,6 +58,9 @@ public sealed partial class ObjectWorld(
     /// <summary>Objects in the filled areas.</summary>
     public int Count { get; private set; }
 
+    /// <summary>A number that changes whenever an area is filled or goes: what is near a place may have changed.</summary>
+    public int Version { get; private set; }
+
     /// <summary>Starts following the world's columns, those resident already among them. At the match's start, after the world's.</summary>
     public void Initialize()
     {
@@ -164,21 +167,7 @@ public sealed partial class ObjectWorld(
             return true;
         }
 
-        var reach = kinds.MostReachCentimetres;
-        // Within the map's areas, so no box reads more than the map holds.
-        var grid = world.Grid;
-        var first = Maths.DeterministicMath.FloorDivide(
-            (long)grid.MinChunkXZ * VoxelConstants.ChunkSize * grid.Edge(0),
-            _areaCentimetres
-        );
-        var last = Maths.DeterministicMath.FloorDivide(
-            ((long)grid.MaxChunkXZ + 1) * VoxelConstants.ChunkSize * grid.Edge(0) - 1,
-            _areaCentimetres
-        );
-        var x0 = Math.Max(first, Maths.DeterministicMath.FloorDivide((long)minX - reach, _areaCentimetres));
-        var x1 = Math.Min(last, Maths.DeterministicMath.FloorDivide((long)maxX + reach, _areaCentimetres));
-        var z0 = Math.Max(first, Maths.DeterministicMath.FloorDivide((long)minZ - reach, _areaCentimetres));
-        var z1 = Math.Min(last, Maths.DeterministicMath.FloorDivide((long)maxZ + reach, _areaCentimetres));
+        var (x0, x1, z0, z1) = AreasRound(minX, maxX, minZ, maxZ);
         var whole = true;
         for (var z = z0; z <= z1; z++)
         {
@@ -207,6 +196,58 @@ public sealed partial class ObjectWorld(
         }
 
         return whole;
+    }
+
+    /// <summary>
+    /// True when every object that may reach into the box from (<paramref name="minX"/>, <paramref name="minZ"/>) to
+    /// (<paramref name="maxX"/>, <paramref name="maxZ"/>), absolute centimetres, inclusive, is known: the areas within the
+    /// widest kind's reach of it, inside the map, are filled (<see cref="Near"/> would return true). True without a placer.
+    /// Allocates nothing.
+    /// </summary>
+    public bool IsKnown(long minX, long maxX, long minZ, long maxZ)
+    {
+        if (_placer is null)
+        {
+            return true;
+        }
+
+        var (x0, x1, z0, z1) = AreasRound(minX, maxX, minZ, maxZ);
+        for (var z = z0; z <= z1; z++)
+        {
+            for (var x = x0; x <= x1; x++)
+            {
+                if (!_areas.TryGetValue(((int)x, (int)z), out var area) || !area.Filled)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The areas within the widest kind's reach of a box (absolute centimetres, inclusive), inside the map's: an area
+    /// past the map's edge holds no column, so it is never kept.
+    /// </summary>
+    private (long X0, long X1, long Z0, long Z1) AreasRound(long minX, long maxX, long minZ, long maxZ)
+    {
+        var reach = kinds.MostReachCentimetres;
+        var grid = world.Grid;
+        var first = Maths.DeterministicMath.FloorDivide(
+            (long)grid.MinChunkXZ * VoxelConstants.ChunkSize * grid.Edge(0),
+            _areaCentimetres
+        );
+        var last = Maths.DeterministicMath.FloorDivide(
+            ((long)grid.MaxChunkXZ + 1) * VoxelConstants.ChunkSize * grid.Edge(0) - 1,
+            _areaCentimetres
+        );
+        return (
+            Math.Max(first, Maths.DeterministicMath.FloorDivide(minX - reach, _areaCentimetres)),
+            Math.Min(last, Maths.DeterministicMath.FloorDivide(maxX + reach, _areaCentimetres)),
+            Math.Max(first, Maths.DeterministicMath.FloorDivide(minZ - reach, _areaCentimetres)),
+            Math.Min(last, Maths.DeterministicMath.FloorDivide(maxZ + reach, _areaCentimetres))
+        );
     }
 
     /// <summary>The area holding the absolute centimetre (<paramref name="x"/>, <paramref name="z"/>).</summary>
@@ -270,6 +311,7 @@ public sealed partial class ObjectWorld(
         area.Objects.Clear();
         area.Filled = false;
         _spare.Push(area);
+        Version++;
     }
 
     private void Fill(Area area)
@@ -306,6 +348,7 @@ public sealed partial class ObjectWorld(
 
         area.Filled = true;
         Count += area.Objects.Count;
+        Version++;
     }
 
     // Counts every resident column again, after the change list lost some: the areas still wanted keep what they hold.

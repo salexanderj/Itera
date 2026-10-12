@@ -66,8 +66,9 @@ stand-in still pushes the ball), and a thin mesh wall blocks the whole cell it p
 at every height (`AddMapEdge`). It waits while the voxels round it are not loaded. Its widest body is 2 m in radius
 (`MaxRadiusMetres`). It takes and gives local positions and reads absolute cells: a local float plus the match's origin
 (`VoxelCharacterMover.Origin`, the world's or the colliders'), in doubles, times its cells a metre, so a move 150 km
-out reads the cells a move at the middle does. It also reads the match's mesh colliders in the same cells (`MeshColumns`), combined with the
-voxels by the higher top, the lower bottom, and either cell; without terrain it reads them and the loose bodies in cells
+out reads the cells a move at the middle does. It also reads the match's mesh colliders in the same cells (`MeshColumns`), and the voxel objects the
+world places (`ObjectColumns`, `.claude/rules/objects.md`), combined with the voxels by the highest top, the lowest
+bottom, and any cell; without terrain it reads them and the loose bodies in cells
 of `Engine:Physics:CollisionCentimetres` (10 by default), with no column to wait for, and its map edge at the play
 area's world edge. The core makes it (`AddIteraEngine`: the world's constructor with terrain,
 `VoxelCharacterMover(passability, colliders, cell, edge, bodies)` without), and the play area (`PlayArea`, round the

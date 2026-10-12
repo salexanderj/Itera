@@ -210,6 +210,56 @@ public sealed class VoxelObjectKind
 
     internal ObjectPart[] Parts { get; }
 
+    // Its parts by their place in the grid of 112-voxel cubes over its box: the part's index, or -1 for an empty cube.
+    private int[]? _partAt;
+
+    /// <summary>
+    /// The material and density of its level-0 voxel (x, y, z), in its own voxels from its box's corner: air of no
+    /// density outside it. Main thread at the first read, which makes its tables.
+    /// </summary>
+    internal void Voxel(int x, int y, int z, out byte material, out byte density)
+    {
+        material = VoxelConstants.Air;
+        density = VoxelDensity.Empty;
+        if ((uint)x >= (uint)Size.X || (uint)y >= (uint)Size.Y || (uint)z >= (uint)Size.Z)
+        {
+            return;
+        }
+
+        const int own = ObjectPart.OwnVoxels;
+        int across = (Size.X + own - 1) / own,
+            up = (Size.Y + own - 1) / own,
+            deep = (Size.Z + own - 1) / own;
+        if (_partAt is null)
+        {
+            var table = new int[across * up * deep];
+            Array.Fill(table, -1);
+            for (var p = 0; p < Parts.Length; p++)
+            {
+                var offset = Parts[p].Offset;
+                table[offset.X / own + across * (offset.Y / own + up * (offset.Z / own))] = p;
+            }
+
+            _partAt = table;
+        }
+
+        var index = _partAt[x / own + across * (y / own + up * (z / own))];
+        if (index < 0)
+        {
+            return;
+        }
+
+        var part = Parts[index];
+        const int border = ObjectPart.BorderVoxels;
+        part.Voxel(
+            x - part.Offset.X + border,
+            y - part.Offset.Y + border,
+            z - part.Offset.Z + border,
+            out material,
+            out density
+        );
+    }
+
     private readonly Dictionary<int, ObjectCopyGrid> _copies = [];
 
     /// <summary>Its copy for world voxels <paramref name="edge"/> centimetres across, made at the first ask. Main thread.</summary>
@@ -370,6 +420,55 @@ internal sealed class ObjectPart
     public VoxelCoord OpenLow { get; set; }
 
     public PartLevel[] Levels { get; }
+
+    // Level 0's bricks by their packed place (x, y, z of 4 bits each): the brick's index, or -1 for none.
+    private int[]? _brickAt;
+
+    /// <summary>
+    /// The material and density of level-0 voxel (x, y, z) of its box (its border's corner at 0): air of no density
+    /// outside the box or in a brick it does not keep. Any thread once made (the first read, on the main thread, makes
+    /// its table).
+    /// </summary>
+    public void Voxel(int x, int y, int z, out byte material, out byte density)
+    {
+        material = VoxelConstants.Air;
+        density = VoxelDensity.Empty;
+        if ((uint)x >= (uint)Size.X || (uint)y >= (uint)Size.Y || (uint)z >= (uint)Size.Z)
+        {
+            return;
+        }
+
+        var level = Levels[0];
+        if (_brickAt is null)
+        {
+            var table = new int[16 * 16 * 16];
+            Array.Fill(table, -1);
+            for (var b = 0; b < level.Bricks.Length; b++)
+            {
+                table[level.Bricks[b]] = b;
+            }
+
+            _brickAt = table;
+        }
+
+        var brick = _brickAt[(x >> 3) | ((y >> 3) << 4) | ((z >> 3) << 8)];
+        if (brick < 0)
+        {
+            return;
+        }
+
+        var payload = level.PayloadStart[brick];
+        if (level.Uniform[brick])
+        {
+            material = level.Payload[payload];
+            density = level.Payload[payload + 1];
+            return;
+        }
+
+        var j = (x & 7) + Brick * ((y & 7) + Brick * (z & 7));
+        material = level.Payload[payload + j];
+        density = level.Payload[payload + BrickVoxels + j];
+    }
 
     /// <summary>The part's box at level <paramref name="level"/>: its box halved per level, rounded up.</summary>
     public VoxelCoord SizeAt(int level)

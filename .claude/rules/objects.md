@@ -78,6 +78,14 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   palette, the texture sets, the tint map at the point, the world's look), so a model and its copy match. A stitched
   block of the level below K reads the coarser block with the objects' materials made air (`MaskCopies`), so no copy
   shows in its seam; the objects' materials should be their own, not the ground's.
+- Characters meet objects as ground (`ObjectColumns`, internal; the mover's `Objects`, set where the world has terrain):
+  in the mover's cells, a cell is blocked where its centre, turned into an object, lands on its solid voxel that is not
+  passable (`IVoxelPassability`: a tree's leaves where the game says so); each run of blocked cells keeps its object's
+  surface over the column's centre (the top of the highest solid voxel there) and that voxel's material, which the mover
+  reads as the ground's (`PhysicsMaterials.OfVoxel`, `IVoxelSurfaceTags`). It answers the voxel world's and the mesh
+  colliders' queries, made 32 by 32 columns at a time and kept until `ObjectWorld.Version` changes (an area filled or
+  gone), at most 256 chunks; a move waits where the areas round it within the map are not filled (`Known`, `ObjectWorld.IsKnown`). Kinds read a voxel through
+  their parts' brick tables (`VoxelObjectKind.Voxel`).
 - Models may have a voxel size of their own (`VoxelModels.Add` with a unit; `UnitCentimetres`, `VoxelMetres`) and keep
   densities (`Encode(voxels, densities, extent)`, `DecodeDensities`, `HasDensities`), which the renderer meshes them with.
   `SolidModelVoxels.Add` and the cut parts' hulls and masses (`LooseBodies.TryCreate(parts)`) take the model's unit.

@@ -204,6 +204,7 @@ public sealed class VoxelCharacterMover
     // The columns' tops and surfaces of a window the ground and the walls read (density only), and the ramp of the move.
     private readonly int[] _columnTops;
     private readonly int[] _meshTops;
+    private readonly int[] _objectTops;
     private readonly double[] _surfaces;
 
     // The columns' surfaces read within one move or query (VoxelWorld.SurfaceOver), by column and top: a move reads
@@ -313,6 +314,7 @@ public sealed class VoxelCharacterMover
         var side = _density ? (int)Math.Ceiling(2 * (MaxRadiusMetres * _cellsPerMetre + MaxPart + 2)) + 4 : 0;
         _columnTops = new int[side * side];
         _meshTops = new int[side * side];
+        _objectTops = new int[side * side];
         _surfaces = new double[side * side];
     }
 
@@ -321,6 +323,12 @@ public sealed class VoxelCharacterMover
 
     /// <summary>The voxel materials' surface tags, for the ground's (<see cref="CharacterMoveResult.GroundTags"/>); none gives none.</summary>
     public IVoxelSurfaceTags? SurfaceTags { get; init; }
+
+    /// <summary>
+    /// The voxel objects the world places, read as the ground is (<see cref="ObjectColumns"/>: walls, ledges, and ground
+    /// to stand on, with their material and tags); none without. A move waits where their areas are not filled yet.
+    /// </summary>
+    internal ObjectColumns? Objects { get; init; }
 
     /// <summary>
     /// The widest body the mover takes, in metres: the window of cells a slide reads (512 cells) limits it. A 10 m giant's
@@ -601,6 +609,17 @@ public sealed class VoxelCharacterMover
             top = meshTop;
             material = meshes.MaterialOf(collider);
             tags = meshTags;
+        }
+
+        if (
+            Objects is { Empty: false } objects
+            && objects.TopAt(x, z, y0, y1, out var objectTop, out var objectVoxel)
+            && objectTop >= top
+        )
+        {
+            top = objectTop;
+            material = Materials?.OfVoxel(objectVoxel) ?? PhysicsMaterialId.Default;
+            tags = SurfaceTags?.TagsOf(objectVoxel) ?? 0;
         }
 
         return top != int.MinValue;
@@ -1195,18 +1214,29 @@ public sealed class VoxelCharacterMover
             _meshes!.ColumnTops(windowX, windowZ, width, depth, y0, y1, meshTops);
         }
 
+        var objectTops = _objectTops.AsSpan(0, width * depth);
+        var objects = Objects is { Empty: false };
+        if (objects)
+        {
+            Objects!.ColumnTops(windowX, windowZ, width, depth, y0, y1, objectTops);
+        }
+
         for (var i = 0; i < tops.Length; i++)
         {
-            // The higher of the two sources' tops, its surface read from whichever has it (both when they meet).
+            // The highest of the sources' tops, its surface read from whichever has it (all that meet there).
             var worldTop = tops[i];
             var meshTop = meshes ? meshTops[i] : int.MinValue;
-            var top = Math.Max(worldTop, meshTop);
+            var objectTop = objects ? objectTops[i] : int.MinValue;
+            var top = Math.Max(worldTop, Math.Max(meshTop, objectTop));
             int x = windowX + i % width,
                 z = windowZ + i / width;
-            var surface = top == int.MinValue ? double.NaN : SurfaceOver(x, top, z, worldTop == top, meshTop == top);
+            var surface =
+                top == int.MinValue
+                    ? double.NaN
+                    : SurfaceOver(x, top, z, worldTop == top, meshTop == top, objectTop == top);
             // A mesh's surface may lie more than a cell under its top (a steep triangle); where it lies within half a
             // cell over the voxels' top or under it, the voxels' ground may be the higher (a mesh rock half buried).
-            if (meshTop > worldTop && worldTop != int.MinValue && !(surface >= worldTop + 0.5))
+            if (Math.Max(meshTop, objectTop) > worldTop && worldTop != int.MinValue && !(surface >= worldTop + 0.5))
             {
                 var ground = _world!.SurfaceOver(x, worldTop, z, in _passable);
                 surface = double.IsNaN(surface) ? ground : Math.Max(surface, ground);
@@ -1222,16 +1252,17 @@ public sealed class VoxelCharacterMover
     /// where theirs is (<paramref name="meshes"/>), the higher of the two where both are; read once for each column and
     /// top within a move or query (<see cref="ForgetSurfaces"/>).
     /// </summary>
-    private double SurfaceOver(int x, int top, int z, bool voxels, bool meshes)
+    private double SurfaceOver(int x, int top, int z, bool voxels, bool meshes, bool objects = false)
     {
-        // Column x and z 21 bits each, the top 20, and which sources have it. A move or query reads columns far fewer than
+        // Column x and z 21 bits each, the top 19, and which sources have it. A move or query reads columns far fewer than
         // 2^21 cells apart, and the cache is forgotten between them, so the bits left out never tell two apart.
         var key =
             (((long)x & 0x1FFFFF) << 43)
             | (((long)z & 0x1FFFFF) << 22)
-            | (((long)top & 0xFFFFF) << 2)
+            | (((long)top & 0x7FFFF) << 3)
             | (voxels ? 1L : 0)
-            | (meshes ? 2L : 0);
+            | (meshes ? 2L : 0)
+            | (objects ? 4L : 0);
         var slot = (x & (SurfaceCacheSide - 1)) | ((z & (SurfaceCacheSide - 1)) << SurfaceCacheSideBits);
         if (_cachedStamps[slot] == _cacheStamp && _cachedKeys[slot] == key)
         {
@@ -1243,6 +1274,12 @@ public sealed class VoxelCharacterMover
         {
             var mesh = _meshes.SurfaceOver(x, top, z);
             surface = double.IsNaN(surface) ? mesh : Math.Max(surface, mesh);
+        }
+
+        if (objects && Objects is not null)
+        {
+            var objectSurface = Objects.SurfaceOver(x, top, z);
+            surface = double.IsNaN(surface) ? objectSurface : Math.Max(surface, objectSurface);
         }
 
         _cachedStamps[slot] = _cacheStamp;
@@ -1338,20 +1375,30 @@ public sealed class VoxelCharacterMover
             bottom = Math.Min(bottom, _meshes.LowestBottom(in footprint, y0, y1));
         }
 
+        if (Objects is not null)
+        {
+            bottom = Math.Min(bottom, Objects.LowestBottom(in footprint, y0, y1));
+        }
+
         return _bodies is null || _bodies.Count == 0
             ? bottom
             : Math.Min(bottom, _bodies.LowestBottom(in footprint, y0, y1));
     }
 
-    /// <summary>The highest top from y0 to y1 under a footprint, of the voxels and the mesh colliders.</summary>
+    /// <summary>The highest top from y0 to y1 under a footprint, of the voxels, the mesh colliders, and the objects.</summary>
     private int TerrainTop(in CircleFootprint footprint, int y0, int y1)
     {
         var top = _world?.HighestTop(in footprint, y0, y1, in _passable) ?? int.MinValue;
-        return _meshes is null ? top : Math.Max(top, _meshes.HighestTop(in footprint, y0, y1));
+        top = _meshes is null ? top : Math.Max(top, _meshes.HighestTop(in footprint, y0, y1));
+        return Objects is null ? top : Math.Max(top, Objects.HighestTop(in footprint, y0, y1));
     }
 
-    /// <summary>True when the voxel columns of the box are loaded; always without voxel terrain.</summary>
-    private bool Resident(int x0, int z0, int x1, int z1) => _world?.ColumnsResident(x0, z0, x1, z1) ?? true;
+    /// <summary>
+    /// True when the voxel columns of the box are loaded and the objects that may stand in it are known; always without
+    /// voxel terrain.
+    /// </summary>
+    private bool Resident(int x0, int z0, int x1, int z1) =>
+        (_world?.ColumnsResident(x0, z0, x1, z1) ?? true) && (Objects?.Known(x0, z0, x1, z1) ?? true);
 
     /// <summary>
     /// The cells of a strip of a window (at most 128 wide) that hold a blocking voxel or a mesh collider's cell from y0
@@ -1369,6 +1416,7 @@ public sealed class VoxelCharacterMover
         }
 
         _meshes?.BlockedCells(windowX, windowZ, width, y0, y1, rows);
+        Objects?.BlockedCells(windowX, windowZ, width, y0, y1, rows);
     }
 
     /// <summary>The strips of 128 cells a window <paramref name="width"/> cells wide needs.</summary>

@@ -10,6 +10,7 @@ using Itera.Engine.Matches;
 using Itera.Engine.Maths;
 using Itera.Engine.Modding;
 using Itera.Engine.Networking;
+using Itera.Engine.Objects;
 using Itera.Engine.Particles;
 using Itera.Engine.Physics;
 using Itera.Engine.Rendering;
@@ -263,6 +264,15 @@ public static class EngineServiceCollectionExtensions
             {
                 Materials = materials,
                 SurfaceTags = tags,
+                // The objects the world places, as its ground.
+                Objects = services.GetService<ObjectWorld>() is { } placed
+                    ? new ObjectColumns(
+                        placed,
+                        services.GetRequiredService<VoxelObjectKinds>(),
+                        passability,
+                        world.Grid.BaseCentimetres
+                    )
+                    : null,
             };
         }
 

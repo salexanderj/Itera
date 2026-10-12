@@ -125,7 +125,9 @@ Where tests live:
   reporting their speed, place, normal, and materials, a ball rolling to rest asleep giving nothing more, two marked
   balls meeting and parting, a marked static, a removal, the origin, drops, no allocation), mesh colliders (`MeshCollidersTests`: two-sided rays across buckets, tags, a ball that
   lands on a collider's Bepu static at any voxel level) and the shared ray (`CollisionSourcesTests`); the colliders as
-  the mover's cells (`MeshColumnsTests`); the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves)
+  the mover's cells (`MeshColumnsTests`); the voxel objects as its cells (`ObjectColumnsTests`: cells against a
+  cell-by-cell reference, a trunk, a rock's top, material, and tags, a low stone, a bush, waiting for unfilled areas, the
+  map's edge, chunks made again when the objects change, no allocation); the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves)
   and 10,000 random moves that never leave it inside a voxel, the same test bodies run on voxels and on triangles built
   from the same features (`MoverFeatureTests`: `VoxelCharacterMoverTests` and `MeshMoverFeatureTests` over a world of
   air; `DensityGroundTests` at 10 cm: `DensityMoverTests` and `MeshDensityGroundTests` with no world, both from

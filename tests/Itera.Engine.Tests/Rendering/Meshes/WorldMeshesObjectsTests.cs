@@ -231,12 +231,15 @@ public sealed partial class WorldMeshesTests
             _test._objectTargets = null;
         }
 
-        /// <summary>Frames until the world's meshes and the kinds' models are in, from <paramref name="at"/>.</summary>
+        /// <summary>
+        /// Frames until the world's meshes, their stitched seams, and the kinds' models are in, from
+        /// <paramref name="at"/>: a stitch that ends later, on a busy machine, is installed in a later frame.
+        /// </summary>
         public void Settle(Vector3 at, bool shadows)
         {
             var deadline = DateTime.UtcNow.AddSeconds(60);
             var parts = _objectModels.PartsOf(default).ToArray();
-            while (!Meshes.IsUpToDate || !parts.All(part => _models.IsUploaded(part.Model)))
+            while (!Meshes.IsUpToDate || !Meshes.StitchesSettled || !parts.All(part => _models.IsUploaded(part.Model)))
             {
                 Assert.True(DateTime.UtcNow < deadline, "The meshes did not catch up.");
                 World.Update(0);
