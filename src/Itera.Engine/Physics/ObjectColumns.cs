@@ -14,7 +14,8 @@ namespace Itera.Engine.Physics;
 /// colliders answer (<see cref="HighestTop"/>, <see cref="LowestBottom"/>, <see cref="BlockedCells"/>,
 /// <see cref="ColumnTops"/>, <see cref="SurfaceOver"/>, <see cref="TopAt"/>), with the same values for none, so the mover
 /// takes them as the ground's. The spans are made a chunk of 32 by 32 columns at a time, the first time a query reads
-/// it, and kept until the objects change (<see cref="ObjectWorld.Version"/>), at most <see cref="MostChunks"/>; a chunk
+/// it, and kept until the objects change (<see cref="ObjectWorld.Version"/>) or one under it is damaged
+/// (<see cref="ObjectDamage.ReadChanges"/>), at most <see cref="MostChunks"/>; a chunk
 /// reads only the cells that can hold each object's column's solid voxels (a table of each kind's columns' lowest and
 /// highest, made at the kind's first chunk). Making a chunk allocates until the cache holds that many and their arrays
 /// have grown to the largest; every other read allocates nothing. Main thread.
@@ -36,6 +37,11 @@ internal sealed class ObjectColumns
     private readonly List<ObjectPlacement> _near = [];
     private readonly List<ObjectSpan>[] _columns = NewColumns();
     private readonly Dictionary<VoxelObjectKindId, ColumnRange[]> _ranges = [];
+    private readonly Dictionary<VoxelObjectKindId, ColumnRange[]> _solidRanges = [];
+    private readonly ObjectDamage? _damage;
+    private readonly ObjectDamageChange[] _damageChanges = new ObjectDamageChange[64];
+    private readonly List<long> _stale = [];
+    private long _damageSeen;
     private int _version = -1;
     private long _reads;
     private Chunk? _last;
@@ -45,13 +51,16 @@ internal sealed class ObjectColumns
     /// <param name="kinds">The run's object kinds.</param>
     /// <param name="passability">The materials characters pass through.</param>
     /// <param name="cellCentimetres">The edge of the mover's cells: the world's level-0 voxels.</param>
+    /// <param name="damage">What edits did to the objects, whose voxels are read through it; none without.</param>
     public ObjectColumns(
         ObjectWorld objects,
         VoxelObjectKinds kinds,
         IVoxelPassability passability,
-        int cellCentimetres
+        int cellCentimetres,
+        ObjectDamage? damage = null
     )
     {
+        _damage = damage;
         ArgumentNullException.ThrowIfNull(objects);
         ArgumentNullException.ThrowIfNull(kinds);
         ArgumentNullException.ThrowIfNull(passability);
@@ -251,6 +260,11 @@ internal sealed class ObjectColumns
             _last = null;
         }
 
+        if (_damage is not null && _damage.Version != _damageSeen)
+        {
+            FollowDamage();
+        }
+
         var cx = x >> ChunkBits;
         var cz = z >> ChunkBits;
         var key = ((long)cx << 32) | (uint)cz;
@@ -271,6 +285,60 @@ internal sealed class ObjectColumns
         var column = (x & (ChunkSide - 1)) | ((z & (ChunkSide - 1)) << ChunkBits);
         var start = built.Offsets[column];
         return built.Spans.AsSpan(start, built.Offsets[column + 1] - start);
+    }
+
+    /// <summary>
+    /// Drops the chunks under each object whose voxels changed since the last read (every chunk when the changes ran
+    /// ahead of it): they are made again at their next read.
+    /// </summary>
+    private void FollowDamage()
+    {
+        while (_damage!.Version != _damageSeen)
+        {
+            var read = _damage.ReadChanges(_damageSeen, _damageChanges, out var lost);
+            if (lost)
+            {
+                _damageSeen = _damage.Version;
+                foreach (var chunk in _chunks.Values)
+                {
+                    _free.Push(chunk);
+                }
+
+                _chunks.Clear();
+                _last = null;
+                return;
+            }
+
+            for (var i = 0; i < read; i++)
+            {
+                ref readonly var change = ref _damageChanges[i];
+                _damageSeen = change.Version;
+                // The chunks whose columns the object's reach meets.
+                var side = (long)ChunkSide * _cell;
+                long cx0 = DeterministicMath.FloorDivide(change.MinX, side),
+                    cx1 = DeterministicMath.FloorDivide(change.MaxX, side),
+                    cz0 = DeterministicMath.FloorDivide(change.MinZ, side),
+                    cz1 = DeterministicMath.FloorDivide(change.MaxZ, side);
+                _stale.Clear();
+                foreach (var key in _chunks.Keys)
+                {
+                    long cx = key >> 32,
+                        cz = (int)(uint)key;
+                    if (cx >= cx0 && cx <= cx1 && cz >= cz0 && cz <= cz1)
+                    {
+                        _stale.Add(key);
+                    }
+                }
+
+                foreach (var key in _stale)
+                {
+                    _free.Push(_chunks[key]);
+                    _chunks.Remove(key);
+                }
+            }
+
+            _last = null;
+        }
     }
 
     /// <summary>A chunk to make: a freed one, a new one while fewer than <see cref="MostChunks"/> are kept, else the one read longest ago.</summary>
@@ -364,7 +432,11 @@ internal sealed class ObjectColumns
         var y0 = (int)DeterministicMath.FloorDivide((long)anchor.Y + kind.BottomCentimetres, _cell);
         var y1 = (int)DeterministicMath.FloorDivide((long)anchor.Y + kind.TopCentimetres - 1, _cell);
         var half = _cell / 2.0;
-        var ranges = RangesOf(placement.Kind, kind);
+        // A damaged object's voxels through its damage, within its kind's solid voxels, passable ones too: edits only
+        // take voxels away, but a paint may make a passable one blocking.
+        var damaged = _damage?.Find(placement.Id);
+        IObjectVoxelSource voxels = (IObjectVoxelSource?)damaged ?? kind;
+        var ranges = RangesOf(placement.Kind, kind, passableToo: damaged is not null);
         for (var z = cz0; z <= cz1; z++)
         {
             for (var x = cx0; x <= cx1; x++)
@@ -409,14 +481,14 @@ internal sealed class ObjectColumns
                 var runStart = int.MinValue;
                 for (var y = from; y <= to + 1; y++)
                 {
-                    var solid = y <= to && Solid(kind, vx, CellVoxelY(kind, anchor, y, half), vz);
+                    var solid = y <= to && Solid(voxels, vx, CellVoxelY(kind, anchor, y, half), vz);
                     if (solid && runStart == int.MinValue)
                     {
                         runStart = y;
                     }
                     else if (!solid && runStart != int.MinValue)
                     {
-                        column.Add(Span(kind, anchor, vx, vz, runStart, y - 1));
+                        column.Add(Span(voxels, kind, anchor, vx, vz, runStart, y - 1));
                         runStart = int.MinValue;
                     }
                 }
@@ -432,9 +504,9 @@ internal sealed class ObjectColumns
                 kind.UnitCentimetres
             );
 
-    private bool Solid(VoxelObjectKind kind, int vx, int vy, int vz)
+    private bool Solid(IObjectVoxelSource voxels, int vx, int vy, int vz)
     {
-        kind.Voxel(vx, vy, vz, out var material, out _);
+        voxels.Voxel(vx, vy, vz, out var material, out _);
         return material != VoxelConstants.Air && !_passable.Contains(material);
     }
 
@@ -442,7 +514,15 @@ internal sealed class ObjectColumns
     /// The span of cells lo to hi of one object's column (vx, vz): its surface the top of the highest solid voxel of the
     /// column under the top cell's top, in cells, and that voxel's material.
     /// </summary>
-    private ObjectSpan Span(VoxelObjectKind kind, VoxelCoord anchor, int vx, int vz, int lo, int hi)
+    private ObjectSpan Span(
+        IObjectVoxelSource voxels,
+        VoxelObjectKind kind,
+        VoxelCoord anchor,
+        int vx,
+        int vz,
+        int lo,
+        int hi
+    )
     {
         var unit = kind.UnitCentimetres;
         // The object's voxels from the top cell's top down to its bottom.
@@ -451,7 +531,7 @@ internal sealed class ObjectColumns
         var bottom = (int)DeterministicMath.FloorDivide((long)hi * _cell - anchor.Y + kind.AnchorCentimetres.Y, unit);
         for (var vy = top; vy >= bottom; vy--)
         {
-            kind.Voxel(vx, vy, vz, out var material, out _);
+            voxels.Voxel(vx, vy, vz, out var material, out _);
             if (material != VoxelConstants.Air && !_passable.Contains(material))
             {
                 var surface = ((long)(vy + 1) * unit - kind.AnchorCentimetres.Y + anchor.Y) / (double)_cell;
@@ -460,18 +540,19 @@ internal sealed class ObjectColumns
         }
 
         // The top cell's centre holds a solid voxel, so one lies in it; past rounding, its top.
-        kind.Voxel(vx, CellVoxelY(kind, anchor, hi, _cell / 2.0), vz, out var centre, out _);
+        voxels.Voxel(vx, CellVoxelY(kind, anchor, hi, _cell / 2.0), vz, out var centre, out _);
         return new ObjectSpan(lo, hi, hi + 1, centre);
     }
 
     /// <summary>
-    /// The lowest and highest solid voxel that is not passable of each of the kind's voxel columns (index
-    /// <c>x + Size.X * z</c>; Low over High for none), made from its parts' bricks at its first read: so a chunk reads
-    /// only the cells an object's column can block.
+    /// The lowest and highest solid voxel that is not passable (with <paramref name="passableToo"/>, any solid voxel) of
+    /// each of the kind's voxel columns (index <c>x + Size.X * z</c>; Low over High for none), made from its parts' bricks
+    /// at its first read: so a chunk reads only the cells an object's column can block.
     /// </summary>
-    private ColumnRange[] RangesOf(VoxelObjectKindId id, VoxelObjectKind kind)
+    private ColumnRange[] RangesOf(VoxelObjectKindId id, VoxelObjectKind kind, bool passableToo)
     {
-        if (_ranges.TryGetValue(id, out var found))
+        var table = passableToo ? _solidRanges : _ranges;
+        if (table.TryGetValue(id, out var found))
         {
             return found;
         }
@@ -500,7 +581,7 @@ internal sealed class ObjectColumns
                     var material = level.Uniform[b] ? level.Payload[payload] : level.Payload[payload + j];
                     if (
                         material == VoxelConstants.Air
-                        || _passable.Contains(material)
+                        || (!passableToo && _passable.Contains(material))
                         || x < part.Offset.X
                         || y < part.Offset.Y
                         || z < part.Offset.Z
@@ -518,7 +599,7 @@ internal sealed class ObjectColumns
             }
         }
 
-        _ranges[id] = ranges;
+        table[id] = ranges;
         return ranges;
     }
 

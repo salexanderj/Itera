@@ -99,7 +99,8 @@ lists the game's). Commonly used:
   `VelocityIterations` (8; 1 to 32), `LinearDamping` and `AngularDamping` (0.03; 0 to 1), `Gravity:X`, `Gravity:Y`, `Gravity:Z` (0, -9.81, 0; each -100
   to 100), `CollisionCentimetres`
   (the character mover's cells without voxel terrain, 1 to 10, default 10); `--Engine:Objects:HandOverLevel` (2; 1 to
-  9: the world level from which voxel objects are drawn as copies in its voxels);
+  9: the world level from which voxel objects are drawn as copies in its voxels), `MostDamaged` (256; 1 to 65,536: the
+  damaged voxel objects that keep their copies at once, the farthest from every streaming centre dropped past it);
   `--Engine:Particles:Enabled=false` (`Capacity` 16,384 to 1,048,576); `--Engine:Audio:Enabled=false` (`Volume` 0 to
   1, default 0.1; `MusicVolume` and `EffectsVolume` 0 to 1 under it, default 1; `MaxVoices` 8 to 254; `MenuMusic` the track the
   engine's menu plays), `--Engine:Audio:Cache=false`; `--Engine:Loading:Enabled=false`;

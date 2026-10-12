@@ -23,6 +23,7 @@ public sealed unsafe partial class WorldMeshes
 
     private ObjectWorld? _objects;
     private VoxelObjects? _objectModels;
+    private ObjectDamage? _damage;
     private int _handOver;
     private readonly HashSet<(int X, int Z)> _cameraSplit = [];
     private readonly HashSet<(int X, int Z)> _farSplit = [];
@@ -33,9 +34,10 @@ public sealed unsafe partial class WorldMeshes
     /// <summary>The level-K columns the far cascade's pass split below K in the last frame. For tests.</summary>
     internal IReadOnlyCollection<(int X, int Z)> FarSplit => _farSplit;
 
-    /// <summary>Follows the match's objects (none without terrain).</summary>
-    private void BeginObjects(ObjectWorld? objects, VoxelObjects? objectModels)
+    /// <summary>Follows the match's objects (none without terrain), damaged ones drawn as their edits left them.</summary>
+    private void BeginObjects(ObjectWorld? objects, VoxelObjects? objectModels, ObjectDamage? damage)
     {
+        _damage = damage;
         // Followed only where the world places objects of some kind.
         _objects = objects is { HasPlacer: true } && objectModels is { Kinds.Count: > 0 } ? objects : null;
         _objectModels = objectModels;
@@ -48,6 +50,7 @@ public sealed unsafe partial class WorldMeshes
     {
         _objects = null;
         _objectModels = null;
+        _damage = null;
         _cameraSplit.Clear();
         _farSplit.Clear();
     }
@@ -137,7 +140,9 @@ public sealed unsafe partial class WorldMeshes
                 var turn = ObjectTurns.Rotation(placement.Heading);
                 // The views draw the coarsest level: one draw for all when it is the level drawn already.
                 var apart = level == 2 ? 0 : lists & views;
-                foreach (ref readonly var part in objectModels.PartsOf(placement.Kind))
+                // A damaged object's own part models once on the GPU, its kind's for the rest.
+                var parts = _damage is { } damage ? damage.PartsOf(in placement) : objectModels.PartsOf(placement.Kind);
+                foreach (ref readonly var part in parts)
                 {
                     var corner = local + Vector3.Transform(part.Corner, turn);
                     GatherModel(

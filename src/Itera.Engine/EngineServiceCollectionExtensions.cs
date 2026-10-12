@@ -270,7 +270,8 @@ public static class EngineServiceCollectionExtensions
                         placed,
                         services.GetRequiredService<VoxelObjectKinds>(),
                         passability,
-                        world.Grid.BaseCentimetres
+                        world.Grid.BaseCentimetres,
+                        services.GetService<ObjectDamage>()
                     )
                     : null,
             };

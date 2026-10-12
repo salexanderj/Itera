@@ -99,7 +99,14 @@ Where tests live:
 - `Itera.Engine.Tests/Objects/`: voxel objects over `PlacingGenerator` (flat stone placing a test's objects): kinds'
   shapes and registry, models, `ObjectWorld`'s areas, far copies (a pinned hash), turns, and rays (`ObjectRaysTests`:
   random rays against every solid voxel's box, a ray across stretches 40 m out, the shared ray, a tool's ray through a
-  bush, the third-person camera pulled in by a trunk, the movement probes on a trunk, no allocation).
+  bush, the third-person camera pulled in by a trunk, the movement probes on a trunk, no allocation), and damage
+  (`ObjectDamageTests`: a turned box against the cubes it holds wholly or misses, damage made live against damage
+  replayed when the area fills bit for bit (also across a reset), a dig past the map's edge changing nothing, the damage
+  pinned, a reset, the cap dropping the farthest copy and replaying it near, a mover far behind the changes, an area's
+  copies going and coming back, a clear's count of what it takes for `IVoxelRemovals`, paint and fill, damaged parts'
+  models against the kind's rule over their voxels across a part's border, the mover, rays, and statics meeting a dug
+  object, a bush painted to rock stopping a character, a second dig allocating nothing; `ObjectDamageMatchTests`: a body on a rock in a match of the engine's real
+  composition, falling when the rock is dug away).
 - `Itera.Engine.Tests/Maths/` and `Animation/`: the deterministic maths and rotations, the octahedral encoding, the
   origin's conversions at up to ±160 km (`WorldOriginTests`), and skeletons, clips, aiming, and foot IK over a humanoid
   test skeleton (`HumanoidTestSkeleton`).

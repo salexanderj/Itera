@@ -89,9 +89,10 @@ internal sealed class VoxelBoxes
     /// <summary>
     /// Finds the boxes of a voxel object kind's blocking voxels that are not in <paramref name="excluded"/>, in the
     /// kind's own voxels (0 to its size less one): each part's own voxels, brick by brick (a part's bricks lie on the
-    /// kind's 8-voxel lattice).
+    /// kind's 8-voxel lattice), or a damaged object's of the kind, its changed bricks read from
+    /// <paramref name="damaged"/> (edits only take voxels away, so the kind's bricks hold all of them).
     /// </summary>
-    public void Build(Objects.VoxelObjectKind kind, in MaterialSet excluded)
+    public void Build(Objects.VoxelObjectKind kind, Objects.DamagedObject? damaged, in MaterialSet excluded)
     {
         Count = 0;
         const int border = Objects.ObjectPart.BorderVoxels;
@@ -110,8 +111,13 @@ internal sealed class VoxelBoxes
                     bz = (((packed >> 8) & 15) << 3) - border + own.Z;
                 var payload = level.PayloadStart[b];
                 var uniform = level.Uniform[b];
+                // A changed brick of a damaged object: its own voxels (materials, then densities).
+                var changed = damaged is null
+                    ? default
+                    : damaged.BrickVoxelsOf(Objects.DamagedObject.BrickKey(bx, by, bz));
                 if (
-                    uniform
+                    changed.IsEmpty
+                    && uniform
                     && bx >= own.X
                     && by >= own.Y
                     && bz >= own.Z
@@ -141,7 +147,10 @@ internal sealed class VoxelBoxes
                         continue;
                     }
 
-                    var material = uniform ? level.Payload[payload] : level.Payload[payload + j];
+                    var material =
+                        !changed.IsEmpty ? changed[j]
+                        : uniform ? level.Payload[payload]
+                        : level.Payload[payload + j];
                     if (material != VoxelConstants.Air && !excluded.Contains(material))
                     {
                         mask[j >> 6] |= 1UL << (j & 63);

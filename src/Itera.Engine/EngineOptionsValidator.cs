@@ -145,6 +145,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         Range(failures, "Camera:MouseSensitivity", camera.MouseSensitivity, 0.001, 10);
 
         Range(failures, "Objects:HandOverLevel", options.Objects.HandOverLevel, 1, 9);
+        Range(failures, "Objects:MostDamaged", options.Objects.MostDamaged, 1, 65_536);
 
         var physics = options.Physics;
         Range(failures, "Physics:SettleSeconds", physics.SettleSeconds, 0.5, 60);

@@ -301,6 +301,7 @@ public sealed partial class ObjectWorld(
         _areas.Remove((area.X, area.Z));
         if (area.Filled)
         {
+            Listener?.Dropping(area.Objects);
             Count -= area.Objects.Count;
         }
         else
@@ -349,7 +350,11 @@ public sealed partial class ObjectWorld(
         area.Filled = true;
         Count += area.Objects.Count;
         Version++;
+        Listener?.Filled(area.Objects);
     }
+
+    /// <summary>Hears of the objects as areas fill and drop (<c>ObjectDamage</c>), or null. Main thread.</summary>
+    internal IObjectWorldListener? Listener { get; set; }
 
     // Counts every resident column again, after the change list lost some: the areas still wanted keep what they hold.
     private void Resync()
@@ -399,4 +404,14 @@ public sealed partial class ObjectWorld(
         public bool Filled;
         public readonly List<ObjectPlacement> Objects = [];
     }
+}
+
+/// <summary>Hears of the placed objects as their areas fill and drop (<see cref="ObjectWorld.Listener"/>). Main thread.</summary>
+internal interface IObjectWorldListener
+{
+    /// <summary>An area's objects, just filled.</summary>
+    void Filled(List<ObjectPlacement> objects);
+
+    /// <summary>An area's objects, about to go.</summary>
+    void Dropping(List<ObjectPlacement> objects);
 }

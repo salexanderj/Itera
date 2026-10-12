@@ -72,7 +72,7 @@ only where every voxel is wholly so (the voxels' edges are tested, not their sam
     lifted pieces (`VoxelPiece`, `PieceRuns`), models (`VoxelModels`), the log's file format (`EditLogSerializer`), what
     an edit's clears remove (`IVoxelRemovals`), and collision queries (`IVoxelPassability`, `VoxelBoxes`); the
     generation toolkit in `Generation/`. `VoxelWorld` is the service: streaming in `VoxelWorld.cs`, the edit path,
-    makers, removals, reset, and saves in `.Edits.cs`, lifts and pieces in `.Pieces.cs`, the edit warm-up in
+    makers, removals, reset, saves, and the voxel objects' hook (`IObjectEdits`, `CollectEdits`) in `.Edits.cs`, lifts and pieces in `.Pieces.cs`, the edit warm-up in
     `.WarmUp.cs`, rays in `.Raycast.cs`, collision in `.Collision.cs`, and the blocks the raster pipeline meshes
     (`TryReadBlock`, `BlockMayHaveSurface`) and the sky field reads (`TryReadOwnBlock`) in `.Blocks.cs`.
 

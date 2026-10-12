@@ -14,13 +14,20 @@ namespace Itera.Engine.Physics;
 /// kind's, made once a match and shared by every object of the kind; passable voxels give none), posed at its anchor and
 /// turned by its heading (<see cref="ObjectTurns.Rotation"/>), touched by bodies of every voxel level
 /// (<see cref="BodyKinds.AnyLevel"/>) in the voxels' layer. An object's statics stay while a cell reaches it; when the
-/// objects change (<see cref="ObjectWorld.Version"/>) every cell finds its objects again. A body round which an area of
-/// objects is not filled yet freezes as one where the columns are not resident.
+/// objects change (<see cref="ObjectWorld.Version"/>) every cell finds its objects again. A damaged object
+/// (<see cref="ObjectDamage"/>) has compounds of its own, of its voxels as the edits left them, swapped into its statics
+/// in place at each change it reads (<see cref="ObjectDamage.ReadChanges"/>) and freed with them. A body round which an
+/// area of objects is not filled yet freezes as one where the columns are not resident.
 /// </summary>
 public sealed partial class VoxelColliders
 {
     private readonly ObjectWorld? _objects;
     private readonly VoxelObjectKinds? _kinds;
+    private readonly ObjectDamage? _damage;
+    private readonly ObjectDamageChange[] _damageChanges = new ObjectDamageChange[64];
+    private readonly List<ObjectId> _changedObjects = [];
+    private readonly HashSet<ObjectId> _changedSet = [];
+    private long _damageSeen;
 
     // Each kind's compound of each physics material (KindPart), made at its first need; Exists false for none.
     private readonly Dictionary<(VoxelObjectKindId Kind, int Part), KindShape> _kindShapes = [];
@@ -145,15 +152,9 @@ public sealed partial class VoxelColliders
                 continue;
             }
 
-            foreach (var part in held.Statics)
+            for (var part = 0; part < _partMaterials.Length; part++)
             {
-                if (part.Value != 0)
-                {
-                    // Its shape is its kind's, kept for the others.
-                    _physics.RemoveStatic(new StaticHandle(part.Value - 1));
-                    StaticCount--;
-                    ObjectStaticCount--;
-                }
+                RemoveObjectStatic(ref held.Statics[part]);
             }
 
             _objectStatics.Remove(id);
@@ -173,23 +174,140 @@ public sealed partial class VoxelColliders
             return;
         }
 
-        var simulation = _physics.Simulation;
-        var anchor = _voxels.Origin.ToLocal(placement.Anchor);
-        var turn = ObjectTurns.Rotation(placement.Heading);
+        held.Placement = placement;
+        var damaged = _damage?.Find(placement.Id);
         for (var part = 0; part < _partMaterials.Length; part++)
         {
-            var shape = ShapeOf(placement.Kind, part);
+            var shape = damaged is null ? ShapeOf(placement.Kind, part) : OwnShape(damaged, part);
+            if (shape.Exists)
+            {
+                AddObjectStatic(in placement, ref held.Statics[part], shape, part, owned: damaged is not null);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gives each object whose voxels changed since the last step (once, however many changes it had), and that has
+    /// statics, statics of its voxels as they are now: a shape of its own while damaged, its kind's again once not, swapped into each static in place (which
+    /// wakes the bodies touching either), a static removed where its material's voxels are gone.
+    /// </summary>
+    private void FollowDamage()
+    {
+        if (_damage is null)
+        {
+            return;
+        }
+
+        // Each object named once, however many changes it had since the last step.
+        _changedObjects.Clear();
+        _changedSet.Clear();
+        while (_damage.Version != _damageSeen)
+        {
+            var read = _damage.ReadChanges(_damageSeen, _damageChanges, out var lost);
+            if (lost)
+            {
+                // Every object with statics, as it is now.
+                _damageSeen = _damage.Version;
+                _changedObjects.Clear();
+                foreach (var id in _objectStatics.Keys)
+                {
+                    _changedObjects.Add(id);
+                }
+
+                break;
+            }
+
+            for (var i = 0; i < read; i++)
+            {
+                _damageSeen = _damageChanges[i].Version;
+                if (_changedSet.Add(_damageChanges[i].Object))
+                {
+                    _changedObjects.Add(_damageChanges[i].Object);
+                }
+            }
+        }
+
+        foreach (var id in _changedObjects)
+        {
+            Refresh(id);
+        }
+    }
+
+    /// <summary>Makes an object's statics, if it has any, its voxels' as they are now.</summary>
+    private void Refresh(ObjectId id)
+    {
+        ref var held = ref CollectionsMarshal.GetValueRefOrNullRef(_objectStatics, id);
+        if (Unsafe.IsNullRef(ref held))
+        {
+            return;
+        }
+
+        var damaged = _damage!.Find(id);
+        var simulation = _physics.Simulation;
+        for (var part = 0; part < _partMaterials.Length; part++)
+        {
+            ref var slot = ref held.Statics[part];
+            var shape = damaged is null ? ShapeOf(held.Placement.Kind, part) : OwnShape(damaged, part);
             if (!shape.Exists)
             {
+                RemoveObjectStatic(ref slot);
                 continue;
             }
 
-            var handle = simulation.Statics.Add(new StaticDescription(anchor, turn, shape.Shape));
-            _physics.Kinds.SetStatic(handle, BodyKinds.AnyLevel, _partMaterials[part], _physics.VoxelLayer);
-            held.Statics[part] = new StaticSlot(handle.Value + 1);
-            StaticCount++;
-            ObjectStaticCount++;
+            if (slot.Value == 0)
+            {
+                AddObjectStatic(in held.Placement, ref slot, shape, part, owned: damaged is not null);
+                continue;
+            }
+
+            // Not Statics.SetShape: in this Bepu it moves the bounds but keeps the old shape.
+            var handle = new StaticHandle(slot.Value - 1);
+            simulation.Statics.GetDescription(handle, out var description);
+            description.Shape = shape.Shape;
+            simulation.Statics.ApplyDescription(handle, description);
+            if (slot.Owned)
+            {
+                simulation.Shapes.RemoveAndDispose(slot.Shape, _physics.Pool);
+            }
+
+            slot = new StaticSlot(slot.Value, shape.Shape, damaged is not null);
         }
+    }
+
+    private void AddObjectStatic(
+        in ObjectPlacement placement,
+        ref StaticSlot slot,
+        KindShape shape,
+        int part,
+        bool owned
+    )
+    {
+        var anchor = _voxels.Origin.ToLocal(placement.Anchor);
+        var turn = ObjectTurns.Rotation(placement.Heading);
+        var handle = _physics.Simulation.Statics.Add(new StaticDescription(anchor, turn, shape.Shape));
+        _physics.Kinds.SetStatic(handle, BodyKinds.AnyLevel, _partMaterials[part], _physics.VoxelLayer);
+        slot = new StaticSlot(handle.Value + 1, shape.Shape, owned);
+        StaticCount++;
+        ObjectStaticCount++;
+    }
+
+    private void RemoveObjectStatic(ref StaticSlot slot)
+    {
+        if (slot.Value == 0)
+        {
+            return;
+        }
+
+        // A kind's shape is kept for the others; a damaged object's own goes with it.
+        _physics.RemoveStatic(new StaticHandle(slot.Value - 1));
+        if (slot.Owned)
+        {
+            _physics.Simulation.Shapes.RemoveAndDispose(slot.Shape, _physics.Pool);
+        }
+
+        slot = default;
+        StaticCount--;
+        ObjectStaticCount--;
     }
 
     /// <summary>The compound of a kind's voxels of physics material <paramref name="part"/>, from its anchor.</summary>
@@ -202,11 +320,24 @@ public sealed partial class VoxelColliders
         }
 
         var kind = _kinds![id];
-        _boxes.Build(kind, in _partExcluded[part]);
+        _boxes.Build(kind, null, in _partExcluded[part]);
+        shape = Compound(kind);
+        return shape;
+    }
+
+    /// <summary>A damaged object's own compound of its voxels of physics material <paramref name="part"/>, as they are now.</summary>
+    private KindShape OwnShape(DamagedObject damaged, int part)
+    {
+        _boxes.Build(damaged.Kind, damaged, in _partExcluded[part]);
+        return Compound(damaged.Kind);
+    }
+
+    /// <summary>A compound of the boxes just built, in the kind's voxels, from its anchor along its own axes.</summary>
+    private KindShape Compound(VoxelObjectKind kind)
+    {
         if (_boxes.Count == 0)
         {
-            shape = default;
-            return shape;
+            return default;
         }
 
         var metres = kind.UnitCentimetres / (float)VoxelConstants.CentimetresPerMetre;
@@ -230,15 +361,16 @@ public sealed partial class VoxelColliders
         }
 
         var simulation = _physics.Simulation;
-        shape = new KindShape(simulation.Shapes.Add(new BigCompound(children, simulation.Shapes, pool)), true);
-        BoxCount += boxes.Length;
-        return shape;
+        return new KindShape(simulation.Shapes.Add(new BigCompound(children, simulation.Shapes, pool)), true);
     }
 
     private readonly record struct KindShape(TypedIndex Shape, bool Exists);
 
-    /// <summary>An object's static of one physics material: its handle's value plus one, 0 for none.</summary>
-    private readonly record struct StaticSlot(int Value);
+    /// <summary>
+    /// An object's static of one physics material: its handle's value plus one (0 for none), its shape, and whether the
+    /// shape is the object's own (a damaged object's), freed with it.
+    /// </summary>
+    private readonly record struct StaticSlot(int Value, TypedIndex Shape, bool Owned);
 
     [InlineArray(PhysicsMaterials.MostVoxelMaterials)]
     private struct StaticSlots
@@ -246,10 +378,11 @@ public sealed partial class VoxelColliders
         private StaticSlot _slot;
     }
 
-    /// <summary>An object's statics and how many cells reach it.</summary>
+    /// <summary>An object's statics, the object, and how many cells reach it.</summary>
     private struct ObjectStatics
     {
         public int Cells;
+        public ObjectPlacement Placement;
         public StaticSlots Statics;
     }
 }

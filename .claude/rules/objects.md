@@ -57,7 +57,8 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   materials.
 - The match's identity (`GeneratorMatchIdentity`) carries the kinds' fingerprint after the generator's id where the
   world places objects, so games whose kinds differ do not join each other; the fingerprint holds the copies' rule
-  (`ObjectCopies.RuleVersion`: raise it with any change to how copies are written). Saves do not record the kinds yet.
+  (`ObjectCopies.RuleVersion`: raise it with any change to how copies are written) and the damage's
+  (`ObjectEditing.RuleVersion`). Saves do not record the kinds yet.
 - A kind's parts own at most 112 voxels a side (`ObjectPart.OwnVoxels`; a kind 5.6 m wide at 5 cm is one part across)
   and hold a border of their neighbours' 8 voxels round them (`BorderVoxels`; 4 at level 1, 2 at level 2: the two past
   an edge the mesher reads for a vertex's normal and openness), so a part's model box is its own plus 16; each part model owns
@@ -84,7 +85,7 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   surface over the column's centre (the top of the highest solid voxel there) and that voxel's material, which the mover
   reads as the ground's (`PhysicsMaterials.OfVoxel`, `IVoxelSurfaceTags`). It answers the voxel world's and the mesh
   colliders' queries, made 32 by 32 columns at a time and kept until `ObjectWorld.Version` changes (an area filled or
-  gone), at most 256 chunks; a move waits where the areas round it within the map are not filled (`Known`, `ObjectWorld.IsKnown`). Kinds read a voxel through
+  gone) or `ObjectDamage.ReadChanges` names an object under it, at most 256 chunks; a move waits where the areas round it within the map are not filled (`Known`, `ObjectWorld.IsKnown`). Kinds read a voxel through
   their parts' brick tables (`VoxelObjectKind.Voxel`).
 - Rays meet objects (`ObjectRays`, scoped with terrain): the first solid voxel of any object along a ray (passable ones
   too, as the world's ray), as an `ObjectHit` (the object, its kind, its voxel's index in the kind, the face entered
@@ -99,14 +100,43 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
 - Bodies meet objects (`VoxelColliders.Objects.cs`): each cell of statics near a body finds, at its first build, the
   objects whose kind's reach meets it and whose height range does (`ObjectWorld.Near`), and each such object gets a
   static for each physics material of its voxels: its kind's `BigCompound` of boxes over its parts' own voxels that are
-  not passable (`VoxelBoxes.Build(kind, excluded)`, in the kind's unit, `PhysicsWorld.UnitBox`; made at its first need
-  and shared by every object of the kind), posed at its anchor's local place and turned by `ObjectTurns.Rotation`, at
+  not passable (`VoxelBoxes.Build(kind, damaged, excluded)`, in the kind's unit, `PhysicsWorld.UnitBox`; made at its
+  first need and shared by every object of the kind; a damaged object's of its own, below), posed at its anchor's local place and turned by `ObjectTurns.Rotation`, at
   `BodyKinds.AnyLevel` (bodies of every level touch it, cut bodies too) in the voxels' layer. An object's statics stay
   while a cell reaches it (counted) and go with the last; a change of the objects (`ObjectWorld.Version`) makes every
   cell find its objects again, the new taken before the old let go. A body round which the areas within the map are not
   filled (`ObjectWorld.IsKnown`) freezes as a body over columns not resident does. Objects' statics take no densities:
   their voxels' boxes are whole (at 5 cm, up to 2.5 cm off the drawn surface). `VoxelColliders.ObjectCount` counts them.
+- Damage (`ObjectDamage`, scoped with terrain, `MatchVoxels.Damage`, initialised at the "objects" step after the
+  objects' world, updated after it each loop iteration): the world hands each edit it logs to it (`VoxelWorld.ObjectEdits`,
+  `IObjectEdits`), which applies it at once to the objects of the filled areas the edit's bounds reach where the log
+  indexes it in a level-0 column under the object's reach (`VoxelWorld.IndexesUnder`: what a replay finds; an edit wholly
+  past the map's sides, or above or below its height, changes no object), in the log's order (`ObjectEditing`, integer maths through `ObjectTurns.FromObject`, each voxel's sample points turned into the
+  world's centimetres and read by the edit's own `Contains`): clears, clears of some materials, sets of air, and lifts
+  (whose object voxels go, not into the piece) take a voxel by the share they cover (`VoxelEditing.ChangeByShare` on
+  `VoxelEditing.Parts` of it); a paint recolours a solid voxel whose middle it covers (a paint of air changes no object); fills, sets of a material, and
+  pieces put back change only the world, so objects never gain voxels. A clear with a maker counts what it takes from
+  them, in cubic centimetres, into the game's `IVoxelRemovals` with the world's, before anything changes (not from an object whose copy the cap
+  dropped, which may differ between peers). An object an
+  edit changes keeps a `DamagedObject`: its changed 8-voxel bricks over its kind's voxels (copied whole at their first
+  change), read through it (`IObjectVoxelSource`, as the kinds and shapes are); its parts' models are made again once an
+  update, at most `PartsPerUpdate` (8) parts an update in the order the objects changed, from those voxels by the kind's
+  rule (`PartLevel.Build`'s sampling; level 0 the kind's with the changed bricks
+  over it, the coarser levels sampled again over each changed brick), a part whose border holds a changed brick with
+  it, each a model of its own owning its kind's window (the old trees freed after `VoxelModels.Replace`), drawn once on
+  the GPU (`ObjectDamage.PartsOf`; the kind's until then). When an area fills, each of its objects replays the edits
+  since the last reset that reach it (`VoxelWorld.CollectEdits`, the log's columns under its reach), so damage made
+  before it loaded, before the match (a save, a joiner's download), or while its copy was dropped, shows the same bit
+  for bit; when an area drops, its objects' copies go. A reset drops every copy. At most `Engine:Objects:MostDamaged`
+  (256) objects keep a copy: past it, the copy of the damaged object farthest from every streaming centre goes (a
+  Warning once a match), and it is made again by replay, `RebuildsPerUpdate` (2) an update, once it is nearer than the
+  farthest kept. Readers keep what they read until `ObjectDamage.ReadChanges` names the object (a ring of 256 changes;
+  past it, read everything again): the mover's chunks under its reach are made again, its statics' shapes swapped for
+  compounds of its own voxels, and rays read it as they go. The far copies need nothing: the world's edits reach its
+  coarse levels too. The rule is `ObjectEditing.RuleVersion`, hashed into the kinds' fingerprint (so the match's
+  identity) with the copies' rule: raise it with any change to what an edit does to objects. The cap counts objects,
+  not bytes (a copy is its changed bricks, 1 KB each, and its rebuilt parts' models).
 - Models may have a voxel size of their own (`VoxelModels.Add` with a unit; `UnitCentimetres`, `VoxelMetres`) and keep
   densities (`Encode(voxels, densities, extent)`, `DecodeDensities`, `HasDensities`), which the renderer meshes them with.
   `SolidModelVoxels.Add` and the cut parts' hulls and masses (`LooseBodies.TryCreate(parts)`) take the model's unit.
-  `VoxelModels.Apply` still edits materials only.
+  `VoxelModels.Apply` still edits materials only; an object's damage makes its models again (`ObjectDamage`).

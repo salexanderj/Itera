@@ -287,7 +287,7 @@ public sealed class ObjectCollidersTests : IDisposable
         Assert.Equal(2, kind.PartCount);
         var boxes = new VoxelBoxes();
 
-        boxes.Build(kind, MaterialSet.Passable(new LeavesPass()));
+        boxes.Build(kind, null, MaterialSet.Passable(new LeavesPass()));
 
         var covered = new int[130 * 24 * 20];
         foreach (var box in boxes.Boxes)

@@ -290,7 +290,8 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         VoxelModels models,
         IVoxelTintMap tintMap,
         Objects.ObjectWorld? objects = null,
-        Objects.VoxelObjects? objectModels = null
+        Objects.VoxelObjects? objectModels = null,
+        Objects.ObjectDamage? damage = null
     )
     {
         ArgumentNullException.ThrowIfNull(models);
@@ -310,7 +311,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
 
         _models = models;
         _tintMap = tintMap;
-        BeginObjects(objects, objectModels);
+        BeginObjects(objects, objectModels, damage);
         _heap = new GpuRangeHeap((long)(_pass.HeapBytes / sizeof(uint)));
         // The heap's first ranges, lowest first: the materials and the tint map at the places MeshPass binds them.
         if (

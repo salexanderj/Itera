@@ -212,6 +212,7 @@ public sealed partial class MatchServices
                     {
                         world.Objects.Initialize();
                         world.Placed.Initialize();
+                        world.Damage.Initialize();
                     },
                     () => { }
                 )

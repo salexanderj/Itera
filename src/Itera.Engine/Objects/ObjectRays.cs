@@ -24,10 +24,16 @@ public readonly record struct ObjectHit(
 /// object along a ray, as the world's ray finds its voxels (<see cref="VoxelWorld.Raycast"/>: any voxel of a material,
 /// passable ones too). The ray is walked in stretches of <see cref="StretchMetres"/>, each asking for the objects whose
 /// reach meets it (<see cref="ObjectWorld.Near"/>; objects of areas not filled are not met), and turned into each
-/// object's own voxels, which it steps through one by one inside the object's box. A ray looks at most
+/// object's own voxels (a damaged object's as edits left them, <see cref="ObjectDamage"/>), which it steps through one by
+/// one inside the object's box. A ray looks at most
 /// <see cref="MostMetres"/>. Scoped to the match, with voxel terrain; main thread; allocates nothing.
 /// </summary>
-public sealed class ObjectRays(ObjectWorld objects, VoxelObjectKinds kinds, VoxelWorld world)
+public sealed class ObjectRays(
+    ObjectWorld objects,
+    VoxelObjectKinds kinds,
+    VoxelWorld world,
+    ObjectDamage? damage = null
+)
 {
     /// <summary>How long a stretch of the ray each search for objects covers, in metres.</summary>
     public const float StretchMetres = 16;
@@ -122,6 +128,7 @@ public sealed class ObjectRays(ObjectWorld objects, VoxelObjectKinds kinds, Voxe
     {
         hit = default;
         var kind = kinds[placement.Kind];
+        IObjectVoxelSource voxels = (IObjectVoxelSource?)damage?.Find(placement.Id) ?? kind;
         var anchor = placement.Anchor;
         double cos = ObjectTurns.Cos(placement.Heading) / Scale,
             sin = ObjectTurns.Sin(placement.Heading) / Scale;
@@ -205,7 +212,7 @@ public sealed class ObjectRays(ObjectWorld objects, VoxelObjectKinds kinds, Voxe
         var t = enter;
         while (true)
         {
-            kind.Voxel(voxel[0], voxel[1], voxel[2], out var material, out _);
+            voxels.Voxel(voxel[0], voxel[1], voxel[2], out var material, out _);
             var nearest = next[0] < next[1] ? (next[0] < next[2] ? 0 : 2) : (next[1] < next[2] ? 1 : 2);
             if (material != VoxelConstants.Air)
             {

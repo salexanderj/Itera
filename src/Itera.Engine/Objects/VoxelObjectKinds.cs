@@ -80,9 +80,9 @@ public sealed class VoxelObjectKinds
     public bool TryFind(string name, out VoxelObjectKindId id) => _byName.TryGetValue(name, out id);
 
     /// <summary>
-    /// A number that stands for every kind's name and voxels, in their order, and the engine's rule for their copies in
-    /// the world's voxels (<see cref="ObjectCopies.RuleVersion"/>): peers whose kinds or rules differ build different
-    /// worlds. 0 with no kinds.
+    /// A number that stands for every kind's name and voxels, in their order, and the engine's rules for their copies in
+    /// the world's voxels (<see cref="ObjectCopies.RuleVersion"/>) and for what edits do to them
+    /// (<see cref="ObjectEditing.RuleVersion"/>): peers whose kinds or rules differ build different worlds. 0 with no kinds.
     /// </summary>
     public ulong Fingerprint
     {
@@ -93,7 +93,7 @@ public sealed class VoxelObjectKinds
                 return 0;
             }
 
-            var hash = (ulong)ObjectCopies.RuleVersion;
+            var hash = Maths.DeterministicMath.Hash((ulong)ObjectCopies.RuleVersion, (ulong)ObjectEditing.RuleVersion);
             foreach (var kind in _kinds)
             {
                 hash = Maths.DeterministicMath.Hash(hash, kind.Fingerprint);
@@ -128,7 +128,7 @@ public sealed class VoxelObjectKinds
 /// An object kind: its voxels split into parts that own at most 112 a side (<see cref="PartCount"/>), each kept as three
 /// levels of materials and densities, and the point it stands on.
 /// </summary>
-public sealed class VoxelObjectKind
+public sealed class VoxelObjectKind : IObjectVoxelSource
 {
     private VoxelObjectKind(
         VoxelObjectKindId id,
@@ -214,22 +214,20 @@ public sealed class VoxelObjectKind
     private int[]? _partAt;
 
     /// <summary>
-    /// The material and density of its level-0 voxel (x, y, z), in its own voxels from its box's corner: air of no
-    /// density outside it. Main thread at the first read, which makes its tables.
+    /// The index in <see cref="Parts"/> of the part at (px, py, pz) of the grid of 112-voxel cubes over its box, or -1 for
+    /// an empty cube or one outside. Main thread at the first read, which makes its table.
     /// </summary>
-    internal void Voxel(int x, int y, int z, out byte material, out byte density)
+    internal int PartIndexAt(int px, int py, int pz)
     {
-        material = VoxelConstants.Air;
-        density = VoxelDensity.Empty;
-        if ((uint)x >= (uint)Size.X || (uint)y >= (uint)Size.Y || (uint)z >= (uint)Size.Z)
-        {
-            return;
-        }
-
         const int own = ObjectPart.OwnVoxels;
         int across = (Size.X + own - 1) / own,
             up = (Size.Y + own - 1) / own,
             deep = (Size.Z + own - 1) / own;
+        if ((uint)px >= (uint)across || (uint)py >= (uint)up || (uint)pz >= (uint)deep)
+        {
+            return -1;
+        }
+
         if (_partAt is null)
         {
             var table = new int[across * up * deep];
@@ -243,7 +241,27 @@ public sealed class VoxelObjectKind
             _partAt = table;
         }
 
-        var index = _partAt[x / own + across * (y / own + up * (z / own))];
+        return _partAt[px + across * (py + up * pz)];
+    }
+
+    void IObjectVoxelSource.Voxel(int x, int y, int z, out byte material, out byte density) =>
+        Voxel(x, y, z, out material, out density);
+
+    /// <summary>
+    /// The material and density of its level-0 voxel (x, y, z), in its own voxels from its box's corner: air of no
+    /// density outside it. Main thread at the first read, which makes its tables.
+    /// </summary>
+    internal void Voxel(int x, int y, int z, out byte material, out byte density)
+    {
+        material = VoxelConstants.Air;
+        density = VoxelDensity.Empty;
+        if ((uint)x >= (uint)Size.X || (uint)y >= (uint)Size.Y || (uint)z >= (uint)Size.Z)
+        {
+            return;
+        }
+
+        const int own = ObjectPart.OwnVoxels;
+        var index = PartIndexAt(x / own, y / own, z / own);
         if (index < 0)
         {
             return;
@@ -481,43 +499,8 @@ internal sealed class ObjectPart
     /// Writes level <paramref name="level"/>'s materials and densities into the 128^3 chunks (index
     /// <c>x + 128y + 16384z</c>), clearing them first within the level's box.
     /// </summary>
-    public void Decode(int level, Span<byte> materials, Span<byte> densities)
-    {
-        var size = SizeAt(level);
-        const int edge = VoxelConstants.ChunkSize;
-        for (var z = 0; z < size.Z; z++)
-        {
-            for (var y = 0; y < size.Y; y++)
-            {
-                materials.Slice(edge * (y + edge * z), size.X).Clear();
-                densities.Slice(edge * (y + edge * z), size.X).Clear();
-            }
-        }
-
-        var part = Levels[level];
-        for (var b = 0; b < part.Bricks.Length; b++)
-        {
-            var packed = part.Bricks[b];
-            var bx = (packed & 15) * Brick;
-            var by = ((packed >> 4) & 15) * Brick;
-            var bz = ((packed >> 8) & 15) * Brick;
-            var uniform = part.Uniform[b];
-            var payload = part.Payload.AsSpan(part.PayloadStart[b]);
-            for (var z = 0; z < Brick; z++)
-            {
-                for (var y = 0; y < Brick; y++)
-                {
-                    for (var x = 0; x < Brick; x++)
-                    {
-                        var i = bx + x + edge * (by + y + edge * (bz + z));
-                        var j = x + Brick * (y + Brick * z);
-                        materials[i] = uniform ? payload[0] : payload[j];
-                        densities[i] = uniform ? payload[1] : payload[BrickVoxels + j];
-                    }
-                }
-            }
-        }
-    }
+    public void Decode(int level, Span<byte> materials, Span<byte> densities) =>
+        Levels[level].Decode(SizeAt(level), materials, densities);
 
     /// <summary>
     /// The part owning <paramref name="ownSize"/> voxels from <paramref name="offset"/> of <paramref name="shape"/>, with its
@@ -532,9 +515,10 @@ internal sealed class ObjectPart
             ownSize.Y + 2 * BorderVoxels,
             ownSize.Z + 2 * BorderVoxels
         );
+        var source = new ShapeVoxels(shape);
         for (var level = 0; level < levels.Length; level++)
         {
-            levels[level] = PartLevel.Build(shape, corner, box, level);
+            levels[level] = PartLevel.Build(in source, corner, box, level);
         }
 
         part = new ObjectPart(offset, ownSize, levels);
@@ -575,7 +559,48 @@ internal sealed class ObjectPart
         /// <summary>Its solid voxels.</summary>
         public required long Solid { get; init; }
 
-        public static PartLevel Build(VoxelObjectShape shape, VoxelCoord offset, VoxelCoord partSize, int level)
+        /// <summary>
+        /// Writes its materials and densities into the 128^3 chunks (index <c>x + 128y + 16384z</c>), clearing them first
+        /// within <paramref name="size"/>, its level's box.
+        /// </summary>
+        public void Decode(VoxelCoord size, Span<byte> materials, Span<byte> densities)
+        {
+            const int edge = VoxelConstants.ChunkSize;
+            for (var z = 0; z < size.Z; z++)
+            {
+                for (var y = 0; y < size.Y; y++)
+                {
+                    materials.Slice(edge * (y + edge * z), size.X).Clear();
+                    densities.Slice(edge * (y + edge * z), size.X).Clear();
+                }
+            }
+
+            for (var b = 0; b < Bricks.Length; b++)
+            {
+                var packed = Bricks[b];
+                var bx = (packed & 15) * Brick;
+                var by = ((packed >> 4) & 15) * Brick;
+                var bz = ((packed >> 8) & 15) * Brick;
+                var uniform = Uniform[b];
+                var payload = Payload.AsSpan(PayloadStart[b]);
+                for (var z = 0; z < Brick; z++)
+                {
+                    for (var y = 0; y < Brick; y++)
+                    {
+                        for (var x = 0; x < Brick; x++)
+                        {
+                            var i = bx + x + edge * (by + y + edge * (bz + z));
+                            var j = x + Brick * (y + Brick * z);
+                            materials[i] = uniform ? payload[0] : payload[j];
+                            densities[i] = uniform ? payload[1] : payload[BrickVoxels + j];
+                        }
+                    }
+                }
+            }
+        }
+
+        public static PartLevel Build<TSource>(in TSource source, VoxelCoord offset, VoxelCoord partSize, int level)
+            where TSource : IObjectVoxelSource, allows ref struct
         {
             var step = 1 << level;
             var size = new VoxelCoord(
@@ -615,7 +640,17 @@ internal sealed class ObjectPart
                                         continue;
                                     }
 
-                                    Sample(shape, offset, cx, cy, cz, step, counts, out materials[j], out densities[j]);
+                                    Sample(
+                                        in source,
+                                        offset,
+                                        cx,
+                                        cy,
+                                        cz,
+                                        step,
+                                        counts,
+                                        out materials[j],
+                                        out densities[j]
+                                    );
                                     solid += materials[j] != VoxelConstants.Air ? 1 : 0;
                                     empty &= densities[j] == VoxelDensity.Empty;
                                 }
@@ -664,9 +699,14 @@ internal sealed class ObjectPart
             };
         }
 
-        // Coarse voxel (cx, cy, cz) of a part at `offset`: the step^3 voxels of the shape it covers.
-        private static void Sample(
-            VoxelObjectShape shape,
+        /// <summary>
+        /// Coarse voxel (cx, cy, cz), of <paramref name="step"/> level-0 voxels a side, of a part whose box starts at
+        /// <paramref name="offset"/> of <paramref name="source"/>: the mean density of the voxels it covers, solid from one
+        /// half, of the material at its sample point when that is solid, else the commonest solid one it covers.
+        /// <paramref name="counts"/> is 256 entries of room.
+        /// </summary>
+        internal static void Sample<TSource>(
+            in TSource source,
             VoxelCoord offset,
             int cx,
             int cy,
@@ -676,14 +716,14 @@ internal sealed class ObjectPart
             out byte material,
             out byte density
         )
+            where TSource : IObjectVoxelSource, allows ref struct
         {
             int x0 = offset.X + cx * step,
                 y0 = offset.Y + cy * step,
                 z0 = offset.Z + cz * step;
             if (step == 1)
             {
-                material = shape.MaterialAt(x0, y0, z0);
-                density = shape.DensityAt(x0, y0, z0);
+                source.Voxel(x0, y0, z0, out material, out density);
                 return;
             }
 
@@ -695,8 +735,9 @@ internal sealed class ObjectPart
                 {
                     for (var x = 0; x < step; x++)
                     {
-                        sum += shape.DensityAt(x0 + x, y0 + y, z0 + z);
-                        counts[shape.MaterialAt(x0 + x, y0 + y, z0 + z)]++;
+                        source.Voxel(x0 + x, y0 + y, z0 + z, out var each, out var share);
+                        sum += share;
+                        counts[each]++;
                     }
                 }
             }
@@ -711,7 +752,7 @@ internal sealed class ObjectPart
             }
 
             var half = step >> 1;
-            material = shape.MaterialAt(x0 + half, y0 + half, z0 + half);
+            source.Voxel(x0 + half, y0 + half, z0 + half, out material, out _);
             if (material == VoxelConstants.Air)
             {
                 var most = 0;

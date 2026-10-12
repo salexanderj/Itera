@@ -34,6 +34,18 @@ public static class ObjectTurns
         return ((x * cos + z * sin) >> Shift, (z * cos - x * sin) >> Shift);
     }
 
+    /// <summary>
+    /// The offset (<paramref name="x"/>, <paramref name="z"/>) along an object's own axes at <paramref name="heading"/>, in
+    /// centimetres, as a world offset from its anchor: rounded down, in integers, so every peer gets the same. Edits reach
+    /// an object's voxels through it.
+    /// </summary>
+    public static (long X, long Z) FromObject(int heading, long x, long z)
+    {
+        long cos = s_table.Cos[heading],
+            sin = s_table.Sin[heading];
+        return ((x * cos - z * sin) >> Shift, (x * sin + z * cos) >> Shift);
+    }
+
     /// <summary>The turn from an object's own axes to the world's at <paramref name="heading"/>, for drawing.</summary>
     public static Quaternion Rotation(int heading) =>
         Quaternion.CreateFromAxisAngle(Vector3.UnitY, -2 * MathF.PI * heading / ObjectPlacement.HeadingSteps);

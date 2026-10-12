@@ -951,7 +951,8 @@ public sealed partial class GameLoop
             match.Models,
             match.TintMap,
             match.Terrain?.Placed,
-            match.Terrain?.Objects
+            match.Terrain?.Objects,
+            match.Terrain?.Damage
         );
         _worldOnGpu = true;
     }

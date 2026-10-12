@@ -2,8 +2,9 @@ namespace Itera.Engine.Voxels;
 
 /// <summary>
 /// Hears what each clear a player made takes out of the world (<see cref="VoxelWorld.Removals"/>): a game that gives players what they dig out hears it here.
-/// The world counts it on its own voxels just before the edit changes them, so a session's every game hears every
-/// player's clears, the host's and, on a client, as the host's edits arrive, each counted from that game's own copy.
+/// The world counts it on its own voxels, and on the loaded voxel objects' (<c>ObjectDamage</c>; not an object whose copy
+/// the damage cap dropped), just before the edit changes them, so a session's every game hears every player's clears, the
+/// host's and, on a client, as the host's edits arrive, each counted from that game's own copy.
 /// </summary>
 public interface IVoxelRemovals
 {

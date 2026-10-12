@@ -554,6 +554,13 @@ public sealed class ObjectSettings
     /// 106 m in a world of 10 cm voxels with the engine's reaches); 1 to 9.
     /// </summary>
     public int HandOverLevel { get; set; } = 2;
+
+    /// <summary>
+    /// The most placed objects that keep a copy of their damaged voxels at once (<c>ObjectDamage</c>). Past it, the copy
+    /// of the damaged object farthest from every streaming centre goes, rebuilt from the edit log when it is among the
+    /// nearest again. 256; 1 to 65,536.
+    /// </summary>
+    public int MostDamaged { get; set; } = 256;
 }
 
 /// <summary>The navigation grid (<c>NavigationService</c>).</summary>

@@ -15,7 +15,8 @@ A ball, a lifted piece, or a part cut off a model is a loose body: Bepu moves it
 top voxel ends where its density puts the ground's surface, a box to the millimetre, `PhysicsWorld.SurfaceBox`; bodies
 whose parts are of coarse voxels collide with the level nearest their voxels, `VoxelColliders.CoarseLevelOf`, in cells
 of 32 voxels), and of the voxel objects the world places that reach into a cell near a body (a static for each
-physics material of an object's voxels, its kind's compound of boxes of its own voxels, made once a match and shared,
+physics material of an object's voxels, its kind's compound of boxes of its own voxels, made once a match and shared (a
+damaged object's of its own, swapped in at each change, `ObjectDamage`),
 posed at its anchor and turned by its heading, at `BodyKinds.AnyLevel` in the voxels' layer; kept while a cell reaches
 it; a body round which an area of objects is not filled freezes as where the columns are not resident; each object
 static is a static of its own to the bounces and impact events, not the voxel ground, so a ball rolling from the ground

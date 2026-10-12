@@ -108,15 +108,18 @@ public sealed partial class VoxelColliders : IDisposable
     /// <param name="logger">Logger.</param>
     /// <param name="objects">The voxel objects the world places, statics near bodies too; none without them.</param>
     /// <param name="kinds">The run's object kinds, with <paramref name="objects"/>.</param>
+    /// <param name="damage">What edits did to the objects, whose statics follow it; none without.</param>
     public VoxelColliders(
         PhysicsWorld physics,
         VoxelWorld voxels,
         IVoxelPassability passability,
         ILogger<VoxelColliders> logger,
         ObjectWorld? objects = null,
-        VoxelObjectKinds? kinds = null
+        VoxelObjectKinds? kinds = null,
+        ObjectDamage? damage = null
     )
     {
+        _damage = kinds is not null ? damage : null;
         _physics = physics;
         // Kept whether or not the world places objects: its placer is known only at the match's "objects" step, after
         // this is made, and without one it gives none and knows every area.
@@ -136,7 +139,7 @@ public sealed partial class VoxelColliders : IDisposable
     /// <summary>Statics built for bodies.</summary>
     public int StaticCount { get; private set; }
 
-    /// <summary>Boxes in those statics.</summary>
+    /// <summary>Boxes in the cells' statics (the voxel objects' compounds are not counted).</summary>
     public int BoxCount { get; private set; }
 
     /// <summary>Cells built or rebuilt since the start.</summary>
@@ -243,6 +246,7 @@ public sealed partial class VoxelColliders : IDisposable
         _step++;
         ReadChanges();
         FollowObjects();
+        FollowDamage();
 
         var simulation = _physics.Simulation;
         var bodies = simulation.Bodies;

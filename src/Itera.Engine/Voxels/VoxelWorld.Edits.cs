@@ -80,6 +80,86 @@ public sealed partial class VoxelWorld
     public IVoxelRemovals? Removals { get; set; }
 
     /// <summary>
+    /// The voxel objects the world places, as its edits reach them (<c>ObjectDamage</c>), or null for none. Main thread.
+    /// </summary>
+    internal IObjectEdits? ObjectEdits { get; set; }
+
+    /// <summary>
+    /// Adds to <paramref name="edits"/> every edit since the last reset that reaches a level-0 column under the box from
+    /// <paramref name="min"/> to <paramref name="end"/> (absolute centimetres, end exclusive, across x and z), in sequence
+    /// order, each once. Main thread.
+    /// </summary>
+    internal void CollectEdits(VoxelCoord min, VoxelCoord end, List<VoxelEdit> edits)
+    {
+        var first = edits.Count;
+        BoxColumns(min, end, out var firstX, out var firstZ, out var lastX, out var lastZ);
+        for (var z = firstZ; z <= lastZ; z++)
+        {
+            for (var x = firstX; x <= lastX; x++)
+            {
+                _edits.CollectForColumn(new ColumnKey(0, x, z), _edits.LastReset, edits);
+            }
+        }
+
+        // The columns' lists, each in order, merged: sorted, then each sequence once.
+        var span = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(edits)[first..];
+        span.Sort(static (a, b) => a.Sequence.CompareTo(b.Sequence));
+        var kept = first;
+        for (var i = first; i < edits.Count; i++)
+        {
+            if (kept == first || edits[i].Sequence != edits[kept - 1].Sequence)
+            {
+                edits[kept++] = edits[i];
+            }
+        }
+
+        edits.RemoveRange(kept, edits.Count - kept);
+    }
+
+    /// <summary>
+    /// True when the log indexes <paramref name="edit"/> in a level-0 column under the box from <paramref name="min"/>
+    /// to <paramref name="end"/> (absolute centimetres, end exclusive, across x and z): when <see cref="CollectEdits"/>
+    /// for that box would find it. An edit wholly past the map's sides, or above or below its height, is in no column.
+    /// </summary>
+    internal bool IndexesUnder(in VoxelEdit edit, VoxelCoord min, VoxelCoord end)
+    {
+        Grid.GetVoxelBounds(in edit, out var low, out var high);
+        if (low.Y >= Grid.EndVoxelY || high.Y <= Grid.MinVoxelY)
+        {
+            return false;
+        }
+
+        ColumnsOf(0, low, high, out var editX, out var editZ, out var editLastX, out var editLastZ);
+        BoxColumns(min, end, out var boxX, out var boxZ, out var boxLastX, out var boxLastZ);
+        return Math.Max(editX, boxX) <= Math.Min(editLastX, boxLastX)
+            && Math.Max(editZ, boxZ) <= Math.Min(editLastZ, boxLastZ);
+    }
+
+    /// <summary>The level-0 columns, within the map, under the box from min to end (absolute centimetres, end exclusive).</summary>
+    private void BoxColumns(
+        VoxelCoord min,
+        VoxelCoord end,
+        out int firstX,
+        out int firstZ,
+        out int lastX,
+        out int lastZ
+    )
+    {
+        var edge = Grid.Edge(0);
+        var low = new VoxelCoord(
+            (int)Maths.DeterministicMath.FloorDivide(min.X, edge),
+            0,
+            (int)Maths.DeterministicMath.FloorDivide(min.Z, edge)
+        );
+        var high = new VoxelCoord(
+            (int)Maths.DeterministicMath.FloorDivide(end.X - 1L, edge) + 1,
+            1,
+            (int)Maths.DeterministicMath.FloorDivide(end.Z - 1L, edge) + 1
+        );
+        ColumnsOf(0, low, high, out firstX, out firstZ, out lastX, out lastZ);
+    }
+
+    /// <summary>
     /// The session slot of the player whose action made edit <paramref name="sequence"/> (1 to <see cref="EditCount"/>),
     /// or <see cref="VoxelEdit.NoMaker"/>. Makers are kept for this match only: a save or a joiner's download has none.
     /// </summary>
@@ -503,11 +583,14 @@ public sealed partial class VoxelWorld
         )
         {
             CountRemoved(in edit, _removed);
+            // And what it takes from the objects' voxels, before they change too.
+            ObjectEdits?.CountRemoved(in edit, _removed);
             removals.Removed(in edit, maker, _removed);
         }
 
         _edits.Append(in edit, maker);
         _stats.Edits++;
+        ObjectEdits?.Applied(in edit);
         if (edit.Operation == VoxelEditOperation.Reset)
         {
             _logFullLogged = false;
@@ -681,4 +764,19 @@ public sealed partial class VoxelWorld
         Message = "Voxels: reset to the seed's world at edit {Sequence}; {Columns} column(s) unloaded to generate again"
     )]
     private partial void LogReset(long sequence, int columns);
+}
+
+/// <summary>
+/// The voxel objects a world places, as its edits reach them (<see cref="VoxelWorld.ObjectEdits"/>). Main thread.
+/// </summary>
+internal interface IObjectEdits
+{
+    /// <summary>
+    /// Adds to <paramref name="removed"/> (256 entries, in cubic centimetres) what a clear with a maker takes out of the
+    /// objects' voxels, before anything changes.
+    /// </summary>
+    void CountRemoved(in VoxelEdit edit, Span<long> removed);
+
+    /// <summary>Applies an edit just logged (a reset among them) to the objects' voxels.</summary>
+    void Applied(in VoxelEdit edit);
 }
