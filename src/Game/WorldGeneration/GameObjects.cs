@@ -6,10 +6,11 @@ namespace Game.WorldGeneration;
 /// <summary>
 /// The starter's voxel objects (<c>docs/voxel-objects.md</c>), all of <see cref="UnitCentimetres"/> cm voxels: a broadleaf
 /// tree about 9 m tall with a crown 6 m across, a young tree about 5 m tall, a bush about 1.6 m across, and a rock about
-/// 70 cm high, each in <see cref="Shapes"/> shapes drawn from the deterministic hash, so neighbours differ. Trunks,
-/// branches, and stems are bark; crowns and bushes leaves, in smooth clumps (soft, not rough); rocks rock. Registered at
-/// the run's start in a fixed order (<see cref="Register"/>), so the generator's placer (<see cref="GameForests"/>) names
-/// each by its number (<see cref="Id"/>). Built with + - * /, square roots, and the deterministic series
+/// 70 cm high, each in <see cref="Shapes"/> shapes drawn from the deterministic hash, so neighbours differ; and boulders
+/// of <see cref="BoulderRadii"/> (2 to 6 m across), each in <see cref="BoulderShapes"/> shapes, a third of each buried.
+/// Trunks, branches, and stems are bark; crowns and bushes leaves, in smooth clumps (soft, not rough); rocks rock; boulders
+/// boulder stone, lumpy. Registered at the run's start in a fixed order (<see cref="Register"/>), so the generator's
+/// placer (<see cref="GameForests"/>) names each by its number (<see cref="Id"/>, <see cref="BoulderId"/>). Built with + - * /, square roots, and the deterministic series
 /// (<see cref="DeterministicMath.CosSin"/>), so every peer builds the same voxels; a change to a shape changes the kinds'
 /// fingerprint, so the match's identity.
 /// </summary>
@@ -18,8 +19,20 @@ public static class GameObjects
     /// <summary>The objects' voxels, in centimetres.</summary>
     public const int UnitCentimetres = 5;
 
-    /// <summary>The shapes of each kind.</summary>
+    /// <summary>The shapes of each kind but the boulders.</summary>
     public const int Shapes = 3;
+
+    /// <summary>The shapes of each boulder size.</summary>
+    public const int BoulderShapes = 2;
+
+    /// <summary>The boulders' sizes: their radii, in centimetres (2, 3, 4.5, and 6 m across).</summary>
+    public static IReadOnlyList<int> BoulderRadii { get; } = [100, 150, 225, 300];
+
+    /// <summary>The kinds registered: every shape of the four kinds, then of each boulder size.</summary>
+    public static int Count => 4 * Shapes + 4 * BoulderShapes;
+
+    /// <summary>How far a boulder of <paramref name="radius"/> reaches from its anchor across, lumps included, in centimetres.</summary>
+    public static int BoulderSpread(int radius) => radius * 23 / 20 + 10;
 
     /// <summary>
     /// How far each kind spreads from its anchor across, in centimetres: its box's half width, which holds its crown or
@@ -37,6 +50,19 @@ public static class GameObjects
     /// <summary>The number <see cref="Register"/> gives shape <paramref name="shape"/> of <paramref name="kind"/>.</summary>
     public static VoxelObjectKindId Id(GameObjectKind kind, int shape) => new((ushort)((int)kind * Shapes + shape));
 
+    /// <summary>The number <see cref="Register"/> gives shape <paramref name="shape"/> of boulder size <paramref name="size"/>.</summary>
+    public static VoxelObjectKindId BoulderId(int size, int shape) =>
+        new((ushort)(4 * Shapes + size * BoulderShapes + shape));
+
+    /// <summary>True when <paramref name="id"/> is one of the boulders' kinds, with its size and shape.</summary>
+    public static bool IsBoulder(VoxelObjectKindId id, out int size, out int shape)
+    {
+        var index = id.Value - 4 * Shapes;
+        size = index / BoulderShapes;
+        shape = index % BoulderShapes;
+        return index >= 0 && size < BoulderRadii.Count;
+    }
+
     /// <summary>
     /// Registers every kind's shapes, kind by kind and shape by shape, as <see cref="Id"/> numbers them. At the run's start
     /// (<c>GameRunStartup</c>), before any other registers a kind. Throws when a kind took another number.
@@ -48,14 +74,151 @@ public static class GameObjects
         {
             for (var shape = 0; shape < Shapes; shape++)
             {
-                var id = kinds.Register(Name(kind, shape), Build(kind, shape));
-                if (id != Id(kind, shape))
+                Check(kinds.Register(Name(kind, shape), Build(kind, shape)), Id(kind, shape), Name(kind, shape));
+            }
+        }
+
+        for (var size = 0; size < BoulderRadii.Count; size++)
+        {
+            for (var shape = 0; shape < BoulderShapes; shape++)
+            {
+                var name = BoulderName(size, shape);
+                Check(kinds.Register(name, BuildBoulder(size, shape)), BoulderId(size, shape), name);
+            }
+        }
+
+        static void Check(VoxelObjectKindId id, VoxelObjectKindId expected, string name)
+        {
+            if (id != expected)
+            {
+                throw new InvalidOperationException(
+                    $"Object kind {name} took number {id.Value}, not {expected.Value}: the game's kinds are registered first."
+                );
+            }
+        }
+    }
+
+    /// <summary>The name a boulder's shape is registered under: <c>boulder-0-0</c> (size, shape) and so on.</summary>
+    public static string BoulderName(int size, int shape) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"boulder-{size}-{shape}");
+
+    /// <summary>
+    /// Builds shape <paramref name="shape"/> of boulder size <paramref name="size"/>: a broad lump of boulder stone, its
+    /// middle a third of its radius over the ground (so a third of its height buried), and one or two smaller lumps
+    /// bulging from its sides.
+    /// </summary>
+    public static VoxelObjectShape BuildBoulder(int size, int shape)
+    {
+        var radius = BoulderRadii[size];
+        var state = DeterministicMath.Hash(shape, size, 0x626F756C646572, 0x73686170);
+        var half = BoulderSpread(radius);
+        // The box from the ball's lowest point: its middle a third of the radius over the ground, the anchor's height.
+        var buried = radius * 2 / 3;
+        var height = radius * 2 + radius / 10 + 10;
+        var shapeOf = new VoxelObjectShape(
+            UnitCentimetres,
+            new(
+                (2 * half + UnitCentimetres - 1) / UnitCentimetres,
+                (height + UnitCentimetres - 1) / UnitCentimetres,
+                (2 * half + UnitCentimetres - 1) / UnitCentimetres
+            ),
+            new(half, buried, half)
+        );
+        double middle = radius;
+        shapeOf.FillEllipsoid(
+            half,
+            middle,
+            half,
+            radius * DeterministicMath.NextBetween(ref state, 0.95, 1.05),
+            radius * DeterministicMath.NextBetween(ref state, 0.85, 0.95),
+            radius * DeterministicMath.NextBetween(ref state, 0.9, 1.0),
+            GameMaterials.Boulder
+        );
+        var lumps = DeterministicMath.NextRange(ref state, 1, 2);
+        for (var i = 0; i < lumps; i++)
+        {
+            var (cos, sin) = DeterministicMath.CosSin(DeterministicMath.NextUnit(ref state));
+            var distance = radius * DeterministicMath.NextBetween(ref state, 0.4, 0.55);
+            var lump = radius * DeterministicMath.NextBetween(ref state, 0.45, 0.55);
+            shapeOf.FillEllipsoid(
+                half + cos * distance,
+                middle + radius * DeterministicMath.NextBetween(ref state, -0.1, 0.2),
+                half + sin * distance,
+                lump,
+                lump * 0.85,
+                lump,
+                GameMaterials.Boulder
+            );
+        }
+
+        return shapeOf;
+    }
+
+    /// <summary>
+    /// The top of boulder <paramref name="id"/>'s voxels over column (<paramref name="x"/>, <paramref name="z"/>) of its
+    /// box, in centimetres from its anchor's height, or <see cref="int.MinValue"/> where the column holds none (or lies
+    /// outside the box). Each boulder's tops are worked out at the first read (built again from its shape) and kept; any
+    /// thread.
+    /// </summary>
+    public static int BoulderTop(VoxelObjectKindId id, int x, int z)
+    {
+        if (!IsBoulder(id, out var size, out var shape))
+        {
+            return int.MinValue;
+        }
+
+        var tops = s_boulderTops[size * BoulderShapes + shape].Value;
+        return (uint)x < (uint)tops.SizeX && (uint)z < (uint)tops.SizeZ ? tops.Tops[x + tops.SizeX * z] : int.MinValue;
+    }
+
+    /// <summary>The anchor of boulder <paramref name="id"/> in centimetres from its box's corner.</summary>
+    public static (int X, int Y, int Z) BoulderAnchor(VoxelObjectKindId id)
+    {
+        IsBoulder(id, out var size, out _);
+        var radius = BoulderRadii[size];
+        return (BoulderSpread(radius), radius * 2 / 3, BoulderSpread(radius));
+    }
+
+    private static readonly Lazy<BoulderTops>[] s_boulderTops = MakeBoulderTops();
+
+    private static Lazy<BoulderTops>[] MakeBoulderTops()
+    {
+        var tops = new Lazy<BoulderTops>[4 * BoulderShapes];
+        for (var i = 0; i < tops.Length; i++)
+        {
+            var (size, shape) = (i / BoulderShapes, i % BoulderShapes);
+            tops[i] = new Lazy<BoulderTops>(() =>
+                BoulderTops.Of(BuildBoulder(size, shape), BoulderRadii[size] * 2 / 3)
+            );
+        }
+
+        return tops;
+    }
+
+    /// <summary>A boulder's tops: for each column of its box, its highest solid voxel's top from the anchor's height.</summary>
+    private sealed record BoulderTops(int SizeX, int SizeZ, int[] Tops)
+    {
+        public static BoulderTops Of(VoxelObjectShape shape, int anchorY)
+        {
+            var size = shape.Size;
+            var tops = new int[size.X * size.Z];
+            Array.Fill(tops, int.MinValue);
+            for (var z = 0; z < size.Z; z++)
+            {
+                for (var x = 0; x < size.X; x++)
                 {
-                    throw new InvalidOperationException(
-                        $"Object kind {Name(kind, shape)} took number {id.Value}, not {Id(kind, shape).Value}: the game's kinds are registered first."
-                    );
+                    for (var y = size.Y - 1; y >= 0; y--)
+                    {
+                        if (shape.MaterialAt(x, y, z) != Itera.Engine.Voxels.VoxelConstants.Air)
+                        {
+                            tops[x + size.X * z] = (y + 1) * UnitCentimetres - anchorY;
+                            break;
+                        }
+                    }
                 }
             }
+
+            return new BoulderTops(size.X, size.Z, tops);
         }
     }
 

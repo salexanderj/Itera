@@ -5,8 +5,8 @@ namespace Game.Tests;
 
 /// <summary>
 /// Where the starter's objects stand (<see cref="GameForests"/>): any tiling of a box finds the same objects, in a fixed
-/// order; none within the clear space round the middle or on a boulder; no bush or rock against a trunk; and forest over
-/// about 40 % of the map.
+/// order; none within the clear space round the middle, and nothing but a boulder on a boulder; no bush or rock against a
+/// trunk; and forest over about 40 % of the map.
 /// </summary>
 public sealed class ForestTests
 {
@@ -57,8 +57,18 @@ public sealed class ForestTests
     [Fact]
     public void No_object_stands_near_the_middle_on_a_boulder_or_against_a_trunk()
     {
-        var found = Find(-30_000, 30_000, -30_000, 30_000);
-        Assert.True(found.Count > 1_000, $"{found.Count} objects.");
+        var all = Find(-30_000, 30_000, -30_000, 30_000);
+        var boulders = all.Where(p => GameObjects.IsBoulder(p.Kind, out _, out _)).ToList();
+        foreach (var boulder in boulders)
+        {
+            GameObjects.IsBoulder(boulder.Kind, out var size, out _);
+            var spread = GameObjects.BoulderSpread(GameObjects.BoulderRadii[size]);
+            var (bx, bz) = (boulder.Anchor.X, boulder.Anchor.Z);
+            Assert.True(Math.Sqrt((double)bx * bx + (double)bz * bz) >= GameForests.ClearCentimetres + spread);
+        }
+
+        var found = all.Except(boulders).ToList();
+        Assert.True(boulders.Count > 100 && found.Count > 1_000, $"{boulders.Count} boulders, {found.Count} others.");
         var trunks = found.Where(p => KindOf(p) is GameObjectKind.Broadleaf or GameObjectKind.Young).ToList();
         foreach (var placement in found)
         {
@@ -66,7 +76,7 @@ public sealed class ForestTests
             var spread = GameObjects.SpreadCentimetres(kind);
             var (x, z) = (placement.Anchor.X, placement.Anchor.Z);
             Assert.True(Math.Sqrt((double)x * x + (double)z * z) >= GameForests.ClearCentimetres + spread);
-            Assert.False(GameGenerator.NearBoulder(x, z, spread, 1), $"{kind} at ({x}, {z}) on a boulder.");
+            Assert.False(GameForests.NearBoulder(x, z, spread, 1), $"{kind} at ({x}, {z}) on a boulder.");
             Assert.Equal((int)Math.Floor(GameGenerator.Height(x, z, 1)), placement.Anchor.Y);
             if (kind is GameObjectKind.Bush or GameObjectKind.Rock)
             {

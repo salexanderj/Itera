@@ -7,7 +7,7 @@ namespace Game.Tests;
 /// <summary>
 /// The world: the same seed gives the same voxels in the same bounds, and the same objects of the same kinds (pinned
 /// hashes and grid: a change of any means <see cref="GameGenerator.Version"/> must rise, or a save or a session of the old
-/// world would not match), the ground near the middle as version 1 made it, the broad relief past 1 km inside the grid,
+/// world would not match), the broad relief past 1 km inside the grid,
 /// the start on the ground with the eye a person's height over it, and every benchmark view over the ground.
 /// </summary>
 public sealed class WorldTests
@@ -22,23 +22,13 @@ public sealed class WorldTests
         // (2 km out at level 2).
         var grid = generator.Grid;
         Assert.Equal(
-            (3, 14497145286141956781UL, (10, -313, 312, -4, 7)),
+            (4, 8126248515993969710UL, (10, -313, 312, -4, 7)),
             (
                 generator.Version,
                 Hash(generator, [(0, 0), (3, -2), (-7, 5), (40, -30)]),
                 (grid.BaseCentimetres, grid.MinChunkXZ, grid.MaxChunkXZ, grid.MinChunkY, grid.MaxChunkY)
             )
         );
-    }
-
-    /// <summary>
-    /// Within 1 km of the middle the generator fills the ground as version 1 did, voxel for voxel (the hash version 1
-    /// pinned): the broad relief starts past it. The objects (version 3) stand on it.
-    /// </summary>
-    [Fact]
-    public void Near_the_middle_the_voxels_are_version_1s()
-    {
-        Assert.Equal(5789805400214179090UL, Hash(new GameGenerator(), [(0, 0), (3, -2), (-7, 5)]));
     }
 
     /// <summary>
@@ -82,7 +72,7 @@ public sealed class WorldTests
         }
 
         Assert.Equal(
-            (3, 4459721786247094893UL, 12518079006946159418UL, 4053),
+            (4, 18185346163863859596UL, 2541961827238320693UL, 4708),
             (new GameGenerator().Version, placements, shapes, found.Count)
         );
     }

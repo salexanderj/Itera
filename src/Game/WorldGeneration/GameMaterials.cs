@@ -29,4 +29,9 @@ public static class GameMaterials
     /// voxels are told apart by their material).
     /// </summary>
     public const byte Rock = 7;
+
+    /// <summary>
+    /// Boulder: the boulders' stone, drawn as stone is and climbable, but a material of its own, apart from the ground's.
+    /// </summary>
+    public const byte Boulder = 8;
 }

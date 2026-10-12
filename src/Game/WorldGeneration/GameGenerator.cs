@@ -1,4 +1,3 @@
-using Itera.Engine.Maths;
 using Itera.Engine.Voxels;
 using Itera.Engine.Voxels.Generation;
 
@@ -6,11 +5,11 @@ namespace Game.WorldGeneration;
 
 /// <summary>
 /// The world, 8 km across (<see cref="WorldGrid"/>): rolling hills (<see cref="FractalNoise"/>) of grass, with gravel on
-/// the hills' low ground, 5 cm of surface over dirt down to 1 m, then stone, and stone boulders (2 to 6 m across) a
-/// third of their height buried in the ground, one a 16 m cell at most (<see cref="JitteredGrid"/>); past 1 km from the
-/// middle, broad relief (2 km across, up to 30 m up or down) rises over the hills, whole from 1.5 km. On the engine's
-/// <see cref="HeightfieldGenerator"/>, which keeps it fast and exact; a game grows its world from here. Thread safe.
-/// Raise <see cref="Version"/> whenever the same seed would give other voxels, or the grid changes.
+/// the hills' low ground, 5 cm of surface over dirt down to 1 m, then stone; past 1 km from the middle, broad relief
+/// (2 km across, up to 30 m up or down) rises over the hills, whole from 1.5 km. On it stand its voxel objects (boulders,
+/// trees, bushes, and rocks: <see cref="GameForests"/>). On the engine's <see cref="HeightfieldGenerator"/>, which keeps
+/// it fast and exact; a game grows its world from here. Thread safe. Raise <see cref="Version"/> whenever the same seed
+/// would give other voxels or objects, or the grid changes.
 /// </summary>
 public sealed class GameGenerator()
     : HeightfieldGenerator(
@@ -30,28 +29,21 @@ public sealed class GameGenerator()
     /// <summary>The most the broad relief raises or lowers the ground, in centimetres.</summary>
     public const double ReliefCentimetres = 3_000;
 
-    /// <summary>The largest boulder's radius, in centimetres.</summary>
-    public const int MaxBoulderRadius = 300;
-
-    /// <summary>The share of the boulders' cells that hold one.</summary>
-    public const double BoulderChance = 0.6;
-
     private static readonly FractalNoise s_hills = new([12800, 3200, 800, 200], [1, 0.35, 0.1, 0.03], 0x68696C6C73);
-    private static readonly JitteredGrid s_boulders = new(1600, MaxBoulderRadius, 0x626F756C64, Margin: 100);
     private static readonly FractalNoise s_relief = new([200_000], [1], 0x72656C696566);
     private static readonly GameForests s_forests = new();
 
     /// <summary>
     /// The world's grid: voxels of 10 cm, 8 km across (±4,006.4 m in whole 12.8 m columns), from 51.2 m below the
-    /// middle's height to 102.4 m above it; the ground lies from -34 m to 46 m, the boulders to 50 m.
+    /// middle's height to 102.4 m above it; the ground lies from -34 m to 46 m, the boulders reach 50 m.
     /// </summary>
     public static VoxelGrid WorldGrid { get; } = VoxelGrid.Sized(10, 4_000, -51.2, 102.4);
 
     public override string Id => "game.world";
 
-    public override int Version => 3;
+    public override int Version => 4;
 
-    /// <summary>The trees, bushes, and rocks (<see cref="GameForests"/>).</summary>
+    /// <summary>The boulders, trees, bushes, and rocks (<see cref="GameForests"/>).</summary>
     public override Itera.Engine.Objects.IObjectPlacer Objects => s_forests;
 
     /// <summary>
@@ -87,111 +79,14 @@ public sealed class GameGenerator()
     }
 
     /// <summary>
-    /// The top of what is solid at (x, z) in centimetres: the ground, or a boulder's top where one stands there. Where a
-    /// player or a camera may start. Allocates; not for generation.
+    /// The top of what is solid at (x, z) in centimetres: the ground, or a boulder's top where one stands there
+    /// (<see cref="GameForests.SurfaceHeight"/>). Where a player or a camera may start. Not for generation.
     /// </summary>
-    public static double SurfaceHeight(int x, int z, ulong seed)
-    {
-        var top = Height(x, z, seed);
-        var found = new JitteredPoint[s_boulders.Capacity(x, x, z, z)];
-        var count = s_boulders.Find(seed, BoulderChance, x, x, z, z, found);
-        for (var i = 0; i < count; i++)
-        {
-            var boulder = Boulder.At(in found[i], seed);
-            double dx = x - boulder.X;
-            double dz = z - boulder.Z;
-            var room = (double)boulder.Radius * boulder.Radius - dx * dx - dz * dz;
-            if (room >= 0)
-            {
-                top = Math.Max(top, boulder.Y + Math.Sqrt(room));
-            }
-        }
-
-        return top;
-    }
-
-    /// <summary>
-    /// True when a boulder lies within <paramref name="distance"/> of (x, z) across, in centimetres: its ball's footprint
-    /// and that much round it. Thread safe; allocates nothing for distances under 10 m.
-    /// </summary>
-    public static bool NearBoulder(int x, int z, int distance, ulong seed)
-    {
-        var capacity = s_boulders.Capacity(x - distance, x + distance, z - distance, z + distance);
-        Span<JitteredPoint> found = capacity <= 64 ? stackalloc JitteredPoint[64] : new JitteredPoint[capacity];
-        var count = s_boulders.Find(seed, BoulderChance, x - distance, x + distance, z - distance, z + distance, found);
-        for (var i = 0; i < count; i++)
-        {
-            var point = found[i];
-            var state = point.State;
-            var radius = DeterministicMath.NextRange(ref state, 100, MaxBoulderRadius) + distance;
-            double dx = x - point.X,
-                dz = z - point.Z;
-            if (dx * dx + dz * dz <= (double)radius * radius)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    public static double SurfaceHeight(int x, int z, ulong seed) => GameForests.SurfaceHeight(x, z, seed);
 
     protected override double HeightAt(int x, int z, ulong seed) => Height(x, z, seed);
 
     // Gravel by the hills alone, so the broad relief's hollows keep the hills' patches instead of turning to gravel.
     protected override byte SurfaceAt(int x, int z, ulong seed, double height) =>
         height - Relief(x, z, seed) < GravelBelow ? GameMaterials.Gravel : GameMaterials.Grass;
-
-    protected override GroundFeatures CreateFeatures() => new Boulders();
-
-    /// <summary>A boulder: a ball of stone, in centimetres, its middle a third of its radius over the ground there.</summary>
-    private readonly record struct Boulder(int X, int Y, int Z, int Radius) : IGroundFeature
-    {
-        public static Boulder At(in JitteredPoint point, ulong seed)
-        {
-            var state = point.State;
-            var radius = DeterministicMath.NextRange(ref state, 100, MaxBoulderRadius);
-            var ground = (int)Math.Floor(Height(point.X, point.Z, seed));
-            return new Boulder(point.X, ground + radius / 3, point.Z, radius);
-        }
-
-        public bool Touches(int minX, int maxX, int minY, int maxY, int minZ, int maxZ) =>
-            X + Radius >= minX
-            && X - Radius <= maxX
-            && Y + Radius >= minY
-            && Y - Radius <= maxY
-            && Z + Radius >= minZ
-            && Z - Radius <= maxZ;
-
-        public void Fill(VoxelCoord first, GridLevel level, Span<byte> voxels) =>
-            Ellipsoid.Fill(X, Y, Z, Radius, Radius, Radius, GameMaterials.Stone, first, level, voxels);
-    }
-
-    /// <summary>The boulders near a column, found once a column on each worker thread.</summary>
-    private sealed class Boulders : GroundFeatures
-    {
-        private readonly GroundFeatureList<Boulder> _boulders = new(64);
-        private JitteredPoint[] _found = new JitteredPoint[64];
-
-        public override void Find(ulong seed, GridLevel level, int minX, int maxX, int minZ, int maxZ)
-        {
-            _boulders.Clear();
-            var capacity = s_boulders.Capacity(minX, maxX, minZ, maxZ);
-            if (_found.Length < capacity)
-            {
-                _found = new JitteredPoint[capacity];
-            }
-
-            var count = s_boulders.Find(seed, BoulderChance, minX, maxX, minZ, maxZ, _found);
-            for (var i = 0; i < count; i++)
-            {
-                _boulders.Add(Boulder.At(in _found[i], seed));
-            }
-        }
-
-        public override bool Touches(int minX, int maxX, int minY, int maxY, int minZ, int maxZ) =>
-            _boulders.Touches(minX, maxX, minY, maxY, minZ, maxZ);
-
-        public override void Fill(VoxelCoord first, GridLevel level, Span<byte> voxels) =>
-            _boulders.Fill(first, level, voxels);
-    }
 }

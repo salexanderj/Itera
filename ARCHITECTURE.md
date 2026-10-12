@@ -512,9 +512,10 @@ A game is an executable that registers the engine, then itself, and runs `GameLo
   renderer, the voxels, the session) and the game's own under `Game:`. The shipped file is checked by
   `ShippedSettingsTests`. `Engine:Steam:AppId` is 0 until the game has one; at 0 Steam stays off.
 - The starter's world is `GameGenerator`, a `HeightfieldGenerator` (rolling hills of grass with gravel on the low ground,
-  5 cm of surface over dirt to 1 m, then stone, and boulders from a `JitteredGrid`) on a 10 cm grid, with four materials
-  (`GameMaterials`), each with a look in `GamePalette` and a texture set under `src/Game/Textures/` (made by
-  `tools/Textures`, copied next to the executable). `BenchmarkViews` gives the benchmark its views of that world; runs of
+  5 cm of surface over dirt to 1 m, then stone) on a 10 cm grid, with voxel objects of 5 cm voxels on it (`GameObjects`:
+  boulders, broadleaf and young trees, bushes, and rocks; placed by `GameForests` from `JitteredGrid`s and a forest
+  noise), with eight materials (`GameMaterials`), each with a look in `GamePalette` and a texture set under
+  `src/Game/Textures/` (made by `tools/Textures`, copied next to the executable). `BenchmarkViews` gives the benchmark its views of that world; runs of
   different views do not compare.
 - Mods load from `Mods/` next to the executable; the sample mod's build copies itself there.
 
@@ -966,8 +967,8 @@ The engine's toolkit is in `Voxels/Generation/`:
   `SeedCache<T>` (something built once per seed, such as a layout, read without a lock), and `FieldTintMap` (a tint map from
   a field, so materials shift between their colour and tint colour across the world close to the generator's own choices).
 
-The starter's `GameGenerator` is a `HeightfieldGenerator` that uses `FractalNoise`, `JitteredGrid`, and `Ellipsoid`: a whole
-world of hills and boulders in about a hundred lines.
+The starter's `GameGenerator` is a `HeightfieldGenerator` that uses `FractalNoise`: a whole world of hills in about a
+hundred lines; its placer (`GameForests`) scatters boulders, trees, bushes, and rocks with `JitteredGrid`s.
 
 ### Deterministic maths and rotations
 

@@ -5,43 +5,44 @@ file is the game's own; a clone rewrites it to describe its game. Replace this p
 
 - Name: "Itera Game" (`Engine:Application:Name`), data folder `IteraGame` (`~/.local/share/IteraGame/`), no Steam App ID
   (Steam stays off).
-- The world (`WorldGeneration/`): `GameGenerator` (`game.world`, version 3) on the engine's `HeightfieldGenerator`,
+- The world (`WorldGeneration/`): `GameGenerator` (`game.world`, version 4) on the engine's `HeightfieldGenerator`,
   10 cm voxels, 8 km across (`GameGenerator.WorldGrid`: ±4,006.4 m, from 51.2 m below the middle's height to 102.4 m
   above it): gentle grass hills of `FractalNoise`, about 6 m high and up to 10 m up or down, gravel where the hills lie
-  below 2 m, 5 cm of surface over dirt down to 1 m, then stone, and stone boulders (2 to 6 m across) a third of their
-  height buried, at most one a 16 m cell (`JitteredGrid`); past 1 km from the middle, broad relief (`Relief`: one
-  octave 2 km across, up to 30 m up or down) rises over the hills, whole from 1.5 km, so within 1 km the ground is
-  version 1's, voxel for voxel. On it stand voxel objects of 5 cm voxels (`GameObjects`, registered at the run's start;
-  `GameForests`, the generator's placer): forest in patches where a broad noise is high (`GameForests.Cover`, about 40 %
+  below 2 m, 5 cm of surface over dirt down to 1 m, then stone; past 1 km from the middle, broad relief (`Relief`: one
+  octave 2 km across, up to 30 m up or down) rises over the hills, whole from 1.5 km. On it stand voxel objects of 5 cm
+  voxels (`GameObjects`, registered at the run's start; `GameForests`, the generator's placer): boulders, one in each
+  16 m cell at a chance of 0.6 (`JitteredGrid`), 2, 3, 4.5, or 6 m across (the size nearest a radius drawn from 1 to
+  3 m), two lumpy shapes a size, a third of their height buried; forest in patches where a broad noise is high (`GameForests.Cover`, about 40 %
   of the map), a tree in each 8 m cell inside them at a chance of 0.7 (about one every 91 m²), thinning over their
   edges, seven in ten a broadleaf (about 9 m tall, its crown 6 m across) and three a young tree (about 5 m); bushes
   (about 1.6 m across) in 6 m cells, at 0.15 outside the forest to 0.45 inside; rocks (about 70 cm high) in 12 m cells,
   at 0.1 to 0.2; each of three shapes and a heading by its cell's hash, standing on the ground's height at its anchor;
-  none within 15 m of the middle (the start and the fox's circle), on a boulder, or (a bush or rock) against a trunk.
-  Trunks and stems are bark, crowns and bushes leaves (smooth clumps), rocks rock. Characters and navigation pass
-  through leaves (`GamePassability`). The materials are `GameMaterials` (grass, dirt, stone, gravel, bark, leaves,
-  rock), drawn by `GamePalette` from the texture sets `grass`, `dirt`, `stone`, `gravel`, `bark`, and `leaves` in
-  `Textures/` (rock from `stone`). The sky
+  none within 15 m of the middle (the start and the fox's circle, which meets objects nowhere: it walks on the voxels),
+  no tree, bush, or rock on a boulder, and no bush or rock against a trunk. Trunks and stems are bark, crowns and bushes
+  leaves (smooth clumps), rocks rock, boulders boulder stone. Characters and navigation pass through leaves
+  (`GamePassability`). The materials are `GameMaterials` (grass, dirt, stone, gravel, bark, leaves, rock, boulder),
+  drawn by `GamePalette` from the texture sets `grass`, `dirt`, `stone`, `gravel`, `bark`, and `leaves` in `Textures/`
+  (rock and boulder from `stone`). The sky
   is one clear day (`GameAtmosphere`: a light haze, `Haze` 0.02, that hides half of a surface 3 km away), drawn with the
   engine's look (`RenderLook.Default`) under the engine's sun, which stays where it is (the console's `sun` and `time`
   move it for a run). The map is seen to its end: an 8 km view (`Engine:Renderer:ViewDistanceMetres` 8000) over nine
   levels (`Engine:Voxels:Levels` 9, voxels of 10 cm to 25.6 m), where the engine's defaults are 256 m and four. A change to what the generator makes, or to its
   grid's size, or to its objects, raises its `Version` (`tests/Game.Tests/WorldTests` pins a hash and the grid's bounds,
-  the placements and the kinds' shapes, and checks the ground near the middle against version 1's hash and the ground
-  inside the grid).
+  the placements and the kinds' shapes, and checks the ground inside the grid).
 - The fox (`GameModels.Fox`): Khronos's Fox sample (`Models/Fox/`, credits in `Models/SOURCES.md`; 24 joints, clips
   Survey, Walk, and Run; its texture compressed in `Models/Fox/Fox.textures/`), declared at the run's start (`GameRunStartup`). `FoxSystem` puts it on the ground 4 m in front
   of the start pose, side on, then over and over: it looks about (Survey) for 6 s, walks (1.1 m/s) for 8 s and runs
   (4 m/s) for 6 s round a 3 m circle beyond where it started, on the voxel ground (`FoxRoute`), each clip fading into
   the next over 0.3 s (`FoxSystem.FadeSeconds`). Its circle's centre moves with the match's origin (`FoxRouteShift`,
   the game's `IOriginShiftHandler`).
-- The player starts at the world's middle, its eye a person's height over the ground or a boulder there
-  (`GameGenerator.SurfaceHeight`), looking along -z (`StartPose`; `Game:World:CameraPose` sets another, which must lie in
+- The player starts at the world's middle, its eye a person's height over the ground there (`GameGenerator.SurfaceHeight`,
+  which reads a boulder's top from its voxels where one stands: none does within 15 m of the middle), looking along -z (`StartPose`; `Game:World:CameraPose` sets another, which must lie in
   the play area). The match's first origin is the start eye's whole metres (`StartPose` is the game's `IOriginStart`),
   and `OriginShiftSystem` moves it with the camera from there. `PlayerSpawnSystem` makes it with the engine's components and a `Climber`; the engine's systems
   move it (W A S D, Shift, Space, Ctrl to crouch, Tab for third person; the console's `fly` for the fly camera).
-- Climbing (the engine's `ClimbingMode`, registered as the game's `IMovementMode` with the tag it climbs; stone, the
-  boulders, tagged climbable by `GameSurfaceTags`):
+- Climbing (the engine's `ClimbingMode`, registered as the game's `IMovementMode` with the tag it climbs; the boulders'
+  stone, and the ground's stone where dug down to it, tagged climbable by `GameSurfaceTags`; it meets the boulders as
+  objects):
   Space with a boulder within 0.3 m ahead grabs it instead of jumping; on it W and S climb at 1.5 m/s, A and D move
   along it at 2 m/s, nothing held hangs, Space jumps off it (4 m/s away, 5 m/s up), and Ctrl lets go; climbing past
   its top pulls the player up onto it where there is room to stand. Its state per player is `Climber`.
@@ -90,7 +91,8 @@ goes in this order where its comments say why, with a behaviour test and a zero-
   `GameObjects.cs`, `GameForests.cs`, and `GamePassability.cs`), `Textures/`,
   `Models/`, `appsettings.json`.
 - `tests/Game.Tests`: `SystemOrderTests`, `ShippedSettingsTests`, `GameOptionsTests`, `WorldTests`, `ForestTests` (a
-  box finds what its quarters find, the clear space, boulders, and trunks kept apart, the forest's share),
+  box finds what its quarters find, its low edges and not its high ones, the clear space, boulders, and trunks kept
+  apart, the forest's share),
   `PlayerSpawnSystemTests`, `FoxSystemTests`, `MinimapSystemTests` (the view asked round the eye, M, the benchmark, the
   HUD's square), `MinimapLayerTests` (inside its bounds, hidden while not shown or loading, below the stats line, the
   arrow's redraw, no allocation), `ChecklistTests` (every console command in the run-game skill's list, every numeric

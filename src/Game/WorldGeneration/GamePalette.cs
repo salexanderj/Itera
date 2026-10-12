@@ -74,6 +74,16 @@ public sealed class GamePalette : IVoxelPalette
                 Patches: 0.4f,
                 Texture: "leaves"
             ),
+            GameMaterials.Boulder => new(
+                new Vector3(0.25f, 0.24f, 0.23f),
+                new Vector3(0.25f, 0.24f, 0.23f),
+                VoxelPattern.Mottle,
+                SizeCentimetres: 32,
+                Contrast: 0.5f,
+                Relief: 0.4f,
+                Patches: 0.4f,
+                Texture: "stone"
+            ),
             GameMaterials.Rock => new(
                 new Vector3(0.23f, 0.22f, 0.21f),
                 new Vector3(0.23f, 0.22f, 0.21f),

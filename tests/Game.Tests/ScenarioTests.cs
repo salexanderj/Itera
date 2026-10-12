@@ -476,13 +476,13 @@ public sealed class ScenarioTests
     }
 
     /// <summary>
-    /// The boulder of seed 1 nearest the middle, out to 40 m (a point more than 1.5 m over the ground): its highest point,
+    /// The boulder of seed 1 nearest the middle, out to 100 m (a point more than 1.5 m over the ground): its highest point,
     /// where its -x foot meets the ground along the row through it (a little out from it), and the ground's height there,
     /// in metres.
     /// </summary>
     private static (Vector3 Middle, Vector3 Foot, float Ground) FindBoulder()
     {
-        for (var reach = 100; reach <= 4000; reach += 100)
+        for (var reach = 100; reach <= 10_000; reach += 100)
         {
             for (var x = -reach; x <= reach; x += 100)
             {
