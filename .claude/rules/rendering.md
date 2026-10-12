@@ -204,7 +204,8 @@ columns not meshed yet. Each frame it picks a
 level per column (a column's nearest part is that of its box: its square, and its height from its first layer with
 blocks to its last, so a camera high over the ground meshes no fine level under it; a coarse column splits into its
 four finer ones when its nearest part is within the finer level's
-reach times `Engine:Renderer:MeshReachShare`, 0.5 by default, and all four are meshed, and stays split while it is not
+reach times `Engine:Renderer:MeshReachShare`, 0.5 by default, and all four are meshed (and, at the voxel objects'
+hand-over level, its objects are ready: `.claude/rules/objects.md`), and stays split while it is not
 meshed itself and they are; a finer column past the map's edge, which never loads, or past the view's end, which is
 never meshed, draws nothing and keeps no coarse column from splitting (`WorldMeshes.DrawsNothing`: a map's half-width
 need not be whole coarse columns, and a coarse column may be wider than the view); `Engine:Renderer:MeshFinestLevel`,

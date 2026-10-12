@@ -67,7 +67,10 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   the faces against its border; the mesher's owned window, `SurfaceNets.Mesh(samples, densities, ownedMin, ownedMax,
   output)`), so parts meet with no seam and each face is made once.
 - Drawing (`WorldMeshes.Objects.cs`): each pass records the level-K columns it split below K (`CameraSplit`, whose columns
-  the near cascade and the image views share; `FarSplit`); an object's part models go into a pass's lists when a level-K
+  the near cascade and the image views share; `FarSplit`); a level-K column splits below K only once the areas whose
+  objects reach into it are filled (`ObjectWorld.IsKnown`) and the kinds' models are on the GPU
+  (`VoxelObjects.AllUploaded`; `WorldMeshes.ObjectsReady`, in `Select` and the balance's `CanSplit`), else it draws its
+  copies, so no object goes undrawn between its copy and its model (a column not meshed itself splits regardless); an object's part models go into a pass's lists when a level-K
   column under its reach is split there (an area is passed over when neither its column nor one round it is), at its own
   voxels within level 0's reach times the mesh share, twice them within level 1's, else four times (the views: four
   times), turned by `ObjectTurns.Rotation` about its anchor. Objects are gathered after the game's models and the retired

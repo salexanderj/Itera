@@ -177,7 +177,8 @@ Where tests live:
   in memory: the seams' stitched meshes, a full heap, the edits' latency, an image view's lists over `FakeViewLists`,
   the same blocks drawn local to a moved origin, a column cut by the map's edge or wider than the view still split, a
   ball set far over a heightfield's ground widening its column and drawn from blocks for its runs alone, no fine blocks
-  under a camera high over the ground, a model sharing a base's meshes meshing only its marked block),
+  under a camera high over the ground, a model sharing a base's meshes meshing only its marked block; objects drawn as models under split columns, a level-K
+  column splitting only once its objects are known),
   `RenderViewsTests` (declaring, the cadence, panels), `Memory/GpuRangeHeapTests`, `GpuLayoutTests` (of
   `tests/Shared/GpuLayout`, also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`, `DeviceChoiceTests`,
   `RenderThreadTests` (a fake renderer), `RenderPassesTests` (a game's pass at every stage in `EngineComposition`, none

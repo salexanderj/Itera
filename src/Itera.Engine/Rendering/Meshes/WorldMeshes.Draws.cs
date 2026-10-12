@@ -212,9 +212,10 @@ public sealed unsafe partial class WorldMeshes
     }
 
     /// <summary>
-    /// Draws the column <paramref name="key"/>, or its four finer columns where they are near enough and meshed; a
-    /// column not meshed yet (loading, or evicted to make room, WorldMeshes.Evict) whose finer columns are meshed stays
-    /// split until it is. Past the map's edge or the view's end (<see cref="DrawsNothing"/>) nothing is drawn.
+    /// Draws the column <paramref name="key"/>, or its four finer columns where they are near enough and meshed (and,
+    /// at the objects' hand-over level, its objects are ready: <see cref="ObjectsReady"/>); a column not meshed yet
+    /// (loading, or evicted to make room, WorldMeshes.Evict) whose finer columns are meshed stays split until it is. Past
+    /// the map's edge or the view's end (<see cref="DrawsNothing"/>) nothing is drawn.
     /// </summary>
     private void Select(ColumnKey key)
     {
@@ -226,7 +227,7 @@ public sealed unsafe partial class WorldMeshes
         if (key.Level > _finestLevel)
         {
             var near = IsNear(column);
-            if ((near || !column.MeshedOnce) && TryChildren(key, orFiner: true))
+            if (((near && ObjectsReady(key)) || !column.MeshedOnce) && TryChildren(key, orFiner: true))
             {
                 if (!near)
                 {
@@ -253,12 +254,12 @@ public sealed unsafe partial class WorldMeshes
     }
 
     /// <summary>
-    /// True when the four columns of the level below that make up <paramref name="key"/> are meshed; where not, any of
-    /// them evicted is meshed again.
+    /// True when the four columns of the level below that make up <paramref name="key"/> are meshed (and its objects are
+    /// ready, <see cref="ObjectsReady"/>); where not, any of them evicted is meshed again.
     /// </summary>
     private bool CanSplit(ColumnKey key)
     {
-        if (key.Level <= _finestLevel)
+        if (key.Level <= _finestLevel || !ObjectsReady(key))
         {
             return false;
         }

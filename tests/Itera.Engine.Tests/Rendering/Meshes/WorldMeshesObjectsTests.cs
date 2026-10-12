@@ -83,6 +83,29 @@ public sealed partial class WorldMeshesTests
     }
 
     /// <summary>
+    /// A level-2 column near the camera splits below level 2 only once the areas whose objects reach into it are filled:
+    /// before, the camera draws the level-2 columns whole, with the objects' copies in their voxels, so no tree goes
+    /// undrawn between its copy and its model; after, they split.
+    /// </summary>
+    [Fact]
+    public void A_column_splits_below_the_hand_over_once_its_objects_are_known()
+    {
+        using var scene = new ObjectScene(this, fill: false);
+        var at = new Vector3(0, 25, 0);
+        scene.Settle(at, shadows: false);
+        Assert.Empty(scene.Meshes.CameraSplit);
+        var slot = scene.Frame(at, shadows: false);
+        Assert.Empty(scene.Corners(slot, 0));
+
+        scene.FillAreas();
+        scene.Frame(at, shadows: false);
+        slot = scene.Frame(at, shadows: false);
+
+        Assert.NotEmpty(scene.Meshes.CameraSplit);
+        Assert.NotEmpty(scene.Corners(slot, 0));
+    }
+
+    /// <summary>
     /// A tree's models are drawn at its own voxels within level 0's reach of the camera, twice them within level 1's, and
     /// four times them past it.
     /// </summary>
@@ -154,7 +177,7 @@ public sealed partial class WorldMeshesTests
         private readonly ObjectWorld _objects;
         private int _frame;
 
-        public ObjectScene(WorldMeshesTests test)
+        public ObjectScene(WorldMeshesTests test, bool fill = true)
         {
             _test = test;
             var shape = new VoxelObjectShape(5, new VoxelCoord(40, 150, 40), new VoxelCoord(100, 0, 100));
@@ -207,9 +230,9 @@ public sealed partial class WorldMeshesTests
                 NullLogger<ObjectWorld>.Instance
             );
             _objects.Initialize();
-            for (var i = 0; i < 100 && _objects.WaitingAreas > 0; i++)
+            if (fill)
             {
-                _objects.Update();
+                FillAreas();
             }
 
             Meshes = _test.NewMeshes(_test.Targets, levels: 4);
@@ -219,6 +242,15 @@ public sealed partial class WorldMeshesTests
         public VoxelWorld World { get; }
 
         public WorldMeshes Meshes { get; }
+
+        /// <summary>Fills every area of objects the world wants.</summary>
+        public void FillAreas()
+        {
+            for (var i = 0; i < 100 && _objects.WaitingAreas > 0; i++)
+            {
+                _objects.Update();
+            }
+        }
 
         public List<ObjectPlacement> Placements { get; }
 

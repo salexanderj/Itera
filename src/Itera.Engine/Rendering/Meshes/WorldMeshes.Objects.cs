@@ -25,6 +25,7 @@ public sealed unsafe partial class WorldMeshes
     private VoxelObjects? _objectModels;
     private ObjectDamage? _damage;
     private int _handOver;
+    private bool _objectModelsReady;
     private readonly HashSet<(int X, int Z)> _cameraSplit = [];
     private readonly HashSet<(int X, int Z)> _farSplit = [];
 
@@ -42,6 +43,7 @@ public sealed unsafe partial class WorldMeshes
         _objects = objects is { HasPlacer: true } && objectModels is { Kinds.Count: > 0 } ? objects : null;
         _objectModels = objectModels;
         _handOver = objects?.HandOverLevel ?? 0;
+        _objectModelsReady = false;
         _cameraSplit.Clear();
         _farSplit.Clear();
     }
@@ -53,6 +55,36 @@ public sealed unsafe partial class WorldMeshes
         _damage = null;
         _cameraSplit.Clear();
         _farSplit.Clear();
+    }
+
+    /// <summary>
+    /// True when the column <paramref name="key"/> may split for its objects: below the hand-over level K its voxels hold no
+    /// copy of them, so a level-K column splits only once the areas whose objects reach into it are filled
+    /// (<see cref="ObjectWorld.IsKnown"/>) and the kinds' models are on the GPU; until then it draws the copies, and no
+    /// object goes undrawn. Always for other levels, and without objects. Allocates nothing.
+    /// </summary>
+    private bool ObjectsReady(ColumnKey key)
+    {
+        if (_objects is null || key.Level != _handOver)
+        {
+            return true;
+        }
+
+        if (!_objectModelsReady)
+        {
+            // The kinds' models stay on the GPU for the match: once they all are, they are.
+            if (_objectModels is not { IsInitialized: true } models || !models.AllUploaded())
+            {
+                return false;
+            }
+
+            _objectModelsReady = true;
+        }
+
+        long width = _grid.ColumnCentimetres(key.Level);
+        long x = key.X * width,
+            z = key.Z * width;
+        return _objects.IsKnown(x, x + width - 1, z, z + width - 1);
     }
 
     /// <summary>Notes that the pass drew <paramref name="leaf"/>: below the hand-over level, its level-K column is split.</summary>
