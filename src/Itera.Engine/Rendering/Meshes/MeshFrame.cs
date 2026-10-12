@@ -35,6 +35,8 @@ public readonly record struct MeshFrame(
 
 /// <summary>
 /// One list of the models' draws in a frame slot: its <see cref="GpuData.MeshModelDraw"/> records and its commands, one
-/// per block of a model level, whose instances are that block's records.
+/// per block of a model level, whose instances are that block's records; the last <paramref name="Faded"/> commands draw
+/// a share of their pixels (<see cref="GpuData.MeshModelDraw.Shown"/>; the camera's list alone has any), the others every
+/// pixel.
 /// </summary>
-public readonly record struct MeshModelList(int Records, int Commands);
+public readonly record struct MeshModelList(int Records, int Commands, int Faded = 0);

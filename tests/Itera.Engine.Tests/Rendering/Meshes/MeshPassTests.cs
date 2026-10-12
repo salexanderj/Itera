@@ -93,13 +93,64 @@ public sealed class MeshPassTests : IDisposable
     public void The_models_are_read_as_their_draws_lay_them_out()
     {
         var vertex = _compiler.Compile("mesh.vert", ["MESH_MODEL"]);
+        var fading = _compiler.Compile("mesh.vert", ["MESH_MODEL", "MESH_FADE"]);
         var shadow = _compiler.Compile("mesh-shadow.vert", ["MESH_MODEL"]);
 
         Assert.Empty(GpuLayout.ArrayElementDifferences<MeshModelDraw>(vertex, 0, 6));
         Assert.Empty(GpuLayout.PushConstantDifferences<ViewConstants>(vertex));
+        Assert.Empty(GpuLayout.ArrayElementDifferences<MeshModelDraw>(fading, 0, 6));
+        Assert.Empty(GpuLayout.PushConstantDifferences<ViewConstants>(fading));
         Assert.Empty(GpuLayout.ArrayElementDifferences<MeshModelDraw>(shadow, 0, 6));
         Assert.Empty(GpuLayout.PushConstantDifferences<MeshShadowConstants>(shadow));
     }
+
+    /// <summary>
+    /// The fading models' fragment shaders, the variants of the world's and the wireframe's that draw a draw's share of
+    /// the dither (<c>mesh-fade.glsl</c>), compile apart from them and read the sets they do.
+    /// </summary>
+    [Theory]
+    [InlineData("mesh.frag")]
+    [InlineData("mesh-wire.frag")]
+    public void The_fading_models_fragment_shaders_read_what_the_worlds_do(string name)
+    {
+        var world = _compiler.Compile(name);
+        var fading = _compiler.Compile(name, ["MESH_FADE"]);
+
+        Assert.NotEqual(world, fading);
+        Assert.Equal(GpuLayout.DescriptorSets(world), GpuLayout.DescriptorSets(fading));
+    }
+
+    /// <summary>
+    /// Draws given shares that meet (0 to a, a to b, b to 1) show each of the dither's thresholds once, compared in
+    /// 65,536ths as <c>mesh-fade.glsl</c> compares them, also where a share rounds to nothing; a record left at zero shows
+    /// every threshold.
+    /// </summary>
+    [Theory]
+    [InlineData(0.3f, 0.7f)]
+    [InlineData(0.123456f, 0.123457f)]
+    [InlineData(0.000001f, 0.5f)]
+    [InlineData(0.5f, 0.999999f)]
+    public void Fade_shares_that_meet_show_each_threshold_once(float a, float b)
+    {
+        Assert.Equal(MeshModelDraw.ShowsAll, MeshModelDraw.Shows(0, 1));
+        Assert.Equal(MeshModelDraw.ShowsAll, default(MeshModelDraw).Shown);
+        Assert.Equal(MeshModelDraw.ShowsNone, MeshModelDraw.Shows(a, a));
+        uint[] draws = [MeshModelDraw.Shows(0, a), MeshModelDraw.Shows(a, b), MeshModelDraw.Shows(b, 1)];
+        for (uint threshold = 0; threshold < 65536; threshold++)
+        {
+            var count = 0;
+            foreach (var shown in draws)
+            {
+                count += Shows(shown, threshold) ? 1 : 0;
+            }
+
+            Assert.Equal(1, count);
+        }
+    }
+
+    /// <summary><c>mesh-fade.glsl</c>'s <c>meshShows</c> for a threshold in 65,536ths.</summary>
+    private static bool Shows(uint shown, uint threshold) =>
+        threshold >= (shown & 0xFFFF) && threshold < 65536 - (shown >> 16);
 
     [Fact]
     public void The_depth_only_shader_reads_nothing()

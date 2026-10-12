@@ -91,10 +91,31 @@ Lucy, 2026-10-11, from the figures and pictures above:
 - **Objects keep densities like the world's.** Kinds store how full each voxel is, models are meshed with them, and edits
   change them by share, so smooth rocks and crowns show no rings.
 
+## After playing the forests
+
+Lucy, 2026-10-12, after walking the starter's forests: whole areas of far objects shrank or grew at once as she walked
+(each level-K column switching between its copies and its models), and the boulders were still the ground's voxels.
+
+- **Boulders are objects:** lumpy, 5 cm, four sizes (2, 3, 4.5, and 6 m) of two shapes each (world version 4).
+- **No column splits below K until its objects are ready:** known and their models on the GPU, so no object goes
+  undrawn between its copy and its model.
+- **Far copies keep the object's size:** each coarse voxel takes the share of it the object fills, at its heading, and a
+  thin upright part (a trunk) is kept one coarse voxel wide so it never vanishes. Before, a copy kept every coarse voxel
+  the object touched, so a far crown grew by up to one coarse voxel.
+- **Dithered fades:** a model's levels fade into each other over 2 m each side of the distance between them, and the
+  camera draws an object's coarsest model over its copy out to the hand-over's fade's end, fading it out over its last
+  30 m; the copy stays drawn whole under it.
+- **No lit strip at an object's foot.** The shadow lookup's depth bias (0.0003 of a cascade's depth, about 5 cm in the
+  near cascade) lit the ground within it of a caster's shaded side. Terrain boulders hid it, their voxels curving into
+  the ground; an object meets the ground at a sharp crease, so a bright strip showed between its foot and its shadow.
+  The bias is gone (the 1.5-texel normal offset stays): the strip closes, and the forest, start, and boulder views under
+  a 45, 20, 15, and 10 degree sun show no acne, the terminators a little sharper.
+
 ## What the drawing leaves
 
-- **Objects at a hand-over column's edge.** An object whose reach spans a level-K column the renderer split and one it
-  did not is drawn as its model, whole, and the column it did not split draws its copy too: on that side, at the
-  hand-over distance (about 33 to 106 m), the model and the copy show together. The copy keeps every coarse voxel the
-  object touches, so on broad faces it lies outside the model and hides it, and at thin parts (a trunk) the model shows
-  through it. Hiding a copy per object would need the copies written per object, which the world's voxels do not hold.
+- **Copies and models together.** Nearer than the hand-over's fade's end, an object in a column that did not split
+  shows its model and its copy together. The copy's surface lies about at the model's: a lumpy model and its smoother
+  copy cross each other in places, and a far trunk's copy, a coarse voxel wide, is wider than its model.
+- **Shadows do not fade.** The cascades cast each object's one model level, chosen by its distance, whole, where its
+  column split; elsewhere its copy casts. A shadow can change by up to a voxel where an object passes from one level to
+  the next.

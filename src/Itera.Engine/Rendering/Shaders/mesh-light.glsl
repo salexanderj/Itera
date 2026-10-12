@@ -2,10 +2,11 @@
 // set MESH_SET): mesh.frag for the world and the models, and particle-simulate.comp for each lit particle. Needs
 // mesh-data.glsl.
 
-// The point is moved this many of its cascade's texels along its normal before the lookup, and its depth this much
-// towards the sun, so a surface does not shadow itself (acne).
+// The point is moved this many of its cascade's texels along its normal before the lookup, so a surface does not shadow
+// itself (acne). Its depth is not moved towards the sun: the maps hold only the faces turned away from it, so a lit
+// surface never meets its own depth, and a depth bias lit the ground within it of a caster's shaded side (a bright strip
+// where a voxel object's foot meets the ground).
 const float ShadowNormalTexels = 1.5;
-const float ShadowDepthBias = 0.0003;
 
 // Contact-hardening shadows in the near cascade the sun is a disc 2 degrees across (as the raymarcher's soft sun; this is its
 // tangent), so a shadow's edge widens with the metres between the
@@ -47,7 +48,7 @@ float cascadeLight(MeshLighting cascades, uint cascade, vec3 world, vec3 normal)
         : (cascade == 1u ? cascades.farCascade : cascades.distantCascade);
     vec4 clip = projection * vec4(world + normal * (ShadowNormalTexels * texel), 1.0);
     vec2 uv = clip.xy * 0.5 + 0.5;
-    float reference = clip.z - ShadowDepthBias;
+    float reference = clip.z;
     float layer = float(cascade);
     vec2 step = 1.0 / vec2(textureSize(shadowMaps, 0).xy);
     if (!near)

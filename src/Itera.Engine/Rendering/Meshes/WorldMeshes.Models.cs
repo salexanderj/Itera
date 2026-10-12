@@ -52,6 +52,11 @@ public sealed unsafe partial class WorldMeshes
     private readonly List<int> _keysUsed = [];
     private readonly int[] _sortedDraws = new int[ModelInstances.MaxModels];
 
+    // The camera's list's draws of one model level that fade, while its whole ones are moved before them, and each
+    // level's draws (where they start among the sorted draws, how many, how many shown whole), written in two rounds.
+    private readonly int[] _fadedDraws = new int[ModelInstances.MaxModels];
+    private readonly (int Start, int Count, int Whole)[] _keyGroups = new (int, int, int)[ModelInstances.MaxModels];
+
     /// <summary>
     /// Meshes models: restarts any whose revision changed (new, replaced, or a handle reused), and starts their blocks'
     /// jobs, oldest model first, until the time budget or the job pool runs out. Before the world's jobs, so an edit to a model shows
@@ -506,7 +511,8 @@ public sealed unsafe partial class WorldMeshes
         Quaternion turn,
         float tint,
         ModelShadow shadow,
-        int lists = AllLists
+        int lists = AllLists,
+        uint shown = MeshModelDraw.ShowsAll
     )
     {
         if (
@@ -549,7 +555,7 @@ public sealed unsafe partial class WorldMeshes
         }
 
         var index = _modelFrameCount++;
-        _modelFrame[index] = new ModelFrameDraw(mesh, tree, corner, voxelMetres, turn, tint);
+        _modelFrame[index] = new ModelFrameDraw(mesh, tree, corner, voxelMetres, turn, tint, shown);
         if (seen)
         {
             _listDraws[0][_listCounts[0]++] = index;
@@ -650,74 +656,155 @@ public sealed unsafe partial class WorldMeshes
             ReportModelListFull(list >= MeshPass.Lists, mostRecords, mostCommands);
         }
 
-        // Each level's draws, block by block.
-        var records = target.ModelDrawsOf(slot, list);
-        var commands = target.ModelCommandsOf(slot, list);
-        var written = 0;
-        var commanded = 0;
+        // Each level's draws kept, those of the camera's list shown whole before those that fade.
+        var groups = 0;
         var from = 0;
         foreach (var key in _keysUsed)
         {
             var instances = _keyCounts[key];
             _keyCounts[key] = 0;
-            var group = _sortedDraws.AsSpan(from, instances);
+            var at = from;
             from += instances;
-            ref readonly var first = ref _modelFrame[group[0]];
-            var blocks = first.Mesh.Drawn[first.Tree];
-            var level = _models!.BaseLevel(first.Mesh.Handle) + first.Tree;
             if (share < 1)
             {
                 instances = (int)(instances * share);
-                group = group[..instances];
             }
 
-            if (
-                instances == 0
-                || written + blocks.Count * instances > mostRecords
-                || commanded + blocks.Count > mostCommands
-            )
+            if (instances == 0)
             {
                 ReportModelListFull(list >= MeshPass.Lists, mostRecords, mostCommands);
                 continue;
             }
 
-            foreach (var block in blocks)
-            {
-                commands[commanded++] = new DrawIndexedIndirectCommand(
-                    (uint)block.IndexCount,
-                    (uint)instances,
-                    block.FirstIndex,
-                    0,
-                    (uint)(recordBase + written)
-                );
-                foreach (var draw in group)
-                {
-                    ref readonly var model = ref _modelFrame[draw];
-                    records[written++] = new MeshModelDraw
-                    {
-                        Corner = model.Corner,
-                        VoxelMetres = model.VoxelMetres,
-                        Turn = model.Turn,
-                        VertexBase = block.VertexBase,
-                        Block = block.Block,
-                        Tint = model.Tint,
-                    };
-                }
+            var group = _sortedDraws.AsSpan(at, instances);
+            _keyGroups[groups++] = (at, instances, list == 0 ? WholeFirst(group) : instances);
+        }
 
-                var triangles = (long)block.IndexCount / 3 * instances;
-                if (list == 0)
+        // Block by block, in two rounds: the draws shown whole, then those that fade, so the pass draws the first with
+        // shaders that never discard a pixel (one that may keeps the depth test from running before it shades: a third of
+        // the forest's models' time).
+        var records = target.ModelDrawsOf(slot, list);
+        var commands = target.ModelCommandsOf(slot, list);
+        var written = 0;
+        var commanded = 0;
+        var faded = 0;
+        for (var round = 0; round < 2; round++)
+        {
+            for (var g = 0; g < groups; g++)
+            {
+                var (at, drawn, whole) = _keyGroups[g];
+                var group =
+                    round == 0 ? _sortedDraws.AsSpan(at, whole) : _sortedDraws.AsSpan(at + whole, drawn - whole);
+                if (group.Length > 0)
                 {
-                    _stats.LastModelTriangles += triangles;
-                    _modelTrianglesByLevel[Math.Min(level, VoxelModels.MaxLevels - 1)] += triangles;
-                }
-                else if (list < MeshPass.Lists)
-                {
-                    _stats.LastShadowTriangles += triangles;
+                    WriteModelGroup(
+                        list,
+                        group,
+                        records,
+                        commands,
+                        recordBase,
+                        mostRecords,
+                        mostCommands,
+                        ref written,
+                        ref commanded,
+                        ref faded,
+                        round == 1
+                    );
                 }
             }
         }
 
-        return new MeshModelList(written, commanded);
+        return new MeshModelList(written, commanded, faded);
+    }
+
+    /// <summary>
+    /// Moves the draws of <paramref name="group"/> shown whole before those that fade, each in the order gathered; the
+    /// count shown whole.
+    /// </summary>
+    private int WholeFirst(Span<int> group)
+    {
+        var whole = 0;
+        var faded = 0;
+        foreach (var draw in group)
+        {
+            if (_modelFrame[draw].Shown == MeshModelDraw.ShowsAll)
+            {
+                group[whole++] = draw;
+            }
+            else
+            {
+                _fadedDraws[faded++] = draw;
+            }
+        }
+
+        _fadedDraws.AsSpan(0, faded).CopyTo(group[whole..]);
+        return whole;
+    }
+
+    /// <summary>
+    /// Writes one model level's draws <paramref name="group"/> into a list: a command for each of its blocks over a
+    /// record per draw, counted into <paramref name="faded"/> too where they fade.
+    /// </summary>
+    private void WriteModelGroup(
+        int list,
+        ReadOnlySpan<int> group,
+        Span<MeshModelDraw> records,
+        Span<DrawIndexedIndirectCommand> commands,
+        int recordBase,
+        int mostRecords,
+        int mostCommands,
+        ref int written,
+        ref int commanded,
+        ref int faded,
+        bool fades
+    )
+    {
+        var instances = group.Length;
+        ref readonly var first = ref _modelFrame[group[0]];
+        var blocks = first.Mesh.Drawn[first.Tree];
+        var level = _models!.BaseLevel(first.Mesh.Handle) + first.Tree;
+        if (written + blocks.Count * instances > mostRecords || commanded + blocks.Count > mostCommands)
+        {
+            ReportModelListFull(list >= MeshPass.Lists, mostRecords, mostCommands);
+            return;
+        }
+
+        faded += fades ? blocks.Count : 0;
+        foreach (var block in blocks)
+        {
+            commands[commanded++] = new DrawIndexedIndirectCommand(
+                (uint)block.IndexCount,
+                (uint)instances,
+                block.FirstIndex,
+                0,
+                (uint)(recordBase + written)
+            );
+            foreach (var draw in group)
+            {
+                ref readonly var model = ref _modelFrame[draw];
+                records[written++] = new MeshModelDraw
+                {
+                    Corner = model.Corner,
+                    VoxelMetres = model.VoxelMetres,
+                    Turn = model.Turn,
+                    VertexBase = block.VertexBase,
+                    Block = block.Block,
+                    Tint = model.Tint,
+                    Shown = model.Shown,
+                };
+            }
+
+            var triangles = (long)block.IndexCount / 3 * instances;
+            if (list == 0)
+            {
+                _stats.LastModelTriangles += triangles;
+                _modelTrianglesByLevel[Math.Min(level, VoxelModels.MaxLevels - 1)] += triangles;
+            }
+            else if (list < MeshPass.Lists)
+            {
+                _stats.LastShadowTriangles += triangles;
+            }
+        }
     }
 
     private int KeyOf(int draw)
@@ -746,7 +833,8 @@ public sealed unsafe partial class WorldMeshes
         Vector3 Corner,
         float VoxelMetres,
         Quaternion Turn,
-        float Tint
+        float Tint,
+        uint Shown
     );
 }
 

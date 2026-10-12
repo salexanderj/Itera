@@ -22,6 +22,13 @@ layout(location = 4) in vec4 inWeightsHigh;
 layout(location = 5) flat in uvec2 inPalette;
 layout(location = 0) out vec4 outColor;
 
+#ifdef MESH_FADE
+// The share of its pixels the model draw shows (MeshModelDraw.shown; mesh-fade.glsl), compiled for the models that fade
+// alone: a shader that may discard keeps the depth test from running before it shades.
+#include "mesh-fade.glsl"
+layout(location = 6) flat in uint inShown;
+#endif
+
 // The world's own look (the frame's look's world values, look.glsl; the starter's for a dark-fantasy art style,
 // docs/rendering-redesign.md; the light and the grade every surface takes are mesh-shade.glsl's): the world's surfaces
 // are worldSaturation as saturated and worldValue as light as their materials, so the characters stand out against
@@ -208,4 +215,11 @@ void main()
     float glow = surface.glow * LOOK.glowStrength;
     vec3 shaded = shadeSurface(colour, normal, lit, offset, openness, surface.cavity, surface.colour, glow);
     outColor = vec4(shaded, 1.0);
+#ifdef MESH_FADE
+    // Last, so every pixel of a 2x2 group took its derivatives and texture reads above.
+    if (!meshShows(inShown))
+    {
+        discard;
+    }
+#endif
 }

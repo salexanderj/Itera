@@ -542,7 +542,8 @@ Departures from the plan and points left open:
   native 1280x720 window (the benchmark script makes the window full screen).
 - The shadow bias (`ShadowDepthBias` 0.0003 of the cascade's depth, `ShadowNormalTexels` 1.5) was set before the maps
   took only faces turned away from the sun. With that, a bias of 0 and a normal offset of 0.5 texel showed no acne at
-  the forest and canopy views and looked the same; the values stay until a look test.
+  the forest and canopy views and looked the same; the values stay until a look test. (2026-10-12: the depth bias went,
+  `docs/voxel-objects.md`.)
 - The cascades meet at 30 m without a blend. Casters more than 100 m beyond a slice towards the sun are clipped, not
   clamped, so a low sun loses far hills' shadows. PCF lookups at the square's outer corners can read past it (lit).
 
@@ -1744,7 +1745,8 @@ at 2560x1440, release, render scale 1 (benchmarks `step6-base-1` and `step6-crow
   keeping 59 m and making each creep cheaper; keeping it as is.)
 - **Shadow bias** (a normal offset of 1.5 texels and a depth bias of 0.0003, set in stage 1.3): a build with stage 1.7's
   values (0.5 texel, no depth bias) costs the same, within 0.01 ms in every view, and neither shows acne or a contact
-  gap in the benchmark views; they differ in up to 3 % of pixels. The shipped values stay.
+  gap in the benchmark views; they differ in up to 3 % of pixels. The shipped values stay. (2026-10-12: the depth bias
+  went: it lit a strip of ground at the feet of voxel objects, `docs/voxel-objects.md`.)
 - **Light power** (tuned against 1 cm faces): the fortress hall's braziers light their surroundings as little as before;
   no change.
 - **Leftovers.** A thrown ball whose space check passes (at sample points) can start up to 8 cm inside the floor's

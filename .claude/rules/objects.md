@@ -83,14 +83,23 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   objects reach into it are filled (`ObjectWorld.IsKnown`) and the kinds' models are on the GPU
   (`VoxelObjects.AllUploaded`; `WorldMeshes.ObjectsReady`, in `Select` and the balance's `CanSplit`), else it draws its
   copies, so no object goes undrawn between its copy and its model (a column not meshed itself splits regardless); an object's part models go into a pass's lists when a level-K
-  column under its reach is split there (an area is passed over when neither its column nor one round it is), at its own
-  voxels within level 0's reach times the mesh share, twice them within level 1's, else four times (the views: four
-  times), turned by `ObjectTurns.Rotation` about its anchor. Objects are gathered after the game's models and the retired
-  ones, their areas nearest the camera first (an insertion sort: no allocation), an area passed over when no column
-  within the widest kind's reach of it is split; when a list's draws need more records than it holds, every model level
-  takes the same share, the first gathered first, so neither a kind nor a part of one (a tree's crowns) drops whole. An
-  object whose reach spans a split column and one that is not draws its model whole beside its copy in the column that
-  is not: at the hand-over distance, the two show together on that side (docs/voxel-objects.md). Their draws' tint is below 0 (`MeshModelDraw.Tint`),
+  column under its reach is split there, and into the camera's when it is known and nearer than the hand-over's fade's
+  end (below), turned by `ObjectTurns.Rotation` about its anchor. Its level follows its anchor's distance: its own voxels
+  within level 0's reach times the mesh share, twice them within level 1's, else four times, each level fading into the
+  next over `LevelFadeMetres` (2 m) each side of the distance between them, and the coarsest (or every level drawn, where the
+  hand-over's fade begins before level 2's) fading out over its far copy from the farthest an object of a split level-K column can lie (the reach that splits it, the column's width's diagonal,
+  and the widest kind's reach) over `HandOverFadeMetres` (30 m; `WorldMeshes.HandOverFade`), so the hand-over follows
+  the distance alone, not the columns. A fade gives each draw a share of a screen-space dither's thresholds
+  (`MeshModelDraw.Shown`, `mesh-fade.glsl`; the `MESH_FADE` variants of `mesh.frag` and `mesh-wire.frag`, drawing the
+  camera's list's fading draws, written last, draw only the pixels whose threshold lies in it; 0 for every pixel), two levels fading into each other taking the two sides of one share; the copy stays drawn
+  whole under the model (where both draw, nearer than the band too, they show together, the copy's surface about at the
+  model's, a thin trunk's a voxel wide), and no world shader discards anything. The fades are the camera's: the cascades cast each object's one level
+  by its distance, whole, and the image views draw the coarsest, whole. An object under a split column has no copy, so its
+  model never fades out. Objects are gathered after the game's models and the retired ones, their areas nearest the
+  camera first (an insertion sort: no allocation), an area passed over when no column within the widest kind's reach of
+  it is split and it lies past the fade's end; when a list's draws need more records than it holds, every model level
+  takes the same share, the first gathered first, so neither a kind nor a part of one (a tree's crowns) drops whole.
+  Their draws' tint is below 0 (`MeshModelDraw.Tint`),
   which `mesh.vert`'s model variant and `mesh.frag` shade as the world's surfaces (the mesh's material weights and
   palette, the texture sets, the tint map at the point, the world's look), so a model and its copy match. A stitched
   block of the level below K reads the coarser block with the objects' materials made air (`MaskCopies`), so no copy

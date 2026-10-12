@@ -25,8 +25,9 @@ public sealed partial class WorldMeshesTests
 
     /// <summary>
     /// Trees 4 m apart along x from the middle out to 60 m, the camera 25 m over the middle looking down wide: each tree's
-    /// models are in the camera's list just when a level-2 column under its reach is split below level 2, and in the far
-    /// cascade's just when the far pass split one, and every drawn part lies where the tree's anchor and heading put it.
+    /// models are in the camera's list when a level-2 column under its reach is split below level 2 or it is nearer than
+    /// the hand-over's fade's end (every one here), and in the far cascade's just when the far pass split one, and every
+    /// drawn part lies where the tree's anchor and heading put it.
     /// </summary>
     [Fact]
     public void Objects_are_drawn_as_models_where_a_pass_split_their_column_below_the_hand_over()
@@ -43,7 +44,9 @@ public sealed partial class WorldMeshesTests
         foreach (var placement in scene.Placements)
         {
             var parts = scene.ExpectedCorners(placement);
-            var inCamera = scene.SplitUnder(placement, scene.Meshes.CameraSplit);
+            var inCamera =
+                scene.SplitUnder(placement, scene.Meshes.CameraSplit)
+                || Vector3.Distance(at, ObjectScene.Local(placement.Anchor)) < scene.Meshes.HandOverFade().End;
             var inFar = scene.SplitUnder(placement, scene.Meshes.FarSplit);
             // Only trees within the view's wide frustum can be in the camera's list; each part's corner is exact.
             foreach (var corner in parts)
@@ -60,11 +63,14 @@ public sealed partial class WorldMeshesTests
             }
         }
 
-        // Every tree under a split column is drawn (the view, 25 m up and wide, sees them all), the nearest among them.
+        // Every tree under a split column or within the fade is drawn (the view, 25 m up and wide, sees them all).
         var drawn = 0;
         foreach (var placement in scene.Placements)
         {
-            if (scene.SplitUnder(placement, scene.Meshes.CameraSplit))
+            if (
+                scene.SplitUnder(placement, scene.Meshes.CameraSplit)
+                || Vector3.Distance(at, ObjectScene.Local(placement.Anchor)) < scene.Meshes.HandOverFade().End
+            )
             {
                 foreach (var corner in scene.ExpectedCorners(placement))
                 {
@@ -107,40 +113,97 @@ public sealed partial class WorldMeshesTests
 
     /// <summary>
     /// A tree's models are drawn at its own voxels within level 0's reach of the camera, twice them within level 1's, and
-    /// four times them past it.
+    /// four times them past it; within 2 m of either distance both levels are drawn, the farther taking the dither's
+    /// thresholds under its share of the band and the nearer those over it, so the two cover every threshold between
+    /// them; a tree under no split column (its copy drawn) fades out from the hand-over's fade's start to its end, its
+    /// copy showing in the thresholds under its share; the camera's list writes the draws that fade last, for the pass to
+    /// draw with its fading shaders alone; and trees lie in each band.
     /// </summary>
     [Fact]
-    public void An_objects_level_follows_its_distance()
+    public void An_objects_levels_fade_into_each_other_by_distance()
     {
         using var scene = new ObjectScene(this);
-        var at = new Vector3(0, 3, 0);
-        scene.Settle(at, shadows: false);
-
-        var slot = scene.Frame(at, shadows: false);
-
-        var records = Targets.ModelDrawsOf(slot, 0)[..scene.Meshes.Frame.ModelCamera.Records];
-        var levelZero = scene.World.Distances.ReachCentimetres(0) * 0.5 / 100;
-        var levelOne = scene.World.Distances.ReachCentimetres(1) * 0.5 / 100;
-        var checkedAny = false;
-        foreach (var placement in scene.Placements)
+        var levelZero = (float)(scene.World.Distances.ReachCentimetres(0) * 0.5 / 100);
+        var levelOne = (float)(scene.World.Distances.ReachCentimetres(1) * 0.5 / 100);
+        var (fadeStart, fadeEnd) = scene.Meshes.HandOverFade();
+        var bands = new HashSet<int>();
+        // From 3 m up a tree lies in the band round level 0's distance, from 25 m up one in the band round level 1's, and
+        // from 100 m up the far trees lie in the hand-over's fade (from 107 m: a level-2 column is 51.2 m wide), their
+        // columns not split.
+        foreach (var at in new[] { new Vector3(0, 3, 0), new Vector3(0, 25, 0), new Vector3(0, 100, 0) })
         {
-            var corner = scene.ExpectedCorners(placement)[0];
-            var drawn = records.ToArray().Where(r => Vector3.Distance(r.Corner, corner) < 1e-3f).ToList();
-            if (drawn.Count == 0)
+            scene.Settle(at, shadows: false);
+            var slot = scene.Frame(at, shadows: false);
+            var list = scene.Meshes.Frame.ModelCamera;
+            var records = Targets.ModelDrawsOf(slot, 0)[..list.Records].ToArray();
+            // The draws shown whole first, then those that fade, the last commands counted as faded.
+            var firstFaded = Array.FindIndex(records, r => r.Shown != MeshModelDraw.ShowsAll);
+            Assert.Equal(firstFaded >= 0, list.Faded > 0);
+            if (firstFaded >= 0)
             {
-                continue;
+                Assert.All(records[firstFaded..], r => Assert.NotEqual(MeshModelDraw.ShowsAll, r.Shown));
+                var command = Targets.ModelCommandsOf(slot, 0)[list.Commands - list.Faded];
+                Assert.Equal((uint)(MeshPass.ModelRecordBase(slot, 0) + firstFaded), command.FirstInstance);
             }
 
-            var distance = Vector3.Distance(at, ObjectScene.Local(placement.Anchor));
-            var expected =
-                distance < levelZero ? 0.05f
-                : distance < levelOne ? 0.10f
-                : 0.20f;
-            Assert.All(drawn, r => Assert.Equal(expected, r.VoxelMetres, 4));
-            checkedAny = true;
+            foreach (var placement in scene.Placements)
+            {
+                var corner = scene.ExpectedCorners(placement)[0];
+                var drawn = records.Where(r => Vector3.Distance(r.Corner, corner) < 1e-3f).ToList();
+                if (drawn.Count == 0)
+                {
+                    // Outside the view, which looks straight down.
+                    continue;
+                }
+
+                var distance = Vector3.Distance(at, ObjectScene.Local(placement.Anchor));
+                var toOne = Math.Clamp((distance - levelZero + 2) / 4, 0, 1);
+                var toTwo = Math.Clamp((distance - levelOne + 2) / 4, 0, 1);
+                var split = scene.SplitUnder(placement, scene.Meshes.CameraSplit);
+                var toCopy = split ? 0 : Math.Clamp((distance - fadeStart) / (fadeEnd - fadeStart), 0, 1);
+                var expected = new List<(float Metres, uint Shown)>();
+                foreach (
+                    var (metres, from, to) in new[]
+                    {
+                        (0.05f, Math.Max(toCopy, toOne), 1f),
+                        (0.10f, Math.Max(toCopy, toTwo), toOne),
+                        (0.20f, toCopy, toTwo),
+                    }
+                )
+                {
+                    var shown = MeshModelDraw.Shows(from, to);
+                    if (shown != MeshModelDraw.ShowsNone)
+                    {
+                        expected.Add((metres, shown));
+                    }
+                }
+
+                // A record for each block of a level drawn: the levels drawn, each with its share.
+                var levels = drawn.Select(r => MathF.Round(r.VoxelMetres, 3)).Distinct().Order().ToList();
+                Assert.Equal(expected.Select(e => MathF.Round(e.Metres, 3)).Order(), levels);
+                foreach (var (metres, shown) in expected)
+                {
+                    Assert.All(
+                        drawn.Where(r => Math.Abs(r.VoxelMetres - metres) < 1e-4f),
+                        r => Assert.Equal(shown, r.Shown)
+                    );
+                }
+
+                if (toCopy > 0)
+                {
+                    bands.Add(2);
+                }
+                else if (levels.Count > 1)
+                {
+                    bands.Add(distance < (levelZero + levelOne) / 2 ? 0 : 1);
+                }
+            }
         }
 
-        Assert.True(checkedAny);
+        Assert.True(
+            bands.Count == 3,
+            $"Bands {string.Join(", ", bands)}; levels at {levelZero} and {levelOne} m, the fade from {fadeStart} to {fadeEnd} m."
+        );
     }
 
     [Fact]

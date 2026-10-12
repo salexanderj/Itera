@@ -292,7 +292,12 @@ hold, drawn but casting nothing; `Only` for the local player's own body in first
 being drawn), are grouped by model level with a counting sort, and each block of a level is one indexed
 indirect command whose instances are that level's draws (`MeshModelDraw`: corner, turn, voxel size, the block's vertex
 base and place, tint), in three lists like the world's. `mesh.vert` and `mesh-shadow.vert` compiled with `MESH_MODEL`
-place and turn them; `mesh.frag` takes the draw's tint instead of the tint map's. The model draws in the main pass are
+place and turn them; `mesh.frag` takes the draw's tint instead of the tint map's. The camera's list
+writes the draws that show every pixel first and those that fade (a voxel object's, `.claude/rules/objects.md`) last
+(`MeshModelList.Faded`), which the pass draws with `mesh.vert` and `mesh.frag` compiled with `MESH_FADE` too: they draw
+only the pixels whose screen-space dither threshold lies in the draw's share (`MeshModelDraw.Shown`, 0 for all,
+`mesh-fade.glsl`; the wireframe's model draws all take it), since a shader that may discard keeps the depth test from
+running before it shades. The model draws in the main pass are
 timed as `Models` (part of `Voxels`).
 
 Underground light, a first try (`WorldMeshes.Sky.cs`, `WorldMeshes.Lights.cs`). The sky field (`SkyField`) is how much

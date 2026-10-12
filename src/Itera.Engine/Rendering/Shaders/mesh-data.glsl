@@ -111,6 +111,7 @@ struct MeshModelDraw
     uint vertexBase;
     uint block;
     float tint;
+    uint shown;
 };
 
 layout(scalar, set = MESH_SET, binding = 6) restrict readonly buffer MeshModelDraws

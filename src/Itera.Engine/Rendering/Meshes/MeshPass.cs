@@ -113,6 +113,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     /// <summary>Invocations in a workgroup of <c>mesh-clusters.comp</c>, one a cluster.</summary>
     private const int ClusterGroup = 64;
     private const string ModelDefine = "MESH_MODEL";
+    private const string FadeDefine = "MESH_FADE";
     private const ShaderStageFlags Stages = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit;
 
     /// <summary>
@@ -147,6 +148,9 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     private byte[] _shadowVertexSpirv = [];
     private byte[] _depthOnlySpirv = [];
     private byte[] _modelVertexSpirv = [];
+    private byte[] _modelFadeVertexSpirv = [];
+    private byte[] _modelFadeFragmentSpirv = [];
+    private byte[] _modelFadeWireSpirv = [];
     private byte[] _modelShadowVertexSpirv = [];
     private byte[] _wireSpirv = [];
     private byte[] _clustersSpirv = [];
@@ -178,6 +182,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     private Pipeline _skyPipeline;
     private Pipeline _shadowPipeline;
     private Pipeline _modelPipeline;
+    private Pipeline _modelFadePipeline;
     private Pipeline _modelShadowPipeline;
     private Pipeline _wirePipeline;
     private Pipeline _modelWirePipeline;
@@ -621,17 +626,35 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         var models = Math.Clamp(frame.ModelCamera.Commands, 0, MaxModelCommands);
         if (models > 0)
         {
-            // Part of the world's time; their shadows are part of the shadow maps'.
+            // Part of the world's time; their shadows are part of the shadow maps'. The draws shown whole first, then
+            // those that fade.
+            var fading = Math.Clamp(frame.ModelCamera.Faded, 0, models);
             _timer.Begin(commandBuffer, timerSlot, GpuPass.Models);
-            vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _modelPipeline);
             vk.CmdBindIndexBuffer(commandBuffer, Heap.Buffer, 0, IndexType.Uint16);
-            vk.CmdDrawIndexedIndirect(
-                commandBuffer,
-                ModelCommands.Buffer,
-                ModelCommandsOffset(slot, 0),
-                (uint)models,
-                (uint)sizeof(DrawIndexedIndirectCommand)
-            );
+            if (models > fading)
+            {
+                vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _modelPipeline);
+                vk.CmdDrawIndexedIndirect(
+                    commandBuffer,
+                    ModelCommands.Buffer,
+                    ModelCommandsOffset(slot, 0),
+                    (uint)(models - fading),
+                    (uint)sizeof(DrawIndexedIndirectCommand)
+                );
+            }
+
+            if (fading > 0)
+            {
+                vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _modelFadePipeline);
+                vk.CmdDrawIndexedIndirect(
+                    commandBuffer,
+                    ModelCommands.Buffer,
+                    ModelCommandsOffset(slot, 0) + (ulong)((models - fading) * sizeof(DrawIndexedIndirectCommand)),
+                    (uint)fading,
+                    (uint)sizeof(DrawIndexedIndirectCommand)
+                );
+            }
+
             _timer.End(commandBuffer, timerSlot, GpuPass.Models);
         }
 
@@ -836,6 +859,9 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             _shaders.Compile("mesh-wire.frag"),
             _shaders.Compile("mesh-clusters.comp"),
             _shaders.Compile("material-bake.comp"),
+            _shaders.Compile("mesh.vert", [ModelDefine, FadeDefine]),
+            _shaders.Compile("mesh.frag", [FadeDefine]),
+            _shaders.Compile("mesh-wire.frag", [FadeDefine]),
         };
 
     public int ReplacePipelines(object compiled)
@@ -844,7 +870,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         TakeShaders((byte[][])compiled);
         CreatePipelines(_format);
         ReplaceBakePipeline();
-        return (_wirePipeline.Handle != 0 ? 8 : 6) + (_viewSkyPipeline.Handle != 0 ? 3 : 0);
+        return (_wirePipeline.Handle != 0 ? 9 : 7) + (_viewSkyPipeline.Handle != 0 ? 3 : 0);
     }
 
     private GpuBuffer Heap => _heap ?? throw NotInitialised();
@@ -1222,6 +1248,9 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         _wireSpirv = compiled[8];
         _clustersSpirv = compiled[9];
         _bakeSpirv = compiled[10];
+        _modelFadeVertexSpirv = compiled[11];
+        _modelFadeFragmentSpirv = compiled[12];
+        _modelFadeWireSpirv = compiled[13];
     }
 
     private void CreatePipelines(Format format)
@@ -1268,7 +1297,8 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             in shadowDepth,
             "shadow cascades"
         );
-        // The models as the world's blocks, each instance placed and turned by its own draw.
+        // The models as the world's blocks, each instance placed and turned by its own draw; those that fade (the end of
+        // the camera's list) with shaders that draw their share of the pixels alone.
         _modelPipeline = PipelineFactory.CreateTriangles(
             _context,
             _modelVertexSpirv,
@@ -1278,6 +1308,17 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             CullModeFlags.BackBit,
             in meshDepth,
             "model meshes",
+            samples: _samples
+        );
+        _modelFadePipeline = PipelineFactory.CreateTriangles(
+            _context,
+            _modelFadeVertexSpirv,
+            _modelFadeFragmentSpirv,
+            _layout,
+            format,
+            CullModeFlags.BackBit,
+            in meshDepth,
+            "fading model meshes",
             samples: _samples
         );
         _modelShadowPipeline = PipelineFactory.CreateTriangles(
@@ -1312,8 +1353,8 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             );
             _modelWirePipeline = PipelineFactory.CreateTriangles(
                 _context,
-                _modelVertexSpirv,
-                _wireSpirv,
+                _modelFadeVertexSpirv,
+                _modelFadeWireSpirv,
                 _layout,
                 format,
                 CullModeFlags.BackBit,
@@ -1383,6 +1424,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         DestroyPipeline(ref _skyPipeline);
         DestroyPipeline(ref _shadowPipeline);
         DestroyPipeline(ref _modelPipeline);
+        DestroyPipeline(ref _modelFadePipeline);
         DestroyPipeline(ref _modelShadowPipeline);
         DestroyPipeline(ref _wirePipeline);
         DestroyPipeline(ref _modelWirePipeline);

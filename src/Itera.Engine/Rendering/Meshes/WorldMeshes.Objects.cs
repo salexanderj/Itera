@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Itera.Engine.Maths;
 using Itera.Engine.Objects;
+using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Rendering.Meshes;
@@ -12,14 +13,26 @@ namespace Itera.Engine.Rendering.Meshes;
 /// share, and the far cascade's) records the level-K columns it split below K (<see cref="RecordSplit"/>), where the
 /// world's own voxels hold no copy of the objects, and an object's models go into a pass's lists when a level-K column
 /// under its reach is one of them; past them, the world's coarser levels draw its copy. Its models' level follows its
-/// distance as the world's levels do (its own voxels within level 0's reach, twice them within level 1's, else four
-/// times), and the image views draw the coarsest. Gathered after the game's models and the retired ones, so a full frame
-/// drops objects first.
+/// anchor's distance as the world's levels do (its own voxels within level 0's reach, twice them within level 1's, else
+/// four times), each level fading into the next over <see cref="LevelFadeMetres"/> each side of the distance between
+/// them, and the coarsest fading out over its copy, which stays drawn whole, from the farthest an object of a split
+/// level-K column can lie (<see cref="HandOverFade"/>) over <see cref="HandOverFadeMetres"/>: the camera draws the models
+/// of every known object nearer than that band's end, so the hand-over follows the distance alone, not the columns. A
+/// fade gives each draw a share of a screen-space dither's thresholds (<see cref="MeshModelDraw.Shown"/>), the two levels
+/// fading into each other taking the two sides of one share. The fades are the camera's alone; the cascades cast each
+/// object's one level by its distance, and the image views draw the coarsest, whole. Gathered after the game's models and the retired
+/// ones, so a full frame drops objects first.
 /// </summary>
 public sealed unsafe partial class WorldMeshes
 {
     // A model draw's tint that shades it as the world's surfaces (MeshModelDraw.Tint).
     private const float WorldShaded = -1;
+
+    /// <summary>How far each side of the distance between two model levels the two fade into each other, in metres.</summary>
+    public const float LevelFadeMetres = 2;
+
+    /// <summary>How far past where the fine models must end the coarsest fades out over the far copy, in metres.</summary>
+    public const float HandOverFadeMetres = 30;
 
     private ObjectWorld? _objects;
     private VoxelObjects? _objectModels;
@@ -103,16 +116,32 @@ public sealed unsafe partial class WorldMeshes
     private void BeginSplits() => (_farPass ? _farSplit : _cameraSplit).Clear();
 
     /// <summary>
-    /// Takes each placed object whose reach meets a split level-K column into the lists of the passes that split it, its
-    /// parts' models turned and placed from its anchor.
+    /// The distances from the camera, in metres, over which an object's coarsest model fades out over its far copy: from
+    /// the farthest an object of a split level-K column can lie (the reach that splits it, its width's diagonal, and the
+    /// widest kind's reach), over <see cref="HandOverFadeMetres"/>. None (the largest half) where nothing is copied.
+    /// </summary>
+    internal (float Start, float End) HandOverFade()
+    {
+        if (_objects is null || _objectModels is null || _world?.Copies is null)
+        {
+            return (65504, 65504);
+        }
+
+        var split = _distances.ReachCentimetres(_handOver - 1) * _reachShare / VoxelConstants.CentimetresPerMetre;
+        var width = _grid.ColumnCentimetres(_handOver) / (double)VoxelConstants.CentimetresPerMetre;
+        var reach = _objectModels.Kinds.MostReachCentimetres / (double)VoxelConstants.CentimetresPerMetre;
+        var start = (float)(split + width * Math.Sqrt(2) + reach);
+        return (start, start + HandOverFadeMetres);
+    }
+
+    /// <summary>
+    /// Takes each placed object whose reach meets a split level-K column into the lists of the passes that split it, and
+    /// each known one nearer than the hand-over's fade's end into the camera's: its parts' models turned and placed from
+    /// its anchor, at each level its distances reach, faded.
     /// </summary>
     private void GatherObjects(VoxelModels models)
     {
-        if (
-            _objects is null
-            || _objectModels is not { IsInitialized: true } objectModels
-            || (_cameraSplit.Count == 0 && _farSplit.Count == 0)
-        )
+        if (_objects is null || _objectModels is not { IsInitialized: true } objectModels)
         {
             return;
         }
@@ -122,22 +151,28 @@ public sealed unsafe partial class WorldMeshes
         // The areas whose objects may reach a split column: as far round it as the widest kind reaches.
         var round = (int)((kinds.MostReachCentimetres + width - 1) / width);
         var origin = _origin;
-        var levelZero = _distances.ReachCentimetres(0) * _reachShare / VoxelConstants.CentimetresPerMetre;
-        var levelOne = _distances.ReachCentimetres(1) * _reachShare / VoxelConstants.CentimetresPerMetre;
+        var levelZero = (float)(_distances.ReachCentimetres(0) * _reachShare / VoxelConstants.CentimetresPerMetre);
+        var levelOne = (float)(_distances.ReachCentimetres(1) * _reachShare / VoxelConstants.CentimetresPerMetre);
+        var (fadeStart, fadeEnd) = HandOverFade();
+        // An area holds its objects' anchors, so it may hold one nearer than the fade's end when its middle (across) is
+        // within that and its half diagonal.
+        var areaReach = width * Math.Sqrt(2) / 2 / VoxelConstants.CentimetresPerMetre;
         var views = _viewCount == 0 ? 0 : ((1 << _viewCount) - 1) * FirstViewList;
         // Nearest the camera first, so a list too full for every draw keeps the nearest.
         var areas = SortedAreas(width);
         for (var a = 0; a < areas.Length; a++)
         {
             var area = areas[a].Area;
-            if (!AnySplitRound(area.X, area.Z, round))
+            var near = Math.Sqrt(areas[a].Squared) - areaReach < fadeEnd;
+            if (!near && !AnySplitRound(area.X, area.Z, round))
             {
                 continue;
             }
 
             foreach (ref readonly var placement in CollectionsMarshal.AsSpan(area.Objects))
             {
-                var reach = kinds[placement.Kind].ReachCentimetres;
+                var kind = kinds[placement.Kind];
+                var reach = kind.ReachCentimetres;
                 var anchor = placement.Anchor;
                 var lists = 0;
                 var x0 = DeterministicMath.FloorDivide((long)anchor.X - reach, width);
@@ -153,48 +188,83 @@ public sealed unsafe partial class WorldMeshes
                     }
                 }
 
+                double dx = anchor.X / (double)VoxelConstants.CentimetresPerMetre - _viewAt.X,
+                    dy = anchor.Y / (double)VoxelConstants.CentimetresPerMetre - _viewAt.Y,
+                    dz = anchor.Z / (double)VoxelConstants.CentimetresPerMetre - _viewAt.Z;
+                var distance = (float)Math.Sqrt(dx * dx + dy * dy + dz * dz);
+                // An object under no split column has its copy drawn: the camera draws its model over it, fading out over
+                // the hand-over's band. One under a split column has none: its model stays whole.
+                var split = (lists & CameraList) != 0;
+                lists |= distance < fadeEnd ? CameraList : 0;
                 if (lists == 0)
                 {
                     continue;
                 }
 
-                var local =
-                    new Vector3(anchor.X - origin.X, anchor.Y - origin.Y, anchor.Z - origin.Z)
-                    / VoxelConstants.CentimetresPerMetre;
-                double dx = anchor.X / (double)VoxelConstants.CentimetresPerMetre - _viewAt.X,
-                    dy = anchor.Y / (double)VoxelConstants.CentimetresPerMetre - _viewAt.Y,
-                    dz = anchor.Z / (double)VoxelConstants.CentimetresPerMetre - _viewAt.Z;
-                var distance = Math.Sqrt(dx * dx + dy * dy + dz * dz);
                 var level =
                     distance < levelZero ? 0
                     : distance < levelOne ? 1
                     : 2;
+                // The shares of the dither's thresholds each level shows at its distance: level 0 from the band to level 1
+                // up, level 1 between that and the band to level 2, level 2 below that, each over the hand-over's fade
+                // (which, with a hand-over level of 1, may begin before level 2's band).
+                var toOne = Ramp(distance, levelZero - LevelFadeMetres, levelZero + LevelFadeMetres);
+                var toTwo = Ramp(distance, levelOne - LevelFadeMetres, levelOne + LevelFadeMetres);
+                var toCopy = split ? 0 : Ramp(distance, fadeStart, fadeEnd);
+                var local =
+                    new Vector3(anchor.X - origin.X, anchor.Y - origin.Y, anchor.Z - origin.Z)
+                    / VoxelConstants.CentimetresPerMetre;
                 var turn = ObjectTurns.Rotation(placement.Heading);
-                // The views draw the coarsest level: one draw for all when it is the level drawn already.
-                var apart = level == 2 ? 0 : lists & views;
                 // A damaged object's own part models once on the GPU, its kind's for the rest.
                 var parts = _damage is { } damage ? damage.PartsOf(in placement) : objectModels.PartsOf(placement.Kind);
                 foreach (ref readonly var part in parts)
                 {
                     var corner = local + Vector3.Transform(part.Corner, turn);
-                    GatherModel(
-                        models,
-                        part.Model,
-                        level,
-                        corner,
-                        turn,
-                        WorldShaded,
-                        ModelShadow.Casts,
-                        lists & ~apart
-                    );
-                    if (apart != 0)
+                    for (var drawn = 0; drawn < 3; drawn++)
                     {
-                        GatherModel(models, part.Model, 2, corner, turn, WorldShaded, ModelShadow.Casts, apart);
+                        var (from, to) = drawn switch
+                        {
+                            0 => (Math.Max(toCopy, toOne), 1f),
+                            1 => (Math.Max(toCopy, toTwo), toOne),
+                            _ => (toCopy, toTwo),
+                        };
+                        // The camera draws every level with a share; the cascades cast its level by its distance alone.
+                        var shown = MeshModelDraw.Shows(from, to);
+                        var drawnLists =
+                            (shown != MeshModelDraw.ShowsNone ? lists & CameraList : 0)
+                            | (drawn == level ? lists & (NearList | FarList) : 0);
+                        if (drawnLists != 0)
+                        {
+                            GatherModel(
+                                models,
+                                part.Model,
+                                drawn,
+                                corner,
+                                turn,
+                                WorldShaded,
+                                ModelShadow.Casts,
+                                drawnLists,
+                                shown
+                            );
+                        }
+                    }
+
+                    // The views draw the coarsest level, whole.
+                    if ((lists & views) != 0)
+                    {
+                        GatherModel(models, part.Model, 2, corner, turn, WorldShaded, ModelShadow.Casts, lists & views);
                     }
                 }
             }
         }
     }
+
+    /// <summary>
+    /// How far <paramref name="value"/> lies from <paramref name="from"/> to <paramref name="to"/>, 0 to 1 (a step at
+    /// <paramref name="to"/> where the two meet).
+    /// </summary>
+    private static float Ramp(float value, float from, float to) =>
+        to <= from ? (value >= to ? 1 : 0) : Math.Clamp((value - from) / (to - from), 0, 1);
 
     /// <summary>
     /// Makes air of the objects' copies in a coarser block read to stitch a block of <paramref name="fineLevel"/> to it,

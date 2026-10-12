@@ -172,15 +172,18 @@ Where tests live:
   `ViewConstantsTests` (the push constants against the shaders, the lens: a perspective near plane, an orthographic box
   and its depth), `ShadowCascadesTests` (slices and orthographic boxes inside their cascades, a fit local to a moved
   origin mapping points as one at the middle), `RenderViewTests` (the
-  frame's view: its atmosphere, and what a match's end puts back), `Meshes/` (`MeshPassTests`, `MeshAssetDrawsTests`
+  frame's view: its atmosphere, and what a match's end puts back), `Meshes/` (`MeshPassTests` (the shaders' structs; the fading shaders, and fade shares that meet
+  showing each threshold once), `MeshAssetDrawsTests`
   (the asset lists, posed instances, and the blended list sorted back to front), `MeshViewTests` (the frame's frustum,
   cascades, and lights), `LevelBalanceTests` (random trees against
   marking every finest column, a level-9 column), `MeshColumnTests`, `WorldMeshesTests` over a draw target and staging
   in memory: the seams' stitched meshes, a full heap, the edits' latency, an image view's lists over `FakeViewLists`,
   the same blocks drawn local to a moved origin, a column cut by the map's edge or wider than the view still split, a
   ball set far over a heightfield's ground widening its column and drawn from blocks for its runs alone, no fine blocks
-  under a camera high over the ground, a model sharing a base's meshes meshing only its marked block; objects drawn as models under split columns, a level-K
-  column splitting only once its objects are known),
+  under a camera high over the ground, a model sharing a base's meshes meshing only its marked block; objects drawn as models under split columns and within
+  the hand-over's fade, their levels fading into each other by distance with complementary shares and out over
+  their copies past the hand-over, the fading draws written last, a level-K column
+  splitting only once its objects are known),
   `RenderViewsTests` (declaring, the cadence, panels), `Memory/GpuRangeHeapTests`, `GpuLayoutTests` (of
   `tests/Shared/GpuLayout`, also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`, `DeviceChoiceTests`,
   `RenderThreadTests` (a fake renderer), `RenderPassesTests` (a game's pass at every stage in `EngineComposition`, none

@@ -20,6 +20,11 @@ layout(location = 2) flat out uvec2 outMaterialTint;
 layout(location = 3) out vec4 outWeightsLow;
 layout(location = 4) out vec4 outWeightsHigh;
 layout(location = 5) flat out uvec2 outPalette;
+#ifdef MESH_FADE
+// The share of its pixels the model draw shows (MeshModelDraw.shown), which mesh.frag's fading variant keeps to: compiled
+// with MESH_MODEL for the draws of the camera's model list that fade.
+layout(location = 6) flat out uint outShown;
+#endif
 
 void main()
 {
@@ -29,6 +34,9 @@ void main()
     vec3 offset = meshModelWorld(draw, index) - view.position;
     outNormal = meshTurn(draw.turn, meshNormalAt(draw.vertexBase, index));
     float tint = draw.tint;
+#ifdef MESH_FADE
+    outShown = draw.shown;
+#endif
 #else
     MeshDraw draw = draws[gl_InstanceIndex];
     vec3 offset = meshWorld(draw, index) - view.position;
