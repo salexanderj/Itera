@@ -18,8 +18,8 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   roots only, as generators do: every peer must build the same voxels.
 - `VoxelObjectKinds` (run-wide, registered in `AddIteraEngine`) takes kinds by name at the game's `IRunStartup`
   (`Register`, `TryFind`, at most 4,096; `VoxelObjectKindId`) and is sealed at each match's start for the world's grid:
-  a kind whose voxels are not finer than the world's stops the start. A kind is split into parts of at most 128 voxels a
-  side (`VoxelObjectKind.Parts`, empty ones left out), each kept as three levels of 8-voxel bricks (its voxels, twice,
+  a kind whose voxels are not finer than the world's stops the start. A kind is split into parts (`VoxelObjectKind.Parts`,
+  empty ones left out), each kept as three levels of 8-voxel bricks (its voxels, twice,
   four times them): a coarser voxel holds the mean density of those it covers, solid from one half, of the material at
   its sample point where that is solid, else the commonest solid one. A kind needs a solid voxel. `Fingerprint`
   stands for every kind's name and voxels in order.
@@ -58,8 +58,9 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
 - The match's identity (`GeneratorMatchIdentity`) carries the kinds' fingerprint after the generator's id where the
   world places objects, so games whose kinds differ do not join each other; the fingerprint holds the copies' rule
   (`ObjectCopies.RuleVersion`: raise it with any change to how copies are written). Saves do not record the kinds yet.
-- A kind's parts own at most 120 voxels a side (`ObjectPart.OwnVoxels`) and hold a border of their neighbours' 4 voxels
-  round them (`BorderVoxels`; 2 at level 1, 1 at level 2), so a part's model box is its own plus 8; each part model owns
+- A kind's parts own at most 112 voxels a side (`ObjectPart.OwnVoxels`; a kind 5.6 m wide at 5 cm is one part across)
+  and hold a border of their neighbours' 8 voxels round them (`BorderVoxels`; 4 at level 1, 2 at level 2: the two past
+  an edge the mesher reads for a vertex's normal and openness), so a part's model box is its own plus 16; each part model owns
   the faces of its own voxels alone (`VoxelModels.SetOwned`, with `OpenLow` 1 on a side with no part beyond, which owns
   the faces against its border; the mesher's owned window, `SurfaceNets.Mesh(samples, densities, ownedMin, ownedMax,
   output)`), so parts meet with no seam and each face is made once.
@@ -68,7 +69,11 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   column under its reach is split there (an area is passed over when neither its column nor one round it is), at its own
   voxels within level 0's reach times the mesh share, twice them within level 1's, else four times (the views: four
   times), turned by `ObjectTurns.Rotation` about its anchor. Objects are gathered after the game's models and the retired
-  ones; a model list too full for a level's draws takes as many as fit. Their draws' tint is below 0 (`MeshModelDraw.Tint`),
+  ones, their areas nearest the camera first (an insertion sort: no allocation), an area passed over when no column
+  within the widest kind's reach of it is split; when a list's draws need more records than it holds, every model level
+  takes the same share, the first gathered first, so neither a kind nor a part of one (a tree's crowns) drops whole. An
+  object whose reach spans a split column and one that is not draws its model whole beside its copy in the column that
+  is not: at the hand-over distance, the two show together on that side (docs/voxel-objects.md). Their draws' tint is below 0 (`MeshModelDraw.Tint`),
   which `mesh.vert`'s model variant and `mesh.frag` shade as the world's surfaces (the mesh's material weights and
   palette, the texture sets, the tint map at the point, the world's look), so a model and its copy match. A stitched
   block of the level below K reads the coarser block with the objects' materials made air (`MaskCopies`), so no copy

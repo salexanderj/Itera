@@ -912,9 +912,10 @@ public sealed partial class WorldMeshesTests : IDisposable
     }
 
     /// <summary>
-    /// An object kind two parts tall (each owning its voxels, with a border of the other's round it) meshes, both parts
-    /// together, into one closed surface at every level: each edge between them made once, so no seam shows where they
-    /// meet.
+    /// An object kind in three parts, an L across a seam in x and one in y with the corner part between them empty (each
+    /// part owning its voxels, with a border of its neighbours' round it), meshes, the parts together, into one closed
+    /// surface at every level: each edge between them made once; and a vertex at a seam has the same normal and openness
+    /// in both parts, as their borders reach as far as the mesher reads, so no seam shows where they meet.
     /// </summary>
     [Theory]
     [InlineData(0)]
@@ -922,24 +923,30 @@ public sealed partial class WorldMeshesTests : IDisposable
     [InlineData(2)]
     public void An_objects_parts_mesh_into_one_closed_surface(int level)
     {
-        var shape = new Itera.Engine.Objects.VoxelObjectShape(1, new VoxelCoord(40, 200, 40), default);
-        shape.FillEllipsoid(20, 100, 20, 15.3, 95.3, 15.3, 1);
+        var shape = new Itera.Engine.Objects.VoxelObjectShape(1, new VoxelCoord(160, 160, 40), default);
+        // An L of two boxes, its faces off the voxels' lines.
+        shape.FillBox(4.3, 4.3, 4.3, 150.4, 70.6, 35.7, 1);
+        shape.FillBox(4.3, 4.3, 4.3, 70.6, 150.4, 35.7, 1);
         var kinds = new Itera.Engine.Objects.VoxelObjectKinds();
-        var kind = kinds[kinds.Register("pillar", shape)];
+        var kind = kinds[kinds.Register("corner", shape)];
         var parts = Itera.Engine.Objects.VoxelObjects.MakeParts(
             _models,
             kind,
             new byte[VoxelConstants.ChunkVoxels],
             new byte[VoxelConstants.ChunkVoxels]
         );
-        Assert.Equal(2, parts.Length);
+        Assert.Equal(3, parts.Length);
         Begin();
         RunUntil(() => parts.All(part => _models.IsUploaded(part.Model)));
 
         var edges = new Dictionary<(Vector3, Vector3), int>();
+        // Each vertex's normal and openness, by its place, and the parts it was made in.
+        var vertices = new Dictionary<Vector3, (uint Normal, byte Openness, int Part)>();
+        var shared = 0;
         var corners = new Vector3[3];
-        foreach (var part in parts)
+        for (var p = 0; p < parts.Length; p++)
         {
+            var part = parts[p];
             // The part's corner in the kind's voxels at this level.
             var corner = part.Corner * 100 / (1 << level);
             var slot = Frame(draws: [new(part.Model, level, Vector3.Zero, Quaternion.Identity, 0)]);
@@ -957,8 +964,24 @@ public sealed partial class WorldMeshesTests : IDisposable
                     for (var c = 0; c < 3; c++)
                     {
                         var at = (int)record.VertexBase + MeshVertex.Words * indices[(int)command.FirstIndex + t + c];
-                        var vertex = new MeshVertex { PositionXY = words[at], PositionZMaterial = words[at + 1] };
+                        var vertex = new MeshVertex
+                        {
+                            PositionXY = words[at],
+                            PositionZMaterial = words[at + 1],
+                            Normal = words[at + 2],
+                        };
                         corners[c] = MeshVertex.DecodePosition(in vertex) + 32 * block - Vector3.One + corner;
+                        var openness = MeshVertex.DecodeOpenness(in vertex);
+                        if (vertices.TryGetValue(corners[c], out var seen) && seen.Part != p)
+                        {
+                            Assert.Equal(seen.Normal, vertex.Normal);
+                            Assert.Equal(seen.Openness, openness);
+                            shared++;
+                        }
+                        else
+                        {
+                            vertices[corners[c]] = (vertex.Normal, openness, p);
+                        }
                     }
 
                     for (var c = 0; c < 3; c++)
@@ -976,6 +999,37 @@ public sealed partial class WorldMeshesTests : IDisposable
             edges,
             edge => Assert.True(edges.ContainsKey((edge.Key.Item2, edge.Key.Item1)), $"No twin for {edge.Key}.")
         );
+        Assert.True(shared > 10, $"Only {shared} vertices lie on a seam.");
+    }
+
+    /// <summary>
+    /// Two models drawn so often that their draws need four times the records the camera's list holds: each takes the same
+    /// share, a quarter of its draws, the first gathered first, so neither drops whole.
+    /// </summary>
+    [Fact]
+    public void A_full_model_list_gives_every_model_level_the_same_share()
+    {
+        var a = AddCube(40);
+        var b = AddCube(40);
+        Begin();
+        RunUntil(() => _models.IsUploaded(a) && _models.IsUploaded(b));
+        var at = new Vector3(0.2f, 1.2f, 0.1f);
+        var draws = new ModelDraw[16_000];
+        for (var i = 0; i < draws.Length; i++)
+        {
+            draws[i] = new ModelDraw(i % 2 == 0 ? a : b, 0, at, Quaternion.Identity, 0);
+        }
+
+        var slot = Frame(draws: draws);
+
+        var records = _targets.ModelDrawsOf(slot, 0)[.._meshes.Frame.ModelCamera.Records];
+        Assert.InRange(records.Length, MeshPass.MaxModelRecords - 64, MeshPass.MaxModelRecords);
+        var commands = _targets.ModelCommandsOf(slot, 0)[.._meshes.Frame.ModelCamera.Commands];
+        // Every block of each cube is drawn with the same number of instances: 16 blocks, half of them each cube's.
+        Assert.Equal(16, commands.Length);
+        var counts = commands.ToArray().Select(command => command.InstanceCount).Distinct().ToList();
+        Assert.Single(counts);
+        Assert.InRange(counts[0], 4_000u, 4_096u);
     }
 
     /// <summary>The vertices of model <paramref name="model"/>'s level 0 as one frame draws them, in its voxels.</summary>

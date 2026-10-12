@@ -66,8 +66,8 @@ public sealed class VoxelObjectsTests : IDisposable
             Assert.Equal(VoxelModels.MaxLevels, _models.LevelCount(model));
             Assert.Equal(part.Size, _models.Size(model));
             Assert.Equal(0.20f, _models.VoxelMetres(model, 2), 6);
-            // Its box starts 4 voxels (20 cm) before the voxels it owns, its border.
-            var corner = new Vector3(-1.7f, (part.Offset.Y - 4) * 0.05f, -1.7f);
+            // Its box starts 8 voxels (40 cm) before the voxels it owns, its border.
+            var corner = new Vector3(-1.9f, (part.Offset.Y - 8) * 0.05f, -1.9f);
             Assert.True(_models.IsPart(model));
             Assert.True(Vector3.Distance(corner, parts[p].Corner) < 1e-5f, $"Part {p} is at {parts[p].Corner}.");
             for (var level = 0; level < VoxelModels.MaxLevels; level++)

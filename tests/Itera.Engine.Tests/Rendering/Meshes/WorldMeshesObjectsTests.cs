@@ -60,10 +60,23 @@ public sealed partial class WorldMeshesTests
             }
         }
 
-        // The trees nearest the camera are split and drawn.
-        var nearest = scene.Placements[0];
-        Assert.True(scene.SplitUnder(nearest, scene.Meshes.CameraSplit));
-        Assert.Contains(camera, c => Vector3.Distance(c, scene.ExpectedCorners(nearest)[0]) < 1e-3f);
+        // Every tree under a split column is drawn (the view, 25 m up and wide, sees them all), the nearest among them.
+        var drawn = 0;
+        foreach (var placement in scene.Placements)
+        {
+            if (scene.SplitUnder(placement, scene.Meshes.CameraSplit))
+            {
+                foreach (var corner in scene.ExpectedCorners(placement))
+                {
+                    Assert.Contains(camera, c => Vector3.Distance(c, corner) < 1e-3f);
+                }
+
+                drawn++;
+            }
+        }
+
+        Assert.True(scene.SplitUnder(scene.Placements[0], scene.Meshes.CameraSplit));
+        Assert.True(drawn > 3, $"Only {drawn} trees lay under split columns.");
         // The far cascade casts the split trees' shadows from their models too.
         Assert.NotEmpty(scene.Meshes.FarSplit);
         Assert.NotEmpty(far);

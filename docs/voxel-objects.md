@@ -90,3 +90,11 @@ Lucy, 2026-10-11, from the figures and pictures above:
   trunks stay and far crowns grow by up to one coarse voxel.
 - **Objects keep densities like the world's.** Kinds store how full each voxel is, models are meshed with them, and edits
   change them by share, so smooth rocks and crowns show no rings.
+
+## What the drawing leaves
+
+- **Objects at a hand-over column's edge.** An object whose reach spans a level-K column the renderer split and one it
+  did not is drawn as its model, whole, and the column it did not split draws its copy too: on that side, at the
+  hand-over distance (about 33 to 106 m), the model and the copy show together. The copy keeps every coarse voxel the
+  object touches, so on broad faces it lies outside the model and hides it, and at thin parts (a trunk) the model shows
+  through it. Hiding a copy per object would need the copies written per object, which the world's voxels do not hold.

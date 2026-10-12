@@ -58,8 +58,8 @@ public sealed class VoxelObjectKindsTests
     }
 
     /// <summary>
-    /// A shape 200 x 300 x 60 voxels is cut into parts that own 120 voxels a side from its corner's multiples of 120, each
-    /// with a border of its neighbours' 4 voxels round it (its model's box); a part owning nothing is left out, and each
+    /// A shape 200 x 300 x 60 voxels is cut into parts that own 112 voxels a side from its corner's multiples of 112, each
+    /// with a border of its neighbours' 8 voxels round it (its model's box); a part owning nothing is left out, and each
     /// side with no part past it is open.
     /// </summary>
     [Fact]
@@ -72,33 +72,33 @@ public sealed class VoxelObjectKindsTests
         var kinds = new VoxelObjectKinds();
         var kind = kinds[kinds.Register("tree", shape)];
 
-        // Parts at x 0 and 120, y 0, 120, and 240, z 0: the trunk (x 35 to 65 voxels) is in x 0's parts only, the crown
-        // (y 230 to 290 voxels, x 10 to 190) in both of y 120's and 240's.
+        // Parts at x 0 and 112, y 0, 112, and 224, z 0: the trunk (x 35 to 65 voxels) is in x 0's parts only, the crown
+        // (y 230 to 290 voxels, x 10 to 190) in y 224's alone.
         var offsets = kind.Parts.Select(part => part.Offset).ToHashSet();
         Assert.Equal(
             new[]
             {
                 new VoxelCoord(0, 0, 0),
-                new VoxelCoord(0, 120, 0),
-                new VoxelCoord(120, 120, 0),
-                new VoxelCoord(0, 240, 0),
-                new VoxelCoord(120, 240, 0),
+                new VoxelCoord(0, 112, 0),
+                new VoxelCoord(0, 224, 0),
+                new VoxelCoord(112, 224, 0),
             },
             offsets.OrderBy(o => o.Y).ThenBy(o => o.X)
         );
-        Assert.Equal(5, kind.PartCount);
-        var corner = kind.Parts.Single(part => part.Offset == new VoxelCoord(120, 240, 0));
-        Assert.Equal(new VoxelCoord(80, 60, 60), corner.OwnSize);
-        Assert.Equal(new VoxelCoord(88, 68, 68), corner.Size);
-        Assert.Equal(new VoxelCoord(44, 34, 34), corner.SizeAt(1));
-        Assert.Equal(new VoxelCoord(22, 17, 17), corner.SizeAt(2));
-        // Below it lies the part at (120, 120, 0), beside it at x 0 the part at (0, 240, 0); nothing in front of it.
-        Assert.Equal(new VoxelCoord(0, 0, 1), corner.OpenLow);
+        Assert.Equal(4, kind.PartCount);
+        var corner = kind.Parts.Single(part => part.Offset == new VoxelCoord(112, 224, 0));
+        Assert.Equal(new VoxelCoord(88, 76, 60), corner.OwnSize);
+        Assert.Equal(new VoxelCoord(104, 92, 76), corner.Size);
+        Assert.Equal(new VoxelCoord(52, 46, 38), corner.SizeAt(1));
+        Assert.Equal(new VoxelCoord(26, 23, 19), corner.SizeAt(2));
+        // Beside it at x 0 lies the part at (0, 224, 0); nothing below it (the part at (112, 112, 0) owns nothing) or in
+        // front of it.
+        Assert.Equal(new VoxelCoord(0, 1, 1), corner.OpenLow);
         Assert.Equal(new VoxelCoord(1, 1, 1), kind.Parts.Single(part => part.Offset == default).OpenLow);
     }
 
     /// <summary>
-    /// A part's level-0 voxels are the shape's from 4 before its corner (its border); a level-1 or level-2 voxel holds the
+    /// A part's level-0 voxels are the shape's from 8 before its corner (its border); a level-1 or level-2 voxel holds the
     /// mean density of the 8 or 64 it covers, solid from one half, of the material at its sample point where that is solid.
     /// </summary>
     [Fact]
@@ -125,9 +125,9 @@ public sealed class VoxelObjectKindsTests
                         for (var k = 0; k < step * step * step; k++)
                         {
                             sum += shape.DensityAt(
-                                x * step + k % step - 4,
-                                y * step + k / step % step - 4,
-                                z * step + k / (step * step) - 4
+                                x * step + k % step - 8,
+                                y * step + k / step % step - 8,
+                                z * step + k / (step * step) - 8
                             );
                         }
 

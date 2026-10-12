@@ -524,8 +524,8 @@ public sealed unsafe partial class WorldMeshes
 
     /// <summary>
     /// Writes list <paramref name="list"/>'s draws grouped by model level: for each level drawn and each of its blocks,
-    /// one command over that block's draws, which lie together in address order. Of a level whose draws do not fit, as
-    /// many as fit go, the first gathered first (warned once a match).
+    /// one command over that block's draws, which lie together in address order. When they need more records than the
+    /// list holds, every level takes the same share of its draws, the first gathered first (warned once a match).
     /// </summary>
     private MeshModelList WriteModelList(int slot, int list) =>
         WriteModelList(
@@ -582,6 +582,21 @@ public sealed unsafe partial class WorldMeshes
             _sortedDraws[_keyStarts[KeyOf(draws[i])]++] = draws[i];
         }
 
+        // When the draws need more records than the list holds, every model level takes the same share of its draws, the
+        // first gathered (the nearest objects) first, so neither a kind nor a part of one (a tree's crowns) drops whole.
+        var needed = 0L;
+        foreach (var key in _keysUsed)
+        {
+            var firstOfKey = _sortedDraws[_keyStarts[key] - _keyCounts[key]];
+            needed += (long)_keyCounts[key] * _modelFrame[firstOfKey].Mesh.Drawn[key % VoxelModels.MaxLevels].Count;
+        }
+
+        var share = needed > mostRecords ? (double)mostRecords / needed : 1;
+        if (share < 1)
+        {
+            ReportModelListFull(list >= MeshPass.Lists, mostRecords, mostCommands);
+        }
+
         // Each level's draws, block by block.
         var records = target.ModelDrawsOf(slot, list);
         var commands = target.ModelCommandsOf(slot, list);
@@ -597,18 +612,20 @@ public sealed unsafe partial class WorldMeshes
             ref readonly var first = ref _modelFrame[group[0]];
             var blocks = first.Mesh.Drawn[first.Tree];
             var level = _models!.BaseLevel(first.Mesh.Handle) + first.Tree;
-            if (written + blocks.Count * instances > mostRecords || commanded + blocks.Count > mostCommands)
+            if (share < 1)
             {
-                // As many of the level's draws as fit, the first gathered first, so no kind of object drops whole.
-                ReportModelListFull(list >= MeshPass.Lists, mostRecords, mostCommands);
-                var room = blocks.Count == 0 ? 0 : (mostRecords - written) / blocks.Count;
-                if (room <= 0 || commanded + blocks.Count > mostCommands)
-                {
-                    continue;
-                }
+                instances = (int)(instances * share);
+                group = group[..instances];
+            }
 
-                instances = room;
-                group = group[..room];
+            if (
+                instances == 0
+                || written + blocks.Count * instances > mostRecords
+                || commanded + blocks.Count > mostCommands
+            )
+            {
+                ReportModelListFull(list >= MeshPass.Lists, mostRecords, mostCommands);
+                continue;
             }
 
             foreach (var block in blocks)

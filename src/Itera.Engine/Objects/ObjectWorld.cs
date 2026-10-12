@@ -46,6 +46,9 @@ public sealed partial class ObjectWorld(
     /// <summary>The width of an area, in centimetres: a level-<see cref="HandOverLevel"/> column's.</summary>
     public long AreaCentimetres => _areaCentimetres;
 
+    /// <summary>True when the world's generator places objects.</summary>
+    public bool HasPlacer => _placer is not null;
+
     /// <summary>Areas kept, filled or waiting.</summary>
     public int AreaCount => _areas.Count;
 

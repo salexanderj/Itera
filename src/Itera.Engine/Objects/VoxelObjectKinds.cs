@@ -14,7 +14,7 @@ public readonly record struct VoxelObjectKindId
 /// <summary>
 /// The run's object kinds, by name: trees, bushes, rocks, and props a world places (<see cref="VoxelObjectShape"/>),
 /// registered once a run, at the game's <c>IRunStartup</c> (or a mod's), before the first match, which seals them; at
-/// most <see cref="MaxKinds"/>. Each kind is split into parts of at most 128 voxels a side, each kept as the three levels
+/// most <see cref="MaxKinds"/>. Each kind is split into parts that own at most 112 voxels a side, each kept as the three levels
 /// a model draws (its voxels, twice them, and four times them), so every match makes its models from them without
 /// building them again (<see cref="VoxelObjects"/>). Main thread.
 /// </summary>
@@ -125,7 +125,7 @@ public sealed class VoxelObjectKinds
 }
 
 /// <summary>
-/// An object kind: its voxels split into parts of at most 128 a side (<see cref="PartCount"/>), each kept as three
+/// An object kind: its voxels split into parts that own at most 112 a side (<see cref="PartCount"/>), each kept as three
 /// levels of materials and densities, and the point it stands on.
 /// </summary>
 public sealed class VoxelObjectKind
@@ -202,7 +202,7 @@ public sealed class VoxelObjectKind
     /// <summary>Its voxels' materials.</summary>
     internal MaterialSet Materials { get; }
 
-    /// <summary>How many parts it is: the 128-voxel cubes of its box that hold anything.</summary>
+    /// <summary>How many parts it is: the 112-voxel cubes of its box that hold anything.</summary>
     public int PartCount => Parts.Length;
 
     /// <summary>A number that stands for its name, voxels, and how far it is copied.</summary>
@@ -336,14 +336,15 @@ public sealed class VoxelObjectKind
 /// </summary>
 internal sealed class ObjectPart
 {
-    /// <summary>The most voxels a part owns along each axis: 120, with its border 128, a chunk.</summary>
+    /// <summary>The most voxels a part owns along each axis: 112, with its border 128, a chunk.</summary>
     public const int OwnVoxels = VoxelConstants.ChunkSize - 2 * BorderVoxels;
 
     /// <summary>
-    /// The voxels of its neighbours a part holds round its own at level 0 (2 at level 1, 1 at level 2), so its mesh meets
-    /// theirs: a multiple of the coarsest level's voxel, so every level's box starts at one corner.
+    /// The voxels of its neighbours a part holds round its own at level 0 (4 at level 1, 2 at level 2): the mesher reads
+    /// two voxels past an edge for a vertex's normal and openness, so at every level a vertex at a seam is the same in
+    /// both parts; a multiple of the coarsest level's voxel, so every level's box starts at one corner.
     /// </summary>
-    public const int BorderVoxels = 4;
+    public const int BorderVoxels = 8;
 
     private const int Brick = VoxelConstants.BrickSize;
     private const int BrickVoxels = Brick * Brick * Brick;

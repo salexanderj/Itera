@@ -113,6 +113,8 @@ public sealed unsafe partial class WorldMeshes
         WriteCameraNearestFirst(lists.Camera);
         WriteViewsNearestFirst(slot);
         LastFarColumns = 0;
+        // Without shadows the far pass chooses nothing, and splits nothing.
+        _farSplit.Clear();
         if (_view.Shadows)
         {
             _farPass = true;

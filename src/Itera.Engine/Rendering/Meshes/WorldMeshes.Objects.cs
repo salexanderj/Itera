@@ -36,7 +36,8 @@ public sealed unsafe partial class WorldMeshes
     /// <summary>Follows the match's objects (none without terrain).</summary>
     private void BeginObjects(ObjectWorld? objects, VoxelObjects? objectModels)
     {
-        _objects = objectModels is null ? null : objects;
+        // Followed only where the world places objects of some kind.
+        _objects = objects is { HasPlacer: true } && objectModels is { Kinds.Count: > 0 } ? objects : null;
         _objectModels = objectModels;
         _handOver = objects?.HandOverLevel ?? 0;
         _cameraSplit.Clear();
@@ -83,13 +84,18 @@ public sealed unsafe partial class WorldMeshes
 
         var kinds = objectModels.Kinds;
         var width = _objects.AreaCentimetres;
+        // The areas whose objects may reach a split column: as far round it as the widest kind reaches.
+        var round = (int)((kinds.MostReachCentimetres + width - 1) / width);
         var origin = _origin;
         var levelZero = _distances.ReachCentimetres(0) * _reachShare / VoxelConstants.CentimetresPerMetre;
         var levelOne = _distances.ReachCentimetres(1) * _reachShare / VoxelConstants.CentimetresPerMetre;
         var views = _viewCount == 0 ? 0 : ((1 << _viewCount) - 1) * FirstViewList;
-        foreach (var area in _objects.Areas)
+        // Nearest the camera first, so a list too full for every draw keeps the nearest.
+        var areas = SortedAreas(width);
+        for (var a = 0; a < areas.Length; a++)
         {
-            if (!area.Filled || !AnySplitRound(area.X, area.Z))
+            var area = areas[a].Area;
+            if (!AnySplitRound(area.X, area.Z, round))
             {
                 continue;
             }
@@ -129,6 +135,8 @@ public sealed unsafe partial class WorldMeshes
                     : distance < levelOne ? 1
                     : 2;
                 var turn = ObjectTurns.Rotation(placement.Heading);
+                // The views draw the coarsest level: one draw for all when it is the level drawn already.
+                var apart = level == 2 ? 0 : lists & views;
                 foreach (ref readonly var part in objectModels.PartsOf(placement.Kind))
                 {
                     var corner = local + Vector3.Transform(part.Corner, turn);
@@ -140,11 +148,11 @@ public sealed unsafe partial class WorldMeshes
                         turn,
                         WorldShaded,
                         ModelShadow.Casts,
-                        lists & ~views
+                        lists & ~apart
                     );
-                    if ((lists & views) != 0)
+                    if (apart != 0)
                     {
-                        GatherModel(models, part.Model, 2, corner, turn, WorldShaded, ModelShadow.Casts, lists & views);
+                        GatherModel(models, part.Model, 2, corner, turn, WorldShaded, ModelShadow.Casts, apart);
                     }
                 }
             }
@@ -175,12 +183,57 @@ public sealed unsafe partial class WorldMeshes
         }
     }
 
-    /// <summary>True when either pass split the level-K column (x, z) or one of the eight round it.</summary>
-    private bool AnySplitRound(int x, int z)
+    /// <summary>
+    /// The filled areas, nearest the camera first (by their middles), in a table kept from frame to frame.
+    /// </summary>
+    private ReadOnlySpan<AreaByDistance> SortedAreas(long width)
     {
-        for (var dz = -1; dz <= 1; dz++)
+        if (_sortedAreas.Length < _objects!.AreaCount)
         {
-            for (var dx = -1; dx <= 1; dx++)
+            _sortedAreas = new AreaByDistance[Math.Max(_objects.AreaCount, 2 * _sortedAreas.Length)];
+        }
+
+        var count = 0;
+        foreach (var area in _objects.Areas)
+        {
+            if (!area.Filled)
+            {
+                continue;
+            }
+
+            double dx = (area.X + 0.5) * width / VoxelConstants.CentimetresPerMetre - _viewAt.X,
+                dz = (area.Z + 0.5) * width / VoxelConstants.CentimetresPerMetre - _viewAt.Z;
+            _sortedAreas[count++] = new AreaByDistance(dx * dx + dz * dz, area);
+        }
+
+        // An insertion sort: a few dozen areas, and Array.Sort with a comparer makes a delegate each call.
+        for (var i = 1; i < count; i++)
+        {
+            var area = _sortedAreas[i];
+            var j = i - 1;
+            while (j >= 0 && _sortedAreas[j].Squared > area.Squared)
+            {
+                _sortedAreas[j + 1] = _sortedAreas[j];
+                j--;
+            }
+
+            _sortedAreas[j + 1] = area;
+        }
+
+        return _sortedAreas.AsSpan(0, count);
+    }
+
+    private AreaByDistance[] _sortedAreas = new AreaByDistance[64];
+
+    /// <summary>A filled area and its middle's squared distance from the camera, in metres.</summary>
+    private readonly record struct AreaByDistance(double Squared, ObjectWorld.Area Area);
+
+    /// <summary>True when either pass split the level-K column (x, z) or one within <paramref name="round"/> columns of it.</summary>
+    private bool AnySplitRound(int x, int z, int round)
+    {
+        for (var dz = -round; dz <= round; dz++)
+        {
+            for (var dx = -round; dx <= round; dx++)
             {
                 if (_cameraSplit.Contains((x + dx, z + dz)) || _farSplit.Contains((x + dx, z + dz)))
                 {
