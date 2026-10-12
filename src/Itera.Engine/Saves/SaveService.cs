@@ -11,7 +11,7 @@ namespace Itera.Engine.Saves;
 /// <summary>
 /// The named save (<c>Engine:Save:Name</c>): a host or offline game starts from
 /// <c>Saves/NAME.save</c> in the data folder when it exists, and writes its world back to it when it quits. A save is the
-/// world's edit log with the match settings (<see cref="VoxelWorld.SaveEdits"/>, format 6): the generator, the seed, the
+/// world's edit log with the match settings (<see cref="VoxelWorld.SaveEdits"/>, format 7): the generator, the seed, the
 /// step rate, the game's match data (its rules), and every edit with its pieces. At start (<see cref="ReadStart"/>, from
 /// the session step) the save's seed and rules replace the options'; its edits load once the world exists
 /// (<see cref="LoadEdits"/>). At quit (<see cref="Save"/>), only after a loop that ended without an exception, every

@@ -58,7 +58,8 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
 - The match's identity (`GeneratorMatchIdentity`) carries the kinds' fingerprint after the generator's id where the
   world places objects, so games whose kinds differ do not join each other; the fingerprint holds the copies' rule
   (`ObjectCopies.RuleVersion`: raise it with any change to how copies are written) and the damage's
-  (`ObjectEditing.RuleVersion`). Saves do not record the kinds yet.
+  (`ObjectEditing.RuleVersion`). Saves and join payloads carry the same id (`VoxelObjectKinds.WorldId`, the log's
+  generator id), so a save of other kinds is refused.
 - A kind's parts own at most 112 voxels a side (`ObjectPart.OwnVoxels`; a kind 5.6 m wide at 5 cm is one part across)
   and hold a border of their neighbours' 8 voxels round them (`BorderVoxels`; 4 at level 1, 2 at level 2: the two past
   an edge the mesher reads for a vertex's normal and openness), so a part's model box is its own plus 16; each part model owns
@@ -135,10 +136,25 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   Warning once a match), and it is made again by replay, `RebuildsPerUpdate` (2) an update, once it is nearer than the
   farthest kept. Readers keep what they read until `ObjectDamage.ReadChanges` names the object (a ring of 256 changes;
   past it, read everything again): the mover's chunks under its reach are made again, its statics' shapes swapped for
-  compounds of its own voxels, and rays read it as they go. The far copies need nothing: the world's edits reach its
-  coarse levels too. The rule is `ObjectEditing.RuleVersion`, hashed into the kinds' fingerprint (so the match's
+  compounds of its own voxels, and rays read it as they go. The far copies take the world's edits at its coarse levels
+  as any voxel does; a removed part's copy stays (`RemovePart` changes no world voxel). The rule is `ObjectEditing.RuleVersion`, hashed into the kinds' fingerprint (so the match's
   identity) with the copies' rule: raise it with any change to what an edit does to objects. The cap counts objects,
   not bytes (a copy is its changed bricks, 1 KB each, and its rebuilt parts' models).
+- A part cut off an object goes by an edit of its own (`VoxelEditOperation.RemovePart`, `VoxelEdit.RemovePart(id,
+  seed, box, size)`: the object's id in `Piece`, the kind's seed voxel in `Turn`, 16 bits an axis, below 1,024; a box
+  of air where the part lay, for the log's index): the world's voxels never change (`VoxelEdit.ChangesWorld` false;
+  columns do not replay it; navigation ignores it), and `ObjectDamage` takes from the object every solid voxel joined
+  to the seed across faces, the same on every peer (nothing for another object, a box missing its reach or height, or a
+  seed of air or outside the kind; a copy the cap dropped takes it at its replay). Applied live (not replayed) to a
+  copy, the voxels go to `ObjectDamage.Fallen`, with the air voxels round them that hold density (the soft side of their
+  surface), and `FallenParts`
+  (scoped, `MatchVoxels.Fallen`, run in the match's fixed step after the fixed group) makes a cut body of them: a
+  model for each of the kind's parts it holds solid voxels of, with its border's (owning its own window's faces, and a low
+  side's where no part of it lies beyond), three levels with densities by the kind's rule, placed and turned
+  where they lay, one body (`LooseBodies.TryCreate(parts)`, 800 kg a cubic metre, shaded as the world, touching the
+  voxels and the objects' statics, gone 30 s after it rests or 60 s after it was made; each peer makes its own, and none
+  where its copy was dropped or its area not filled) with its entity (`LooseBody`, `CutPiece`), room made
+  as for a thrown ball.
 - Models may have a voxel size of their own (`VoxelModels.Add` with a unit; `UnitCentimetres`, `VoxelMetres`) and keep
   densities (`Encode(voxels, densities, extent)`, `DecodeDensities`, `HasDensities`), which the renderer meshes them with.
   `SolidModelVoxels.Add` and the cut parts' hulls and masses (`LooseBodies.TryCreate(parts)`) take the model's unit.

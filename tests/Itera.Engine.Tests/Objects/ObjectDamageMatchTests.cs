@@ -1,6 +1,8 @@
 using System.Numerics;
+using Arch.Core;
 using BepuPhysics;
 using BepuPhysics.Collidables;
+using Itera.Engine.Components;
 using Itera.Engine.Matches;
 using Itera.Engine.Objects;
 using Itera.Engine.Physics;
@@ -65,6 +67,72 @@ public sealed class ObjectDamageMatchTests
         Assert.Equal(1, terrain.Damage.Count);
         var fallen = physics.Simulation.Bodies[ball].Pose.Position;
         Assert.Equal(match.Match.Voxels.Origin.ToLocal(new VoxelCoord(0, 10, 0)).Y, fallen.Y, 0.01f);
+    }
+
+    /// <summary>
+    /// A trunk cut through from 1.5 to 1.7 m, its top removed (<see cref="VoxelEditOperation.RemovePart"/>): the top falls
+    /// as a cut body, made at the next step, and comes down onto the stump.
+    /// </summary>
+    [Fact]
+    public void A_part_cut_off_a_trunk_falls_as_a_body()
+    {
+        var placements = new List<ObjectPlacement>();
+        using var provider = EngineComposition.Build(
+            new Dictionary<string, string?> { ["Engine:Physics:Threads"] = "1" },
+            services =>
+            {
+                services.Replace(ServiceDescriptor.Singleton<IChunkGenerator>(new PlacingGenerator(placements)));
+                services.AddSingleton<IRunStartup>(sp => new TrunkStartup(
+                    sp.GetRequiredService<VoxelObjectKinds>(),
+                    placements
+                ));
+            }
+        );
+        var run = new HeadlessRun(provider);
+        using var match = run.Play(seed: 5);
+        match.Match.Voxels.SetCenters([Vector3.Zero]);
+        Assert.True(match.WaitUntilLoaded());
+        var terrain = match.Match.Terrain!;
+        match.Step(2);
+
+        var voxels = match.Match.Voxels;
+        voxels.Apply(
+            VoxelEdit.Box(new VoxelCoord(-40, 150, -40), new VoxelCoord(80, 20, 80), VoxelEditOperation.Clear)
+        );
+        voxels.Apply(
+            VoxelEdit.RemovePart(
+                1,
+                new VoxelCoord(6, 40, 6),
+                new VoxelCoord(-25, 170, -25),
+                new VoxelCoord(50, 150, 50)
+            )
+        );
+        match.Step(1);
+
+        Assert.Equal(1, terrain.Fallen.Made);
+        var cut = new QueryDescription().WithAll<LooseBody, CutPiece>();
+        Assert.Equal(1, match.World.CountEntities(in cut));
+        var physics = match.Services.GetRequiredService<PhysicsWorld>();
+        var body = default(BepuPhysics.BodyHandle);
+        match.World.Query(in cut, (ref LooseBody loose) => body = loose.Body);
+        var start = physics.Simulation.Bodies[body].Pose.Position.Y;
+
+        match.Step(90);
+
+        var end = physics.Simulation.Bodies[body].Pose.Position.Y;
+        Assert.InRange(start - end, 0.15f, 0.25f);
+    }
+
+    /// <summary>Registers a trunk 50 cm across and 3.2 m tall and places one at the map's middle.</summary>
+    private sealed class TrunkStartup(VoxelObjectKinds kinds, List<ObjectPlacement> placements) : IRunStartup
+    {
+        public void Start()
+        {
+            var shape = new VoxelObjectShape(5, new VoxelCoord(12, 64, 12), new VoxelCoord(30, 0, 30));
+            shape.FillCapsule(30, -10, 30, 30, 300, 30, 25, Rock);
+            var trunk = kinds.Register("trunk", shape);
+            placements.Add(new ObjectPlacement(new ObjectId(1), trunk, default, 0));
+        }
     }
 
     /// <summary>Registers a rock 1.2 m square and 50 cm high and places one at the map's middle.</summary>

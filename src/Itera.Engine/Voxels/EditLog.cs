@@ -294,9 +294,10 @@ internal sealed class EditLog
 
     /// <summary>
     /// Adds to <paramref name="edits"/>, in sequence order, every edit after <paramref name="afterSequence"/> that
-    /// reaches the column, which must be at an indexed level.
+    /// reaches the column, which must be at an indexed level: with <paramref name="worldOnly"/>, only those that can change
+    /// the world's voxels (<see cref="VoxelEdit.ChangesWorld"/>), which a column replays.
     /// </summary>
-    public void CollectForColumn(ColumnKey column, long afterSequence, List<VoxelEdit> edits)
+    public void CollectForColumn(ColumnKey column, long afterSequence, List<VoxelEdit> edits, bool worldOnly = true)
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(column.Level, _levels);
         if (!_byColumn.TryGetValue(column, out var list))
@@ -308,7 +309,11 @@ internal sealed class EditLog
         {
             if (_entries[i].Sequence > afterSequence)
             {
-                edits.Add(this[_entries[i].Sequence]);
+                ref readonly var edit = ref this[_entries[i].Sequence];
+                if (!worldOnly || edit.ChangesWorld)
+                {
+                    edits.Add(edit);
+                }
             }
         }
     }

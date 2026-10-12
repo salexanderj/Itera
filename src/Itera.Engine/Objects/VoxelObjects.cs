@@ -39,7 +39,10 @@ public sealed partial class VoxelObjects(
         var parts = 0;
         for (var k = 0; k < kinds.Count; k++)
         {
-            var made = MakeParts(models, kinds[new VoxelObjectKindId((ushort)k)], materials, densities);
+            var kind = kinds[new VoxelObjectKindId((ushort)k)];
+            // Its voxels read on other threads from now on (the labeller's).
+            kind.MakeTables();
+            var made = MakeParts(models, kind, materials, densities);
             _parts[k] = made;
             parts += made.Length;
         }

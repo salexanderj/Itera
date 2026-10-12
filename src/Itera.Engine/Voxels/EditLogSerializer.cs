@@ -36,13 +36,16 @@ internal sealed record StoredPiece(long Sequence, VoxelCoord Min, VoxelCoord Siz
 /// the new version makes it refuse the stream by its version. Format 5 (2026-10-02) has the same layout again, and its
 /// edits may include capsules (<see cref="VoxelEditShape.Capsule"/>: a round's channel). Format 6 (2026-10-02) has the
 /// same layout again, and its edits may include clears of some materials (<see cref="VoxelEditOperation.ClearMaterials"/>:
-/// a player's removal of one material). Format 1 to 5 streams, which have none (format 1 to 4 no capsules, format 1
-/// to 3 no resets, formats 1 and 2 no match settings, and format 1 no pieces), still read. A save file is this stream.
+/// a player's removal of one material). Format 7 has the same layout again, its edits may include removals of voxel
+/// objects' parts (<see cref="VoxelEditOperation.RemovePart"/>), and its generator id is the world's
+/// (<c>VoxelObjectKinds.WorldId</c>: with the object kinds' fingerprint where the world places objects). Format 1 to 6
+/// streams, which have none (format 1 to 5 no clears of some materials, format 1 to 4 no capsules, format 1 to 3 no
+/// resets, formats 1 and 2 no match settings, and format 1 no pieces), still read. A save file is this stream.
 /// </summary>
 internal static class EditLogSerializer
 {
     /// <summary>Format version written into every stream.</summary>
-    public const int FormatVersion = 6;
+    public const int FormatVersion = 7;
 
     /// <summary>The most bytes of game match data a stream may hold (as the welcome, <c>SessionProtocol</c>).</summary>
     public const int MaxGameDataBytes = 4096;
@@ -227,6 +230,11 @@ internal static class EditLogSerializer
                     throw Invalid($"Edit {i} is invalid: {problem}.");
                 }
 
+                if (format < 7 && edit.Operation == VoxelEditOperation.RemovePart)
+                {
+                    throw Invalid($"A format {format} edit log cannot hold removals of objects' parts (edit {i}).");
+                }
+
                 if (format < 6 && edit.Operation == VoxelEditOperation.ClearMaterials)
                 {
                     throw Invalid($"A format {format} edit log cannot hold clears of some materials (edit {i}).");
@@ -319,10 +327,11 @@ internal static class EditLogSerializer
         var generatorId = reader.ReadString();
         var generatorVersion = reader.ReadInt32();
         var seed = reader.ReadUInt64();
-        if (
-            !string.Equals(generatorId, expectedGeneratorId, StringComparison.Ordinal)
-            || generatorVersion != expectedGeneratorVersion
-        )
+        // Before format 7 the id was the generator's alone, as a world's whose objects it did not name.
+        var sameId =
+            string.Equals(generatorId, expectedGeneratorId, StringComparison.Ordinal)
+            || (format < 7 && expectedGeneratorId.StartsWith(generatorId + "+objects-", StringComparison.Ordinal));
+        if (!sameId || generatorVersion != expectedGeneratorVersion)
         {
             throw Invalid(
                 $"The edit log was made with generator {generatorId} version {generatorVersion}; this world uses {expectedGeneratorId} version {expectedGeneratorVersion}."

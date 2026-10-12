@@ -293,15 +293,16 @@ public sealed class VoxelPieceTests : IDisposable
 
         var bytes = stream.ToArray();
         // The format version follows the 4-byte magic.
-        Assert.Equal(6, bytes[4]);
+        Assert.Equal(7, bytes[4]);
         bytes[4] = 4;
         var asFormat4 = Fnv(bytes);
         bytes[4] = 3;
         var asFormat3 = Fnv(bytes);
 
-        // Pinned: the bytes are the save file and the join payload; a change here needs a new format version. Formats 4,
-        // 5, and 6 changed only the version from format 3 (resets, then capsules, then clears of some materials may
-        // follow), so with 4 or 3 put back the old pins hold.
+        // Pinned: the bytes are the save file and the join payload; a change here needs a new format version. Formats 4
+        // to 7 changed only the version from format 3 (resets, then capsules, then clears of some materials, then removals
+        // of objects' parts may follow; this world places no objects, so its id is its generator's), so with 4 or 3 put
+        // back the old pins hold.
         Assert.Equal(7552161417393775388UL, asFormat4);
         Assert.Equal(14899856787725782161UL, asFormat3);
 

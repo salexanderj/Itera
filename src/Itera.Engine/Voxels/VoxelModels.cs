@@ -217,7 +217,10 @@ public sealed class VoxelModels : IDisposable
     /// </summary>
     public bool Apply(ref ModelTree tree, int level, in VoxelEdit edit)
     {
-        if (edit.Shape == VoxelEditShape.Piece || edit.Operation is VoxelEditOperation.Lift or VoxelEditOperation.Reset)
+        if (
+            edit.Shape == VoxelEditShape.Piece
+            || edit.Operation is VoxelEditOperation.Lift or VoxelEditOperation.Reset or VoxelEditOperation.RemovePart
+        )
         {
             throw new ArgumentException("A model takes sphere, capsule, and box edits only.", nameof(edit));
         }

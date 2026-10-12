@@ -1,4 +1,3 @@
-using System.Globalization;
 using Itera.Engine.Objects;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Options;
@@ -28,10 +27,7 @@ public interface IMatchIdentity
 /// </summary>
 public sealed class GeneratorMatchIdentity(IChunkGenerator generator, VoxelObjectKinds? kinds = null) : IMatchIdentity
 {
-    public string Id =>
-        generator.Objects is not null && kinds is { Count: > 0 }
-            ? string.Create(CultureInfo.InvariantCulture, $"{generator.Id}+objects-{kinds.Fingerprint:x16}")
-            : generator.Id;
+    public string Id => VoxelObjectKinds.WorldId(generator, kinds);
 
     public int Version => generator.Version;
 }

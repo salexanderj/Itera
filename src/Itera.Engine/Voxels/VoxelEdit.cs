@@ -62,6 +62,16 @@ public enum VoxelEditOperation : byte
     /// never.
     /// </summary>
     ClearMaterials = 6,
+
+    /// <summary>
+    /// A part of a voxel object, cut off from the rest, goes (since save format 7 and protocol 39): the object
+    /// <see cref="VoxelEdit.Piece"/> names (its <c>ObjectId</c>) loses every solid voxel joined to the seed voxel
+    /// <see cref="VoxelEdit.Turn"/> holds (the kind's voxel, 16 bits an axis, x lowest; <see cref="VoxelEdit.PartSeed"/>), and
+    /// each game makes a falling body of them. The world's voxels do not change: its box (<see cref="VoxelEdit.Origin"/>,
+    /// <see cref="VoxelEdit.Extent"/>, of air) is where the part lay, for the log's index. Made by a session's host, or an
+    /// offline game, when an edit cuts a part off (<see cref="VoxelEdit.RemovePart"/>).
+    /// </summary>
+    RemovePart = 7,
 }
 
 /// <summary>
@@ -176,6 +186,42 @@ public readonly record struct VoxelEdit(
         material < 64
             ? ((Piece >> material) & 1) != 0
             : material < MaterialSetSize && ((Turn >> (material - 64)) & 1) != 0;
+
+    /// <summary>
+    /// The removal of the part of object <paramref name="objectId"/> joined to its kind's voxel <paramref name="seed"/>
+    /// (<see cref="VoxelEditOperation.RemovePart"/>), which lay in the box from <paramref name="min"/> covering
+    /// <paramref name="size"/> centimetres.
+    /// </summary>
+    public static VoxelEdit RemovePart(ulong objectId, VoxelCoord seed, VoxelCoord min, VoxelCoord size)
+    {
+        if ((uint)seed.X >= MostSeed || (uint)seed.Y >= MostSeed || (uint)seed.Z >= MostSeed)
+        {
+            throw new ArgumentOutOfRangeException(nameof(seed), seed, "A part's seed lies in an object kind's box.");
+        }
+
+        return new(
+            0,
+            VoxelEditShape.Box,
+            VoxelEditOperation.RemovePart,
+            VoxelConstants.Air,
+            min,
+            size,
+            (long)objectId,
+            (long)(ushort)seed.X | ((long)(ushort)seed.Y << 16) | ((long)(ushort)seed.Z << 32)
+        );
+    }
+
+    /// <summary>The kind's voxel a <see cref="VoxelEditOperation.RemovePart"/> edit's part is joined to.</summary>
+    public VoxelCoord PartSeed => new((int)(Turn & 0xFFFF), (int)((Turn >> 16) & 0xFFFF), (int)((Turn >> 32) & 0xFFFF));
+
+    /// <summary>The most voxels along each axis a part's seed may lie at: an object kind's box.</summary>
+    public const int MostSeed = Objects.VoxelObjectShape.MostVoxelsAcross;
+
+    /// <summary>
+    /// True when the edit can change the world's own voxels: not a reset (which unloads them instead) nor the removal of
+    /// an object's part. Columns replay only these.
+    /// </summary>
+    public bool ChangesWorld => Operation is not VoxelEditOperation.Reset and not VoxelEditOperation.RemovePart;
 
     /// <summary>
     /// A piece edit: puts the piece lifted by edit <paramref name="piece"/> back with its pivot at voxel corner
@@ -332,7 +378,7 @@ public readonly record struct VoxelEdit(
             VoxelEditOperation.Set => Material,
             VoxelEditOperation.Clear or VoxelEditOperation.Lift => VoxelConstants.Air,
             VoxelEditOperation.Fill => current == VoxelConstants.Air ? Material : current,
-            VoxelEditOperation.Reset => current,
+            VoxelEditOperation.Reset or VoxelEditOperation.RemovePart => current,
             VoxelEditOperation.ClearMaterials => ClearsMaterial(current) ? VoxelConstants.Air : current,
             _ => current == VoxelConstants.Air ? VoxelConstants.Air : Material,
         };
@@ -346,7 +392,7 @@ public readonly record struct VoxelEdit(
                 VoxelEditOperation.Set => Material == material,
                 VoxelEditOperation.Clear or VoxelEditOperation.Lift => material == VoxelConstants.Air,
                 VoxelEditOperation.Fill => material != VoxelConstants.Air || Material == VoxelConstants.Air,
-                VoxelEditOperation.Reset => true,
+                VoxelEditOperation.Reset or VoxelEditOperation.RemovePart => true,
                 VoxelEditOperation.ClearMaterials => !ClearsMaterial(material),
                 _ => material == VoxelConstants.Air || Material == material,
             };
@@ -356,9 +402,23 @@ public readonly record struct VoxelEdit(
     {
         // Plain comparisons, not Enum.IsDefined: that keeps its value list in a runtime cache that any garbage
         // collection can drop, and rebuilding it allocates about 480 bytes inside the next edit.
-        if (Shape > VoxelEditShape.Capsule || Operation > VoxelEditOperation.ClearMaterials)
+        if (Shape > VoxelEditShape.Capsule || Operation > VoxelEditOperation.RemovePart)
         {
             return "unknown shape or operation";
+        }
+
+        if (Operation == VoxelEditOperation.RemovePart)
+        {
+            if (Shape != VoxelEditShape.Box || Material != VoxelConstants.Air)
+            {
+                return "a part's removal is a box of air";
+            }
+
+            var seed = PartSeed;
+            if ((Turn >> 48) != 0 || seed.X >= MostSeed || seed.Y >= MostSeed || seed.Z >= MostSeed)
+            {
+                return "a part's seed lies in an object kind's box";
+            }
         }
 
         if (Operation == VoxelEditOperation.ClearMaterials)
@@ -444,7 +504,10 @@ public readonly record struct VoxelEdit(
                 );
             }
         }
-        else if ((Piece != 0 || Turn != 0) && Operation != VoxelEditOperation.ClearMaterials)
+        else if (
+            (Piece != 0 || Turn != 0)
+            && Operation is not VoxelEditOperation.ClearMaterials and not VoxelEditOperation.RemovePart
+        )
         {
             return "only a piece edit names a piece or a turn";
         }

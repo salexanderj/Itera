@@ -39,11 +39,18 @@ public sealed class VoxelObjectKinds
     /// Registers the kind <paramref name="name"/> of <paramref name="shape"/>'s voxels and returns its number. Far away it
     /// is drawn as a coarse copy in the world's voxels, at the levels whose voxels are no wider than
     /// <paramref name="copiesUpToCentimetres"/> (0: half the widest of its box's sides, so a tree 6 m wide and 9 m tall is
-    /// copied in voxels up to 4.5 m; a smaller thing past them is not drawn at all). The shape is read now and not kept.
-    /// Throws for a name registered already, a full registry, a shape with no solid voxel, a negative reach, or once
-    /// sealed.
+    /// copied in voxels up to 4.5 m; a smaller thing past them is not drawn at all). When an edit cuts it apart, the pieces
+    /// <paramref name="roots"/> says stay, and the others fall (<see cref="ObjectRoots"/>; a kind rooted in the ground with
+    /// no solid voxel at its foot, its bottom at or below its anchor, keeps its largest piece instead). The shape is read
+    /// now and not kept. Throws for a name registered already, a full registry, a shape with no solid voxel, a negative
+    /// reach, or once sealed.
     /// </summary>
-    public VoxelObjectKindId Register(string name, VoxelObjectShape shape, int copiesUpToCentimetres = 0)
+    public VoxelObjectKindId Register(
+        string name,
+        VoxelObjectShape shape,
+        int copiesUpToCentimetres = 0,
+        ObjectRoots roots = ObjectRoots.Ground
+    )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(shape);
@@ -65,12 +72,39 @@ public sealed class VoxelObjectKinds
             throw new InvalidOperationException($"A run registers at most {MaxKinds} object kinds.");
         }
 
+        // A kind rooted in the ground with no voxel at its foot would lose every piece at its first cut: its largest stays.
+        if (roots == ObjectRoots.Ground && !HasRoots(shape))
+        {
+            roots = ObjectRoots.Largest;
+        }
+
         var id = new VoxelObjectKindId((ushort)_kinds.Count);
-        var kind = VoxelObjectKind.Build(id, name, shape, copiesUpToCentimetres);
+        var kind = VoxelObjectKind.Build(id, name, shape, copiesUpToCentimetres, roots);
         _kinds.Add(kind);
         _byName.Add(name, id);
         MostReachCentimetres = Math.Max(MostReachCentimetres, kind.ReachCentimetres);
         return id;
+    }
+
+    /// <summary>True when a solid voxel of <paramref name="shape"/> has its bottom at or below its anchor.</summary>
+    private static bool HasRoots(VoxelObjectShape shape)
+    {
+        var top = Math.Min(shape.Size.Y - 1, shape.AnchorCentimetres.Y / shape.UnitCentimetres);
+        for (var y = 0; y <= top; y++)
+        {
+            for (var z = 0; z < shape.Size.Z; z++)
+            {
+                for (var x = 0; x < shape.Size.X; x++)
+                {
+                    if (shape.MaterialAt(x, y, z) != VoxelConstants.Air)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>The farthest any kind reaches across from its anchor (<see cref="VoxelObjectKind.ReachCentimetres"/>); 0 with none.</summary>
@@ -78,6 +112,23 @@ public sealed class VoxelObjectKinds
 
     /// <summary>The kind called <paramref name="name"/>, when one is registered.</summary>
     public bool TryFind(string name, out VoxelObjectKindId id) => _byName.TryGetValue(name, out id);
+
+    /// <summary>
+    /// The id of the world <paramref name="generator"/> makes with <paramref name="kinds"/>: the generator's, and where
+    /// it places objects of any kind, the kinds' <see cref="Fingerprint"/> after it (<c>game.world+objects-…</c>), so
+    /// games, saves, and joins whose kinds or rules differ refuse each other. The match's identity and a save's header
+    /// carry it.
+    /// </summary>
+    public static string WorldId(IChunkGenerator generator, VoxelObjectKinds? kinds)
+    {
+        ArgumentNullException.ThrowIfNull(generator);
+        return generator.Objects is not null && kinds is { Count: > 0 }
+            ? string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"{generator.Id}+objects-{kinds.Fingerprint:x16}"
+            )
+            : generator.Id;
+    }
 
     /// <summary>
     /// A number that stands for every kind's name and voxels, in their order, and the engine's rules for their copies in
@@ -139,10 +190,12 @@ public sealed class VoxelObjectKind : IObjectVoxelSource
         ObjectPart[] parts,
         ulong fingerprint,
         int copiesUpTo,
-        MaterialSet materials
+        MaterialSet materials,
+        ObjectRoots roots
     )
     {
         Id = id;
+        Roots = roots;
         CopiesUpToCentimetres = copiesUpTo;
         Materials = materials;
         Name = name;
@@ -201,6 +254,22 @@ public sealed class VoxelObjectKind : IObjectVoxelSource
 
     /// <summary>Its voxels' materials.</summary>
     internal MaterialSet Materials { get; }
+
+    /// <summary>Which of its pieces stay when an edit cuts it apart (<see cref="ObjectRoots"/>).</summary>
+    public ObjectRoots Roots { get; }
+
+    /// <summary>
+    /// Makes its tables of parts and bricks (<see cref="Voxel"/>'s), so other threads may read its voxels. Main thread,
+    /// before any other thread reads it (<c>VoxelObjects.Initialize</c>).
+    /// </summary>
+    internal void MakeTables()
+    {
+        PartIndexAt(0, 0, 0);
+        foreach (var part in Parts)
+        {
+            part.Voxel(0, 0, 0, out _, out _);
+        }
+    }
 
     /// <summary>How many parts it is: the 112-voxel cubes of its box that hold anything.</summary>
     public int PartCount => Parts.Length;
@@ -292,7 +361,13 @@ public sealed class VoxelObjectKind : IObjectVoxelSource
         return copy;
     }
 
-    internal static VoxelObjectKind Build(VoxelObjectKindId id, string name, VoxelObjectShape shape, int copiesUpTo)
+    internal static VoxelObjectKind Build(
+        VoxelObjectKindId id,
+        string name,
+        VoxelObjectShape shape,
+        int copiesUpTo,
+        ObjectRoots roots = ObjectRoots.Ground
+    )
     {
         const int own = ObjectPart.OwnVoxels;
         var size = shape.Size;
@@ -360,7 +435,8 @@ public sealed class VoxelObjectKind : IObjectVoxelSource
             [.. parts],
             Maths.DeterministicMath.Hash(FingerprintOf(name, shape), (ulong)copied),
             copied,
-            MaterialSet.Of([.. materials])
+            MaterialSet.Of([.. materials]),
+            roots
         );
     }
 

@@ -97,7 +97,7 @@ public sealed partial class VoxelWorld
         {
             for (var x = firstX; x <= lastX; x++)
             {
-                _edits.CollectForColumn(new ColumnKey(0, x, z), _edits.LastReset, edits);
+                _edits.CollectForColumn(new ColumnKey(0, x, z), _edits.LastReset, edits, worldOnly: false);
             }
         }
 
@@ -115,6 +115,12 @@ public sealed partial class VoxelWorld
 
         edits.RemoveRange(kept, edits.Count - kept);
     }
+
+    /// <summary>
+    /// The id a save or a join payload carries (<see cref="Objects.VoxelObjectKinds.WorldId"/>): the generator's, with the
+    /// object kinds' fingerprint where it places objects.
+    /// </summary>
+    internal string WorldId => Objects.VoxelObjectKinds.WorldId(_generator, _kinds);
 
     /// <summary>
     /// True when the log indexes <paramref name="edit"/> in a level-0 column under the box from <paramref name="min"/>
@@ -224,7 +230,7 @@ public sealed partial class VoxelWorld
         var scratch = _pieceScratch ??= new byte[VoxelConstants.ChunkVoxels];
         var written = EditLogSerializer.Write(
             stream,
-            _generator.Id,
+            WorldId,
             _generator.Version,
             _seed,
             fixedStepHz,
@@ -244,7 +250,7 @@ public sealed partial class VoxelWorld
     /// generator version. Needs no initialised world: a save's seed is read before its world starts.
     /// </summary>
     public EditLogHeader ReadSaveHeader(Stream stream) =>
-        EditLogSerializer.ReadHeader(stream, _generator.Id, _generator.Version);
+        EditLogSerializer.ReadHeader(stream, WorldId, _generator.Version);
 
     /// <summary>
     /// Reads an edit log written by <see cref="SaveEdits"/> and applies it. The world must have no edits yet, and the
@@ -260,7 +266,7 @@ public sealed partial class VoxelWorld
 
         var edits = new List<VoxelEdit>();
         var pieces = new List<StoredPiece>();
-        var header = EditLogSerializer.Read(stream, _generator.Id, _generator.Version, edits, pieces);
+        var header = EditLogSerializer.Read(stream, WorldId, _generator.Version, edits, pieces);
         if (header.Seed != _seed)
         {
             throw new InvalidDataException(
@@ -591,6 +597,12 @@ public sealed partial class VoxelWorld
         _edits.Append(in edit, maker);
         _stats.Edits++;
         ObjectEdits?.Applied(in edit);
+        if (edit.Operation == VoxelEditOperation.RemovePart)
+        {
+            // An object's alone: the world's voxels stay.
+            return;
+        }
+
         if (edit.Operation == VoxelEditOperation.Reset)
         {
             _logFullLogged = false;

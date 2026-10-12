@@ -19,7 +19,7 @@ public sealed class VoxelEditTests
         Assert.NotNull((reset with { Shape = VoxelEditShape.Sphere }).Validate());
         Assert.NotNull((reset with { Material = 3 }).Validate());
         Assert.NotNull((reset with { Origin = new VoxelCoord(0, 1, 0) }).Validate());
-        Assert.NotNull((reset with { Operation = (VoxelEditOperation)7 }).Validate());
+        Assert.NotNull((reset with { Operation = (VoxelEditOperation)8 }).Validate());
     }
 
     [Fact]

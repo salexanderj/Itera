@@ -104,8 +104,8 @@ public sealed class WireFingerprintTests : IDisposable
 
         Assert.Equal(4, clientWorld.EditCount);
         WireFingerprint.AssertPinned(
-            38,
-            "F2B2553DCAEC2A9C",
+            39,
+            "039A5DEDFD1C646F",
             WireFingerprint.Of([.. hostTransport.Recorded, .. clientTransport.Recorded])
         );
     }

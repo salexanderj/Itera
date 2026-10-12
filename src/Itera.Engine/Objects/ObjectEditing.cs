@@ -20,18 +20,22 @@ internal static class ObjectEditing
     /// </summary>
     public const int RuleVersion = 1;
 
-    /// <summary>True when <paramref name="edit"/> changes objects: a removal or a paint, not of a piece.</summary>
+    /// <summary>
+    /// True when <paramref name="edit"/> changes objects: a removal or a paint, not of a piece, or the removal of an
+    /// object's part (<see cref="VoxelEditOperation.RemovePart"/>, which <c>ObjectDamage</c> applies).
+    /// </summary>
     public static bool Changes(in VoxelEdit edit) =>
-        edit.Shape != VoxelEditShape.Piece
-        && (
-            edit.Operation
-                is VoxelEditOperation.Clear
-                    or VoxelEditOperation.ClearMaterials
-                    or VoxelEditOperation.Lift
-                    or VoxelEditOperation.Paint
-            || (edit.Operation == VoxelEditOperation.Set && edit.Material == VoxelConstants.Air)
-        )
-        && !(edit.Operation == VoxelEditOperation.Paint && edit.Material == VoxelConstants.Air);
+        edit.Operation == VoxelEditOperation.RemovePart
+        || edit.Shape != VoxelEditShape.Piece
+            && (
+                edit.Operation
+                    is VoxelEditOperation.Clear
+                        or VoxelEditOperation.ClearMaterials
+                        or VoxelEditOperation.Lift
+                        or VoxelEditOperation.Paint
+                || (edit.Operation == VoxelEditOperation.Set && edit.Material == VoxelConstants.Air)
+            )
+            && !(edit.Operation == VoxelEditOperation.Paint && edit.Material == VoxelConstants.Air);
 
     /// <summary>
     /// Applies <paramref name="edit"/> to the object of <paramref name="placement"/> (its voxels read and written through
@@ -48,7 +52,7 @@ internal static class ObjectEditing
         Span<long> removed
     )
     {
-        if (!Changes(in edit))
+        if (!Changes(in edit) || edit.Operation == VoxelEditOperation.RemovePart)
         {
             return false;
         }

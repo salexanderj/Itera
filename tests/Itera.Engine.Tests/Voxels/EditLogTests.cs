@@ -245,13 +245,13 @@ public sealed class EditLogTests
     public void A_log_of_a_newer_format_is_refused_by_its_version()
     {
         var bytes = Written(new EditLog(1, VoxelGrid.Unit)).ToArray();
-        bytes[4] = 7;
+        bytes[4] = 8;
 
         var ex = Assert.Throws<InvalidDataException>(() =>
             EditLogSerializer.ReadHeader(new MemoryStream(bytes), "test.gen", 3)
         );
 
-        Assert.Contains("format version 7; this build reads 1 to 6", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("format version 8; this build reads 1 to 7", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -301,6 +301,54 @@ public sealed class EditLogTests
         Assert.Equal([log[1]], edits);
         Assert.True(edits[0].ClearsMaterial(64) && edits[0].ClearsMaterial(100) && !edits[0].ClearsMaterial(4));
         Assert.Contains("cannot hold clears of some materials", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_part_removal_reads_back_from_format_7_and_is_refused_in_a_format_6_log()
+    {
+        var log = new EditLog(1, VoxelGrid.Unit);
+        log.Append(
+            VoxelEdit.RemovePart(
+                ulong.MaxValue - 5,
+                new VoxelCoord(1023, 7, 512),
+                new VoxelCoord(-7, 4, 5),
+                new VoxelCoord(10, 20, 30)
+            ) with
+            {
+                Sequence = 1,
+            }
+        );
+        var bytes = Written(log).ToArray();
+        var edits = new List<VoxelEdit>();
+
+        EditLogSerializer.Read(new MemoryStream(bytes), "test.gen", 3, edits, []);
+        // The format version follows the 4-byte magic; formats 6 and 7 have the same layout.
+        bytes[4] = 6;
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            EditLogSerializer.Read(new MemoryStream(bytes), "test.gen", 3, [], [])
+        );
+
+        Assert.Equal([log[1]], edits);
+        Assert.Equal((ulong.MaxValue - 5, new VoxelCoord(1023, 7, 512)), ((ulong)edits[0].Piece, edits[0].PartSeed));
+        Assert.Contains("cannot hold removals of objects' parts", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A world that now places objects (its id the generator's with the kinds' fingerprint) reads a format 6 log, whose
+    /// id was the generator's alone; a format 7 log of the plain id, or of other kinds, is another world's.
+    /// </summary>
+    [Fact]
+    public void An_older_log_of_a_world_now_placing_objects_reads()
+    {
+        var bytes = Written(new EditLog(1, VoxelGrid.Unit)).ToArray();
+        const string objectsId = "test.gen+objects-0123456789abcdef";
+
+        Assert.Throws<InvalidDataException>(() => EditLogSerializer.ReadHeader(new MemoryStream(bytes), objectsId, 3));
+        bytes[4] = 6;
+        Assert.Equal("test.gen", EditLogSerializer.ReadHeader(new MemoryStream(bytes), objectsId, 3).GeneratorId);
+        Assert.Throws<InvalidDataException>(() =>
+            EditLogSerializer.ReadHeader(new MemoryStream(bytes), "other.gen+objects-0123456789abcdef", 3)
+        );
     }
 
     [Fact]

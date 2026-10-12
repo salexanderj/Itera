@@ -19,7 +19,8 @@ public sealed class MatchVoxels(
     NavigationService navigation,
     VoxelObjects objects,
     ObjectWorld placed,
-    ObjectDamage damage
+    ObjectDamage damage,
+    FallenParts fallen
 )
 {
     public VoxelWorld Voxels { get; } = voxels;
@@ -33,6 +34,9 @@ public sealed class MatchVoxels(
     public ObjectWorld Placed { get; } = placed;
 
     public ObjectDamage Damage { get; } = damage;
+
+    /// <summary>The bodies of the parts cut off objects, made in the match's fixed step.</summary>
+    public FallenParts Fallen { get; } = fallen;
 
     /// <summary>
     /// Streams the world (<see cref="VoxelWorld.Update"/>), then follows its columns with the placed objects

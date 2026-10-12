@@ -160,11 +160,13 @@ public sealed class ObjectDamageTests : IDisposable
     /// The damage the edits do, pinned: a change to the turn, the share, or what changes objects changes it on every peer,
     /// which <see cref="ObjectEditing.RuleVersion"/> must then mark.
     /// </summary>
-    [Fact]
-    public void The_damage_is_pinned()
+    [Theory]
+    [InlineData(false, "A3315972C4ABFE2E")]
+    [InlineData(true, "8AD4AF99D93E8B1E")]
+    public void The_damage_is_pinned(bool withRemoval, string pinned)
     {
         var scene = Make();
-        foreach (var edit in Edits())
+        foreach (var edit in Edits(withRemoval))
         {
             scene.World.Apply(edit);
         }
@@ -175,11 +177,58 @@ public sealed class ObjectDamageTests : IDisposable
 
         Assert.Equal(1, ObjectEditing.RuleVersion);
         Assert.Equal(
-            "A3315972C4ABFE2E",
+            pinned,
             Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(all)))[
                 ..16
             ]
         );
+    }
+
+    /// <summary>
+    /// A part's removal whose box lies over the object's top, its seed in the object, changes it neither live nor
+    /// replayed; one whose box lies over the ground under no object leaves the world's voxels as they were, also once
+    /// its columns load again.
+    /// </summary>
+    [Fact]
+    public void A_part_removal_is_bound_by_its_box_and_never_changes_the_world()
+    {
+        var live = Make();
+        var replayed = Make(fill: false);
+        var above = VoxelEdit.RemovePart(
+            1,
+            new VoxelCoord(6, 50, 6),
+            new VoxelCoord(-25, 1000, -25),
+            new VoxelCoord(50, 50, 50)
+        );
+        live.World.Apply(above);
+        replayed.World.Apply(above);
+        replayed.Fill();
+        Assert.Equal((0, 0), (live.Damage.Count, replayed.Damage.Count));
+
+        var ground = VoxelEdit.RemovePart(
+            1,
+            new VoxelCoord(6, 50, 6),
+            new VoxelCoord(-500, -100, -500),
+            new VoxelCoord(300, 100, 300)
+        );
+        live.World.Apply(ground);
+        AssertGround(live.World);
+        live.World.SetCenters([new Vector3(400, 0, 400)]);
+        TestWorlds.WaitUntilLoaded(live.World);
+        live.World.SetCenters([Vector3.Zero]);
+        TestWorlds.WaitUntilLoaded(live.World);
+        AssertGround(live.World);
+
+        static void AssertGround(VoxelWorld world)
+        {
+            foreach (
+                var at in new[] { new Vector3(-4.5f, 1, -4.5f), new Vector3(-3, 1, -3), new Vector3(-2.1f, 1, -2.1f) }
+            )
+            {
+                Assert.True(world.Raycast(at, -Vector3.UnitY, 5, out var hit));
+                Assert.Equal(1, hit.DistanceMetres, 1e-3f);
+            }
+        }
     }
 
     /// <summary>
@@ -217,6 +266,129 @@ public sealed class ObjectDamageTests : IDisposable
         Assert.True(scene.Damage.Version > ObjectDamage.KeptChanges);
         Assert.Equal(fresh, tops);
         Assert.Contains(fresh, top => top != int.MinValue && top < 30);
+    }
+
+    /// <summary>
+    /// The trunk's top, cut off and removed, goes with every voxel joined to it and none below the cut; applied live it
+    /// falls (a part for a body), replayed it does not.
+    /// </summary>
+    [Fact]
+    public void A_removed_part_goes_whole_and_falls_only_when_applied_live()
+    {
+        var live = Make();
+        var replayed = Make(fill: false);
+        foreach (var edit in Edits())
+        {
+            live.World.Apply(edit);
+            replayed.World.Apply(edit);
+        }
+
+        replayed.Fill();
+
+        var trunk = live.Placements[0];
+        var damaged = live.Damage.Find(trunk.Id)!;
+        var fallen = Assert.Single(live.Damage.Fallen);
+        Assert.Equal(trunk.Id, fallen.Placement.Id);
+        Assert.Empty(replayed.Damage.Fallen);
+        // Every voxel 2.2 m up and above is gone; the stump under the cut keeps its own.
+        for (var y = 44; y < 64; y++)
+        {
+            damaged.Voxel(6, y, 6, out var material, out _);
+            Assert.Equal(VoxelConstants.Air, material);
+        }
+
+        damaged.Voxel(6, 2, 6, out var stump, out _);
+        Assert.Equal(Bark, stump);
+        Assert.All(fallen.Voxels, voxel => Assert.True(voxel.Y >= 44, $"Voxel {voxel} lay under the cut."));
+        Assert.True(fallen.Voxels.Count > 1000, $"{fallen.Voxels.Count} voxels fell.");
+    }
+
+    /// <summary>
+    /// Removals from a host that name no object of the area, a seed of air, a seed outside the kind, or a box reaching no
+    /// object change nothing.
+    /// </summary>
+    [Fact]
+    public void Hostile_part_removals_change_nothing()
+    {
+        var scene = Make();
+        var box = new VoxelCoord(100, 0, -50);
+        var size = new VoxelCoord(100, 320, 100);
+
+        scene.World.Apply(VoxelEdit.RemovePart(999, new VoxelCoord(6, 50, 6), box, size));
+        scene.World.Apply(VoxelEdit.RemovePart(1, new VoxelCoord(0, 0, 0), box, size));
+        scene.World.Apply(VoxelEdit.RemovePart(1, new VoxelCoord(1000, 5, 5), box, size));
+        scene.World.Apply(VoxelEdit.RemovePart(1, new VoxelCoord(6, 50, 6), new VoxelCoord(30000, 0, 30000), size));
+
+        Assert.Equal(0, scene.Damage.Count);
+        Assert.Empty(scene.Damage.Fallen);
+        Assert.Null((VoxelEdit.RemovePart(1, new VoxelCoord(6, 50, 6), box, size) with { Sequence = 1 }).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            VoxelEdit.RemovePart(1, new VoxelCoord(1024, 0, 0), box, size)
+        );
+        Assert.NotNull((VoxelEdit.RemovePart(1, default, box, size) with { Turn = 1024 }).Validate());
+        Assert.NotNull((VoxelEdit.RemovePart(1, default, box, size) with { Turn = 1L << 48 }).Validate());
+        Assert.NotNull((VoxelEdit.RemovePart(1, default, box, size) with { Shape = VoxelEditShape.Sphere }).Validate());
+        Assert.NotNull((VoxelEdit.RemovePart(1, default, box, size) with { Material = Bark }).Validate());
+    }
+
+    /// <summary>
+    /// A client following its host takes each of the host's edits, a part's removal among them, as the session gives them
+    /// (<see cref="VoxelWorld.ApplySequenced"/>): its objects are damaged as the host's, and the same part falls.
+    /// </summary>
+    [Fact]
+    public void A_client_following_its_host_gets_the_same_damage()
+    {
+        var host = Make();
+        var client = Make();
+        client.World.FollowHost();
+        foreach (var edit in Edits())
+        {
+            host.World.Apply(edit);
+        }
+
+        for (var sequence = 1L; sequence <= host.World.EditCount; sequence++)
+        {
+            client.World.ApplySequenced(host.World.GetEdit(sequence));
+        }
+
+        Assert.Equal(host.Damage.Count, client.Damage.Count);
+        foreach (var placement in host.Placements)
+        {
+            if (host.Damage.Find(placement.Id) is { } expected)
+            {
+                AssertSame(expected, client.Damage.Find(placement.Id));
+            }
+        }
+
+        Assert.Equal(Assert.Single(host.Damage.Fallen).Voxels, Assert.Single(client.Damage.Fallen).Voxels);
+    }
+
+    /// <summary>A world's saved log, a part's removal among its edits, loads into a world whose objects are damaged the same.</summary>
+    [Fact]
+    public void A_saved_log_with_a_part_removal_loads_the_same_damage()
+    {
+        var saved = Make();
+        foreach (var edit in Edits())
+        {
+            saved.World.Apply(edit);
+        }
+
+        using var stream = new MemoryStream();
+        saved.World.SaveEdits(stream, 60, []);
+        stream.Position = 0;
+        var loaded = Make(fill: false);
+
+        loaded.World.LoadEdits(stream);
+        loaded.Fill();
+
+        Assert.Equal(saved.Damage.Count, loaded.Damage.Count);
+        foreach (var placement in saved.Placements)
+        {
+            if (saved.Damage.Find(placement.Id) is { } expected)
+            {
+                AssertSame(expected, loaded.Damage.Find(placement.Id));
+            }
+        }
     }
 
     [Fact]
@@ -649,7 +821,7 @@ public sealed class ObjectDamageTests : IDisposable
         return scene;
     }
 
-    private static IEnumerable<VoxelEdit> Edits()
+    private static IEnumerable<VoxelEdit> Edits(bool withRemoval = true)
     {
         yield return VoxelEdit.Sphere(new VoxelCoord(140, 100, 0), 18, VoxelEditOperation.Clear);
         yield return VoxelEdit.Capsule(
@@ -663,6 +835,19 @@ public sealed class ObjectDamageTests : IDisposable
         yield return VoxelEdit.Sphere(new VoxelCoord(150, 64, 4), 9, VoxelEditOperation.Clear);
         yield return VoxelEdit.MaterialsBox(new VoxelCoord(130, 150, -20), new VoxelCoord(30, 30, 40), [Bark]);
         yield return VoxelEdit.Sphere(new VoxelCoord(-300, 40, 300), 12, VoxelEditOperation.Set, VoxelConstants.Air);
+        if (!withRemoval)
+        {
+            yield break;
+        }
+
+        // The trunk cut through from 2 to 2.2 m, and its top, joined to its voxel 2.5 m up, removed.
+        yield return VoxelEdit.Box(new VoxelCoord(110, 200, -40), new VoxelCoord(80, 20, 80), VoxelEditOperation.Clear);
+        yield return VoxelEdit.RemovePart(
+            1,
+            new VoxelCoord(6, 50, 6),
+            new VoxelCoord(125, 220, -25),
+            new VoxelCoord(50, 100, 50)
+        );
     }
 
     /// <summary>Whether voxel (x, y, z)'s cube, turned as drawn, lies wholly inside the box, or wholly outside it, by a centimetre.</summary>

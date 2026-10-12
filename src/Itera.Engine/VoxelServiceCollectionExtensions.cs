@@ -18,7 +18,8 @@ public static class VoxelServiceCollectionExtensions
     /// that registers an <see cref="IChunkGenerator"/>: each match's <see cref="VoxelWorld"/> and <see cref="MatchVoxels"/>,
     /// the colliders loose bodies meet it through (<see cref="VoxelColliders"/>), navigation over it, the object kinds'
     /// models (<see cref="VoxelObjects"/>), the objects its world places (<see cref="ObjectWorld"/>), the rays through them
-    /// (<see cref="ObjectRays"/>), and the damage edits do to them (<see cref="ObjectDamage"/>), the benchmark's view
+    /// (<see cref="ObjectRays"/>), the damage edits do to them (<see cref="ObjectDamage"/>) and the bodies of the parts cut
+    /// off them (<see cref="FallenParts"/>), the benchmark's view
     /// of it, and its loading tasks (World, Objects, Navigation, and Warm-up, after the engine's Sounds and before the game's own,
     /// so a game calls this before it adds those). The voxel models, the loose bodies, the character mover, and the play
     /// area are the core's, which read the world when there is one. A second call adds nothing.
@@ -39,6 +40,7 @@ public static class VoxelServiceCollectionExtensions
         services.TryAddScoped<ObjectWorld>();
         services.TryAddScoped<ObjectRays>();
         services.TryAddScoped<ObjectDamage>();
+        services.TryAddScoped<FallenParts>();
         services.AddScoped<ILoadingTask, WorldLoadingTask>();
         services.AddScoped<ILoadingTask, ObjectsLoadingTask>();
         services.AddScoped<ILoadingTask, NavigationLoadingTask>();

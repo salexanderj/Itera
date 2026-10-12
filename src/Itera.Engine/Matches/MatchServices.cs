@@ -129,7 +129,7 @@ public sealed partial class MatchServices
 
     /// <summary>
     /// One fixed step of the match, in the order the game runs it (the main loop calls it; tests call it too, so they run
-    /// what the game runs): the fixed group, the large edits' share (<paramref name="editColumns"/> columns), the voxel
+    /// what the game runs): the fixed group, the bodies of the parts it cut off objects, the large edits' share (<paramref name="editColumns"/> columns), the voxel
     /// colliders, Bepu, the bodies as voxels, the mods (<paramref name="mods"/>), navigation's finished fields, and the
     /// session's step; the terrain's parts only with terrain. <paramref name="stats"/>, when given, takes the parts'
     /// timestamps.
@@ -139,6 +139,8 @@ public sealed partial class MatchServices
         var terrain = Terrain;
         var stepStart = Stopwatch.GetTimestamp();
         Ecs.FixedUpdate(in step);
+        // The parts the step's edits cut off objects fall as bodies from this step on.
+        terrain?.Fallen.Make();
         var editsStart = Stopwatch.GetTimestamp();
         // Large edits apply over steps, a share each step, before Bepu and the renderer read the change list.
         terrain?.Voxels.ApplyPendingEdits(editColumns);

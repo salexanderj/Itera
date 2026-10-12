@@ -59,6 +59,11 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
     private readonly List<ObjectPlacement> _near = [];
     private readonly List<VoxelEdit> _replay = [];
     private readonly Queue<DamagedObject> _changed = new();
+    private readonly List<FallenPart> _fallen = [];
+    private readonly Stack<List<FallenVoxel>> _spareVoxels = new();
+    private readonly Stack<int> _flood = new();
+    private ulong[] _seen = [];
+    private bool _live;
     private readonly long[] _steps = new long[256];
     private readonly int[] _counts = new int[256];
     private readonly ObjectDamageChange[] _changes = new ObjectDamageChange[KeptChanges];
@@ -198,14 +203,41 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         }
 
         Near(in edit);
-        foreach (var placement in _near)
+        _live = true;
+        try
         {
-            // As a replay finds it: only where the log indexes it under the object.
-            if (IndexedFor(in edit, in placement))
+            foreach (var placement in _near)
             {
-                Damage(in edit, in placement);
+                // As a replay finds it: only where the log indexes it under the object.
+                if (IndexedFor(in edit, in placement))
+                {
+                    Damage(in edit, in placement);
+                }
             }
         }
+        finally
+        {
+            _live = false;
+        }
+    }
+
+    /// <summary>
+    /// The parts removals cut off since the last call (<see cref="VoxelEditOperation.RemovePart"/>, applied live: a
+    /// replay makes none), each with its voxels, for a falling body (<c>FallenParts</c>); <see cref="ReturnFallen"/>
+    /// gives their lists back. Main thread.
+    /// </summary>
+    internal List<FallenPart> Fallen => _fallen;
+
+    /// <summary>Gives the fallen parts' voxel lists back for reuse and forgets the parts.</summary>
+    internal void ReturnFallen()
+    {
+        foreach (var part in _fallen)
+        {
+            part.Voxels.Clear();
+            _spareVoxels.Push(part.Voxels);
+        }
+
+        _fallen.Clear();
     }
 
     void IObjectWorldListener.Filled(List<ObjectPlacement> objects)
@@ -295,18 +327,22 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
     }
 
     /// <summary>
-    /// True when the log indexes the edit under the object's reach: what a replay of the object finds (an edit wholly past
-    /// the map's sides, or above or below its height, is in none), so damage made live and replayed are the same.
+    /// True when the edit's bounds meet the object's reach and height (<see cref="Reaches"/>) and the log indexes it under
+    /// the object's reach: what a replay of the object finds (an edit wholly past the map's sides, or above or below its
+    /// height, is in none), so damage made live and replayed are the same; a part's removal, which reads only its seed,
+    /// among them.
     /// </summary>
     private bool IndexedFor(in VoxelEdit edit, in ObjectPlacement placement)
     {
-        var reach = _kinds[placement.Kind].ReachCentimetres;
+        var kind = _kinds[placement.Kind];
+        var reach = kind.ReachCentimetres;
         var anchor = placement.Anchor;
-        return _world.IndexesUnder(
-            in edit,
-            new VoxelCoord(anchor.X - reach, 0, anchor.Z - reach),
-            new VoxelCoord(anchor.X + reach + 1, 0, anchor.Z + reach + 1)
-        );
+        return Reaches(in edit, in placement, kind)
+            && _world.IndexesUnder(
+                in edit,
+                new VoxelCoord(anchor.X - reach, 0, anchor.Z - reach),
+                new VoxelCoord(anchor.X + reach + 1, 0, anchor.Z + reach + 1)
+            );
     }
 
     public void Dispose()
@@ -350,6 +386,12 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         }
 
         var kind = _kinds[placement.Kind];
+        if (edit.Operation == VoxelEditOperation.RemovePart)
+        {
+            RemovePart(in edit, in placement, kind);
+            return;
+        }
+
         if (!_damaged.TryGetValue(placement.Id, out var damaged))
         {
             if (!ObjectEditing.Apply(in edit, in placement, kind, null, false, default))
@@ -374,6 +416,126 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
                 _changed.Enqueue(damaged);
             }
         }
+    }
+
+    /// <summary>
+    /// Removes from the object the edit names every solid voxel joined to the edit's seed (across faces), the same on
+    /// every peer; applied live, the voxels go to <see cref="Fallen"/> for a falling body. Nothing for another object, a
+    /// seed of air or outside the kind, or an object whose copy the cap dropped.
+    /// </summary>
+    private void RemovePart(in VoxelEdit edit, in ObjectPlacement placement, VoxelObjectKind kind)
+    {
+        var seed = edit.PartSeed;
+        var size = kind.Size;
+        if ((ulong)edit.Piece != placement.Id.Value || seed.X >= size.X || seed.Y >= size.Y || seed.Z >= size.Z)
+        {
+            return;
+        }
+
+        var damaged = _damaged.GetValueOrDefault(placement.Id);
+        IObjectVoxelSource voxels = (IObjectVoxelSource?)damaged ?? kind;
+        voxels.Voxel(seed.X, seed.Y, seed.Z, out var seedMaterial, out _);
+        if (seedMaterial == VoxelConstants.Air)
+        {
+            return;
+        }
+
+        damaged ??= Make(in placement);
+        if (damaged is null)
+        {
+            return;
+        }
+
+        var count = size.X * size.Y * size.Z;
+        if (_seen.Length * 64L < count)
+        {
+            _seen = new ulong[(count + 63) / 64];
+        }
+
+        List<FallenVoxel>? fallen = null;
+        if (_live)
+        {
+            fallen = _spareVoxels.Count > 0 ? _spareVoxels.Pop() : [];
+        }
+
+        // Across faces, through every solid voxel, from the seed: each voxel taken once, marked as it is reached.
+        _flood.Clear();
+        var start = seed.X + size.X * (seed.Y + size.Y * seed.Z);
+        _seen[start >> 6] |= 1UL << (start & 63);
+        _flood.Push(start);
+        while (_flood.Count > 0)
+        {
+            var at = _flood.Pop();
+            int x = at % size.X,
+                y = at / size.X % size.Y,
+                z = at / (size.X * size.Y);
+            damaged.Voxel(x, y, z, out var material, out var density);
+            fallen?.Add(new FallenVoxel(x, y, z, material, density));
+            damaged.Set(x, y, z, VoxelConstants.Air, VoxelDensity.Empty);
+            Reach(damaged, size, x - 1, y, z, fallen);
+            Reach(damaged, size, x + 1, y, z, fallen);
+            Reach(damaged, size, x, y - 1, z, fallen);
+            Reach(damaged, size, x, y + 1, z, fallen);
+            Reach(damaged, size, x, y, z - 1, fallen);
+            Reach(damaged, size, x, y, z + 1, fallen);
+        }
+
+        // The marks go with the voxels: every one marked was taken, and is air now.
+        if (fallen is not null)
+        {
+            foreach (var voxel in fallen)
+            {
+                var at = voxel.X + size.X * (voxel.Y + size.Y * voxel.Z);
+                _seen[at >> 6] &= ~(1UL << (at & 63));
+            }
+
+            _fallen.Add(new FallenPart(placement, kind, fallen));
+        }
+        else
+        {
+            Array.Clear(_seen, 0, (count + 63) / 64);
+        }
+
+        damaged.Touched();
+        Record(in placement);
+        if (!damaged.Queued)
+        {
+            damaged.Queued = true;
+            _changed.Enqueue(damaged);
+        }
+    }
+
+    /// <summary>
+    /// Takes voxel (x, y, z) into the flood when solid; an air voxel with density beside the part (the soft side of its
+    /// surface) is copied into <paramref name="fallen"/>, applied live, and left in the object.
+    /// </summary>
+    private void Reach(DamagedObject damaged, VoxelCoord size, int x, int y, int z, List<FallenVoxel>? fallen)
+    {
+        if ((uint)x >= (uint)size.X || (uint)y >= (uint)size.Y || (uint)z >= (uint)size.Z)
+        {
+            return;
+        }
+
+        var at = x + size.X * (y + size.Y * z);
+        if ((_seen[at >> 6] & (1UL << (at & 63))) != 0)
+        {
+            return;
+        }
+
+        damaged.Voxel(x, y, z, out var material, out var density);
+        if (material == VoxelConstants.Air)
+        {
+            if (fallen is not null && density > VoxelDensity.Empty)
+            {
+                _seen[at >> 6] |= 1UL << (at & 63);
+                fallen.Add(new FallenVoxel(x, y, z, material, density));
+            }
+
+            return;
+        }
+
+        _seen[at >> 6] |= 1UL << (at & 63);
+        _flood.Push(at);
     }
 
     /// <summary>
@@ -419,7 +581,7 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         );
         foreach (var edit in _replay)
         {
-            if (ObjectEditing.Changes(in edit) && Reaches(in edit, in placement, kind))
+            if (ObjectEditing.Changes(in edit) && IndexedFor(in edit, in placement))
             {
                 Damage(in edit, in placement);
             }
@@ -452,6 +614,7 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         _damaged.Clear();
         _dropped.Clear();
         _changed.Clear();
+        ReturnFallen();
     }
 
     /// <summary>Drops one object's copy, keeping it noted as damaged, for a replay when it is near again.</summary>
@@ -734,3 +897,9 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
     )]
     private partial void LogCapReached(int most);
 }
+
+/// <summary>One voxel of a part cut off an object: its place in the kind's voxels, its material and density.</summary>
+internal readonly record struct FallenVoxel(int X, int Y, int Z, byte Material, byte Density);
+
+/// <summary>A part cut off an object (<see cref="ObjectDamage.Fallen"/>): the object, its kind, and the part's voxels.</summary>
+internal readonly record struct FallenPart(ObjectPlacement Placement, VoxelObjectKind Kind, List<FallenVoxel> Voxels);
