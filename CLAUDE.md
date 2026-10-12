@@ -34,7 +34,8 @@ changing anything structural. `docs/` holds the write-ups behind decisions: `vox
 renderer's decisions and measurements), `rendering-extension.md` (what a game can change in the renderer, and why),
 `map-size-and-origin.md` (large maps, the floating origin, and why), `framework-plan.md` (how Itera became a framework),
 `framework-limits.md` (what kinds of game the engine blocks today, and the order of work), `ui-toolkit.md` (typed
-text, the menu a game replaces, and the UI toolkit), and `sound-files.md` (sounds and music from files). `docs/references/` holds
+text, the menu a game replaces, and the UI toolkit), `sound-files.md` (sounds and music from files), and
+`physics-materials-and-groups.md` (gravity, materials, layers, triggers, and impacts a game sets). `docs/references/` holds
 notes on outside projects used as references.
 
 # How to work

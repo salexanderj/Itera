@@ -48,6 +48,8 @@ engine so far). The research and decisions behind the engine are in `docs/`:
 - `docs/anti-aliasing.md`: the research behind SMAA 1x before FSR 1.
 - `docs/procedural-audio.md`: sound made in code, after Farnell's *Designing Sound*.
 - `docs/sound-files.md`: sounds and music read from WAV and Ogg Vorbis files, the choices made, and the measurements.
+- `docs/physics-materials-and-groups.md`: gravity, the solver, physics materials and the exact bounce, layers and
+  groups, triggers, and impact events a game sets, the choices made, and what the reviews found.
 
 ## 2. Dependencies and their roles
 
@@ -64,7 +66,7 @@ Versions are pinned in `Directory.Packages.props` (central package management).
 | NVorbis | 1.0.0-rc.2 | Decodes Ogg Vorbis sound files and music (`Audio/Files/VorbisDecoder`) | MIT and managed; a release candidate pinned for its fixes over 0.10.5, whose seeks land off and can throw (`docs/sound-files.md`). It allocates as it decodes, so it runs on the sound render and music threads. |
 | Silk.NET.Maths | 2.23.0 | Vector and matrix types used by Silk.NET APIs | Required by the windowing API surface. |
 | Arch + Arch.System | 2.1.0 / 1.1.0 | Entity component system | Archetype-based, allocation-free queries, fast iteration. Game logic is systems over components. |
-| BepuPhysics + BepuUtilities | 2.5.0-beta.29 | Rigid body physics: loose bodies against the voxels (characters move with Itera's own mover) | Fast, SIMD-based, actively maintained. The 2.4 stable line only targets net6.0 and is old. |
+| BepuPhysics + BepuUtilities | 2.5.0-beta.29 | Rigid body physics: loose bodies and a game's bodies against the voxels and mesh colliders, with the game's materials, layers, triggers, and gravity (characters move with Itera's own mover) | Fast, SIMD-based, actively maintained. The 2.4 stable line only targets net6.0 and is old. |
 | SkiaSharp + SkiaSharp.NativeAssets.Linux | 4.152.1 | 2D UI drawing | Solid text and vector rendering. Linux needs the explicit native package; Windows and macOS natives come with the main package. |
 | BCnEncoder.Net | 2.3.0 | Block-compressed texture encoding, in `tools/Textures` only (texture sets, models' compressed textures) | Pure managed BC1 to BC7 encoder. |
 | SharpGLTF.Core | 1.0.7 | Reads glTF 2.0 models (`Assets/GltfImport`), at load only | MIT, no dependencies, reads .gltf and .glb with skins and animations; the engine copies what it needs into its own arrays. It cannot read Draco or meshopt compression, which the importer refuses by name. |
@@ -170,7 +172,7 @@ Rules:
 | `Maths/` | `DeterministicMath`, `Rotation`, `RigidTransform`, and `Octahedral` (the packed normals and tangents of mesh vertices) |
 | `Assets/` | Mesh assets (`MeshAsset`, `MeshAssets`): models read from glTF files at the run's "mesh assets" step (`GltfImport`, `TextureDecode`, `MipChain`, `MeshTangents`, `TextureReading`; a model's compressed textures `CompressedTextures`) and meshes a game builds; a skinned model's `Rig`, `RigClip` with `RigTrack`, and `JointTransform` |
 | `Animation/` | Skeletons, poses, clips, aim, and foot placement |
-| `Physics/` | `PhysicsWorld` (Bepu simulation, pool, thread dispatcher, shared voxel box shapes, characters' stand-ins), callbacks, `BodyKinds`, `VoxelColliders`, `LooseBodies`, `LooseBodyVoxels`, `SolidModelVoxels` and `SolidColumns`, `VoxelCharacterMover`, `MeshColliders` (a game's static triangle colliders, also Bepu mesh statics), `MeshColumns` (the colliders as the mover's cells), `CollisionSources` (the ray over the terrain and the colliders), `SurfaceHit` |
+| `Physics/` | `PhysicsWorld` (Bepu simulation, pool, thread dispatcher, shared voxel box shapes, characters' stand-ins; a game's bodies, statics, and trigger zones), callbacks, `BodyKinds` (the records by handle), `PhysicsMaterials`, `PhysicsLayers`, `PhysicsContacts` (bounces and impact events), `PhysicsTriggers`, `TriggerOverlap`, `VoxelColliders`, `LooseBodies`, `LooseBodyVoxels`, `SolidModelVoxels` and `SolidColumns`, `VoxelCharacterMover`, `MeshColliders` (a game's static triangle colliders, also Bepu mesh statics), `MeshColumns` (the colliders as the mover's cells), `CollisionSources` (the ray over the terrain and the colliders), `SurfaceHit` |
 | `Voxels/` | `VoxelWorld` (streaming, edits, change list, stats, `Raycast`, collision queries, block reads), `VoxelGrid` and `GridLevel`, `VoxelDensity`, `IVoxelPassability`, `VoxelBoxes`, `VoxelMemory` (native block pools), `BrickCodec`, `ChunkTree`, `Column`, `VoxelEditing` and `VoxelEdit`, `VoxelPiece` and `PieceRuns`, `VoxelModels` (small voxel volumes drawn at any position and turn), `EditLog` and `EditLogSerializer`, `VoxelChangeLog`, `IChunkGenerator`, `VoxelWorkers` and `ColumnJob`, `LevelDistances`, `StreamingCentre`, `VoxelConstants` |
 | `Voxels/Generation/` | The world generation toolkit (see "World generation") |
 | `Navigation/` | `NavigationService` (its window, `NavArea`), `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`, `INavGridSource` (the game's part), `FlowFieldBuilder` and `FlowField`, `NavGridScanner`, `NavigationDebugLines` |
@@ -722,7 +724,8 @@ and `Alpha`, how far the frame lies between the last two steps). Components are 
   character near a thrown body a stand-in. `LooseBodySystem` puts bodies that rested 3 s back into the grid and removes
   cut bodies. `LooseBodyRoom` makes room when the body limit is reached. `LooseBodyModelSystem` hands the bodies' models to
   the renderer. `DebugBallSystem` is the console's `balls`. `DebugOutlineSystem` draws bodies' boxes and stand-ins with the
-  debug lines.
+  debug lines. `TriggerCharacterSystem` (fixed, after the stand-ins) tests the characters with a `TriggerSensor` against
+  the match's trigger zones and writes `CharacterTriggers`.
 - `MeshDrawSystem` (frame) hands every placed mesh asset to the renderer, its pose blended by `Alpha`, a posed one with
   its clip's skinning matrices (blended between two clips while one fades into the other); `meshes` is its command
   (list, place, test, clear, with clips). `MeshAnimatorSystem` (fixed) moves the clips' times and fades on.
@@ -1205,6 +1208,18 @@ a piece's boxes was tried first and cost up to 137 ms a step.
   ragdoll and cut-body physics are tested but have no caller until a game cuts models. Cut bodies collide without sweeps
   (passive continuous detection), which keeps piles of them cheap.
 
+### A game sets the physics
+
+A game sets the match's gravity and each body's share of it (characters fall by its strength's share of the Earth's and
+keep their jump's launch speed), the solver's substeps, iterations, and damping (options, and during a match), physics
+materials by name (friction, and bounciness set exactly by a pass after each step, since Bepu's contacts have no
+restitution) on its bodies, statics, mesh colliders, and voxel materials (a voxel cell a static per material), collision
+layers and groups, trigger zones that report the bodies and characters coming in and going out, and impact events for
+the bodies and statics it marks. The engine's records by handle (`BodyKinds`) carry each body's and static's settings to
+the narrow phase on Bepu's worker threads; every removal resets them. Gravity is each peer's own, and down stays -Y for
+characters, the mover, and the terrain. The rules are in `.claude/rules/physics.md`, the choices and findings in
+`docs/physics-materials-and-groups.md`.
+
 ### Networking is host-authoritative
 
 One peer is the host and owns the simulation. Deterministic lockstep is ruled out because Bepu does not guarantee
@@ -1563,8 +1578,12 @@ Engine work that is known and not done:
   thread of its own and cross-fading at equal power on two decks, the menu's track an option; Master, Music, and Effects
   volumes on a Sound tab; the mesh sample's sounds and music made in code (`docs/sound-files.md`). Not built: EFX
   filters and reverb, Doppler, playlists, a track's own volume, ducking, sounds from files past 120 s that are not
-  music, more than two channels, and Opus, FLAC, or MP3. Next in the order of work: physics materials, collision groups,
-  and gravity set by the game.
+  music, more than two channels, and Opus, FLAC, or MP3.
+- **Physics a game sets** (built 2026-10-11): gravity and each body's share, the solver's settings, physics materials with
+  an exact bounce on bodies, mesh colliders, and voxel materials, characters gripping by the ground, layers and groups,
+  trigger zones, and impact events (`docs/physics-materials-and-groups.md`). Not built: materials per mesh triangle and
+  per lifted piece, a mover filtered by layer, impacts while a pair touches, mesh and swept triggers, rays by layer,
+  gravity on the wire, down other than -Y for characters; the step's Release timings before and after are still to take.
 - **Large maps** (built 2026-10-10): a map's size set in its generator's grid (up to ±160 km, up and down too), voxels of
   1 cm to 1 m, positions kept local to a match's origin with absolute types (`WorldPoint`, `VoxelCoord`) wherever
   they cross it, and moves of the origin following the camera (`OriginShiftSystem`, `OriginShifts`; the renderer,

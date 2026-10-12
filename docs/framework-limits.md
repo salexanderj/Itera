@@ -44,9 +44,14 @@ Ordered by how many game types each blocks.
 4. **Sessions are one host with clients.** At most 16 slots (`SessionProtocol.MaxSlots`); clients reach each other only
    through the host; the match ends when the host quits (no host migration); Steam lobbies are friends-only; nothing
    helps lockstep or rollback (Bepu is not bit-identical across CPUs, and peers' step clocks run apart).
-5. **Physics settings are fixed.** One gravity vector, one contact material (`NarrowPhaseCallbacks`), no collision groups
-   or triggers, fixed solver settings; `VoxelColliders` freezes any dynamic body, a game's too, where no level-0 column
-   is loaded.
+5. **Physics is set by the game, within limits.** When this was written there was one gravity vector, one contact material
+   (`NarrowPhaseCallbacks`), no collision groups or triggers, and fixed solver settings. Since 2026-10-11 a game sets
+   the match's gravity and each body's share of it, the solver's substeps, iterations, and damping, physics materials
+   (friction and an exact bounce) on bodies, mesh colliders, and voxel materials, collision layers and groups, trigger
+   zones for bodies and characters, and impact events (`docs/physics-materials-and-groups.md`). Still missing: down is
+   -Y for characters, the mover, and the terrain; the mover reads every mesh collider whatever its layer; materials per
+   mesh triangle; impacts while a pair already touches; gravity is each peer's own. `VoxelColliders` freezes a dynamic
+   body where no column of its level is loaded, unless the game marks it to keep moving.
 6. **Input, sound, the menu, and saves.** Keyboard and mouse only (gamepads are counted, not read; all devices feed one
    player); sound was procedural and mono (no file loading, no music path) until 2026-10-11, when sounds and music
    from WAV and Ogg Vorbis files came (`docs/sound-files.md`); a save holds the edit log and 4 KB of the game's match
@@ -100,6 +105,14 @@ and bodies, and saving the game's own state.
    its own with equal-power cross-fades and the menu's track an option, Master, Music, and Effects volumes on a Sound
    tab, and the mesh sample's sounds and music made in code. Left for later: EFX filters and reverb, Doppler, playlists,
    a track's own volume, ducking, more than two channels, and Opus, FLAC, or MP3.
-6. Physics materials, collision groups, and gravity set by the game.
+6. Physics materials, collision groups, and gravity set by the game. Done 2026-10-11
+   (`docs/physics-materials-and-groups.md`): records by handle reset on removal and a game's own bodies and statics; the
+   solver's settings as options; the match's gravity and each body's share, characters falling by it and jumping higher
+   under less; particles following it; physics materials with friction and an exact bounce pass on bodies, mesh
+   colliders, and voxel materials (each voxel cell a static per material); characters gripping by the ground's
+   friction; collision layers and groups; trigger zones for bodies and characters; impact events; and the mesh sample's
+   physics corner. Left for later: materials per mesh triangle and per lifted piece, a mover filtered by layer, impacts
+   while a pair touches, mesh and swept triggers, rays by layer, gravity on the wire, and down other than -Y for
+   characters. Release timings of the step before and after wait for a quiet machine.
 
 Gamepads come later (not a high priority, 2026-10-11); the research for them is in `docs/ui-toolkit.md`.
