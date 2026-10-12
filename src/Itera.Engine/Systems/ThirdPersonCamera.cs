@@ -1,6 +1,7 @@
 using System.Numerics;
 using Arch.Core;
 using Itera.Engine.Components;
+using Itera.Engine.Objects;
 using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Systems;
@@ -8,11 +9,12 @@ namespace Itera.Engine.Systems;
 /// <summary>
 /// The third-person camera's place and aim. The camera orbits a pivot over the right shoulder (the eye plus
 /// <see cref="RightMetres"/> to the look's level right and <see cref="UpMetres"/> up), <see cref="ThirdPersonView.Metres"/>
-/// back along the look, pitch included; a voxel in the way (from the eye to the pivot, then from the pivot to the camera)
-/// pulls it in to <see cref="WallGapMetres"/> short of it, at once both ways, so the fixed step's aim and the frame's
-/// camera agree. The aim goes from the eye towards what the camera's middle ray meets first past the point level with the
-/// eye (nothing between the camera and the player counts), in the voxels. The voxels' rays hit leaves, so a bush behind
-/// the player pulls the camera in front of it. Every number is a placeholder. Allocates nothing.
+/// back along the look, pitch included; a voxel in the way (from the eye to the pivot, then from the pivot to the camera),
+/// the world's or a voxel object's (<see cref="ObjectRays"/>, where given), pulls it in to <see cref="WallGapMetres"/>
+/// short of it, at once both ways, so the fixed step's aim and the frame's camera agree. The aim goes from the eye towards
+/// what the camera's middle ray meets first past the point level with the eye (nothing between the camera and the player
+/// counts), in the voxels and the objects. The rays hit leaves, so a bush behind the player pulls the camera in front of
+/// it. Every number is a placeholder. Allocates nothing.
 /// </summary>
 public static class ThirdPersonCamera
 {
@@ -46,7 +48,14 @@ public static class ThirdPersonCamera
     public const float AimMetres = 200;
 
     /// <summary>Where the camera is for an eye at <paramref name="eye"/> looking at <paramref name="yaw"/> and <paramref name="pitch"/>, <paramref name="metres"/> back; without voxels, nothing pulls it in.</summary>
-    public static Vector3 Position(VoxelWorld? voxels, Vector3 eye, float yaw, float pitch, float metres)
+    public static Vector3 Position(
+        VoxelWorld? voxels,
+        Vector3 eye,
+        float yaw,
+        float pitch,
+        float metres,
+        ObjectRays? objects = null
+    )
     {
         var forward = Forward(yaw, pitch);
         // Forward at yaw y is (-sin y, 0, -cos y) and right is (cos y, 0, -sin y).
@@ -57,24 +66,36 @@ public static class ThirdPersonCamera
             return pivot - forward * metres;
         }
 
-        pivot = Clear(voxels, eye, pivot);
-        return Clear(voxels, pivot, pivot - forward * metres);
+        pivot = Clear(voxels, objects, eye, pivot);
+        return Clear(voxels, objects, pivot, pivot - forward * metres);
     }
 
     /// <summary>
     /// The direction from <paramref name="eye"/> towards what the third-person camera's middle points at: the first
-    /// voxel on its ray past the point level with the eye, or <see cref="AimMetres"/> along it. The voxels are read at
-    /// coarser levels where level 0 is not resident.
+    /// voxel (the world's or an object's) on its ray past the point level with the eye, or <see cref="AimMetres"/> along
+    /// it. The world's voxels are read at coarser levels where level 0 is not resident.
     /// </summary>
-    public static Vector3 Aim(VoxelWorld voxels, Vector3 eye, float yaw, float pitch, float metres)
+    public static Vector3 Aim(
+        VoxelWorld voxels,
+        Vector3 eye,
+        float yaw,
+        float pitch,
+        float metres,
+        ObjectRays? objects = null
+    )
     {
-        var camera = Position(voxels, eye, yaw, pitch, metres);
+        var camera = Position(voxels, eye, yaw, pitch, metres, objects);
         var forward = Forward(yaw, pitch);
         var start = camera + forward * MathF.Max(0, Vector3.Dot(eye - camera, forward));
         var far = AimMetres;
         if (voxels.Raycast(start, forward, far, out var hit, coarse: true))
         {
             far = hit.DistanceMetres;
+        }
+
+        if (objects is not null && objects.Raycast(start, forward, far, out var met))
+        {
+            far = met.DistanceMetres;
         }
 
         var towards = start + forward * far - eye;
@@ -86,7 +107,15 @@ public static class ThirdPersonCamera
     /// (<see cref="Forward"/>) in first person or <paramref name="flying"/> (the fly camera's look), else
     /// <see cref="Aim"/> for its third-person camera (<see cref="ThirdPersonView"/>).
     /// </summary>
-    public static Vector3 Look(World world, VoxelWorld voxels, Vector3 eye, float yaw, float pitch, bool flying)
+    public static Vector3 Look(
+        World world,
+        VoxelWorld voxels,
+        Vector3 eye,
+        float yaw,
+        float pitch,
+        bool flying,
+        ObjectRays? objects = null
+    )
     {
         if (flying)
         {
@@ -95,7 +124,7 @@ public static class ThirdPersonCamera
 
         var find = new FindView();
         world.InlineQuery<FindView, ThirdPersonView>(in s_view, ref find);
-        return find.On ? Aim(voxels, eye, yaw, pitch, find.Metres) : Forward(yaw, pitch);
+        return find.On ? Aim(voxels, eye, yaw, pitch, find.Metres, objects) : Forward(yaw, pitch);
     }
 
     /// <summary>The look's forward at <paramref name="yaw"/> and <paramref name="pitch"/>.</summary>
@@ -119,8 +148,11 @@ public static class ThirdPersonCamera
         }
     }
 
-    /// <summary><paramref name="to"/>, or <see cref="WallGapMetres"/> short of the first voxel from <paramref name="from"/> towards it.</summary>
-    private static Vector3 Clear(VoxelWorld voxels, Vector3 from, Vector3 to)
+    /// <summary>
+    /// <paramref name="to"/>, or <see cref="WallGapMetres"/> short of the first voxel, the world's or an object's, from
+    /// <paramref name="from"/> towards it.
+    /// </summary>
+    private static Vector3 Clear(VoxelWorld voxels, ObjectRays? objects, Vector3 from, Vector3 to)
     {
         var along = to - from;
         var length = along.Length();
@@ -130,8 +162,20 @@ public static class ThirdPersonCamera
         }
 
         var direction = along / length;
-        return voxels.Raycast(from, direction, length + WallGapMetres, out var hit)
-            ? from + direction * MathF.Max(0, hit.DistanceMetres - WallGapMetres)
-            : to;
+        var reach = length + WallGapMetres;
+        var met = false;
+        if (voxels.Raycast(from, direction, reach, out var hit))
+        {
+            reach = hit.DistanceMetres;
+            met = true;
+        }
+
+        if (objects is not null && objects.Raycast(from, direction, reach, out var objectHit))
+        {
+            reach = objectHit.DistanceMetres;
+            met = true;
+        }
+
+        return met ? from + direction * MathF.Max(0, reach - WallGapMetres) : to;
     }
 }

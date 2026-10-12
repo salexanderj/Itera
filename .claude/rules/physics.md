@@ -14,7 +14,12 @@ A ball, a lifted piece, or a part cut off a model is a loose body: Bepu moves it
 (`LooseBodies`) against statics of voxel boxes built near it (`VoxelColliders`; on voxels coarser than 1 cm a column's
 top voxel ends where its density puts the ground's surface, a box to the millimetre, `PhysicsWorld.SurfaceBox`; bodies
 whose parts are of coarse voxels collide with the level nearest their voxels, `VoxelColliders.CoarseLevelOf`, in cells
-of 32 voxels). A piece of more than 4,096 box corners is hulled from its farthest points in 42 directions
+of 32 voxels), and of the voxel objects the world places that reach into a cell near a body (a static for each
+physics material of an object's voxels, its kind's compound of boxes of its own voxels, made once a match and shared,
+posed at its anchor and turned by its heading, at `BodyKinds.AnyLevel` in the voxels' layer; kept while a cell reaches
+it; a body round which an area of objects is not filled freezes as where the columns are not resident; each object
+static is a static of its own to the bounces and impact events, not the voxel ground, so a ball rolling from the ground
+onto a rock begins a new pair; `.claude/rules/objects.md`). A piece of more than 4,096 box corners is hulled from its farthest points in 42 directions
 (`LooseBodies.MaxHullPoints`). A ball is made from nothing (`LooseBodies.TryCreateBall`: one piece of 1 cm voxels per
 radius and material, `VoxelModels.MakeBall`, shared; the console's `balls` drops a row, `DebugBallSystem`) and goes back
 into the grid as a sphere of its material filled into the air after 3 s at rest (`Engine:Physics:SettleSeconds`;
@@ -254,10 +259,12 @@ at the first query after a change, which allocates; other queries allocate nothi
 from the front as Bepu asks (glTF's are counter-clockwise), one-sided in Bepu, at `BodyKinds.AnyLevel`: every loose body
 touches it whatever its voxel level (`SetGameStatic`; `ClearStatic` on removal). Surface tags are up to 32 bits a game
 defines: voxel materials through its `IVoxelSurfaceTags` (none by default), mesh materials by name at registration.
-`CollisionSources` (scoped) is what rays meet: `Raycast` answers from the terrain (`VoxelWorld.Raycast`) and the
-colliders (two-sided, nearest first through the buckets), the nearer winning, as a `SurfaceHit` (point, normal turned
-towards the origin, distance, tags, source, and the voxel's material or the collider and triangle). The voxel tools'
-ray (`ToolAim`) stays the terrain's own.
+`CollisionSources` (scoped) is what rays meet: `Raycast` answers from the terrain (`VoxelWorld.Raycast`), the voxel
+objects the world places (`ObjectRays`, `.claude/rules/objects.md`), and the colliders (two-sided, nearest first through
+the buckets), the nearest winning, as a `SurfaceHit` (point, normal turned towards the origin, distance, tags, source,
+and the voxel's material, the collider and triangle, or the object's voxel's material and `ObjectId`). The voxel tools'
+ray over the terrain alone (`ToolAim.Raycast(VoxelWorld, ...)`) stays; `ToolAim.Raycast(CollisionSources, ...)` meets
+all three, past the terrain's and the objects' passable voxels round the eye.
 
 ### Files in `src/Itera.Engine`
 

@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Itera.Engine.Tests.Systems;
 
 /// <summary>
-/// <see cref="ToolAim.Raycast"/> over a flat stone floor (its top at y = 0, 10 cm voxels) with a bush of leaves 1.3 to
+/// <c>ToolAim.Raycast</c> over a flat stone floor (its top at y = 0, 10 cm voxels) with a bush of leaves 1.3 to
 /// 1.7 m up: from an eye inside the bush a tool's ray goes past the leaves round it to the floor, and from outside it
 /// meets the leaves as before; within reach only; and a ray with no leaves meets what the voxel world's own ray meets.
 /// <see cref="ToolAim.FindPlayer"/> and <c>ToolAim.Look</c> read the local player.

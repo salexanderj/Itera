@@ -86,6 +86,26 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   colliders' queries, made 32 by 32 columns at a time and kept until `ObjectWorld.Version` changes (an area filled or
   gone), at most 256 chunks; a move waits where the areas round it within the map are not filled (`Known`, `ObjectWorld.IsKnown`). Kinds read a voxel through
   their parts' brick tables (`VoxelObjectKind.Voxel`).
+- Rays meet objects (`ObjectRays`, scoped with terrain): the first solid voxel of any object along a ray (passable ones
+  too, as the world's ray), as an `ObjectHit` (the object, its kind, its voxel's index in the kind, the face entered
+  turned into the world's frame, zero from inside, the material, and where the ray enters and leaves that voxel); a ray
+  that only touches an object's box, or starts on its side going away, meets nothing; the ray is walked in stretches
+  of 16 m, each asking `ObjectWorld.Near` for the objects whose reach meets it (unfilled areas' objects are not met),
+  turned into each object's voxels and stepped through them in its box; at most 10 km. `CollisionSources` answers from
+  it too (`SurfaceSource.VoxelObject`, `SurfaceHit.ObjectId`), so the movement probes and climbing (`ClimbingMode`)
+  meet objects by their voxels' tags; `ToolAim.Raycast(CollisionSources, ...)` goes past objects' passable voxels round
+  the eye as past the terrain's; the third-person camera is pulled in by objects where given them
+  (`ThirdPersonCamera`'s `objects`, `PlayerCameraSystem`'s, `ToolAim.Look`'s).
+- Bodies meet objects (`VoxelColliders.Objects.cs`): each cell of statics near a body finds, at its first build, the
+  objects whose kind's reach meets it and whose height range does (`ObjectWorld.Near`), and each such object gets a
+  static for each physics material of its voxels: its kind's `BigCompound` of boxes over its parts' own voxels that are
+  not passable (`VoxelBoxes.Build(kind, excluded)`, in the kind's unit, `PhysicsWorld.UnitBox`; made at its first need
+  and shared by every object of the kind), posed at its anchor's local place and turned by `ObjectTurns.Rotation`, at
+  `BodyKinds.AnyLevel` (bodies of every level touch it, cut bodies too) in the voxels' layer. An object's statics stay
+  while a cell reaches it (counted) and go with the last; a change of the objects (`ObjectWorld.Version`) makes every
+  cell find its objects again, the new taken before the old let go. A body round which the areas within the map are not
+  filled (`ObjectWorld.IsKnown`) freezes as a body over columns not resident does. Objects' statics take no densities:
+  their voxels' boxes are whole (at 5 cm, up to 2.5 cm off the drawn surface). `VoxelColliders.ObjectCount` counts them.
 - Models may have a voxel size of their own (`VoxelModels.Add` with a unit; `UnitCentimetres`, `VoxelMetres`) and keep
   densities (`Encode(voxels, densities, extent)`, `DecodeDensities`, `HasDensities`), which the renderer meshes them with.
   `SolidModelVoxels.Add` and the cut parts' hulls and masses (`LooseBodies.TryCreate(parts)`) take the model's unit.

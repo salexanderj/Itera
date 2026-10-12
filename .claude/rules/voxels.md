@@ -16,7 +16,8 @@ over the following fixed steps, 4 columns a step (`Engine:Voxels:EditColumnsPerS
 same pace; `VoxelWorld.ApplyPendingEdits`), level 0 and the nearest columns first. `StartEditWarmUp` makes the edit code fast before the first edit. Streaming
 centres (`StreamingCentre`): the player's eye; on a host, a 4 m level-0 disc around each remote player; on a host or
 offline, a 3 m level-0 disc around each loose body away from every player (stretched ahead by 0.5 s of travel, at most
-12 m, at most 32 bodies, each streaming the levels up to the one it collides with; `StreamingCentreSystem`), since a
+12 m, then wider by the widest voxel object kind's reach where the world places objects, `VoxelWorld.ObjectReachMetres`;
+at most 32 bodies, each streaming the levels up to the one it collides with; `StreamingCentreSystem`), since a
 loose body where level 0 is not loaded freezes in the air.
 
 ## World generation

@@ -12,7 +12,7 @@ namespace Itera.MeshSample.Systems;
 
 /// <summary>
 /// Finds the yard block the local player aims at (frame group, after the camera's systems): the shared ray from where
-/// the player's tools aim (<see cref="ToolAim.Look(World, Itera.Engine.Voxels.VoxelWorld?, Vector3, float, float, bool)"/>:
+/// the player's tools aim (<see cref="ToolAim.Look(World, Itera.Engine.Voxels.VoxelWorld?, Vector3, float, float, bool, Itera.Engine.Objects.ObjectRays?)"/>:
 /// the eye along the look, or the fly camera; with no voxel world, straight along the look in third person too, so the
 /// block may differ from the one under the screen's dot there), within <see cref="ReachMetres"/>, meeting a climbable
 /// surface of one of the yard's pieces (<see cref="YardColliders"/>), whose box, larger by <see cref="RimMetres"/> each

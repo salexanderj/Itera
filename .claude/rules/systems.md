@@ -56,7 +56,7 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   camera back.
 - `PlayerCameraSystem` (frame) puts the active camera at the eye between the last two steps, looking where the command
   looks plus the mouse since the step, or behind the right shoulder (`ThirdPersonCamera`: 2.5 m back, 1.5 to 5 m by the
-  wheel, pulled in by voxels); it makes the camera entity from a start pose (`CameraRules.CreateCamera`).
+  wheel, pulled in by voxels, and by the voxel objects where the game gives it `ObjectRays`); it makes the camera entity from a start pose (`CameraRules.CreateCamera`).
   `DebugFlyCameraSystem` flies it while the player flies (`flyspeed`; with `Engine:Voxels:DebugWalkSpeed` above 0 it
   flies a 100 m circle round the map's middle `Engine:Camera:CircleHeightMetres` up, which must clear the game's hills),
   kept to the play area (`PlayArea`: the world and 1 km round it, absolute: `Contains`, `HoldsEye`, and `ClampEye` take
@@ -64,8 +64,10 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   the camera to the renderer with its lens (`CameraLens`: perspective, drawn at the player's field of view, or
   orthographic, `CameraLens.Orthographic`, drawn as it is; `.claude/rules/rendering.md`), `AtmosphereSystem` the sky and the look (`RenderLook`) from a game's
   `IAtmosphereSource`, asked at the camera's absolute place (`WorldPoint`).
-- `ToolAim` (static) gives where the local player aims from and along, and the first voxel a tool's ray meets past
-  passable voxels.
+- `ToolAim` (static) gives where the local player aims from and along (through the third-person camera, with the voxel
+  objects given `ObjectRays`), and the first voxel a tool's ray meets past passable voxels (`Raycast` over the terrain),
+  or the first surface of the match (`Raycast` over `CollisionSources`: the terrain, the voxel objects, and the mesh
+  colliders).
 
 The origin: `OriginShiftSystem` (fixed, first, so the whole step runs in one origin) moves the match's origin to the
 active camera's whole metres once the camera is `Engine:Origin:ShiftMetres` (512) or more from it on any axis, or to

@@ -126,6 +126,15 @@ public sealed partial class VoxelWorld : IDisposable
     private readonly Objects.VoxelObjectKinds? _kinds;
     private readonly int _objectHandOverLevel;
 
+    /// <summary>
+    /// The widest reach of the object kinds (<c>VoxelObjectKind.ReachCentimetres</c>), in metres, where the world's
+    /// generator places objects; 0 where it places none: how far round a body the objects that may touch it lie.
+    /// </summary>
+    public double ObjectReachMetres =>
+        _kinds is { } kinds && _generator.Objects is not null
+            ? kinds.MostReachCentimetres / (double)VoxelConstants.CentimetresPerMetre
+            : 0;
+
     public VoxelWorld(
         IOptions<EngineOptions> options,
         IChunkGenerator generator,

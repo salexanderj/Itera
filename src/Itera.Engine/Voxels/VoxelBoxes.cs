@@ -86,6 +86,77 @@ internal sealed class VoxelBoxes
         );
     }
 
+    /// <summary>
+    /// Finds the boxes of a voxel object kind's blocking voxels that are not in <paramref name="excluded"/>, in the
+    /// kind's own voxels (0 to its size less one): each part's own voxels, brick by brick (a part's bricks lie on the
+    /// kind's 8-voxel lattice).
+    /// </summary>
+    public void Build(Objects.VoxelObjectKind kind, in MaterialSet excluded)
+    {
+        Count = 0;
+        const int border = Objects.ObjectPart.BorderVoxels;
+        const int brick = VoxelConstants.BrickSize;
+        Span<ulong> mask = stackalloc ulong[VoxelConstants.BrickMaskWords];
+        foreach (var part in kind.Parts)
+        {
+            var level = part.Levels[0];
+            var own = part.Offset;
+            var end = new VoxelCoord(own.X + part.OwnSize.X, own.Y + part.OwnSize.Y, own.Z + part.OwnSize.Z);
+            for (var b = 0; b < level.Bricks.Length; b++)
+            {
+                var packed = level.Bricks[b];
+                int bx = ((packed & 15) << 3) - border + own.X,
+                    by = (((packed >> 4) & 15) << 3) - border + own.Y,
+                    bz = (((packed >> 8) & 15) << 3) - border + own.Z;
+                var payload = level.PayloadStart[b];
+                var uniform = level.Uniform[b];
+                if (
+                    uniform
+                    && bx >= own.X
+                    && by >= own.Y
+                    && bz >= own.Z
+                    && bx + brick <= end.X
+                    && by + brick <= end.Y
+                    && bz + brick <= end.Z
+                )
+                {
+                    var material = level.Payload[payload];
+                    if (material != VoxelConstants.Air && !excluded.Contains(material))
+                    {
+                        Add(bx, by, bz, bx + brick - 1, by + brick - 1, bz + brick - 1);
+                    }
+
+                    continue;
+                }
+
+                mask.Clear();
+                var any = false;
+                for (var j = 0; j < brick * brick * brick; j++)
+                {
+                    int x = bx + (j & 7),
+                        y = by + ((j >> 3) & 7),
+                        z = bz + (j >> 6);
+                    if (x < own.X || y < own.Y || z < own.Z || x >= end.X || y >= end.Y || z >= end.Z)
+                    {
+                        continue;
+                    }
+
+                    var material = uniform ? level.Payload[payload] : level.Payload[payload + j];
+                    if (material != VoxelConstants.Air && !excluded.Contains(material))
+                    {
+                        mask[j >> 6] |= 1UL << (j & 63);
+                        any = true;
+                    }
+                }
+
+                if (any)
+                {
+                    AddBrick(bx, by, bz, mask);
+                }
+            }
+        }
+    }
+
     private void Add(int x0, int y0, int z0, int x1, int y1, int z1)
     {
         if (Count == _boxes.Length)

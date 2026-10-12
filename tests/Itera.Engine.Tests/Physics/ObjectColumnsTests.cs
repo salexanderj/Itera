@@ -1,7 +1,7 @@
 using System.Numerics;
 using Itera.Engine.Objects;
 using Itera.Engine.Physics;
-using Itera.Engine.Tests.Systems;
+using Itera.Engine.Tests.Objects;
 using Itera.Engine.Tests.Voxels;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -22,7 +22,6 @@ public sealed class ObjectColumnsTests : IDisposable
     private const byte Leaves = 31;
     private const byte Rock = 40;
     private const float Step = 1f / 60;
-    private static readonly VoxelGrid s_grid = new(10);
     private static readonly CharacterShape s_shape = new(1.7f, 0.26f, 0.4f);
     private readonly VoxelObjectKinds _kinds = new();
     private readonly Dictionary<VoxelObjectKindId, VoxelObjectShape> _shapes = [];
@@ -70,7 +69,7 @@ public sealed class ObjectColumnsTests : IDisposable
         _placements.Add(new ObjectPlacement(new ObjectId(4), bush, new VoxelCoord(0, 0, -300), 0));
         var rough = _materials.Register("rough", new PhysicsMaterial(2, 0));
         _materials.MapVoxel(Rock, rough);
-        var generator = new Placing(_placements);
+        var generator = new PlacingGenerator(_placements);
         _world = TestWorlds.Load(generator, Vector3.Zero, radiusMetres: 0);
         _objects = new ObjectWorld(
             _world,
@@ -207,7 +206,7 @@ public sealed class ObjectColumnsTests : IDisposable
         var unfilled = new ObjectWorld(
             _world,
             _kinds,
-            new Placing(_placements),
+            new PlacingGenerator(_placements),
             Options.Create(new EngineOptions()),
             NullLogger<ObjectWorld>.Instance
         );
@@ -231,11 +230,11 @@ public sealed class ObjectColumnsTests : IDisposable
     [Fact]
     public void A_character_at_the_maps_edge_does_not_wait()
     {
-        using var world = TestWorlds.Load(new Placing(_placements), new Vector3(508, 0, 0), radiusMetres: 0);
+        using var world = TestWorlds.Load(new PlacingGenerator(_placements), new Vector3(508, 0, 0), radiusMetres: 0);
         var objects = new ObjectWorld(
             world,
             _kinds,
-            new Placing(_placements),
+            new PlacingGenerator(_placements),
             Options.Create(new EngineOptions()),
             NullLogger<ObjectWorld>.Instance
         );
@@ -263,7 +262,7 @@ public sealed class ObjectColumnsTests : IDisposable
         var unfilled = new ObjectWorld(
             _world,
             _kinds,
-            new Placing(_placements),
+            new PlacingGenerator(_placements),
             Options.Create(new EngineOptions()),
             NullLogger<ObjectWorld>.Instance
         );
@@ -370,40 +369,5 @@ public sealed class ObjectColumnsTests : IDisposable
     private sealed class RockTags : IVoxelSurfaceTags
     {
         public uint TagsOf(byte material) => material == Rock ? 1u : 0;
-    }
-
-    /// <summary>Flat 10 cm stone below y = 0, placing the given objects.</summary>
-    private sealed class Placing(List<ObjectPlacement> placements) : IChunkGenerator, IObjectPlacer
-    {
-        private readonly FlatTestGenerator _ground = new(s_grid);
-
-        public VoxelGrid Grid => s_grid;
-
-        public string Id => "test.object-columns";
-
-        public int Version => 1;
-
-        public IObjectPlacer Objects => this;
-
-        public void DescribeColumn(ColumnKey column, ulong seed, Span<ChunkFill> layers) =>
-            _ground.DescribeColumn(column, seed, layers);
-
-        public void Fill(ChunkKey chunk, ulong seed, Span<byte> voxels) => _ground.Fill(chunk, seed, voxels);
-
-        public void Find(ulong seed, int minX, int maxX, int minZ, int maxZ, List<ObjectPlacement> found)
-        {
-            foreach (var placement in placements)
-            {
-                if (
-                    placement.Anchor.X >= minX
-                    && placement.Anchor.X < maxX
-                    && placement.Anchor.Z >= minZ
-                    && placement.Anchor.Z < maxZ
-                )
-                {
-                    found.Add(placement);
-                }
-            }
-        }
     }
 }

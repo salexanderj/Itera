@@ -9,6 +9,7 @@ using Itera.Engine.Input;
 using Itera.Engine.Matches;
 using Itera.Engine.Maths;
 using Itera.Engine.Networking;
+using Itera.Engine.Objects;
 using Itera.Engine.Particles;
 using Itera.Engine.Physics;
 using Itera.Engine.Rendering;
@@ -254,7 +255,8 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<VoxelWorld>(),
             sp.GetRequiredService<PlayerInputBlock>(),
             sp.GetRequiredService<PlayerSettings>(),
-            sp.GetRequiredService<StartPose>().PoseIn(sp.GetRequiredService<WorldOrigin>())
+            sp.GetRequiredService<StartPose>().PoseIn(sp.GetRequiredService<WorldOrigin>()),
+            sp.GetRequiredService<ObjectRays>()
         ));
         services.AddScoped<IFrameUpdateSystem>(sp =>
         {

@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using BepuPhysics;
 using BepuPhysics.Collidables;
 using BepuUtilities.Memory;
+using Itera.Engine.Objects;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging;
 
@@ -101,14 +102,26 @@ public sealed partial class VoxelColliders : IDisposable
     private long _step;
     private bool _disposed;
 
+    /// <param name="physics">The match's physics.</param>
+    /// <param name="voxels">The match's voxel world.</param>
+    /// <param name="passability">The materials that give no boxes.</param>
+    /// <param name="logger">Logger.</param>
+    /// <param name="objects">The voxel objects the world places, statics near bodies too; none without them.</param>
+    /// <param name="kinds">The run's object kinds, with <paramref name="objects"/>.</param>
     public VoxelColliders(
         PhysicsWorld physics,
         VoxelWorld voxels,
         IVoxelPassability passability,
-        ILogger<VoxelColliders> logger
+        ILogger<VoxelColliders> logger,
+        ObjectWorld? objects = null,
+        VoxelObjectKinds? kinds = null
     )
     {
         _physics = physics;
+        // Kept whether or not the world places objects: its placer is known only at the match's "objects" step, after
+        // this is made, and without one it gives none and knows every area.
+        _objects = kinds is not null ? objects : null;
+        _kinds = kinds;
         _voxels = voxels;
         _passable = MaterialSet.Passable(passability);
         _partExcluded = [_passable];
@@ -229,6 +242,7 @@ public sealed partial class VoxelColliders : IDisposable
 
         _step++;
         ReadChanges();
+        FollowObjects();
 
         var simulation = _physics.Simulation;
         var bodies = simulation.Bodies;
@@ -331,6 +345,8 @@ public sealed partial class VoxelColliders : IDisposable
         // the children's buffer goes back to the pool while it is there (a disposed world cleared it).
         _cells.Clear();
         _frozen.Clear();
+        _objectStatics.Clear();
+        _kindShapes.Clear();
         if (_children.Allocated && _physics.IsInitialized)
         {
             _physics.Pool.Return(ref _children);
@@ -397,9 +413,9 @@ public sealed partial class VoxelColliders : IDisposable
             }
         }
 
-        if (level < 0)
+        if (level < 0 || !ObjectsKnown(bounds.Min - reach, bounds.Max + reach))
         {
-            // A body a game keeps moving goes on, meeting no voxels until they load.
+            // A body a game keeps moving goes on, meeting no voxels until they load (nor objects until they are known).
             if (!frozen && (_physics.Kinds.Marks(handle.Value) & PhysicsMarks.KeepsMovingUnloaded) == 0)
             {
                 _freeze.Add(handle);
@@ -691,6 +707,9 @@ public sealed partial class VoxelColliders : IDisposable
         {
             BuildPart(key, ref cell.Parts[part], part, ref surfaces);
         }
+
+        // Its objects at its first build: an edit changes the world's voxels, not theirs.
+        Link(key, ref cell);
     }
 
     /// <summary>
@@ -890,6 +909,8 @@ public sealed partial class VoxelColliders : IDisposable
         {
             RemovePart(ref cell.Parts[part]);
         }
+
+        Unlink(ref cell);
     }
 
     private void RemovePart(ref Part cell)
@@ -917,11 +938,14 @@ public sealed partial class VoxelColliders : IDisposable
 
     [LoggerMessage(
         Level = LogLevel.Debug,
-        Message = "Body {Body} frozen at ({X:F2}, {Y:F2}, {Z:F2}) m: a column around it is not resident"
+        Message = "Body {Body} frozen at ({X:F2}, {Y:F2}, {Z:F2}) m: a column around it is not resident, or the objects round it not known yet"
     )]
     private partial void LogFrozen(int body, float x, float y, float z);
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Body {Body} moves on: the columns around it are resident")]
+    [LoggerMessage(
+        Level = LogLevel.Debug,
+        Message = "Body {Body} moves on: the columns and the objects around it are ready"
+    )]
     private partial void LogThawed(int body);
 
     [LoggerMessage(
@@ -944,6 +968,9 @@ public sealed partial class VoxelColliders : IDisposable
         /// <summary>True once built: a cell never built holds nothing for bodies yet, so it is built at once.</summary>
         public bool Built;
         public long LastNeeded;
+
+        /// <summary>The voxel objects that reach into it, given statics (<see cref="Link"/>); null before its first build.</summary>
+        public List<ObjectId>? Objects;
 
         public readonly bool HasStatic
         {

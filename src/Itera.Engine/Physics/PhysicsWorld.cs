@@ -24,6 +24,7 @@ public sealed partial class PhysicsWorld : IDisposable
     private readonly bool[]?[] _voxelBoxMade = new bool[VoxelConstants.MaxLevel + 1][];
     private readonly Dictionary<(int X, int Y, int Z), TypedIndex> _largeVoxelBoxes = [];
     private readonly Dictionary<int, TypedIndex> _surfaceBoxes = [];
+    private readonly Dictionary<(int Unit, int X, int Y, int Z), TypedIndex> _unitBoxes = [];
     private readonly BodyKinds _kinds = new();
     private readonly PhysicsSettings _settings;
     private readonly IntegrationSettings _integration;
@@ -442,6 +443,26 @@ public sealed partial class PhysicsWorld : IDisposable
         var shape = Simulation.Bodies[body].Collidable.Shape;
         RemoveBody(body);
         Simulation.Shapes.Remove(shape);
+    }
+
+    /// <summary>
+    /// The shape of a box of <paramref name="x"/> by <paramref name="y"/> by <paramref name="z"/> voxels of
+    /// <paramref name="unitCentimetres"/> each (a voxel object's: <see cref="VoxelColliders"/>), added to the simulation's
+    /// shapes once and kept, as <see cref="VoxelBox(VoxelGrid, int, int, int, int)"/>'s are. Main thread.
+    /// </summary>
+    internal TypedIndex UnitBox(int unitCentimetres, int x, int y, int z)
+    {
+        ref var box = ref CollectionsMarshal.GetValueRefOrAddDefault(
+            _unitBoxes,
+            (unitCentimetres, x, y, z),
+            out var exists
+        );
+        if (!exists)
+        {
+            box = AddVoxelBox(x, y, z, unitCentimetres / (float)VoxelConstants.CentimetresPerMetre);
+        }
+
+        return box;
     }
 
     /// <summary>A box of (x, y, z) level-0 voxels of <paramref name="metres"/> each.</summary>

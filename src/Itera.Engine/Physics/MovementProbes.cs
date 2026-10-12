@@ -5,10 +5,10 @@ namespace Itera.Engine.Physics;
 /// <summary>
 /// What a movement mode (<c>IMovementMode</c>) asks of the world round an upright body: a wall ahead within reach
 /// (<see cref="TryWallAhead"/>), the top of the ledge over it (<see cref="TryLedgeTop"/>), and room to stand there
-/// (<see cref="HasRoom"/>). They read the shared ray (<see cref="CollisionSources"/>: the voxel terrain, with its
-/// materials' surface tags, and the mesh colliders, with theirs; not loose bodies) and the character mover. A voxel's
-/// normal is the face the ray entered, so a wall of voxels gives the mean of its rays' faces. Main thread; allocates
-/// nothing.
+/// (<see cref="HasRoom"/>). They read the shared ray (<see cref="CollisionSources"/>: the voxel terrain and the voxel
+/// objects, with their materials' surface tags, and the mesh colliders, with theirs; not loose bodies) and the character
+/// mover. A voxel's normal is the face the ray entered (an object's turned with it), so a wall of voxels gives the mean
+/// of its rays' faces. Main thread; allocates nothing.
 /// </summary>
 public sealed class MovementProbes(CollisionSources sources, VoxelCharacterMover mover)
 {

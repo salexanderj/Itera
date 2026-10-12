@@ -4,6 +4,7 @@ using Arch.System;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
 using Itera.Engine.Input;
+using Itera.Engine.Objects;
 using Itera.Engine.Settings;
 using Itera.Engine.Voxels;
 using Itera.Modding;
@@ -19,7 +20,8 @@ namespace Itera.Engine.Systems;
 /// <see cref="Bodiless"/> player keeps its eye where its body was (nothing moves it) and still looks about; a game may
 /// move the camera on from there. With <see cref="PlayerInputBlock.Blocked"/> the mouse adds no look since the step,
 /// as the input does nothing at the steps. With the third-person camera on (<see cref="ThirdPersonView"/>) the camera
-/// sits behind that eye's right shoulder instead (<see cref="ThirdPersonCamera.Position"/>, pulled in by the voxels).
+/// sits behind that eye's right shoulder instead (<see cref="ThirdPersonCamera.Position"/>, pulled in by the voxels and
+/// the voxel objects).
 /// Reads <see cref="ThirdPersonView"/>, <see cref="PlayerMode"/>, <see cref="PlayerCommand"/>,
 /// <see cref="CharacterSize"/>, <see cref="CharacterPosition"/>, <see cref="EyeSmoothing"/>, <see cref="Bodiless"/>,
 /// and <see cref="IFrameInput"/>; writes <see cref="CameraPose"/>.
@@ -47,6 +49,7 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
     /// <summary>The player's settings, whose mouse sensitivity is read each frame; the options' without them (tests).</summary>
     private readonly PlayerSettings? _settings;
     private readonly VoxelWorld? _voxels;
+    private readonly ObjectRays? _objects;
     private readonly PlayerInputBlock? _block;
     private readonly EngineOptions _engine;
     private readonly CameraPose? _start;
@@ -61,6 +64,7 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
     /// Where the game's camera starts: <see cref="Initialize"/> makes it there (<see cref="CameraRules.CreateCamera"/>);
     /// none in tests that make their own.
     /// </param>
+    /// <param name="objects">The voxel objects that pull the third-person camera in too; none without them.</param>
     public PlayerCameraSystem(
         World world,
         IFrameInput input,
@@ -68,10 +72,12 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
         VoxelWorld? voxels = null,
         PlayerInputBlock? block = null,
         PlayerSettings? settings = null,
-        CameraPose? start = null
+        CameraPose? start = null,
+        ObjectRays? objects = null
     )
         : base(world)
     {
+        _objects = objects;
         ArgumentNullException.ThrowIfNull(options);
         _engine = options.Value;
         _start = start;
@@ -122,7 +128,7 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
             Pose = new CameraPose
             {
                 Position = shoulder.On
-                    ? ThirdPersonCamera.Position(_voxels, eye.Position, yaw, pitch, shoulder.Metres)
+                    ? ThirdPersonCamera.Position(_voxels, eye.Position, yaw, pitch, shoulder.Metres, _objects)
                     : eye.Position,
                 Yaw = yaw,
                 Pitch = pitch,

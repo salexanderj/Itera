@@ -135,6 +135,43 @@ public sealed class StreamingCentreSystemTests : IDisposable
     }
 
     /// <summary>
+    /// Where the world places voxel objects, a body's disc is wider by the widest kind's reach, so the areas of objects
+    /// that may touch it are filled.
+    /// </summary>
+    [Fact]
+    public void A_bodys_disc_is_wider_by_the_objects_reach()
+    {
+        var kinds = new Itera.Engine.Objects.VoxelObjectKinds();
+        var shape = new Itera.Engine.Objects.VoxelObjectShape(
+            5,
+            new VoxelCoord(80, 20, 80),
+            new VoxelCoord(200, 0, 200)
+        );
+        shape.FillBox(0, 0, 0, 400, 100, 400, FlatTestGenerator.Stone);
+        kinds.Register("block", shape);
+        using var voxels = new VoxelWorld(
+            Options.Create(new EngineOptions()),
+            new Objects.PlacingGenerator([]),
+            NullLogger<VoxelWorld>.Instance,
+            kinds: kinds
+        );
+        using var world = World.Create();
+        var system = new StreamingCentreSystem(world, voxels);
+        system.Initialize();
+        CreatePlayer(world, flying: false);
+        CreateBody(world, new Vector3(-60, 1, 30));
+
+        system.Update(in Step);
+
+        Assert.Equal(kinds.MostReachCentimetres / 100.0, voxels.ObjectReachMetres);
+        Assert.Equal(
+            StreamingCentreSystem.BodyRadiusMetres + Math.Ceiling(voxels.ObjectReachMetres),
+            voxels.StreamingCentres[1].Level0RadiusMetres
+        );
+        system.Dispose();
+    }
+
+    /// <summary>
     /// On a world of 1 cm voxels and a 16 m view radius, where a giant's body collides with level 2 (at 10 cm it
     /// collides with level 0, as every body does): its disc streams levels 0 to 2.
     /// </summary>

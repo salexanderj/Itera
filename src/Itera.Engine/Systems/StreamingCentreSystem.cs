@@ -20,7 +20,9 @@ namespace Itera.Engine.Systems;
 /// to move (<c>VoxelColliders</c> freezes it in the air where they are not loaded), so a throw that flies past the
 /// player's level 0, or a client's throw far from the host, would stop. The disc is <see cref="BodyRadiusMetres"/> about
 /// the body, stretched along its velocity to hold where it will be <see cref="BodyLeadSeconds"/> ahead, so the columns
-/// load before a fast body reaches them. A body's disc streams the levels up to the one it collides with (a level's disc
+/// load before a fast body reaches them, and wider by the widest voxel object kind's reach where the world places objects
+/// (<see cref="VoxelWorld.ObjectReachMetres"/>), so the areas of objects that may touch it are filled (a body waits
+/// frozen until they are). A body's disc streams the levels up to the one it collides with (a level's disc
 /// is twice as wide as the one below it), unless a player's disc holds it there: level 0 on a 10 cm grid; on a 1 cm grid a
 /// giant's body collides with level 2 (<c>VoxelColliders.CoarseLevelOf</c>).
 /// All centres go in one call per step, since each call that changes them rebuilds every level's wanted
@@ -173,7 +175,10 @@ public sealed class StreamingCentreSystem : BaseSystem<World, FixedStepTime>, IF
             // radius changes rebuilds every level's wanted columns.
             var moved = pose.Position - pose.PreviousPosition;
             var ahead = new Vector3(moved.X, 0, moved.Z) * (BodyLeadSeconds / Seconds);
-            var radius = Math.Min(BodyRadiusMetres + Math.Ceiling(0.5 * ahead.Length()), MaxBodyRadiusMetres);
+            // Wider by the objects' reach, so the areas of objects that may touch it are known (VoxelColliders).
+            var radius =
+                Math.Min(BodyRadiusMetres + Math.Ceiling(0.5 * ahead.Length()), MaxBodyRadiusMetres)
+                + Math.Ceiling(Voxels.ObjectReachMetres);
             var middle = pose.Position + 0.5f * ahead;
             // The levels 0 to the one the body collides with, each disc twice as wide as the one below.
             var levels = (Bodies?.CollisionLevel(body.Body) ?? 0) + 1;

@@ -96,6 +96,10 @@ Where tests live:
 - `Itera.Engine.Tests/Voxels/Generation/`: the shapes' row spans against point tests, fractal noise, the jittered grid,
   the scalar field, the field tint map with `VoxelTintSampler`, and the heightfield generator (every description against
   its filled voxels, a column's range and its layers standing for every layer, fills against a voxel-by-voxel reference, `HillsGenerator`).
+- `Itera.Engine.Tests/Objects/`: voxel objects over `PlacingGenerator` (flat stone placing a test's objects): kinds'
+  shapes and registry, models, `ObjectWorld`'s areas, far copies (a pinned hash), turns, and rays (`ObjectRaysTests`:
+  random rays against every solid voxel's box, a ray across stretches 40 m out, the shared ray, a tool's ray through a
+  bush, the third-person camera pulled in by a trunk, the movement probes on a trunk, no allocation).
 - `Itera.Engine.Tests/Maths/` and `Animation/`: the deterministic maths and rotations, the octahedral encoding, the
   origin's conversions at up to ±160 km (`WorldOriginTests`), and skeletons, clips, aiming, and foot IK over a humanoid
   test skeleton (`HumanoidTestSkeleton`).
@@ -127,7 +131,11 @@ Where tests live:
   lands on a collider's Bepu static at any voxel level) and the shared ray (`CollisionSourcesTests`); the colliders as
   the mover's cells (`MeshColumnsTests`); the voxel objects as its cells (`ObjectColumnsTests`: cells against a
   cell-by-cell reference, a trunk, a rock's top, material, and tags, a low stone, a bush, waiting for unfilled areas, the
-  map's edge, chunks made again when the objects change, no allocation); the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves)
+  map's edge, chunks made again when the objects change, no allocation) and as statics near bodies (`ObjectCollidersTests`,
+  made before the objects' world is initialised as a match makes them: a ball on a rock's top, a ball rolled at a trunk,
+  a plank turned from its anchor, passable leaves, two physics materials, a body frozen until the objects are known,
+  statics going with the cells and kept while the objects change, a cut body on a trunk, a kind's boxes against its
+  voxels, no allocation); the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves)
   and 10,000 random moves that never leave it inside a voxel, the same test bodies run on voxels and on triangles built
   from the same features (`MoverFeatureTests`: `VoxelCharacterMoverTests` and `MeshMoverFeatureTests` over a world of
   air; `DensityGroundTests` at 10 cm: `DensityMoverTests` and `MeshDensityGroundTests` with no world, both from
