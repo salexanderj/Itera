@@ -238,6 +238,12 @@ public abstract class HeightfieldGenerator : IChunkGenerator
     /// </summary>
     protected virtual GroundFeatures? CreateFeatures() => null;
 
+    /// <summary>
+    /// The objects its world places (<see cref="IChunkGenerator.Objects"/>), or null for none: a subclass overrides it
+    /// (a property of its own of that name would not stand for the interface's, which this class implements).
+    /// </summary>
+    public virtual Objects.IObjectPlacer? Objects => null;
+
     private ColumnGround ColumnFor(ColumnKey column, GridLevel at, ulong seed)
     {
         var ground = t_column ??= new ColumnGround();

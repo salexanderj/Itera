@@ -27,7 +27,9 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   step, after the voxel physics: three levels with densities (`VoxelModels.Add(levels, size, 0, unit, densities:
   true)`), each part's corner from the kind's anchor (`PartsOf`); `ObjectsLoadingTask` waits for them on the GPU (done once
   made without graphics).
-- A world places its objects through its generator (`IChunkGenerator.Objects`, an `IObjectPlacer`, null for none; thread
+- A world places its objects through its generator (`IChunkGenerator.Objects`, an `IObjectPlacer`, null for none; a
+  `HeightfieldGenerator` subclass overrides its virtual `Objects`, since a property of its own would not stand for the
+  interface's; thread
   safe and pure like `Fill`, so a change to its placements raises the generator's `Version`): `Find(seed, box, found)`
   adds every `ObjectPlacement` (its `ObjectId`, the same on every peer, `ObjectId.Of` a jittered point; its kind; its
   anchor at absolute centimetres; its heading in steps of a turn over `ObjectPlacement.HeadingSteps`, 4,096) whose
@@ -66,7 +68,11 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   column under its reach is split there (an area is passed over when neither its column nor one round it is), at its own
   voxels within level 0's reach times the mesh share, twice them within level 1's, else four times (the views: four
   times), turned by `ObjectTurns.Rotation` about its anchor. Objects are gathered after the game's models and the retired
-  ones; a model list too full for a level's draws takes as many as fit.
+  ones; a model list too full for a level's draws takes as many as fit. Their draws' tint is below 0 (`MeshModelDraw.Tint`),
+  which `mesh.vert`'s model variant and `mesh.frag` shade as the world's surfaces (the mesh's material weights and
+  palette, the texture sets, the tint map at the point, the world's look), so a model and its copy match. A stitched
+  block of the level below K reads the coarser block with the objects' materials made air (`MaskCopies`), so no copy
+  shows in its seam; the objects' materials should be their own, not the ground's.
 - Models may have a voxel size of their own (`VoxelModels.Add` with a unit; `UnitCentimetres`, `VoxelMetres`) and keep
   densities (`Encode(voxels, densities, extent)`, `DecodeDensities`, `HasDensities`), which the renderer meshes them with.
   `SolidModelVoxels.Add` and the cut parts' hulls and masses (`LooseBodies.TryCreate(parts)`) take the model's unit.

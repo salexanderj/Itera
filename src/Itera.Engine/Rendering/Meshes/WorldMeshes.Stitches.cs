@@ -112,6 +112,7 @@ public sealed partial class WorldMeshes
                 continue;
             }
 
+            MaskCopies(world, level, job.CoarseSamples!, job.CoarseDensities!);
             const int Half = SurfaceNets.BlockSize / 2;
             job.Model = null;
             job.HasDensities = true;

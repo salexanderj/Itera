@@ -178,7 +178,7 @@ makes a column whose runs no longer cover its surfaces again and meshes it), rea
 (`VoxelDensity`) crosses one half along the cell's crossing edges; normals from a 4x4x4 gradient of the densities;
 openness from the mean density round each of the cell's corners, blended to the vertex's place, so it follows the
 surface and not the cell; a model's blocks at their materials' default densities unless it keeps densities (an object
-kind's); the material most of the cell's
+kind's); a model draw with a tint below 0 (an object's part) shaded as the world's surfaces; the material most of the cell's
 surface corners have (solid corners beside an air corner, so a one-voxel skin shows),
 a block owning the edges whose lower voxel is in it, so blocks meet exactly). It follows the change list (columns,
 bricks, and chunks changed) and meshes a column only while it can be drawn (`IsWanted`), the columns nearest the view

@@ -13,7 +13,7 @@
 #include "mesh-shade.glsl"
 
 // mesh.vert's outputs: the offset from the camera with the openness, the normal, and the material with the tint's bits
-// (-1: the tint map's).
+// (-1: the tint map's, for the world's blocks and the models shaded as the world, the voxel objects' parts).
 layout(location = 0) in vec4 inOffsetOpenness;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) flat in uvec2 inMaterialTint;

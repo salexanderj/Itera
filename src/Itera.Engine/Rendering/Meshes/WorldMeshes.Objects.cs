@@ -18,6 +18,9 @@ namespace Itera.Engine.Rendering.Meshes;
 /// </summary>
 public sealed unsafe partial class WorldMeshes
 {
+    // A model draw's tint that shades it as the world's surfaces (MeshModelDraw.Tint).
+    private const float WorldShaded = -1;
+
     private ObjectWorld? _objects;
     private VoxelObjects? _objectModels;
     private int _handOver;
@@ -129,12 +132,45 @@ public sealed unsafe partial class WorldMeshes
                 foreach (ref readonly var part in objectModels.PartsOf(placement.Kind))
                 {
                     var corner = local + Vector3.Transform(part.Corner, turn);
-                    GatherModel(models, part.Model, level, corner, turn, 0, ModelShadow.Casts, lists & ~views);
+                    GatherModel(
+                        models,
+                        part.Model,
+                        level,
+                        corner,
+                        turn,
+                        WorldShaded,
+                        ModelShadow.Casts,
+                        lists & ~views
+                    );
                     if ((lists & views) != 0)
                     {
-                        GatherModel(models, part.Model, 2, corner, turn, 0, ModelShadow.Casts, lists & views);
+                        GatherModel(models, part.Model, 2, corner, turn, WorldShaded, ModelShadow.Casts, lists & views);
                     }
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Makes air of the objects' copies in a coarser block read to stitch a block of <paramref name="fineLevel"/> to it,
+    /// where the finer level holds no copies (below the hand-over level) and the coarser does: the seam's coarser
+    /// vertices are then the ground's, as the finer block's own, and no copy shows in the finer level's meshes. The copies'
+    /// materials are the objects' alone.
+    /// </summary>
+    private static void MaskCopies(VoxelWorld world, int fineLevel, Span<byte> samples, Span<byte> densities)
+    {
+        if (world.Copies is not { } copies || fineLevel + 1 < copies.FirstLevel || fineLevel >= copies.FirstLevel)
+        {
+            return;
+        }
+
+        var materials = copies.Materials;
+        for (var i = 0; i < samples.Length; i++)
+        {
+            if (samples[i] != VoxelConstants.Air && materials.Contains(samples[i]))
+            {
+                samples[i] = VoxelConstants.Air;
+                densities[i] = VoxelDensity.Empty;
             }
         }
     }

@@ -27,7 +27,11 @@ public struct MeshModelDraw
     /// <summary>The block's place in the model, in blocks of 32 voxels: x, y, and z in bits 0, 8, and 16.</summary>
     public uint Block;
 
-    /// <summary>How far the materials blend from their base to their tint colour, 0 to 1.</summary>
+    /// <summary>
+    /// How far the materials blend from their base to their tint colour, 0 to 1; below 0, the model is shaded as the
+    /// world's surfaces are (its materials' texture sets and the tint map at its points, its mesh's material weights, the
+    /// world's look): a voxel object's part, so it matches its copy in the world's voxels.
+    /// </summary>
     public float Tint;
 
     /// <summary>The packed <see cref="Block"/> of block (<paramref name="x"/>, <paramref name="y"/>, <paramref name="z"/>).</summary>

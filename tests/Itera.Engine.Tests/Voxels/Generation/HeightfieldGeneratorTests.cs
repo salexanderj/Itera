@@ -594,4 +594,45 @@ public sealed class HeightfieldGeneratorTests
 
         Assert.True(compared > 500 && solid > 100 && air > 100, $"{compared} points: {solid} solid, {air} air");
     }
+
+    /// <summary>
+    /// A heightfield's objects reach its world through <see cref="IChunkGenerator.Objects"/> when a subclass overrides
+    /// the base's: none by default.
+    /// </summary>
+    [Fact]
+    public void A_subclasses_objects_are_the_generators()
+    {
+        Assert.Null(ObjectsOf(new HillsGenerator(new VoxelGrid(10))));
+        var placer = new NoObjects();
+        Assert.Same(placer, ObjectsOf(new PlacingHeightfield(placer)));
+    }
+
+    // Read as the world reads it, through the interface.
+    private static Itera.Engine.Objects.IObjectPlacer? ObjectsOf(IChunkGenerator generator) => generator.Objects;
+
+    private sealed class NoObjects : Itera.Engine.Objects.IObjectPlacer
+    {
+        public void Find(
+            ulong seed,
+            int minX,
+            int maxX,
+            int minZ,
+            int maxZ,
+            List<Itera.Engine.Objects.ObjectPlacement> found
+        ) { }
+    }
+
+    private sealed class PlacingHeightfield(Itera.Engine.Objects.IObjectPlacer placer)
+        : HeightfieldGenerator(new VoxelGrid(10), new GroundLayers(5, [], HillsGenerator.Stone))
+    {
+        public override string Id => "test.placing-heightfield";
+
+        public override int Version => 1;
+
+        public override Itera.Engine.Objects.IObjectPlacer? Objects => placer;
+
+        protected override double HeightAt(int x, int z, ulong seed) => 0;
+
+        protected override byte SurfaceAt(int x, int z, ulong seed, double height) => HillsGenerator.Grass;
+    }
 }
