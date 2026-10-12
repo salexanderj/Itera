@@ -2,6 +2,7 @@ using Itera.Engine.Assets;
 using Itera.Engine.Audio;
 using Itera.Engine.Matches;
 using Itera.Engine.Particles;
+using Itera.Engine.Physics;
 using Itera.Engine.Rendering;
 using Itera.Engine.Systems;
 
@@ -10,8 +11,8 @@ namespace Itera.MeshSample;
 /// <summary>
 /// The sample's run-wide registries, at the engine's <c>game</c> step: the movement keys, the engine's stock particle
 /// effects, the starter's fox (read from <c>Models/Fox/</c>), the yard's meshes built in code (<see cref="Yard"/>), and the
-/// yard camera's image view shown on its screen (<see cref="YardCamera"/>), and the sounds and music read from its
-/// files (<see cref="SampleSounds"/>).
+/// yard camera's image view shown on its screen (<see cref="YardCamera"/>), the sounds and music read from its
+/// files (<see cref="SampleSounds"/>), and the physics corner's materials and layers (<see cref="PhysicsDemo"/>).
 /// </summary>
 public sealed class SampleRunStartup(
     MovementKeys movement,
@@ -19,7 +20,9 @@ public sealed class SampleRunStartup(
     MeshAssets assets,
     RenderViews views,
     YardCamera camera,
-    AudioService audio
+    AudioService audio,
+    PhysicsMaterials materials,
+    PhysicsLayers layers
 ) : IRunStartup
 {
     /// <summary>The fox's name among the run's mesh assets.</summary>
@@ -32,5 +35,6 @@ public sealed class SampleRunStartup(
         Yard.Add(assets);
         camera.Declare(views);
         SampleSounds.Register(audio);
+        PhysicsDemo.Register(materials, layers);
     }
 }

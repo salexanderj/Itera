@@ -53,6 +53,8 @@ public static class MeshSampleServiceCollectionExtensions
         ));
         // The sample's own menu in place of the engine's: the last IMenu registered is the run's.
         services.AddSingleton<IMenu, SampleMenu>();
+        // The physics corner's balls in their colours.
+        services.Replace(ServiceDescriptor.Singleton<IVoxelPalette, SamplePalette>());
         AddFixedSystems(services);
         AddFrameSystems(services);
         return services;
@@ -62,7 +64,8 @@ public static class MeshSampleServiceCollectionExtensions
     /// The fixed systems, in their run order: the origin moved to the camera when it has gone far (first, before any
     /// system reads a position); the yard and the player at the start, the fox (its pose before the clips
     /// move on); the console's cleanup and reset, and its balls; the player's input; what the last physics step did;
-    /// the player's move and climb; the stand-ins and the loose bodies; and the clips moved on.
+    /// the player's move and climb; the stand-ins; the characters in the trigger zones and the physics corner; the loose
+    /// bodies; and the clips moved on.
     /// </summary>
     private static void AddFixedSystems(IServiceCollection services)
     {
@@ -75,7 +78,9 @@ public static class MeshSampleServiceCollectionExtensions
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<MeshAssets>(),
             sp.GetRequiredService<MeshColliders>(),
-            sp.GetRequiredService<YardColliders>()
+            sp.GetRequiredService<YardColliders>(),
+            sp.GetRequiredService<PhysicsMaterials>(),
+            sp.GetRequiredService<PhysicsLayers>()
         ));
         services.AddScoped<IFixedUpdateSystem>(sp => new SampleSpawnSystem(
             sp.GetRequiredService<EcsWorld>().World,
@@ -131,6 +136,22 @@ public static class MeshSampleServiceCollectionExtensions
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<PhysicsWorld>(),
             sp.GetRequiredService<LooseBodies>()
+        ));
+        // The characters in the trigger zones, after they and their stand-ins moved; then the physics corner, which reads
+        // what they found this step and what the last physics step found.
+        services.AddScoped<IFixedUpdateSystem>(sp => new TriggerCharacterSystem(
+            sp.GetRequiredService<EcsWorld>().World,
+            sp.GetRequiredService<PhysicsWorld>(),
+            sp.GetRequiredService<CharacterTriggers>()
+        ));
+        services.AddScoped<IFixedUpdateSystem>(sp => new PhysicsDemoSystem(
+            sp.GetRequiredService<EcsWorld>().World,
+            sp.GetRequiredService<PhysicsWorld>(),
+            sp.GetRequiredService<PhysicsLayers>(),
+            sp.GetRequiredService<LooseBodies>(),
+            sp.GetRequiredService<CharacterTriggers>(),
+            sp.GetRequiredService<AudioService>(),
+            sp.GetRequiredService<WorldOrigin>()
         ));
         services.AddScoped<IFixedUpdateSystem>(sp => new LooseBodySystem(
             sp.GetRequiredService<EcsWorld>().World,

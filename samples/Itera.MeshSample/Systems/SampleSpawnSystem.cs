@@ -11,7 +11,8 @@ namespace Itera.MeshSample.Systems;
 /// <summary>
 /// Makes the local player at the match's start (fixed group, after the yard; it does nothing after): a 1.7 m body on
 /// the ground at <see cref="StartFeet"/>, looking along -z at the blocks, with the engine's player components and a
-/// <see cref="Climber"/> (the engine's <see cref="ClimbingMode"/>).
+/// <see cref="Climber"/> (the engine's <see cref="ClimbingMode"/>) and a <see cref="TriggerSensor"/> (the trigger zones see
+/// it).
 /// </summary>
 public sealed class SampleSpawnSystem(World world, WorldOrigin origin)
     : BaseSystem<World, FixedStepTime>(world),
@@ -51,7 +52,8 @@ public sealed class SampleSpawnSystem(World world, WorldOrigin origin)
             new CharacterStandIn(),
             MovementStats.Default,
             new ThirdPersonView { Metres = ThirdPersonCamera.StartMetres },
-            new Climber()
+            new Climber(),
+            new TriggerSensor()
         );
     }
 

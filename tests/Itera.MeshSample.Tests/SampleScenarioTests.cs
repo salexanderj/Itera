@@ -4,6 +4,7 @@ using Arch.Core;
 using Itera.Engine.Assets;
 using Itera.Engine.Commands;
 using Itera.Engine.Components;
+using Itera.Engine.Ecs;
 using Itera.Engine.Matches;
 using Itera.Engine.Physics;
 using Itera.Engine.Rendering;
@@ -99,9 +100,20 @@ public sealed class SampleScenarioTests
         // Past the time a ball rests before it would settle into a grid (3 s): with none, it stays.
         match.Step(60 * 6);
 
+        // The console's balls, not the physics corner's.
         var bodies = match.Services.GetRequiredService<LooseBodies>();
+        var demo = match.Services.GetServices<IFixedUpdateSystem>().OfType<PhysicsDemoSystem>().Single();
         var pivots = new List<Vector3>();
-        match.World.Query(in s_balls, (ref LooseBody body) => pivots.Add(bodies.PivotOf(body.Body)));
+        match.World.Query(
+            in s_balls,
+            (ref LooseBody body) =>
+            {
+                if (!demo.Owns(body.Body))
+                {
+                    pivots.Add(bodies.PivotOf(body.Body));
+                }
+            }
+        );
         Assert.Empty(output.Failures);
         Assert.Equal(3, pivots.Count);
         // On the ground: a 12 cm ball's middle 12 cm up.

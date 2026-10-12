@@ -19,6 +19,9 @@ public static class SampleSounds
     /// <summary>A bell chord, kept stereo, at the listener.</summary>
     public const string Chime = "chime";
 
+    /// <summary>The same chord, in the world: at the physics corner's trigger zone as something comes in.</summary>
+    public const string ZoneChime = "zone-chime";
+
     /// <summary>
     /// The menu's music: 16 s heard once (an intro of 4 s, then the chords once through), then a loop of the chords' 12 s
     /// (the file's LOOPSTART and LOOPLENGTH tags).
@@ -42,6 +45,10 @@ public static class SampleSounds
         );
         audio.Recipes.Register(Hum, new FileLoopRecipe(File("hum.wav")) { Gain = 0.5f, ReferenceMetres = 2 });
         audio.Recipes.Register(Chime, new FileOneShotRecipe(File("chime.wav")) { KeepStereo = true, Gain = 0.7f });
+        audio.Recipes.Register(
+            ZoneChime,
+            new FileOneShotRecipe(File("chime.wav")) { Gain = 0.6f, ReferenceMetres = 3 }
+        );
         audio.Music.Declare(MenuMusic, File("menu.ogg"));
         audio.Music.Declare(YardMusic, File("yard.ogg"));
     }

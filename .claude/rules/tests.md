@@ -10,7 +10,9 @@ paths:
   label, `SampleMenuTests` over `SampleMenuHarness`, with the engine's hooks for a game's tests: `MatchControlStates`,
   `MatchControl.PendingStart` and `PendingLeave`, `PlayerSettings.WithoutFile`, and a `MusicPlayer` with no audio
   thread; its pages drawn by `SampleMenuPicturesTests`; its sounds heard with no device through
-  `AudioService.QueueWithoutThread`, `SampleSoundSystemTests`, and its files read, `SampleSoundsTests`), with subfolders that
+  `AudioService.QueueWithoutThread`, `SampleSoundSystemTests`, and its files read, `SampleSoundsTests`; its physics
+  corner played, `PhysicsDemoTests`: a ramp ball through the gate into the zone, the gate holding the player, a pad
+  ball's bounce and clang, the floating and slow balls), with subfolders that
   mirror `src/`. `tests/Shared/` holds `SystemAllocation`, `ArchStartup`, `SerialCollectionDefinition`,
   `RunsLongAttribute` and `LongFirstCollectionOrderer`, `xunit.runner.json`, `VoxelLoading` (load a test's voxel world),
   `FakeTransport` (an in-memory session transport: no sockets, no clocks), `HostileValues` and `Watchdog` (hostile field

@@ -5,11 +5,24 @@ using Itera.Engine.Rendering.GpuData;
 
 namespace Itera.MeshSample;
 
-/// <summary>A piece of the yard: a mesh asset by name, where its own origin stands, and its uniform scale.</summary>
+/// <summary>
+/// A piece of the yard: a mesh asset by name, where its own origin stands, its uniform scale, and as a collider its
+/// physics material and layer by name (the default's when null), or none.
+/// </summary>
 /// <param name="Asset">The asset's name (<see cref="Yard"/>'s).</param>
 /// <param name="Position">Where the asset's origin stands, an absolute point (metres from the map's middle).</param>
 /// <param name="Scale">Its uniform scale.</param>
-public readonly record struct YardPiece(string Asset, WorldPoint Position, float Scale = 1);
+/// <param name="Material">Its collider's physics material's name (<see cref="PhysicsDemo"/>'s), or null.</param>
+/// <param name="Layer">Its collider's layer's name, or null.</param>
+/// <param name="Collides">False for a piece only drawn (the trigger zone's box).</param>
+public readonly record struct YardPiece(
+    string Asset,
+    WorldPoint Position,
+    float Scale = 1,
+    string? Material = null,
+    string? Layer = null,
+    bool Collides = true
+);
 
 /// <summary>
 /// The sample's world, all built in code: a 60 m square of flat ground (a grey-green checker of 1 m squares), cubes of
@@ -17,8 +30,10 @@ public readonly record struct YardPiece(string Asset, WorldPoint Position, float
 /// <see cref="Climbable"/>), two ramps, of 20 and 40 degrees, a pane of glass, and two amber see-through cubes behind it
 /// as the start sees them (blended, two-sided materials: drawn back to front, the far faces through the near), and a
 /// screen 4 m up on a post past the blocks, ahead of the start, that shows the yard camera's picture
-/// (<see cref="YardCamera"/>, an image view shown on its <see cref="ScreenMaterial"/>). Each piece is drawn as a mesh
-/// asset and collides as the same triangles (<c>MeshColliders</c>).
+/// (<see cref="YardCamera"/>, an image view shown on its <see cref="ScreenMaterial"/>), and the physics corner west of
+/// the start (<see cref="PhysicsDemo"/>: an ice ramp, a green gate pane, a violet see-through trigger zone, a row of
+/// blocks, and a red rubber pad). Each piece is drawn as a mesh asset and collides as the same triangles
+/// (<c>MeshColliders</c>), of its material and layer, but the zone's box, which is only drawn.
 /// </summary>
 public static class Yard
 {
@@ -29,6 +44,10 @@ public static class Yard
     public const string Glass = "yard-glass";
     public const string Amber = "yard-amber";
     public const string Screen = "yard-screen";
+    public const string IceRamp = "yard-ice-ramp";
+    public const string Gate = "yard-gate";
+    public const string Pad = "yard-pad";
+    public const string Zone = "yard-zone";
 
     /// <summary>The screen's material that shows the yard camera's picture.</summary>
     public const string ScreenMaterial = "screen";
@@ -75,6 +94,14 @@ public static class Yard
         new(Amber, new WorldPoint(6, 0, -3)),
         new(Amber, new WorldPoint(7.5, 0, -2.5)),
         new(Screen, ScreenPlace),
+        new(IceRamp, PhysicsDemo.RampPlace, Material: PhysicsDemo.Ice),
+        new(Gate, PhysicsDemo.GatePlace, Layer: PhysicsDemo.GateLayer),
+        new(Zone, PhysicsDemo.ZonePlace, Collides: false),
+        new(Pad, PhysicsDemo.PadPlace, Material: PhysicsDemo.Rubber),
+        new(Block, PhysicsDemo.BackStop[0]),
+        new(Block, PhysicsDemo.BackStop[1]),
+        new(Block, PhysicsDemo.BackStop[2]),
+        new(Block, PhysicsDemo.BackStop[3]),
     ];
 
     /// <summary>The surface tags of each of the yard's materials: the stone's climbable.</summary>
@@ -86,14 +113,29 @@ public static class Yard
         ArgumentNullException.ThrowIfNull(assets);
         assets.Add(Ground, GroundMesh());
         assets.Add(Block, BlockMesh());
-        assets.Add(GentleRamp, RampMesh(GentleRamp, 6, 3, 20));
-        assets.Add(SteepRamp, RampMesh(SteepRamp, 4, 3, 40));
+        assets.Add(GentleRamp, RampMesh(GentleRamp, 6, 3, 20, "ramp", new Vector4(0.4f, 0.4f, 0.38f, 1)));
+        assets.Add(SteepRamp, RampMesh(SteepRamp, 4, 3, 40, "ramp", new Vector4(0.4f, 0.4f, 0.38f, 1)));
         assets.Add(
             Glass,
             SeeThroughBox(Glass, "glass", new Vector3(3, 2.5f, 0.1f), new Vector4(0.55f, 0.75f, 0.85f, 0.3f))
         );
         assets.Add(Amber, SeeThroughBox(Amber, "amber", Vector3.One, new Vector4(0.9f, 0.55f, 0.15f, 0.5f)));
         assets.Add(Screen, ScreenMesh());
+        assets.Add(IceRamp, RampMesh(IceRamp, 6, 3, 20, "ice", new Vector4(0.72f, 0.86f, 0.95f, 1)));
+        assets.Add(
+            Gate,
+            SeeThroughBox(Gate, "gate", new Vector3(0.1f, 2.5f, 4), new Vector4(0.3f, 0.85f, 0.4f, 0.35f))
+        );
+        assets.Add(Zone, SeeThroughBox(Zone, "zone", PhysicsDemo.ZoneSize, new Vector4(0.6f, 0.35f, 0.9f, 0.12f)));
+        assets.Add(Pad, SolidBox(Pad, "rubber", new Vector3(3, 0.15f, 3), new Vector4(0.45f, 0.08f, 0.08f, 1)));
+    }
+
+    /// <summary>A box from the origin to <paramref name="size"/> of an opaque <paramref name="colour"/>.</summary>
+    private static MeshAsset SolidBox(string name, string material, Vector3 size, Vector4 colour)
+    {
+        var builder = new Builder();
+        builder.Box(Vector3.Zero, size);
+        return builder.Build(name, MeshMaterialData.Default with { Name = material, BaseColour = colour }, []);
     }
 
     /// <summary>
@@ -124,12 +166,13 @@ public static class Yard
 
     /// <summary>
     /// A box from the origin to <paramref name="size"/> of a blended, two-sided material of <paramref name="colour"/> (its
-    /// alpha how much it covers what is behind).
+    /// alpha how much it covers what is behind), with no bottom face: each stands on the ground, and a see-through face in
+    /// the ground's plane, seen through the top, would flicker with it (the two at one depth, rounding picks either).
     /// </summary>
     private static MeshAsset SeeThroughBox(string name, string material, Vector3 size, Vector4 colour)
     {
         var builder = new Builder();
-        builder.Box(Vector3.Zero, size);
+        builder.Box(Vector3.Zero, size, bottom: false);
         var data = MeshMaterialData.Default with
         {
             Name = material,
@@ -175,9 +218,17 @@ public static class Yard
 
     /// <summary>
     /// A ramp <paramref name="length"/> metres long along +x from its origin, <paramref name="width"/> wide along +z,
-    /// rising at <paramref name="degrees"/> to a back wall: a closed wedge.
+    /// rising at <paramref name="degrees"/> to a back wall: a closed wedge of <paramref name="material"/>, coloured
+    /// <paramref name="colour"/>.
     /// </summary>
-    private static MeshAsset RampMesh(string name, float length, float width, float degrees)
+    private static MeshAsset RampMesh(
+        string name,
+        float length,
+        float width,
+        float degrees,
+        string material,
+        Vector4 colour
+    )
     {
         var height = length * MathF.Tan(degrees * MathF.PI / 180);
         Vector3 a = new(0, 0, 0),
@@ -192,8 +243,7 @@ public static class Yard
         builder.Quad(a, b, c, d);
         builder.Triangle(a, e, b);
         builder.Triangle(d, c, f);
-        var material = MeshMaterialData.Default with { Name = "ramp", BaseColour = new Vector4(0.4f, 0.4f, 0.38f, 1) };
-        return builder.Build(name, material, []);
+        return builder.Build(name, MeshMaterialData.Default with { Name = material, BaseColour = colour }, []);
     }
 
     /// <summary>A 64-texel square of two grey-greens in a 2 by 2 checker.</summary>
@@ -255,11 +305,15 @@ public static class Yard
             Triangle(a, c, d, uvMetres);
         }
 
-        public void Box(Vector3 min, Vector3 max)
+        public void Box(Vector3 min, Vector3 max, bool bottom = true)
         {
             Vector3 C(int x, int y, int z) =>
                 new(x == 0 ? min.X : max.X, y == 0 ? min.Y : max.Y, z == 0 ? min.Z : max.Z);
-            Quad(C(0, 0, 0), C(1, 0, 0), C(1, 0, 1), C(0, 0, 1));
+            if (bottom)
+            {
+                Quad(C(0, 0, 0), C(1, 0, 0), C(1, 0, 1), C(0, 0, 1));
+            }
+
             Quad(C(0, 1, 0), C(0, 1, 1), C(1, 1, 1), C(1, 1, 0));
             Quad(C(0, 0, 0), C(0, 1, 0), C(1, 1, 0), C(1, 0, 0));
             Quad(C(0, 0, 1), C(1, 0, 1), C(1, 1, 1), C(0, 1, 1));

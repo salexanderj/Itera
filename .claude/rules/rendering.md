@@ -384,7 +384,9 @@ show; the depth tested, not written; premultiplied alpha over what is drawn, the
 surface's, then times its alpha). It blends on the frame's display colours (there is no HDR image), as the particles do,
 inside the multisampled rendering, so its edges are anti-aliased; it is timed with the world (`Voxels`), not `Meshes`.
 Objects that cross, or one inside another, can show in the wrong order from some sides (sorted per object, not per
-pixel). A blended surface writes no depth, so the particles and debug lines, drawn after the world and tested against
+pixel). A blended face in the plane of an opaque surface (a see-through box's bottom on the ground, seen through its
+top) flickers with it as the view moves (the two at one depth, rounding picks either): leave such a face out or lift it
+off the surface, as the mesh sample's see-through boxes do. A blended surface writes no depth, so the particles and debug lines, drawn after the world and tested against
 its depth, draw over one in front of them, untinted. A draw's tint multiplies the base colour's alpha too, so a tint's
 alpha fades a blended instance. Its log lines: `Mesh assets on the GPU: N vertices, T triangles, M material(s), X
 texture(s) of Y MB; draws Z MB a frame slot`, and with skinned assets `Mesh assets on the GPU: N skinned vertices; posed

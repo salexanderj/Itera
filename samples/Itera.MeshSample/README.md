@@ -30,6 +30,17 @@ matches have no voxel world. It shows what such a game composes and how the engi
   `yard` (looping whole), holds the screen's hum at its picture's middle (a WAV loop with a `smpl` chunk; walk up to the
   screen to hear it), plays a clang (one of three files) at a block's middle as the aim comes onto it, and a chime at the
   listener (stereo, 24-bit) once the loading screen lifts. The console's `music` and `sound files` show them.
+- A physics corner west of the start (`PhysicsDemo`, `PhysicsDemoSystem`; turn left), with the run's physics materials
+  `ice` (friction 0.03) and `rubber` (bounciness 0.9) and the layers `gate` and `balls` apart, registered by
+  `SampleRunStartup`, and the yard's pieces given their material and layer by name (`YardPiece`, `YardSystem`): every
+  5 s a red rubber ball is let go at the top of a pale ice ramp; it rolls down, through a green gate pane that stops
+  the player but not balls of its layer, and through a faint violet trigger zone (a chime at the zone as anything comes
+  in, the player too: the player carries a `TriggerSensor`, and `TriggerCharacterSystem` runs after the stand-ins)
+  against a row of stone blocks. Another is let go over a dark red rubber pad, where it bounces most of its height, a
+  clang at each landing as loud as it was fast (its impacts reported, `PhysicsMarks.ContactEvents`). Two blue balls
+  hang in the air to the start's left (no gravity; push them), and two green ones fall onto the pad at 0.3 of
+  gravity. Walk onto the ice to feel it grip at 0.03 of the ground's. At most 8 released balls are kept; the oldest
+  goes. Its balls are loose bodies with their entities, coloured by the sample's palette (`SamplePalette`).
 - The sky is the engine's default (no `IAtmosphereSource`).
 - Its play area is the yard (`PlayArea` with the yard's bounds, in place of the engine's 10 cm grid's): the mover's map
   edge is a wall at the yard's side, so nobody walks off it.
