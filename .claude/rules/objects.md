@@ -140,14 +140,19 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   as any voxel does; a removed part's are cleared by the host (below). The rule is `ObjectEditing.RuleVersion`, hashed into the kinds' fingerprint (so the match's
   identity) with the copies' rule: raise it with any change to what an edit does to objects. The cap counts objects,
   not bytes (a copy is its changed bricks, 1 KB each, and its rebuilt parts' models).
-- Cuts are the world owner's (a session's host, or an offline game; a client follows the host's removals): each live
-  edit that takes voxels from an object marks it, and once an update `ObjectDamage` hands each marked object's snapshot
-  (`LabelSnapshot`: its kind and a copy of its changed bricks) to `ObjectLabeller`, a thread of its own, which splits the
-  object's solid voxels into pieces joined across faces (any material, leaves too) and keeps by the kind's rule
-  (`ObjectRoots`, `Register`'s fourth argument: `Ground`, the default, keeps the pieces holding a voxel at its foot, its
-  bottom at or below its anchor, and a kind with none keeps its largest; `Largest` keeps the largest piece, the first of
-  two as large). When the answer comes back and the object has not changed since (`DamagedObject.Revision`; else it is
-  asked again), each piece that falls is logged as a removal (`VoxelEdit.RemovePart` with the piece's first voxel in scan
+- Cuts are the world owner's (a session's host, or an offline game; a client follows the host's removals): each edit
+  that takes voxels from an object marks it (a replayed one too, when its area fills or its dropped copy is made again,
+  so a cut made meanwhile is looked at), and once an update `ObjectDamage` hands at most `AsksPerUpdate` (4) marked
+  objects' snapshots (`LabelSnapshot`: its kind, the copy it was taken from, and a copy of its changed bricks) to
+  `ObjectLabeller`, each once the areas of the objects whose copies may reach its own are filled (else it waits), a
+  thread of its own (an exception there answers no pieces, logged at Error once a match), which splits the object's solid voxels
+  into pieces joined across faces (any material, leaves too) and keeps by the kind's rule (`ObjectRoots`, `Register`'s
+  fourth argument: `Ground`, the default, keeps the pieces holding a voxel at its foot, its bottom at or below its
+  anchor, so a dig through every foot voxel fells the whole object, and a piece of the kind's own voxels joined to no
+  foot voxel falls at its first cut (build kinds joined); a kind with none keeps its largest; `Largest` keeps the
+  largest piece, the first of two as large). When the answer comes back for the copy it was taken from (a copy made
+  since, after a reset or a drop, is asked anew) and the object has not changed since (`DamagedObject.Revision`; else
+  it is asked again), each piece that falls is logged as a removal (`VoxelEdit.RemovePart` with the piece's first voxel in scan
   order as its seed and its bounds turned into the world's centimetres as its box), then the clears of the far copies only
   those pieces filled: at each level the kind is copied at, each world voxel in reach of the pieces whose copy holds the
   object's material, with no voxel the object keeps within the copy rule's reach of its sample point (the kept voxels
@@ -165,7 +170,8 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   seed of air or outside the kind; a copy the cap dropped takes it at its replay). Applied live (not replayed) to a
   copy, the voxels go to `ObjectDamage.Fallen`, with the air voxels round them that hold density (the soft side of their
   surface), and `FallenParts`
-  (scoped, `MatchVoxels.Fallen`, run in the match's fixed step after the fixed group) makes a cut body of them: a
+  (scoped, `MatchVoxels.Fallen`, run in the match's fixed step after the fixed group) makes a cut body of them (none
+  for a part of fewer than `FallenParts.FewestVoxels`, 27, solid voxels, which just goes): a
   model for each of the kind's parts it holds solid voxels of, with its border's (owning its own window's faces, and a low
   side's where no part of it lies beyond), three levels with densities by the kind's rule, placed and turned
   where they lay, one body (`LooseBodies.TryCreate(parts)`, 800 kg a cubic metre, shaded as the world, touching the

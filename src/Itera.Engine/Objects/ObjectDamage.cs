@@ -40,6 +40,9 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
     /// <summary>The dropped copies made again by replay in one update, nearest first.</summary>
     public const int RebuildsPerUpdate = 2;
 
+    /// <summary>The objects asked about (<see cref="ObjectLabeller"/>) in one update; the rest wait.</summary>
+    public const int AsksPerUpdate = 4;
+
     /// <summary>
     /// The damaged parts whose models are made again in one update; the rest wait for the next, the objects in the order
     /// they were changed.
@@ -74,6 +77,7 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
     private byte[] _level = [];
     private byte[] _levelDensities = [];
     private bool _capLogged;
+    private bool _labelFailureLogged;
     private bool _disposed;
 
     public ObjectDamage(
@@ -122,6 +126,9 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
 
     /// <summary>The objects whose pieces the labeller looks at now or will. For tests.</summary>
     internal int Labelling => _labeller.Pending + _toLabel.Count;
+
+    /// <summary>The labeller, for tests that label on the test's thread (<see cref="ObjectLabeller.Manual"/>, set before <see cref="Initialize"/>).</summary>
+    internal ObjectLabeller Labeller => _labeller;
 
     /// <summary>The damage of the object <paramref name="id"/>, or null while it keeps its kind's voxels (or no copy).</summary>
     internal DamagedObject? Find(ObjectId id) => _damaged.GetValueOrDefault(id);
@@ -426,8 +433,9 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
                 _changed.Enqueue(damaged);
             }
 
-            // A removal made here, by the world's owner, may cut a piece off: the labeller looks.
-            if (_live && !_world.FollowsHost && edit.Operation != VoxelEditOperation.Paint && !damaged.NeedsLabel)
+            // A removal by the world's owner may cut a piece off: the labeller looks. A replayed one too, since a cut made
+            // while the object's copy was dropped, or its area not filled, was never looked at.
+            if (!_world.FollowsHost && edit.Operation != VoxelEditOperation.Paint && !damaged.NeedsLabel)
             {
                 damaged.NeedsLabel = true;
                 _toLabel.Add(damaged);
@@ -437,17 +445,29 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
 
     /// <summary>
     /// Takes the labeller's answers, removing each piece that falls (a logged <see cref="VoxelEditOperation.RemovePart"/>)
-    /// of an object unchanged since it was asked; one changed since is asked again. Then asks for the objects edits took
-    /// voxels from since, one snapshot each at a time.
+    /// of the copy it was asked for, unchanged since; one changed since is asked again. Then asks for at most
+    /// <see cref="AsksPerUpdate"/> of the objects edits took voxels from since, one snapshot each at a time, each once
+    /// the areas of the objects whose copies may reach its own are filled.
     /// </summary>
     private void Label()
     {
         while (_labeller.TryTake(out var snapshot))
         {
             var id = snapshot.Placement.Id;
-            if (_damaged.TryGetValue(id, out var damaged) && ReferenceEquals(damaged.Kind, snapshot.Kind))
+            // For the copy it was taken from alone: a copy made since (after a reset, or a drop and its replay) asks anew.
+            if (
+                snapshot.Source is { } damaged
+                && _damaged.TryGetValue(id, out var kept)
+                && ReferenceEquals(kept, damaged)
+            )
             {
                 damaged.Labelling = false;
+                if (snapshot.Failure is { } failure && !_labelFailureLogged)
+                {
+                    _labelFailureLogged = true;
+                    LogLabelFailed(failure, damaged.Kind.Name);
+                }
+
                 if (damaged.Revision != snapshot.Revision)
                 {
                     if (!damaged.NeedsLabel)
@@ -474,41 +494,53 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
             _labeller.Return(snapshot);
         }
 
+        var asks = 0;
         for (var i = _toLabel.Count - 1; i >= 0; i--)
         {
             var damaged = _toLabel[i];
-            if (damaged.Labelling)
-            {
-                continue;
-            }
-
-            _toLabel.RemoveAt(i);
-            damaged.NeedsLabel = false;
             if (!_damaged.TryGetValue(damaged.Placement.Id, out var kept) || !ReferenceEquals(kept, damaged))
             {
                 // Its copy went since.
+                _toLabel.RemoveAt(i);
+                damaged.NeedsLabel = false;
+                damaged.Labelling = false;
                 continue;
             }
 
-            damaged.Labelling = true;
+            if (damaged.Labelling || asks == AsksPerUpdate)
+            {
+                continue;
+            }
+
             var snapshot = _labeller.Rent();
             var copies = _world.Copies;
-            snapshot.Copy(damaged, copies, _kinds);
             snapshot.Neighbours.Clear();
             if (copies is not null)
             {
                 // The objects whose copies may reach the object's: their reach, and a coarsest copied voxel past it.
+                // Until all their areas are filled it waits: a neighbour left out could lose its copy to a clear.
                 var reach = damaged.Kind.ReachCentimetres + copies.Grid.Edge(copies.LastLevel);
                 var anchor = damaged.Placement.Anchor;
-                _objects.Near(
-                    anchor.X - reach,
-                    anchor.X + reach,
-                    anchor.Z - reach,
-                    anchor.Z + reach,
-                    snapshot.Neighbours
-                );
+                if (
+                    !_objects.Near(
+                        anchor.X - reach,
+                        anchor.X + reach,
+                        anchor.Z - reach,
+                        anchor.Z + reach,
+                        snapshot.Neighbours
+                    )
+                )
+                {
+                    _labeller.Return(snapshot);
+                    continue;
+                }
             }
 
+            snapshot.Copy(damaged, copies, _kinds);
+            asks++;
+            _toLabel.RemoveAt(i);
+            damaged.NeedsLabel = false;
+            damaged.Labelling = true;
             _labeller.Ask(snapshot);
         }
     }
@@ -1026,6 +1058,12 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         Message = "Objects: {Most} damaged objects keep copies (Engine:Objects:MostDamaged); the farthest's copies go, made again near"
     )]
     private partial void LogCapReached(int most);
+
+    [LoggerMessage(
+        Level = LogLevel.Error,
+        Message = "Objects: finding the pieces of a damaged {Kind} failed (logged once a match); nothing of it falls"
+    )]
+    private partial void LogLabelFailed(Exception exception, string kind);
 }
 
 /// <summary>One voxel of a part cut off an object: its place in the kind's voxels, its material and density.</summary>

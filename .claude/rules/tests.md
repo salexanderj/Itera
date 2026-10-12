@@ -104,7 +104,8 @@ Where tests live:
   replayed when the area fills bit for bit (also across a reset), a dig past the map's edge changing nothing, the damage
   pinned (with and without a part's removal), a part removed whole and falling only live, a removal bound by its box and
   never changing the world, the labeller's pieces by each root rule, a cut on the host logging the removal it cuts
-  off (a client following labels nothing), its far copies cleared where only the piece filled them (kept through a
+  off (a client following labels nothing; a cut replayed when its area fills too; an answer for a copy a reset dropped
+  changing nothing, the labeller run on the test's thread, `ObjectLabeller.Manual`), its far copies cleared where only the piece filled them (kept through a
   reload and on a client), hostile part removals and clears of copies, a saved log with a removal loading the same damage, a client following its host, a reset, the cap dropping the farthest copy and replaying it near, a mover far behind the changes, an area's
   copies going and coming back, a clear's count of what it takes for `IVoxelRemovals`, paint and fill, damaged parts'
   models against the kind's rule over their voxels across a part's border, the mover, rays, and statics meeting a dug

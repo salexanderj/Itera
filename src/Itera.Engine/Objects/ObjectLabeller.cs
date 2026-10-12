@@ -38,8 +38,14 @@ internal sealed class LabelSnapshot : IObjectVoxelSource
     /// <summary>The object's <see cref="DamagedObject.Revision"/> when copied.</summary>
     public int Revision { get; private set; }
 
+    /// <summary>The copy of the object it was taken from: an answer is for that copy alone, not a later one.</summary>
+    public DamagedObject? Source { get; private set; }
+
     /// <summary>The pieces to fall, filled on the labeller's thread.</summary>
     public List<FallingPiece> Falling { get; } = [];
+
+    /// <summary>What the labeller's thread threw while labelling it (then nothing falls), or null.</summary>
+    public Exception? Failure { get; set; }
 
     /// <summary>
     /// The world's copies of objects (null without), whose voxels only the falling pieces fill are cleared
@@ -56,14 +62,24 @@ internal sealed class LabelSnapshot : IObjectVoxelSource
     /// <summary>The clears of the falling pieces' far copies (<see cref="VoxelEditOperation.ClearCopies"/>), filled on the thread.</summary>
     public List<VoxelEdit> Clears { get; } = [];
 
+    /// <summary>Drops what keeps the copy and its neighbours alive while the snapshot waits in the pool.</summary>
+    internal void Forget()
+    {
+        Source = null;
+        Failure = null;
+        Neighbours.Clear();
+    }
+
     /// <summary>Copies the object's changed bricks, with the world's copies and the kinds. Main thread.</summary>
     public void Copy(DamagedObject damaged, ObjectCopies? copies = null, VoxelObjectKinds? kinds = null)
     {
         Placement = damaged.Placement;
         Kind = damaged.Kind;
         Revision = damaged.Revision;
+        Source = damaged;
         Copies = copies;
         Kinds = kinds;
+        Failure = null;
         Falling.Clear();
         Clears.Clear();
         _brickAt.Clear();
@@ -131,10 +147,43 @@ internal sealed class ObjectLabeller : IDisposable
     /// <summary>The snapshots asked for and not yet answered or taken.</summary>
     public int Pending { get; private set; }
 
+    /// <summary>
+    /// True to keep the thread from starting: the snapshots asked for wait for <see cref="LabelPending"/> on the caller's
+    /// thread. For tests that decide when an answer comes.
+    /// </summary>
+    internal bool Manual { get; set; }
+
+    /// <summary>Labels every snapshot asked for on the calling thread (with <see cref="Manual"/>).</summary>
+    internal void LabelPending()
+    {
+        if (!Manual)
+        {
+            throw new InvalidOperationException("The labeller labels on the caller's thread only when manual.");
+        }
+
+        while (true)
+        {
+            LabelSnapshot snapshot;
+            lock (_lock)
+            {
+                if (!_asked.TryDequeue(out snapshot!))
+                {
+                    return;
+                }
+            }
+
+            Label(snapshot);
+            lock (_lock)
+            {
+                _answered.Enqueue(snapshot);
+            }
+        }
+    }
+
     /// <summary>Starts the thread. Main thread.</summary>
     public void Start()
     {
-        if (_thread is not null)
+        if (_thread is not null || Manual)
         {
             return;
         }
@@ -178,9 +227,10 @@ internal sealed class ObjectLabeller : IDisposable
         }
     }
 
-    /// <summary>Gives a snapshot back for reuse. Main thread.</summary>
+    /// <summary>Gives a snapshot back for reuse, dropping its copy's reference. Main thread.</summary>
     public void Return(LabelSnapshot snapshot)
     {
+        snapshot.Forget();
         lock (_lock)
         {
             _spare.Push(snapshot);
@@ -677,7 +727,19 @@ internal sealed class ObjectLabeller : IDisposable
                 snapshot = _asked.Dequeue();
             }
 
-            Label(snapshot);
+            try
+            {
+                Label(snapshot);
+            }
+            catch (Exception exception)
+            {
+                // No answer of pieces rather than a thread that ends the game: the object stays whole, and the main
+                // thread logs it.
+                snapshot.Falling.Clear();
+                snapshot.Clears.Clear();
+                snapshot.Failure = exception;
+            }
+
             lock (_lock)
             {
                 _answered.Enqueue(snapshot);

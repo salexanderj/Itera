@@ -383,6 +383,57 @@ public sealed class ObjectDamageTests : IDisposable
     }
 
     /// <summary>
+    /// An answer of the labeller for a copy since dropped (by a reset) is not applied to the copy made after it: the cut's
+    /// top stays on the trunk bitten after the reset, and nothing is logged but the three edits.
+    /// </summary>
+    [Fact]
+    public void A_labellers_answer_for_a_dropped_copy_changes_nothing()
+    {
+        var host = Make(manual: true);
+        host.World.Apply(
+            VoxelEdit.Box(new VoxelCoord(110, 200, -40), new VoxelCoord(80, 20, 80), VoxelEditOperation.Clear)
+        );
+        host.Damage.Update();
+        Assert.Equal(1, host.Damage.Labelling);
+
+        host.World.Reset();
+        host.World.Apply(VoxelEdit.Sphere(new VoxelCoord(140, 100, 0), 18, VoxelEditOperation.Clear));
+        host.Damage.Labeller.LabelPending();
+        host.Damage.Update();
+        host.Damage.Labeller.LabelPending();
+        host.Damage.Update();
+
+        Assert.Equal(0, host.Damage.Labelling);
+        Assert.Equal(3, host.World.EditCount);
+        Assert.Empty(host.Damage.Fallen);
+        var trunk = host.Damage.Find(host.Placements[0].Id);
+        Assert.NotNull(trunk);
+        // The trunk's middle 2.5 m up, above the first cut.
+        trunk.Voxel(6, 50, 6, out var material, out _);
+        Assert.Equal(Bark, material);
+    }
+
+    /// <summary>
+    /// A cut made before the trunk's area was filled is looked at when the area fills and replays it: the host logs the
+    /// top's removal then.
+    /// </summary>
+    [Fact]
+    public void A_cut_replayed_on_the_host_removes_the_piece_it_cuts_off()
+    {
+        var host = Make(fill: false, manual: true);
+        host.World.Apply(
+            VoxelEdit.Box(new VoxelCoord(110, 200, -40), new VoxelCoord(80, 20, 80), VoxelEditOperation.Clear)
+        );
+        host.Fill();
+        host.Damage.Labeller.LabelPending();
+        host.Damage.Update();
+
+        Assert.Equal(2, host.World.EditCount);
+        Assert.Equal(VoxelEditOperation.RemovePart, host.World.GetEdit(2).Operation);
+        Assert.Equal(0, host.Damage.Labelling);
+    }
+
+    /// <summary>
     /// A cut through the trunk of a world that copies its objects from level 2 up: with the top's removal, the host clears
     /// the far voxels (40 and 80 cm) only the top filled, and keeps those the stump still reaches; so they stay once the
     /// columns load again, and a client following the host gets the same.
@@ -957,9 +1008,15 @@ public sealed class ObjectDamageTests : IDisposable
     /// A trunk, the rock turned, a slab 6 m out, a wall two parts wide, and a bush of leaves; with
     /// <paramref name="atEdge"/>, another wall 1 m inside the map's edge (x = 512 m), streamed round 508 m out.
     /// </summary>
-    private Scene Make(bool fill = true, int mostDamaged = 256, bool atEdge = false, bool copies = false)
+    private Scene Make(
+        bool fill = true,
+        int mostDamaged = 256,
+        bool atEdge = false,
+        bool copies = false,
+        bool manual = false
+    )
     {
-        var scene = new Scene(mostDamaged, atEdge, copies);
+        var scene = new Scene(mostDamaged, atEdge, copies, manual);
         _scenes.Add(scene);
         if (fill)
         {
@@ -1089,7 +1146,7 @@ public sealed class ObjectDamageTests : IDisposable
     /// </summary>
     private sealed class Scene : IDisposable
     {
-        public Scene(int mostDamaged, bool atEdge, bool copies = false)
+        public Scene(int mostDamaged, bool atEdge, bool copies = false, bool manual = false)
         {
             Kinds = new VoxelObjectKinds();
             var trunk = Register(
@@ -1181,6 +1238,8 @@ public sealed class ObjectDamageTests : IDisposable
                 options,
                 NullLogger<ObjectDamage>.Instance
             );
+            // Manual: the labeller answers only when the test labels what was asked (LabelPending).
+            Damage.Labeller.Manual = manual;
             KindModels.Initialize();
             Objects.Initialize();
             Damage.Initialize();

@@ -30,6 +30,9 @@ public sealed class FallenParts(
     /// <summary>The density of a fallen part's voxels, in kilograms a cubic metre: about green wood's.</summary>
     public const float DensityKilogramsPerCubicMetre = 800;
 
+    /// <summary>The fewest solid voxels a fallen part makes a body of; a smaller speck just goes.</summary>
+    public const int FewestVoxels = 27;
+
     private readonly LooseBodyRoom _room = new(bodies);
     private readonly int[] _counts = new int[256];
     private readonly List<LoosePart> _parts = [];
@@ -67,6 +70,17 @@ public sealed class FallenParts(
             _densities = new byte[VoxelConstants.ChunkVoxels];
             _coarse = new byte[VoxelConstants.ChunkVoxels];
             _coarseDensities = new byte[VoxelConstants.ChunkVoxels];
+        }
+
+        var solid = 0;
+        foreach (var voxel in fallen.Voxels)
+        {
+            solid += voxel.Material != VoxelConstants.Air ? 1 : 0;
+        }
+
+        if (solid < FewestVoxels)
+        {
+            return;
         }
 
         var kind = fallen.Kind;
