@@ -165,7 +165,7 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
 - A part cut off an object goes by an edit of its own (`VoxelEditOperation.RemovePart`, `VoxelEdit.RemovePart(id,
   seed, box, size)`: the object's id in `Piece`, the kind's seed voxel in `Turn`, 16 bits an axis, below 1,024; a box
   of air where the part lay, for the log's index): the world's voxels never change (`VoxelEdit.ChangesWorld` false;
-  columns do not replay it; navigation ignores it), and `ObjectDamage` takes from the object every solid voxel joined
+  columns do not replay it; navigation reads the cells under its box again), and `ObjectDamage` takes from the object every solid voxel joined
   to the seed across faces, the same on every peer (nothing for another object, a box missing its reach or height, or a
   seed of air or outside the kind; a copy the cap dropped takes it at its replay). Applied live (not replayed) to a
   copy, the voxels go to `ObjectDamage.Fallen`, with the air voxels round them that hold density (the soft side of their
@@ -178,6 +178,10 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   voxels and the objects' statics, gone 30 s after it rests or 60 s after it was made; each peer makes its own, and none
   where its copy was dropped or its area not filled) with its entity (`LooseBody`, `CutPiece`), room made
   as for a thrown ball.
+- Navigation meets objects (`.claude/rules/navigation.md`): the objects as generated are stamped onto the cells a
+  source fills, on the navigation thread (`NavObjects`, a placer read with `ObjectColumnReader`, the mover's column
+  rule), and reads take them from the mover's `ObjectColumns`, once known; a part's removal and each change of an
+  object's copy read its cells again.
 - Models may have a voxel size of their own (`VoxelModels.Add` with a unit; `UnitCentimetres`, `VoxelMetres`) and keep
   densities (`Encode(voxels, densities, extent)`, `DecodeDensities`, `HasDensities`), which the renderer meshes them with.
   `SolidModelVoxels.Add` and the cut parts' hulls and masses (`LooseBodies.TryCreate(parts)`) take the model's unit.

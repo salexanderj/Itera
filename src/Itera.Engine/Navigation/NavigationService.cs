@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using Itera.Engine.Maths;
 using Itera.Engine.Networking;
+using Itera.Engine.Objects;
+using Itera.Engine.Physics;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -43,6 +45,13 @@ namespace Itera.Engine.Navigation;
 /// fills its grid from the layout again and builds every field from it; the main thread takes that grid whole with the
 /// fields, and only then reads the edits after the reset (<see cref="Refilling"/> until then).
 /// </para>
+/// <para>
+/// The voxel objects a world places block as solid does: every fill from the source has the objects as generated stamped
+/// onto it (<see cref="NavGridScanner.StampObjects"/>), and a read takes them as they are, with the voxels, from the
+/// mover's reading of them, once they are known round the cell. A removal of an object's part changes the cells under
+/// its box, and each change of an object's copy (<see cref="ObjectDamage.ReadChanges"/>) has the cells under its reach
+/// read again where loaded.
+/// </para>
 /// A session client builds nothing: the host moves every walker.
 /// </summary>
 public sealed partial class NavigationService : IDisposable
@@ -69,6 +78,10 @@ public sealed partial class NavigationService : IDisposable
     private readonly Func<bool> _isAuthority;
     private readonly VoxelWorld? _voxels;
     private readonly IVoxelPassability? _passability;
+    private readonly ObjectWorld? _placed;
+    private readonly ObjectColumns? _objectColumns;
+    private readonly ObjectDamage? _damage;
+    private readonly ObjectDamageChange[] _damageChanges = new ObjectDamageChange[64];
     private readonly ILogger<NavigationService> _logger;
     private readonly AutoResetEvent _wake = new(false);
     private readonly Action<int> _changed;
@@ -82,6 +95,8 @@ public sealed partial class NavigationService : IDisposable
     private NavGrid? _grid;
     private NavGrid? _work;
     private NavGridScanner? _scanner;
+    private NavObjects? _objects;
+    private long _damageSeen;
     private NavFieldSpec[] _specs = [];
     private FlowField[] _front = [];
     private FlowField[] _back = [];
@@ -123,6 +138,9 @@ public sealed partial class NavigationService : IDisposable
         VoxelWorld voxels,
         IVoxelPassability passability,
         IEnumerable<INavGridSource> sources,
+        ObjectWorld placed,
+        VoxelCharacterMover mover,
+        ObjectDamage damage,
         IOptions<EngineOptions> options,
         ILogger<NavigationService> logger
     )
@@ -133,7 +151,10 @@ public sealed partial class NavigationService : IDisposable
             voxels,
             passability,
             NavArea.Of(voxels.Grid),
-            options.Value.Navigation.WindowCells
+            options.Value.Navigation.WindowCells,
+            placed,
+            mover.Objects,
+            damage
         ) { }
 
     /// <param name="source">The game's cells and fields, or null for no navigation.</param>
@@ -143,6 +164,9 @@ public sealed partial class NavigationService : IDisposable
     /// <param name="passability">The materials walkers pass through; with <paramref name="voxels"/>.</param>
     /// <param name="area">The square the window may cover (the map); none for <paramref name="voxels"/>'s map.</param>
     /// <param name="windowCells">The most cells the window is across.</param>
+    /// <param name="placed">The objects the world places, with <paramref name="voxels"/>; null for none.</param>
+    /// <param name="objectColumns">The objects as the mover reads them (shared with it), with <paramref name="placed"/>.</param>
+    /// <param name="damage">What edits did to the objects, with <paramref name="placed"/>.</param>
     internal NavigationService(
         INavGridSource? source,
         Func<bool> isAuthority,
@@ -150,9 +174,15 @@ public sealed partial class NavigationService : IDisposable
         VoxelWorld? voxels = null,
         IVoxelPassability? passability = null,
         NavArea? area = null,
-        int windowCells = NavigationSettings.DefaultWindowCells
+        int windowCells = NavigationSettings.DefaultWindowCells,
+        ObjectWorld? placed = null,
+        ObjectColumns? objectColumns = null,
+        ObjectDamage? damage = null
     )
     {
+        _placed = placed;
+        _objectColumns = objectColumns;
+        _damage = damage;
         _source = source;
         _isAuthority = isAuthority;
         _logger = logger;
@@ -261,7 +291,27 @@ public sealed partial class NavigationService : IDisposable
         _specs = [.. _source.CreateFields()];
         if (_voxels is not null && _passability is not null)
         {
-            _scanner = new NavGridScanner(_voxels, _passability, _source.LowCentimetres, _source);
+            var placer = _placed?.Placer;
+            // Objects only where reads see them too (the mover's reading of them).
+            if (placer is not null && _objectColumns is not null && _placed!.Kinds.Count > 0)
+            {
+                // The navigation thread reads the kinds' voxels: their tables are made here, before it starts.
+                _placed.Kinds.MakeTables();
+
+                _objects = new NavObjects(
+                    placer,
+                    _voxels.Seed,
+                    _placed.Kinds,
+                    _passability,
+                    _voxels.Grid.BaseCentimetres,
+                    _placed.KeptBox()
+                );
+            }
+
+            _scanner = new NavGridScanner(_voxels, _passability, _source.LowCentimetres, _source)
+            {
+                Objects = _objects is null ? null : _objectColumns,
+            };
             _editsSeen = _voxels.EditCount;
             // Edits before the last reset changed nothing that is left; nor does one that changes no cell.
             var reset = _voxels.LastReset;
@@ -317,6 +367,8 @@ public sealed partial class NavigationService : IDisposable
             {
                 StartRefill();
             }
+
+            ReadDamage();
 
             Rescan();
             CheckStamped();
@@ -482,17 +534,68 @@ public sealed partial class NavigationService : IDisposable
     }
 
     /// <summary>
-    /// False for an edit that cannot change a cell: painting, a clear of only what walkers pass through, or one that
-    /// covers no cell's centre column (outside the window, among others).
+    /// False for an edit that cannot change a cell: painting, a clear of only what walkers pass through, a clear of
+    /// objects' far copies, or one that covers no cell's centre column (outside the window, among others). A removal of
+    /// an object's part changes the cells under its box (read once loaded; its stamp changes nothing).
     /// </summary>
     private bool Changes(in VoxelEdit edit) =>
         edit.Operation
             is not VoxelEditOperation.Paint
                 and not VoxelEditOperation.Reset
-                and not VoxelEditOperation.RemovePart
                 and not VoxelEditOperation.ClearCopies
         && !_scanner!.ClearsOnlyPassable(in edit)
         && NavGridScanner.CoversAnyCentre(_grid!, in edit);
+
+    /// <summary>
+    /// Reads the objects' changes since the last step (<see cref="ObjectDamage.ReadChanges"/>: any change of an object's
+    /// copy: an edit or a cut, a replay, a copy made again after the cap dropped it, a reset's healing): the cells under
+    /// each changed object's reach (and a cell round it) are read again where loaded and its objects known, else wait with
+    /// the stamped edits (a change repeated for one object, as a replay records each edit, counts once). Changes lost past
+    /// the ring are passed over (the edits that made them wait for their own reads); those made during a refill are read
+    /// after it, as the edits are.
+    /// </summary>
+    private void ReadDamage()
+    {
+        if (_damage is null || _objects is null || Refilling)
+        {
+            return;
+        }
+
+        while (_damage.Version != _damageSeen)
+        {
+            var read = _damage.ReadChanges(_damageSeen, _damageChanges, out var lost);
+            if (lost)
+            {
+                _damageSeen = _damage.Version;
+                return;
+            }
+
+            for (var i = 0; i < read; i++)
+            {
+                ref readonly var change = ref _damageChanges[i];
+                _damageSeen = change.Version;
+                if (i > 0 && change.Object == _damageChanges[i - 1].Object)
+                {
+                    continue;
+                }
+
+                var cells = new StampedEdit(
+                    NavGrid.FloorDivide(change.MinX, NavGrid.CellCentimetres) - 1,
+                    NavGrid.FloorDivide(change.MinZ, NavGrid.CellCentimetres) - 1,
+                    NavGrid.FloorDivide(change.MaxX, NavGrid.CellCentimetres) + 1,
+                    NavGrid.FloorDivide(change.MaxZ, NavGrid.CellCentimetres) + 1
+                );
+                if (Resident(in cells))
+                {
+                    Queue(in cells);
+                }
+                else if (cells.TryClip(_grid!, out _, out _, out _, out _))
+                {
+                    _stamped.Add(cells);
+                }
+            }
+        }
+    }
 
     /// <summary>At a reset: drops what waits to be read again, and asks the thread for a grid from the layout.</summary>
     private void ForgetEdits()
@@ -661,11 +764,7 @@ public sealed partial class NavigationService : IDisposable
         {
             ref readonly var edit = ref _voxels.GetEdit(sequence);
             if (
-                edit.Operation
-                is VoxelEditOperation.Paint
-                    or VoxelEditOperation.Reset
-                    or VoxelEditOperation.RemovePart
-                    or VoxelEditOperation.ClearCopies
+                edit.Operation is VoxelEditOperation.Paint or VoxelEditOperation.Reset or VoxelEditOperation.ClearCopies
             )
             {
                 continue;
@@ -813,12 +912,11 @@ public sealed partial class NavigationService : IDisposable
         }
 
         var voxels = _voxels!.Grid;
-        return _voxels.ColumnsResident(
-            voxels.ToVoxel(grid.CentreX(firstColumn)),
-            voxels.ToVoxel(grid.CentreZ(firstRow)),
-            voxels.ToVoxel(grid.CentreX(lastColumn)),
-            voxels.ToVoxel(grid.CentreZ(lastRow))
-        );
+        int x0 = voxels.ToVoxel(grid.CentreX(firstColumn)),
+            z0 = voxels.ToVoxel(grid.CentreZ(firstRow)),
+            x1 = voxels.ToVoxel(grid.CentreX(lastColumn)),
+            z1 = voxels.ToVoxel(grid.CentreZ(lastRow));
+        return _voxels.ColumnsResident(x0, z0, x1, z1) && _scanner!.ObjectsKnown(x0, z0, x1, z1);
     }
 
     private void Queue(in StampedEdit cells)
@@ -905,7 +1003,7 @@ public sealed partial class NavigationService : IDisposable
             }
 
             var start = Stopwatch.GetTimestamp();
-            _source!.Fill(_work, 0, 0, _work.Width - 1, _work.Depth - 1);
+            Fill(_work, 0, 0, _work.Width - 1, _work.Depth - 1);
             // Only edits that change cells were kept (Initialize), and with them there is a scanner.
             foreach (ref readonly var edit in _startEdits.AsSpan())
             {
@@ -927,7 +1025,7 @@ public sealed partial class NavigationService : IDisposable
                 if (_refilling)
                 {
                     var refill = Stopwatch.GetTimestamp();
-                    _source.Fill(_work, 0, 0, _work.Width - 1, _work.Depth - 1);
+                    Fill(_work, 0, 0, _work.Width - 1, _work.Depth - 1);
                     _fillMs = Stopwatch.GetElapsedTime(refill).TotalMilliseconds;
                 }
                 else if (_moving)
@@ -943,6 +1041,19 @@ public sealed partial class NavigationService : IDisposable
         }
     }
 
+    /// <summary>
+    /// On the thread: fills cells from the source, the world as generated, then stamps the objects the world places onto
+    /// them, as generated (<see cref="NavGridScanner.StampObjects"/>): the source knows only the ground.
+    /// </summary>
+    private void Fill(NavGrid grid, int firstColumn, int firstRow, int lastColumn, int lastRow)
+    {
+        _source!.Fill(grid, firstColumn, firstRow, lastColumn, lastRow);
+        if (_objects is not null)
+        {
+            _scanner!.StampObjects(grid, _objects, firstColumn, firstRow, lastColumn, lastRow);
+        }
+    }
+
     /// <summary>On the thread: fills the strips a move of the window brought in, and stamps the edits that reach them.</summary>
     private void FillStrips()
     {
@@ -951,7 +1062,7 @@ public sealed partial class NavigationService : IDisposable
         for (var i = 0; i < _stripCount; i++)
         {
             var strip = _strips[i];
-            _source!.Fill(work, strip.FirstColumn, strip.FirstRow, strip.LastColumn, strip.LastRow);
+            Fill(work, strip.FirstColumn, strip.FirstRow, strip.LastColumn, strip.LastRow);
             foreach (ref readonly var edit in System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_stripEdits))
             {
                 _scanner?.Stamp(

@@ -21,6 +21,22 @@ while their users keep the old ones. A read or a stamp judges solid from the sou
 without an `INavGridSource` has no navigation (its loading task is done at once). Floors are absolute centimetres in
 `int`s, so any map's heights fit. `NavigationDebugLines` draws a field's arrows round the camera for a game's debug view.
 
+The voxel objects a world places (`.claude/rules/objects.md`) block as solid does. After each fill from the source (the
+window at the start, a refill after a reset, a move's strips) the navigation thread stamps the objects as generated onto
+the cells (`NavGridScanner.StampObjects`: the placer's objects in the areas the match keeps, `NavObjects`, read in the
+mover's cells by `ObjectColumnReader`): each run of an object's blocking voxels in a cell's centre column blocks the cell
+where it rises more than `LowCentimetres` over the ground (a trunk), raises the floor where lower (a flat stone), and
+lowers the headroom where it hangs over the floor (a branch); passable voxels (leaves) change nothing. A read takes the
+objects as they are (damaged too) from the mover's `ObjectColumns` (`NavGridScanner.Objects`, shared, main thread), by
+the highest top and the lowest bottom with the voxels, and waits, with the stamped edits, until the objects round the
+cell are known (their areas filled, `ObjectsKnown`). A removal of an object's part (`VoxelEditOperation.RemovePart`)
+changes the cells under its box (read once loaded; its stamp changes nothing), and each change of an object's copy
+(`ObjectDamage.ReadChanges`: an edit or a cut, a replay, a copy made again after the cap dropped it, a reset's healing)
+has the cells under its reach read again where loaded, else once loaded (one lost past the ring is passed over: the edits
+that changed it wait for their own reads; those during a refill are read after it). A run of an object's voxels whose
+bottom lies within `LowCentimetres` over the ground stands on the floor, in a stamp as in a read. A stamp keeps the headroom's top where an object raised the floor, and a read looks up from the new floor, so the
+two differ in headroom there.
+
 The grid is a window (`NavArea`, the map's square of whole cells; `Engine:Navigation:WindowCells`, 1024 by default, 256
 to 4096): a map that fits is covered whole and the window never moves; on a larger one it starts round the match's
 start (the origin) and follows a focus, what the game gives `NavigationService.Follow(WorldPoint)` (a point among its
@@ -40,4 +56,5 @@ and the fields are absolute (corners and floors in centimetres); their helpers i
 ### Files in `src/Itera.Engine`
 
   - `Navigation/`: `NavigationService` (with `NavArea`), `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`,
-    `INavGridSource` (the game's part), `FlowFieldBuilder`, `FlowField`, `NavGridScanner`, `NavigationDebugLines`.
+    `INavGridSource` (the game's part), `FlowFieldBuilder`, `FlowField`, `NavGridScanner`, `NavObjects`,
+    `NavigationDebugLines`.

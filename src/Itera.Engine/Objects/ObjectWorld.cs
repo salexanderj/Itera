@@ -49,6 +49,32 @@ public sealed partial class ObjectWorld(
     /// <summary>True when the world's generator places objects.</summary>
     public bool HasPlacer => _placer is not null;
 
+    /// <summary>The world's placer (<see cref="IChunkGenerator.Objects"/>), or null; known before <see cref="Initialize"/>.</summary>
+    internal IObjectPlacer? Placer => generator.Objects;
+
+    /// <summary>The run's object kinds.</summary>
+    internal VoxelObjectKinds Kinds => kinds;
+
+    /// <summary>
+    /// The box, in absolute centimetres across x and z (half open), whose objects the areas keep: the map's areas, each a
+    /// level-<c>Engine:Objects:HandOverLevel</c> column wide (an area past the map's edge holds no column, so is never
+    /// kept, and its objects never placed). Known before <see cref="Initialize"/>; any thread.
+    /// </summary>
+    internal (long MinX, long EndX, long MinZ, long EndZ) KeptBox()
+    {
+        var grid = world.Grid;
+        var area = (long)VoxelConstants.ChunkSize * grid.Edge(0) << options.Value.Objects.HandOverLevel;
+        var first = Maths.DeterministicMath.FloorDivide(
+            (long)grid.MinChunkXZ * VoxelConstants.ChunkSize * grid.Edge(0),
+            area
+        );
+        var last = Maths.DeterministicMath.FloorDivide(
+            ((long)grid.MaxChunkXZ + 1) * VoxelConstants.ChunkSize * grid.Edge(0) - 1,
+            area
+        );
+        return (first * area, (last + 1) * area, first * area, (last + 1) * area);
+    }
+
     /// <summary>Areas kept, filled or waiting.</summary>
     public int AreaCount => _areas.Count;
 

@@ -155,6 +155,18 @@ public sealed class VoxelObjectKinds
     }
 
     /// <summary>
+    /// Makes every kind's tables (<see cref="VoxelObjectKind.MakeTables"/>), so other threads may read their voxels. Main
+    /// thread, before such a thread starts.
+    /// </summary>
+    internal void MakeTables()
+    {
+        foreach (var kind in _kinds)
+        {
+            kind.MakeTables();
+        }
+    }
+
+    /// <summary>
     /// Seals the kinds for a world of <paramref name="grid"/>: no kind is registered from then on, and every kind's voxels
     /// must be finer than the world's. Throws naming the first kind whose voxels are not. At each match's start.
     /// </summary>

@@ -1,3 +1,4 @@
+using Itera.Engine.Physics;
 using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Navigation;
@@ -11,8 +12,12 @@ namespace Itera.Engine.Navigation;
 /// past that limit blocks the cell (stone placed on a path, or 1 dm
 /// cubes stacked one at a time: judged from the floor each cube raised, a stack would be a floor to walk over); otherwise the headroom runs up to the lowest
 /// blocking voxel over the floor (a tunnel dug through a wall opens with its height). Only the voxel column at the
-/// cell's centre is read, as the builder samples its centre. Foliage does not block, as for the character mover. Main
-/// thread; allocates nothing.
+/// cell's centre is read, as the builder samples its centre. Foliage does not block, as for the character mover. The
+/// voxel objects a world places count as the voxels do where given (<see cref="Objects"/>: the mover's, read in the same
+/// cells and combined by the highest top and the lowest bottom), and <see cref="StampObjects"/> stamps them, as
+/// generated, onto cells a source filled. Main thread (but <see cref="Stamp"/> and <see cref="StampObjects"/>);
+/// allocates nothing once the objects' chunks it reads are made (<c>ObjectColumns</c>, which allocates until its cache is
+/// full).
 /// </summary>
 public sealed class NavGridScanner
 {
@@ -47,6 +52,19 @@ public sealed class NavGridScanner
     public int LowCentimetres { get; }
 
     /// <summary>
+    /// The voxel objects the world places, as the mover reads them (its <c>VoxelCharacterMover.Objects</c>, shared), or
+    /// null for none: a read waits until they are known round the cell, and counts them as voxels.
+    /// </summary>
+    internal ObjectColumns? Objects { get; init; }
+
+    /// <summary>
+    /// True when the objects that may stand in the level-0 voxel columns from (<paramref name="x0"/>,
+    /// <paramref name="z0"/>) to (<paramref name="x1"/>, <paramref name="z1"/>) are known (their areas filled); always
+    /// without objects.
+    /// </summary>
+    public bool ObjectsKnown(int x0, int z0, int x1, int z1) => Objects?.Known(x0, z0, x1, z1) ?? true;
+
+    /// <summary>
     /// True when <paramref name="edit"/> clears only materials walkers pass through (a blast stripping leaves and
     /// flowers): it changes no floor or headroom, so its cells need neither reading again nor stamping (stamped from its
     /// shape, a clear of some materials counts as a dig of its whole box). Any thread; allocates nothing.
@@ -69,14 +87,17 @@ public sealed class NavGridScanner
         return true;
     }
 
-    /// <summary>True when the voxel column at the centre of <paramref name="cell"/> is loaded at level 0.</summary>
+    /// <summary>
+    /// True when the voxel column at the centre of <paramref name="cell"/> is loaded at level 0, and the objects that may
+    /// stand in it are known.
+    /// </summary>
     public bool IsResident(NavGrid grid, int cell)
     {
         ArgumentNullException.ThrowIfNull(grid);
         var voxels = _world.Grid;
         var x = voxels.ToVoxel(grid.CentreX(grid.Column(cell)));
         var z = voxels.ToVoxel(grid.CentreZ(grid.Row(cell)));
-        return _world.ColumnsResident(x, z, x, z);
+        return _world.ColumnsResident(x, z, x, z) && ObjectsKnown(x, z, x, z);
     }
 
     /// <summary>
@@ -97,14 +118,14 @@ public sealed class NavGridScanner
         var ground = Ground(x, z, reference);
         var limit = ground + LowCentimetres;
         var lowest = Math.Max(Math.Min(reference, ground) - DepthCentimetres, worldFloor);
-        var top = HighestTop(in footprint, lowest, limit);
+        var top = HighestTop(in footprint, lowest, limit, out var fromWorld, out var fromObjects);
         if (top == int.MinValue && lowest > worldFloor)
         {
             // Dug deeper than the search reaches (one 5 m removal): down to the world's floor.
-            top = HighestTop(in footprint, worldFloor, lowest - 1);
+            top = HighestTop(in footprint, worldFloor, lowest - 1, out fromWorld, out fromObjects);
         }
 
-        var surface = top == int.MinValue ? int.MinValue : SurfaceOver(x, top, z);
+        var surface = top == int.MinValue ? int.MinValue : SurfaceOver(x, top, z, fromWorld, fromObjects);
         int floor;
         byte clear;
         if (surface > limit)
@@ -125,6 +146,18 @@ public sealed class NavGridScanner
                 voxels.ToVoxel(above + NavGrid.MostClear - 1),
                 in _passable
             );
+            if (Objects is not null)
+            {
+                bottom = Math.Min(
+                    bottom,
+                    Objects.LowestBottom(
+                        in footprint,
+                        voxels.ToVoxel(above),
+                        voxels.ToVoxel(above + NavGrid.MostClear - 1)
+                    )
+                );
+            }
+
             var room = bottom == int.MaxValue ? NavGrid.MostClear : voxels.ToCentimetres(bottom) - standing;
             floor = standing;
             clear = (byte)(Math.Clamp(room, 0, NavGrid.MostClear) / NavGrid.ClearUnit);
@@ -310,27 +343,120 @@ public sealed class NavGridScanner
     }
 
     /// <summary>
-    /// The top, in centimetres, of the highest blocking voxel of the world between the centimetres
+    /// The top, in centimetres, of the highest blocking voxel of the world or an object between the centimetres
     /// <paramref name="y0"/> and <paramref name="y1"/> under <paramref name="footprint"/> (in the world's level-0
-    /// voxels), or <see cref="int.MinValue"/> when there is none.
+    /// voxels), or <see cref="int.MinValue"/> when there is none; <paramref name="fromWorld"/> and
+    /// <paramref name="fromObjects"/> say whose top it is (both where they meet).
     /// </summary>
-    private int HighestTop(in CircleFootprint footprint, int y0, int y1)
+    private int HighestTop(in CircleFootprint footprint, int y0, int y1, out bool fromWorld, out bool fromObjects)
     {
         var voxels = _world.Grid;
-        var top = _world.HighestTop(in footprint, voxels.ToVoxel(y0), voxels.ToVoxel(y1), in _passable);
+        int v0 = voxels.ToVoxel(y0),
+            v1 = voxels.ToVoxel(y1);
+        var worldTop = _world.HighestTop(in footprint, v0, v1, in _passable);
+        var objectTop = Objects?.HighestTop(in footprint, v0, v1) ?? int.MinValue;
+        var top = Math.Max(worldTop, objectTop);
+        fromWorld = top != int.MinValue && worldTop == top;
+        fromObjects = top != int.MinValue && objectTop == top;
         return top == int.MinValue ? int.MinValue : voxels.ToCentimetres(top);
     }
 
     /// <summary>
     /// The surface over a run of blocking voxels whose top is <paramref name="top"/> centimetres in the column at
-    /// (<paramref name="x"/>, <paramref name="z"/>), in centimetres, rounded: where the density crosses one half
-    /// (<see cref="VoxelWorld.SurfaceOver"/>), from half a voxel under the top to half a voxel over it.
+    /// (<paramref name="x"/>, <paramref name="z"/>), in centimetres, rounded: the world's where its top is it, where the
+    /// density crosses one half (<see cref="VoxelWorld.SurfaceOver"/>), from half a voxel under the top to half a voxel
+    /// over it; an object's where its top is (its voxel's top over the column's centre); the higher where both are.
     /// </summary>
-    private int SurfaceOver(int x, int top, int z)
+    private int SurfaceOver(int x, int top, int z, bool fromWorld, bool fromObjects)
     {
         var voxels = _world.Grid;
-        var surface = _world.SurfaceOver(voxels.ToVoxel(x), voxels.ToVoxel(top), voxels.ToVoxel(z), in _passable);
-        return (int)Math.Round(surface * voxels.BaseCentimetres);
+        int vx = voxels.ToVoxel(x),
+            vt = voxels.ToVoxel(top),
+            vz = voxels.ToVoxel(z);
+        var surface = fromWorld ? _world.SurfaceOver(vx, vt, vz, in _passable) : double.NaN;
+        if (fromObjects && Objects is not null)
+        {
+            var objects = Objects.SurfaceOver(vx, vt, vz);
+            surface =
+                double.IsNaN(surface) ? objects
+                : double.IsNaN(objects) ? surface
+                : Math.Max(surface, objects);
+        }
+
+        return (int)Math.Round((double.IsNaN(surface) ? vt : surface) * voxels.BaseCentimetres);
+    }
+
+    /// <summary>
+    /// Stamps the voxel objects the world places, as generated, onto the cells from columns
+    /// <paramref name="firstColumn"/> to <paramref name="lastColumn"/> and rows <paramref name="firstRow"/> to
+    /// <paramref name="lastRow"/> (inclusive), after a source filled them (<see cref="INavGridSource.Fill"/>, which knows
+    /// only the ground): in the voxel column at each cell's centre, each run of an object's blocking voxels, as a read
+    /// finds it, is solid added from its bottom to its surface, judged from the ground there as a stamped fill is: it
+    /// blocks the cell where it rises more than <see cref="LowCentimetres"/> over the ground (a trunk), raises the floor
+    /// where lower (a flat stone), and lowers the headroom where it hangs over the floor (a branch). The navigation
+    /// thread; allocates only as its lists grow.
+    /// </summary>
+    internal void StampObjects(
+        NavGrid grid,
+        NavObjects objects,
+        int firstColumn,
+        int firstRow,
+        int lastColumn,
+        int lastRow
+    )
+    {
+        var voxels = _world.Grid;
+        var cell = objects.CellCentimetres;
+        const int half = NavGrid.CellCentimetres / 2;
+        var found = objects.Near(
+            grid.CentreX(firstColumn),
+            grid.CentreX(lastColumn),
+            grid.CentreZ(firstRow),
+            grid.CentreZ(lastRow)
+        );
+        foreach (var placement in found)
+        {
+            // The kind's reach, and half a voxel: a cell reads the voxel column holding its centre, whose own centre lies
+            // up to half a voxel from it.
+            var reach = objects.Kinds[placement.Kind].ReachCentimetres + cell / 2 + 1;
+            var anchor = placement.Anchor;
+            // The cells whose centres lie within its reach.
+            var c0 = Math.Max(
+                firstColumn,
+                CeilingDivide(anchor.X - reach - grid.OriginX - half, NavGrid.CellCentimetres)
+            );
+            var c1 = Math.Min(lastColumn, FloorDivide(anchor.X + reach - grid.OriginX - half, NavGrid.CellCentimetres));
+            var r0 = Math.Max(firstRow, CeilingDivide(anchor.Z - reach - grid.OriginZ - half, NavGrid.CellCentimetres));
+            var r1 = Math.Min(lastRow, FloorDivide(anchor.Z + reach - grid.OriginZ - half, NavGrid.CellCentimetres));
+            for (var row = r0; row <= r1; row++)
+            {
+                var z = grid.CentreZ(row);
+                for (var column = c0; column <= c1; column++)
+                {
+                    var x = grid.CentreX(column);
+                    var spans = objects.Spans(in placement, voxels.ToVoxel(x), voxels.ToVoxel(z));
+                    if (spans.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    var index = grid.Index(column, row);
+                    var ground = Ground(x, z, grid.Floor[index]);
+                    foreach (var span in spans)
+                    {
+                        // As a read judges it: a run whose bottom lies within the step over the ground stands on the
+                        // floor (its bottom a whole voxel, the floor any centimetre), so it raises the floor or blocks.
+                        var bottom = span.Lo * cell;
+                        if (bottom <= ground + LowCentimetres)
+                        {
+                            bottom = Math.Min(bottom, grid.Floor[index]);
+                        }
+
+                        Add(grid, index, bottom, (int)Math.Round(span.Surface * cell), ground, LowCentimetres);
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>The game's ground at column (x, z), or <paramref name="floor"/> where it gives none.</summary>

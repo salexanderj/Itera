@@ -186,7 +186,11 @@ Where tests live:
   `ShaderReloadTests`.
 - Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `LoopbackTests`, `SteamTransportTests`,
   `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests` and `SaveFilesTests` (a temporary folder), `Matches/JoinRequestsTests`, `Matches/MatchControlStatesTests` (the hooks for a game's menu tests against a real match), `Navigation/`
-  (flow fields on small grids, the scanner with a floor 409 m down, the service, and its moving window,
+  (flow fields on small grids, the scanner with a floor 409 m down, and the service; the voxel objects,
+  `NavigationObjectsTests`: as generated stamped onto the fill and read alike, a trunk cut through opening once its top
+  is removed and blocked again after a reset, a cell waiting until its objects are known and a removal logged before
+  then waiting as an edit, a moved window stamping the objects in its strips, no allocation; and the service's moving
+  window,
   `NavigationWindowTests`: moves by tiles, the map's edge, a moved window against one placed there at the start, an edit
   past it, a reset during a move, a walker 2 km to its goal, no allocation), `Audio/` (`AudioMixerTests` with the one-shots across a move of the origin, `AudioServiceTests`,
   `SynthesisTests`, `SoundCacheTests`; the files' readers, `WavReaderTests` over `WavBuilder`, `VorbisDecoderTests` and
