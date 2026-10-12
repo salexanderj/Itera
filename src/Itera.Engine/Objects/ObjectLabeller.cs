@@ -129,9 +129,12 @@ internal sealed class LabelSnapshot : IObjectVoxelSource
 /// </summary>
 internal sealed class ObjectLabeller : IDisposable
 {
-    private readonly Queue<LabelSnapshot> _asked = new();
-    private readonly Queue<LabelSnapshot> _answered = new();
-    private readonly Stack<LabelSnapshot> _spare = new();
+    // Room made up front, so a first answer taken or snapshot returned on the main thread allocates nothing (when the
+    // first one comes is the thread's timing).
+    private const int PoolRoom = 16;
+    private readonly Queue<LabelSnapshot> _asked = new(PoolRoom);
+    private readonly Queue<LabelSnapshot> _answered = new(PoolRoom);
+    private readonly Stack<LabelSnapshot> _spare = new(PoolRoom);
 
     // A plain object: the thread waits on it (Monitor.Wait), which System.Threading.Lock does not offer.
     private readonly object _lock = new();

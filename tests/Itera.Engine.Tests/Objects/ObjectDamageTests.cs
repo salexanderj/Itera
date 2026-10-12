@@ -990,12 +990,15 @@ public sealed class ObjectDamageTests : IDisposable
     [Fact]
     public void A_second_dig_on_a_damaged_object_allocates_nothing()
     {
-        var scene = Make();
+        // The labeller on the test's thread: its first answer is taken, and its snapshot returned, in the measured
+        // update, as happens whenever the thread is slow.
+        var scene = Make(manual: true);
         var dig = VoxelEdit.Sphere(new VoxelCoord(140, 100, 0), 18, VoxelEditOperation.Clear);
         scene.World.Apply(dig);
         scene.Damage.Update();
         scene.World.Apply(dig);
         scene.Damage.Update();
+        scene.Damage.Labeller.LabelPending();
 
         var start = Itera.TestSupport.SystemAllocation.StartMeasurement();
         scene.World.Apply(dig);
