@@ -146,11 +146,26 @@ search used every other point of the filter's disc, and those eight leaned to on
 small caster on that side was missed (fixed: eight points of its own, every 45 degrees). She also saw the see-through
 cubes' bottoms flicker with the ground: a blended face in the ground's plane (fixed in the sample, by leaving it out).
 
-## Measurements still to take
+## Measurements
 
-Release timings of the physics step, before this item (`179e389`) and after it, on a quiet machine:
-384 balls resting and thrown, and the 238-piece pile of cut bodies, with one material and no layers (the per-pair
-record reads the narrow phase now does), and with materials, layers, and marked bodies. To be added here.
+Release, 2026-10-11, on a quiet machine (the development PC, Bepu on 4 threads): the physics step before this item
+(`179e389`) and after it (`1190798`), driven by a console program on `PhysicsWorld` alone, each scene run 7 times and
+the median step of each run's window taken, then the median of three passes, in milliseconds. "Plain" is one material,
+no layers, no marks, in both builds: the narrow phase's new reads of the records (layers, groups, materials) and the
+bounce pass that finds nothing to follow. "Everything used" (after only) puts every body in one of two layers that
+touch, every fifth in a group, two thirds on a material other than the default (half of those bouncy, 0.6), and marks
+every body for impact events, so every contact is recorded, sorted, and set against the last step's.
+
+| Scene, while the bodies move (first 2 s) | Before | After, plain | After, everything used |
+|---|---|---|---|
+| A heap: 384 balls (hulls of 256 points, 12 cm) poured into a pit 3 m square | 0.855 | 0.866 (+1.3 %) | 0.950 (+11 %) |
+| A pile: 238 boxes (30 by 20 by 40 cm) dropped on one place | 0.218 | 0.216 | 0.233 (+7 %) |
+| 384 balls thrown over a floor | 0.542 | 0.552 | 0.414 (bouncier: fewer contacts) |
+| The same balls rolling (the next 8 s) | 0.226 | 0.227 | 0.299 (+0.07 ms) |
+
+The plain step costs what it did (the differences are within the passes' spread, about 2 %). Every body marked and
+bouncy costs 7 to 11 % more while bodies touch; a game pays it only for the bodies it marks or makes bouncy. Asleep, every
+scene steps in 0.01 to 0.02 ms, as before.
 
 ## Left for later
 

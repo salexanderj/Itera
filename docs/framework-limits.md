@@ -113,6 +113,6 @@ and bodies, and saving the game's own state.
    friction; collision layers and groups; trigger zones for bodies and characters; impact events; and the mesh sample's
    physics corner. Left for later: materials per mesh triangle and per lifted piece, a mover filtered by layer, impacts
    while a pair touches, mesh and swept triggers, rays by layer, gravity on the wire, and down other than -Y for
-   characters. Release timings of the step before and after wait for a quiet machine.
+   characters. The plain step costs what it did; every body marked and bouncy, 7 to 11 % more while bodies touch.
 
 Gamepads come later (not a high priority, 2026-10-11); the research for them is in `docs/ui-toolkit.md`.
