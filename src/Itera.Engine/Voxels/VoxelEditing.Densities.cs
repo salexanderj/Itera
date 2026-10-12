@@ -395,6 +395,11 @@ internal static partial class VoxelEditing
         Span<byte> densities
     )
     {
+        if (!edit.AppliesAtLevel(level.Level))
+        {
+            return false;
+        }
+
         if (!ChangesByShare(in edit))
         {
             return ApplyBySamples(in edit, in piece, level, origin, size, voxels, densities);
@@ -424,6 +429,11 @@ internal static partial class VoxelEditing
     )
     {
         changedCount = 0;
+        if (!edit.AppliesAtLevel(key.Level))
+        {
+            return chunk;
+        }
+
         if (!ChangesByShare(in edit))
         {
             return ApplyToChunk(

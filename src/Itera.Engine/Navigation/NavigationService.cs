@@ -490,6 +490,7 @@ public sealed partial class NavigationService : IDisposable
             is not VoxelEditOperation.Paint
                 and not VoxelEditOperation.Reset
                 and not VoxelEditOperation.RemovePart
+                and not VoxelEditOperation.ClearCopies
         && !_scanner!.ClearsOnlyPassable(in edit)
         && NavGridScanner.CoversAnyCentre(_grid!, in edit);
 
@@ -659,7 +660,13 @@ public sealed partial class NavigationService : IDisposable
         for (var sequence = _voxels.LastReset + 1; sequence <= _editsSeen; sequence++)
         {
             ref readonly var edit = ref _voxels.GetEdit(sequence);
-            if (edit.Operation is VoxelEditOperation.Paint or VoxelEditOperation.Reset or VoxelEditOperation.RemovePart)
+            if (
+                edit.Operation
+                is VoxelEditOperation.Paint
+                    or VoxelEditOperation.Reset
+                    or VoxelEditOperation.RemovePart
+                    or VoxelEditOperation.ClearCopies
+            )
             {
                 continue;
             }

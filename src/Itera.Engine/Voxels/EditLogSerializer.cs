@@ -230,9 +230,11 @@ internal static class EditLogSerializer
                     throw Invalid($"Edit {i} is invalid: {problem}.");
                 }
 
-                if (format < 7 && edit.Operation == VoxelEditOperation.RemovePart)
+                if (format < 7 && edit.Operation is VoxelEditOperation.RemovePart or VoxelEditOperation.ClearCopies)
                 {
-                    throw Invalid($"A format {format} edit log cannot hold removals of objects' parts (edit {i}).");
+                    throw Invalid(
+                        $"A format {format} edit log cannot hold removals of objects' parts or clears of their copies (edit {i})."
+                    );
                 }
 
                 if (format < 6 && edit.Operation == VoxelEditOperation.ClearMaterials)

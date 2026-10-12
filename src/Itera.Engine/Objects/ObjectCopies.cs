@@ -114,6 +114,13 @@ internal sealed class ObjectCopies
     /// <summary>True when some kind has a copy at <paramref name="level"/>.</summary>
     public bool CopiesAt(int level) => level >= FirstLevel && level <= LastLevel;
 
+    /// <summary>The copy of <paramref name="kind"/> at <paramref name="level"/>, or null where it is not copied. Any thread.</summary>
+    public ObjectCopyGrid? GridFor(VoxelObjectKindId kind, int level) =>
+        level >= FirstLevel && level <= LastLevel ? _copies[kind.Value][level] : null;
+
+    /// <summary>The world's grid.</summary>
+    public VoxelGrid Grid => _grid;
+
     /// <summary>
     /// Adds to <paramref name="found"/> the objects whose copy at <paramref name="column"/>'s level reaches into the column:
     /// the placer's objects near it, those of kinds copied at the level whose box, widened by the copy's reach, meets the
@@ -329,6 +336,14 @@ internal sealed class ObjectCopyGrid
 
     /// <summary>How far across from the kind's anchor any of the copy's voxels lies, at any heading, rounded up.</summary>
     public int ReachAcrossCentimetres { get; }
+
+    /// <summary>A block's edge, in centimetres: whole voxels of the kind.</summary>
+    public int BlockCentimetres => _block;
+
+    /// <summary>The blocks across, and up and down, a world voxel whose sample point lies in a block may touch.</summary>
+    public int MarginAcross => _marginAcross;
+
+    public int MarginUp => _marginUp;
 
     /// <summary>The lowest centimetre of the copy from the kind's anchor.</summary>
     public int LowCentimetres { get; }

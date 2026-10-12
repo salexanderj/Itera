@@ -41,7 +41,7 @@ internal static partial class VoxelEditing
         Span<byte> voxels
     )
     {
-        if (!TryGetRange(in edit, level, origin, size, out var min, out var end))
+        if (!edit.AppliesAtLevel(level.Level) || !TryGetRange(in edit, level, origin, size, out var min, out var end))
         {
             return false;
         }

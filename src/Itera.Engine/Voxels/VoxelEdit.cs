@@ -72,6 +72,15 @@ public enum VoxelEditOperation : byte
     /// offline game, when an edit cuts a part off (<see cref="VoxelEdit.RemovePart"/>).
     /// </summary>
     RemovePart = 7,
+
+    /// <summary>
+    /// Every voxel of the world's level <see cref="VoxelEdit.Material"/> names (1 or coarser) whose sample point the box
+    /// covers and whose material is in the edit's set (as <see cref="ClearMaterials"/>'s) becomes air; no other level,
+    /// and no voxel object, changes (since save format 7 and protocol 39). Made by a session's host, or an offline game,
+    /// when a part of an object falls (<see cref="RemovePart"/>), to clear the far copies only that part filled
+    /// (<see cref="VoxelEdit.ClearCopies"/>).
+    /// </summary>
+    ClearCopies = 8,
 }
 
 /// <summary>
@@ -210,6 +219,28 @@ public readonly record struct VoxelEdit(
             (long)(ushort)seed.X | ((long)(ushort)seed.Y << 16) | ((long)(ushort)seed.Z << 32)
         );
     }
+
+    /// <summary>
+    /// A clear of the far copies of objects at world level <paramref name="level"/> (1 or coarser) in the box from
+    /// <paramref name="min"/> covering <paramref name="size"/> centimetres, of the materials in
+    /// <paramref name="materials"/> (each below <see cref="MaterialSetSize"/>; <see cref="VoxelEditOperation.ClearCopies"/>).
+    /// </summary>
+    public static VoxelEdit ClearCopies(int level, VoxelCoord min, VoxelCoord size, ReadOnlySpan<byte> materials)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(level, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(level, VoxelConstants.MaxLevel);
+        return MaterialsBox(min, size, materials) with
+        {
+            Operation = VoxelEditOperation.ClearCopies,
+            Material = (byte)level,
+        };
+    }
+
+    /// <summary>
+    /// True when the edit can change the world's voxels of <paramref name="level"/>: a clear of copies only its own level
+    /// (<see cref="VoxelEditOperation.ClearCopies"/>), any other edit every level.
+    /// </summary>
+    public bool AppliesAtLevel(int level) => Operation != VoxelEditOperation.ClearCopies || Material == level;
 
     /// <summary>The kind's voxel a <see cref="VoxelEditOperation.RemovePart"/> edit's part is joined to.</summary>
     public VoxelCoord PartSeed => new((int)(Turn & 0xFFFF), (int)((Turn >> 16) & 0xFFFF), (int)((Turn >> 32) & 0xFFFF));
@@ -379,7 +410,9 @@ public readonly record struct VoxelEdit(
             VoxelEditOperation.Clear or VoxelEditOperation.Lift => VoxelConstants.Air,
             VoxelEditOperation.Fill => current == VoxelConstants.Air ? Material : current,
             VoxelEditOperation.Reset or VoxelEditOperation.RemovePart => current,
-            VoxelEditOperation.ClearMaterials => ClearsMaterial(current) ? VoxelConstants.Air : current,
+            VoxelEditOperation.ClearMaterials or VoxelEditOperation.ClearCopies => ClearsMaterial(current)
+                ? VoxelConstants.Air
+                : current,
             _ => current == VoxelConstants.Air ? VoxelConstants.Air : Material,
         };
 
@@ -393,7 +426,7 @@ public readonly record struct VoxelEdit(
                 VoxelEditOperation.Clear or VoxelEditOperation.Lift => material == VoxelConstants.Air,
                 VoxelEditOperation.Fill => material != VoxelConstants.Air || Material == VoxelConstants.Air,
                 VoxelEditOperation.Reset or VoxelEditOperation.RemovePart => true,
-                VoxelEditOperation.ClearMaterials => !ClearsMaterial(material),
+                VoxelEditOperation.ClearMaterials or VoxelEditOperation.ClearCopies => !ClearsMaterial(material),
                 _ => material == VoxelConstants.Air || Material == material,
             };
 
@@ -402,9 +435,22 @@ public readonly record struct VoxelEdit(
     {
         // Plain comparisons, not Enum.IsDefined: that keeps its value list in a runtime cache that any garbage
         // collection can drop, and rebuilding it allocates about 480 bytes inside the next edit.
-        if (Shape > VoxelEditShape.Capsule || Operation > VoxelEditOperation.RemovePart)
+        if (Shape > VoxelEditShape.Capsule || Operation > VoxelEditOperation.ClearCopies)
         {
             return "unknown shape or operation";
+        }
+
+        if (Operation == VoxelEditOperation.ClearCopies)
+        {
+            if (Shape != VoxelEditShape.Box || Material is < 1 or > VoxelConstants.MaxLevel)
+            {
+                return "a clear of copies is a box of one world level, 1 or coarser";
+            }
+
+            if ((Piece == 0 && Turn == 0) || (Piece & 1) != 0)
+            {
+                return "a clear of copies names at least one material, and never air";
+            }
         }
 
         if (Operation == VoxelEditOperation.RemovePart)
@@ -506,7 +552,10 @@ public readonly record struct VoxelEdit(
         }
         else if (
             (Piece != 0 || Turn != 0)
-            && Operation is not VoxelEditOperation.ClearMaterials and not VoxelEditOperation.RemovePart
+            && Operation
+                is not VoxelEditOperation.ClearMaterials
+                    and not VoxelEditOperation.RemovePart
+                    and not VoxelEditOperation.ClearCopies
         )
         {
             return "only a piece edit names a piece or a turn";

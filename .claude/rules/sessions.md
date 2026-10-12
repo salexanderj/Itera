@@ -74,7 +74,8 @@ cleanly, after putting thrown balls still loose back into the grid: only the edi
 from 1 (a join payload keeps every edit). The old file is kept as `NAME.save.bak`; a failed write
 leaves the old save, deletes its temporary file, and is told at the menu. Save names refuse Windows device names (CON,
 NUL, COM1, ...). The file is the edit log stream, format
-7 (it may hold resets, capsule edits, clears of some materials, and removals of voxel objects' parts; its generator id
+7 (it may hold resets, capsule edits, clears of some materials, removals of voxel objects' parts, and clears of their
+far copies; its generator id
 is the world's, with the object kinds' fingerprint where the world places objects, `VoxelObjectKinds.WorldId`, so a
 save of other kinds is refused; formats 1 to 6 still read, their plain generator id taken for such a world too, and an
 older build refuses format 7). A client never saves. The log indexes at most 2^24 column entries since its last

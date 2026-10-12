@@ -462,6 +462,12 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
                     {
                         RemovePiece(in snapshot, in piece);
                     }
+
+                    // The far copies only the falling pieces filled.
+                    foreach (var clear in snapshot.Clears)
+                    {
+                        _world.TryApply(in clear, VoxelEdit.NoMaker, out _);
+                    }
                 }
             }
 
@@ -486,7 +492,23 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
 
             damaged.Labelling = true;
             var snapshot = _labeller.Rent();
-            snapshot.Copy(damaged);
+            var copies = _world.Copies;
+            snapshot.Copy(damaged, copies, _kinds);
+            snapshot.Neighbours.Clear();
+            if (copies is not null)
+            {
+                // The objects whose copies may reach the object's: their reach, and a coarsest copied voxel past it.
+                var reach = damaged.Kind.ReachCentimetres + copies.Grid.Edge(copies.LastLevel);
+                var anchor = damaged.Placement.Anchor;
+                _objects.Near(
+                    anchor.X - reach,
+                    anchor.X + reach,
+                    anchor.Z - reach,
+                    anchor.Z + reach,
+                    snapshot.Neighbours
+                );
+            }
+
             _labeller.Ask(snapshot);
         }
     }

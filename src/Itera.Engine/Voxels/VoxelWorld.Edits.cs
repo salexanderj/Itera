@@ -617,6 +617,12 @@ public sealed partial class VoxelWorld
         var defer = (long)(end.X - min.X) * (end.Y - min.Y) * (end.Z - min.Z) > DeferVoxels;
         for (var level = 0; level < _levels; level++)
         {
+            // A clear of copies changes its own level alone.
+            if (!edit.AppliesAtLevel(level))
+            {
+                continue;
+            }
+
             ColumnsOf(level, min, end, out var firstX, out var firstZ, out var lastX, out var lastZ);
             for (var z = firstZ; z <= lastZ; z++)
             {

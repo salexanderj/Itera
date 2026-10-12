@@ -19,6 +19,7 @@ public sealed class ObjectDamageTests : IDisposable
 {
     private const byte Bark = 30;
     private const byte Leaves = 31;
+    private static readonly int[] s_copiedLevels = [2, 3];
     private const byte Rock = 40;
     private readonly List<Scene> _scenes = [];
 
@@ -382,6 +383,66 @@ public sealed class ObjectDamageTests : IDisposable
     }
 
     /// <summary>
+    /// A cut through the trunk of a world that copies its objects from level 2 up: with the top's removal, the host clears
+    /// the far voxels (40 and 80 cm) only the top filled, and keeps those the stump still reaches; so they stay once the
+    /// columns load again, and a client following the host gets the same.
+    /// </summary>
+    [Fact]
+    public void A_cut_on_the_host_clears_the_far_copies_only_its_piece_filled()
+    {
+        var host = Make(copies: true);
+        var top = new VoxelCoord(150, 290, 0);
+        var stump = new VoxelCoord(150, 60, 0);
+        Assert.All(s_copiedLevels, level => Assert.Equal(Bark, Material(host.World, top, level)));
+
+        host.World.Apply(
+            VoxelEdit.Box(new VoxelCoord(110, 200, -40), new VoxelCoord(80, 20, 80), VoxelEditOperation.Clear)
+        );
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (host.World.EditCount == 1)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "No removal was logged.");
+            host.Damage.Update();
+            Thread.Sleep(1);
+        }
+
+        Assert.Equal(VoxelEditOperation.RemovePart, host.World.GetEdit(2).Operation);
+        Assert.True(host.World.EditCount > 2);
+        Assert.All(
+            Enumerable.Range(3, (int)host.World.EditCount - 2),
+            sequence => Assert.Equal(VoxelEditOperation.ClearCopies, host.World.GetEdit(sequence).Operation)
+        );
+        AssertFar(host.World);
+
+        host.World.SetCenters([new Vector3(400, 0, 400)]);
+        TestWorlds.WaitUntilLoaded(host.World);
+        host.World.SetCenters([Vector3.Zero]);
+        TestWorlds.WaitUntilLoaded(host.World);
+        AssertFar(host.World);
+
+        var client = Make(copies: true);
+        client.World.FollowHost();
+        for (var sequence = 1L; sequence <= host.World.EditCount; sequence++)
+        {
+            client.World.ApplySequenced(host.World.GetEdit(sequence));
+        }
+
+        AssertFar(client.World);
+
+        void AssertFar(VoxelWorld world)
+        {
+            Assert.All(s_copiedLevels, level => Assert.Equal(VoxelConstants.Air, Material(world, top, level)));
+            Assert.All(s_copiedLevels, level => Assert.Equal(Bark, Material(world, stump, level)));
+        }
+
+        static byte Material(VoxelWorld world, VoxelCoord point, int level)
+        {
+            Assert.True(world.TryGetMaterial(point, level, out var material));
+            return material;
+        }
+    }
+
+    /// <summary>
     /// Removals from a host that name no object of the area, a seed of air, a seed outside the kind, or a box reaching no
     /// object change nothing.
     /// </summary>
@@ -403,6 +464,15 @@ public sealed class ObjectDamageTests : IDisposable
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             VoxelEdit.RemovePart(1, new VoxelCoord(1024, 0, 0), box, size)
         );
+        // A clear of copies: one level, 1 to 9, of materials other than air; objects never take it.
+        var clear = VoxelEdit.ClearCopies(2, box, size, [Bark]);
+        Assert.Null(clear.Validate());
+        Assert.False(ObjectEditing.Changes(in clear));
+        Assert.True(clear.AppliesAtLevel(2) && !clear.AppliesAtLevel(1) && !clear.AppliesAtLevel(3));
+        Assert.Throws<ArgumentOutOfRangeException>(() => VoxelEdit.ClearCopies(0, box, size, [Bark]));
+        Assert.NotNull((clear with { Material = 10 }).Validate());
+        Assert.NotNull((clear with { Piece = clear.Piece | 1 }).Validate());
+        Assert.NotNull((clear with { Shape = VoxelEditShape.Sphere }).Validate());
         Assert.NotNull((VoxelEdit.RemovePart(1, default, box, size) with { Turn = 1024 }).Validate());
         Assert.NotNull((VoxelEdit.RemovePart(1, default, box, size) with { Turn = 1L << 48 }).Validate());
         Assert.NotNull((VoxelEdit.RemovePart(1, default, box, size) with { Shape = VoxelEditShape.Sphere }).Validate());
@@ -887,9 +957,9 @@ public sealed class ObjectDamageTests : IDisposable
     /// A trunk, the rock turned, a slab 6 m out, a wall two parts wide, and a bush of leaves; with
     /// <paramref name="atEdge"/>, another wall 1 m inside the map's edge (x = 512 m), streamed round 508 m out.
     /// </summary>
-    private Scene Make(bool fill = true, int mostDamaged = 256, bool atEdge = false)
+    private Scene Make(bool fill = true, int mostDamaged = 256, bool atEdge = false, bool copies = false)
     {
-        var scene = new Scene(mostDamaged, atEdge);
+        var scene = new Scene(mostDamaged, atEdge, copies);
         _scenes.Add(scene);
         if (fill)
         {
@@ -1019,7 +1089,7 @@ public sealed class ObjectDamageTests : IDisposable
     /// </summary>
     private sealed class Scene : IDisposable
     {
-        public Scene(int mostDamaged, bool atEdge)
+        public Scene(int mostDamaged, bool atEdge, bool copies = false)
         {
             Kinds = new VoxelObjectKinds();
             var trunk = Register(
@@ -1069,7 +1139,33 @@ public sealed class ObjectDamageTests : IDisposable
                     : Array.Empty<ObjectPlacement>(),
             ];
             var generator = new PlacingGenerator([.. Placements]);
-            World = TestWorlds.Load(generator, atEdge ? new Vector3(508, 0, 0) : Vector3.Zero, radiusMetres: 0);
+            var centre = atEdge ? new Vector3(508, 0, 0) : Vector3.Zero;
+            if (copies)
+            {
+                // Four levels, the objects copied into the world's from level 2 (40 cm) up.
+                World = new VoxelWorld(
+                    new VoxelSettings
+                    {
+                        StreamingRadiusMetres = 0,
+                        Levels = 4,
+                        MemoryBudgetMegabytes = 256,
+                        WorkerThreads = 2,
+                        Seed = 17,
+                    },
+                    0,
+                    generator,
+                    NullLogger<VoxelWorld>.Instance,
+                    kinds: Kinds,
+                    objectHandOverLevel: 2
+                );
+                World.Initialize();
+                World.SetCenters([centre]);
+                TestWorlds.WaitUntilLoaded(World);
+            }
+            else
+            {
+                World = TestWorlds.Load(generator, centre, radiusMetres: 0);
+            }
             Models = new VoxelModels(World);
             var options = Options.Create(
                 new EngineOptions { Objects = new ObjectSettings { MostDamaged = mostDamaged } }

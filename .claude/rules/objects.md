@@ -137,7 +137,7 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   farthest kept. Readers keep what they read until `ObjectDamage.ReadChanges` names the object (a ring of 256 changes;
   past it, read everything again): the mover's chunks under its reach are made again, its statics' shapes swapped for
   compounds of its own voxels, and rays read it as they go. The far copies take the world's edits at its coarse levels
-  as any voxel does; a removed part's copy stays (`RemovePart` changes no world voxel). The rule is `ObjectEditing.RuleVersion`, hashed into the kinds' fingerprint (so the match's
+  as any voxel does; a removed part's are cleared by the host (below). The rule is `ObjectEditing.RuleVersion`, hashed into the kinds' fingerprint (so the match's
   identity) with the copies' rule: raise it with any change to what an edit does to objects. The cap counts objects,
   not bytes (a copy is its changed bricks, 1 KB each, and its rebuilt parts' models).
 - Cuts are the world owner's (a session's host, or an offline game; a client follows the host's removals): each live
@@ -148,8 +148,15 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   bottom at or below its anchor, and a kind with none keeps its largest; `Largest` keeps the largest piece, the first of
   two as large). When the answer comes back and the object has not changed since (`DamagedObject.Revision`; else it is
   asked again), each piece that falls is logged as a removal (`VoxelEdit.RemovePart` with the piece's first voxel in scan
-  order as its seed and its bounds turned into the world's centimetres as its box). The kinds' tables are made at the
-  "objects" step (`VoxelObjectKind.MakeTables`) for the thread to read them.
+  order as its seed and its bounds turned into the world's centimetres as its box), then the clears of the far copies only
+  those pieces filled: at each level the kind is copied at, each world voxel in reach of the pieces whose copy holds the
+  object's material, with no voxel the object keeps within the copy rule's reach of its sample point (the kept voxels
+  counted in the copy grid's blocks, `ObjectCopyGrid.BlockCentimetres`, `MarginAcross`, `MarginUp`) and no neighbour's
+  copy there (the objects whose reach and a coarsest copied voxel meet the object's), is cleared by an edit of its own
+  (`VoxelEditOperation.ClearCopies`, `VoxelEdit.ClearCopies(level, box, size, materials)`: one world level, in its
+  `Material` byte, 1 to 9; the kind's materials below 128 as `ClearMaterials`' set; by sample point; objects, other
+  levels, and navigation ignore it, `VoxelEdit.AppliesAtLevel`), in boxes of runs along x of one row. The kinds' tables
+  are made at the "objects" step (`VoxelObjectKind.MakeTables`) for the thread to read them.
 - A part cut off an object goes by an edit of its own (`VoxelEditOperation.RemovePart`, `VoxelEdit.RemovePart(id,
   seed, box, size)`: the object's id in `Piece`, the kind's seed voxel in `Turn`, 16 bits an axis, below 1,024; a box
   of air where the part lay, for the log's index): the world's voxels never change (`VoxelEdit.ChangesWorld` false;
