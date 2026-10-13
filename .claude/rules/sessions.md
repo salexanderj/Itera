@@ -39,7 +39,9 @@ early) and for what a game's loading tasks wait on.
 What a game sends: its own messages, each kind a byte with the way it may travel (host to clients, clients to host,
 or both), through `ISessionGameHandler`s it registers in a match's scope (`GameMessageHandler` hands one kind to a
 method) and `SessionService.BeginMessage`; the engine drops a message that travels the wrong way and the peer with it.
-Three channels (`SessionChannel`): `Reliable` (once, in order), `Sequenced` (may be lost; LiteNetLib drops one older than
+A host's match tunables go to its clients by name, reliably, after the step they changed and as each joins
+(`MessageKind.Tune`, `Tunables`, `.claude/rules/ui.md`); a client sets those it has within its own ranges and passes over
+the rest. Three channels (`SessionChannel`): `Reliable` (once, in order), `Sequenced` (may be lost; LiteNetLib drops one older than
 the newest it has), and `Unreliable` (may be lost or come out of order, none dropped for its age: for messages that
 number and acknowledge themselves). A message on either of the last two must fit one packet,
 `SessionService.MaxUnreliableBytes` (1,020 bytes on LiteNetLib, measured in `LoopbackTests`; 1,024 on Steam): the session

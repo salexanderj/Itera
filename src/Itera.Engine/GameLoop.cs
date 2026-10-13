@@ -94,6 +94,7 @@ public sealed partial class GameLoop
     private readonly SteamFriendList _friends;
     private readonly PlayerSettings _playerSettings;
     private readonly SettingsCommands _settingsCommands;
+    private readonly TuningCommands _tuningCommands;
     private readonly UiCommands _uiCommands;
     private bool _loopEnded;
     private readonly MatchFlow _flow;
@@ -198,10 +199,12 @@ public sealed partial class GameLoop
         JoinRequests joinRequests,
         PlayerSettings playerSettings,
         SettingsCommands settingsCommands,
+        TuningCommands tuningCommands,
         UiCommands uiCommands
     )
     {
         _settingsCommands = settingsCommands;
+        _tuningCommands = tuningCommands;
         _uiCommands = uiCommands;
         _playerSettings = playerSettings;
         _services = services;
@@ -547,6 +550,7 @@ public sealed partial class GameLoop
         _services.GetRequiredService<PhysicsCommands>().Register();
         _matchCommands.Register();
         _settingsCommands.Register();
+        _tuningCommands.Register();
         _uiCommands.Register();
         _particleCommands.Register();
         _soundCommands.Register();

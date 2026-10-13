@@ -202,7 +202,8 @@ Where tests live:
   made or written without graphics; too many, or names empty or used twice, refused), the passes' shaders against their
   push constants (`UiPassTests`, `UpscalePassTests`, `LoadingPassTests`, `ParticlePassTests`, with the pool's origin), `ScreenshotTests`,
   `ShaderReloadTests`.
-- Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `LoopbackTests`, `SteamTransportTests`, `SimulatedNetworkTests` (delay, jitter, and loss over `FakeTransport` with a hand-stepped clock),
+- Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `SessionTuningTests` (a host's match tunables reaching a joining client and
+each change, local ones staying, a client's range kept, defaults back at the end), `LoopbackTests`, `SteamTransportTests`, `SimulatedNetworkTests` (delay, jitter, and loss over `FakeTransport` with a hand-stepped clock),
   `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests`, `SaveSectionsTests` (a game's sections by name and version, a newer or damaged one
 stopping the start, the backup for a damaged save and not for a newer build's, a deleted save starting afresh, an
 autosave on a background thread, a section that throws when captured, a capture holding its moment, no allocation until
@@ -225,7 +226,7 @@ a save is due), `SaveMatchTests` (the last save captured while the ECS world liv
   `EngineLayerBoundsTests` and `UiFontsTests` (the sizing rule), `RadialMenuTests`, `TextLineTests`; `Toolkit/`:
   `UiLayoutTests` pinning rectangles with `FixedTextMeasurer`, `UiInputTests`, `UiLayerTests` through `UISurface` and
   `LayerPicture`), `Input/`
-  (`MenuInputTests`, `KeyBindingsTests`, `KeyboardFocusTests`, `InputInjectionTests`, `TextFocusTests`), `Settings/`, `Loading/`,
+  (`MenuInputTests`, `KeyBindingsTests`, `KeyboardFocusTests`, `InputInjectionTests`, `TextFocusTests`), `Settings/` (with `TunablesTests`: names, ranges, sealing, scopes, and `tune`), `Loading/`,
   `Control/`, `EngineStepsTests` (the start-up steps), `ModLoaderIntegrationTests` (loads the real sample mod and
   checks that it unloads), and `ModDispatcherTests` (a throwing mod isolated, callbacks timed).
 

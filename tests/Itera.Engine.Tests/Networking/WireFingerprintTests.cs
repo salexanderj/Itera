@@ -8,8 +8,8 @@ namespace Itera.Engine.Tests.Networking;
 
 /// <summary>
 /// The engine's part of the wire, pinned with the protocol version (<see cref="WireFingerprint"/>): every message a
-/// host and a client send in a join with a payload holding an edit and a lift, a live edit and a live lift, and a
-/// client's leaving, recorded as sent. Change their bytes and this fails until <see cref="SessionProtocol.Version"/>
+/// host and a client send in a join with a payload holding an edit and a lift, a host's tunable not at its default, a
+/// live edit, a live lift, and a changed tunable, and a client's leaving, recorded as sent. Change their bytes and this fails until <see cref="SessionProtocol.Version"/>
 /// rises.
 /// </summary>
 public sealed class WireFingerprintTests : IDisposable
@@ -42,13 +42,17 @@ public sealed class WireFingerprintTests : IDisposable
             )
         );
         var hostTransport = new FakeTransport(_network) { Recorded = [] };
+        var hostTunables = new Itera.Engine.Settings.Tunables();
+        var speed = hostTunables.Register("test.speed", 4.5f, 0, 10, "");
+        hostTunables.TrySet(speed, 6);
         var host = Own(
             Session(
                 new SessionSettings { Mode = SessionMode.Host, PlayerName = "Host" },
                 hostWorld,
                 hostTransport,
                 () => { },
-                17
+                17,
+                hostTunables
             )
         );
         host.Initialize();
@@ -97,6 +101,7 @@ public sealed class WireFingerprintTests : IDisposable
         Assert.True(
             hostWorld.TryLift(VoxelEdit.Sphere(new VoxelCoord(-20, 240, 20), 5, VoxelEditOperation.Lift), out _)
         );
+        hostTunables.TrySet(speed, 7.25f);
         host.AfterFixedStep();
         client.Poll();
         client.Stop();
@@ -104,8 +109,8 @@ public sealed class WireFingerprintTests : IDisposable
 
         Assert.Equal(4, clientWorld.EditCount);
         WireFingerprint.AssertPinned(
-            43,
-            "6DF6055F9CB67015",
+            44,
+            "A62AF78D25DD166A",
             WireFingerprint.Of([.. hostTransport.Recorded, .. clientTransport.Recorded])
         );
     }
@@ -147,7 +152,7 @@ public sealed class WireFingerprintTests : IDisposable
             message => message[0] == (byte)MessageKind.Reply && message.Length > 40
         );
         WireFingerprint.AssertPinned(
-            43,
+            44,
             "D761F8814488E272",
             WireFingerprint.Of([.. harness.HostTransport.Recorded, .. harness.ClientTransport.Recorded])
         );
@@ -165,7 +170,8 @@ public sealed class WireFingerprintTests : IDisposable
         VoxelWorld world,
         FakeTransport transport,
         Action wait,
-        ulong seed
+        ulong seed,
+        Itera.Engine.Settings.Tunables? tunables = null
     )
     {
         var clock = 0.0;
@@ -182,7 +188,8 @@ public sealed class WireFingerprintTests : IDisposable
             {
                 clock += 0.01;
                 wait();
-            }
+            },
+            tunables: tunables
         );
     }
 }

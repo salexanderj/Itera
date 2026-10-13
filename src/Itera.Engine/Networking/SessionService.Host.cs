@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Itera.Engine.Settings;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging;
 
@@ -186,6 +187,11 @@ public sealed partial class SessionService
         client.Joined = true;
         client.Join = ++_lastJoin;
         UpdateRoster();
+        // The host's numbers that are not the run's defaults, before anything moves by them.
+        if (WriteTuning(changedSince: -1))
+        {
+            Send(peer);
+        }
         var total = Stopwatch.GetElapsedTime(client.JoinStarted).TotalMilliseconds;
         var megabytes = Megabytes(bytes.Length);
         LogPlayerJoined(client.Name, client.Slot, client.SentThrough, megabytes, client.SavedMilliseconds, total);
@@ -286,6 +292,73 @@ public sealed partial class SessionService
     }
 
     /// <summary>Sends each joined client the edits of the log it has not been sent, lifts with their pieces.</summary>
+    /// <summary>
+    /// After a step on a host: the match tunables changed since the clients last had them, to every joined client.
+    /// </summary>
+    private void SendTuning()
+    {
+        if (_tunables is null || _tunables.Version == _sentTuning)
+        {
+            return;
+        }
+
+        var since = _sentTuning;
+        _sentTuning = _tunables.Version;
+        if (!WriteTuning(since))
+        {
+            return;
+        }
+
+        foreach (var (id, peer) in _peers)
+        {
+            if (peer.Joined)
+            {
+                Send(id);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes a tuning message of the match tunables changed since version <paramref name="changedSince"/> (-1: those not
+    /// at their defaults); false when there are none.
+    /// </summary>
+    private bool WriteTuning(long changedSince)
+    {
+        if (_tunables is null)
+        {
+            return false;
+        }
+
+        var count = 0;
+        foreach (var tunable in _tunables.All)
+        {
+            count += Sends(tunable, changedSince) ? 1 : 0;
+        }
+
+        if (count == 0)
+        {
+            return false;
+        }
+
+        _writer.Reset();
+        _writer.WriteByte((byte)MessageKind.Tune);
+        _writer.WriteVarInt(count);
+        foreach (var tunable in _tunables.All)
+        {
+            if (Sends(tunable, changedSince))
+            {
+                _writer.WriteString(tunable.Name);
+                _writer.WriteFloat(tunable.Value);
+            }
+        }
+
+        return true;
+    }
+
+    private static bool Sends(Tunable tunable, long changedSince) =>
+        tunable.Scope == TuningScope.Match
+        && (changedSince < 0 ? tunable.Value != tunable.Default : tunable.Version > changedSince);
+
     private void SendNewEdits()
     {
         if (_voxels is null)

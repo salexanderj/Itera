@@ -222,6 +222,9 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<Objects.VoxelObjectKinds>();
         services.TryAddSingleton<MatchCommands>();
         services.TryAddSingleton<SettingsCommands>();
+        // The numbers a game tunes while it plays, run-wide, and the console's tune.
+        services.TryAddSingleton<Tunables>();
+        services.TryAddSingleton<TuningCommands>();
         services.TryAddSingleton<UiCommands>();
         services.TryAddSingleton<ParticleCommands>();
         services.TryAddSingleton<SoundCommands>();

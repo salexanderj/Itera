@@ -214,7 +214,9 @@ control port's `run` runs commands outside any script, so `wait` there fails (th
 lists the commands (`ConsoleCommands`):
 
 - Engine: `help`, `clear`, `play` [SEED], `host` [SEED] [steam|direct], `join` ADDRESS, `leave`, `save` (the match's
-  save now, on a background thread; offline or on a host with `Engine:Save:Name`), `settings` (volume,
+  save now, on a background thread; offline or on a host with `Engine:Save:Name`), `tune` [NAME [VALUE|default] |
+  default] (the game's tunables, numbers it reads while it plays: listed, read, set, or put back; a match tunable is set
+  offline or on a host, which sends it to its clients), `settings` (volume,
   musicvolume, effectsvolume, sensitivity, fov, uiscale 0.75 to 1.5, scaling, threshold, shadows, aa off|smaa|2x|4x|8x, vsync, fullscreen; a test run that changes them
   writes the data folder's `settings.json`: give render options on the command line instead, or run with the agent data
   folder, `--Engine:Application:DataFolder=<DataFolder>-agent`), `lines`, `shadows`, `scale` (the run's only), `aa` (on,

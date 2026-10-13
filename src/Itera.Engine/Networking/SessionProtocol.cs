@@ -39,6 +39,9 @@ internal enum MessageKind : byte
 
     /// <summary>Client to host, unreliable, every step: the snapshots it received (its newest and the 32 before).</summary>
     Reply = 9,
+
+    /// <summary>Host to client: match tunables, each its name and value (when they change, and as the client joins).</summary>
+    Tune = 10,
 }
 
 /// <summary>What a disconnect's data says: the first byte, then a reason byte and a text.</summary>
@@ -93,7 +96,7 @@ internal static class SessionProtocol
     /// Raised whenever any message changes shape or meaning or a kind is added, the game's included: the game's messages
     /// have no version of their own, so a mismatch is refused in the handshake with this number instead of failing later.
     /// </summary>
-    public const int Version = 43;
+    public const int Version = 44;
 
     /// <summary>Lobby data: the players in the session now, the host's included (<c>SessionService</c> writes it).</summary>
     public const string LobbyPlayersKey = "itera_players";

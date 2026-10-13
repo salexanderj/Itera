@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Itera.Engine.Matches;
 using Itera.Engine.Saves;
+using Itera.Engine.Settings;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -70,6 +71,10 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
     private readonly MessageWriter _disconnectWriter = new();
     private readonly ISessionGameHandler?[] _handlers = new ISessionGameHandler?[256];
     private readonly ISessionMatchData? _matchData;
+    private readonly Tunables? _tunables;
+
+    // On a host, the tunables' version its clients have had.
+    private long _sentTuning;
     private readonly Func<string?> _steamName;
     private readonly SaveService? _saves;
     private string _playerName = DefaultPlayerName;
@@ -98,7 +103,8 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         IEnumerable<ISessionGameHandler> handlers,
         SaveService saves,
         ISessionMatchData? matchData = null,
-        VoxelWorld? voxels = null
+        VoxelWorld? voxels = null,
+        Tunables? tunables = null
     )
         : this(
             SettingsFor(options.Value.Session, match.Start),
@@ -114,7 +120,8 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
             matchData,
             () => steam.PersonaName,
             saves,
-            identity
+            identity,
+            tunables
         ) { }
 
     /// <param name="settings">Mode, address, limits.</param>
@@ -131,6 +138,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
     /// <param name="steamName">This player's Steam name, or null without Steam; read when the session starts.</param>
     /// <param name="saves">The named save a host or offline game starts from; null for none.</param>
     /// <param name="identity">What the match is, as a joining game must share it; the world's generator's when null.</param>
+    /// <param name="tunables">The run's tunables: a host sends its match ones, a client takes them; none for none.</param>
     internal SessionService(
         SessionSettings settings,
         int fixedStepHz,
@@ -145,9 +153,13 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         ISessionMatchData? matchData = null,
         Func<string?>? steamName = null,
         SaveService? saves = null,
-        IMatchIdentity? identity = null
+        IMatchIdentity? identity = null,
+        Tunables? tunables = null
     )
     {
+        _tunables = tunables;
+        // No more tunables once a match has begun: every peer's are the run's start's.
+        tunables?.Seal();
         _identity =
             identity
             ?? (
@@ -431,6 +443,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         if (Role == SessionRole.Host)
         {
             SendNewEdits();
+            SendTuning();
         }
 
         _transport.Flush();
@@ -508,6 +521,12 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         if (Role == SessionRole.Offline)
         {
             return;
+        }
+
+        if (Role == SessionRole.Client)
+        {
+            // The host's numbers were this match's: the next match starts from the run's own.
+            _tunables?.Reset(TuningScope.Match);
         }
 
         var text = Role == SessionRole.Host ? "the host quit" : "the player left";

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Itera.Engine.Settings;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging;
 
@@ -219,6 +220,9 @@ public sealed partial class SessionService
             case (JoinState.Loaded, MessageKind.Roster):
                 ReadRoster(ref reader);
                 break;
+            case (JoinState.Loaded, MessageKind.Tune):
+                ReadTuning(ref reader);
+                break;
             case (JoinState.Loaded, MessageKind.Snapshot):
                 (
                     _replication ?? throw new InvalidDataException("A snapshot came to a game that replicates nothing.")
@@ -310,6 +314,31 @@ public sealed partial class SessionService
     private static InvalidDataException NoWorldForEdits() =>
         new("The host sent a voxel edit to a game without a world.");
 
+    /// <summary>
+    /// The host's match tunables: each by name, set where this game has one of that name and the value is in its range
+    /// (a host of another build may have others); a count past any run's is refused.
+    /// </summary>
+    private void ReadTuning(ref MessageReader reader)
+    {
+        var count = reader.ReadVarInt();
+        if (count is < 1 or > Tunables.MostTunables)
+        {
+            throw new InvalidDataException($"A tuning message holds {count} tunables.");
+        }
+
+        for (var i = 0; i < count; i++)
+        {
+            var name = reader.ReadString();
+            var value = reader.ReadFloat();
+            if (_tunables?.Find(name) is { Scope: TuningScope.Match } tunable && !_tunables.TrySet(tunable, value))
+            {
+                LogTuningRefused(name, value);
+            }
+        }
+
+        reader.EnsureEnd();
+    }
+
     private void ReadRoster(ref MessageReader reader)
     {
         var count = reader.ReadByte();
@@ -367,6 +396,12 @@ public sealed partial class SessionService
         _early.Clear();
         LogLoaded(edits, loaded);
     }
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Session: the host's tunable {Name} = {Value} is out of this game's range; it is left as it was"
+    )]
+    private partial void LogTuningRefused(string name, float value);
 
     [LoggerMessage(
         Level = LogLevel.Information,

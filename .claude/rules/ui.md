@@ -82,6 +82,15 @@ that opens with its box typing). The console's `ui` prints every toolkit layer s
 element a line, and `ui press LABEL` clicks the element reading LABEL (`UiCommands`), so a tool or agent works a UI by
 what it says.
 
+Tunables (`Tunables`, run-wide): the numbers a game tunes while it plays (movement, recoil, sway, part limits, an
+enemy's), each registered once at the run's start (`Register(name, value, least, most, help, scope)`: a name of 1 to 64
+letters, digits, '.', '-', or '_', a default within its range; sealed by the first match) and read as
+`Tunable.Value`, which allocates nothing. The console's `tune` lists them, reads one, sets one within its range, or puts
+them back (`TuningCommands`). A `Match` tunable (what a client predicts must move by the host's numbers) is set only
+offline or on a host, which sends its value by name to its clients after the step it changed and, for those not at
+their defaults, as each client joins (the session's `Tune` message, `.claude/rules/sessions.md`); a client's go back to
+their defaults when its session ends. A `Local` one is each game's own.
+
 The stats line (F1, `stats`, `Engine:Ui:Stats`) shows frames per second, frame and GPU time, the render scale, fixed
 steps per second, the session, and the living particles.
 
@@ -173,10 +182,10 @@ registered later that clash with another action keep the file's (`KeyBindings` u
     `CapturingBinding`), `IFrameInput` and `InputService` (`SetDrawnPointer`, `SetPanel`, `SetTextFocus`,
     `AddEscapeHandler`), `IPanelInput`, `ITextInput`, `IEscapeHandler`, `KeyBindings`, `InputBinding`.
   - `Commands/` (not `Console/`: that namespace would hide `System.Console`): `ConsoleCommands`, `CommandLine`,
-    `EngineCommands`, `MatchCommands`, `SettingsCommands`, `ParticleCommands`, `SoundCommands`, `TimeCommands` (pause,
+    `EngineCommands`, `MatchCommands`, `SettingsCommands`, `TuningCommands`, `ParticleCommands`, `SoundCommands`, `TimeCommands` (pause,
     step, timescale), `EcsCommands` (`ecs`, registered at a match's ECS step). The console's scripts:
     `UI/ConsoleScript`, run by `DevConsole` (`Hold`, `RunScript`). `Settings/`:
-    `PlayerSettings`, `CommandLineKeys`, `AntiAliasMode`, `GameSwitch`.
+    `PlayerSettings`, `CommandLineKeys`, `AntiAliasMode`, `GameSwitch`, `Tunables` (with `Tunable` and `TuningScope`).
 
 ### Package notes
 
