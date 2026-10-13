@@ -88,7 +88,8 @@ public sealed partial class ReplicationService : IReplicationEndpoint
             "replication",
             "[delay MS]",
             "Prints what the host sends each client, or what this client shows; 'delay MS' sets how far behind the host a client shows it (0 to 1000).",
-            CommandScope.Match,
+            // A client's: what it shows, and its own delay.
+            CommandScope.Local,
             Command
         );
 

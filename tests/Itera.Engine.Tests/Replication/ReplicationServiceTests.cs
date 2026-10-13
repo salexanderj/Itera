@@ -1,4 +1,5 @@
 using System.Globalization;
+using Itera.Engine.Commands;
 using Itera.Engine.Maths;
 using Itera.Engine.Networking;
 using Xunit.Abstractions;
@@ -33,6 +34,44 @@ public sealed class ReplicationServiceTests(ITestOutputHelper output)
         Assert.Equal(3, harness.ClientPlan.Spawns);
         // Measured 5.99 to 6.02 steps: the delay alone, the host's tick known to within its rounding.
         Assert.All(lags, lag => Assert.InRange(lag, DelayTicks - 0.1, DelayTicks + 0.2));
+    }
+
+    /// <summary>
+    /// The console's <c>replication</c> on a client prints what it shows (a command of a client's own, not refused as
+    /// one only a host may run), and on the host what it sends.
+    /// </summary>
+    [Fact]
+    public void The_replication_command_prints_what_a_client_shows_and_what_the_host_sends()
+    {
+        using var harness = ReplicationHarness.Start(new MoverPlan { Count = 2, Speed = 1 });
+        harness.Step(30);
+        var shown = new Output();
+        var sent = new Output();
+
+        Commands(harness.Client).Execute("replication", shown);
+        Commands(harness.Host).Execute("replication", sent);
+
+        Assert.Empty(shown.Errors);
+        Assert.Contains(shown.Lines, line => line.StartsWith("Showing 2 entities", StringComparison.Ordinal));
+        Assert.Empty(sent.Errors);
+        Assert.Contains(sent.Lines, line => line.StartsWith("Replicating ", StringComparison.Ordinal));
+        Assert.Contains(sent.Lines, line => line.StartsWith("  client 1: ", StringComparison.Ordinal));
+
+        static ConsoleCommands Commands(Engine.Matches.HeadlessMatch match) =>
+            Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<ConsoleCommands>(
+                match.Services
+            );
+    }
+
+    private sealed class Output : IConsoleOutput
+    {
+        public List<string> Lines { get; } = [];
+
+        public List<string> Errors { get; } = [];
+
+        public void Print(string text) => Lines.Add(text);
+
+        public void PrintError(string text) => Errors.Add(text);
     }
 
     [Fact]
