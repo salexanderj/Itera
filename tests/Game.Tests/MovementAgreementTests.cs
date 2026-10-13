@@ -12,7 +12,7 @@ using Xunit.Abstractions;
 namespace Game.Tests;
 
 /// <summary>
-/// The check behind host-corrected prediction (GAME-DESIGN.md, section 3, 2026-10-12): a host moves a client's player
+/// The check behind host-corrected prediction (`docs/replication.md`): a host moves a client's player
 /// from the client's commands while the client moves it from the same commands at once, so the two agree only where the
 /// mover gives the same result on both. The host's floats are measured from its own origin, at its own camera, which may
 /// be far from the client's player; the client's from an origin near it. Two matches of the starter's world play the
