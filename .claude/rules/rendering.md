@@ -442,10 +442,11 @@ copies the swapchain image, before the stage's rendering, into an image of the s
 earlier frames' fragment reads to `TransferDstOptimal`, then to `ShaderReadOnlyOptimal` for the fragment stage), and
 `RenderPassContext.Picture` is a set that samples it (binding 0, a combined image sampler, linear, clamped to the edge;
 its layout `RenderPassSetup.PictureSetLayout`, given at the `Screen` stage alone); otherwise its handle is 0 and the pass
-draws nothing that needs it. The copy is timed with the first pass that reads it. The image is made on the render thread
+draws nothing that needs it. The copy is timed with the stage's first pass. The image is made on the render thread
 the first time it is asked for, made again for a new screen size (dropped with the swapchain), and freed once no pass has
-read it for 600 frames (`RenderPasses.PictureFramesBeforeFree`, `FrameImages`); where the surface offers no copy
-(`VulkanSwapchain.CanCopyImages`) a Warning says so at the "render passes" step and no pass gets one. Nothing is copied
+read it for 600 frames (`RenderPasses.PictureFramesBeforeFree`, `FrameImages`, by the frame's fence slot); where the
+surface's images cannot be copied from (`VulkanSwapchain.CanCopyImages`) or an image of their format cannot be copied
+into and sampled, a Warning says so at the "render passes" step and no pass gets one. Nothing is copied
 while no pass reads it. A copy at 2560x1440 moves about 30 MB; a blur of 24 taps and a grey over it took about 0.12 ms
 at 849x1390 (`docs/rendering-extension.md`). `RenderPassSetup` gives the device, the allocator, the shader compiler,
 the stage's colour and depth formats and samples, `MeshPass`'s set and its layout (a pipeline whose set 0 it is reads

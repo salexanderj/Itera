@@ -520,8 +520,8 @@ public sealed unsafe partial class RenderPasses : IDisposable
         _slot = slot;
         _timerSlot = timerSlot;
         _fresh = fresh;
-        // Whether the passes wrote this frame's data (a frame without a match's world has none); the slot's next frame
-        // is written only after this one was recorded.
+        // Whether the passes wrote this frame's data (a frame presented again as the render thread stops has none); the
+        // slot's next frame is written only after this one was recorded.
         _passesWritten = _written[slot];
         _written[slot] = false;
     }
@@ -576,7 +576,7 @@ public sealed unsafe partial class RenderPasses : IDisposable
     /// <summary>
     /// The Screen stage's passes, in a rendering of the screen's <paramref name="target"/> (the view of the swapchain's
     /// <paramref name="image"/>; no depth) begun here, the view's size the screen's; first, when one reads the picture,
-    /// its copy, timed with the first pass that reads it. Render thread, after the upscale.
+    /// its copy, timed with the stage's first pass. Render thread, after the upscale.
     /// </summary>
     public void RecordScreen(
         CommandBuffer commandBuffer,
@@ -594,16 +594,18 @@ public sealed unsafe partial class RenderPasses : IDisposable
         var constants = view;
         constants.Width = screen.Width;
         constants.Height = screen.Height;
-        var reader = _swapchain.CanCopyImages ? FirstPictureReader() : -1;
+        // The picture's copy is timed with the stage's first pass, whose time it then includes.
+        var first = _firstScreenPass;
         var picture = default(DescriptorSet);
-        if (reader >= 0)
+        if (_pictureCopyable && FirstPictureReader() >= 0)
         {
-            _timer.BeginGame(commandBuffer, _timerSlot, reader);
+            _timer.BeginGame(commandBuffer, _timerSlot, first);
             picture = CopyPicture(commandBuffer, image, screen);
         }
         else
         {
-            _pictures.NotUsed(_slot, PictureFramesBeforeFree);
+            first = -1;
+            _pictures.NotUsed(_timerSlot, PictureFramesBeforeFree);
         }
 
         BeginRendering(commandBuffer, target, default, screen);
@@ -615,7 +617,7 @@ public sealed unsafe partial class RenderPasses : IDisposable
                 continue;
             }
 
-            if (i != reader)
+            if (i != first)
             {
                 _timer.BeginGame(commandBuffer, _timerSlot, i);
             }
@@ -636,6 +638,7 @@ public sealed unsafe partial class RenderPasses : IDisposable
         }
 
         _pictures.Clear();
+        UpdatePictureSupport(warn: false);
         foreach (var pass in _passes)
         {
             pass.OnTargetsChanged(SetupFor(pass.Stage));

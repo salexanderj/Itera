@@ -12,8 +12,9 @@ namespace Itera.Engine.Rendering;
 /// <see cref="RenderPassSetup.PictureSetLayout"/>). The image is made on the render thread the first time it is asked
 /// for, made again for a new screen size, and freed once no pass has read it for <see cref="PictureFramesBeforeFree"/>
 /// frames, each slot's set pointed at it after that slot's fence, as the upscale's images are (<see cref="FrameImages{T}"/>).
-/// Nothing is copied or kept while no pass reads it, nor where the surface offers no copy
-/// (<see cref="VulkanSwapchain.CanCopyImages"/>).
+/// Nothing is copied or kept while no pass reads it, nor where the surface's images cannot be copied from
+/// (<see cref="VulkanSwapchain.CanCopyImages"/>) or an image of their format cannot be copied into and sampled. The copy is
+/// timed with the stage's first pass.
 /// </summary>
 public sealed unsafe partial class RenderPasses
 {
@@ -29,6 +30,8 @@ public sealed unsafe partial class RenderPasses
     private DescriptorSetLayout _pictureSetLayout;
     private DescriptorPool _picturePool;
     private bool _passesWritten;
+    private bool _pictureCopyable;
+    private int _firstScreenPass = -1;
 
     /// <summary>The Screen stage's first pass that reads the picture in this frame, or -1 for none.</summary>
     private int FirstPictureReader()
@@ -56,13 +59,13 @@ public sealed unsafe partial class RenderPasses
     /// </summary>
     private DescriptorSet CopyPicture(CommandBuffer commandBuffer, Image image, Extent2D screen)
     {
-        _pictures.Use(_slot);
+        _pictures.Use(_timerSlot);
         var picture = EnsurePicture(screen);
-        if (_pictures.SetsNeedWriting(_slot))
+        if (_pictures.SetsNeedWriting(_timerSlot))
         {
             // The slot's fence has passed, so no submitted frame uses its set.
-            WritePictureSet(_pictureSets[_slot], picture.View);
-            _pictures.SetsWritten(_slot);
+            WritePictureSet(_pictureSets[_timerSlot], picture.View);
+            _pictures.SetsWritten(_timerSlot);
         }
 
         var barriers = stackalloc ImageMemoryBarrier2[2];
@@ -125,7 +128,7 @@ public sealed unsafe partial class RenderPasses
             AccessFlags2.ColorAttachmentReadBit | AccessFlags2.ColorAttachmentWriteBit
         );
         PictureBarriers(commandBuffer, barriers);
-        return _pictureSets[_slot];
+        return _pictureSets[_timerSlot];
     }
 
     /// <summary>The picture's image, made when there is none or it has another size or format; the old one retired.</summary>
@@ -150,7 +153,7 @@ public sealed unsafe partial class RenderPasses
             ImageAspectFlags.ColorBit,
             "screen picture"
         );
-        _pictures.Replace(made, _slot);
+        _pictures.Replace(made, _timerSlot);
         LogPicture(screen.Width, screen.Height);
         return made;
     }
@@ -221,7 +224,30 @@ public sealed unsafe partial class RenderPasses
             _context.SetObjectName(ObjectType.DescriptorSet, sets[slot].Handle, "screen picture");
         }
 
-        if (!_swapchain.CanCopyImages)
+        _firstScreenPass = Array.FindIndex(_passes, pass => pass.Stage == RenderStage.Screen);
+        UpdatePictureSupport(warn: true);
+    }
+
+    /// <summary>
+    /// Whether the picture can be copied now: the swapchain's images can be copied from, and an image of its format can be
+    /// copied into and sampled with optimal tiling. At the "render passes" step (saying so when it cannot) and with each
+    /// new swapchain, the device idle.
+    /// </summary>
+    private void UpdatePictureSupport(bool warn)
+    {
+        if (_pictureSetLayout.Handle == 0)
+        {
+            return;
+        }
+
+        _context.Vk.GetPhysicalDeviceFormatProperties(
+            _context.PhysicalDevice,
+            _swapchain.ImageFormat,
+            out var properties
+        );
+        const FormatFeatureFlags Needed = FormatFeatureFlags.TransferDstBit | FormatFeatureFlags.SampledImageBit;
+        _pictureCopyable = _swapchain.CanCopyImages && (properties.OptimalTilingFeatures & Needed) == Needed;
+        if (warn && !_pictureCopyable)
         {
             LogNoPicture();
         }
@@ -316,7 +342,7 @@ public sealed unsafe partial class RenderPasses
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Render passes: the surface offers no copy of its images, so passes that read the screen's picture get none"
+        Message = "Render passes: the surface's images cannot be copied into a picture to sample, so passes that read the screen's picture get none"
     )]
     private partial void LogNoPicture();
 }

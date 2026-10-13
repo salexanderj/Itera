@@ -6,7 +6,7 @@ namespace Itera.Engine.Rendering;
 /// destroyed once the frame before (the previous slot's) has passed its fence; that fence also covers every earlier
 /// frame. A slot's descriptor sets are pointed at the current images only after that slot's fence
 /// (<see cref="SetsNeedWriting"/>). Nothing waits for the device. Render thread only;
-/// <see cref="UpscalePass"/> and <see cref="SmaaPass"/> keep theirs in one.
+/// <see cref="UpscalePass"/>, <see cref="SmaaPass"/>, and <see cref="RenderPasses"/> (the screen's picture) keep theirs in one.
 /// </summary>
 /// <typeparam name="T">The images of one size, destroyed by their <see cref="IDisposable.Dispose"/>.</typeparam>
 internal sealed class FrameImages<T> : IDisposable
