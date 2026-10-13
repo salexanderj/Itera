@@ -8,7 +8,7 @@ paths:
 ## The engine's components and systems
 
 `src/Itera.Engine/Components/` holds the ECS components the engine's systems share (namespace
-`Itera.Engine.Components`): cameras (`CameraPose`, `CameraLens`, `FlyCamera`, `ActiveCamera`), characters
+`Itera.Engine.Components`): cameras (`CameraPose`, `CameraLens`, `FlyCamera`, `ActiveCamera`, `LookKick`), characters
 (`LocalPlayer`, `RemotePlayer`, `Bodiless`, `PlayerCommand` with `PlayerButtons` and a game's own `Actions` bits,
 `PlayerMode` with `Flying` and `Crouching`, `ThirdPersonView`, `CharacterSize` with `ForHeight`, `CharacterPosition`,
 `CharacterVelocity`, `CharacterContact`, `EyeSmoothing`, `MovementStats` with a person's `Default`), mesh assets
@@ -63,7 +63,10 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   wheel, the right shoulder unless `ThirdPersonView.Left` (1 the left, a game easing it between to swap), pulled in by
   voxels, by the voxel objects where the game gives it `ObjectRays`, and by the mesh colliders where it gives it
   `MeshColliders`; the aim the same, and stopped by a character's hit shape where the game gives it a `HitHistory` and
-  a tick, the aimer's own left out, so a crosshair on a character sends a shot from the eye into it); it makes the camera entity from a start pose (`CameraRules.CreateCamera`).
+  a tick, the aimer's own left out, so a crosshair on a character sends a shot from the eye into it), turned by a
+  game's kick of the view (`LookKick` on the local player, radians up and to the left: a weapon's recoil, which the
+  game also adds to what it aims through the camera; the command's look is left as it was); it makes the camera entity
+  from a start pose (`CameraRules.CreateCamera`).
   `DebugFlyCameraSystem` flies it while the player flies (`flyspeed`; with `Engine:Voxels:DebugWalkSpeed` above 0 it
   flies a 100 m circle round the map's middle `Engine:Camera:CircleHeightMetres` up, which must clear the game's hills),
   kept to the play area (`PlayArea`: the world and 1 km round it, absolute: `Contains`, `HoldsEye`, and `ClampEye` take

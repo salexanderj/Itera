@@ -15,6 +15,21 @@ public struct CameraPose
 }
 
 /// <summary>
+/// A kick of the local player's view, in radians (a weapon's recoil): <c>PlayerCameraSystem</c> adds it to the look the
+/// camera sits behind and points along, so the whole picture moves with it and the screen's middle stays where a shot
+/// that aims through the camera goes. The game sets it each frame; the command's own look is left as it was.
+/// Presentation only: what aims through the camera adds the same kick to the command's look itself.
+/// </summary>
+public struct LookKick
+{
+    /// <summary>Radians up.</summary>
+    public float Pitch;
+
+    /// <summary>Radians to the left.</summary>
+    public float Yaw;
+}
+
+/// <summary>
 /// How a camera projects (<see cref="CameraView"/> has each value's meaning): perspective, by its vertical field of view
 /// from its near plane on; or orthographic, an image <see cref="HeightMetres"/> high round the camera's position, between
 /// <see cref="NearMetres"/> and <see cref="FarMetres"/> along the view (<see cref="Orthographic"/> makes one).

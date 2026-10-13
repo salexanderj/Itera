@@ -44,6 +44,8 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
 
     private static readonly QueryDescription s_view = new QueryDescription().WithAll<LocalPlayer, ThirdPersonView>();
 
+    private static readonly QueryDescription s_kick = new QueryDescription().WithAll<LocalPlayer, LookKick>();
+
     private readonly IFrameInput _input;
     private readonly float _radiansPerPixel;
 
@@ -100,6 +102,7 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
         EcsChecks.RequireAll<CameraPose>(in s_camera);
         EcsChecks.RequireAll<LocalPlayer, Bodiless>(in s_bodiless);
         EcsChecks.RequireAll<LocalPlayer, ThirdPersonView>(in s_view);
+        EcsChecks.RequireAll<LocalPlayer, LookKick>(in s_kick);
         if (_start is { } start)
         {
             CameraRules.CreateCamera(World, in start, _engine);
@@ -124,8 +127,11 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
         // at the next.
         var blocked = _block is { Blocked: true };
         var look = _input.Frame.PointerCaptured && !blocked ? _input.MouseSinceTick * radiansPerPixel : Vector2.Zero;
-        var yaw = MathF.IEEERemainder(eye.Yaw - look.X, 2 * MathF.PI);
-        var pitch = Math.Clamp(eye.Pitch - look.Y, -CameraRules.MaxPitch, CameraRules.MaxPitch);
+        // A game's kick of the view (recoil) turns the whole look the camera sits behind and points along.
+        var kick = new FindKick();
+        World.InlineQuery<FindKick, LookKick>(in s_kick, ref kick);
+        var yaw = MathF.IEEERemainder(eye.Yaw - look.X + kick.Yaw, 2 * MathF.PI);
+        var pitch = Math.Clamp(eye.Pitch - look.Y + kick.Pitch, -CameraRules.MaxPitch, CameraRules.MaxPitch);
         var shoulder = new FindView();
         World.InlineQuery<FindView, ThirdPersonView>(in s_view, ref shoulder);
         var set = new SetPose
@@ -197,6 +203,18 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
             Position = EyeAt(in position, in size, in smoothing, Alpha);
             Yaw = command.Yaw;
             Pitch = command.Pitch;
+        }
+    }
+
+    private struct FindKick : IForEach<LookKick>
+    {
+        public float Pitch;
+        public float Yaw;
+
+        public void Update(ref LookKick kick)
+        {
+            Pitch = float.IsFinite(kick.Pitch) ? kick.Pitch : 0;
+            Yaw = float.IsFinite(kick.Yaw) ? kick.Yaw : 0;
         }
     }
 

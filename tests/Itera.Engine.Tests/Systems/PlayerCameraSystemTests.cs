@@ -177,6 +177,33 @@ public sealed class PlayerCameraSystemTests
     }
 
     [Fact]
+    public void A_look_kick_turns_the_whole_view_behind_the_shoulder_and_leaves_the_command_alone()
+    {
+        using var world = World.Create();
+        using var system = Create(world);
+        var feet = new Vector3(1, 0, 2);
+        CreatePlayer(
+            world,
+            flying: false,
+            new CharacterPosition { Feet = feet, PreviousFeet = feet },
+            default,
+            new PlayerCommand { Yaw = 0.1f, Pitch = -0.2f }
+        );
+        var player = Player(world);
+        world.Add(player, new ThirdPersonView { On = true, Metres = 3 });
+        world.Add(player, new LookKick { Pitch = 0.05f, Yaw = -0.02f });
+
+        system.Update(new FrameTime(1f / 60, 1, 1, 0.5f));
+
+        var camera = ReadCamera(world);
+        var eye = feet + new Vector3(0, 1.5f, 0);
+        // Sitting behind the shoulder of the kicked look, and pointing along it.
+        Assert.Equal(ThirdPersonCamera.Position(null, eye, 0.08f, -0.15f, 3), camera.Position);
+        Assert.Equal((0.08f, -0.15f), (camera.Yaw, camera.Pitch));
+        Assert.Equal((0.1f, -0.2f), (world.Get<PlayerCommand>(player).Yaw, world.Get<PlayerCommand>(player).Pitch));
+    }
+
+    [Fact]
     public void Update_allocates_nothing()
     {
         using var world = World.Create();
