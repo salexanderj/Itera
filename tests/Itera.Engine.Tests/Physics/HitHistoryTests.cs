@@ -304,7 +304,17 @@ public sealed class HitHistoryTests : IDisposable
         Assert.Equal((0, 0), (late, unknown));
         // What the ray meets at the tick lies on a capsule read there.
         Assert.True(_history.Raycast(new(0.5f, 0.5f, -4), Vector3.UnitZ, 10, 1.5, Entity.Null, out var hit));
-        Assert.True(HitShapes.RaycastCapsule(new(0.5f, 0.5f, -4), Vector3.UnitZ, moved.A, moved.B, moved.Radius, out var distance, out _));
+        Assert.True(
+            HitShapes.RaycastCapsule(
+                new(0.5f, 0.5f, -4),
+                Vector3.UnitZ,
+                moved.A,
+                moved.B,
+                moved.Radius,
+                out var distance,
+                out _
+            )
+        );
         Assert.Equal(hit.Distance, distance, 1e-5f);
 
         var start = SystemAllocation.StartMeasurement();
