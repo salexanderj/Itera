@@ -702,8 +702,10 @@ and `Alpha`, how far the frame lies between the last two steps). Components are 
   the player out of play.
 - `PlayerMovementSystem` (fixed) moves every entity with a command and `MovementStats` through the voxels with
   `VoxelCharacterMover`: steering faster on walkable ground than in the air, jumping, gravity, sliding on steep ground,
-  pushes from loose bodies, crouching (the local player crouches while Crouch is held, to 0.77 of its height; it stands
-  once the standing body fits), and backwards walking at 0.7 of its speed. The eye eases after a step or a change of eye
+  pushes from loose bodies, crouching (each character crouches while Crouch is held, to 0.77 of its height; it stands
+  once the standing body fits), and backwards walking at 0.7 of its speed, the same for the local player, a remote one
+  a host moves, and a game's characters; one character's step is also `CharacterStepper.Step` (scoped), to run a step
+  again (a client's replay after the host's correction). The eye eases after a step or a change of eye
   height (`EyeSmoothing`). A game's `IMovementMode` may take a walking player's step first (a climb), giving the
   velocity and step height, with `MovementProbes` (a wall ahead by three rays of the shared ray, its ledge's top by a
   ray down, room to stand by the mover) and the move's `WallNormal`; `ClimbingMode` is the engine's ready-made one

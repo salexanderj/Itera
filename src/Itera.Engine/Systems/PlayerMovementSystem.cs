@@ -20,13 +20,15 @@ namespace Itera.Engine.Systems;
 /// <see cref="VoxelCharacterMover"/>, which slides the body along walls, steps it onto ledges, and lands it. On ground
 /// steeper than its max slope the player slides down, steers only as in the air, and cannot jump, so no slope steeper
 /// than the limit can be walked or jumped up. After a step up or down, or a crouch, the eye starts from its old height
-/// and eases to the new one (<see cref="EyeSmoothing"/>). Before the moves, the local player crouches while its
-/// command holds <see cref="PlayerButtons.Crouch"/> and it walks (<see cref="PlayerMode.Crouching"/>): its height and
-/// eye drop to <see cref="CrouchHeightShare"/> of standing, it moves at <see cref="CrouchSpeedShare"/> of its speed, and
-/// it cannot jump or sprint; let go, it stands up once the standing body fits where it is
+/// and eases to the new one (<see cref="EyeSmoothing"/>). Before its move, each character crouches while its command
+/// holds <see cref="PlayerButtons.Crouch"/> and it walks (<see cref="PlayerMode.Crouching"/>): its height and eye drop
+/// to <see cref="CrouchHeightShare"/> of standing, it moves at <see cref="CrouchSpeedShare"/> of its speed, and it
+/// cannot jump or sprint; let go, it stands up once the standing body fits where it is
 /// (<see cref="VoxelCharacterMover.OverlapsAnything"/>), so it stays down under a low roof. Flying ends the crouch at
-/// once. Moving backwards, the local player moves at most <see cref="BackwardSpeedShare"/> of its speed (of its crouched
-/// speed while crouched) and cannot sprint. A game's <see cref="IMovementMode"/> may take a walking player's step before
+/// once. Moving backwards, a character moves at most <see cref="BackwardSpeedShare"/> of its speed (of its crouched
+/// speed while crouched) and cannot sprint. These are the same for the local player, a remote one a host moves, and a
+/// game's characters, so a host moves a client's player as the client does. One character's step is also
+/// <see cref="CharacterStepper.Step"/>, for running a step again. A game's <see cref="IMovementMode"/> may take a walking player's step before
 /// the engine steers it (a climb): it gives the velocity and step height, and the move, contact, and eye go on as for any
 /// step. A <see cref="Bodiless"/> entity is not moved. The velocity before the move
 /// is kept as <see cref="CharacterVelocity.Wanted"/> for a stand-in, and the push loose bodies gave the stand-in
@@ -35,7 +37,7 @@ namespace Itera.Engine.Systems;
 /// entity: a game makes its player with these components. Reads <see cref="PlayerCommand"/>, <see cref="PlayerMode"/>,
 /// <see cref="CharacterSize"/>, <see cref="MovementStats"/>, and <see cref="CameraPose"/>; writes
 /// <see cref="CharacterPosition"/>, <see cref="CharacterVelocity"/>, <see cref="CharacterContact"/>,
-/// <see cref="EyeSmoothing"/>, and for the crouch the local player's <see cref="CharacterSize"/>, command, and
+/// <see cref="EyeSmoothing"/>, and for the crouch and limits each character's <see cref="CharacterSize"/>, command, and
 /// <see cref="PlayerMode.Crouching"/>. The console's <c>pos</c> prints where the camera is, and <c>tp</c> moves the
 /// local player (or the fly camera) there at the next step.
 /// </summary>
@@ -82,22 +84,15 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         >()
         .WithNone<Bodiless>();
 
-    // The local player's command, limited by its crouch and moving backwards.
-    private static readonly QueryDescription s_limited = new QueryDescription().WithAll<
-        LocalPlayer,
-        PlayerCommand,
-        PlayerMode
-    >();
-
     private static readonly QueryDescription s_camera = new QueryDescription().WithAll<CameraPose, ActiveCamera>();
 
-    // Only the local player crouches. A bodiless one too: with its buttons cleared (PlayerInputSystem), it stands up.
-    private static readonly QueryDescription s_crouchers = new QueryDescription().WithAll<
-        LocalPlayer,
+    // A bodiless character is not moved, but crouches too: with its buttons cleared (PlayerInputSystem), it stands up.
+    private static readonly QueryDescription s_bodilessCrouchers = new QueryDescription().WithAll<
         PlayerCommand,
         PlayerMode,
         CharacterSize,
-        CharacterPosition
+        CharacterPosition,
+        Bodiless
     >();
 
     private static readonly QueryDescription s_localPlayer = new QueryDescription().WithAll<
@@ -185,11 +180,9 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     {
         EcsChecks.RequireAll<PlayerCommand, PlayerMode, CharacterSize, CharacterPosition>(in s_players);
         EcsChecks.RequireAll<CharacterVelocity, CharacterContact, EyeSmoothing, MovementStats>(in s_players);
-        EcsChecks.RequireAll<LocalPlayer, PlayerCommand, PlayerMode>(in s_limited);
         EcsChecks.RequireAll<CameraPose>(in s_camera);
         EcsChecks.RequireAll<CharacterContact, CharacterPosition>(in s_localPlayer);
-        EcsChecks.RequireAll<LocalPlayer, PlayerCommand, PlayerMode, CharacterSize>(in s_crouchers);
-        EcsChecks.RequireAll<CharacterPosition>(in s_crouchers);
+        EcsChecks.RequireAll<PlayerCommand, PlayerMode, CharacterSize, CharacterPosition>(in s_bodilessCrouchers);
         EcsChecks.RequireAll<LocalPlayer, PlayerCommand, CharacterSize, CharacterPosition>(in s_local);
         EcsChecks.RequireAll<CharacterVelocity, CharacterContact, EyeSmoothing>(in s_local);
         EcsChecks.RequireAll<CameraPose>(in s_jumpCameras);
@@ -205,11 +198,9 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
 
         var crouch = new Crouch { Mover = _mover };
         World.InlineQuery<Crouch, PlayerCommand, PlayerMode, CharacterSize, CharacterPosition>(
-            in s_crouchers,
+            in s_bodilessCrouchers,
             ref crouch
         );
-        var limit = new LimitLocal();
-        World.InlineQuery<LimitLocal, PlayerCommand, PlayerMode>(in s_limited, ref limit);
 
         var camera = new FindCamera();
         World.InlineQuery<FindCamera, CameraPose>(in s_camera, ref camera);
@@ -326,10 +317,10 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     }
 
     /// <summary>
-    /// The local player's crouch for the step (<see cref="PlayerButtons.Crouch"/>): down while it is held and the player
+    /// A character's crouch for the step (<see cref="PlayerButtons.Crouch"/>): down while it is held and the character
     /// walks, up once it is let go and the standing body fits, at once when it flies. Going down or up scales the height
     /// and eye (the step stays); the move then eases the eye to its new height (<see cref="EyeSmoothing.Height"/>). What a
-    /// crouch allows the command is <see cref="LimitLocal"/>'s.
+    /// crouch allows the command is <see cref="Limit"/>'s.
     /// </summary>
     private struct Crouch : IForEach<PlayerCommand, PlayerMode, CharacterSize, CharacterPosition>
     {
@@ -340,6 +331,14 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             ref PlayerMode mode,
             ref CharacterSize size,
             ref CharacterPosition position
+        ) => Step(Mover, in command, ref mode, ref size, in position);
+
+        public static void Step(
+            VoxelCharacterMover mover,
+            in PlayerCommand command,
+            ref PlayerMode mode,
+            ref CharacterSize size,
+            in CharacterPosition position
         )
         {
             var walking = !mode.Flying;
@@ -352,7 +351,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
                     size.RadiusMetres,
                     size.StepMetres
                 );
-                down = Mover.OverlapsAnything(position.Feet, in standing);
+                down = mover.OverlapsAnything(position.Feet, in standing);
             }
 
             if (down != mode.Crouching)
@@ -365,10 +364,10 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         }
     }
 
-    /// <summary>The local player's command, limited by its crouch and by moving backwards.</summary>
-    private struct LimitLocal : IForEach<PlayerCommand, PlayerMode>
+    /// <summary>A character's command, limited by its crouch and by moving backwards.</summary>
+    private static class Limit
     {
-        public readonly void Update(ref PlayerCommand command, ref PlayerMode mode)
+        public static void Apply(ref PlayerCommand command, in PlayerMode mode)
         {
             if (mode.Crouching)
             {
@@ -630,7 +629,11 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         }
     }
 
-    private struct Move
+    /// <summary>
+    /// One character's step: the command made safe, its crouch and limits, then flying, the game's movement mode, or the
+    /// engine's walking, and the mover. <see cref="CharacterStepper"/> runs it for one entity.
+    /// </summary>
+    internal struct Move
     {
         public VoxelCharacterMover Mover;
         public IMovementMode? Mode;
@@ -659,6 +662,8 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         )
         {
             Sanitize(ref command);
+            Crouch.Step(Mover, in command, ref mode, ref size, in position);
+            Limit.Apply(ref command, in mode);
             if (!IsFinite(velocity.MetresPerSecond) || !IsFinite(velocity.Push) || !IsFinite(position.Feet))
             {
                 // A bad number from a physics push or an earlier step would freeze the character for good (NaN never
