@@ -480,7 +480,7 @@ public sealed class ScenarioTests
     /// where its -x foot meets the ground along the row through it (a little out from it), and the ground's height there,
     /// in metres.
     /// </summary>
-    private static (Vector3 Middle, Vector3 Foot, float Ground) FindBoulder()
+    internal static (Vector3 Middle, Vector3 Foot, float Ground) FindBoulder()
     {
         for (var reach = 100; reach <= 10_000; reach += 100)
         {
