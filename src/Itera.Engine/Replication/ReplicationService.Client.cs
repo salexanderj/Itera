@@ -205,10 +205,12 @@ public sealed partial class ReplicationService
         FollowClock(tick);
         if (!_clockKnown)
         {
+            _shownTick = -1;
             return;
         }
 
         var shownAt = tick + _clockOffset - (double)InterpolationMilliseconds * _fixedStepHz / 1000;
+        _shownTick = shownAt;
         foreach (var shown in _shown)
         {
             if (

@@ -58,15 +58,22 @@ public sealed record ReplicatedKind(
 );
 
 /// <summary>
-/// The run's replicated kinds, registered once at its start (a game's <c>IRunStartup</c>) and sealed by the first match.
-/// Their names and fields make a fingerprint a client's hello carries, so a host refuses a client whose kinds differ.
+/// The run's replicated kinds, and the parts of a predicted player's state a game adds (<see cref="IPredictedState"/>,
+/// after the engine's climber), registered once at its start (a game's <c>IRunStartup</c>) and sealed by the first
+/// match. Their names and fields make a fingerprint a client's hello carries, so a host refuses a client whose kinds or
+/// parts differ.
 /// </summary>
 public sealed class ReplicatedKinds
 {
     /// <summary>The most kinds a run registers.</summary>
     public const int MostKinds = 255;
 
+    /// <summary>The most bytes all of a predicted player's parts take, the engine's climber's 43 among them.</summary>
+    public const int MostPredictedBytes = 128;
+
     private readonly List<ReplicatedKind> _kinds = [];
+    private readonly List<IPredictedState> _predicted = [new ClimberPredictedState()];
+    private int _predictedBytes = new ClimberPredictedState().Bytes;
     private bool _sealed;
 
     public int Count => _kinds.Count;
@@ -125,14 +132,56 @@ public sealed class ReplicatedKinds
     }
 
     /// <summary>
-    /// A number the kinds' names and fields make, in their order (FNV-1a over their descriptions): the same build of the
-    /// same game gives the same one. 0 with no kinds.
+    /// Registers a part of a predicted player's state that a game keeps in a component of its own, after the engine's
+    /// and those registered before it. Names are unique, and all the parts take at most <see cref="MostPredictedBytes"/>.
+    /// </summary>
+    public void RegisterPredicted(IPredictedState part)
+    {
+        ArgumentNullException.ThrowIfNull(part);
+        ArgumentException.ThrowIfNullOrWhiteSpace(part.Name);
+        if (_sealed)
+        {
+            throw new InvalidOperationException(
+                $"The replicated kinds are sealed by the first match; the predicted part {part.Name} is too late."
+            );
+        }
+
+        if (part.Bytes < 1 || _predictedBytes + part.Bytes > MostPredictedBytes)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(part),
+                $"The predicted part {part.Name} takes {part.Bytes} bytes; {MostPredictedBytes - _predictedBytes} are left."
+            );
+        }
+
+        foreach (var other in _predicted)
+        {
+            if (string.Equals(other.Name, part.Name, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"The predicted part {part.Name} is registered already.");
+            }
+        }
+
+        _predicted.Add(part);
+        _predictedBytes += part.Bytes;
+    }
+
+    /// <summary>The parts of a predicted player's state, the engine's climber first, in the order of their registration.</summary>
+    internal IReadOnlyList<IPredictedState> Predicted => _predicted;
+
+    /// <summary>The bytes all of a predicted player's parts take.</summary>
+    internal int PredictedBytes => _predictedBytes;
+
+    /// <summary>
+    /// A number the kinds' names and fields, and the game's predicted parts' names and sizes, make in their order (FNV-1a
+    /// over their descriptions): the same build of the same game gives the same one. 0 with neither (the engine's own
+    /// climber is the same in every build the protocol's version lets meet).
     /// </summary>
     public ulong Fingerprint
     {
         get
         {
-            if (_kinds.Count == 0)
+            if (_kinds.Count == 0 && _predicted.Count == 1)
             {
                 return 0;
             }
@@ -141,6 +190,15 @@ public sealed class ReplicatedKinds
             foreach (var kind in _kinds)
             {
                 text.Append(kind.Name).Append('=').Append(kind.Schema.Description).Append('|');
+            }
+
+            for (var i = 1; i < _predicted.Count; i++)
+            {
+                text.Append("predicted ")
+                    .Append(_predicted[i].Name)
+                    .Append('=')
+                    .Append(_predicted[i].Bytes)
+                    .Append('|');
             }
 
             var hash = 14695981039346656037ul;

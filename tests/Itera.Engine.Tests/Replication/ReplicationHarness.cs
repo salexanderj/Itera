@@ -176,6 +176,11 @@ internal sealed class ReplicationHarness : IDisposable
                 services.AddSingleton<ISessionTransports>(new Transports(transport));
                 services.AddSingleton(plan);
                 services.AddSingleton<IRunStartup, TestKinds>();
+                if (plan.Boost)
+                {
+                    services.AddScoped<IMovementMode, TestBoostMode>();
+                }
+
                 // A client shows first; the host moves its movers, then sends.
                 services.AddScoped<IFixedUpdateSystem>(sp => new ReplicationReceiveSystem(
                     sp.GetRequiredService<EcsWorld>().World,
@@ -208,6 +213,7 @@ internal sealed class ReplicationHarness : IDisposable
                     sp.GetRequiredService<Itera.Engine.Physics.VoxelCharacterMover>(),
                     sp.GetRequiredService<PlayArea>(),
                     Microsoft.Extensions.Logging.Abstractions.NullLogger<PlayerMovementSystem>.Instance,
+                    mode: sp.GetService<IMovementMode>(),
                     physics: sp.GetRequiredService<Itera.Engine.Physics.PhysicsWorld>()
                 ));
                 services.AddScoped<IFixedUpdateSystem>(sp => new ReplicationSendSystem(
@@ -256,6 +262,14 @@ internal sealed class MoverPlan
 
     /// <summary>On a client, its player's command at each tick; none stands still.</summary>
     public Func<ulong, Components.PlayerCommand>? Script { get; set; }
+
+    /// <summary>
+    /// Characters carry a <see cref="TestBoost"/> and move by <see cref="TestBoostMode"/>; with
+    /// <see cref="BoostPredicted"/> its state is a predicted part (<see cref="TestBoostState"/>).
+    /// </summary>
+    public bool Boost { get; set; }
+
+    public bool BoostPredicted { get; set; } = true;
 
     /// <summary>On a client, its own player; on the host, each slot's.</summary>
     public Entity Own { get; set; } = Entity.Null;
@@ -314,6 +328,11 @@ internal sealed class TestKinds(ReplicatedKinds kinds, MoverPlan plan) : IRunSta
         if (plan.ExtraKind)
         {
             kinds.Register("test.extra", new ReplicatedSchema(), new PlayerKind(plan));
+        }
+
+        if (plan.Boost && plan.BoostPredicted)
+        {
+            kinds.RegisterPredicted(new TestBoostState());
         }
     }
 
@@ -506,7 +525,7 @@ internal sealed class TestCharacterSystem(
     {
         if (session.Role == SessionRole.Client && plan.Characters)
         {
-            plan.Own = Create(World);
+            plan.Own = Create(World, plan.Boost);
             World.Add(plan.Own, new Components.LocalPlayer());
             replication.Predict(plan.Own);
         }
@@ -536,18 +555,18 @@ internal sealed class TestCharacterSystem(
             plan.Remote[slot] = Entity.Null;
             if (slot < players.Length && players[slot].Present)
             {
-                plan.Remote[slot] = Create(World);
+                plan.Remote[slot] = Create(World, plan.Boost);
                 World.Add(plan.Remote[slot], new Components.RemotePlayer());
                 replication.Add(plan.Remote[slot], plan.Character, PlayerIds.Of(slot));
             }
         }
     }
 
-    /// <summary>A 1.7 m character standing on the floor at the middle, waiting for its first step.</summary>
-    public static Entity Create(World world)
+    /// <summary>A 1.7 m character standing on the floor at the middle, waiting for its first step; with a boost, its <see cref="TestBoost"/>.</summary>
+    public static Entity Create(World world, bool boost = false)
     {
         var feet = new Vector3(0, 0.05f, 0);
-        return world.Create(
+        var character = world.Create(
             new Components.PlayerCommand(),
             new Components.PlayerMode(),
             Components.CharacterSize.ForHeight(1.7f),
@@ -557,6 +576,12 @@ internal sealed class TestCharacterSystem(
             new Components.EyeSmoothing(),
             Components.MovementStats.Default
         );
+        if (boost)
+        {
+            world.Add(character, new TestBoost());
+        }
+
+        return character;
     }
 }
 
@@ -571,5 +596,88 @@ internal sealed class TestInputSystem(World world, MoverPlan plan)
         {
             World.Get<Components.PlayerCommand>(plan.Own) = script(step.Tick);
         }
+    }
+}
+
+/// <summary>A test boost (<see cref="MoverPlan.Boost"/>): the seconds of it left, and how many have started.</summary>
+internal struct TestBoost
+{
+    public float Seconds;
+    public int Started;
+}
+
+/// <summary>
+/// The test's movement mode: the command's first action with no boost running starts one of <see cref="Seconds"/>, in
+/// which the player runs along its look at <see cref="Speed"/>, falling as it would; its state is the player's
+/// <see cref="TestBoost"/>, which a correction must put back for the client to run its commands again alike.
+/// </summary>
+internal sealed class TestBoostMode : IMovementMode
+{
+    public const float Seconds = 0.5f;
+    public const float Speed = 9;
+
+    public bool Steer(in MovementModeInput input, ref MovementModeMove move)
+    {
+        if (!input.World.Has<TestBoost>(input.Entity))
+        {
+            return false;
+        }
+
+        ref var boost = ref input.World.Get<TestBoost>(input.Entity);
+        if (boost.Seconds <= 0 && (input.Command.Actions & 1) != 0)
+        {
+            boost.Seconds = Seconds;
+            boost.Started++;
+        }
+
+        if (boost.Seconds <= 0)
+        {
+            return false;
+        }
+
+        boost.Seconds -= input.Seconds;
+        var forward = ThirdPersonCamera.Forward(input.Command.Yaw, 0);
+        move.Velocity = new Vector3(forward.X * Speed, input.Velocity.Y - 9.81f * input.Seconds, forward.Z * Speed);
+        move.StepMetres = input.Size.StepMetres;
+        return true;
+    }
+}
+
+/// <summary>The test boost as a predicted part: its seconds left and how many have started.</summary>
+internal sealed class TestBoostState : IPredictedState
+{
+    public string Name => "test.boost";
+
+    public int Bytes => 8;
+
+    public void Capture(World world, Entity entity, WorldOrigin origin, Span<byte> state)
+    {
+        var boost = world.Has<TestBoost>(entity) ? world.Get<TestBoost>(entity) : default;
+        System.Buffers.Binary.BinaryPrimitives.WriteSingleLittleEndian(state, boost.Seconds);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(state[4..], boost.Started);
+    }
+
+    public void Restore(World world, Entity entity, WorldOrigin origin, ReadOnlySpan<byte> state)
+    {
+        if (world.Has<TestBoost>(entity))
+        {
+            world.Get<TestBoost>(entity) = new TestBoost
+            {
+                Seconds = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(state),
+                Started = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(state[4..]),
+            };
+        }
+    }
+
+    public bool Differs(ReadOnlySpan<byte> host, ReadOnlySpan<byte> predicted) =>
+        System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(host[4..])
+        != System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(predicted[4..]);
+
+    public bool IsValid(ReadOnlySpan<byte> state)
+    {
+        var seconds = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(state);
+        return float.IsFinite(seconds)
+            && seconds <= TestBoostMode.Seconds
+            && System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(state[4..]) >= 0;
     }
 }

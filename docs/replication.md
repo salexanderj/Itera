@@ -86,6 +86,17 @@ amounts cost 110 to 140 KB/s until changes under a millimetre went unsent.
   applied. A client that predicted otherwise there (1 cm, or another contact, crouch, or climb) takes the host's state
   and runs its later commands again with the same step the movement system uses (`CharacterStepper`), and eases what is
   drawn from where it was (0.85 a step kept, so a jump is mostly gone in a quarter second; past 2 m at once).
+- **A game's own movement state** (2026-10-13). A correction must put back everything a step reads, or the client
+  runs its later commands again from a state the host never had: with a test boost kept in a component of the test's,
+  nine pushes by the host made 17 corrections when the boost was not carried, and nine when it was. So a game
+  registers the components its movement keeps as predicted parts, each a fixed number of bytes (so a step's history
+  allocates nothing), and the engine's climbing became the first of them. Offered: a game's state as replicated lanes
+  (quantised, so not the same to the last bit), or one blob a game writes whole (no checking part by part).
+- **What a client saw when it aimed** (2026-10-13). A host judging a client's shot needs where the targets were on that
+  client's screen: the reply carries, with each command, the host's tick the client showed then, and the host gives the
+  one of the command it applies (`ShownTickOf`), held to half a second back so a client cannot ask for a time long
+  gone. Measured in the harness: 9 steps behind the host's step with no delay (the 6 of the interpolation delay, the
+  buffer's 2, and one step on the way), 21 through 100 ms each way.
 
 ## Measured
 
@@ -101,7 +112,8 @@ delay); a host that moves the player a metre corrects the client within 20 steps
 
 ## Left for later
 
-- A short history of positions on the host for judging hits against what a client saw.
+- A short history of poses on the host for judging hits against what a client saw (the tick it saw is known:
+  `ShownTickOf`).
 - A group far from every player sent as one record for the whole group, rather than one for each member, when crowds
   need it.
 - Stamping edits with the host's tick, so a crater shows with what made it rather than up to the delay before.

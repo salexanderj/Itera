@@ -56,6 +56,15 @@ public sealed partial class ReplicationService
     /// <summary>The commands a host keeps of each client, by the client's tick.</summary>
     private const int CommandRing = 64;
 
+    /// <summary>
+    /// How far behind the host's step a client's shown tick may be (<see cref="ShownTickOf"/>): half a second, past any
+    /// delay the game plays at, so a client cannot have its shots judged against a time long gone.
+    /// </summary>
+    public const int MostShownTicksBehind = 30;
+
+    /// <summary>The steps of the tick a reply's shown ticks are in: 1/16 of a step.</summary>
+    private const int ShownSteps = 16;
+
     private readonly PredictionEntry[] _history = new PredictionEntry[PredictionHistory];
     private Entity _predicted = Entity.Null;
     private int _lastCommandTick = -1;
@@ -65,6 +74,12 @@ public sealed partial class ReplicationService
     private PredictedState _ownerScratch;
     private long _corrections;
     private double _lastCorrectionMetres;
+
+    // On a client, the host's tick shown this step (what it replicates is shown at it), -1 until its clock is known.
+    private double _shownTick = -1;
+
+    // On a host, the step's tick.
+    private long _stepTick;
 
     /// <summary>True while a client runs its player's steps again after a correction: a game's sounds and effects skip them.</summary>
     public bool Replaying { get; private set; }
@@ -94,6 +109,7 @@ public sealed partial class ReplicationService
     /// </summary>
     internal void StepStart(ulong tick)
     {
+        _stepTick = (long)tick;
         if (_session.Role == SessionRole.Host)
         {
             ApplyCommands();
@@ -187,6 +203,7 @@ public sealed partial class ReplicationService
         ref var entry = ref _history[(int)(tick % PredictionHistory)];
         entry.Stored = (int)tick + 1;
         entry.Command = command;
+        entry.ShownTick = _shownTick;
         entry.HasState = false;
         _lastCommandTick = (int)tick;
     }
@@ -220,7 +237,19 @@ public sealed partial class ReplicationService
         {
             WriteCommand(_reply, in _history[(_lastCommandTick - i) % PredictionHistory].Command);
         }
+
+        // The host's tick each was made at the sight of, in 1/16 steps: the newest's, then each one's step back from the
+        // one before it (-1 for a tick not known yet).
+        var before = 0L;
+        for (var i = 0; i < count; i++)
+        {
+            var shown = ShownOf(_history[(_lastCommandTick - i) % PredictionHistory].ShownTick);
+            _reply.WriteVarLong(i == 0 ? shown : before - shown);
+            before = shown;
+        }
     }
+
+    private static long ShownOf(double tick) => tick < 0 ? -1 : (long)Math.Round(tick * ShownSteps);
 
     /// <summary>On a host: a reply's commands, kept by the client's tick for <see cref="ApplyCommands"/>.</summary>
     private static void ReadCommands(ref MessageReader reader, HostClient? client)
@@ -242,15 +271,34 @@ public sealed partial class ReplicationService
             throw new InvalidDataException("A reply's commands start before the match.");
         }
 
+        Span<PlayerCommand> commands = stackalloc PlayerCommand[CommandsPerReply];
         for (var i = 0; i < count; i++)
         {
-            var command = ReadCommand(ref reader);
+            commands[i] = ReadCommand(ref reader);
+        }
+
+        var shown = 0L;
+        for (var i = 0; i < count; i++)
+        {
+            var value = reader.ReadVarLong();
+            if (Math.Abs(value) > (long)int.MaxValue * ShownSteps)
+            {
+                throw new InvalidDataException("A reply's shown tick is out of range.");
+            }
+
+            shown = i == 0 ? value : shown - value;
+            if (shown < -1 || shown > (long)int.MaxValue * ShownSteps)
+            {
+                throw new InvalidDataException("A reply's shown tick is out of range.");
+            }
+
             var tick = newest - i;
             // Kept by tick whether or not the host has passed it (a host that got ahead goes back for them), unless the
             // slot holds a newer one.
             if (client is not null && client.CommandTicks[tick % CommandRing] < tick + 1)
             {
-                client.Commands[tick % CommandRing] = command;
+                client.Commands[tick % CommandRing] = commands[i];
+                client.ShownTicks[tick % CommandRing] = shown < 0 ? -1 : shown / (double)ShownSteps;
                 client.CommandTicks[tick % CommandRing] = tick + 1;
                 if (tick > client.NewestCommand)
                 {
@@ -313,11 +361,14 @@ public sealed partial class ReplicationService
             if (client.CommandTicks[tick % CommandRing] == tick + 1)
             {
                 command = client.Commands[tick % CommandRing];
+                client.Shown = client.ShownTicks[tick % CommandRing];
                 client.Missed = 0;
                 client.Starved = 0;
             }
             else
             {
+                // The client's view went on a step while its command did not come.
+                client.Shown = client.Shown < 0 ? -1 : client.Shown + 1;
                 command = client.LastCommand;
                 command.Buttons &= ~PlayerButtons.Jump;
                 // A game's actions may be one-shot: they are not repeated.
@@ -353,9 +404,9 @@ public sealed partial class ReplicationService
             && PredictedState.CanCapture(world, _entities[index].Entity);
         if (present)
         {
-            _ownerScratch.Capture(world, _entities[_hostIndex[PlayerIds.Of(client.Slot)]].Entity, _origin);
+            _ownerScratch.Capture(world, _entities[_hostIndex[PlayerIds.Of(client.Slot)]].Entity, _origin, _kinds);
             // A state a message cannot carry (a number not finite, a place past its reach) is not sent.
-            present = _ownerScratch.CanWrite;
+            present = _ownerScratch.CanWrite(_kinds);
         }
 
         _packet.WriteByte(present ? (byte)1 : (byte)0);
@@ -365,7 +416,7 @@ public sealed partial class ReplicationService
         }
 
         _packet.WriteVarInt(client.NewestApplied);
-        _ownerScratch.Write(_packet);
+        _ownerScratch.Write(_packet, _kinds);
     }
 
     /// <summary>On a client: a snapshot's owner's block, the newest kept for the next step's check.</summary>
@@ -383,7 +434,7 @@ public sealed partial class ReplicationService
         }
 
         var tick = reader.ReadVarInt();
-        var state = PredictedState.Read(ref reader);
+        var state = PredictedState.Read(ref reader, _kinds);
         if (tick > _ownerTick)
         {
             _ownerTick = tick;
@@ -408,7 +459,7 @@ public sealed partial class ReplicationService
         ref var last = ref _history[(tick - 1 + PredictionHistory) % PredictionHistory];
         if (tick > 0 && last.Stored == tick && !last.HasState)
         {
-            last.State.Capture(world, _predicted, _origin);
+            last.State.Capture(world, _predicted, _origin, _kinds);
             last.HasState = true;
         }
 
@@ -426,7 +477,7 @@ public sealed partial class ReplicationService
     private void Correct(World world, int tick)
     {
         ref var entry = ref _history[_ownerTick % PredictionHistory];
-        if (entry.Stored != _ownerTick + 1 || !entry.HasState || !_ownerState.Differs(in entry.State))
+        if (entry.Stored != _ownerTick + 1 || !entry.HasState || !_ownerState.Differs(in entry.State, _kinds))
         {
             return;
         }
@@ -434,7 +485,7 @@ public sealed partial class ReplicationService
         var before = world.Get<CharacterPosition>(_predicted).Feet;
         var drawn = world.Get<EyeSmoothing>(_predicted);
         Replaying = true;
-        _ownerState.Restore(world, _predicted, _origin);
+        _ownerState.Restore(world, _predicted, _origin, _kinds);
         // The eye's easing is the prediction's (the host does not send it), the drawn correction the client's now.
         var eye = entry.State.Eye;
         eye.Correction = drawn.Correction;
@@ -453,7 +504,7 @@ public sealed partial class ReplicationService
 
             world.Get<PlayerCommand>(_predicted) = next.Command;
             _stepper.Step(_predicted, seconds);
-            next.State.Capture(world, _predicted, _origin);
+            next.State.Capture(world, _predicted, _origin, _kinds);
             next.HasState = true;
         }
 
@@ -484,12 +535,38 @@ public sealed partial class ReplicationService
             && world.Has<MovementStats>(_predicted);
     }
 
-    /// <summary>A step a client predicted: its command, and the state it gave once moved.</summary>
+    /// <summary>
+    /// On a host during a step, the host's tick (with its fraction) at which slot <paramref name="slot"/>'s client showed
+    /// what it replicates when it made the command its player moves by this step: where it saw the others when it aimed.
+    /// A game judges that player's shots against where their targets were then. At most
+    /// <see cref="MostShownTicksBehind"/> steps behind this step and never past it; -1 for a slot with no client, before
+    /// its clock is known, and on a client or offline (where a game judges against now).
+    /// </summary>
+    public double ShownTickOf(int slot)
+    {
+        if (_session.Role != SessionRole.Host)
+        {
+            return -1;
+        }
+
+        foreach (var client in _clients)
+        {
+            if (client is not null && client.Slot == slot)
+            {
+                return client.Shown < 0 ? -1 : Math.Clamp(client.Shown, _stepTick - MostShownTicksBehind, _stepTick);
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>A step a client predicted: its command, the host's tick it was made at the sight of, and the state it gave once moved.</summary>
     private struct PredictionEntry
     {
         /// <summary>The step's tick plus one; 0 for none.</summary>
         public int Stored;
         public PlayerCommand Command;
+        public double ShownTick;
         public bool HasState;
         public PredictedState State;
     }
@@ -497,8 +574,9 @@ public sealed partial class ReplicationService
 
 /// <summary>
 /// A player's movement state, what a step reads and writes of it: the feet (absolute), the velocity, the contact, the
-/// mode, the size, the eye's easing, and a climber's state where it has one (its target absolute). The host sends it
-/// to the player's client; the client keeps it for each predicted step and takes the host's when they differ.
+/// mode, the size, the eye's easing, and the parts a run registers (<see cref="IPredictedState"/>: the engine's climber,
+/// then a game's own), as their bytes. The host sends it to the player's client; the client keeps it for each predicted
+/// step and takes the host's when they differ.
 /// </summary>
 internal struct PredictedState
 {
@@ -508,11 +586,9 @@ internal struct PredictedState
     public PlayerMode Mode;
     public CharacterSize Size;
     public EyeSmoothing Eye;
-    public bool HasClimber;
-    public Climber Climber;
-    public WorldPoint ClimberTarget;
+    public PredictedStateBytes Parts;
 
-    /// <summary>True when the entity has every component a state holds (a climber's is optional).</summary>
+    /// <summary>True when the entity has every component a state holds (the parts' are each optional).</summary>
     public static bool CanCapture(World world, Entity entity) =>
         world.Has<CharacterPosition>(entity)
         && world.Has<CharacterVelocity>(entity)
@@ -521,7 +597,7 @@ internal struct PredictedState
         && world.Has<CharacterSize>(entity)
         && world.Has<EyeSmoothing>(entity);
 
-    public void Capture(World world, Entity entity, WorldOrigin origin)
+    public void Capture(World world, Entity entity, WorldOrigin origin, ReplicatedKinds kinds)
     {
         Feet = origin.ToWorld(world.Get<CharacterPosition>(entity).Feet);
         Velocity = world.Get<CharacterVelocity>(entity).MetresPerSecond;
@@ -529,16 +605,19 @@ internal struct PredictedState
         Mode = world.Get<PlayerMode>(entity);
         Size = world.Get<CharacterSize>(entity);
         Eye = world.Get<EyeSmoothing>(entity);
-        HasClimber = world.Has<Climber>(entity);
-        if (HasClimber)
+        Span<byte> parts = Parts;
+        var at = 0;
+        var predicted = kinds.Predicted;
+        for (var i = 0; i < predicted.Count; i++)
         {
-            Climber = world.Get<Climber>(entity);
-            ClimberTarget = origin.ToWorld(Climber.Target);
+            var part = predicted[i];
+            part.Capture(world, entity, origin, parts.Slice(at, part.Bytes));
+            at += part.Bytes;
         }
     }
 
     /// <summary>Sets the entity to this state (not the eye's easing, which the caller sets); its feet start the next step here.</summary>
-    public readonly void Restore(World world, Entity entity, WorldOrigin origin)
+    public readonly void Restore(World world, Entity entity, WorldOrigin origin, ReplicatedKinds kinds)
     {
         ref var position = ref world.Get<CharacterPosition>(entity);
         position.Feet = origin.ToLocal(Feet);
@@ -547,16 +626,19 @@ internal struct PredictedState
         world.Get<CharacterContact>(entity) = Contact;
         world.Get<PlayerMode>(entity) = Mode;
         world.Get<CharacterSize>(entity) = Size;
-        if (HasClimber && world.Has<Climber>(entity))
+        ReadOnlySpan<byte> parts = Parts;
+        var at = 0;
+        var predicted = kinds.Predicted;
+        for (var i = 0; i < predicted.Count; i++)
         {
-            var climber = Climber;
-            climber.Target = origin.ToLocal(ClimberTarget);
-            world.Get<Climber>(entity) = climber;
+            var part = predicted[i];
+            part.Restore(world, entity, origin, parts.Slice(at, part.Bytes));
+            at += part.Bytes;
         }
     }
 
     /// <summary>True when every number is finite and every place within a message's reach (<see cref="Write"/> takes it).</summary>
-    public readonly bool CanWrite =>
+    public readonly bool CanWrite(ReplicatedKinds kinds) =>
         Within(Feet)
         && Finite(Velocity)
         && float.IsFinite(Contact.Downhill.X)
@@ -568,16 +650,26 @@ internal struct PredictedState
         && float.IsFinite(Size.EyeMetres)
         && float.IsFinite(Size.StepMetres)
         && float.IsFinite(Size.MassKilograms)
-        && (
-            !HasClimber
-            || (
-                Within(ClimberTarget)
-                && float.IsFinite(Climber.Normal.X)
-                && float.IsFinite(Climber.Normal.Y)
-                && float.IsFinite(Climber.Seconds)
-                && float.IsFinite(Climber.Regrab)
-            )
-        );
+        && PartsValid(kinds);
+
+    private readonly bool PartsValid(ReplicatedKinds kinds)
+    {
+        ReadOnlySpan<byte> parts = Parts;
+        var at = 0;
+        var predicted = kinds.Predicted;
+        for (var i = 0; i < predicted.Count; i++)
+        {
+            var part = predicted[i];
+            if (!part.IsValid(parts.Slice(at, part.Bytes)))
+            {
+                return false;
+            }
+
+            at += part.Bytes;
+        }
+
+        return true;
+    }
 
     private static bool Within(in WorldPoint point) =>
         point.IsFinite
@@ -590,16 +682,39 @@ internal struct PredictedState
 
     /// <summary>
     /// True when the host's state and a predicted one differ enough to correct: the feet more than
-    /// <see cref="ReplicationService.CorrectionMetres"/> apart, or one on the ground, crouched, or climbing where the
-    /// other is not.
+    /// <see cref="ReplicationService.CorrectionMetres"/> apart, one on the ground or crouched where the other is not, or a
+    /// part that says so (the engine's: a climb in another state).
     /// </summary>
-    public readonly bool Differs(in PredictedState other) =>
-        Feet.DistanceTo(other.Feet) > ReplicationService.CorrectionMetres
-        || Contact.Grounded != other.Contact.Grounded
-        || Mode.Crouching != other.Mode.Crouching
-        || (HasClimber && other.HasClimber && Climber.State != other.Climber.State);
+    public readonly bool Differs(in PredictedState other, ReplicatedKinds kinds)
+    {
+        if (
+            Feet.DistanceTo(other.Feet) > ReplicationService.CorrectionMetres
+            || Contact.Grounded != other.Contact.Grounded
+            || Mode.Crouching != other.Mode.Crouching
+        )
+        {
+            return true;
+        }
 
-    public readonly void Write(MessageWriter writer)
+        ReadOnlySpan<byte> host = Parts;
+        ReadOnlySpan<byte> predicted = other.Parts;
+        var at = 0;
+        var parts = kinds.Predicted;
+        for (var i = 0; i < parts.Count; i++)
+        {
+            var part = parts[i];
+            if (part.Differs(host.Slice(at, part.Bytes), predicted.Slice(at, part.Bytes)))
+            {
+                return true;
+            }
+
+            at += part.Bytes;
+        }
+
+        return false;
+    }
+
+    public readonly void Write(MessageWriter writer, ReplicatedKinds kinds)
     {
         writer.WritePosition(in Feet);
         Vector(writer, Velocity);
@@ -611,8 +726,6 @@ internal struct PredictedState
                 | (Contact.Jumped ? 8 : 0)
                 | (Mode.Flying ? 16 : 0)
                 | (Mode.Crouching ? 32 : 0)
-                | (HasClimber ? 64 : 0)
-                | (Climber.JumpHeld ? 128 : 0)
             )
         );
         writer.WriteFloat(Contact.Downhill.X);
@@ -626,35 +739,33 @@ internal struct PredictedState
         writer.WriteFloat(Size.EyeMetres);
         writer.WriteFloat(Size.StepMetres);
         writer.WriteFloat(Size.MassKilograms);
-        if (HasClimber)
-        {
-            writer.WriteByte((byte)Climber.State);
-            writer.WriteFloat(Climber.Normal.X);
-            writer.WriteFloat(Climber.Normal.Y);
-            writer.WritePosition(in ClimberTarget);
-            writer.WriteFloat(Climber.Seconds);
-            writer.WriteFloat(Climber.Regrab);
-        }
+        ReadOnlySpan<byte> parts = Parts;
+        writer.WriteVarInt(kinds.PredictedBytes);
+        writer.WriteBytes(parts[..kinds.PredictedBytes]);
     }
 
     /// <summary>
     /// A state <see cref="Write"/> wrote; a number that is not finite, or past any a game moves by (a speed of 100 km/s, a
-    /// body of 10 km or 10^9 kg), or a climb's state that is not one, is refused.
+    /// body of 10 km or 10^9 kg), parts of another size than this run's, or a part that is not one a player can have
+    /// (<see cref="IPredictedState.IsValid"/>), is refused.
     /// </summary>
-    public static PredictedState Read(ref MessageReader reader)
+    public static PredictedState Read(ref MessageReader reader, ReplicatedKinds kinds)
     {
         var state = default(PredictedState);
         state.Feet = reader.ReadPosition();
         state.Velocity = new Vector3(Finite(ref reader, 1e5f), Finite(ref reader, 1e5f), Finite(ref reader, 1e5f));
         var flags = reader.ReadByte();
+        if (flags > 63)
+        {
+            throw new InvalidDataException("A player's state has flags that are not known.");
+        }
+
         state.Contact.Grounded = (flags & 1) != 0;
         state.Contact.Steep = (flags & 2) != 0;
         state.Contact.Waiting = (flags & 4) != 0;
         state.Contact.Jumped = (flags & 8) != 0;
         state.Mode.Flying = (flags & 16) != 0;
         state.Mode.Crouching = (flags & 32) != 0;
-        state.HasClimber = (flags & 64) != 0;
-        state.Climber.JumpHeld = (flags & 128) != 0;
         state.Contact.Downhill = new Vector2(Finite(ref reader, 2), Finite(ref reader, 2));
         state.Contact.WallNormal = new Vector2(Finite(ref reader, 2), Finite(ref reader, 2));
         state.Contact.GroundMaterial = new PhysicsMaterialId(reader.ReadByte());
@@ -668,19 +779,17 @@ internal struct PredictedState
         {
             throw new InvalidDataException("A player's size is out of range.");
         }
-        if (state.HasClimber)
-        {
-            var climb = reader.ReadByte();
-            if (climb > (byte)ClimbState.PullingOver)
-            {
-                throw new InvalidDataException("A player's climb is in a state there is not.");
-            }
 
-            state.Climber.State = (ClimbState)climb;
-            state.Climber.Normal = new Vector2(Finite(ref reader, 2), Finite(ref reader, 2));
-            state.ClimberTarget = reader.ReadPosition();
-            state.Climber.Seconds = Finite(ref reader, float.MaxValue);
-            state.Climber.Regrab = Finite(ref reader, float.MaxValue);
+        if (reader.ReadVarInt() != kinds.PredictedBytes)
+        {
+            throw new InvalidDataException("A player's state has parts of another size than this game's.");
+        }
+
+        Span<byte> parts = state.Parts;
+        reader.ReadBytes(kinds.PredictedBytes).CopyTo(parts);
+        if (!state.PartsValid(kinds))
+        {
+            throw new InvalidDataException("A player's state has a part a player cannot have.");
         }
 
         return state;

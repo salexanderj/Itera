@@ -297,6 +297,113 @@ public sealed class PredictionTests(ITestOutputHelper output)
         harness.Host.Step(1);
     }
 
+    /// <summary>
+    /// A game's own movement state (the test's boost, kept in a component of the test's) registered as a predicted part
+    /// is put back with the host's state when the client is corrected, so the client runs its later commands again as
+    /// the host ran them: one correction each time the host pushes the player in the middle of a boost. Not registered,
+    /// the client runs them again with the boost it has now, and is corrected again and again.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_games_movement_state_as_a_predicted_part_is_put_back_by_a_correction(bool predicted)
+    {
+        var stopAt = ulong.MaxValue;
+        using var harness = ReplicationHarness.Start(
+            new MoverPlan
+            {
+                Count = 0,
+                Characters = true,
+                Boost = true,
+                BoostPredicted = predicted,
+            },
+            clientPlan: new MoverPlan
+            {
+                Characters = true,
+                Boost = true,
+                BoostPredicted = predicted,
+                Script = tick =>
+                    tick >= stopAt
+                        ? new PlayerCommand { Yaw = 0.5f }
+                        : new PlayerCommand
+                        {
+                            Move = new Vector2(0, 1),
+                            Yaw = 0.5f + tick % 240 / 120f,
+                            Actions = tick % 60 == 0 ? 1u : 0,
+                        },
+            }
+        );
+        harness.Step(90);
+        var before = harness.ClientReplication.Corrections;
+        var copy = harness.HostPlan.Remote[1];
+        var pushed = -1;
+        var pushes = 0;
+        for (var step = 0; step < 480; step++)
+        {
+            // Half way through each boost on the host, it pushes its copy aside: the client's state at that command
+            // differs, inside the boost.
+            var boost = harness.Host.World.Get<TestBoost>(copy);
+            if (boost.Started != pushed && boost.Seconds is > 0 and < 0.25f)
+            {
+                harness.Host.World.Get<CharacterPosition>(copy).Feet.X += 0.5f;
+                pushed = boost.Started;
+                pushes++;
+            }
+
+            harness.Step(1);
+        }
+
+        stopAt = harness.Client.Tick;
+        harness.Step(90);
+        var corrections = harness.ClientReplication.Corrections - before;
+        output.WriteLine(Text($"{pushes} pushes, {corrections} corrections, the part predicted: {predicted}."));
+        Assert.True(pushes >= 6, $"Only {pushes} pushes.");
+        if (predicted)
+        {
+            Assert.Equal(pushes, corrections);
+            var client = Feet(harness.Client, harness.ClientPlan.Own);
+            var host = Feet(harness.Host, copy);
+            Assert.True(client.DistanceTo(host) < 0.01, $"The client's player at {client}, the host's copy at {host}.");
+        }
+        else
+        {
+            Assert.True(corrections > pushes, $"{corrections} corrections for {pushes} pushes.");
+        }
+    }
+
+    /// <summary>
+    /// The host knows the tick each client showed what it replicates at when it made the command its player moves by:
+    /// about the interpolation delay, the way there and back, and the command buffer behind the host's step, within the
+    /// limit; none for the host's own slot.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 7, 14)]
+    [InlineData(100, 18, 28)]
+    public void The_host_knows_the_tick_each_client_showed_when_it_made_its_command(
+        int delayMilliseconds,
+        double least,
+        double most
+    )
+    {
+        using var harness = ReplicationHarness.Start(
+            new MoverPlan { Count = 2, Characters = true },
+            clientConditions: delayMilliseconds > 0 ? new NetworkConditions(delayMilliseconds, 0, 0) : default,
+            clientPlan: new MoverPlan { Characters = true, Script = tick => Walk(tick, ulong.MaxValue) }
+        );
+        harness.Step(180);
+        var behind = new List<double>();
+        for (var step = 0; step < 60; step++)
+        {
+            harness.Step(1);
+            behind.Add(harness.Host.Tick - 1 - harness.HostReplication.ShownTickOf(1));
+        }
+
+        output.WriteLine(Text($"Behind the host's step by {behind.Min():F2} to {behind.Max():F2} steps."));
+        Assert.All(behind, steps => Assert.InRange(steps, least, most));
+        Assert.Equal(-1, harness.HostReplication.ShownTickOf(0));
+        Assert.Equal(-1, harness.ClientReplication.ShownTickOf(1));
+    }
+
     [Fact]
     public void A_predicted_players_reply_and_check_allocate_nothing()
     {

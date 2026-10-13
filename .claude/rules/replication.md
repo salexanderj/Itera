@@ -39,7 +39,16 @@ What a game does:
   outside queries.
 - On a client, marks its own player for prediction (`ReplicationService.Predict(entity)`, an entity with the components
   `PlayerMovementSystem` moves by); on the host, replicates each client's player under its slot's id with those
-  components (a `RemotePlayer`), which the host moves from the client's commands.
+  components (a `RemotePlayer`), which the host moves from the client's commands. Movement state a game keeps in a
+  component of its own (a wall run, a roll) it registers at the run's start as a predicted part
+  (`ReplicatedKinds.RegisterPredicted`, an `IPredictedState`: a name, a fixed number of bytes, `Capture` and `Restore`
+  through the origin, `Differs`, `IsValid`; all of a run's parts at most `ReplicatedKinds.MostPredictedBytes`, 128, the
+  engine's climber's 43 among them), so a correction puts it back with the rest; the parts' names and sizes go into
+  the kinds' fingerprint.
+- On the host, judges a client's player's shots against where their targets were when the client saw them:
+  `ReplicationService.ShownTickOf(slot)` gives the host's tick (with its fraction) that client showed when it made the
+  command its player moves by this step, at most `MostShownTicksBehind` (30) steps back; -1 for the host's own slot,
+  on a client, and offline, where a game judges against now.
 - Registers the systems in its fixed order: `ReplicationReceiveSystem` early (after `OriginShiftSystem`, before the
   input and the move: a client's check and correction, what it shows, and a host's commands written into the clients'
   players), `ReplicationReplySystem` after the input and before the move (a client's command quantised and sent), and
@@ -84,7 +93,8 @@ How it works:
   snapshot read (loss) it is blended straight.
 - A client's own player (`Predict`, `ReplicationService.Prediction.cs`): each step the reply system quantises its
   command in place (the move in 1/127ths, the yaw in 65,536ths of a turn, the pitch in 32,767ths of a quarter turn: what
-  the host reads, bit for bit) and keeps it, and the reply carries the last 8 (newest first, the newest's tick). The
+  the host reads, bit for bit) and keeps it, and the reply carries the last 8 (newest first, the newest's tick), then
+  the host's tick each was made at the sight of (in 1/16 steps: the newest's, then each one's step back). The
   player moves at once by the engine's movement. The host keeps each client's commands by its tick (also those it has
   passed), and at each step's start writes the next into the client's player: it starts once two steps of them wait
   beyond the first, so two wait against jitter; when more than eight wait it skips ahead; a missing one is the last
@@ -92,10 +102,12 @@ How it works:
   the client's still arrive (the client stalled and dropped steps, or the delay grew), it starts again from the newest
   less two, taking those steps' commands again, which corrects the client once. The client keeps 128 steps. Each send's first
   packet to a client carries the owner's block: the tick of the last command applied and the player's state after it
-  (feet absolute, velocity, contact, mode, size, and a `Climber`'s state; one with a number that is not finite, or a
-  place past a message's reach, is not sent, and every number is checked when read, against bounds past any game's). At the step's
+  (feet absolute, velocity, contact, mode, size, and the run's predicted parts' bytes: the engine's climber, then a
+  game's own; one with a number that is not finite, a place past a message's reach, or a part that is not valid, is not
+  sent, and every number and part is checked when read, against bounds past any game's). At the step's
   start the client keeps the state the last step left with its command; when the host's state at a command differs from
-  the one predicted (the feet more than 1 cm apart, or on the ground, crouched, or climbing where the other is not), it
+  the one predicted (the feet more than 1 cm apart, on the ground or crouched where the other is not, or a part that
+  says so: a climb in another state), it
   takes the host's and runs the later commands again through `CharacterStepper` (`Replaying`). What is drawn eases from
   where it was (`EyeSmoothing.Correction`, which the camera adds: 0.85 of it kept a step; past 2 m at once). While the
   player flies the debug camera nothing is predicted or sent. The host and the client start a few steps apart (the
@@ -114,12 +126,16 @@ player's commands and owner's block among them (`WireFingerprintTests`); and `Pr
 floor: a client's player moving at once and the host's copy ending where it does with no correction after the first
 second, also through 100 ms each way with jitter and loss; a host that moves the player correcting the client, also
 while it walks through 100 ms each way, the drawn jump starting where the player was drawn and easing out; after a
-client stall that drops steps, the host starting again and the corrections stopping; commands read as quantised,
-numbers that are not finite among them; damaged replies with commands; no allocation).
+client stall that drops steps, the host starting again and the corrections stopping; a game's movement state (the
+harness's test boost, `TestBoostState`) put back by each correction when it is a predicted part, and corrected again
+and again when it is not; the tick each client showed known on the host, with no delay and through 100 ms each way;
+commands read as quantised, numbers that are not finite among them; damaged replies with commands; no allocation); in
+`ReplicatedStateCodecTests` the predicted parts' registration and a state's parts read back, damaged ones refused.
 
 ### Files in `src/Itera.Engine`
 
-  - `Replication/`: `ReplicationService` (`.Host.cs`, `.Client.cs`, `.Prediction.cs` with `PredictedState`), `ReplicatedKinds` with `IReplicatedKind`,
+  - `Replication/`: `ReplicationService` (`.Host.cs`, `.Client.cs`, `.Prediction.cs` with `PredictedState`),
+    `PredictedStates.cs` (`IPredictedState`, the engine's `ClimberPredictedState`), `ReplicatedKinds` with `IReplicatedKind`,
     `ReplicatedKind`, `ReplicatedKindId`, and `ReplicationContext`, `ReplicatedSchema`, the fields and
     `ReplicatedState` (`ReplicatedFields.cs`), and `ReplicatedStateCodec`. `Networking/IReplicationEndpoint` is the
     session's side.

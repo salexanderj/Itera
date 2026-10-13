@@ -702,6 +702,10 @@ public sealed partial class ReplicationService
         public readonly PlayerCommand[] Commands = new PlayerCommand[CommandRing];
         public readonly int[] CommandTicks = new int[CommandRing];
 
+        // The host's tick each command was made at the sight of, by the client's tick; and the applied one's.
+        public readonly double[] ShownTicks = new double[CommandRing];
+        public double Shown = -1;
+
         /// <summary>The newest command's tick it sent, the next to apply, and the last applied; -1 for none.</summary>
         public int NewestCommand = -1;
         public int NextCommand = -1;

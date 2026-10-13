@@ -283,6 +283,110 @@ public sealed class ReplicatedStateCodecTests
         Assert.Throws<InvalidOperationException>(() => kinds.Register("three", new ReplicatedSchema(), new NoKind()));
     }
 
+    [Fact]
+    public void Predicted_parts_refuse_a_name_twice_too_many_bytes_and_registering_once_sealed_and_change_the_fingerprint()
+    {
+        var kinds = new ReplicatedKinds();
+        Assert.Equal(0ul, kinds.Fingerprint);
+        Assert.Equal("engine.climber", Assert.Single(kinds.Predicted).Name);
+
+        kinds.RegisterPredicted(new Part("game.dash", 8));
+
+        Assert.NotEqual(0ul, kinds.Fingerprint);
+        Assert.Equal(43 + 8, kinds.PredictedBytes);
+        var other = new ReplicatedKinds();
+        other.RegisterPredicted(new Part("game.dash", 9));
+        Assert.NotEqual(kinds.Fingerprint, other.Fingerprint);
+        Assert.Throws<InvalidOperationException>(() => kinds.RegisterPredicted(new Part("game.dash", 4)));
+        Assert.Throws<InvalidOperationException>(() => kinds.RegisterPredicted(new Part("engine.climber", 4)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => kinds.RegisterPredicted(new Part("game.big", 128 - 51 + 1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => kinds.RegisterPredicted(new Part("game.none", 0)));
+        kinds.RegisterPredicted(new Part("game.rest", 128 - 51));
+        kinds.Seal();
+        Assert.Throws<InvalidOperationException>(() => kinds.RegisterPredicted(new Part("game.late", 1)));
+    }
+
+    /// <summary>
+    /// A predicted player's state as the owner's block carries it reads back with its parts; one whose climb is in a
+    /// state there is not, whose parts are another size than the run's, or whose part a game says no player can have, is
+    /// refused; and one with a number that is not finite is not sent.
+    /// </summary>
+    [Fact]
+    public void A_predicted_state_reads_back_with_its_parts_and_damaged_parts_are_refused()
+    {
+        var kinds = new ReplicatedKinds();
+        kinds.RegisterPredicted(new Part("game.dash", 8));
+        using var world = World.Create();
+        var origin = new WorldOrigin();
+        var player = world.Create(
+            new Components.CharacterPosition { Feet = new Vector3(1, 2, 3) },
+            new Components.CharacterVelocity { MetresPerSecond = new Vector3(0, -1, 4) },
+            new Components.CharacterContact { Grounded = true },
+            new Components.PlayerMode(),
+            Components.CharacterSize.ForHeight(1.7f),
+            new Components.EyeSmoothing(),
+            new Components.Climber
+            {
+                State = Components.ClimbState.Climbing,
+                Normal = new Vector2(0, 1),
+                Target = new Vector3(1, 3, 2),
+                Seconds = 0.25f,
+                Regrab = 0.1f,
+            }
+        );
+        var state = default(PredictedState);
+        state.Capture(world, player, origin, kinds);
+        var writer = new MessageWriter();
+        state.Write(writer, kinds);
+        var bytes = writer.Written.ToArray();
+
+        var reader = new MessageReader(bytes);
+        var read = PredictedState.Read(ref reader, kinds);
+
+        Assert.False(read.Differs(in state, kinds));
+        world.Get<Components.Climber>(player) = default;
+        read.Restore(world, player, origin, kinds);
+        var climber = world.Get<Components.Climber>(player);
+        Assert.Equal(Components.ClimbState.Climbing, climber.State);
+        Assert.Equal(new Vector3(1, 3, 2), climber.Target);
+        Assert.Equal(0.25f, climber.Seconds);
+
+        // The parts are the message's last bytes: the climber's 43 (its state the second), then the game's 8.
+        var climbAt = bytes.Length - 51;
+        var badClimb = (byte[])bytes.Clone();
+        badClimb[climbAt + 1] = 9;
+        Assert.Throws<InvalidDataException>(() => ReadState(badClimb, kinds));
+        var badPart = (byte[])bytes.Clone();
+        badPart[^1] = 0xFF;
+        Assert.Throws<InvalidDataException>(() => ReadState(badPart, kinds));
+        Assert.Throws<InvalidDataException>(() => ReadState(bytes, new ReplicatedKinds()));
+        var nan = state;
+        ((Span<byte>)nan.Parts)[43 + 7] = 0xFF;
+        Assert.False(nan.CanWrite(kinds));
+    }
+
+    private static PredictedState ReadState(byte[] bytes, ReplicatedKinds kinds)
+    {
+        var reader = new MessageReader(bytes);
+        return PredictedState.Read(ref reader, kinds);
+    }
+
+    /// <summary>A test part of <paramref name="bytes"/> bytes: valid unless its last byte is 0xFF.</summary>
+    private sealed class Part(string name, int bytes) : IPredictedState
+    {
+        public string Name => name;
+
+        public int Bytes => bytes;
+
+        public void Capture(World world, Entity entity, WorldOrigin origin, Span<byte> state) => state.Fill(7);
+
+        public void Restore(World world, Entity entity, WorldOrigin origin, ReadOnlySpan<byte> state) { }
+
+        public bool Differs(ReadOnlySpan<byte> host, ReadOnlySpan<byte> predicted) => !host.SequenceEqual(predicted);
+
+        public bool IsValid(ReadOnlySpan<byte> state) => state[^1] != 0xFF;
+    }
+
     private sealed class NoKind : IReplicatedKind
     {
         public void Capture(in ReplicationContext context, Entity entity, ref ReplicatedState state) { }
