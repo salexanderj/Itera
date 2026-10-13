@@ -276,7 +276,9 @@ capsule at the same place in both lists with the same part is matched, else each
 `CapsulesAt(entity, tick, into)` gives one entity's capsules as that ray takes them at the tick (for a game testing its
 own shapes past the first the ray meets, such as organs inside a part it hit). `ThirdPersonCamera.Aim` takes one with
 a tick and the aimer to leave out, so an over-the-shoulder crosshair stops at a character's shape (without it, a shot
-from the eye at a character 20 m off passes about 0.4 m beside the one the crosshair covers). It
+from the eye at a character 20 m off passes about 0.4 m beside the one the crosshair covers); `AimPoint` gives the
+point itself, for a shot that leaves from a muzzle towards it, and `LookPoint` the point straight along the look from
+the eye, for an aimer with no camera over its shoulder. It
 keeps 32 steps of up to 32 capsules for up to 1,024 entities (`Steps` is more than `ReplicationService.MostShownTicksBehind`).
 A step is kept as one absolute anchor (a `WorldPoint`) and float offsets from it, so a move of the origin changes nothing
 and the history is not a component `OriginShifts` moves. An entity is met from a step before its oldest record to a step

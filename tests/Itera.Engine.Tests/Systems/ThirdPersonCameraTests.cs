@@ -103,6 +103,32 @@ public sealed class ThirdPersonCameraTests : IDisposable
     }
 
     [Fact]
+    public void The_aim_point_is_where_the_crosshair_meets_a_shape_and_the_look_point_where_the_look_does()
+    {
+        using var world = Arch.Core.World.Create();
+        var aimer = world.Create();
+        var other = world.Create();
+        var bodies = new Itera.Engine.Physics.HitHistory(new Itera.Engine.Maths.WorldOrigin());
+        var met = new Vector3(ThirdPersonCamera.RightMetres, s_eye.Y + ThirdPersonCamera.UpMetres, -20);
+        bodies.Record(other, 4, [new(met + new Vector3(0, -0.5f, 0), met + new Vector3(0, 0.5f, 0), 0.3f, 1)]);
+        bodies.Record(aimer, 4, [new(new Vector3(0, 0, 0), s_eye + Vector3.UnitY, 0.4f, 1)]);
+        var straight = s_eye + new Vector3(0, 0, -30);
+        bodies.Record(world.Create(), 4, [new(straight - Vector3.UnitY, straight + Vector3.UnitY, 0.3f, 1)]);
+
+        var point = ThirdPersonCamera.AimPoint(null, s_eye, 0, 0, 2.5f, bodies: bodies, tick: 4, ignore: aimer);
+        var aim = ThirdPersonCamera.Aim(null, s_eye, 0, 0, 2.5f, bodies: bodies, tick: 4, ignore: aimer);
+        var look = ThirdPersonCamera.LookPoint(null, s_eye, 0, 0, bodies: bodies, tick: 4, ignore: aimer);
+        var open = ThirdPersonCamera.LookPoint(null, s_eye, MathF.PI, 0);
+
+        // The crosshair's ray meets the front of the capsule; the aim is the direction from the eye to that point.
+        Assert.True(Vector3.Distance(met + new Vector3(0, 0, 0.3f), point) < 1e-3f, $"{point}");
+        Assert.True(Vector3.Distance(Vector3.Normalize(point - s_eye), aim) < 1e-5f, $"{aim}");
+        // From the eye straight along the look, the second character, past the aimer's own.
+        Assert.True(Vector3.Distance(straight + new Vector3(0, 0, 0.3f), look) < 1e-3f, $"{look}");
+        Assert.Equal(ThirdPersonCamera.AimMetres, Vector3.Distance(s_eye, open), 2);
+    }
+
+    [Fact]
     public void A_wall_behind_or_at_the_shoulder_pulls_the_camera_in_short_of_it()
     {
         // A wall 1.5 m behind the eye, its near face at z = 1.5.

@@ -71,14 +71,36 @@ public static class ThirdPersonCamera
     }
 
     /// <summary>
-    /// The direction from <paramref name="eye"/> towards what the third-person camera's middle points at: the first
-    /// voxel (the world's or an object's) or mesh collider on its ray past the point level with the eye, or, given
-    /// <paramref name="bodies"/>, the first character's hit shape there at <paramref name="tick"/> but those of
-    /// <paramref name="ignore"/> (the aimer's own), or <see cref="AimMetres"/> along it. The world's voxels are read at
-    /// coarser levels where level 0 is not resident. Without the bodies a crosshair on a character 20 m off sends a shot
-    /// from the eye about 0.4 m beside it, the camera being over the shoulder.
+    /// The direction from <paramref name="eye"/> towards what the third-person camera's middle points at
+    /// (<see cref="AimPoint"/>): the first voxel (the world's or an object's) or mesh collider on its ray past the point
+    /// level with the eye, or, given <paramref name="bodies"/>, the first character's hit shape there at
+    /// <paramref name="tick"/> but those of <paramref name="ignore"/> (the aimer's own), or <see cref="AimMetres"/> along
+    /// it. The world's voxels are read at coarser levels where level 0 is not resident. Without the bodies a crosshair on a
+    /// character 20 m off sends a shot from the eye about 0.4 m beside it, the camera being over the shoulder.
     /// </summary>
     public static Vector3 Aim(
+        VoxelWorld? voxels,
+        Vector3 eye,
+        float yaw,
+        float pitch,
+        float metres,
+        ObjectRays? objects = null,
+        MeshColliders? meshes = null,
+        float left = 0,
+        HitHistory? bodies = null,
+        double tick = 0,
+        Entity? ignore = null
+    )
+    {
+        var towards = AimPoint(voxels, eye, yaw, pitch, metres, objects, meshes, left, bodies, tick, ignore) - eye;
+        return towards.LengthSquared() > 1e-8f ? Vector3.Normalize(towards) : Forward(yaw, pitch);
+    }
+
+    /// <summary>
+    /// The point the third-person camera's middle points at, as <see cref="Aim"/> finds it: for a shot that leaves from
+    /// somewhere other than the eye (a weapon's muzzle) towards what the crosshair covers.
+    /// </summary>
+    public static Vector3 AimPoint(
         VoxelWorld? voxels,
         Vector3 eye,
         float yaw,
@@ -95,6 +117,41 @@ public static class ThirdPersonCamera
         var camera = Position(voxels, eye, yaw, pitch, metres, objects, meshes, left);
         var forward = Forward(yaw, pitch);
         var start = camera + forward * MathF.Max(0, Vector3.Dot(eye - camera, forward));
+        return start + forward * Reach(voxels, start, forward, objects, meshes, bodies, tick, ignore);
+    }
+
+    /// <summary>
+    /// The point straight along the look from <paramref name="eye"/> that it first meets (<see cref="AimPoint"/>'s rules,
+    /// with no camera over the shoulder): for an aimer that aims from its eye.
+    /// </summary>
+    public static Vector3 LookPoint(
+        VoxelWorld? voxels,
+        Vector3 eye,
+        float yaw,
+        float pitch,
+        ObjectRays? objects = null,
+        MeshColliders? meshes = null,
+        HitHistory? bodies = null,
+        double tick = 0,
+        Entity? ignore = null
+    )
+    {
+        var forward = Forward(yaw, pitch);
+        return eye + forward * Reach(voxels, eye, forward, objects, meshes, bodies, tick, ignore);
+    }
+
+    /// <summary>How far along <paramref name="forward"/> from <paramref name="start"/> the first thing met lies, at most <see cref="AimMetres"/>.</summary>
+    private static float Reach(
+        VoxelWorld? voxels,
+        Vector3 start,
+        Vector3 forward,
+        ObjectRays? objects,
+        MeshColliders? meshes,
+        HitHistory? bodies,
+        double tick,
+        Entity? ignore
+    )
+    {
         var far = AimMetres;
         if (voxels is not null && voxels.Raycast(start, forward, far, out var hit, coarse: true))
         {
@@ -116,8 +173,7 @@ public static class ThirdPersonCamera
             far = body.Distance;
         }
 
-        var towards = start + forward * far - eye;
-        return towards.LengthSquared() > 1e-8f ? Vector3.Normalize(towards) : forward;
+        return far;
     }
 
     /// <summary>
