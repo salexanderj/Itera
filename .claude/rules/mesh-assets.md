@@ -35,8 +35,15 @@ clips (`RigClip`: tracks of one joint's translation, rotation, or scale, `RigTra
 arc for rotations, or cubic spline with the file's tangents scaled by the time between keys; held at the ends; the
 clip's `Duration` is its last key). `Pose(clip, seconds, locals)` (the rest pose for clip -1) and `WritePalette(locals,
 palette)` (each joint's inverse bind, then its place in the asset's space: `v * InverseBind * Global`, `Global = local *
-offset * parent's Global`) allocate nothing. Drawing only, in floats: never for what peers must agree on; the
-deterministic skeletons for bodies, aim, and foot IK are `Animation.Skeleton`'s (`.claude/rules/animation.md`).
+offset * parent's Global`, `Globals` alone) allocate nothing. A pose can be shaped before its palette, allocating
+nothing: `FindJoint(name)`; `Mask(root, weights, weight)` (a joint and every joint below it) and `Blend(under, over,
+weights, into)` (joint by joint, rotations the shorter way: legs from one clip, the upper body from another); `Turn(locals,
+joint, turn, globals)` (a rotation in the asset's space about the joint's own place, the joints below swinging round it:
+a spine bent to an aim); `ReachTwoBone(locals, upper, lower, end, target, pole, globals)` (an arm or a leg reaching a
+point in the asset's space, or stretched towards it, the middle joint bending towards the pole: a hand on a rifle). In
+floats, so never for what peers must agree on: for drawing, and for what one peer alone judges (a host's hits on posed
+bodies); the deterministic skeletons for bodies, aim, and foot IK are `Animation.Skeleton`'s
+(`.claude/rules/animation.md`). Clips shared between rigs by joint name are not built.
 
 `MeshAssets` (run-wide singleton) holds the run's assets by name and index. A game declares its models at its run
 startup (`IRunStartup`, the run's "game" step): `Declare(name, path, metresPerUnit)` (a relative path from the

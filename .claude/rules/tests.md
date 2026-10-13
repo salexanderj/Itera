@@ -130,7 +130,9 @@ Where tests live:
   test skeleton (`HumanoidTestSkeleton`).
 - `Itera.Engine.Tests/Assets/`: glTF files written in the test (`GltfBuilder`: accessors over a data-URI buffer or a
   .glb's BIN chunk, PNG images, skins, joints, and animations) read by `GltfImportTests` and `RigImportTests` (a rig
-  posed against SharpGLTF's own world matrices); `RigClipTests` (step, linear, and cubic sampling); `MeshAssetsTests`,
+  posed against SharpGLTF's own world matrices); `RigClipTests` (step, linear, and cubic sampling); `RigShapingTests` (a
+  joint by name, the globals, a mask and a blend, a turn in the asset's space under a turned parent, two-bone IK reaching
+  and stretching, no allocation); `MeshAssetsTests`,
   `TextureDecodeTests`, `MipChainTests`, `MeshTangentsTests`; a model's compressed textures (`CompressedTexturesTests`:
   read where they match, each mismatch decoded with a warning, the image's hash wherever the model keeps it).
 - `Itera.Engine.Tests/Physics/`: a game's bodies and the records by handle (`PhysicsBodiesTests`: a reused handle

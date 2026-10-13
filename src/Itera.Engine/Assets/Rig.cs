@@ -8,8 +8,12 @@ namespace Itera.Engine.Assets;
 /// nodes between them that are not joints, and for a joint without a parent joint every node above it to the scene's
 /// root; usually none), its rest transform (<see cref="JointTransform"/>), and its inverse bind matrix (the asset's space
 /// to the joint's in the pose the mesh was bound in). <see cref="WritePalette"/> turns a pose into the matrices the
-/// skinning reads (<c>v * InverseBind * Global</c>, the vertex in the asset's space). For drawing only, in floats: not
-/// the same on every machine (the engine's deterministic skeletons are <c>Animation.Skeleton</c>'s).
+/// skinning reads (<c>v * InverseBind * Global</c>, the vertex in the asset's space). A pose can be shaped before that:
+/// two blended joint by joint (<see cref="Blend"/>, with weights a <see cref="Mask"/> sets: legs from one clip, the upper
+/// body from another), a joint turned in the asset's space (<see cref="Turn"/>: a spine bent to an aim), and an arm or a
+/// leg reaching a point (<see cref="ReachTwoBone"/>: a hand on a rifle). In floats, so not the same on every machine
+/// (the engine's deterministic skeletons are <c>Animation.Skeleton</c>'s): for drawing, and for what one peer alone
+/// judges (a host's hits on posed bodies).
 /// </summary>
 public sealed class Rig
 {
@@ -95,6 +99,20 @@ public sealed class Rig
 
     public RigClip[] Clips { get; }
 
+    /// <summary>The index of the joint <paramref name="name"/> (its node's name in the file), or -1.</summary>
+    public int FindJoint(string name)
+    {
+        for (var j = 0; j < Names.Length; j++)
+        {
+            if (string.Equals(Names[j], name, StringComparison.Ordinal))
+            {
+                return j;
+            }
+        }
+
+        return -1;
+    }
+
     /// <summary>The index of the clip <paramref name="name"/>, or -1.</summary>
     public int FindClip(string name)
     {
@@ -128,16 +146,195 @@ public sealed class Rig
     /// </summary>
     public void WritePalette(ReadOnlySpan<JointTransform> locals, Span<Matrix4x4> palette)
     {
-        // First each joint's place in the asset's space, parents before children, then the inverse bind before it.
-        for (var j = 0; j < Names.Length; j++)
-        {
-            var global = locals[j].ToMatrix() * Offsets[j];
-            palette[j] = Parents[j] < 0 ? global : global * palette[Parents[j]];
-        }
-
+        // First each joint's place in the asset's space, then the inverse bind before it.
+        Globals(locals, palette);
         for (var j = 0; j < Names.Length; j++)
         {
             palette[j] = InverseBinds[j] * palette[j];
         }
     }
+
+    /// <summary>
+    /// Each joint's transform in the asset's space in a pose (<paramref name="locals"/>, one a joint), into
+    /// <paramref name="globals"/> (one a joint): <c>local * offset * parent's</c>, parents before children; a joint's place
+    /// is its <c>Translation</c>. Allocates nothing.
+    /// </summary>
+    public void Globals(ReadOnlySpan<JointTransform> locals, Span<Matrix4x4> globals)
+    {
+        for (var j = 0; j < Names.Length; j++)
+        {
+            var global = locals[j].ToMatrix() * Offsets[j];
+            globals[j] = Parents[j] < 0 ? global : global * globals[Parents[j]];
+        }
+    }
+
+    /// <summary>
+    /// Sets <paramref name="weight"/> into <paramref name="weights"/> (one a joint) for joint <paramref name="root"/> and
+    /// every joint below it, leaving the others: the share of an upper layer a <see cref="Blend"/> takes from the spine up.
+    /// </summary>
+    public void Mask(int root, Span<float> weights, float weight)
+    {
+        if ((uint)root >= (uint)Names.Length)
+        {
+            return;
+        }
+
+        // Parents come first, so one pass finds every joint below the root. A joint in the mask is marked by its weight
+        // being the one set; the marks live in a stack span so other weights already set are kept.
+        Span<bool> inside = Names.Length <= 512 ? stackalloc bool[Names.Length] : new bool[Names.Length];
+        inside.Clear();
+        inside[root] = true;
+        weights[root] = weight;
+        for (var j = root + 1; j < Names.Length; j++)
+        {
+            if (Parents[j] >= 0 && inside[Parents[j]])
+            {
+                inside[j] = true;
+                weights[j] = weight;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Two poses blended joint by joint into <paramref name="into"/>: each joint <paramref name="weights"/> of the way from
+    /// <paramref name="under"/> to <paramref name="over"/> (rotations along the shorter way). Any of the three may be the
+    /// same span. Allocates nothing.
+    /// </summary>
+    public static void Blend(
+        ReadOnlySpan<JointTransform> under,
+        ReadOnlySpan<JointTransform> over,
+        ReadOnlySpan<float> weights,
+        Span<JointTransform> into
+    )
+    {
+        for (var j = 0; j < into.Length; j++)
+        {
+            var weight = weights[j];
+            into[j] =
+                weight <= 0 ? under[j]
+                : weight >= 1 ? over[j]
+                : new JointTransform(
+                    Vector3.Lerp(under[j].Translation, over[j].Translation, weight),
+                    Quaternion.Slerp(under[j].Rotation, over[j].Rotation, weight),
+                    Vector3.Lerp(under[j].Scale, over[j].Scale, weight)
+                );
+        }
+    }
+
+    /// <summary>
+    /// Turns joint <paramref name="joint"/> of a pose by <paramref name="turn"/>, a rotation in the asset's space about the
+    /// joint's own place: the joint stays where it is and everything below it swings round it (a spine bent to an aim, a
+    /// head turned to a target). <paramref name="globals"/> is scratch, one a joint. Allocates nothing.
+    /// </summary>
+    public void Turn(Span<JointTransform> locals, int joint, Quaternion turn, Span<Matrix4x4> globals)
+    {
+        if ((uint)joint >= (uint)Names.Length)
+        {
+            return;
+        }
+
+        Globals(locals, globals);
+        // The joint's global is local * frame, where frame is its offset and its parent's global. Turned in the asset's
+        // space after it, the global becomes local * frame * turn, so the new local is local * frame * turn * frame⁻¹.
+        var frame = Parents[joint] < 0 ? Offsets[joint] : Offsets[joint] * globals[Parents[joint]];
+        if (!Matrix4x4.Decompose(frame, out _, out var frameRotation, out _))
+        {
+            return;
+        }
+
+        var local = locals[joint];
+        // Quaternions here read right to left (the right one first): the local, then the frame, then the turn, then back.
+        var rotation = Quaternion.Inverse(frameRotation) * turn * frameRotation * local.Rotation;
+        locals[joint] = local with { Rotation = Quaternion.Normalize(rotation) };
+    }
+
+    /// <summary>
+    /// Bends the chain <paramref name="upper"/>, <paramref name="lower"/>, <paramref name="end"/> (a shoulder, an elbow,
+    /// a hand; a hip, a knee, a foot) so the end joint reaches <paramref name="target"/>, in the asset's space, or points at
+    /// it as far as the chain stretches; the middle joint bends towards <paramref name="pole"/> (where the elbow or knee
+    /// points). The end joint keeps its own turn. <paramref name="globals"/> is scratch, one a joint. Returns false, the
+    /// pose unchanged, for joints that are not such a chain. Allocates nothing.
+    /// </summary>
+    public bool ReachTwoBone(
+        Span<JointTransform> locals,
+        int upper,
+        int lower,
+        int end,
+        Vector3 target,
+        Vector3 pole,
+        Span<Matrix4x4> globals
+    )
+    {
+        if (
+            (uint)end >= (uint)Names.Length
+            || (uint)lower >= (uint)Names.Length
+            || (uint)upper >= (uint)Names.Length
+            || Parents[end] != lower
+            || Parents[lower] != upper
+        )
+        {
+            return false;
+        }
+
+        Globals(locals, globals);
+        var a = globals[upper].Translation;
+        var b = globals[lower].Translation;
+        var c = globals[end].Translation;
+        var upperLength = Vector3.Distance(a, b);
+        var lowerLength = Vector3.Distance(b, c);
+        var toTarget = target - a;
+        var reach = toTarget.Length();
+        if (upperLength < 1e-6f || lowerLength < 1e-6f || reach < 1e-6f)
+        {
+            return false;
+        }
+
+        var direction = toTarget / reach;
+        reach = Math.Clamp(reach, MathF.Abs(upperLength - lowerLength) + 1e-4f, upperLength + lowerLength - 1e-4f);
+        // The middle joint's new place: along the target's direction by the law of cosines, out towards the pole.
+        var along = (upperLength * upperLength - lowerLength * lowerLength + reach * reach) / (2 * reach);
+        var across = MathF.Sqrt(MathF.Max(0, upperLength * upperLength - along * along));
+        var bend = pole - a;
+        bend -= direction * Vector3.Dot(bend, direction);
+        if (bend.LengthSquared() < 1e-10f)
+        {
+            // A pole on the line: bend the way the middle joint already does.
+            bend = b - a;
+            bend -= direction * Vector3.Dot(bend, direction);
+        }
+
+        bend = bend.LengthSquared() > 1e-10f ? Vector3.Normalize(bend) : Perpendicular(direction);
+        var middle = a + direction * along + bend * across;
+        Turn(locals, upper, Arc(b - a, middle - a), globals);
+        Globals(locals, globals);
+        var bent = globals[lower].Translation;
+        Turn(locals, lower, Arc(globals[end].Translation - bent, a + direction * reach - bent), globals);
+        return true;
+    }
+
+    /// <summary>The shortest turn from one direction to another (neither zero).</summary>
+    private static Quaternion Arc(Vector3 from, Vector3 to)
+    {
+        var f = Vector3.Normalize(from);
+        var t = Vector3.Normalize(to);
+        var dot = Math.Clamp(Vector3.Dot(f, t), -1, 1);
+        if (dot > 1 - 1e-7f)
+        {
+            return Quaternion.Identity;
+        }
+
+        if (dot < -1 + 1e-7f)
+        {
+            return Quaternion.CreateFromAxisAngle(Perpendicular(f), MathF.PI);
+        }
+
+        return Quaternion.CreateFromAxisAngle(Vector3.Normalize(Vector3.Cross(f, t)), MathF.Acos(dot));
+    }
+
+    private static Vector3 Perpendicular(Vector3 direction) =>
+        Vector3.Normalize(
+            MathF.Abs(direction.X) < 0.9f
+                ? Vector3.Cross(direction, Vector3.UnitX)
+                : Vector3.Cross(direction, Vector3.UnitY)
+        );
 }

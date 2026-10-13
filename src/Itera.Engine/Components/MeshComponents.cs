@@ -53,6 +53,36 @@ public struct DrawnMesh
 public struct ConsoleMesh;
 
 /// <summary>
+/// A posed mesh whose pose the game's <c>IMeshPoseShaper</c> shapes before it is drawn (an upper body's own clip, a spine
+/// bent to an aim, a hand on a rifle), after its <see cref="MeshAnimator"/>'s clip is sampled.
+/// </summary>
+public struct ShapedPose;
+
+/// <summary>
+/// A mesh drawn at a joint of another entity's posed mesh (a rifle in a hand), with the attached entity's
+/// <see cref="DrawnMesh"/> and no placement of its own: <see cref="Holder"/>'s joint <see cref="Joint"/> (from
+/// <c>Rig.FindJoint</c>) as its pose is drawn this frame, shaped included, then <see cref="Offset"/> and
+/// <see cref="Turn"/> in the joint's space (the grip's place and turn in the hand). A holder that is gone or not drawn
+/// draws nothing; a joint the holder's rig does not have draws it at the holder's placement.
+/// </summary>
+public struct MeshAttachment
+{
+    public Arch.Core.Entity Holder;
+    public int Joint;
+    public Vector3 Offset;
+    public Quaternion Turn;
+
+    public static MeshAttachment To(Arch.Core.Entity holder, int joint, Vector3 offset, Quaternion turn) =>
+        new()
+        {
+            Holder = holder,
+            Joint = joint,
+            Offset = offset,
+            Turn = turn,
+        };
+}
+
+/// <summary>
 /// Plays a clip of a skinned mesh asset's rig on a <see cref="DrawnMesh"/> (<c>Rig.Clips</c>, its index from
 /// <c>Rig.FindClip</c>; -1 for the rest pose): the clip's time at the last two fixed steps, which the frame blends by its
 /// <c>Alpha</c>, advanced by <c>MeshAnimatorSystem</c> at <see cref="Speed"/> times the step (0 holds it). A looping clip

@@ -18,8 +18,10 @@ namespace Itera.Engine.Systems;
 /// <see cref="MeshPlacement"/> and a <see cref="DrawnMesh"/> is drawn where it is between the last two fixed steps, its
 /// pose blended by <see cref="FrameTime.Alpha"/> and scaled; one that also has a <see cref="MeshAnimator"/> is posed by
 /// its clip at the blend of its last two times (its rig's skinning matrices, <c>Rig.WritePalette</c>), and while it fades
-/// from another clip by both, each joint blended by the fade (rotations along the shorter way). Reads those three;
-/// writes no components. Registers the console's <c>meshes</c> (the run's assets and their clips; placing one or many in
+/// from another clip by both, each joint blended by the fade (rotations along the shorter way); one with a
+/// <see cref="ShapedPose"/> is then shaped by the game's <see cref="IMeshPoseShaper"/>. An entity with a
+/// <see cref="MeshAttachment"/> is drawn at its holder's joint as the holder is posed this frame (<see cref="MeshPoses"/>).
+/// Reads those; writes no components. Registers the console's <c>meshes</c> (the run's assets and their clips; placing one or many in
 /// front of the camera, on the ground where a voxel world is, playing a clip or held at a time of it, tagged
 /// <see cref="ConsoleMesh"/>; removing those).
 /// </summary>
@@ -34,11 +36,16 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     private static readonly QueryDescription s_static = new QueryDescription()
         .WithAll<MeshPlacement, DrawnMesh>()
         .WithNone<MeshAnimator>();
-    private static readonly QueryDescription s_posed = new QueryDescription().WithAll<
+    private static readonly QueryDescription s_posed = new QueryDescription()
+        .WithAll<MeshPlacement, DrawnMesh, MeshAnimator>()
+        .WithNone<ShapedPose>();
+    private static readonly QueryDescription s_shaped = new QueryDescription().WithAll<
         MeshPlacement,
         DrawnMesh,
-        MeshAnimator
+        MeshAnimator,
+        ShapedPose
     >();
+    private static readonly QueryDescription s_attached = new QueryDescription().WithAll<MeshAttachment, DrawnMesh>();
     private static readonly QueryDescription s_placed = new QueryDescription().WithAll<ConsoleMesh>();
     private static readonly QueryDescription s_camera = new QueryDescription().WithAll<CameraPose, ActiveCamera>();
 
@@ -46,23 +53,28 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     private readonly MeshAssets _assets;
     private readonly VoxelWorld? _voxels;
     private readonly ConsoleCommands? _commands;
+    private readonly IMeshPoseShaper? _shaper;
     private JointTransform[] _locals = [];
     private JointTransform[] _fromLocals = [];
+    private Matrix4x4[] _globals = [];
 
     /// <param name="world">The ECS world.</param>
     /// <param name="instances">The frame's mesh instances.</param>
     /// <param name="assets">The run's mesh assets, which <c>meshes</c> lists and places.</param>
     /// <param name="voxels">The match's voxel world, whose ground <c>meshes</c> places on; none for a world without voxels.</param>
     /// <param name="commands">The console's commands, for <c>meshes</c>; none in tests.</param>
+    /// <param name="shaper">The game's shaping of the poses with a <see cref="ShapedPose"/>; none leaves them as sampled.</param>
     public MeshDrawSystem(
         World world,
         MeshInstances instances,
         MeshAssets assets,
         VoxelWorld? voxels = null,
-        ConsoleCommands? commands = null
+        ConsoleCommands? commands = null,
+        IMeshPoseShaper? shaper = null
     )
         : base(world)
     {
+        _shaper = shaper;
         _instances = instances;
         _assets = assets;
         _voxels = voxels;
@@ -73,6 +85,8 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     {
         EcsChecks.RequireAll<MeshPlacement, DrawnMesh>(in s_static);
         EcsChecks.RequireAll<MeshPlacement, DrawnMesh, MeshAnimator>(in s_posed);
+        EcsChecks.RequireAll<MeshPlacement, DrawnMesh, MeshAnimator, ShapedPose>(in s_shaped);
+        EcsChecks.RequireAll<MeshAttachment, DrawnMesh>(in s_attached);
         EcsChecks.RequireAll<CameraPose, ActiveCamera>(in s_camera);
 
         // Room for the largest rig's joints, posed one instance at a time. The run's assets are read by now.
@@ -84,6 +98,7 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
 
         _locals = new JointTransform[most];
         _fromLocals = new JointTransform[most];
+        _globals = new Matrix4x4[most];
         _commands?.Register(
             "meshes",
             "[place NAME [SCALE] [CLIP [SECONDS]] | test COUNT [NAME [CLIP]] | clear]",
@@ -106,16 +121,99 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
             Alpha = time.Alpha,
         };
         World.InlineQuery<AddPosed, MeshPlacement, DrawnMesh, MeshAnimator>(in s_posed, ref posed);
+        foreach (ref var chunk in World.Query(in s_shaped))
+        {
+            var placements = chunk.GetSpan<MeshPlacement>();
+            var meshes = chunk.GetSpan<DrawnMesh>();
+            var animators = chunk.GetSpan<MeshAnimator>();
+            foreach (var index in chunk)
+            {
+                DrawPosed(chunk.Entity(index), in placements[index], in meshes[index], in animators[index], time.Alpha);
+            }
+        }
+
+        foreach (ref var chunk in World.Query(in s_attached))
+        {
+            var attachments = chunk.GetSpan<MeshAttachment>();
+            var meshes = chunk.GetSpan<DrawnMesh>();
+            foreach (var index in chunk)
+            {
+                DrawAttached(in attachments[index], in meshes[index], time.Alpha);
+            }
+        }
     }
 
-    /// <summary>A placement's transform between its last two steps: scale, then the blended turn, then the blended place.</summary>
-    private static Matrix4x4 Blend(in MeshPlacement placement, float alpha)
+    /// <summary>A posed mesh shaped by the game's shaper, then drawn.</summary>
+    private void DrawPosed(
+        Entity entity,
+        in MeshPlacement placement,
+        in DrawnMesh mesh,
+        in MeshAnimator animator,
+        float alpha
+    )
     {
-        var position = Vector3.Lerp(placement.PreviousPosition, placement.Position, alpha);
-        var orientation = Quaternion.Slerp(placement.PreviousOrientation, placement.Orientation, alpha);
-        return Matrix4x4.CreateScale(placement.Scale)
-            * Matrix4x4.CreateFromQuaternion(orientation)
-            * Matrix4x4.CreateTranslation(position);
+        var transform = MeshPoses.Placed(in placement, alpha);
+        if (!MeshPoses.Sample(_assets, mesh.Asset, in animator, alpha, _locals, _fromLocals, out var rig))
+        {
+            _instances.Add(mesh.Asset, in transform, mesh.Tint, mesh.Shadow);
+            return;
+        }
+
+        var locals = _locals.AsSpan(0, rig.JointCount);
+        _shaper?.Shape(World, entity, rig, locals, _globals, alpha);
+        var palette = _instances.AddPosed(mesh.Asset, in transform, rig.JointCount, mesh.Tint, mesh.Shadow);
+        if (!palette.IsEmpty)
+        {
+            rig.WritePalette(locals, palette);
+        }
+    }
+
+    /// <summary>A mesh at its holder's joint, the holder posed (and shaped) as it is drawn this frame.</summary>
+    private void DrawAttached(in MeshAttachment attachment, in DrawnMesh mesh, float alpha)
+    {
+        var holder = attachment.Holder;
+        if (!World.IsAlive(holder) || !World.Has<MeshPlacement>(holder) || !World.Has<DrawnMesh>(holder))
+        {
+            return;
+        }
+
+        var placed = MeshPoses.Placed(in World.Get<MeshPlacement>(holder), alpha);
+        var at = placed;
+        var asset = World.Get<DrawnMesh>(holder).Asset;
+        if (World.Has<MeshAnimator>(holder))
+        {
+            if (
+                MeshPoses.Sample(
+                    _assets,
+                    asset,
+                    in World.Get<MeshAnimator>(holder),
+                    alpha,
+                    _locals,
+                    _fromLocals,
+                    out var rig
+                )
+            )
+            {
+                var locals = _locals.AsSpan(0, rig.JointCount);
+                if (World.Has<ShapedPose>(holder))
+                {
+                    _shaper?.Shape(World, holder, rig, locals, _globals, alpha);
+                }
+
+                at = MeshPoses.JointInWorld(rig, locals, attachment.Joint, in placed, _globals);
+            }
+        }
+        else if (_assets.TryGet(asset, out var model) && model.Rig is { } rest && rest.JointCount <= _locals.Length)
+        {
+            var locals = _locals.AsSpan(0, rest.JointCount);
+            rest.Pose(-1, 0, locals);
+            at = MeshPoses.JointInWorld(rest, locals, attachment.Joint, in placed, _globals);
+        }
+
+        // A turn left at its default (all zeros) is none.
+        var turn = attachment.Turn == default ? Quaternion.Identity : attachment.Turn;
+        var transform = Matrix4x4.CreateFromQuaternion(turn) * Matrix4x4.CreateTranslation(attachment.Offset) * at;
+        _instances.Add(mesh.Asset, in transform, mesh.Tint, mesh.Shadow);
     }
 
     private void Meshes(CommandContext context)
@@ -372,7 +470,7 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
 
         public readonly void Update(ref MeshPlacement placement, ref DrawnMesh mesh)
         {
-            var transform = Blend(in placement, Alpha);
+            var transform = MeshPoses.Placed(in placement, Alpha);
             Instances.Add(mesh.Asset, in transform, mesh.Tint, mesh.Shadow);
         }
     }
@@ -392,56 +490,18 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
 
         public readonly void Update(ref MeshPlacement placement, ref DrawnMesh mesh, ref MeshAnimator animator)
         {
-            var transform = Blend(in placement, Alpha);
-            if (!Assets.TryGet(mesh.Asset, out var asset) || asset.Rig is not { } rig || rig.JointCount > Locals.Length)
+            var transform = MeshPoses.Placed(in placement, Alpha);
+            if (!MeshPoses.Sample(Assets, mesh.Asset, in animator, Alpha, Locals, FromLocals, out var rig))
             {
                 Instances.Add(mesh.Asset, in transform, mesh.Tint, mesh.Shadow);
                 return;
             }
 
-            var locals = Locals.AsSpan(0, rig.JointCount);
-            var seconds = Between(animator.PreviousSeconds, animator.Seconds, animator.Clip, animator.Once, mesh.Asset);
-            rig.Pose(animator.Clip, seconds, locals);
-            var weight = animator.FadeWeight(Alpha);
-            if (weight < 1)
-            {
-                var from = FromLocals.AsSpan(0, rig.JointCount);
-                var fromSeconds = Between(
-                    animator.FromPreviousSeconds,
-                    animator.FromSeconds,
-                    animator.FromClip,
-                    animator.FromOnce,
-                    mesh.Asset
-                );
-                rig.Pose(animator.FromClip, fromSeconds, from);
-                for (var j = 0; j < locals.Length; j++)
-                {
-                    locals[j] = new JointTransform(
-                        Vector3.Lerp(from[j].Translation, locals[j].Translation, weight),
-                        Quaternion.Slerp(from[j].Rotation, locals[j].Rotation, weight),
-                        Vector3.Lerp(from[j].Scale, locals[j].Scale, weight)
-                    );
-                }
-            }
-
             var palette = Instances.AddPosed(mesh.Asset, in transform, rig.JointCount, mesh.Tint, mesh.Shadow);
             if (!palette.IsEmpty)
             {
-                rig.WritePalette(locals, palette);
+                rig.WritePalette(Locals.AsSpan(0, rig.JointCount), palette);
             }
-        }
-
-        /// <summary>A clip's time between its last two steps, wrapped by a looping clip's length.</summary>
-        private readonly float Between(float previous, float seconds, int clip, bool once, int asset)
-        {
-            var between = previous + (seconds - previous) * Alpha;
-            var duration = MeshAnimatorSystem.DurationOf(Assets, asset, clip);
-            if (duration > 0 && !once)
-            {
-                between -= MathF.Floor(between / duration) * duration;
-            }
-
-            return between;
         }
     }
 }

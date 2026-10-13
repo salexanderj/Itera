@@ -40,6 +40,7 @@ public sealed class OriginShiftsTests : IDisposable
         "CharacterContact.Downhill",
         "EyeSmoothing.Correction",
         "EyeSmoothing.PreviousCorrection",
+        "MeshAttachment.Offset",
         "CharacterContact.WallNormal",
         "Climber.Normal",
         "BodyBox.Min",

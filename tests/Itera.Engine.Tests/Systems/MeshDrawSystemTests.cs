@@ -15,7 +15,8 @@ namespace Itera.Engine.Tests.Systems;
 /// <summary>
 /// <see cref="MeshDrawSystem"/>: each placed mesh is drawn at its pose between the last two fixed steps, scaled, with its
 /// tint and shadow, a posed one with its clip's skinning matrices at the blend of its last two times, and while it fades
-/// with each joint blended between its two clips; the console's
+/// with each joint blended between its two clips, and with a <see cref="ShapedPose"/> shaped by the game's shaper; a mesh
+/// attached to a joint of another's pose drawn there, and nothing when its holder is gone; the console's
 /// <c>meshes</c> lists the assets and their clips, places one or many in front of the camera facing it, playing a clip or
 /// held at a time of it, and clears only those it placed; and drawing allocates nothing.
 /// </summary>
@@ -318,10 +319,90 @@ public sealed class MeshDrawSystemTests
     }
 
     [Fact]
-    public void Drawing_allocates_nothing()
+    public void A_shaped_pose_is_shaped_by_the_games_shaper_before_its_palette_and_others_are_not()
+    {
+        using var world = World.Create();
+        var shaper = new TurningShaper();
+        using var system = Create(world, shaper: shaper);
+        var shaped = world.Create(
+            MeshPlacement.At(Vector3.Zero, Quaternion.Identity),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f),
+            new ShapedPose()
+        );
+        world.Create(
+            MeshPlacement.At(Vector3.UnitX, Quaternion.Identity),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f)
+        );
+
+        system.Update(new FrameTime(1f / 240, 1, 1, 1));
+
+        Assert.Equal([shaped], shaper.Shaped);
+        var rig = _assets[2].Rig!;
+        var locals = new JointTransform[2];
+        var globals = new Matrix4x4[2];
+        var expected = new Matrix4x4[2];
+        rig.Pose(0, 0.4f, locals);
+        rig.Turn(locals, 1, TurningShaper.Turn, globals);
+        rig.WritePalette(locals, expected);
+        var instance = _instances.Instances.ToArray().Single(i => i.Transform.Translation == Vector3.Zero);
+        var palette = _instances.Palettes.Slice(instance.FirstJoint, instance.Joints).ToArray();
+        for (var j = 0; j < 2; j++)
+        {
+            var point = new Vector3(0.3f, 1.2f, -0.4f);
+            Assert.True(
+                Vector3.Distance(Vector3.Transform(point, expected[j]), Vector3.Transform(point, palette[j])) < 1e-5f
+            );
+        }
+    }
+
+    [Fact]
+    public void An_attached_mesh_is_drawn_at_its_holders_joint_and_not_once_the_holder_is_gone()
     {
         using var world = World.Create();
         using var system = Create(world);
+        var holder = world.Create(
+            MeshPlacement.At(new Vector3(3, 0, 0), Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f)),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f)
+        );
+        var offset = new Vector3(0, 0.5f, 0.1f);
+        world.Create(DrawnMesh.Of(0), MeshAttachment.To(holder, 1, offset, Quaternion.Identity));
+
+        system.Update(new FrameTime(1f / 240, 1, 1, 1));
+
+        var rig = _assets[2].Rig!;
+        var locals = new JointTransform[2];
+        var globals = new Matrix4x4[2];
+        rig.Pose(0, 0.4f, locals);
+        rig.Globals(locals, globals);
+        var placed = MeshPoses.Placed(in world.Get<MeshPlacement>(holder), 1);
+        var expected = Matrix4x4.CreateTranslation(offset) * globals[1] * placed;
+        var attached = _instances.Instances.ToArray().Single(i => i.Asset == 0);
+        Assert.True(
+            Vector3.Distance(expected.Translation, attached.Transform.Translation) < 1e-5f,
+            $"Drawn at {attached.Transform.Translation}, its joint's grip at {expected.Translation}."
+        );
+
+        _instances.Clear();
+        world.Destroy(holder);
+        system.Update(new FrameTime(1f / 240, 1, 1, 1));
+        Assert.Equal(0, _instances.Count);
+    }
+
+    [Fact]
+    public void Drawing_allocates_nothing()
+    {
+        using var world = World.Create();
+        using var system = Create(world, shaper: new TurningShaper { Keep = false });
+        var holder = world.Create(
+            MeshPlacement.At(Vector3.UnitZ, Quaternion.Identity),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.2f),
+            new ShapedPose()
+        );
+        world.Create(DrawnMesh.Of(0), MeshAttachment.To(holder, 1, Vector3.UnitY, Quaternion.Identity));
         world.Create(MeshPlacement.At(Vector3.Zero, Quaternion.Identity), DrawnMesh.Of(0));
         world.Create(MeshPlacement.At(Vector3.One, Quaternion.Identity, 2), DrawnMesh.Of(1));
         world.Create(
@@ -335,15 +416,42 @@ public sealed class MeshDrawSystemTests
             0,
             SystemAllocation.BytesAllocated(system, new FrameTime(1f / 240, 1, 1, 0.5f), warmup: 10, measured: 100)
         );
-        Assert.Equal(330, _instances.Count);
+        Assert.Equal(550, _instances.Count);
     }
 
     private static ConsoleCommands NewCommands() =>
         new(() => SessionRole.Offline, NullLogger<ConsoleCommands>.Instance);
 
-    private MeshDrawSystem Create(World world, ConsoleCommands? commands = null)
+    /// <summary>A shaper that turns joint 1 a quarter about +z, and keeps the entities it shaped.</summary>
+    private sealed class TurningShaper : IMeshPoseShaper
     {
-        var system = new MeshDrawSystem(world, _instances, _assets, commands: commands);
+        public static readonly Quaternion Turn = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2);
+
+        public List<Entity> Shaped { get; } = [];
+
+        public bool Keep { get; init; } = true;
+
+        public void Shape(
+            World world,
+            Entity entity,
+            Rig rig,
+            Span<JointTransform> locals,
+            Span<Matrix4x4> globals,
+            float alpha
+        )
+        {
+            if (Keep)
+            {
+                Shaped.Add(entity);
+            }
+
+            rig.Turn(locals, 1, Turn, globals);
+        }
+    }
+
+    private MeshDrawSystem Create(World world, ConsoleCommands? commands = null, IMeshPoseShaper? shaper = null)
+    {
+        var system = new MeshDrawSystem(world, _instances, _assets, commands: commands, shaper: shaper);
         system.Initialize();
         return system;
     }
