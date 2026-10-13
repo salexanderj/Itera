@@ -72,8 +72,11 @@ public static class ThirdPersonCamera
 
     /// <summary>
     /// The direction from <paramref name="eye"/> towards what the third-person camera's middle points at: the first
-    /// voxel (the world's or an object's) or mesh collider on its ray past the point level with the eye, or
-    /// <see cref="AimMetres"/> along it. The world's voxels are read at coarser levels where level 0 is not resident.
+    /// voxel (the world's or an object's) or mesh collider on its ray past the point level with the eye, or, given
+    /// <paramref name="bodies"/>, the first character's hit shape there at <paramref name="tick"/> but those of
+    /// <paramref name="ignore"/> (the aimer's own), or <see cref="AimMetres"/> along it. The world's voxels are read at
+    /// coarser levels where level 0 is not resident. Without the bodies a crosshair on a character 20 m off sends a shot
+    /// from the eye about 0.4 m beside it, the camera being over the shoulder.
     /// </summary>
     public static Vector3 Aim(
         VoxelWorld? voxels,
@@ -83,7 +86,10 @@ public static class ThirdPersonCamera
         float metres,
         ObjectRays? objects = null,
         MeshColliders? meshes = null,
-        float left = 0
+        float left = 0,
+        HitHistory? bodies = null,
+        double tick = 0,
+        Entity? ignore = null
     )
     {
         var camera = Position(voxels, eye, yaw, pitch, metres, objects, meshes, left);
@@ -103,6 +109,11 @@ public static class ThirdPersonCamera
         if (meshes is not null && meshes.Raycast(start, forward, far, out var surface))
         {
             far = surface.Distance;
+        }
+
+        if (bodies is not null && bodies.Raycast(start, forward, far, tick, ignore ?? Entity.Null, out var body))
+        {
+            far = body.Distance;
         }
 
         var towards = start + forward * far - eye;

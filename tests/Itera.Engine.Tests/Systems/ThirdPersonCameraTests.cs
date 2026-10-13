@@ -10,7 +10,8 @@ namespace Itera.Engine.Tests.Systems;
 /// <see cref="ThirdPersonCamera"/>: the camera behind the right shoulder at its distance, orbiting it with the look's
 /// pitch, over the left one mirrored and between them part of the way; pulled in short of a wall behind and of one at
 /// the shoulder, a mesh collider's too; the aim from the eye towards what the camera's middle meets, which the eye's own
-/// look would miss, a mesh collider among it; the wheel within its limits; and no allocation.
+/// look would miss, a mesh collider among it, and a character's hit shape but the aimer's own; the wheel within its
+/// limits; and no allocation.
 /// </summary>
 public sealed class ThirdPersonCameraTests : IDisposable
 {
@@ -73,6 +74,32 @@ public sealed class ThirdPersonCameraTests : IDisposable
         Assert.Equal(1.5f - ThirdPersonCamera.WallGapMetres, behind.Z, 3);
         var met = new Vector3(ThirdPersonCamera.RightMetres, s_eye.Y + ThirdPersonCamera.UpMetres, -10);
         Assert.True(Vector3.Distance(Vector3.Normalize(met - s_eye), aim) < 1e-4f, $"{aim}");
+    }
+
+    [Fact]
+    public void A_characters_hit_shape_on_the_crosshair_stops_the_aim_and_the_aimers_own_does_not()
+    {
+        using var world = Arch.Core.World.Create();
+        var aimer = world.Create();
+        var other = world.Create();
+        var bodies = new Itera.Engine.Physics.HitHistory(new Itera.Engine.Maths.WorldOrigin());
+        // A character 20 m off where the right shoulder's crosshair covers it, and the aimer's own body round its eye.
+        var met = new Vector3(ThirdPersonCamera.RightMetres, s_eye.Y + ThirdPersonCamera.UpMetres, -20);
+        bodies.Record(other, 4, [new(met + new Vector3(0, -0.5f, 0), met + new Vector3(0, 0.5f, 0), 0.3f, 1)]);
+        bodies.Record(aimer, 4, [new(new Vector3(0, 0, 0), s_eye + Vector3.UnitY, 0.4f, 1)]);
+
+        var past = ThirdPersonCamera.Aim(null, s_eye, 0, 0, 2.5f);
+        var aim = ThirdPersonCamera.Aim(null, s_eye, 0, 0, 2.5f, bodies: bodies, tick: 4, ignore: aimer);
+        var early = ThirdPersonCamera.Aim(null, s_eye, 0, 0, 2.5f, bodies: bodies, tick: 40, ignore: aimer);
+
+        // To the front of the capsule: from the eye along the aim, the round passes through the character.
+        var front = met + new Vector3(0, 0, 0.3f);
+        Assert.True(Vector3.Distance(Vector3.Normalize(front - s_eye), aim) < 1e-3f, $"{aim}");
+        // Without it, the aim goes on to its farthest, and the line from the eye passes the character 0.4 m aside.
+        var beside = s_eye + past * (20 / -past.Z);
+        Assert.InRange(MathF.Abs(beside.X - met.X), 0.35f, 0.45f);
+        // At a tick where no character was, nothing stops it.
+        Assert.True(Vector3.Distance(past, early) < 1e-6f);
     }
 
     [Fact]
@@ -151,11 +178,17 @@ public sealed class ThirdPersonCameraTests : IDisposable
     public void Placing_and_aiming_allocate_nothing()
     {
         Wall(new VoxelCoord(-200, 0, -520), new VoxelCoord(400, 400, 20));
+        using var world = Arch.Core.World.Create();
+        var other = world.Create();
+        var bodies = new Itera.Engine.Physics.HitHistory(new Itera.Engine.Maths.WorldOrigin());
+        bodies.Record(other, 1, [new(new Vector3(0.45f, 1, -3), new Vector3(0.45f, 3, -3), 0.3f, 1)]);
         ThirdPersonCamera.Aim(_voxels, s_eye, 0, 0, 2.5f);
+        ThirdPersonCamera.Aim(_voxels, s_eye, 0, 0, 2.5f, bodies: bodies, tick: 1);
 
         var start = SystemAllocation.StartMeasurement();
         ThirdPersonCamera.Position(_voxels, s_eye, 0.3f, -0.2f, 2.5f);
         ThirdPersonCamera.Aim(_voxels, s_eye, 0, 0, 2.5f);
+        ThirdPersonCamera.Aim(_voxels, s_eye, 0, 0, 2.5f, bodies: bodies, tick: 1, ignore: other);
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - start);
     }
 

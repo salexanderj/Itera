@@ -62,7 +62,8 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   since the step, or behind a shoulder (`ThirdPersonCamera`: 2.5 m back, 1.5 to 5 m by the
   wheel, the right shoulder unless `ThirdPersonView.Left` (1 the left, a game easing it between to swap), pulled in by
   voxels, by the voxel objects where the game gives it `ObjectRays`, and by the mesh colliders where it gives it
-  `MeshColliders`; the aim the same); it makes the camera entity from a start pose (`CameraRules.CreateCamera`).
+  `MeshColliders`; the aim the same, and stopped by a character's hit shape where the game gives it a `HitHistory` and
+  a tick, the aimer's own left out, so a crosshair on a character sends a shot from the eye into it); it makes the camera entity from a start pose (`CameraRules.CreateCamera`).
   `DebugFlyCameraSystem` flies it while the player flies (`flyspeed`; with `Engine:Voxels:DebugWalkSpeed` above 0 it
   flies a 100 m circle round the map's middle `Engine:Camera:CircleHeightMetres` up, which must clear the game's hills),
   kept to the play area (`PlayArea`: the world and 1 km round it, absolute: `Contains`, `HoldsEye`, and `ClampEye` take
