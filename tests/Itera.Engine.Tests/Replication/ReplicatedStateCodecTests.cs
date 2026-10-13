@@ -299,9 +299,11 @@ public sealed class ReplicatedStateCodecTests
         Assert.NotEqual(kinds.Fingerprint, other.Fingerprint);
         Assert.Throws<InvalidOperationException>(() => kinds.RegisterPredicted(new Part("game.dash", 4)));
         Assert.Throws<InvalidOperationException>(() => kinds.RegisterPredicted(new Part("engine.climber", 4)));
-        Assert.Throws<ArgumentOutOfRangeException>(() => kinds.RegisterPredicted(new Part("game.big", 128 - 51 + 1)));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            kinds.RegisterPredicted(new Part("game.big", ReplicatedKinds.MostPredictedBytes - 51 + 1))
+        );
         Assert.Throws<ArgumentOutOfRangeException>(() => kinds.RegisterPredicted(new Part("game.none", 0)));
-        kinds.RegisterPredicted(new Part("game.rest", 128 - 51));
+        kinds.RegisterPredicted(new Part("game.rest", ReplicatedKinds.MostPredictedBytes - 51));
         kinds.Seal();
         Assert.Throws<InvalidOperationException>(() => kinds.RegisterPredicted(new Part("game.late", 1)));
     }

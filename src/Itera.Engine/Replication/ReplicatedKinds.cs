@@ -68,8 +68,11 @@ public sealed class ReplicatedKinds
     /// <summary>The most kinds a run registers.</summary>
     public const int MostKinds = 255;
 
-    /// <summary>The most bytes all of a predicted player's parts take, the engine's climber's 43 among them.</summary>
-    public const int MostPredictedBytes = 128;
+    /// <summary>
+    /// The most bytes all of a predicted player's parts take, the engine's climber's 43 among them. The owner's block
+    /// carries only the parts' own bytes, so the most changes no message; each step a client keeps holds this many.
+    /// </summary>
+    public const int MostPredictedBytes = 256;
 
     private readonly List<ReplicatedKind> _kinds = [];
     private readonly List<IPredictedState> _predicted = [new ClimberPredictedState()];

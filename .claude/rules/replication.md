@@ -42,7 +42,7 @@ What a game does:
   components (a `RemotePlayer`), which the host moves from the client's commands. Movement state a game keeps in a
   component of its own (a wall run, a roll) it registers at the run's start as a predicted part
   (`ReplicatedKinds.RegisterPredicted`, an `IPredictedState`: a name, a fixed number of bytes, `Capture` and `Restore`
-  through the origin, `Differs`, `IsValid`; all of a run's parts at most `ReplicatedKinds.MostPredictedBytes`, 128, the
+  through the origin, `Differs`, `IsValid`; all of a run's parts at most `ReplicatedKinds.MostPredictedBytes`, 256, the
   engine's climber's 43 among them), so a correction puts it back with the rest; the parts' names and sizes go into
   the kinds' fingerprint.
 - On the host, judges a client's player's shots against where their targets were when the client saw them:
