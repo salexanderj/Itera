@@ -166,6 +166,8 @@ public static class EngineServiceCollectionExtensions
         // The match's colliders a game registers, and the sources rays and the character mover meet: those and the terrain.
         services.TryAddScoped<MeshColliders>();
         services.TryAddScoped<CollisionSources>();
+        // Where characters' hit shapes were over the last steps, for a host to judge a shot against (lag compensation).
+        services.TryAddScoped<HitHistory>();
         services.TryAddSingleton<IVoxelPassability, NothingPassable>();
         services.TryAddSingleton<IVoxelSurfaceTags, NoVoxelSurfaceTags>();
         // The voxel models (in the voxel world's memory with terrain, their own without), the loose bodies (which meet the

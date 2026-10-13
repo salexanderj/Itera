@@ -267,6 +267,19 @@ and the voxel's material, the collider and triangle, or the object's voxel's mat
 ray over the terrain alone (`ToolAim.Raycast(VoxelWorld, ...)`) stays; `ToolAim.Raycast(CollisionSources, ...)` meets
 all three, past the terrain's and the objects' passable voxels round the eye.
 
+`HitHistory` (scoped; `Physics/HitHistory.cs`, with `HitShapes.RaycastCapsule`, the exact ray against a capsule, public
+for a game's own shapes) is lag compensation's record: a game records each character's hit capsules (`HitCapsule`: two
+ends, a radius, and the game's part number) once a step with `Record(entity, tick, capsules)`, and a host judges a shot
+with `Raycast(from, direction, maxMetres, tick, ignore, out hit)`, the nearest capsule of any entity but the shooter at
+a tick that may fall between two steps (each capsule's ends moved straight between the two steps' by the fraction; a
+capsule at the same place in both lists with the same part is matched, else each is used where it was recorded). It
+keeps 32 steps of up to 32 capsules for up to 1,024 entities (`Steps` is more than `ReplicationService.MostShownTicksBehind`).
+A step is kept as one absolute anchor (a `WorldPoint`) and float offsets from it, so a move of the origin changes nothing
+and the history is not a component `OriginShifts` moves. An entity is met from a step before its oldest record to a step
+after its newest (a character the game stopped recording is met only at ticks it was there; `Forget` drops one). Storage
+is made at an entity's first record and reused after `Forget`; recording a known entity, asking, and forgetting
+allocate nothing. The game decides what the tick and the capsules are; the engine keeps no character's shape.
+
 ### Files in `src/Itera.Engine`
 
   - `Physics/`: the Bepu simulation and stand-ins (`PhysicsWorld`; a game's bodies and statics in `PhysicsWorld.Bodies.cs`;
@@ -276,7 +289,8 @@ all three, past the terrain's and the objects' passable voxels round the eye.
     `.Hulls.cs` large hulls), loose bodies and solid models as voxels (`LooseBodyVoxels`, `SolidModelVoxels`,
     `SolidColumns`), the character mover (`VoxelCharacterMover`) and the mesh colliders as its cells (`MeshColumns`), a
     game's mesh colliders (`MeshColliders`) and the ray
-    over them and the terrain (`CollisionSources`, `SurfaceHit`), and Bepu's callback structs. The voxels' surface tags
+    over them and the terrain (`CollisionSources`, `SurfaceHit`), the characters' hit shapes over the last steps
+    (`HitHistory`, `HitShapes`), and Bepu's callback structs. The voxels' surface tags
     are `Voxels/IVoxelSurfaceTags`.
   - `Systems/`: `PhysicsReadSystem`, `LooseBodySystem`, `LooseBodyRoom`, `StandInSystem`, `DebugBallSystem`,
     `LooseBodyModelSystem` (`.claude/rules/systems.md`).
