@@ -279,6 +279,9 @@ and the history is not a component `OriginShifts` moves. An entity is met from a
 after its newest (a character the game stopped recording is met only at ticks it was there; `Forget` drops one). Storage
 is made at an entity's first record and reused after `Forget`; recording a known entity, asking, and forgetting
 allocate nothing. The game decides what the tick and the capsules are; the engine keeps no character's shape.
+`HitShapes.FromPose(globals, placed, bones, into)` gives a posed rig's capsules (its joints' places, `Rig.Globals`,
+through the mesh's placement, `MeshPoses.Placed`), each `HitBone` a part from one joint towards another (or a sphere),
+its far end `Reach` times the way between them, its radius scaled with the placement.
 
 ### Files in `src/Itera.Engine`
 

@@ -31,6 +31,28 @@ public sealed class HitHistoryTests : IDisposable
     private static readonly Vector3 s_a = Vector3.Zero;
     private static readonly Vector3 s_b = new(0, 2, 0);
 
+    /// <summary>A posed rig's capsules: between their joints, reaching past the far one, a sphere, placed and scaled.</summary>
+    [Fact]
+    public void A_posed_bodys_capsules_lie_between_their_joints_placed_and_scaled()
+    {
+        Matrix4x4[] globals =
+        [
+            Matrix4x4.CreateTranslation(0, 1, 0),
+            Matrix4x4.CreateTranslation(0, 2, 0),
+            Matrix4x4.CreateTranslation(0, 2.5f, 0),
+        ];
+        HitBone[] bones = [new(0, 1, 0.1f, 5), new(2, -1, 0.2f, 7), new(1, 2, 0.05f, 9, Reach: 2), new(0, 3, 1, 1)];
+        var placed = Matrix4x4.CreateScale(2) * Matrix4x4.CreateTranslation(10, 0, 0);
+        var into = new HitCapsule[4];
+
+        var count = HitShapes.FromPose(globals, in placed, bones, into);
+
+        Assert.Equal(3, count);
+        Assert.Equal(new HitCapsule(new Vector3(10, 2, 0), new Vector3(10, 4, 0), 0.2f, 5), into[0]);
+        Assert.Equal(new HitCapsule(new Vector3(10, 5, 0), new Vector3(10, 5, 0), 0.4f, 7), into[1]);
+        Assert.Equal(new HitCapsule(new Vector3(10, 4, 0), new Vector3(10, 6, 0), 0.1f, 9), into[2]);
+    }
+
     [Fact]
     public void A_ray_from_the_side_meets_the_cylinder()
     {

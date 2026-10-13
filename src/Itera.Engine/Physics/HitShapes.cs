@@ -3,11 +3,55 @@ using System.Numerics;
 namespace Itera.Engine.Physics;
 
 /// <summary>
-/// Rays against the simple shapes a game judges shots with. Plain functions of their arguments: they keep nothing and
-/// allocate nothing, so any thread may call them.
+/// A body part's hit capsule on a rig (<see cref="HitShapes.FromPose"/>): from joint <paramref name="From"/> towards
+/// joint <paramref name="To"/> (-1: a sphere round <paramref name="From"/>), its far end <paramref name="Reach"/> times
+/// the way between them (a hand's capsule from its joint past the knuckles: 1.5 from the hand's joint to the middle
+/// finger's first), of <paramref name="Radius"/> metres, standing for the game's part <paramref name="Part"/>.
+/// </summary>
+public readonly record struct HitBone(int From, int To, float Radius, int Part, float Reach = 1);
+
+/// <summary>
+/// Rays against the simple shapes a game judges shots with, and a posed rig's capsules. Plain functions of their
+/// arguments: they keep nothing and allocate nothing, so any thread may call them.
 /// </summary>
 public static class HitShapes
 {
+    /// <summary>
+    /// The hit capsules of a posed body into <paramref name="into"/> (one a bone; returns how many): each
+    /// <see cref="HitBone"/> between its joints' places in the asset's space (<paramref name="globals"/>, from
+    /// <c>Rig.Globals</c>) taken into the world by the mesh's <paramref name="placed"/> transform (its scale scales the
+    /// radius too). A bone naming a joint past <paramref name="globals"/> is left out.
+    /// </summary>
+    public static int FromPose(
+        ReadOnlySpan<Matrix4x4> globals,
+        in Matrix4x4 placed,
+        ReadOnlySpan<HitBone> bones,
+        Span<HitCapsule> into
+    )
+    {
+        // The placement's uniform scale: the length of a transformed unit vector.
+        var scale = Vector3.TransformNormal(Vector3.UnitX, placed).Length();
+        var count = 0;
+        foreach (var bone in bones)
+        {
+            if (count == into.Length || (uint)bone.From >= (uint)globals.Length || bone.To >= globals.Length)
+            {
+                continue;
+            }
+
+            var a = Vector3.Transform(globals[bone.From].Translation, placed);
+            var b = bone.To < 0 ? a : Vector3.Transform(globals[bone.To].Translation, placed);
+            if (bone.To >= 0 && bone.Reach != 1)
+            {
+                b = a + (b - a) * bone.Reach;
+            }
+
+            into[count++] = new HitCapsule(a, b, bone.Radius * scale, bone.Part);
+        }
+
+        return count;
+    }
+
     // The squared length under which a ray counts as parallel to a capsule's axis (about 10 millionths of a turn), and
     // under which a capsule counts as a sphere (a tenth of a millimetre). A ray that near the axis meets the end spheres
     // where it meets the capsule, and a shorter axis has no side to meet.
