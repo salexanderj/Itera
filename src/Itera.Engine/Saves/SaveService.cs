@@ -16,7 +16,9 @@ namespace Itera.Engine.Saves;
 /// reset with its pieces, and the game's own state in sections (<see cref="ISaveSection"/>).
 /// <list type="bullet">
 /// <item>At start (<see cref="ReadStart"/>, from the session step) the whole file is read and checked, and its seed and
-/// rules replace the options'; when it cannot be read, <c>NAME.save.bak</c> is used instead, with a warning. Its edits
+/// rules replace the options'; when it is damaged, <c>NAME.save.bak</c> is used instead, with a warning, and the next
+/// write keeps the damaged file as <c>NAME.save.damaged</c> (a save that is whole but of another generator or a newer
+/// build, or that cannot be opened, ends the start instead, and a save that is gone starts a new world). Its edits
 /// load once the world exists (<see cref="LoadEdits"/>), and its sections go to the game's at the "save sections" step
 /// (<see cref="BeginSections"/>), after the systems are made and before the first step.</item>
 /// <item>A save is captured on the main thread between steps (the edit log frozen, <see cref="EditLog.Freeze"/>, and
@@ -48,7 +50,8 @@ public sealed partial class SaveService
     private ReadSave? _read;
     private List<SavedSection>? _restoring;
 
-    // Started from NAME.save.bak because NAME.save would not read: the broken file is not copied over the backup.
+    // Started from NAME.save.bak because NAME.save is damaged: the next write keeps the damaged file aside, not as the
+    // backup.
     private bool _fromBackup;
 
     private ISaveSection[] _sections = [];
@@ -132,11 +135,13 @@ public sealed partial class SaveService
     public bool Writing => _writing is { IsCompleted: false };
 
     /// <summary>
-    /// The session step, on a host or offline: reads the whole save when its file exists (or its backup, when the file
-    /// cannot be read), and returns its header (its seed and match settings are the match's), or null for a new world.
-    /// Throws <see cref="SessionStartException"/>, with the files left as they are, when neither can be used (not a save,
-    /// unreadable or damaged, from another generator or generator version, or holding voxel edits in a game without a
-    /// world), or the save runs at another step rate than <paramref name="fixedStepHz"/>.
+    /// The session step, on a host or offline: reads the whole save when its file exists (or its backup, when the file is
+    /// damaged), and returns its header (its seed and match settings are the match's), or null for a new world, also
+    /// when the file is gone and its backup is not (a player who deletes a save starts afresh). Throws
+    /// <see cref="SessionStartException"/>, with the files left as they are, when the save cannot be opened, is whole but
+    /// of another generator, generator version, or a newer build (<see cref="EditLogSerializer.IsMismatch"/>: its backup
+    /// is not used, so a later write cannot replace it), is damaged with no backup that reads, holds voxel edits in a game
+    /// without a world, or runs at another step rate than <paramref name="fixedStepHz"/>.
     /// </summary>
     internal EditLogHeader? ReadStart(int fixedStepHz, ulong configuredSeed)
     {
@@ -145,25 +150,21 @@ public sealed partial class SaveService
             return null;
         }
 
-        var backup = path + ".bak";
-        if (!File.Exists(path) && !File.Exists(backup))
+        if (!File.Exists(path))
         {
             LogNew(_name!, configuredSeed, path);
             return null;
         }
 
+        var backup = path + ".bak";
         ReadSave read;
         try
         {
             read = Read(path);
         }
-        catch (Exception ex) when (IsReadFailure(ex))
+        catch (InvalidDataException ex) when (!EditLogSerializer.IsMismatch(ex) && File.Exists(backup))
         {
-            if (!File.Exists(backup))
-            {
-                throw new SessionStartException($"The save {path} cannot be used: {ex.Message}", ex);
-            }
-
+            // Damaged: the backup, the save before it, takes its place.
             LogUsingBackup(_name!, ex.Message, backup);
             try
             {
@@ -178,6 +179,10 @@ public sealed partial class SaveService
             }
 
             _fromBackup = true;
+        }
+        catch (Exception ex) when (IsReadFailure(ex))
+        {
+            throw new SessionStartException($"The save {path} cannot be used: {ex.Message}", ex);
         }
 
         var header = read.Header;
@@ -311,8 +316,9 @@ public sealed partial class SaveService
                 );
                 own.Restore(reader, section.Version);
             }
-            catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or FormatException)
+            catch (Exception ex)
             {
+                // Whatever the game's reader threw, the match does not start from a state half put back.
                 throw new SessionStartException(
                     $"The save {FilePath} holds the section {section.Name}, which cannot be read: {ex.Message}",
                     ex
@@ -378,7 +384,7 @@ public sealed partial class SaveService
             {
                 WaitForWrite();
                 var settled = _bodies?.SettleThrown() ?? 0;
-                _last = CaptureNow("quit", settled, _match);
+                _last = TryCapture("quit", settled, _match);
             }
             else
             {
@@ -427,14 +433,37 @@ public sealed partial class SaveService
 
         WaitForWrite();
         var settled = _bodies?.SettleThrown() ?? 0;
-        Write(CaptureNow("quit", settled, match));
+        if (TryCapture("quit", settled, match) is { } capture)
+        {
+            Write(capture);
+        }
     }
 
     private void SaveInBackground(string why)
     {
         _stepsSinceSave = 0;
-        var capture = CaptureNow(why, 0, _match);
-        _writing = Task.Run(() => Write(capture));
+        if (TryCapture(why, 0, _match) is { } capture)
+        {
+            _writing = Task.Run(() => Write(capture));
+        }
+    }
+
+    /// <summary>
+    /// <see cref="CaptureNow"/>, or null when a section (or the world) threw: logged at Error and kept in
+    /// <see cref="Failure"/>, the last save left as it was, and the match going on.
+    /// </summary>
+    private Capture? TryCapture(string why, int settled, MatchSettings match)
+    {
+        try
+        {
+            return CaptureNow(why, settled, match);
+        }
+        catch (Exception ex)
+        {
+            LogCaptureFailed(ex, _name!, why);
+            Failure = $"The save {_name} could not be taken: {ex.Message}";
+            return null;
+        }
     }
 
     /// <summary>Waits for a write on the background thread, if one runs.</summary>
@@ -536,9 +565,10 @@ public sealed partial class SaveService
                 file.Flush(flushToDisk: true);
             }
 
-            if (File.Exists(path) && !_fromBackup)
+            if (File.Exists(path))
             {
-                File.Copy(path, path + ".bak", overwrite: true);
+                // A save the game passed over for its backup is kept aside; otherwise the save is the new backup.
+                File.Copy(path, path + (_fromBackup ? ".damaged" : ".bak"), overwrite: true);
             }
 
             File.Move(temporary, path, overwrite: true);
@@ -695,6 +725,12 @@ public sealed partial class SaveService
         int settled,
         string path
     );
+
+    [LoggerMessage(
+        Level = LogLevel.Error,
+        Message = "Save: could not take {Name} for {Why}; the last save stays, and the match goes on"
+    )]
+    private partial void LogCaptureFailed(Exception exception, string name, string why);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Save: could not write {Name} to {Path}")]
     private partial void LogFailed(Exception exception, string name, string path);

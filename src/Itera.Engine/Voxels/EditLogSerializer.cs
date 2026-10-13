@@ -20,10 +20,6 @@ public readonly record struct EditLogHeader(
 );
 
 /// <summary>
-/// A lifted piece as a saved log holds it: its voxels in a dense box, x fastest, then y, then z, as runs of one material.
-/// The runs are kept as read, so a piece costs what its bytes in the stream cost, not its volume, until it is unpacked.
-/// </summary>
-/// <summary>
 /// A named part of a game's state in a save (format 8 on): its <paramref name="Name"/> (1 to 64 letters, digits, '.',
 /// '-', or '_'), the <paramref name="Version"/> of the layout its <paramref name="Bytes"/> were written in, from 1, and
 /// those bytes.
@@ -42,6 +38,10 @@ internal sealed record FrozenEdits(
     VoxelMemory Memory
 );
 
+/// <summary>
+/// A lifted piece as a saved log holds it: its voxels in a dense box, x fastest, then y, then z, as runs of one material.
+/// The runs are kept as read, so a piece costs what its bytes in the stream cost, not its volume, until it is unpacked.
+/// </summary>
 internal sealed record StoredPiece(long Sequence, VoxelCoord Min, VoxelCoord Size, (byte Material, int Length)[] Runs);
 
 /// <summary>
@@ -460,7 +460,12 @@ internal static class EditLogSerializer
         }
 
         var format = reader.ReadInt32();
-        if (format is < 1 or > FormatVersion)
+        if (format > FormatVersion)
+        {
+            throw Mismatch($"The edit log has format version {format}; this build reads 1 to {FormatVersion}.");
+        }
+
+        if (format < 1)
         {
             throw Invalid($"The edit log has format version {format}; this build reads 1 to {FormatVersion}.");
         }
@@ -474,7 +479,7 @@ internal static class EditLogSerializer
             || (format < 7 && expectedGeneratorId.StartsWith(generatorId + "+objects-", StringComparison.Ordinal));
         if (!sameId || generatorVersion != expectedGeneratorVersion)
         {
-            throw Invalid(
+            throw Mismatch(
                 $"The edit log was made with generator {generatorId} version {generatorVersion}; this world uses {expectedGeneratorId} version {expectedGeneratorVersion}."
             );
         }
@@ -629,6 +634,23 @@ internal static class EditLogSerializer
 
     private static VoxelCoord ReadCoord(BinaryReader reader) =>
         new(reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32());
+
+    /// <summary>
+    /// True when <paramref name="exception"/> says the log is whole but not this world's: of a newer format than this
+    /// build reads, or made by another generator or generator version (<see cref="Mismatch"/>). A save that will not
+    /// read for that reason is not damaged, so its backup is not used in its place.
+    /// </summary>
+    public static bool IsMismatch(InvalidDataException exception) =>
+        exception?.Data.Contains(MismatchKey) ?? throw new ArgumentNullException(nameof(exception));
+
+    private const string MismatchKey = "Itera.EditLogMismatch";
+
+    private static InvalidDataException Mismatch(FormattableString message)
+    {
+        var exception = Invalid(message);
+        exception.Data[MismatchKey] = true;
+        return exception;
+    }
 
     private static InvalidDataException Invalid(FormattableString message) =>
         new(message.ToString(CultureInfo.InvariantCulture));

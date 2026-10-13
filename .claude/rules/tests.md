@@ -202,8 +202,9 @@ Where tests live:
   `ShaderReloadTests`.
 - Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `LoopbackTests`, `SteamTransportTests`, `SimulatedNetworkTests` (delay, jitter, and loss over `FakeTransport` with a hand-stepped clock),
   `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests`, `SaveSectionsTests` (a game's sections by name and version, a newer or damaged one
-stopping the start, the backup, an autosave on a background thread, a capture holding its moment, no allocation until a
-save is due), `SaveMatchTests` (the last save captured while the ECS world lives, restored before the first step), and
+stopping the start, the backup for a damaged save and not for a newer build's, a deleted save starting afresh, an
+autosave on a background thread, a section that throws when captured, a capture holding its moment, no allocation until
+a save is due), `SaveMatchTests` (the last save captured while the ECS world lives, restored before the first step), and
 `SaveFilesTests` (a temporary folder), `Matches/JoinRequestsTests`, `Matches/MatchControlStatesTests` (the hooks for a game's menu tests against a real match), `Navigation/`
   (flow fields on small grids, the scanner with a floor 409 m down, and the service; the voxel objects,
   `NavigationObjectsTests`: as generated stamped onto the fill and read alike, a trunk cut through opening once its top

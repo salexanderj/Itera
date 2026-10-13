@@ -99,9 +99,13 @@ the last reset, renumbered from 1 (a join payload keeps every edit). A game's ow
 (`Saves/`, scoped: a name of 1 to 64 letters, digits, '.', '-', or '_', a version from 1, `Capture(BinaryWriter)`, and
 `Restore(BinaryReader, version)`), handed what the save held at the "save sections" step (after "ecs": the systems
 exist, and no step has run; `SaveService.StartedFromSave` tells a system the match resumes); a saved section the game
-lacks is left out with a warning, and one of a newer version, or whose bytes do not read, ends the start. The old
-file is kept as `NAME.save.bak`; a save that cannot be read is passed over for its backup with a warning (the next save
-then leaves the backup alone); a failed write leaves the old save, deletes its temporary file, and is told at the menu.
+lacks is left out with a warning, and one of a newer version, or whose bytes do not read, ends the start; a section
+whose `Capture` throws is logged at Error and told at the menu, the last save stays, and the match goes on. The old
+file is kept as `NAME.save.bak`; a damaged save is passed over for its backup with a warning (the next write keeps the
+damaged file as `NAME.save.damaged`, not as the backup), while a save that is whole but of another generator or a newer
+build (`EditLogSerializer.IsMismatch`), or that cannot be opened, ends the start with both files left, and a deleted
+save starts a new world whatever its backup; a failed write leaves the old save, deletes its temporary file, and is told
+at the menu.
 Save names refuse Windows device names (CON, NUL, COM1, ...). The file is the edit log stream, format 8 (it may hold
 resets, capsule edits, clears of some materials, removals of voxel objects' parts, and clears of their far copies, and
 ends with the game's sections, at most 256, none in a join payload; its generator id is the world's, with the object

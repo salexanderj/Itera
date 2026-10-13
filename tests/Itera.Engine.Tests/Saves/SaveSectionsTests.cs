@@ -11,10 +11,12 @@ namespace Itera.Engine.Tests.Saves;
 /// A game's own state in its save (<see cref="ISaveSection"/>, save format 8), the backup used when a save will not read,
 /// and saves while the match plays (<see cref="SaveService.AfterFixedStep"/>, <see cref="SaveService.SaveNow"/>), over a
 /// <see cref="SessionService"/> on <see cref="FakeTransport"/> in a temporary folder: sections captured at the end and
-/// restored by name and version at the next start, a section the game lacks passed over, a newer or damaged one
-/// stopping the start, two of one name refused, the backup taken when the save is damaged and kept by the next save, an
-/// autosave after its steps on a background thread, a capture holding the edits and state of its moment and none made
-/// after, the end waiting for a write still running, and no allocation until a save is due.
+/// restored by name and version at the next start, a section the game lacks passed over, a newer or damaged one (or one
+/// whose reader throws) stopping the start, two of one name refused, the backup taken when the save is damaged (the
+/// damaged file kept aside) and kept by the next save, a save of a newer build refused whatever its backup, a deleted
+/// save starting a new world, an autosave after its steps on a background thread, a section that throws when captured
+/// leaving the last save and the match going on, a capture holding the edits and state of its moment and none made after,
+/// the end waiting for a write still running, and no allocation until a save is due.
 /// </summary>
 public sealed class SaveSectionsTests : IDisposable
 {
@@ -102,10 +104,14 @@ public sealed class SaveSectionsTests : IDisposable
         var damaged = Assert.Throws<SessionStartException>(() =>
             Begin(Start(configuredSeed: 5), new Section("game.counter", 3) { ReadsTooMuch = true })
         );
+        var refused = Assert.Throws<SessionStartException>(() =>
+            Begin(Start(configuredSeed: 5), new Section("game.counter", 3) { ThrowsOnRestore = true })
+        );
 
         Assert.Contains("version 3", newer.Message, StringComparison.Ordinal);
         Assert.Contains("up to version 2", newer.Message, StringComparison.Ordinal);
         Assert.Contains("cannot be read", damaged.Message, StringComparison.Ordinal);
+        Assert.Contains("cannot be read", refused.Message, StringComparison.Ordinal);
         Assert.Equal(bytes, File.ReadAllBytes(path));
     }
 
@@ -139,7 +145,8 @@ public sealed class SaveSectionsTests : IDisposable
         End(first);
         var path = first.Saves.FilePath!;
         Assert.Equal(good, File.ReadAllBytes(path + ".bak"));
-        File.WriteAllBytes(path, File.ReadAllBytes(path)[..^7]);
+        var damaged = File.ReadAllBytes(path)[..^7];
+        File.WriteAllBytes(path, damaged);
 
         var second = Start(configuredSeed: 5);
         var counterAgain = new Section("game.counter", 1);
@@ -151,6 +158,7 @@ public sealed class SaveSectionsTests : IDisposable
         counterAgain.Value = 5;
         End(second);
         Assert.Equal(good, File.ReadAllBytes(path + ".bak"));
+        Assert.Equal(damaged, File.ReadAllBytes(path + ".damaged"));
         Assert.Equal(1, Start(configuredSeed: 5).World.EditCount);
         // From now on the new save is the one kept.
         var third = Start(configuredSeed: 5);
@@ -175,6 +183,67 @@ public sealed class SaveSectionsTests : IDisposable
         Assert.Contains("Nor can its backup", failure.Message, StringComparison.Ordinal);
         Assert.Equal("not a save", File.ReadAllText(path));
         Assert.Equal("nor this", File.ReadAllText(path + ".bak"));
+    }
+
+    /// <summary>
+    /// A save that is whole but written by a newer build is not damaged: the start ends, and neither it nor its backup
+    /// is touched, so no later write replaces it with the backup's older match.
+    /// </summary>
+    [Fact]
+    public void A_save_of_a_newer_build_is_refused_whatever_its_backup()
+    {
+        var game = Start(SavedSeed);
+        Begin(game);
+        game.Saves.Save(true, game.Session.Role, game.Session.Match);
+        End(game);
+        var path = game.Saves.FilePath!;
+        var newer = File.ReadAllBytes(path);
+        // The format version follows the 4-byte magic.
+        newer[4] = EditLogSerializer.FormatVersion + 1;
+        File.WriteAllBytes(path, newer);
+        var backup = File.ReadAllBytes(path + ".bak");
+
+        var failure = Assert.Throws<SessionStartException>(() => Start(configuredSeed: 5));
+
+        Assert.Contains("this build reads", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(newer, File.ReadAllBytes(path));
+        Assert.Equal(backup, File.ReadAllBytes(path + ".bak"));
+    }
+
+    [Fact]
+    public void A_deleted_save_starts_a_new_world_whatever_its_backup()
+    {
+        var game = Start(SavedSeed);
+        Begin(game);
+        Dig(game.World, 0);
+        game.Saves.Save(true, game.Session.Role, game.Session.Match);
+        End(game);
+        File.Delete(game.Saves.FilePath!);
+
+        var fresh = Start(configuredSeed: 5);
+
+        Assert.False(fresh.Saves.StartedFromSave);
+        Assert.Equal(5UL, fresh.World.Seed);
+        Assert.Equal(0, fresh.World.EditCount);
+    }
+
+    [Fact]
+    public void A_section_that_throws_when_captured_leaves_the_last_save_and_the_match_goes_on()
+    {
+        var game = Start(SavedSeed, autosaveMinutes: 1 / 3600.0);
+        var counter = new Section("game.counter", 1) { Value = 1 };
+        Begin(game, counter);
+        game.Saves.Save(true, game.Session.Role, game.Session.Match);
+        var before = File.ReadAllBytes(game.Saves.FilePath!);
+        counter.ThrowsOnCapture = true;
+
+        game.Saves.AfterFixedStep();
+        game.Saves.WriteAtEnd();
+        Assert.NotNull(game.Saves.Failure);
+        End(game);
+
+        Assert.Equal(before, File.ReadAllBytes(game.Saves.FilePath!));
+        Assert.Contains("could not be taken", game.Saves.Failure, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -296,6 +365,10 @@ public sealed class SaveSectionsTests : IDisposable
 
         public bool ReadsTooMuch { get; init; }
 
+        public bool ThrowsOnRestore { get; init; }
+
+        public bool ThrowsOnCapture { get; set; }
+
         public int RestoredVersion { get; private set; }
 
         public string Name => name;
@@ -304,6 +377,11 @@ public sealed class SaveSectionsTests : IDisposable
 
         public void Capture(BinaryWriter writer)
         {
+            if (ThrowsOnCapture)
+            {
+                throw new InvalidOperationException("A section that cannot write itself.");
+            }
+
             if (!Empty)
             {
                 writer.Write(Value);
@@ -313,6 +391,11 @@ public sealed class SaveSectionsTests : IDisposable
         public void Restore(BinaryReader reader, int version)
         {
             RestoredVersion = version;
+            if (ThrowsOnRestore)
+            {
+                throw new ArgumentOutOfRangeException(nameof(reader), "A section whose reader refuses what it reads.");
+            }
+
             if (reader.BaseStream.Length > 0)
             {
                 Value = reader.ReadInt32();

@@ -1329,8 +1329,10 @@ there is no host migration, and the session ends when the host quits.
   time, and the match's end waits for it before the world's memory goes. The last save is captured at the "save
   sections" step's shutdown, before the ECS world goes, and written at the save step's. The stream goes to
   `NAME.save.tmp`, the old save is kept as `NAME.save.bak`, and the new one takes its place; any failure leaves the old
-  save and no temporary file. A match with a name starts from the file when it exists, read whole and checked, or from
-  the backup with a warning when the file cannot be read (the next save then leaves the backup alone), with the save's
+  save and no temporary file, and a section that throws when captured leaves the last save and the match going on. A
+  match with a name starts from the file when it exists, read whole and checked, or from the backup with a warning when
+  the file is damaged (the next write keeps the damaged file as `NAME.save.damaged`; a save that is whole but of another
+  generator or a newer build is refused, so no write replaces it, and a deleted save starts a new world), with the save's
   seed and match data; the sections go to the game's at the "save sections" step, after the systems are made and before
   the first step (`SaveService.StartedFromSave` tells a system the match resumes). A save of another step rate,
   generator, or generator version, or a section of a newer version than the game's, ends the match before it is played.
