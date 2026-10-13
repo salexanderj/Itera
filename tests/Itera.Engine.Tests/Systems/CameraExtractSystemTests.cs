@@ -75,6 +75,44 @@ public sealed class CameraExtractSystemTests
         Assert.Equal(settings.VerticalFieldOfViewRadians, _view.Camera.VerticalFovRadians);
     }
 
+    /// <summary>A perspective lens's zoom draws that many times closer than the player's field of view; an orthographic lens keeps its size.</summary>
+    [Fact]
+    public void A_lens_zoom_draws_closer_than_the_players_field_of_view()
+    {
+        using var world = World.Create();
+        var settings = new PlayerSettings(
+            new EngineOptions(),
+            CommandLineKeys.None,
+            null,
+            NullLogger<PlayerSettings>.Instance
+        );
+        using var system = new CameraExtractSystem(world, _view, settings);
+        system.Initialize();
+        var camera = world.Create(
+            new CameraPose(),
+            new CameraLens
+            {
+                VerticalFovRadians = 1.2f,
+                NearMetres = 0.1f,
+                Zoom = 2,
+            },
+            new ActiveCamera()
+        );
+
+        system.Update(in Time);
+        var zoomed = _view.Camera.VerticalFovRadians;
+        world.Get<CameraLens>(camera).Zoom = 1;
+        system.Update(in Time);
+        var plain = _view.Camera.VerticalFovRadians;
+        world.Set(camera, CameraLens.Orthographic(64, -100, 100) with { Zoom = 2 });
+        system.Update(in Time);
+
+        var field = settings.VerticalFieldOfViewRadians;
+        Assert.Equal(field, plain);
+        Assert.Equal(MathF.Tan(field / 2) / 2, MathF.Tan(zoomed / 2), 1e-5f);
+        Assert.Equal((64f, 0f), (_view.Camera.HeightMetres, _view.Camera.VerticalFovRadians));
+    }
+
     [Fact]
     public void Without_an_active_camera_nothing_changes()
     {

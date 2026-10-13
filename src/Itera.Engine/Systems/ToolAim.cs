@@ -75,9 +75,10 @@ public static class ToolAim
     /// <summary>
     /// Where a player at <paramref name="eye"/> looking at <paramref name="yaw"/> and <paramref name="pitch"/> aims from
     /// and along: from the eye along its look, towards the screen's middle in third person
-    /// (<see cref="ThirdPersonCamera.Look"/>, through the voxels and the <paramref name="objects"/>; straight along the look
-    /// with no voxel world), or from the <see cref="ActiveCamera"/> along its look while it flies the debug camera (from
-    /// the eye with no camera). Every tool of the local player aims through it.
+    /// (<see cref="ThirdPersonCamera.Look"/>, through the voxels, the <paramref name="objects"/>, and the
+    /// <paramref name="meshes"/>; straight along the look with neither voxels nor colliders), or from the
+    /// <see cref="ActiveCamera"/> along its look while it flies the debug camera (from the eye with no camera). Every tool
+    /// of the local player aims through it.
     /// </summary>
     public static (Vector3 From, Vector3 Forward) Look(
         World world,
@@ -86,7 +87,8 @@ public static class ToolAim
         float yaw,
         float pitch,
         bool flying,
-        ObjectRays? objects = null
+        ObjectRays? objects = null,
+        MeshColliders? meshes = null
     )
     {
         if (flying)
@@ -100,19 +102,20 @@ public static class ToolAim
 
         return (
             eye,
-            voxels is null
+            voxels is null && meshes is null
                 ? ThirdPersonCamera.Forward(yaw, pitch)
-                : ThirdPersonCamera.Look(world, voxels, eye, yaw, pitch, false, objects)
+                : ThirdPersonCamera.Look(world, voxels, eye, yaw, pitch, false, objects, meshes)
         );
     }
 
-    /// <summary>Where <paramref name="player"/> (<see cref="FindPlayer"/>) aims from and along (<see cref="Look(World, VoxelWorld?, Vector3, float, float, bool, ObjectRays?)"/>).</summary>
+    /// <summary>Where <paramref name="player"/> (<see cref="FindPlayer"/>) aims from and along (<see cref="Look(World, VoxelWorld?, Vector3, float, float, bool, ObjectRays?, MeshColliders?)"/>).</summary>
     public static (Vector3 From, Vector3 Forward) Look(
         World world,
-        VoxelWorld voxels,
+        VoxelWorld? voxels,
         in ToolAimPlayer player,
-        ObjectRays? objects = null
-    ) => Look(world, voxels, player.Eye, player.Yaw, player.Pitch, player.Flying, objects);
+        ObjectRays? objects = null,
+        MeshColliders? meshes = null
+    ) => Look(world, voxels, player.Eye, player.Yaw, player.Pitch, player.Flying, objects, meshes);
 
     /// <summary>
     /// The surface a tool's ray from <paramref name="eye"/> along <paramref name="forward"/> meets first within

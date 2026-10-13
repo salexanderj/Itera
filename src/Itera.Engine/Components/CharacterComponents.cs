@@ -94,6 +94,12 @@ public struct ThirdPersonView
 
     /// <summary>How far behind the shoulder the camera is, in metres, before walls pull it in.</summary>
     public float Metres;
+
+    /// <summary>
+    /// Which shoulder the camera is over: 0 the right (the default), 1 the left; a game eases it between them to swap
+    /// (<c>ThirdPersonCamera</c>).
+    /// </summary>
+    public float Left;
 }
 
 /// <summary>An upright character body's size, in metres: height, radius seen from above, eye height, and step height.</summary>

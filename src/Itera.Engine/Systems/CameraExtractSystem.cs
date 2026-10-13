@@ -13,7 +13,8 @@ namespace Itera.Engine.Systems;
 /// Hands the <see cref="ActiveCamera"/> to the renderer (<see cref="RenderView"/>) (frame group, registered after every
 /// system that moves the camera, so it sees the frame's final pose). Reads <see cref="CameraPose"/> and
 /// <see cref="CameraLens"/>; writes no components. With the player's settings a perspective lens draws with their field of
-/// view instead of its own; an orthographic lens keeps its size.
+/// view instead of its own, and then closer by the lens's <see cref="CameraLens.Zoom"/>; an orthographic lens keeps its
+/// size.
 /// </summary>
 public sealed class CameraExtractSystem : BaseSystem<World, FrameTime>, IFrameUpdateSystem
 {
@@ -50,6 +51,10 @@ public sealed class CameraExtractSystem : BaseSystem<World, FrameTime>, IFrameUp
         _view.SetCamera(in job.View);
     }
 
+    /// <summary>A vertical field of view <paramref name="zoom"/> times closer: its half angle's tangent divided by it.</summary>
+    public static float Zoomed(float verticalFovRadians, float zoom) =>
+        2 * MathF.Atan(MathF.Tan(verticalFovRadians / 2) / zoom);
+
     /// <summary>The view a pose and lens describe.</summary>
     public static CameraView ToView(in CameraPose pose, in CameraLens lens) =>
         new(
@@ -74,9 +79,20 @@ public sealed class CameraExtractSystem : BaseSystem<World, FrameTime>, IFrameUp
         {
             // There is one active camera; if a bug made several, the last one visited wins.
             View = ToView(in pose, in lens);
-            if (FieldOfView > 0 && !View.Orthographic)
+            if (View.Orthographic)
+            {
+                Found = true;
+                return;
+            }
+
+            if (FieldOfView > 0)
             {
                 View = View with { VerticalFovRadians = FieldOfView };
+            }
+
+            if (lens.Zoom > 1 && float.IsFinite(lens.Zoom))
+            {
+                View = View with { VerticalFovRadians = Zoomed(View.VerticalFovRadians, lens.Zoom) };
             }
 
             Found = true;

@@ -5,6 +5,7 @@ using Itera.Engine.Components;
 using Itera.Engine.Ecs;
 using Itera.Engine.Input;
 using Itera.Engine.Objects;
+using Itera.Engine.Physics;
 using Itera.Engine.Settings;
 using Itera.Engine.Voxels;
 using Itera.Modding;
@@ -50,6 +51,7 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
     private readonly PlayerSettings? _settings;
     private readonly VoxelWorld? _voxels;
     private readonly ObjectRays? _objects;
+    private readonly MeshColliders? _meshes;
     private readonly PlayerInputBlock? _block;
     private readonly EngineOptions _engine;
     private readonly CameraPose? _start;
@@ -65,6 +67,7 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
     /// none in tests that make their own.
     /// </param>
     /// <param name="objects">The voxel objects that pull the third-person camera in too; none without them.</param>
+    /// <param name="meshes">The mesh colliders that pull the third-person camera in too; none without them.</param>
     public PlayerCameraSystem(
         World world,
         IFrameInput input,
@@ -73,11 +76,13 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
         PlayerInputBlock? block = null,
         PlayerSettings? settings = null,
         CameraPose? start = null,
-        ObjectRays? objects = null
+        ObjectRays? objects = null,
+        MeshColliders? meshes = null
     )
         : base(world)
     {
         _objects = objects;
+        _meshes = meshes;
         ArgumentNullException.ThrowIfNull(options);
         _engine = options.Value;
         _start = start;
@@ -128,7 +133,16 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
             Pose = new CameraPose
             {
                 Position = shoulder.On
-                    ? ThirdPersonCamera.Position(_voxels, eye.Position, yaw, pitch, shoulder.Metres, _objects)
+                    ? ThirdPersonCamera.Position(
+                        _voxels,
+                        eye.Position,
+                        yaw,
+                        pitch,
+                        shoulder.Metres,
+                        _objects,
+                        _meshes,
+                        shoulder.Left
+                    )
                     : eye.Position,
                 Yaw = yaw,
                 Pitch = pitch,
@@ -190,11 +204,13 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
     {
         public bool On;
         public float Metres;
+        public float Left;
 
         public void Update(ref ThirdPersonView view)
         {
             On = view.On;
             Metres = view.Metres > 0 ? view.Metres : ThirdPersonCamera.StartMetres;
+            Left = view.Left;
         }
     }
 

@@ -182,7 +182,8 @@ public static class MeshSampleServiceCollectionExtensions
             null,
             sp.GetRequiredService<PlayerInputBlock>(),
             sp.GetRequiredService<PlayerSettings>(),
-            SampleSpawnSystem.StartPoseIn(sp.GetRequiredService<WorldOrigin>())
+            SampleSpawnSystem.StartPoseIn(sp.GetRequiredService<WorldOrigin>()),
+            meshes: sp.GetRequiredService<MeshColliders>()
         ));
         services.AddScoped<IFrameUpdateSystem>(sp =>
         {

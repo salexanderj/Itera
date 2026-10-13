@@ -8,8 +8,9 @@ namespace Itera.Engine.Tests.Systems;
 
 /// <summary>
 /// <see cref="ThirdPersonCamera"/>: the camera behind the right shoulder at its distance, orbiting it with the look's
-/// pitch; pulled in short of a wall behind and of one at the shoulder; the aim from the eye towards what the camera's
-/// middle meets, which the eye's own look would miss; the wheel within its limits; and no allocation.
+/// pitch, over the left one mirrored and between them part of the way; pulled in short of a wall behind and of one at
+/// the shoulder, a mesh collider's too; the aim from the eye towards what the camera's middle meets, which the eye's own
+/// look would miss, a mesh collider among it; the wheel within its limits; and no allocation.
 /// </summary>
 public sealed class ThirdPersonCameraTests : IDisposable
 {
@@ -38,6 +39,40 @@ public sealed class ThirdPersonCameraTests : IDisposable
 
         // Without voxels, nothing pulls it in.
         Assert.Equal(level, ThirdPersonCamera.Position(null, s_eye, 0, 0, 2.5f));
+    }
+
+    [Fact]
+    public void The_left_shoulder_mirrors_the_right_and_a_share_between_goes_part_of_the_way()
+    {
+        var right = ThirdPersonCamera.Position(null, s_eye, 0, 0, 2.5f);
+        var left = ThirdPersonCamera.Position(null, s_eye, 0, 0, 2.5f, left: 1);
+        var between = ThirdPersonCamera.Position(null, s_eye, 0, 0, 2.5f, left: 0.5f);
+
+        Assert.Equal(right with { X = -right.X }, left);
+        Assert.Equal(right with { X = 0 }, between);
+        Assert.Equal(-ThirdPersonCamera.RightMetres, left.X, 5);
+    }
+
+    /// <summary>A mesh collider's wall behind pulls the camera in short of it; one ahead is where the aim points.</summary>
+    [Fact]
+    public void A_mesh_colliders_wall_pulls_the_camera_in_and_stops_the_aim()
+    {
+        using var harness = new PhysicsTestHarness();
+        using var colliders = new Itera.Engine.Physics.MeshColliders(
+            harness.Physics,
+            NullLogger<Itera.Engine.Physics.MeshColliders>.Instance
+        );
+        Vector3[] quad = [new(-5, 0, 0), new(5, 0, 0), new(5, 5, 0), new(-5, 5, 0)];
+        uint[] triangles = [0, 1, 2, 0, 2, 3];
+        colliders.Add(quad, triangles, Matrix4x4.CreateTranslation(0, 0, 1.5f), 0);
+        colliders.Add(quad, triangles, Matrix4x4.CreateTranslation(0, 0, -10), 0);
+
+        var behind = ThirdPersonCamera.Position(null, s_eye, 0, 0, 2.5f, meshes: colliders);
+        var aim = ThirdPersonCamera.Aim(null, s_eye, 0, 0, 2.5f, meshes: colliders);
+
+        Assert.Equal(1.5f - ThirdPersonCamera.WallGapMetres, behind.Z, 3);
+        var met = new Vector3(ThirdPersonCamera.RightMetres, s_eye.Y + ThirdPersonCamera.UpMetres, -10);
+        Assert.True(Vector3.Distance(Vector3.Normalize(met - s_eye), aim) < 1e-4f, $"{aim}");
     }
 
     [Fact]

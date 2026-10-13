@@ -28,6 +28,12 @@ public struct CameraLens
     public float FarMetres;
 
     /// <summary>
+    /// How many times closer a perspective lens draws than its field of view (aiming down sights): 2 halves the field's
+    /// tangent; 0 or 1, none. It applies on top of the player's field of view (<c>CameraExtractSystem</c>).
+    /// </summary>
+    public float Zoom;
+
+    /// <summary>
     /// An orthographic lens: an image <paramref name="heightMetres"/> high, round the camera's position, from
     /// <paramref name="nearMetres"/> to <paramref name="farMetres"/> along the view (negative: behind the position; NaN
     /// for the view distance behind it, and past it).

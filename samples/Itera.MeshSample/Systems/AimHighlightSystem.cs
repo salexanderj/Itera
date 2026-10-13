@@ -12,9 +12,9 @@ namespace Itera.MeshSample.Systems;
 
 /// <summary>
 /// Finds the yard block the local player aims at (frame group, after the camera's systems): the shared ray from where
-/// the player's tools aim (<see cref="ToolAim.Look(World, Itera.Engine.Voxels.VoxelWorld?, Vector3, float, float, bool, Itera.Engine.Objects.ObjectRays?)"/>:
-/// the eye along the look, or the fly camera; with no voxel world, straight along the look in third person too, so the
-/// block may differ from the one under the screen's dot there), within <see cref="ReachMetres"/>, meeting a climbable
+/// the player's tools aim (<see cref="ToolAim.Look(World, Itera.Engine.Voxels.VoxelWorld?, Vector3, float, float, bool, Itera.Engine.Objects.ObjectRays?, MeshColliders?)"/>:
+/// the eye along the look, towards the screen's middle through the yard's colliders in third person, or the fly
+/// camera), within <see cref="ReachMetres"/>, meeting a climbable
 /// surface of one of the yard's pieces (<see cref="YardColliders"/>), whose box, larger by <see cref="RimMetres"/> each
 /// way, <see cref="AimHighlight"/> then shows; else it hides it. Reads the player's command, mode, position, and size,
 /// and the active camera's pose; writes no components.
@@ -44,7 +44,15 @@ public sealed class AimHighlightSystem(
         var player = ToolAim.FindPlayer(World);
         if (player.Found)
         {
-            var (from, forward) = ToolAim.Look(World, null, player.Eye, player.Yaw, player.Pitch, player.Flying);
+            var (from, forward) = ToolAim.Look(
+                World,
+                null,
+                player.Eye,
+                player.Yaw,
+                player.Pitch,
+                player.Flying,
+                meshes: collisions.Meshes
+            );
             if (
                 collisions.Raycast(from, forward, ReachMetres, out var hit)
                 && (hit.Tags & Yard.Climbable) != 0
