@@ -53,8 +53,18 @@ window's edge cell nearest it (`NavGrid.NearestCell`), so walkers head that way 
 and the fields are absolute (corners and floors in centimetres); their helpers in metres (`TryCell`, `CentreMetres`,
 `FloorMetres`) and the debug lines take the match's origin and local positions.
 
+A walker whose goal changes (a character moving to cover) asks for a path instead (`NavPathFinder`, A*, on the main
+thread over `NavigationService.Grid`): `Find(grid, size, costs, start, goal, path, out length, budget)` writes the cells
+after the start into a span (the first of a longer path), by a flow field's steps (eight neighbours, a diagonal only
+where both cells beside it are walkable, a walkable cell's class cost, the steep cost for a rise past the size's climb),
+but a cell the size cannot stand in is closed instead of priced, so a path walks round what blocks it; the heuristic is
+the octile distance at the cheapest class's cost, so a path found costs what a flow field's route does. At most a
+budget of cells is expanded (`DefaultBudget`, 4,096); past it, or where the goal is closed off or outside the grid, the
+path ends at the cell searched nearest the goal (`NavPathResult.Nearest`; `None` for a start the size cannot stand in).
+It keeps its arrays (an entry a grid cell, and a heap) between searches and allocates nothing once they have grown.
+
 ### Files in `src/Itera.Engine`
 
   - `Navigation/`: `NavigationService` (with `NavArea`), `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`,
-    `INavGridSource` (the game's part), `FlowFieldBuilder`, `FlowField`, `NavGridScanner`, `NavObjects`,
-    `NavigationDebugLines`.
+    `INavGridSource` (the game's part), `FlowFieldBuilder`, `FlowField`, `NavPathFinder` (with `NavPathResult`),
+    `NavGridScanner`, `NavObjects`, `NavigationDebugLines`.

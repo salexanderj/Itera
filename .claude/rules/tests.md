@@ -213,7 +213,9 @@ stopping the start, the backup for a damaged save and not for a newer build's, a
 autosave on a background thread, a section that throws when captured, a capture holding its moment, no allocation until
 a save is due), `SaveMatchTests` (the last save captured while the ECS world lives, restored before the first step), and
 `SaveFilesTests` (a temporary folder), `Matches/JoinRequestsTests`, `Matches/MatchControlStatesTests` (the hooks for a game's menu tests against a real match), `Navigation/`
-  (flow fields on small grids, the scanner with a floor 409 m down, and the service; the voxel objects,
+  (flow fields on small grids, paths on them (`NavPathFinderTests`: a flow field's cost, round walls, no corner cut, a
+  ramp before a step, a sealed goal and the budget ending nearest, no allocation), the scanner with a floor 409 m down,
+  and the service; the voxel objects,
   `NavigationObjectsTests`: as generated stamped onto the fill and read alike, a trunk cut through opening once its top
   is removed and blocked again after a reset, a cell waiting until its objects are known and a removal logged before
   then waiting as an edit, a moved window stamping the objects in its strips, no allocation; and the service's moving
