@@ -7,8 +7,10 @@ namespace Itera.Engine.Components;
 public struct LocalPlayer;
 
 /// <summary>
-/// Marks a player of another game in the session, which that game simulates: this game draws it from the states it
-/// receives and never moves it. A session host streams the world around it (<c>StreamingCentreSystem</c>).
+/// Marks a player of another game in the session. On a host it has the movement components and is moved from the
+/// commands that game sends, by the rules the local player moves by (<c>PlayerMovementSystem</c>), and the host streams
+/// the world around it (<c>StreamingCentreSystem</c>); on a client it is drawn from the states the host sends, and
+/// nothing moves it.
 /// </summary>
 public struct RemotePlayer;
 

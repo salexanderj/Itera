@@ -14,8 +14,8 @@ namespace Itera.Engine.Systems;
 /// Centres voxel streaming on the local player's eye (fixed group, last), so the voxels follow the player even while
 /// no frames are drawn. While the player flies the debug camera, or when there is no player, it follows the
 /// <see cref="ActiveCamera"/> instead, a debug case: a frame system moves that camera. A session host also streams a
-/// level-0 disc of <see cref="RemotePlayerRadiusMetres"/> around each remote player, for their stand-ins, the checks of
-/// their moves, and their feet. The world's owner (offline or a host) also streams a level-0 disc around each loose body
+/// level-0 disc of <see cref="VoxelWorld.RemotePlayerRadiusMetres"/> (<c>Engine:Voxels:RemotePlayerRadiusMetres</c>)
+/// around each remote player, whom it moves from their commands, for their moves, stand-ins, and feet. The world's owner (offline or a host) also streams a level-0 disc around each loose body
 /// that no player's level-0 disc holds (at most <see cref="MaxBodyCentres"/>): a body needs the level-0 voxels around it
 /// to move (<c>VoxelColliders</c> freezes it in the air where they are not loaded), so a throw that flies past the
 /// player's level 0, or a client's throw far from the host, would stop. The disc is <see cref="BodyRadiusMetres"/> about
@@ -46,9 +46,6 @@ public sealed class StreamingCentreSystem : BaseSystem<World, FixedStepTime>, IF
         RemotePlayer,
         CharacterPosition
     >();
-
-    /// <summary>The level-0 radius a host streams around each remote player, in metres.</summary>
-    public const double RemotePlayerRadiusMetres = 4;
 
     /// <summary>The level-0 radius a host streams around a loose body away from every player, in metres.</summary>
     public const double BodyRadiusMetres = 3;
@@ -124,7 +121,12 @@ public sealed class StreamingCentreSystem : BaseSystem<World, FixedStepTime>, IF
         _centres[count++] = new StreamingCentre(centre, _voxels.RadiusMetres(0), _voxels.Levels, View: true);
         if (_host)
         {
-            var remote = new CollectRemote { Centres = _centres, Count = count };
+            var remote = new CollectRemote
+            {
+                Centres = _centres,
+                Count = count,
+                RadiusMetres = _voxels.RemotePlayerRadiusMetres,
+            };
             World.InlineQuery<CollectRemote, CharacterPosition>(in s_remote, ref remote);
             _centres = remote.Centres;
             count = remote.Count;
@@ -210,11 +212,12 @@ public sealed class StreamingCentreSystem : BaseSystem<World, FixedStepTime>, IF
         }
     }
 
-    /// <summary>Adds a small level-0 centre at each remote player's feet, growing the array when full.</summary>
+    /// <summary>Adds a level-0 centre at each remote player's feet, growing the array when full.</summary>
     private struct CollectRemote : IForEach<CharacterPosition>
     {
         public StreamingCentre[] Centres;
         public int Count;
+        public double RadiusMetres;
 
         public void Update(ref CharacterPosition position)
         {
@@ -223,7 +226,7 @@ public sealed class StreamingCentreSystem : BaseSystem<World, FixedStepTime>, IF
                 Array.Resize(ref Centres, Centres.Length * 2);
             }
 
-            Centres[Count++] = new StreamingCentre(position.Feet, RemotePlayerRadiusMetres, 1);
+            Centres[Count++] = new StreamingCentre(position.Feet, RadiusMetres, 1);
         }
     }
 

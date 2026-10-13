@@ -135,6 +135,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         Range(failures, "Voxels:WorkerThreads", voxels.WorkerThreads, 0, 64);
         Range(failures, "Voxels:DebugWalkSpeed", voxels.DebugWalkSpeed, 0, 100);
         Range(failures, "Voxels:EditColumnsPerStep", voxels.EditColumnsPerStep, 1, 64);
+        Range(failures, "Voxels:RemotePlayerRadiusMetres", voxels.RemotePlayerRadiusMetres, 2, 256);
         Range(failures, "Voxels:Level0ReachMetres", voxels.Level0ReachMetres, 0, MostRadiusMetres(_grid));
         Range(failures, "Voxels:ReachGrowth", voxels.ReachGrowth, 1.25, 2);
         ReachesGrow(failures, voxels, _grid);

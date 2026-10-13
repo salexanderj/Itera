@@ -478,6 +478,13 @@ public sealed class VoxelSettings
     public int Levels { get; set; } = 4;
 
     /// <summary>
+    /// The radius of the level-0 disc a session host streams around each remote player, in metres (2 to 256): the host
+    /// moves a client's player from its commands, and the mover waits where the voxels round the feet are not loaded, so
+    /// the disc holds what the player can reach before the columns ahead load (16 m: two seconds at a sprint).
+    /// </summary>
+    public double RemotePlayerRadiusMetres { get; set; } = 16;
+
+    /// <summary>
     /// How far the view draws level 0, in metres; its columns load two of them (25.6 m in the game) farther. 0 draws it
     /// to the streaming radius less those two columns (33.6 m at 59.2 m). Other streaming centres (a
     /// host's discs round remote players and bodies) keep their own radii.

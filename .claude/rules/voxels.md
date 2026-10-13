@@ -14,7 +14,9 @@ An edit larger than a chunk's worth of level-0 voxels (128^3: a 12.8 m cube in 1
 smaller edits apply at once) is logged and sent at once but applied to the resident columns
 over the following fixed steps, 4 columns a step (`Engine:Voxels:EditColumnsPerStep`, a count so every game keeps the
 same pace; `VoxelWorld.ApplyPendingEdits`), level 0 and the nearest columns first. `StartEditWarmUp` makes the edit code fast before the first edit. Streaming
-centres (`StreamingCentre`): the player's eye; on a host, a 4 m level-0 disc around each remote player; on a host or
+centres (`StreamingCentre`): the player's eye; on a host, a level-0 disc around each remote player
+(`Engine:Voxels:RemotePlayerRadiusMetres`, 16 m: the host moves them, and the mover waits where its voxels are not
+loaded); on a host or
 offline, a 3 m level-0 disc around each loose body away from every player (stretched ahead by 0.5 s of travel, at most
 12 m, then wider by the widest voxel object kind's reach where the world places objects, `VoxelWorld.ObjectReachMetres`;
 at most 32 bodies, each streaming the levels up to the one it collides with; `StreamingCentreSystem`), since a

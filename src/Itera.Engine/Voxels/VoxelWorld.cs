@@ -339,6 +339,9 @@ public sealed partial class VoxelWorld : IDisposable
     /// <summary>Horizontal distance from the view within which level-<paramref name="level"/> columns load, in metres.</summary>
     public double RadiusMetres(int level) => _distances.RadiusMetres(level);
 
+    /// <summary>The level-0 radius a host streams around each remote player (<c>Engine:Voxels:RemotePlayerRadiusMetres</c>).</summary>
+    public double RemotePlayerRadiusMetres => _settings.RemotePlayerRadiusMetres;
+
     /// <summary>How far the view draws and loads each level.</summary>
     public LevelDistances Distances => _distances;
 

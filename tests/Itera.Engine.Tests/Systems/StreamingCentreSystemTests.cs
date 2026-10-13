@@ -77,6 +77,10 @@ public sealed class StreamingCentreSystemTests : IDisposable
             [new Vector3(3, 2.5f, -7), new Vector3(40, 1, 0), new Vector3(-60, 1, 30)],
             _voxels.Centers.ToArray()
         );
+        // The remote player's disc: level 0 alone, as wide as Engine:Voxels:RemotePlayerRadiusMetres (16 m by default).
+        var remote = _voxels.StreamingCentres[1];
+        Assert.Equal(16, remote.Level0RadiusMetres);
+        Assert.Equal(1, remote.Levels);
         Assert.Equal(0, SystemAllocation.BytesAllocated(system, Step));
     }
 
