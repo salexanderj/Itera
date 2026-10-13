@@ -137,8 +137,8 @@ public sealed partial class MatchServices
     /// <summary>
     /// One fixed step of the match, in the order the game runs it (the main loop calls it; tests call it too, so they run
     /// what the game runs): the fixed group, the bodies of the parts it cut off objects, the large edits' share (<paramref name="editColumns"/> columns), the voxel
-    /// colliders, Bepu, the bodies as voxels, the mods (<paramref name="mods"/>), navigation's finished fields, and the
-    /// session's step; the terrain's parts only with terrain. <paramref name="stats"/>, when given, takes the parts'
+    /// colliders, Bepu, the bodies as voxels, the mods (<paramref name="mods"/>), navigation's finished fields, the
+    /// session's step, and the autosave's; the terrain's parts only with terrain. <paramref name="stats"/>, when given, takes the parts'
     /// timestamps.
     /// </summary>
     public void RunFixedStep(in FixedStepTime step, int editColumns, FrameStats? stats = null, ModLoader? mods = null)
@@ -172,6 +172,8 @@ public sealed partial class MatchServices
         terrain?.Navigation.AfterFixedStep();
         // The step's edits, the tools' and the mods', go to the clients in the order they were made.
         Session.AfterFixedStep();
+        // An autosave captures the match as the step left it, and writes it on a background thread.
+        Saves.AfterFixedStep();
     }
 
     /// <summary>
@@ -190,10 +192,13 @@ public sealed partial class MatchServices
     /// The match's other steps, once the session has settled the match (at once offline or hosting; after the download
     /// when joining). The voxel world starts from the match's seed; the joined world step loads the host's edits (or the
     /// named save's) into it, and without terrain only reads what the host sent; navigation starts with the seed and
-    /// every edit so far; the object kinds' models are made once the world's memory exists; the save step writes the named save when the match ends, while physics and the world still
-    /// exist; the world goes to the GPU; the match's console commands (registered as the HUD layers and systems are made)
-    /// and HUD layers come before the systems; the mods hear of the match once its systems exist; the loading screen
-    /// waits for the match's tasks. ECS comes after physics and voxels so a system's <c>Initialize</c> can use them, and
+    /// every edit so far; the object kinds' models are made once the world's memory exists; the save step writes the
+    /// named save's last capture when the match ends, after waiting for an autosave still being written, while the
+    /// world's memory still exists; the world goes to the GPU; the match's console commands (registered as the HUD layers
+    /// and systems are made) and HUD layers come before the systems; the save sections step gives the game's sections what
+    /// the save held once the systems exist and before the first step, and at the end captures the last save before the
+    /// systems and the ECS world go; the mods hear of the match once its systems exist; the loading screen waits for the
+    /// match's tasks. ECS comes after physics and voxels so a system's <c>Initialize</c> can use them, and
     /// its shutdown waits for character builds before the world's memory is freed. Without terrain the voxels,
     /// navigation, voxel physics, and objects steps are left out, and no world goes to the GPU.
     /// </summary>
@@ -228,12 +233,13 @@ public sealed partial class MatchServices
             );
         }
 
-        steps.Add(new("save", () => { }, () => Saves.Save(EndedCleanly, Session.Role, Session.Match)));
+        steps.Add(new("save", () => { }, Saves.WriteAtEnd));
         steps.Add(new("tint", BeginTint, () => _colours.Tint = null));
         steps.Add(new("world on the gpu", () => gpu.Begin(this), gpu.End));
 
         steps.Add(new("match ui", BeginUi, EndUi));
         steps.Add(new("ecs", InitializeEcs, Ecs.Dispose));
+        steps.Add(new("save sections", BeginSaveSections, () => Saves.EndSections(EndedCleanly)));
         steps.Add(new("mods", () => _mods.MatchStarted(_scope), _mods.MatchEnded));
         steps.Add(new("loading", () => BeginLoading(now()), _loading.End));
         return steps;
@@ -266,6 +272,9 @@ public sealed partial class MatchServices
         _ui.SetMatchLayers([]);
         _commands.EndMatch();
     }
+
+    private void BeginSaveSections() =>
+        Saves.BeginSections(_scope.GetServices<ISaveSection>(), Session.Role, Session.Match);
 
     private void InitializeEcs()
     {

@@ -50,6 +50,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
             );
         }
 
+        Range(failures, "Save:AutosaveMinutes", options.Save.AutosaveMinutes, 0, 1440);
         Range(failures, "Window:Width", options.Window.Width, 1, 32768);
         if (options.Window.Mode is not (WindowMode.Window or WindowMode.Offscreen or WindowMode.None))
         {

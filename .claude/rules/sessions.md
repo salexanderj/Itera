@@ -88,17 +88,26 @@ listener, `ISteamFriendsListener`; the loop updates it whatever menu shows, and 
 
 Named saves (`Engine:Save:Name`, `SaveService`): a host or offline game starts from `Saves/NAME.save` in the data
 folder when it exists (its seed and match settings, a game's match data among them, replace the options'; another step
-rate or generator version ends the run; a game without terrain saves and reads the header alone, with its match
-identity, refuses a save holding edits, and holds no loose bodies) and writes its world there when the match ends
-cleanly, after putting thrown balls still loose back into the grid: only the edits since the last reset, renumbered
-from 1 (a join payload keeps every edit). The old file is kept as `NAME.save.bak`; a failed write
-leaves the old save, deletes its temporary file, and is told at the menu. Save names refuse Windows device names (CON,
-NUL, COM1, ...). The file is the edit log stream, format
-7 (it may hold resets, capsule edits, clears of some materials, removals of voxel objects' parts, and clears of their
-far copies; its generator id
-is the world's, with the object kinds' fingerprint where the world places objects, `VoxelObjectKinds.WorldId`, so a
-save of other kinds is refused; formats 1 to 6 still read, their plain generator id taken for such a world too, and an
-older build refuses format 7). A client never saves. The log indexes at most 2^24 column entries since its last
+rate or generator version ends the run; a game without terrain saves and reads the header and its sections alone,
+with its match identity, refuses a save holding edits, and holds no loose bodies) and writes its world and the game's own state there:
+every `Engine:Save:AutosaveMinutes` (5; 0 to 1,440, 0 for only at the end) of the match's steps and at the console's
+`save`, captured on the main thread at a step's end (the edit log frozen, `EditLog.Freeze`, and each section's bytes)
+and written on a background thread, one write at a time, loose bodies left out; and when the match ends cleanly, after
+putting thrown balls still loose back into the grid, captured at the "save sections" step's shutdown (before the ECS
+world goes) and written at the save step's, after waiting for a write still running. A save holds only the edits since
+the last reset, renumbered from 1 (a join payload keeps every edit). A game's own state is its `ISaveSection`s
+(`Saves/`, scoped: a name of 1 to 64 letters, digits, '.', '-', or '_', a version from 1, `Capture(BinaryWriter)`, and
+`Restore(BinaryReader, version)`), handed what the save held at the "save sections" step (after "ecs": the systems
+exist, and no step has run; `SaveService.StartedFromSave` tells a system the match resumes); a saved section the game
+lacks is left out with a warning, and one of a newer version, or whose bytes do not read, ends the start. The old
+file is kept as `NAME.save.bak`; a save that cannot be read is passed over for its backup with a warning (the next save
+then leaves the backup alone); a failed write leaves the old save, deletes its temporary file, and is told at the menu.
+Save names refuse Windows device names (CON, NUL, COM1, ...). The file is the edit log stream, format 8 (it may hold
+resets, capsule edits, clears of some materials, removals of voxel objects' parts, and clears of their far copies, and
+ends with the game's sections, at most 256, none in a join payload; its generator id is the world's, with the object
+kinds' fingerprint where the world places objects, `VoxelObjectKinds.WorldId`, so a save of other kinds is refused;
+formats 1 to 7 still read, those before 7 with their plain generator id taken for such a world too, and an older build
+refuses format 8). A client never saves. The log indexes at most 2^24 column entries since its last
 reset (`EditLog.MaxIndexEntries`, counted over all ten levels whatever `Engine:Voxels:Levels` is, so every game
 agrees): a save, a join payload, or a host's edit past that is refused, and a game's edits
 (`VoxelWorld.TryApply`, which also refuses an edit far outside the map) stop short of it.

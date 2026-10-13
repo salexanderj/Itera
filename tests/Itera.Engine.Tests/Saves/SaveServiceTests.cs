@@ -110,7 +110,7 @@ public sealed class SaveServiceTests : IDisposable
         Assert.Equal(bytes, File.ReadAllBytes(first.Saves.FilePath!));
     }
 
-    /// <summary>A save whose header reads but whose edits are cut short is refused and kept.</summary>
+    /// <summary>A save whose header reads but whose edits are cut short is refused at the start, whole, and kept.</summary>
     [Fact]
     public void A_save_with_a_good_header_and_a_damaged_body_is_refused_and_left_as_it_was()
     {
@@ -123,7 +123,7 @@ public sealed class SaveServiceTests : IDisposable
 
         var failure = Assert.Throws<SessionStartException>(() => Start(SessionMode.Offline, 5));
 
-        Assert.Contains("cannot be loaded", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("cannot be used", failure.Message, StringComparison.Ordinal);
         Assert.Equal(damaged, File.ReadAllBytes(path));
     }
 

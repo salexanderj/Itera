@@ -245,13 +245,170 @@ public sealed class EditLogTests
     public void A_log_of_a_newer_format_is_refused_by_its_version()
     {
         var bytes = Written(new EditLog(1, VoxelGrid.Unit)).ToArray();
-        bytes[4] = 8;
+        bytes[4] = 9;
 
         var ex = Assert.Throws<InvalidDataException>(() =>
             EditLogSerializer.ReadHeader(new MemoryStream(bytes), "test.gen", 3)
         );
 
-        Assert.Contains("format version 8; this build reads 1 to 7", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("format version 9; this build reads 1 to 8", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A game's sections follow the pieces (format 8): read back by name, version, and bytes, from a world's log and a
+    /// world-less one, and left out when not asked for; a format 7 log, the same layout before them, holds none.
+    /// </summary>
+    [Fact]
+    public void Sections_read_back_after_the_pieces_and_a_format_7_log_has_none()
+    {
+        var log = new EditLog(1, VoxelGrid.Unit);
+        log.Append(Dig(1, new VoxelCoord(0, 0, 0)));
+        SavedSection[] sections = [new("game.players", 3, [1, 2, 3, 4]), new("game.empty", 1, [])];
+        var bytes = WrittenWith(log, sections);
+
+        var edits = new List<VoxelEdit>();
+        var read = new List<SavedSection>();
+        EditLogSerializer.Read(new MemoryStream(bytes), "test.gen", 3, edits, [], read);
+        var withoutWorld = new MemoryStream();
+        EditLogSerializer.WriteEmpty(withoutWorld, "mesh.game", 2, 77UL, 30, [], sections);
+        var readWithoutWorld = new List<SavedSection>();
+        EditLogSerializer.Read(new MemoryStream(withoutWorld.ToArray()), "mesh.game", 2, [], [], readWithoutWorld);
+        EditLogSerializer.Read(new MemoryStream(bytes), "test.gen", 3, [], []);
+
+        Assert.Single(edits);
+        foreach (var got in new[] { read, readWithoutWorld })
+        {
+            Assert.Equal(2, got.Count);
+            Assert.Equal(("game.players", 3), (got[0].Name, got[0].Version));
+            Assert.Equal([1, 2, 3, 4], got[0].Bytes);
+            Assert.Equal(("game.empty", 1, 0), (got[1].Name, got[1].Version, got[1].Bytes.Length));
+        }
+
+        // A format 7 log: the version byte follows the 4-byte magic, and the sections' count is past its end.
+        var format7 = Written(log).ToArray()[..^4];
+        format7[4] = 7;
+        var fromFormat7 = new List<SavedSection>();
+        EditLogSerializer.Read(new MemoryStream(format7), "test.gen", 3, [], [], fromFormat7);
+        Assert.Empty(fromFormat7);
+    }
+
+    [Theory]
+    [InlineData("count")]
+    [InlineData("negative count")]
+    [InlineData("name")]
+    [InlineData("long name")]
+    [InlineData("version")]
+    [InlineData("twice")]
+    [InlineData("length")]
+    [InlineData("negative length")]
+    [InlineData("short")]
+    public void Damaged_sections_are_refused(string damage)
+    {
+        var log = new EditLog(1, VoxelGrid.Unit);
+        var good = WrittenWith(log, [new SavedSection("game.a", 1, [9, 9])]);
+        // The sections start after the header, no edits, and no pieces: a count, then the name, version, and length.
+        var start = good.Length - (4 + 7 + 4 + 4 + 2);
+        var bytes = (byte[])good.Clone();
+        switch (damage)
+        {
+            case "count":
+                BitConverter.TryWriteBytes(bytes.AsSpan(start), EditLogSerializer.MaxSections + 1);
+                break;
+            case "negative count":
+                BitConverter.TryWriteBytes(bytes.AsSpan(start), -1);
+                break;
+            case "name":
+                bytes[start + 4 + 5] = (byte)' ';
+                break;
+            case "long name":
+                bytes = WrittenRaw(log, [(new string('a', 65), 1, [])]);
+                break;
+            case "version":
+                BitConverter.TryWriteBytes(bytes.AsSpan(start + 4 + 7), 0);
+                break;
+            case "twice":
+                bytes = WrittenRaw(log, [("game.a", 1, []), ("game.a", 2, [])]);
+                break;
+            case "length":
+                BitConverter.TryWriteBytes(bytes.AsSpan(start + 4 + 7 + 4), 3);
+                break;
+            case "negative length":
+                BitConverter.TryWriteBytes(bytes.AsSpan(start + 4 + 7 + 4), -2);
+                break;
+            default:
+                bytes = good[..^1];
+                break;
+        }
+
+        Assert.Throws<InvalidDataException>(() =>
+            EditLogSerializer.Read(new MemoryStream(bytes), "test.gen", 3, [], [], [])
+        );
+        // Left out, they are still checked.
+        Assert.Throws<InvalidDataException>(() =>
+            EditLogSerializer.Read(new MemoryStream(bytes), "test.gen", 3, [], [])
+        );
+    }
+
+    [Fact]
+    public void Sections_a_writer_may_not_write_are_refused()
+    {
+        var log = new EditLog(1, VoxelGrid.Unit);
+
+        Assert.Throws<ArgumentException>(() => WrittenWith(log, [new("game a", 1, [])]));
+        Assert.Throws<ArgumentException>(() => WrittenWith(log, [new("", 1, [])]));
+        Assert.Throws<ArgumentException>(() => WrittenWith(log, [new("game.a", 0, [])]));
+        Assert.Throws<ArgumentException>(() => WrittenWith(log, [new("game.a", 1, []), new("game.a", 1, [])]));
+        Assert.Throws<ArgumentException>(() =>
+            WrittenWith(
+                log,
+                [
+                    .. Enumerable
+                        .Range(0, EditLogSerializer.MaxSections + 1)
+                        .Select(i => new SavedSection($"s{i}", 1, [])),
+                ]
+            )
+        );
+    }
+
+    /// <summary>
+    /// A log frozen (<see cref="EditLog.Freeze"/>) holds the edits and pieces it had: edits appended after it are not in
+    /// what it writes.
+    /// </summary>
+    [Fact]
+    public void A_frozen_log_writes_the_edits_it_had_and_none_appended_after()
+    {
+        var log = new EditLog(1, VoxelGrid.Unit);
+        for (var i = 1; i <= 1500; i++)
+        {
+            log.Append(Dig(i, new VoxelCoord(i, 0, 0)));
+        }
+
+        var frozen = log.Freeze();
+        for (var i = 1501; i <= 2100; i++)
+        {
+            log.Append(Dig(i, new VoxelCoord(i, 0, 0)));
+        }
+
+        using var memory = new VoxelMemory(1 << 20);
+        using var stream = new MemoryStream();
+        EditLogSerializer.Write(
+            stream,
+            "test.gen",
+            3,
+            42,
+            60,
+            [],
+            frozen,
+            memory,
+            new byte[VoxelConstants.ChunkVoxels]
+        );
+        stream.Position = 0;
+        var edits = new List<VoxelEdit>();
+        var header = EditLogSerializer.Read(stream, "test.gen", 3, edits, []);
+
+        Assert.Equal(1500, header.Count);
+        Assert.Equal(1500, frozen.Count);
+        Assert.Equal(log[1500], edits[^1]);
     }
 
     [Fact]
@@ -414,8 +571,9 @@ public sealed class EditLogTests
         var log = new EditLog(1, VoxelGrid.Unit);
         log.Append(Dig(1, new VoxelCoord(0, 0, 0)));
         var bytes = Written(log).ToArray();
-        // The last 4 bytes count the pieces; the one edit before them takes 51 bytes and starts with its sequence.
-        var sequenceOffset = bytes.Length - 4 - 51;
+        // The last 8 bytes count the pieces and the sections; the one edit before them takes 51 bytes and starts with its
+        // sequence.
+        var sequenceOffset = bytes.Length - 8 - 51;
         bytes[sequenceOffset] = 7;
 
         using var stream = new MemoryStream(bytes);
@@ -427,7 +585,7 @@ public sealed class EditLogTests
     /// A written log patched into what the reader must refuse: an unknown shape, a sphere's radius past
     /// the largest, a piece edit's radius past any piece's, and a piece count with no lift for it. The one edit takes
     /// 51 bytes before the 4-byte piece count: its sequence (8), shape, operation, material, origin (12), extent (12),
-    /// piece (8), and turn (8).
+    /// piece (8), and turn (8); the 4-byte section count follows the piece count.
     /// </summary>
     [Theory]
     [InlineData("shape")]
@@ -438,7 +596,7 @@ public sealed class EditLogTests
         var log = new EditLog(1, VoxelGrid.Unit);
         log.Append(Dig(1, new VoxelCoord(0, 0, 0)));
         var bytes = Written(log).ToArray();
-        var edit = bytes.Length - 4 - 51;
+        var edit = bytes.Length - 8 - 51;
         switch (damage)
         {
             case "shape":
@@ -448,7 +606,7 @@ public sealed class EditLogTests
                 BitConverter.TryWriteBytes(bytes.AsSpan(edit + 23), VoxelConstants.MaxEditExtent + 1);
                 break;
             default:
-                BitConverter.TryWriteBytes(bytes.AsSpan(bytes.Length - 4), 1);
+                BitConverter.TryWriteBytes(bytes.AsSpan(bytes.Length - 8), 1);
                 break;
         }
 
@@ -461,6 +619,45 @@ public sealed class EditLogTests
         {
             Sequence = sequence,
         };
+
+    private static byte[] WrittenWith(EditLog log, SavedSection[] sections)
+    {
+        using var stream = new MemoryStream();
+        using var memory = new VoxelMemory(1 << 20);
+        EditLogSerializer.Write(
+            stream,
+            "test.gen",
+            3,
+            42,
+            60,
+            [],
+            log.Freeze(),
+            memory,
+            new byte[VoxelConstants.ChunkVoxels],
+            sections: sections
+        );
+        return stream.ToArray();
+    }
+
+    /// <summary>A log of no edits, then sections written as they are, with no checks: what a damaged save may hold.</summary>
+    private static byte[] WrittenRaw(EditLog log, (string Name, int Version, byte[] Bytes)[] sections)
+    {
+        var bytes = WrittenWith(log, [])[..^4];
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        using var writer = new BinaryWriter(stream);
+        writer.Write(sections.Length);
+        foreach (var (name, version, data) in sections)
+        {
+            writer.Write(name);
+            writer.Write(version);
+            writer.Write(data.Length);
+            writer.Write(data);
+        }
+
+        writer.Flush();
+        return stream.ToArray();
+    }
 
     private static MemoryStream Written(EditLog log)
     {

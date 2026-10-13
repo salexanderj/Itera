@@ -91,7 +91,8 @@ Where tests live:
   checked against the shapes at each voxel's sample point; pinned content hashes; rays and
   collision queries against voxel-by-voxel walks; row spans against the point test (`VoxelEditingTests`); large edits
   spread over steps (`DeferredEditTests`); resets (`VoxelResetTests`); pieces and save formats (`VoxelPieceTests`);
-  models (`ModelEditingTests`); `EditLogTests`.
+  models (`ModelEditingTests`); `EditLogTests` (with a game's sections after the pieces, damaged sections, and a frozen
+  log writing only the edits it had).
 - `Itera.Engine.Tests/Systems/`: each engine system's behaviour and allocation, over `PhysicsTestHarness`,
   `FlatGenerator`, `FlatTestGenerator`, `RampGenerator`, `FakeTickInput`, and `FakeFrameInput`; the play area
   (`PlayAreaTests`); `LooseBodySystem` without voxel terrain, with a game's rest handler (`LooseBodyRestTests`, over
@@ -200,7 +201,10 @@ Where tests live:
   push constants (`UiPassTests`, `UpscalePassTests`, `LoadingPassTests`, `ParticlePassTests`, with the pool's origin), `ScreenshotTests`,
   `ShaderReloadTests`.
 - Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `LoopbackTests`, `SteamTransportTests`, `SimulatedNetworkTests` (delay, jitter, and loss over `FakeTransport` with a hand-stepped clock),
-  `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests` and `SaveFilesTests` (a temporary folder), `Matches/JoinRequestsTests`, `Matches/MatchControlStatesTests` (the hooks for a game's menu tests against a real match), `Navigation/`
+  `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests`, `SaveSectionsTests` (a game's sections by name and version, a newer or damaged one
+stopping the start, the backup, an autosave on a background thread, a capture holding its moment, no allocation until a
+save is due), `SaveMatchTests` (the last save captured while the ECS world lives, restored before the first step), and
+`SaveFilesTests` (a temporary folder), `Matches/JoinRequestsTests`, `Matches/MatchControlStatesTests` (the hooks for a game's menu tests against a real match), `Navigation/`
   (flow fields on small grids, the scanner with a floor 409 m down, and the service; the voxel objects,
   `NavigationObjectsTests`: as generated stamped onto the fill and read alike, a trunk cut through opening once its top
   is removed and blocked again after a reset, a cell waiting until its objects are known and a removal logged before

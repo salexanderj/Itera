@@ -223,11 +223,12 @@ A match's, `MatchServices`: first the session (offline and hosting settle the ma
 `SessionService.PollJoin` carries the join on once a loop iteration while the menu shows its progress, until the host's
 edit log is downloaded), then, once a frame saying "Starting…" has been shown, physics, voxels (memory and worker
 threads, for the match's seed; the edit warm-up once per run), joined world (a client loads the host's edits, a named
-save its own), navigation, voxel physics, objects (the object kinds' models, `VoxelObjects`, the placed objects, `ObjectWorld`, and their damage, `ObjectDamage`), save (written at the
-match's end), tint (the match's tint map for the
+save its own), navigation, voxel physics, objects (the object kinds' models, `VoxelObjects`, the placed objects, `ObjectWorld`, and their damage, `ObjectDamage`), save (the
+last save written at the match's end, after an autosave still being written), tint (the match's tint map for the
 particles' colours), world on the GPU (`WorldMeshes.BeginMatch`), match UI (the match's console commands, which go when
-it ends, and the HUD layers), ECS world and systems, mods (`IGameMod.OnMatchStarted`), and loading (the loading screen
-takes the match's tasks). The session settles the match before anything reads the seed (`SessionService.Match` throws
+it ends, and the HUD layers), ECS world and systems, save sections (a named save's game state handed to the game's
+`ISaveSection`s before the first step; at the end the last save captured while the systems still exist), mods
+(`IGameMod.OnMatchStarted`), and loading (the loading screen takes the match's tasks). The session settles the match before anything reads the seed (`SessionService.Match` throws
 until then; a game's generator and start pose take the seed from it). ECS comes after physics and voxels so systems can
 use them in `Initialize`. A match ends with its session's goodbye, its steps in reverse, and its scope disposed; the run
 puts back what it kept of it (the view, the title, the particles). Options are validated (`EngineOptionsValidator`, and
@@ -388,8 +389,8 @@ changes the live voxel world. The same threads free the memory of unloaded colum
 costs the main thread a few microseconds per column.
 
 **Shutdown.** A match that is on ends first: its session says goodbye (the peers are told this game has left), and its
-steps run in reverse (loading, mods' `OnMatchEnded`, ECS, match UI, the world on the GPU, tint, save (the named save
-written), voxel physics, navigation, whose thread is given 5 s, voxels with their workers stopped and their memory freed,
+steps run in reverse (loading, mods' `OnMatchEnded`, save sections (the last save captured), ECS, match UI, the world on
+the GPU, tint, save (the named save written), voxel physics, navigation, whose thread is given 5 s, voxels with their workers stopped and their memory freed,
 physics, then the session's socket). Then every run step whose initialisation started shuts down in reverse order: the
 control port (each connection given 1 s), the render thread (stopped, then the device drained), the audio thread (the sound render thread and
 the music thread stopped first, each given 2 s, then the audio thread, which frees its sources and buffers), mods (`OnGameExit`, then `OnModUnloaded` in reverse load order), game, UI, renderer, settings
@@ -904,9 +905,10 @@ format. A save loads only with the same generator version.
   again, and the log keeps the earlier edits so sequences go on and every reader follows it in place: a session's clients
   get it as an edit, saves and join payloads carry it, and the loop covers the picture with the loading screen again when
   `VoxelWorld.LastReset` moves. Code that reads the edit log must handle it.
-- Edit log formats: the save is the log stream with the match settings (the format is 7, whose generator id carries the
-  voxel object kinds' fingerprint where the world places objects; formats 1 to 6 still read, their plain generator id
-  taken for such a world too, and an older build refuses a newer format). A save holds only the edits after the last reset, renumbered from 1; a join payload
+- Edit log formats: the save is the log stream with the match settings (the format is 8, whose generator id carries the
+  voxel object kinds' fingerprint where the world places objects, and which ends with a game's sections, none in a join
+  payload; formats 1 to 7 still read, those before 7 with their plain generator id taken for such a world too, and an
+  older build refuses a newer format). A save holds only the edits after the last reset, renumbered from 1; a join payload
   keeps every edit. The log indexes at most 2^24 column entries since its last reset (`EditLog.MaxIndexEntries`, counted
   over all ten levels whatever a game streams, so a host, its clients, and a save's next load agree).
 - Compaction (`docs/edit-log-compaction.md`): a long log is small (50,000 edits make a 2.5 MB payload) but replaying edits
@@ -1316,12 +1318,23 @@ there is no host migration, and the session ends when the host quits.
   match, end with exit code 0; a lost connection or a protocol error does the same, with exit code 1 for a match the options
   started. Each match has a session of its own (Scoped), on the run's transports, which close at its end and open again for
   the next.
-- **Saves.** `SaveService` writes the host's or an offline match's world when the match ends cleanly:
-  `Saves/NAME.save` in the data folder (`Engine:Save:Name`, 1 to 64 letters, digits, spaces, '-', or '_'), after putting
-  thrown bodies still loose back into the grid; the stream goes to `NAME.save.tmp`, the old save is kept as
-  `NAME.save.bak`, and the new one takes its place. A match with a name starts from the file when it exists, with the
-  save's seed and match data; a save of another step rate, generator, or generator version ends the match before it is
-  played. A client never saves.
+- **Saves.** `SaveService` writes the host's or an offline match's world and the game's own state to
+  `Saves/NAME.save` in the data folder (`Engine:Save:Name`, 1 to 64 letters, digits, spaces, '-', or '_'): every
+  `Engine:Save:AutosaveMinutes` (5) of the match's steps, at the console's `save`, and when the match ends cleanly,
+  after putting thrown bodies still loose back into the grid (an autosave leaves loose bodies out). A game's state is
+  its `ISaveSection`s (scoped, each a name, a version, `Capture`, and `Restore`), written after the edit log in format 8.
+  A save is captured on the main thread between steps, the edit log frozen (`EditLog.Freeze`: its written edits never
+  change and its pieces' memory never moves, so only the segments' references and the pieces are copied) and each
+  section's bytes taken; an autosave's is written on a background thread with a scratch of its own, one write at a
+  time, and the match's end waits for it before the world's memory goes. The last save is captured at the "save
+  sections" step's shutdown, before the ECS world goes, and written at the save step's. The stream goes to
+  `NAME.save.tmp`, the old save is kept as `NAME.save.bak`, and the new one takes its place; any failure leaves the old
+  save and no temporary file. A match with a name starts from the file when it exists, read whole and checked, or from
+  the backup with a warning when the file cannot be read (the next save then leaves the backup alone), with the save's
+  seed and match data; the sections go to the game's at the "save sections" step, after the systems are made and before
+  the first step (`SaveService.StartedFromSave` tells a system the match resumes). A save of another step rate,
+  generator, or generator version, or a section of a newer version than the game's, ends the match before it is played.
+  After an exception nothing is written, and the last save stays. A client never saves.
 
 ### Steam
 

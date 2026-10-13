@@ -253,6 +253,15 @@ public sealed partial class VoxelWorld
         EditLogSerializer.ReadHeader(stream, WorldId, _generator.Version);
 
     /// <summary>
+    /// The edit log as it is now, with what writing it as a save needs (<see cref="FrozenEdits"/>), for writing on
+    /// another thread while the world goes on. Main thread.
+    /// </summary>
+    internal FrozenEdits FreezeEdits() => new(WorldId, _generator.Version, _seed, _edits.Freeze(), Memory);
+
+    /// <summary>The generator id and version a save of this world is read with; needs no initialised world.</summary>
+    internal (string Id, int Version) SaveIdentity => (WorldId, _generator.Version);
+
+    /// <summary>
     /// Reads an edit log written by <see cref="SaveEdits"/> and applies it. The world must have no edits yet, and the
     /// log must come from the same generator, generator version, and seed; otherwise nothing is applied and
     /// <see cref="InvalidDataException"/> or <see cref="InvalidOperationException"/> is thrown. Returns the edit count.
@@ -267,6 +276,20 @@ public sealed partial class VoxelWorld
         var edits = new List<VoxelEdit>();
         var pieces = new List<StoredPiece>();
         var header = EditLogSerializer.Read(stream, WorldId, _generator.Version, edits, pieces);
+        return LoadEdits(header, edits, pieces);
+    }
+
+    /// <summary>
+    /// Applies an edit log already read (<see cref="EditLogSerializer.Read"/>, with this world's <see cref="SaveIdentity"/>),
+    /// as <see cref="LoadEdits(Stream)"/> does: a save read whole at the match's start, before its world existed.
+    /// </summary>
+    internal long LoadEdits(EditLogHeader header, List<VoxelEdit> edits, List<StoredPiece> pieces)
+    {
+        if (_edits.Count != 0)
+        {
+            throw new InvalidOperationException("Edits can only be loaded into a world that has none.");
+        }
+
         if (header.Seed != _seed)
         {
             throw new InvalidDataException(

@@ -37,16 +37,20 @@ public sealed class HeadlessRun
         services.GetRequiredService<MeshAssets>().LoadAll(textures: false);
     }
 
-    /// <summary>Starts an offline match of <paramref name="seed"/>: its session and world steps run now.</summary>
-    public HeadlessMatch Play(ulong seed) =>
-        new(_services, new MatchStart(SessionMode.Offline, SessionTransportKind.Direct, null, seed, null, false));
+    /// <summary>
+    /// Starts an offline match of <paramref name="seed"/>: its session and world steps run now. With
+    /// <paramref name="saveName"/> it starts from that named save when it exists, and writes it.
+    /// </summary>
+    public HeadlessMatch Play(ulong seed, string? saveName = null) =>
+        new(_services, new MatchStart(SessionMode.Offline, SessionTransportKind.Direct, null, seed, saveName, false));
 
     /// <summary>
     /// Hosts a match of <paramref name="seed"/> over the run's direct transport: its session and world steps run now,
-    /// and clients join it while it polls (<see cref="HeadlessMatch.Step"/>, or a <see cref="Join"/>).
+    /// and clients join it while it polls (<see cref="HeadlessMatch.Step"/>, or a <see cref="Join"/>). With
+    /// <paramref name="saveName"/> it starts from that named save when it exists, and writes it.
     /// </summary>
-    public HeadlessMatch Host(ulong seed) =>
-        new(_services, new MatchStart(SessionMode.Host, SessionTransportKind.Direct, null, seed, null, false));
+    public HeadlessMatch Host(ulong seed, string? saveName = null) =>
+        new(_services, new MatchStart(SessionMode.Host, SessionTransportKind.Direct, null, seed, saveName, false));
 
     /// <summary>
     /// Joins <paramref name="host"/>'s match at <paramref name="address"/> over the run's direct transport: polls the

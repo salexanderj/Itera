@@ -30,8 +30,8 @@ internal sealed class EditLog
     /// </summary>
     public const int CountedLevels = VoxelConstants.MaxLevel + 1;
 
-    private const int SegmentShift = 10;
-    private const int SegmentSize = 1 << SegmentShift;
+    internal const int SegmentShift = 10;
+    internal const int SegmentSize = 1 << SegmentShift;
     private const int NoEntry = -1;
     private const byte NoMakerByte = byte.MaxValue;
 
@@ -124,6 +124,13 @@ internal sealed class EditLog
             }
         }
     }
+
+    /// <summary>
+    /// The log as it is now, for writing on another thread while this one goes on: the edits so far and their pieces.
+    /// Written edits never change and the log only grows, so it keeps the segments' arrays and copies the pieces' list
+    /// (a segment's array for each 1,024 edits, and the pieces). Main thread.
+    /// </summary>
+    public EditLogSnapshot Freeze() => new([.. _segments], Count, LastReset, [.. _pieces]);
 
     /// <summary>The edit with sequence <paramref name="sequence"/> (1 to <see cref="Count"/>).</summary>
     public ref readonly VoxelEdit this[long sequence]
@@ -339,4 +346,32 @@ internal sealed class EditLog
     }
 
     private readonly record struct IndexEntry(long Sequence, int Next);
+}
+
+/// <summary>
+/// An edit log as it was when it was frozen (<see cref="EditLog.Freeze"/>): its first <see cref="Count"/> edits and
+/// their pieces, read on any thread while the log goes on growing.
+/// </summary>
+internal sealed class EditLogSnapshot(VoxelEdit[][] segments, long count, long lastReset, VoxelPiece[] pieces)
+{
+    /// <summary>Edits in the snapshot; also the sequence of its newest edit.</summary>
+    public long Count => count;
+
+    /// <summary>The sequence of its newest reset, or 0 when there is none.</summary>
+    public long LastReset => lastReset;
+
+    /// <summary>Its lifted pieces, in the order of their lifts.</summary>
+    public ReadOnlySpan<VoxelPiece> Pieces => pieces;
+
+    /// <summary>The edit with sequence <paramref name="sequence"/> (1 to <see cref="Count"/>).</summary>
+    public ref readonly VoxelEdit this[long sequence]
+    {
+        get
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(sequence, 1);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(sequence, count);
+            var index = sequence - 1;
+            return ref segments[(int)(index >> EditLog.SegmentShift)][index & (EditLog.SegmentSize - 1)];
+        }
+    }
 }

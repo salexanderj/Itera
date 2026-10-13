@@ -18,7 +18,7 @@ paths:
   through `ISessionTransports`. Folders:
   - `Assets/`: mesh assets, models read from glTF files at the run's "mesh assets" step, with a skinned model's rig and
     clips (`.claude/rules/mesh-assets.md`).
-  - `Saves/` (`SaveService`, `SaveFiles`), `Modding/` (mod loading: `ModLoader`, `ModLoadContext`, `ModDispatcher`), `Diagnostics/`
+  - `Saves/` (`SaveService`, `ISaveSection`, `SaveFiles`), `Modding/` (mod loading: `ModLoader`, `ModLoadContext`, `ModDispatcher`), `Diagnostics/`
     (Serilog setup `LoggingServiceCollectionExtensions`, the session header `SessionInfo`, loop stats `FrameStats`, GPU
     pass times `GpuTimings`, `ConsoleLogBuffer`, crash logging, `ControlLog`), `Time/` (`GameClock`,
     `FixedStepAccumulator`), `Loading/` (`LoadingScreen`, `ILoadingTask`, `LoadingProgress`,

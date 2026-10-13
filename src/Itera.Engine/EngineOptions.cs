@@ -838,6 +838,12 @@ public sealed class SaveSettings
     /// <summary>The save's name: 1 to 64 letters, digits, spaces (not first or last), '-', or '_'; null for none.</summary>
     public string? Name { get; set; }
 
+    /// <summary>
+    /// How often a host or offline match with a save writes it while it plays, in minutes of its steps (a paused match
+    /// waits), 0 to 1,440; 0 for only at the end. Written on a background thread, so no step waits for the disk.
+    /// </summary>
+    public double AutosaveMinutes { get; set; } = 5;
+
     /// <summary>The folder that holds the saves: <c>Saves</c> in the data folder.</summary>
     public static string Folder(ApplicationSettings application) => Path.Combine(application.DataDirectory(), "Saves");
 }

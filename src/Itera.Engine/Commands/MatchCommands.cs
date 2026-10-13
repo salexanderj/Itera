@@ -7,7 +7,7 @@ namespace Itera.Engine.Commands;
 
 /// <summary>
 /// The console's commands that start and end matches (<see cref="CommandScope.Local"/>): <c>play</c> offline, <c>host</c>,
-/// <c>join</c>, and <c>leave</c>. Each asks <see cref="MatchControl"/>, which the loop answers at its next iteration; a
+/// <c>join</c>, and <c>leave</c>; and <c>save</c> (<see cref="CommandScope.Match"/>), which writes the match's save now. Each asks <see cref="MatchControl"/>, which the loop answers at its next iteration; a
 /// start ends the match now first. The menu asks the same. A match the console starts is not the options': a failed
 /// start or a session's end goes back to the menu rather than ending the run.
 /// </summary>
@@ -43,6 +43,13 @@ public sealed class MatchCommands(
             Join
         );
         commands.Register("leave", "", "Ends the match and goes back to the menu.", CommandScope.Local, Leave);
+        commands.Register(
+            "save",
+            "",
+            "Writes the match's save now, on a background thread (a match with a save name, Engine:Save:Name).",
+            CommandScope.Match,
+            Save
+        );
     }
 
     /// <summary>
@@ -182,6 +189,23 @@ public sealed class MatchCommands(
         }
 
         matches.RequestLeave("You left the match.");
+    }
+
+    private void Save(CommandContext context)
+    {
+        if (matches.Current is not { } match)
+        {
+            context.PrintError("save: no match is played.");
+            return;
+        }
+
+        if (match.Saves.SaveNow() is { } reason)
+        {
+            context.PrintError("save: " + reason);
+            return;
+        }
+
+        context.Print("Saving " + match.Saves.Name + " to " + match.Saves.FilePath + ".");
     }
 
     /// <summary>The seed in argument <paramref name="index"/> when it is a number; null when it is not there or a word.</summary>

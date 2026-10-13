@@ -54,7 +54,8 @@ lists the game's). Commonly used:
 
 - Matches: `--Engine:Session:Mode=Offline|Host|Join` (default `Menu`; the lines that look at a world need a match),
   `Address=127.0.0.1:47600` (or `lobby:ID`, `steam:ID`), `Port`, `Transport=Steam`; `--Engine:Steam:Enabled=false`;
-  `--Engine:Save:Name=castle` (start from `Saves/castle.save` and write it at quit). Two games on one machine: add
+  `--Engine:Save:Name=castle` (start from `Saves/castle.save`, write it every `Engine:Save:AutosaveMinutes`, 5, on a
+  background thread, and at quit; 0 for only at quit). Two games on one machine: add
   `--Engine:Voxels:WorkerThreads=4` to each (each takes a 512 MB mesh heap). As if far apart:
   `--Engine:Session:AddedDelayMilliseconds=100` on a client delays both ways of its link (`AddedJitterMilliseconds`,
   `AddedLossPercent` for what it sends; give loss to the host too to lose what it sends);
@@ -212,7 +213,8 @@ written; a hold past its time (300 s for `wait` unless given, 60 s for a screens
 control port's `run` runs commands outside any script, so `wait` there fails (the port has its own `wait`). `help`
 lists the commands (`ConsoleCommands`):
 
-- Engine: `help`, `clear`, `play` [SEED], `host` [SEED] [steam|direct], `join` ADDRESS, `leave`, `settings` (volume,
+- Engine: `help`, `clear`, `play` [SEED], `host` [SEED] [steam|direct], `join` ADDRESS, `leave`, `save` (the match's
+  save now, on a background thread; offline or on a host with `Engine:Save:Name`), `settings` (volume,
   musicvolume, effectsvolume, sensitivity, fov, uiscale 0.75 to 1.5, scaling, threshold, shadows, aa off|smaa|2x|4x|8x, vsync, fullscreen; a test run that changes them
   writes the data folder's `settings.json`: give render options on the command line instead, or run with the agent data
   folder, `--Engine:Application:DataFolder=<DataFolder>-agent`), `lines`, `shadows`, `scale` (the run's only), `aa` (on,
@@ -270,5 +272,5 @@ lists the commands (`ConsoleCommands`):
   1000, for the match).
 - The game's own commands go here (the starter has none).
 
-In a session, `tp`, `settle`, `cleanup`, `reset`, and `balls` work only on the host; `pause`, `resume`, `step`, and
+In a session, `tp`, `settle`, `cleanup`, `reset`, `balls`, and `save` work only on the host; `pause`, `resume`, `step`, and
 `timescale` only offline.
