@@ -88,8 +88,10 @@ public struct MeshAttachment
 /// <c>Alpha</c>, advanced by <c>MeshAnimatorSystem</c> at <see cref="Speed"/> times the step (0 holds it). A looping clip
 /// wraps both times together at its end; one played <see cref="Once"/> holds its last pose. A change of clip may fade
 /// (<see cref="FadeTo"/>): the clip it played goes on at its own speed, and each joint blends from it to the new one over
-/// <see cref="FadeSeconds"/> of the match's time. Drawing only: the pose is never the same on every machine, so nothing
-/// peers agree on reads it.
+/// <see cref="FadeSeconds"/> of the match's time. A second clip may be blended in (<see cref="SetBlend"/>): posed at the
+/// same share of its length as the clip is of its own (two walks in step), each joint moved towards it by
+/// <see cref="BlendWeight"/> (directional movement: a forward clip and a sideways one). Drawing only: the pose is never
+/// the same on every machine, so nothing peers agree on reads it.
 /// </summary>
 public struct MeshAnimator
 {
@@ -114,6 +116,30 @@ public struct MeshAnimator
     public float Faded;
 
     public float PreviousFaded;
+
+    /// <summary>The clip blended in while <see cref="BlendWeight"/> is more than 0 (-1 for the rest pose).</summary>
+    public int BlendClip;
+
+    /// <summary>How far each joint moves towards <see cref="BlendClip"/>'s pose at the last two steps, 0 to 1.</summary>
+    public float BlendWeight;
+
+    public float PreviousBlendWeight;
+
+    /// <summary>
+    /// Blends <paramref name="clip"/> in by <paramref name="weight"/> from this step (0 for none), the weight before kept
+    /// for the frames between (none to blend from when the clip changes).
+    /// </summary>
+    public void SetBlend(int clip, float weight)
+    {
+        var clamped = float.IsFinite(weight) ? Math.Clamp(weight, 0, 1) : 0;
+        PreviousBlendWeight = clip == BlendClip ? BlendWeight : clamped;
+        BlendClip = clip;
+        BlendWeight = clamped;
+    }
+
+    /// <summary>How far a frame moves each joint towards the blended clip.</summary>
+    public readonly float BlendShare(float alpha) =>
+        Math.Clamp(PreviousBlendWeight + (BlendWeight - PreviousBlendWeight) * alpha, 0, 1);
 
     /// <summary>
     /// Plays <paramref name="clip"/> from <paramref name="seconds"/> at <paramref name="speed"/>, faded in over

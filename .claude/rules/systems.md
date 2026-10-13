@@ -106,7 +106,10 @@ pose blended by the frame's `Alpha`; one with a `MeshAnimator` (a clip of the as
 for the rest pose; its time at the last two steps; a speed, 0 to hold; `Once` to stop at the end) is posed by the clip
 at the blend of its two times, wrapped by a looping clip's length (`MeshInstances.AddPosed`, `Rig.WritePalette`). A
 change of clip may fade (`MeshAnimator.FadeTo(clip, seconds)`: the old clip goes on at its own speed, and each joint
-blends from it to the new one, rotations along the shorter way, by `FadeWeight` at the frame's `Alpha`). One with a
+blends from it to the new one, rotations along the shorter way, by `FadeWeight` at the frame's `Alpha`). A second clip may be blended in (`MeshAnimator.SetBlend(clip, weight)`, set by a fixed system each step: posed at the
+same share of its length as the clip is of its own, so two gaits keep step, each joint moved towards it by the weight
+between the last two steps at the frame's `Alpha`, `BlendShare`): directional movement between a forward clip and a
+sideways one; the clip's own times stay the main clip's (a game's footfalls read them). One with a
 `ShapedPose` is then shaped by the game's `IMeshPoseShaper` (scoped, given to the system: layers, aim, IK through the
 rig's tools, reading the entity's own components; no structural changes, no allocation). An entity with a
 `MeshAttachment` and a `DrawnMesh` (no placement) is drawn at its holder's joint as the holder is posed (and shaped)

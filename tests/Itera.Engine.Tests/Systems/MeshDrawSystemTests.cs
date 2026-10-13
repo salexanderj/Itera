@@ -108,6 +108,53 @@ public sealed class MeshDrawSystemTests
     }
 
     [Fact]
+    public void A_blended_clip_moves_each_joint_towards_it_by_its_weight_between_the_steps()
+    {
+        using var world = World.Create();
+        using var system = Create(world);
+        // The bend at 0.4 s, the rest pose blended in: from none at the last step to all at this one, half at alpha 0.5.
+        var animator = MeshAnimator.Playing(0, seconds: 0.4f, speed: 0);
+        animator.SetBlend(-1, 0);
+        animator.SetBlend(-1, 1);
+        world.Create(MeshPlacement.At(Vector3.Zero, Quaternion.Identity), DrawnMesh.Of(2), animator);
+        // The rest pose with the bend blended in at its own share of its length: 0.4 s, as the clip has no length.
+        var resting = MeshAnimator.Playing(-1, seconds: 0.4f, speed: 0);
+        resting.SetBlend(0, 0.5f);
+        resting.SetBlend(0, 0.5f);
+        world.Create(MeshPlacement.At(new Vector3(10, 0, 0), Quaternion.Identity), DrawnMesh.Of(2), resting);
+
+        system.Update(new FrameTime(1f / 240, 1, 1, 0.5f));
+
+        var instances = _instances.Instances.ToArray();
+        var rig = _assets[2].Rig!;
+        var bent = new JointTransform[2];
+        var rest = new JointTransform[2];
+        rig.Pose(0, 0.4f, bent);
+        rig.Pose(-1, 0, rest);
+        var halfway = new JointTransform[2];
+        for (var j = 0; j < 2; j++)
+        {
+            halfway[j] = new JointTransform(
+                Vector3.Lerp(bent[j].Translation, rest[j].Translation, 0.5f),
+                Quaternion.Slerp(bent[j].Rotation, rest[j].Rotation, 0.5f),
+                Vector3.Lerp(bent[j].Scale, rest[j].Scale, 0.5f)
+            );
+        }
+
+        var expected = new Matrix4x4[2];
+        rig.WritePalette(halfway, expected);
+        var want = Vector3.Transform(new Vector3(2, 0, 0), expected[1]);
+        Assert.Equal(2, instances.Length);
+        foreach (var instance in instances)
+        {
+            var tip = Vector3.Transform(new Vector3(2, 0, 0), _instances.Palettes[instance.FirstJoint + 1]);
+            Assert.True(Vector3.Distance(want, tip) < 1e-4f, $"{tip} against {want}");
+        }
+
+        Assert.Equal((0f, 1f), (animator.PreviousBlendWeight, animator.BlendWeight));
+    }
+
+    [Fact]
     public void A_looping_clip_blends_across_its_wrap()
     {
         using var world = World.Create();
