@@ -70,6 +70,9 @@ public sealed class LoopbackTests
         Assert.Equal(23UL, clientWorld.Seed);
         Assert.Equal(2, clientWorld.EditCount);
         Assert.Equal(1, host.JoinedPeers);
+        // LiteNetLib's first MTU is 1,024 bytes and it looks for no larger one: less the sequenced channel's header.
+        Assert.Equal(1020, hostTransport.MaxUnreliableBytes);
+        Assert.Equal(1020, clientTransport.MaxUnreliableBytes);
 
         host.Stop();
         deadline.Restart();

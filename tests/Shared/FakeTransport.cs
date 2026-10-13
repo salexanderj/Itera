@@ -25,10 +25,13 @@ internal sealed class FakeTransport(FakeNetwork network) : ISessionTransport
     public bool CountSendsOnly { get; set; }
 
     /// <summary>
-    /// When true, a sequenced message this side sends reaches the other side ahead of the messages still waiting there,
-    /// as LiteNetLib's separate channels may deliver it past a long reliable download.
+    /// When true, a sequenced or unreliable message this side sends reaches the other side ahead of the messages still
+    /// waiting there, as LiteNetLib's separate channels may deliver it past a long reliable download.
     /// </summary>
     public bool SequencedFirst { get; set; }
+
+    /// <summary>How many times the session asked this side to send at once (<see cref="Flush"/>).</summary>
+    public int Flushes { get; private set; }
 
     /// <summary>
     /// The reliable bytes this side may send between two of its polls before <see cref="ReliableRoom"/> says there is no
@@ -98,10 +101,10 @@ internal sealed class FakeTransport(FakeNetwork network) : ISessionTransport
 
     public void Send(int peer, ReadOnlySpan<byte> data, SessionChannel channel)
     {
-        if (channel == SessionChannel.Sequenced && data.Length > MaxUnreliableBytes)
+        if (channel != SessionChannel.Reliable && data.Length > MaxUnreliableBytes)
         {
             throw new InvalidOperationException(
-                $"A sequenced message of {data.Length} bytes is over the {MaxUnreliableBytes}-byte limit."
+                $"A message of {data.Length} bytes that may be lost is over the {MaxUnreliableBytes}-byte limit."
             );
         }
 
@@ -119,7 +122,7 @@ internal sealed class FakeTransport(FakeNetwork network) : ISessionTransport
         }
 
         var delivered = new Event(EventKind.Received, link.IdThere, default, data.ToArray());
-        if (SequencedFirst && channel == SessionChannel.Sequenced)
+        if (SequencedFirst && channel != SessionChannel.Reliable)
         {
             link.Remote.Overtake(delivered);
         }
@@ -172,8 +175,10 @@ internal sealed class FakeTransport(FakeNetwork network) : ISessionTransport
         }
     }
 
-    /// <summary>The sequenced channel's limit the fake reports; sends above it fail the test.</summary>
+    /// <summary>The sequenced and unreliable channels' limit the fake reports; sends above it fail the test.</summary>
     public int MaxUnreliableBytes { get; set; } = 1024;
+
+    public void Flush() => Flushes++;
 
     public int RoundTripMilliseconds(int peer) => _links.ContainsKey(peer) ? 1 : -1;
 

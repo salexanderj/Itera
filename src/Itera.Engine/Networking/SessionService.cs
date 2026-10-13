@@ -200,6 +200,32 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
     public int HostRoundTripMilliseconds =>
         Role == SessionRole.Client && _host >= 0 ? _transport.RoundTripMilliseconds(_host) : -1;
 
+    /// <summary>
+    /// The round trip in milliseconds to the player in <paramref name="slot"/>, as the transport measures it: on a host,
+    /// to that joined client; on a client, to the host (slot 0). -1 for this game's own slot, a slot with no player, offline,
+    /// or when the transport does not know it yet.
+    /// </summary>
+    public int RoundTripMilliseconds(int slot)
+    {
+        if (Role == SessionRole.Client)
+        {
+            return slot == 0 ? HostRoundTripMilliseconds : -1;
+        }
+
+        if (Role == SessionRole.Host)
+        {
+            foreach (var (id, peer) in _peers)
+            {
+                if (peer.Joined && peer.Slot == slot)
+                {
+                    return _transport.RoundTripMilliseconds(id);
+                }
+            }
+        }
+
+        return -1;
+    }
+
     /// <summary>True when this game owns the world (offline or hosting): only then may it make edits of its own.</summary>
     public bool IsAuthority => Role != SessionRole.Client;
 
@@ -390,13 +416,23 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         UpdateStats();
     }
 
-    /// <summary>After each fixed step (and the mods'), a host sends every joined client the edits made since.</summary>
+    /// <summary>
+    /// After each fixed step (and the mods'), a host sends every joined client the edits made since; then what the step
+    /// sent leaves at once (<see cref="ISessionTransport.Flush"/>).
+    /// </summary>
     public void AfterFixedStep()
     {
+        if (Role == SessionRole.Offline || _stopped)
+        {
+            return;
+        }
+
         if (Role == SessionRole.Host)
         {
             SendNewEdits();
         }
+
+        _transport.Flush();
     }
 
     /// <summary>
@@ -576,6 +612,16 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
 
     private void SendGame(int peer, SessionChannel channel)
     {
+        // A transport takes a message that may be lost in one packet: LiteNetLib throws past it, Steam splits it.
+        if (channel != SessionChannel.Reliable && _gameWriter.Length > _transport.MaxUnreliableBytes)
+        {
+            throw new ArgumentException(
+                $"A game message of {_gameWriter.Length} bytes is over the {_transport.MaxUnreliableBytes}-byte limit "
+                    + "of a message that may be lost (MaxUnreliableBytes).",
+                nameof(channel)
+            );
+        }
+
         _messagesOut++;
         _bytesOut += _gameWriter.Length;
         _transport.Send(peer, _gameWriter.Written, channel);

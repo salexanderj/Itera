@@ -39,6 +39,13 @@ early) and for what a game's loading tasks wait on.
 What a game sends: its own messages, each kind a byte with the way it may travel (host to clients, clients to host,
 or both), through `ISessionGameHandler`s it registers in a match's scope (`GameMessageHandler` hands one kind to a
 method) and `SessionService.BeginMessage`; the engine drops a message that travels the wrong way and the peer with it.
+Three channels (`SessionChannel`): `Reliable` (once, in order), `Sequenced` (may be lost; LiteNetLib drops one older than
+the newest it has), and `Unreliable` (may be lost or come out of order, none dropped for its age: for messages that
+number and acknowledge themselves). A message on either of the last two must fit one packet,
+`SessionService.MaxUnreliableBytes` (1,020 bytes on LiteNetLib, measured in `LoopbackTests`; 1,024 on Steam): the session
+throws `ArgumentException` for a larger one. `RoundTripMilliseconds(slot)` gives the round trip to a player (on a host,
+to each joined client; on a client, to the host). After each fixed step the session sends what the step queued at once
+(`ISessionTransport.Flush`: LiteNetLib's thread otherwise sends every 15 ms).
 Helpers: `NetEntities` (the ids a host gives the entities it sends, with a byte kind a game defines, checked alive at
 every lookup; `PlayerIds`, each session slot's player id; the `NetEntity` component), `TickRing` (the last 16 values by
 sender tick), and `JitterPlayback` (a few ticks' delay for smooth playback). Player and body replication is a game's

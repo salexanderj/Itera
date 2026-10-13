@@ -12,6 +12,13 @@ public enum SessionChannel
     /// carry what orders it (its tick).
     /// </summary>
     Sequenced,
+
+    /// <summary>
+    /// May be lost and may arrive out of order, and no transport drops one for arriving after a newer one; skipped while
+    /// too much is queued to a peer, as <see cref="Sequenced"/> is. For messages that carry their own numbers and
+    /// acknowledgements (replication's packets: several sent together each step, any of which may come first).
+    /// </summary>
+    Unreliable,
 }
 
 /// <summary>Why a connection ended.</summary>
@@ -93,10 +100,18 @@ public interface ISessionTransport
     void Disconnect(int peer, ReadOnlySpan<byte> data);
 
     /// <summary>
-    /// The largest message the <see cref="SessionChannel.Sequenced"/> channel takes now, to every connected peer, in
-    /// bytes. Per-step state goes in batches no larger than this: LiteNetLib does not split such a message.
+    /// The largest message the <see cref="SessionChannel.Sequenced"/> and <see cref="SessionChannel.Unreliable"/>
+    /// channels take now, to every connected peer, in bytes. Per-step state goes in batches no larger than this:
+    /// LiteNetLib does not split such a message, and the session refuses a larger one.
     /// </summary>
     int MaxUnreliableBytes { get; }
+
+    /// <summary>
+    /// Starts sending what was handed to <see cref="Send"/> at once, where the transport would otherwise wait for its own
+    /// next send (LiteNetLib's thread sends every 15 ms): the session calls it after each fixed step. A transport that
+    /// sends at once does nothing (the default).
+    /// </summary>
+    void Flush() { }
 
     /// <summary>The round trip to <paramref name="peer"/> in milliseconds, or -1 when unknown.</summary>
     int RoundTripMilliseconds(int peer);

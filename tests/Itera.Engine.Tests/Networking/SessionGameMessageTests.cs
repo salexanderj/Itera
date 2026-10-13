@@ -10,7 +10,8 @@ namespace Itera.Engine.Tests.Networking;
 /// <summary>
 /// The game's side of a session (roadmap item 5, part C): its messages reach the right handler with the sender's slot,
 /// only from the side their handler takes them from, a handler that fails drops only that peer, the roster follows joins
-/// and leaves, and the host's match data reaches a client.
+/// and leaves, and the host's match data reaches a client; an unreliable message arrives and one too large for a packet is
+/// refused before the transport; the round trip is known for each slot; and each step's sends leave at once.
 /// </summary>
 public sealed class SessionGameMessageTests : IDisposable
 {
@@ -45,6 +46,62 @@ public sealed class SessionGameMessageTests : IDisposable
 
         Assert.Equal([(1, 41)], hostHandler.Received);
         Assert.Equal([(0, 42)], clientHandler.Received);
+    }
+
+    [Fact]
+    public void Unreliable_game_messages_arrive_and_one_too_large_for_a_packet_is_refused()
+    {
+        var hostHandler = new Recorder();
+        var host = StartHost(hostHandler);
+        var client = Join(host, new Recorder());
+
+        client.BeginMessage(Kind).WriteInt(43);
+        client.SendToHost(SessionChannel.Unreliable);
+        host.Poll();
+
+        Assert.Equal([(1, 43)], hostHandler.Received);
+        // The fake takes 1,024 bytes in a message that may be lost: one more is refused before it reaches the
+        // transport, on either channel that may lose it; a reliable message of that size is split by the transport.
+        foreach (var channel in (ReadOnlySpan<SessionChannel>)[SessionChannel.Unreliable, SessionChannel.Sequenced])
+        {
+            host.BeginMessage(Kind).WriteBytes(new byte[host.MaxUnreliableBytes]);
+            Assert.Throws<ArgumentException>(() => host.SendToAll(channel));
+        }
+
+        host.BeginMessage(Kind).WriteBytes(new byte[host.MaxUnreliableBytes]);
+        host.SendToAll(SessionChannel.Reliable);
+    }
+
+    [Fact]
+    public void The_round_trip_is_known_for_each_slot()
+    {
+        var host = StartHost(new Recorder());
+        var client = Join(host, new Recorder());
+
+        // The fake measures 1 ms to any peer it is linked to.
+        Assert.Equal(1, host.RoundTripMilliseconds(1));
+        Assert.Equal(-1, host.RoundTripMilliseconds(0));
+        Assert.Equal(-1, host.RoundTripMilliseconds(5));
+        Assert.Equal(1, client.RoundTripMilliseconds(0));
+        Assert.Equal(-1, client.RoundTripMilliseconds(1));
+    }
+
+    [Fact]
+    public void A_step_sends_at_once_on_a_host_and_a_client_until_the_session_stops()
+    {
+        var hostTransport = new FakeTransport(_network);
+        var clientTransport = new FakeTransport(_network);
+        var host = StartHost([new Recorder()], transport: hostTransport);
+        var client = Join(host, [new Recorder()], transport: clientTransport);
+
+        host.AfterFixedStep();
+        client.AfterFixedStep();
+        Assert.Equal(1, hostTransport.Flushes);
+        Assert.Equal(1, clientTransport.Flushes);
+
+        client.Stop();
+        client.AfterFixedStep();
+        Assert.Equal(1, clientTransport.Flushes);
     }
 
     [Fact]
@@ -201,13 +258,22 @@ public sealed class SessionGameMessageTests : IDisposable
     private SessionService StartHost(
         ISessionGameHandler[] handlers,
         ISessionMatchData? data = null,
-        ILogger<SessionService>? logger = null
+        ILogger<SessionService>? logger = null,
+        FakeTransport? transport = null
     )
     {
         var world = TestWorlds.Load(s_generator, Vector3.Zero, seed: 5);
         _owned.Add(world);
         var settings = new SessionSettings { Mode = SessionMode.Host, PlayerName = "Host" };
-        var host = Session(settings, world, new FakeTransport(_network), () => { }, handlers, data, logger);
+        var host = Session(
+            settings,
+            world,
+            transport ?? new FakeTransport(_network),
+            () => { },
+            handlers,
+            data,
+            logger
+        );
         host.Initialize();
         return host;
     }
@@ -215,7 +281,12 @@ public sealed class SessionGameMessageTests : IDisposable
     private SessionService Join(SessionService host, Recorder handler, string name = "Client") =>
         Join(host, [handler], name);
 
-    private SessionService Join(SessionService host, ISessionGameHandler[] handlers, string name = "Client")
+    private SessionService Join(
+        SessionService host,
+        ISessionGameHandler[] handlers,
+        string name = "Client",
+        FakeTransport? transport = null
+    )
     {
         var world = new VoxelWorld(
             new VoxelSettings
@@ -236,7 +307,7 @@ public sealed class SessionGameMessageTests : IDisposable
             Address = "host:47600",
             PlayerName = name,
         };
-        var client = Session(settings, world, new FakeTransport(_network), host.Poll, handlers);
+        var client = Session(settings, world, transport ?? new FakeTransport(_network), host.Poll, handlers);
         client.Initialize();
         world.Initialize(client.Match.Seed);
         client.LoadJoinedWorld();

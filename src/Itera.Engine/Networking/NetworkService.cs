@@ -118,10 +118,18 @@ public sealed partial class NetworkService : ISessionTransport, IDisposable
     {
         if (_peers.TryGetValue(peer, out var netPeer))
         {
-            var method = channel == SessionChannel.Reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Sequenced;
+            var method = channel switch
+            {
+                SessionChannel.Reliable => DeliveryMethod.ReliableOrdered,
+                SessionChannel.Sequenced => DeliveryMethod.Sequenced,
+                _ => DeliveryMethod.Unreliable,
+            };
             netPeer.Send(data, 0, method);
         }
     }
+
+    /// <summary>Wakes LiteNetLib's thread to send what is queued now rather than at its next 15 ms update.</summary>
+    public void Flush() => _manager?.TriggerUpdate();
 
     public void Disconnect(int peer, ReadOnlySpan<byte> data)
     {
@@ -132,8 +140,9 @@ public sealed partial class NetworkService : ISessionTransport, IDisposable
     }
 
     /// <summary>
-    /// The smallest single-packet size of the connected peers' sequenced channels: LiteNetLib refuses a larger sequenced
-    /// message. It starts near 500 bytes and grows as LiteNetLib finds each path's MTU.
+    /// The smallest single-packet size of the connected peers' sequenced channels, which serves the unreliable channel
+    /// too: LiteNetLib refuses a larger such message. LiteNetLib starts each peer at an MTU of 1,024 bytes and does not look
+    /// for a larger one (its MTU discovery is off), so a connected peer takes 1,020 (<c>LoopbackTests</c>).
     /// </summary>
     public int MaxUnreliableBytes
     {
