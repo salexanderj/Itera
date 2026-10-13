@@ -1,8 +1,10 @@
 using System.Numerics;
 using Itera.Engine.Ecs;
 using Itera.Engine.Matches;
+using Itera.Engine.Networking;
 using Itera.Engine.Physics;
 using Itera.Engine.Rendering;
+using Itera.Engine.Voxels;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Itera.Engine.Tests.Matches;
@@ -11,7 +13,8 @@ namespace Itera.Engine.Tests.Matches;
 /// <see cref="HeadlessRun"/> and <see cref="HeadlessMatch"/> over the engine's real services and a test game: a match
 /// played with no window or GPU, its fixed steps each followed by a frame, the run's view of it kept up, a retired
 /// model removed after a frame, an image view's ask and panel forgotten at the next frame, and the match ended when
-/// disposed.
+/// disposed; and a host and a client in one process over an in-memory transport, the client's world downloaded with
+/// terrain and following the host's edits, and a join with no host refused.
 /// </summary>
 public sealed class HeadlessMatchTests
 {
@@ -50,6 +53,59 @@ public sealed class HeadlessMatchTests
 
         Assert.Null(matches.Current);
         Assert.Equal(MatchPhase.Menu, matches.Phase);
+    }
+
+    [Fact]
+    public void A_headless_client_joins_a_host_with_terrain_and_follows_its_edits()
+    {
+        var network = new FakeNetwork();
+        using var hostProvider = EngineComposition.Build(configure: services => InMemory(services, network));
+        using var clientProvider = EngineComposition.Build(configure: services => InMemory(services, network));
+        using var host = new HeadlessRun(hostProvider).Host(seed: 7);
+        host.Match.Voxels.SetCenters([Vector3.Zero]);
+        Assert.True(host.WaitUntilLoaded());
+        // An edit before the join comes in the download.
+        host.Match.Voxels.Apply(VoxelEdit.Sphere(new VoxelCoord(0, 0, 0), 50, VoxelEditOperation.Clear));
+
+        using var client = new HeadlessRun(clientProvider).Join(host);
+
+        Assert.Equal(SessionRole.Client, client.Match.Session.Role);
+        Assert.Equal(7UL, client.Match.Session.Match.Seed);
+        Assert.Equal(host.Match.Voxels.EditCount, client.Match.Voxels.EditCount);
+        client.Match.Voxels.SetCenters([Vector3.Zero]);
+        Assert.True(client.WaitUntilLoaded());
+
+        // An edit after the join goes after the host's step and arrives at the client's next poll.
+        host.Match.Voxels.Apply(VoxelEdit.Sphere(new VoxelCoord(200, 0, 0), 50, VoxelEditOperation.Clear));
+        host.Step(1);
+        client.Step(1);
+
+        Assert.Equal(2, client.Match.Voxels.EditCount);
+        Assert.Equal(host.Match.Voxels.EditCount, client.Match.Voxels.EditCount);
+        Assert.False(client.SessionEnded);
+    }
+
+    [Fact]
+    public void A_headless_join_with_no_host_throws_and_leaves_no_match()
+    {
+        var network = new FakeNetwork();
+        using var hostProvider = EngineComposition.Build(configure: services => InMemory(services, network));
+        using var lonely = EngineComposition.Build(configure: services => InMemory(services, new FakeNetwork()));
+        using var host = new HeadlessRun(hostProvider).Host(seed: 7);
+
+        // The client's network has no host: its connection fails, and the join ends with the reason.
+        var error = Assert.Throws<InvalidOperationException>(() => new HeadlessRun(lonely).Join(host));
+
+        Assert.StartsWith("The headless join did not finish", error.Message, StringComparison.Ordinal);
+        Assert.Null(lonely.GetRequiredService<MatchControl>().Current);
+    }
+
+    private static void InMemory(IServiceCollection services, FakeNetwork network) =>
+        services.AddSingleton<ISessionTransports>(new Transports(new FakeTransport(network)));
+
+    private sealed class Transports(FakeTransport transport) : ISessionTransports
+    {
+        public ISessionTransport Transport(SessionTransportKind kind) => transport;
     }
 
     [Fact]

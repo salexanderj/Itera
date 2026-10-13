@@ -15,8 +15,10 @@ namespace Itera.Engine.Matches;
 /// The run's side of matches played without a window or GPU, for tests and tools: from a game's composed services
 /// (<c>AddIteraEngine</c> and the game's own), it makes the game's run-wide registries once (<see cref="IRunStartup"/>),
 /// as the run's game step does, reads the mesh assets they declared without their textures, as the run's mesh assets
-/// step does without graphics, and plays offline matches (<see cref="Play"/>). Nothing is drawn, heard, or loaded from
-/// mods. Main thread.
+/// step does without graphics, and plays matches: offline (<see cref="Play"/>), or hosting (<see cref="Host"/>) and
+/// joining (<see cref="Join"/>) over the run's transports, which a test makes in-memory (an
+/// <see cref="Networking.ISessionTransports"/> of its own), so a host and a client run in one process, each from its
+/// own services. Nothing is drawn, heard, or loaded from mods. Main thread.
 /// </summary>
 public sealed class HeadlessRun
 {
@@ -36,17 +38,43 @@ public sealed class HeadlessRun
     }
 
     /// <summary>Starts an offline match of <paramref name="seed"/>: its session and world steps run now.</summary>
-    public HeadlessMatch Play(ulong seed) => new(_services, seed);
+    public HeadlessMatch Play(ulong seed) =>
+        new(_services, new MatchStart(SessionMode.Offline, SessionTransportKind.Direct, null, seed, null, false));
+
+    /// <summary>
+    /// Hosts a match of <paramref name="seed"/> over the run's direct transport: its session and world steps run now,
+    /// and clients join it while it polls (<see cref="HeadlessMatch.Step"/>, or a <see cref="Join"/>).
+    /// </summary>
+    public HeadlessMatch Host(ulong seed) =>
+        new(_services, new MatchStart(SessionMode.Host, SessionTransportKind.Direct, null, seed, null, false));
+
+    /// <summary>
+    /// Joins <paramref name="host"/>'s match at <paramref name="address"/> over the run's direct transport: polls the
+    /// host's session and this one's in turn until the host's world has been downloaded (at most
+    /// <paramref name="mostSeconds"/>), then starts the world from it. Throws when the join fails or takes longer.
+    /// </summary>
+    public HeadlessMatch Join(HeadlessMatch host, string address = "127.0.0.1:47600", double mostSeconds = 60)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        return new(
+            _services,
+            new MatchStart(SessionMode.Join, SessionTransportKind.Direct, address, 0, null, false),
+            host,
+            mostSeconds
+        );
+    }
 }
 
 /// <summary>
-/// One offline match played without a window or GPU (<see cref="HeadlessRun.Play"/>), through the same
-/// <see cref="MatchFlow"/> the main loop uses: its world starts at once, and it moves only when told:
-/// <see cref="Step"/> runs fixed steps as the main loop does (the world's streaming, the step's input, then
+/// One match played without a window or GPU (<see cref="HeadlessRun.Play"/>, <see cref="HeadlessRun.Host"/>,
+/// <see cref="HeadlessRun.Join"/>), through the same <see cref="MatchFlow"/> the main loop uses: its world starts at once
+/// (a client's once the host's is downloaded), and it moves only when told: <see cref="Step"/> runs fixed steps as the
+/// main loop does (the session's poll, the world's streaming, the step's input, then
 /// <see cref="MatchServices.RunFixedStep"/>), each followed by a frame of the frame group (<see cref="Frame"/>), which
-/// writes only the renderer's CPU-side objects. Input comes from <see cref="Input"/>'s injections (keys, buttons, look);
-/// the game's input is not blocked. Read the match through <see cref="World"/> and <see cref="Services"/>. Disposing it
-/// ends the match. Main thread.
+/// writes only the renderer's CPU-side objects. A host and a client in one process step in turn, each polling its own
+/// session first. Input comes from <see cref="Input"/>'s injections (keys, buttons, look); the game's input is not
+/// blocked. Read the match through <see cref="World"/> and <see cref="Services"/>. Disposing it ends the match. Main
+/// thread.
 /// </summary>
 public sealed class HeadlessMatch : IDisposable
 {
@@ -62,7 +90,12 @@ public sealed class HeadlessMatch : IDisposable
     private ulong _frame;
     private bool _disposed;
 
-    internal HeadlessMatch(IServiceProvider services, ulong seed)
+    internal HeadlessMatch(
+        IServiceProvider services,
+        MatchStart start,
+        HeadlessMatch? host = null,
+        double mostSeconds = 60
+    )
     {
         var options = services.GetRequiredService<IOptions<EngineOptions>>().Value;
         _matches = services.GetRequiredService<MatchControl>();
@@ -83,7 +116,12 @@ public sealed class HeadlessMatch : IDisposable
             _ => { },
             services.GetRequiredService<ILogger<HeadlessMatch>>()
         );
-        _flow.Start(new MatchStart(SessionMode.Offline, SessionTransportKind.Direct, null, seed, null, false));
+        _flow.Start(start);
+        if (host is not null)
+        {
+            JoinWith(host, mostSeconds);
+        }
+
         // No frame says the world is starting: it starts at once.
         _flow.StartWorldWhenShown(ulong.MaxValue);
         Match =
@@ -91,6 +129,43 @@ public sealed class HeadlessMatch : IDisposable
             ?? throw new InvalidOperationException("The headless match's world did not start: " + _matches.LastEnd);
         Input.SetGameInputBlocked(false);
     }
+
+    /// <summary>
+    /// A joining match's join: the host's session and this one's are polled in turn, as two main loops would, until the
+    /// download has ended (the match is starting) or failed, or <paramref name="mostSeconds"/> have gone.
+    /// </summary>
+    private void JoinWith(HeadlessMatch host, double mostSeconds)
+    {
+        var deadline = Stopwatch.GetTimestamp() + (long)(mostSeconds * Stopwatch.Frequency);
+        while (_matches.Phase == MatchPhase.Joining)
+        {
+            if (Stopwatch.GetTimestamp() > deadline)
+            {
+                _flow.End(clean: false, "The headless join took too long.");
+                break;
+            }
+
+            host.PollSession();
+            PollSession();
+        }
+
+        if (_matches.Phase != MatchPhase.Starting)
+        {
+            var reason = _matches.LastEnd;
+            _flow.End(clean: false);
+            throw new InvalidOperationException("The headless join did not finish: " + reason);
+        }
+    }
+
+    /// <summary>Takes what arrived for the match's session, as the main loop does once a frame before its steps.</summary>
+    public void PollSession()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _flow.PollSession(_frame);
+    }
+
+    /// <summary>True once the match's session has ended: on a client, the host left or the connection was lost.</summary>
+    public bool SessionEnded => _flow.SessionEnded;
 
     /// <summary>The match's engine services.</summary>
     public MatchServices Match { get; }
@@ -135,12 +210,16 @@ public sealed class HeadlessMatch : IDisposable
         return true;
     }
 
-    /// <summary>Runs <paramref name="ticks"/> fixed steps, each followed by a frame.</summary>
+    /// <summary>
+    /// Runs <paramref name="ticks"/> fixed steps, each after a poll of the session (nothing offline) and followed by a
+    /// frame.
+    /// </summary>
     public void Step(int ticks)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         for (var i = 0; i < ticks; i++)
         {
+            _flow.PollSession(_frame);
             Match.Terrain?.Update(Seconds);
             Input.BeginTick();
             Match.RunFixedStep(new FixedStepTime(_stepSeconds, Tick), _editColumns);

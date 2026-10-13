@@ -12,7 +12,7 @@ paths:
   options checks in `EngineOptionsValidator`; the run's initialisation order (one step list), main loop, and shutdown
   in `GameLoop`; a match's start, join, and end in `Matches/MatchFlow.cs` (no window: `MatchFlowTests` drives it); a
   match without a window or GPU for tests and tools in `Matches/HeadlessMatch.cs` (`HeadlessRun`, `HeadlessMatch`, over
-  `MatchFlow`); a match's services, step list, and fixed step (`RunFixedStep`) in `Matches/MatchServices.cs` (`MatchStart`,
+  `MatchFlow`: offline, hosting, or joining a host in the same process); a match's services, step list, and fixed step (`RunFixedStep`) in `Matches/MatchServices.cs` (`MatchStart`,
   `MatchContext`, `MatchControl` with `MatchControlStates` for a game's tests of its menu, `IRunStartup` for the game's
   run-wide registries); the transports a session takes
   through `ISessionTransports`. Folders:

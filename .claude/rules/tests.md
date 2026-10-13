@@ -43,11 +43,14 @@ paths:
   on 127.0.0.1 (`LoopbackTests`). A game's message handlers take damaged bodies and hostile values in every field, each
   row under the `Watchdog` (`HostileValues`).
 - A game's real match without a window or GPU: `HeadlessRun` (the game's run-wide registries, once) and `HeadlessMatch`
-  (`Play(seed)`, `WaitUntilLoaded()`, `Step(ticks)` with a frame after each, `Input` for injected keys, `World`,
-  `Services`; disposing ends the match) over the game's composition, with `Engine:Physics:Threads=1` so the steps
-  repeat: the starter's `tests/Game.Tests/ScenarioTests` (standing, walking a second, balls that rest and go back into
-  the world) and the engine's `Matches/HeadlessMatchTests`. Write a game feature's test this way when it needs the real
-  world and systems.
+  (`Play(seed)`, `WaitUntilLoaded()`, `Step(ticks)` with a poll of the session before each and a frame after each,
+  `Input` for injected keys, `World`, `Services`; disposing ends the match) over the game's composition, with
+  `Engine:Physics:Threads=1` so the steps repeat: the starter's `tests/Game.Tests/ScenarioTests` (standing, walking a
+  second, balls that rest and go back into the world) and the engine's `Matches/HeadlessMatchTests`. A host and a
+  client in one process: each from its own services with an `ISessionTransports` handing out a `FakeTransport` on one
+  `FakeNetwork`, `Host(seed)` on one run and `Join(host)` on the other (both sessions polled until the download ends),
+  then both stepped in turn (`HeadlessMatchTests`: a client with terrain following the host's edits). Write a game
+  feature's test this way when it needs the real world and systems.
 - The origin's moves: `Matches/OriginShiftsTests` (what moves and what does not, the components' vectors each moved or
   listed as no position, only between steps or in the first fixed system's update, following a point only once it is
   far, no allocation) and `Systems/OriginShiftSystemTests` (the camera followed past the distance, a jump's request
