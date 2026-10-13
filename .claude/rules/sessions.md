@@ -57,6 +57,15 @@ refused); the engine's own messages carry no positions. A host simulates every b
 a client far from the host's camera step in coarser floats (1 mm at 10 km, 8 mm at 100 km). Each game makes its own particles and sounds. Test a game's messages with damaged
 bodies and hostile values in every field (`HostileValues`, `Watchdog` in `tests/Shared`).
 
+Testing a session far apart: `SimulatedNetwork` wraps any `ISessionTransport` and holds what it sends and what it receives
+for a delay. `Engine:Session:AddedDelayMilliseconds` (0 to 2000) adds that delay to every message on this peer's links in
+both directions, so setting it on a client alone gives the delay each way; `AddedJitterMilliseconds` (0 to 1000) adds up
+to that much more, drawn for each message; `AddedLossPercent` (0 to 100) drops that share of the sequenced and
+unreliable messages this peer sends. Reliable messages are never dropped and keep their order to a peer, and what the peer receives stays in order
+and is never dropped, so loss and reordering apply to what it sends. `SessionTransports` wraps the LiteNetLib and Steam
+transports once for the run when any is set, and logs one Information line. Tests wrap a `FakeTransport` with a clock
+they step by hand (`SimulatedNetworkTests`).
+
 The commands that work only on the host are listed in the `run-game` skill.
 
 Steam (`SteamService`, `Engine:Steam`) starts at startup when the Steam client runs and the game has an App ID
@@ -93,7 +102,8 @@ agrees): a save, a join payload, or a host's edit past that is refused, and a ga
 ### Files in `src/Itera.Engine`
 
   - `Networking/`: `SessionService` (`.Host.cs`, `.Client.cs`; the roster in `Players`), `ISessionTransport` with the
-    LiteNetLib `NetworkService` and `SteamTransport`, `SessionProtocol` with `MessageWriter` and `MessageReader`,
+    LiteNetLib `NetworkService`, `SteamTransport`, and `SimulatedNetwork` (added delay, jitter, and loss),
+    `SessionProtocol` with `MessageWriter` and `MessageReader`,
     `MatchSettings`, `SessionAddress`; Steam: `SteamService`, `ISteamPlatform` and `SteamPlatform` (the
     Steamworks.NET calls), `SteamAddress`, `SteamLaunchArguments`, `SteamFriendList`, `ISteamFriendsListener`; the
     game's messages through `ISessionGameHandler` and `BeginMessage` (`GameMessageHandler`), its match data through

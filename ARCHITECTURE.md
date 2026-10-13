@@ -1263,6 +1263,8 @@ there is no host migration, and the session ends when the host quits.
   `MessageReader`, which throws on anything short or oversized (a peer is not trusted). `SessionProtocol.Version` rises
   whenever any message changes shape or a kind is added, a game's included. `WireFingerprintTests` pin a fingerprint of
   every message's bytes with the version, so a change to the wire fails them until the version rises.
+  `SimulatedNetwork` wraps a transport to add delay, jitter, and loss (`Engine:Session:AddedDelayMilliseconds`,
+  `AddedJitterMilliseconds`, `AddedLossPercent`), so a host and a client can be tested as if far apart.
 - **The handshake** is plain messages, so every transport shares it: the client sends `Hello` (protocol version, the
   match identity's id and version (`IMatchIdentity`: the generator's with voxel terrain, its object kinds' fingerprint after its id where the world places objects), fixed step rate, name); the
   host answers `Welcome` (the client's slot from 1, the match: seed, step rate, identity; the join payload's size and edit

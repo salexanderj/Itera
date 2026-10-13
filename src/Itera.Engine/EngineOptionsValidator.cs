@@ -214,6 +214,9 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         Range(failures, "Session:DisconnectTimeoutSeconds", session.DisconnectTimeoutSeconds, 2, 60);
         // A payload is held in one MemoryStream, whose length is an int.
         Range(failures, "Session:MaxJoinMegabytes", session.MaxJoinMegabytes, 1, 2047);
+        Range(failures, "Session:AddedDelayMilliseconds", session.AddedDelayMilliseconds, 0, 2000);
+        Range(failures, "Session:AddedJitterMilliseconds", session.AddedJitterMilliseconds, 0, 1000);
+        Range(failures, "Session:AddedLossPercent", session.AddedLossPercent, 0, 100);
         if (
             session.PlayerName is not null
             && (

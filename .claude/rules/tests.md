@@ -193,7 +193,7 @@ Where tests live:
   made or written without graphics; too many, or names empty or used twice, refused), the passes' shaders against their
   push constants (`UiPassTests`, `UpscalePassTests`, `LoadingPassTests`, `ParticlePassTests`, with the pool's origin), `ScreenshotTests`,
   `ShaderReloadTests`.
-- Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `LoopbackTests`, `SteamTransportTests`,
+- Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `LoopbackTests`, `SteamTransportTests`, `SimulatedNetworkTests` (delay, jitter, and loss over `FakeTransport` with a hand-stepped clock),
   `SteamFriendListTests`, `SessionGameMessageTests`), `Saves/SaveServiceTests` and `SaveFilesTests` (a temporary folder), `Matches/JoinRequestsTests`, `Matches/MatchControlStatesTests` (the hooks for a game's menu tests against a real match), `Navigation/`
   (flow fields on small grids, the scanner with a floor 409 m down, and the service; the voxel objects,
   `NavigationObjectsTests`: as generated stamped onto the fill and read alike, a trunk cut through opening once its top

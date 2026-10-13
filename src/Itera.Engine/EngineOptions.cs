@@ -746,6 +746,26 @@ public sealed class SessionSettings
     /// downloaded.
     /// </summary>
     public int MaxJoinMegabytes { get; set; } = 256;
+
+    /// <summary>
+    /// For testing: milliseconds of delay this peer adds to every message on its links, in both directions (0 to 2000;
+    /// set on a client alone, it delays what the client sends and what it receives). 0 adds none.
+    /// </summary>
+    public int AddedDelayMilliseconds { get; set; }
+
+    /// <summary>
+    /// For testing: up to this many extra milliseconds of delay, drawn at random for each message (0 to 1000). A
+    /// sequenced or unreliable message sent by this peer may arrive out of order; what this peer receives stays in order.
+    /// 0 adds none.
+    /// </summary>
+    public int AddedJitterMilliseconds { get; set; }
+
+    /// <summary>
+    /// For testing: the share of the sequenced and unreliable messages this peer sends that are dropped, in percent (0 to
+    /// 100).
+    /// Reliable messages and what this peer receives are never dropped. 0 drops none.
+    /// </summary>
+    public double AddedLossPercent { get; set; }
 }
 
 /// <summary>

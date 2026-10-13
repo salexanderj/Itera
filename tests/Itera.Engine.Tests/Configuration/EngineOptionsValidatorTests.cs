@@ -268,6 +268,38 @@ public sealed class EngineOptionsValidatorTests
         Assert.Equal(!valid, _validator.Validate(null, options).Failed);
     }
 
+    /// <summary>The testing options that add delay, jitter, and loss to a peer's links have ranges of their own.</summary>
+    [Theory]
+    [InlineData(0, 0, 0, true)]
+    [InlineData(2000, 1000, 100, true)]
+    [InlineData(2001, 0, 0, false)]
+    [InlineData(-1, 0, 0, false)]
+    [InlineData(0, 1001, 0, false)]
+    [InlineData(0, -1, 0, false)]
+    [InlineData(0, 0, 100.5, false)]
+    [InlineData(0, 0, -0.5, false)]
+    [InlineData(0, 0, double.NaN, false)]
+    public void The_added_network_conditions_have_ranges(int delay, int jitter, double loss, bool valid)
+    {
+        var options = new EngineOptions
+        {
+            Session = new SessionSettings
+            {
+                AddedDelayMilliseconds = delay,
+                AddedJitterMilliseconds = jitter,
+                AddedLossPercent = loss,
+            },
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.Equal(!valid, result.Failed);
+        if (!valid)
+        {
+            Assert.StartsWith("Engine:Session:Added", Assert.Single(result.Failures!), StringComparison.Ordinal);
+        }
+    }
+
     [Theory]
     [InlineData(null, false)]
     [InlineData("", false)]
