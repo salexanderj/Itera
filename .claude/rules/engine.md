@@ -23,6 +23,8 @@ paths:
     pass times `GpuTimings`, `ConsoleLogBuffer`, crash logging, `ControlLog`), `Time/` (`GameClock`,
     `FixedStepAccumulator`), `Loading/` (`LoadingScreen`, `ILoadingTask`, `LoadingProgress`,
     `EngineLoadingTasks.cs`), `Control/` (`ControlService`, `ControlRequest`, `InputScript`).
+  - `Replication/`: what a host sends each client of the entities a game marks, and how a client shows them
+    (`.claude/rules/replication.md`).
   - `Ecs/`: `EcsWorld` (times each system), `IFixedUpdateSystem` and `IFrameUpdateSystem` (`SystemInterfaces.cs`),
     `EcsChecks`, `CheckedWorldExtensions`, and `EcsInspector` (archetypes, entities, and components read by reflection
     for the console's `ecs` and the control port's `query`; it allocates, so commands only).

@@ -125,6 +125,7 @@ public sealed partial class SessionService
         _writer.WriteInt(_identity.Version);
         _writer.WriteInt(_fixedStepHz);
         _writer.WriteString(_playerName);
+        _writer.WriteULong(_replication?.KindsFingerprint ?? 0);
         Send(peer);
     }
 
@@ -172,11 +173,14 @@ public sealed partial class SessionService
 
         var reader = new MessageReader(data);
         var kind = (MessageKind)reader.ReadByte();
-        if (_join is JoinState.Welcoming or JoinState.Downloading && (byte)kind >= FirstGameKind)
+        if (
+            _join is JoinState.Welcoming or JoinState.Downloading
+            && ((byte)kind >= FirstGameKind || kind == MessageKind.Snapshot)
+        )
         {
-            // The host sends game messages only once the payload is queued, so one this early came on the sequenced
-            // channel past the reliable download, and the host sends its like again every step: drop it (it would fail the
-            // join as a protocol error).
+            // The host sends game messages and snapshots only once the payload is queued, so one this early came on a
+            // channel that may overtake the reliable download, and the host sends its like again: drop it (it would fail
+            // the join as a protocol error).
             return;
         }
 
@@ -214,6 +218,11 @@ public sealed partial class SessionService
                 break;
             case (JoinState.Loaded, MessageKind.Roster):
                 ReadRoster(ref reader);
+                break;
+            case (JoinState.Loaded, MessageKind.Snapshot):
+                (
+                    _replication ?? throw new InvalidDataException("A snapshot came to a game that replicates nothing.")
+                ).ReceiveSnapshot(reader.ReadRest());
                 break;
             case (JoinState.Loaded, _) when (byte)kind >= FirstGameKind:
                 ReceiveGame(0, (byte)kind, reader.ReadRest());

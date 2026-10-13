@@ -61,6 +61,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
     private readonly VoxelWorld? _voxels;
     private readonly IMatchIdentity _identity;
     private readonly ISessionTransport _transport;
+    private IReplicationEndpoint? _replication;
     private readonly ILogger<SessionService> _logger;
     private readonly Func<double> _clock;
     private readonly Action _wait;
@@ -608,6 +609,57 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
             End = end;
             EndReason = reason;
         }
+    }
+
+    /// <summary>
+    /// The match's replication, which takes the snapshots and replies (<see cref="IReplicationEndpoint"/>): it attaches
+    /// itself as the match starts, before the session's step, so the hello carries its kinds' fingerprint.
+    /// </summary>
+    internal void Attach(IReplicationEndpoint replication) => _replication = replication;
+
+    /// <summary>
+    /// On a host, sends an engine message the replication built (whole, its kind first) to the joined client in
+    /// <paramref name="slot"/>, unreliable; nothing when no client holds it.
+    /// </summary>
+    internal void SendEngineTo(int slot, ReadOnlySpan<byte> message)
+    {
+        if (Role != SessionRole.Host)
+        {
+            return;
+        }
+
+        foreach (var (id, peer) in _peers)
+        {
+            if (peer.Joined && peer.Slot == slot)
+            {
+                SendEngine(id, message);
+                return;
+            }
+        }
+    }
+
+    /// <summary>On a client that has joined, sends an engine message the replication built to the host, unreliable.</summary>
+    internal void SendEngineToHost(ReadOnlySpan<byte> message)
+    {
+        if (Role == SessionRole.Client && _join == JoinState.Loaded && _host >= 0)
+        {
+            SendEngine(_host, message);
+        }
+    }
+
+    private void SendEngine(int peer, ReadOnlySpan<byte> message)
+    {
+        if (message.Length > _transport.MaxUnreliableBytes)
+        {
+            throw new ArgumentException(
+                $"An engine message of {message.Length} bytes is over the {_transport.MaxUnreliableBytes}-byte limit.",
+                nameof(message)
+            );
+        }
+
+        _messagesOut++;
+        _bytesOut += message.Length;
+        _transport.Send(peer, message, SessionChannel.Unreliable);
     }
 
     private void SendGame(int peer, SessionChannel channel)

@@ -31,10 +31,10 @@ and loose bodies moving over the mesh colliders it registers.
 `ARCHITECTURE.md` holds the full description, the dependencies, the design decisions, and the open work. Read it before
 changing anything structural. `docs/` holds the write-ups behind decisions: `voxel-structures.md`, `edit-log-compaction.md`,
 `procedural-audio.md`, `anti-aliasing.md`, `rendering-redesign-brief.md` with `rendering-redesign.md` (the raster
-renderer), `rendering-extension.md`, `map-size-and-origin.md`, `framework-plan.md` (how Itera became a framework),
-`framework-limits.md` (what the engine blocks today, and the order of work), `ui-toolkit.md`, `sound-files.md`,
-`physics-materials-and-groups.md`, and `voxel-objects.md`. `docs/references/` holds notes on outside projects used as
-references.
+renderer), `rendering-extension.md`, `map-size-and-origin.md`, `replication.md`, `framework-plan.md` (how Itera became
+a framework), `framework-limits.md` (what the engine blocks today, and the order of work), `ui-toolkit.md`,
+`sound-files.md`, `physics-materials-and-groups.md`, and `voxel-objects.md`. `docs/references/` holds notes on outside
+projects used as references.
 
 # How to work
 
@@ -83,6 +83,7 @@ references.
   - Sound: `.claude/rules/audio.md`.
   - UI layers, the menu and settings, the loading screen, and input: `.claude/rules/ui.md`.
   - Sessions, Steam, saves, and what peers send: `.claude/rules/sessions.md`.
+  - Replicating entities from the host to its clients: `.claude/rules/replication.md`.
   - Navigation and flow fields: `.claude/rules/navigation.md`.
   - The engine's composition and its other folders: `.claude/rules/engine.md`.
   - Tests: `.claude/rules/tests.md`.

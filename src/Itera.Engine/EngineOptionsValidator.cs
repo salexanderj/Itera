@@ -203,6 +203,16 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         Range(failures, "Benchmark:MeasureSeconds", options.Benchmark.MeasureSeconds, 0.1, 600);
         Range(failures, "Benchmark:FlightSeconds", options.Benchmark.FlightSeconds, 0, 3600);
 
+        var replication = options.Replication;
+        Range(failures, "Replication:SendHz", replication.SendHz, 1, 60);
+        Range(failures, "Replication:BytesPerSecond", replication.BytesPerSecond, 4096, 1 << 20);
+        Range(failures, "Replication:PeakBytesPerSecond", replication.PeakBytesPerSecond, 4096, 4 << 20);
+        Range(failures, "Replication:InterpolationMilliseconds", replication.InterpolationMilliseconds, 0, 1000);
+        if (replication.PeakBytesPerSecond < replication.BytesPerSecond)
+        {
+            failures.Add($"{Prefix}Replication:PeakBytesPerSecond must be at least Replication:BytesPerSecond.");
+        }
+
         var session = options.Session;
         if (session.Mode is not (SessionMode.Menu or SessionMode.Offline or SessionMode.Host or SessionMode.Join))
         {

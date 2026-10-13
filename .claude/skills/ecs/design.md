@@ -108,8 +108,9 @@ iteration (at least once per fixed step):
   slot the host assigns (`PlayerIds`); for bodies and characters a host sends, `NetEntity { uint Id }`, which the host
   hands out. `NetEntities` maps ids to entities in each game, with a kind a game defines, and checks `IsAlive` on every
   lookup; an id whose entity was destroyed is found afterwards by the whole `Entity` (`NetEntities.TryFindId`), never by
-  a `Get` through the dead handle. Per-entity replication memory on the host (what a client holds, a pose last sent) is
-  a component, not a system field.
+  a `Get` through the dead handle. The engine's replication (`ReplicationService`, `.claude/rules/replication.md`) marks
+  an entity it sends or shows with `Replicated` (id and kind) and keeps what each client holds of it in the service's
+  own tables, by the entity's place in them, not in components: a client's view changes with every acknowledgement.
 - The session's game messages are stored by handlers registered in DI (`ISessionGameHandler`), which exist before the
   ECS; systems read the stores in the fixed group. A handler never touches the ECS world.
 - Query order is not stable (back-to-front iteration, swap-remove, archetype creation order). Anything

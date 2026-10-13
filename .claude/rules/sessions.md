@@ -48,12 +48,16 @@ to each joined client; on a client, to the host). After each fixed step the sess
 (`ISessionTransport.Flush`: LiteNetLib's thread otherwise sends every 15 ms).
 Helpers: `NetEntities` (the ids a host gives the entities it sends, with a byte kind a game defines, checked alive at
 every lookup; `PlayerIds`, each session slot's player id; the `NetEntity` component), `TickRing` (the last 16 values by
-sender tick), and `JitterPlayback` (a few ticks' delay for smooth playback). Player and body replication is a game's
-today (Zorf TD's is in its archive). Each peer keeps its own origin (`.claude/rules/engine.md`), so a position in a
+sender tick), and `JitterPlayback` (a few ticks' delay for smooth playback). Replicating entities is the engine's
+(`.claude/rules/replication.md`): its packets are the engine's `Snapshot` (host to a client) and `Reply` (client to
+host) messages on the unreliable channel, handed to the match's `ReplicationService` through `IReplicationEndpoint`
+(which attaches itself as the match starts), and a client's hello carries the replicated kinds' fingerprint, which the
+host refuses when it differs from its own (`RejectReason.ReplicatedKinds`). Each peer keeps its own origin (`.claude/rules/engine.md`), so a position in a
 message is absolute: `MessageWriter.WritePosition` writes a `WorldPoint` as three int32 in 1/64 cm (0.16 mm, to
 ±335 km; `SessionProtocol.PositionStepsPerMetre`), `WriteLocalPosition` a local one through the peer's origin, and
 `MessageReader.ReadPosition` and `ReadLocalPosition` read them (any twelve bytes are a finite point within reach, or
-refused); the engine's own messages carry no positions. A host simulates every body in its own origin, so bodies near
+refused); the engine's own messages carry no positions this way (replication's snapshots carry them as lanes of
+1/1,024 m, `.claude/rules/replication.md`). A host simulates every body in its own origin, so bodies near
 a client far from the host's camera step in coarser floats (1 mm at 10 km, 8 mm at 100 km). Each game makes its own particles and sounds. Test a game's messages with damaged
 bodies and hostile values in every field (`HostileValues`, `Watchdog` in `tests/Shared`).
 

@@ -10,6 +10,7 @@ using Itera.Engine.Networking;
 using Itera.Engine.Particles;
 using Itera.Engine.Physics;
 using Itera.Engine.Rendering.Voxels;
+using Itera.Engine.Replication;
 using Itera.Engine.Saves;
 using Itera.Engine.Time;
 using Itera.Engine.UI;
@@ -61,10 +62,13 @@ public sealed partial class MatchServices
         ModLoader mods,
         VoxelModels models,
         LooseBodyVoxels bodyVoxels,
+        ReplicationService replication,
         ILogger<MatchServices> logger,
         MatchVoxels? terrain = null
     )
     {
+        // Made with the match, so it is the session's before the session's step (its hello carries the kinds).
+        Replication = replication;
         _mods = mods;
         Models = models;
         BodyVoxels = bodyVoxels;
@@ -90,6 +94,9 @@ public sealed partial class MatchServices
     public IServiceProvider Services => _scope;
 
     public SessionService Session { get; }
+
+    /// <summary>The match's replication of the entities a game marks.</summary>
+    public ReplicationService Replication { get; }
 
     /// <summary>The match's voxel terrain, or null for a game without one (no <c>AddIteraVoxels</c>).</summary>
     public MatchVoxels? Terrain { get; }

@@ -27,6 +27,14 @@ public sealed partial class SessionService
             return;
         }
 
+        if (client.Joined && kind == MessageKind.Reply)
+        {
+            (
+                _replication ?? throw new InvalidDataException("A reply came to a host that replicates nothing.")
+            ).ReceiveReply(client.Slot, reader.ReadRest());
+            return;
+        }
+
         if (client.Joined || client.Slot != 0 || kind != MessageKind.Hello)
         {
             // Before it has joined a client sends only its hello, once, and after it only the game's messages.
@@ -50,6 +58,7 @@ public sealed partial class SessionService
         var identityVersion = reader.ReadInt();
         var fixedStepHz = reader.ReadInt();
         var name = reader.ReadString();
+        var kinds = reader.ReadULong();
         reader.EnsureEnd();
         var match = Match;
         if (
@@ -72,6 +81,12 @@ public sealed partial class SessionService
                 RejectReason.StepRate,
                 $"the host steps {match.FixedStepHz} times a second, the client {fixedStepHz}"
             );
+            return;
+        }
+
+        if (kinds != (_replication?.KindsFingerprint ?? 0))
+        {
+            Reject(peer, RejectReason.ReplicatedKinds, "the host and the client replicate other kinds of entity");
             return;
         }
 

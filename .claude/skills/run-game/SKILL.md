@@ -55,7 +55,10 @@ lists the game's). Commonly used:
 - Matches: `--Engine:Session:Mode=Offline|Host|Join` (default `Menu`; the lines that look at a world need a match),
   `Address=127.0.0.1:47600` (or `lobby:ID`, `steam:ID`), `Port`, `Transport=Steam`; `--Engine:Steam:Enabled=false`;
   `--Engine:Save:Name=castle` (start from `Saves/castle.save` and write it at quit). Two games on one machine: add
-  `--Engine:Voxels:WorkerThreads=4` to each (each takes a 512 MB mesh heap).
+  `--Engine:Voxels:WorkerThreads=4` to each (each takes a 512 MB mesh heap). As if far apart:
+  `--Engine:Session:AddedDelayMilliseconds=100` on a client delays both ways of its link (`AddedJitterMilliseconds`,
+  `AddedLossPercent` for what it sends; give loss to the host too to lose what it sends);
+  `--Engine:Replication:InterpolationMilliseconds` (100) sets how far behind the host a client shows what it replicates.
 - World: `--Engine:Voxels:Seed=7`, `Levels` (4 by default and 9 in the starter, 1 to 10: 10, 20, 40, and 80 cm voxels on a 10 cm world;
   `Levels=1` is level 0 only, loaded to 59.2 m, a fraction of the memory), `StreamingRadiusMetres` (0, from the grid:
   59.2 m on 10 cm voxels, where level 0 loads to it and reaches it less two 12.8 m columns, 33.6 m; 4.625 level-0
@@ -262,7 +265,9 @@ lists the commands (`ConsoleCommands`):
   size, and a rig's joints and clips; `place NAME [SCALE] [CLIP [SECONDS]]` puts one 4 m in front of the camera on the
   ground, facing it, playing CLIP or held at SECONDS of it (repeatable shots); `test COUNT [NAME [CLIP]]` puts COUNT, at
   most 4096, in rows ahead, the first asset unless named, each from another time of CLIP; `clear` removes those it
-  placed; this game only, on clients too).
+  placed; this game only, on clients too), `replication` [delay MS] (what the host sends each client of the entities it
+  replicates, or what a client shows and how far behind; delay MS sets how far behind the host a client shows them, 0 to
+  1000, for the match).
 - The game's own commands go here (the starter has none).
 
 In a session, `tp`, `settle`, `cleanup`, `reset`, and `balls` work only on the host; `pause`, `resume`, `step`, and

@@ -30,6 +30,15 @@ internal enum MessageKind : byte
 
     /// <summary>Host to every client: each slot's presence and name, sent when a player joins or leaves.</summary>
     Roster = 7,
+
+    /// <summary>
+    /// Host to one client, unreliable, at the replication's rate: a packet of replicated state (its number, the host's
+    /// tick, ids removed, then entity records; <c>Replication.ReplicationService</c>).
+    /// </summary>
+    Snapshot = 8,
+
+    /// <summary>Client to host, unreliable, every step: the snapshots it received (its newest and the 32 before).</summary>
+    Reply = 9,
 }
 
 /// <summary>What a disconnect's data says: the first byte, then a reason byte and a text.</summary>
@@ -68,6 +77,9 @@ internal enum RejectReason : byte
     /// Steam id is public, and <c>steam:ID</c> joins once passed the friends-only lobby).
     /// </summary>
     NotInvited = 6,
+
+    /// <summary>Other replicated kinds: the names and fields of the entities the two replicate differ.</summary>
+    ReplicatedKinds = 7,
 }
 
 /// <summary>
@@ -81,7 +93,7 @@ internal static class SessionProtocol
     /// Raised whenever any message changes shape or meaning or a kind is added, the game's included: the game's messages
     /// have no version of their own, so a mismatch is refused in the handshake with this number instead of failing later.
     /// </summary>
-    public const int Version = 39;
+    public const int Version = 40;
 
     /// <summary>Lobby data: the players in the session now, the host's included (<c>SessionService</c> writes it).</summary>
     public const string LobbyPlayersKey = "itera_players";
@@ -327,7 +339,8 @@ public sealed class MessageWriter
     /// <summary>
     /// An absolute position as three int32 in 1/64 cm (<see cref="SessionProtocol.PositionStepsPerMetre"/>), the same
     /// whatever either peer's origin; throws when it is not finite or lies past
-    /// <see cref="SessionProtocol.MaxPositionMetres"/>. A game's messages use it (the engine's own carry no positions).
+    /// <see cref="SessionProtocol.MaxPositionMetres"/>. A game's messages use it (replication's snapshots carry positions
+    /// as lanes of their own, <c>PositionField</c>).
     /// </summary>
     public void WritePosition(in WorldPoint point)
     {
@@ -347,6 +360,22 @@ public sealed class MessageWriter
     public void WriteVarInt(int value)
     {
         var rest = (uint)value;
+        while (rest >= 0x80)
+        {
+            WriteByte((byte)(rest | 0x80));
+            rest >>= 7;
+        }
+
+        WriteByte((byte)rest);
+    }
+
+    /// <summary>
+    /// A signed number in 1 to 10 bytes: zigzag (0, -1, 1, -2, ... as 0, 1, 2, 3, ...), then 7 bits a byte, low first,
+    /// so a small number either side of 0 takes one byte (replication's changes of a lane).
+    /// </summary>
+    public void WriteVarLong(long value)
+    {
+        var rest = (ulong)((value << 1) ^ (value >> 63));
         while (rest >= 0x80)
         {
             WriteByte((byte)(rest | 0x80));
@@ -432,6 +461,29 @@ public ref struct MessageReader(ReadOnlySpan<byte> data)
         }
 
         throw Invalid("A number does not end within five bytes.");
+    }
+
+    /// <summary>A signed number <see cref="MessageWriter.WriteVarLong"/> wrote; one past 64 bits is refused.</summary>
+    public long ReadVarLong()
+    {
+        var value = 0ul;
+        for (var shift = 0; shift < 70; shift += 7)
+        {
+            var next = ReadByte();
+            // The tenth byte carries bit 63 alone: more would be shifted out and lost.
+            if (shift == 63 && (next & 0x7F) > 0x01)
+            {
+                throw Invalid("A number is out of range.");
+            }
+
+            value |= (ulong)(next & 0x7F) << shift;
+            if ((next & 0x80) == 0)
+            {
+                return (long)(value >> 1) ^ -(long)(value & 1);
+            }
+        }
+
+        throw Invalid("A number does not end within ten bytes.");
     }
 
     public string ReadString()

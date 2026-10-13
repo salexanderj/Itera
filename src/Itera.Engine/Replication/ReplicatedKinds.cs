@@ -1,0 +1,158 @@
+using System.Text;
+using Arch.Core;
+using Itera.Engine.Maths;
+
+namespace Itera.Engine.Replication;
+
+/// <summary>What a replicated kind's handler is given: the match's ECS world and origin.</summary>
+/// <param name="World">The match's ECS world.</param>
+/// <param name="Origin">The match's origin, through which a local position becomes the absolute one a state holds.</param>
+public readonly record struct ReplicationContext(World World, WorldOrigin Origin);
+
+/// <summary>
+/// A game's side of one replicated kind: the host reads an entity's state into a <see cref="ReplicatedState"/> by its
+/// schema, and a client makes, shows, and removes the entities the host sends. Run-wide (registered at the run's start),
+/// so it keeps no match's state; it is called on the main thread from the replication systems, outside any query, so
+/// structural changes are safe in it.
+/// </summary>
+public interface IReplicatedKind
+{
+    /// <summary>On the host: writes <paramref name="entity"/>'s state now (absolute positions: the context's origin).</summary>
+    void Capture(in ReplicationContext context, Entity entity, ref ReplicatedState state);
+
+    /// <summary>
+    /// On a client: makes the entity for an id the host sent, first shown at <paramref name="state"/>. The engine adds
+    /// its <see cref="Components.Replicated"/> after; return <see cref="Entity.Null"/> to leave the id unshown.
+    /// </summary>
+    Entity Spawn(in ReplicationContext context, in ReplicatedState state);
+
+    /// <summary>
+    /// On a client, each step: shows <paramref name="entity"/> at <paramref name="state"/>, blended between the two states
+    /// the host sent round the time shown (a fixed step: a pose kept for drawing copies its last into its previous one
+    /// first).
+    /// </summary>
+    void Apply(in ReplicationContext context, Entity entity, in ReplicatedState state);
+
+    /// <summary>
+    /// On a client: the host removed the entity, or it went out of this client's reach. Destroy it (or keep it, for a
+    /// game's own reasons); the engine forgets its id either way.
+    /// </summary>
+    void Despawn(in ReplicationContext context, Entity entity);
+}
+
+/// <summary>A replicated kind's number, as it travels: its place in <see cref="ReplicatedKinds"/>.</summary>
+public readonly record struct ReplicatedKindId(byte Value);
+
+/// <summary>
+/// One replicated kind: its name, schema, handler, and how the host chooses what to send of it: within
+/// <see cref="RelevanceMetres"/> of a client's player (0: to every client wherever it is), and how fast its priority
+/// grows (<see cref="Priority"/>: a player 4, a character 1, a far body 0.25).
+/// </summary>
+public sealed record ReplicatedKind(
+    ReplicatedKindId Id,
+    string Name,
+    ReplicatedSchema Schema,
+    IReplicatedKind Handler,
+    float RelevanceMetres,
+    float Priority
+);
+
+/// <summary>
+/// The run's replicated kinds, registered once at its start (a game's <c>IRunStartup</c>) and sealed by the first match.
+/// Their names and fields make a fingerprint a client's hello carries, so a host refuses a client whose kinds differ.
+/// </summary>
+public sealed class ReplicatedKinds
+{
+    /// <summary>The most kinds a run registers.</summary>
+    public const int MostKinds = 255;
+
+    private readonly List<ReplicatedKind> _kinds = [];
+    private bool _sealed;
+
+    public int Count => _kinds.Count;
+
+    public ReplicatedKind this[ReplicatedKindId id] => _kinds[id.Value];
+
+    /// <summary>
+    /// Registers a kind, sealing its schema. Names are unique; <paramref name="relevanceMetres"/> 0 sends it to every
+    /// client wherever it is; <paramref name="priority"/> is above 0.
+    /// </summary>
+    public ReplicatedKindId Register(
+        string name,
+        ReplicatedSchema schema,
+        IReplicatedKind handler,
+        float relevanceMetres = 0,
+        float priority = 1
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(schema);
+        ArgumentNullException.ThrowIfNull(handler);
+        if (_sealed)
+        {
+            throw new InvalidOperationException(
+                $"The replicated kinds are sealed by the first match; {name} is too late."
+            );
+        }
+
+        if (!float.IsFinite(relevanceMetres) || relevanceMetres < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(relevanceMetres), "Relevance is 0 or more metres.");
+        }
+
+        if (!float.IsFinite(priority) || !(priority > 0))
+        {
+            throw new ArgumentOutOfRangeException(nameof(priority), "Priority is above 0.");
+        }
+
+        if (_kinds.Count == MostKinds)
+        {
+            throw new InvalidOperationException($"At most {MostKinds} replicated kinds; {name} is one too many.");
+        }
+
+        foreach (var kind in _kinds)
+        {
+            if (string.Equals(kind.Name, name, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"The replicated kind {name} is registered already.");
+            }
+        }
+
+        schema.Seal();
+        var id = new ReplicatedKindId((byte)_kinds.Count);
+        _kinds.Add(new ReplicatedKind(id, name, schema, handler, relevanceMetres, priority));
+        return id;
+    }
+
+    /// <summary>
+    /// A number the kinds' names and fields make, in their order (FNV-1a over their descriptions): the same build of the
+    /// same game gives the same one. 0 with no kinds.
+    /// </summary>
+    public ulong Fingerprint
+    {
+        get
+        {
+            if (_kinds.Count == 0)
+            {
+                return 0;
+            }
+
+            var text = new StringBuilder();
+            foreach (var kind in _kinds)
+            {
+                text.Append(kind.Name).Append('=').Append(kind.Schema.Description).Append('|');
+            }
+
+            var hash = 14695981039346656037ul;
+            foreach (var b in Encoding.UTF8.GetBytes(text.ToString()))
+            {
+                hash = (hash ^ b) * 1099511628211ul;
+            }
+
+            return hash;
+        }
+    }
+
+    /// <summary>No more kinds: the first match seals them.</summary>
+    internal void Seal() => _sealed = true;
+}

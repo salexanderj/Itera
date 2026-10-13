@@ -51,6 +51,9 @@ public sealed class EngineOptions
     /// <summary>Hosting or joining a multiplayer session (<c>Engine:Session</c>).</summary>
     public SessionSettings Session { get; set; } = new();
 
+    /// <summary>What a host sends each client of the entities it replicates, and how a client shows them.</summary>
+    public ReplicationSettings Replication { get; set; } = new();
+
     /// <summary>Steam (<c>Engine:Steam</c>): internet play through Steam's networking, lobbies, and invites.</summary>
     public SteamSettings Steam { get; set; } = new();
 
@@ -773,6 +776,36 @@ public sealed class SessionSettings
     /// Reliable messages and what this peer receives are never dropped. 0 drops none.
     /// </summary>
     public double AddedLossPercent { get; set; }
+}
+
+/// <summary>
+/// Replication (<c>Engine:Replication</c>): how often a host sends each client the entities it replicates, how many
+/// bytes a second it may, and how far behind the host a client shows them.
+/// </summary>
+public sealed class ReplicationSettings
+{
+    /// <summary>
+    /// Sends a second to each client (1 to 60): every few fixed steps (30 at 60 steps a second: every second step). A
+    /// client sends its reply every step whatever this is.
+    /// </summary>
+    public int SendHz { get; set; } = 30;
+
+    /// <summary>
+    /// Bytes a second a host sends each client of replicated state, over time (4,096 to 1,048,576; 64 KB/s, so a home
+    /// connection's upload holds seven clients). What it does not spend it keeps, up to a send's share of
+    /// <see cref="PeakBytesPerSecond"/>.
+    /// </summary>
+    public int BytesPerSecond { get; set; } = 65536;
+
+    /// <summary>The most bytes a second a host sends one client in a burst (at least <see cref="BytesPerSecond"/>, at most 4 MB/s).</summary>
+    public int PeakBytesPerSecond { get; set; } = 131072;
+
+    /// <summary>
+    /// How far behind the host a client shows what it replicates, in milliseconds (0 to 1,000): three sends at 30 a
+    /// second, so a lost send or two leaves states to blend between. The console's <c>replication delay</c> changes it
+    /// during a match.
+    /// </summary>
+    public int InterpolationMilliseconds { get; set; } = 100;
 }
 
 /// <summary>

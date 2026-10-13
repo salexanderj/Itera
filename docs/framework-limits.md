@@ -62,8 +62,9 @@ Ordered by how many game types each blocks.
 7. **Platforms.** Only Linux has run; Windows and macOS are untested, and macOS lacks a Vulkan loader. Vulkan 1.3 and BC
    textures are required.
 
-Possible from game code, with work: dialogue and cutscenes (on the UI toolkit since 2026-10-11), replication of players
-and bodies, and saving the game's own state.
+Possible from game code, with work: dialogue and cutscenes (on the UI toolkit since 2026-10-11), and saving the game's
+own state. Replicating entities from the host is the engine's since 2026-10-12 (`docs/replication.md`); predicting a
+client's own player is not yet.
 
 ## By game type
 

@@ -104,9 +104,31 @@ public sealed class WireFingerprintTests : IDisposable
 
         Assert.Equal(4, clientWorld.EditCount);
         WireFingerprint.AssertPinned(
-            39,
-            "039A5DEDFD1C646F",
+            40,
+            "12694C668615A925",
             WireFingerprint.Of([.. hostTransport.Recorded, .. clientTransport.Recorded])
+        );
+    }
+
+    /// <summary>
+    /// The replication's messages: a host's snapshots of three movers (whole, then as changes) and a client's replies,
+    /// over ten steps after a join.
+    /// </summary>
+    [Fact]
+    public void The_replications_messages_have_the_shape_this_protocol_pins()
+    {
+        using var harness = Replication.ReplicationHarness.Start(new Replication.MoverPlan { Count = 3, Speed = 2 });
+        harness.HostTransport.Recorded = [];
+        harness.ClientTransport.Recorded = [];
+
+        harness.Step(10);
+
+        Assert.Contains(harness.HostTransport.Recorded, message => message[0] == (byte)MessageKind.Snapshot);
+        Assert.Contains(harness.ClientTransport.Recorded, message => message[0] == (byte)MessageKind.Reply);
+        WireFingerprint.AssertPinned(
+            40,
+            "2EB853E0ECAD1FB9",
+            WireFingerprint.Of([.. harness.HostTransport.Recorded, .. harness.ClientTransport.Recorded])
         );
     }
 

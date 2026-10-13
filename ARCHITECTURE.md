@@ -178,6 +178,7 @@ Rules:
 | `Objects/` | Voxel objects finer than the terrain: a kind's voxels (`VoxelObjectShape`), the run's kinds (`VoxelObjectKinds`), a match's models of them (`VoxelObjects`, `ObjectsLoadingTask`), a world's placer (`IObjectPlacer`, `ObjectPlacement`, `ObjectId`), the objects placed near the loaded world (`ObjectWorld`), their far copies in the world's voxels at their own size (`ObjectCopies`, `ObjectShareGrid` and `ObjectShareBuilder`), rays through them (`ObjectRays`, `ObjectHit`), the damage edits do to them (`ObjectDamage`, `DamagedObject`, `ObjectEditing`, the voxel sources `IObjectVoxelSource`) the cuts the world's owner finds (`ObjectLabeller`, `ObjectRoots`), and the bodies of the parts cut off them (`FallenParts`), and the headings' turns (`ObjectTurns`; `docs/voxel-objects.md`) |
 | `Navigation/` | `NavigationService` (its window, `NavArea`), `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`, `INavGridSource` (the game's part), `FlowFieldBuilder` and `FlowField`, `NavGridScanner` (with the voxel objects in its reads and stamps), `NavObjects` (the objects as generated, for the navigation thread's fills), `NavigationDebugLines` |
 | `Networking/` | `SessionService` (hosting or joining; `.Host.cs`, `.Client.cs`), `ISessionTransport` with `NetworkService` (LiteNetLib) and `SteamTransport` over `ISteamPlatform`, `SteamService`, `SteamAddress`, `SteamLaunchArguments`, `SteamFriendList`, `SessionProtocol` (message kinds, `MessageWriter`, `MessageReader`), `MatchSettings` and `ISessionGameHandler`, `GameMessageHandler`, `SessionAddress`, `NetLoggerAdapter`, and the helpers `NetEntities`, `PlayerIds`, `TickRing`, and `JitterPlayback` |
+| `Replication/` | `ReplicationService` (`.Host.cs`, `.Client.cs`: what a host sends each client of the entities a game marks, and how a client shows them), `ReplicatedKinds` with `IReplicatedKind`, `ReplicatedSchema` and its fields (`ReplicatedFields.cs`: `ReplicatedState`, `PositionField`, `AngleField`, `RotationField`, `ScalarField`, `IntegerField`, `FlagsField`), `ReplicatedStateCodec` |
 | `UI/` | `UISurface` (the UI's pixels: a Skia CPU surface that draws its layers when one changes and reports the rows that changed), `IUiLayer`, `IMatchUiLayer`, `ConsoleLayer` and `DevConsole`, `StatsLayer`, `AimDotLayer`, `LoadingLayer`, `CentredMessageLayer`, `TextBlobs`, `TextLine`, `TextEntry` (a text box's typing), `UiFonts` (the font and the UI's sizing rule) and `LayerFont`, `Amounts`, `WheelSteps`, `Toolkit/` (a UI described in code: `Ui`'s layout, input, focus, and dump; `UiStyle`, `UiPainter`, `UiToolkit`, `UiLayer`), and `Menu/` (`IMenu`, `MenuLayer` on the toolkit, `MenuPages` and `IMenuPage` (a game's pages in it), `SettingsPage` (the Settings page as a part a game's menu shows too) and `SettingsRows` (a game's switches on it), `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`) |
 | `Commands/` | `ConsoleCommands` (name, usage, help, scope, owner), `CommandLine`, `EngineCommands`, `MatchCommands`, `SettingsCommands`, `ParticleCommands`, `SoundCommands` |
 | `Control/` | `ControlService` (the control port), `ControlRequest`, `InputScript` |
@@ -1295,13 +1296,19 @@ there is no host migration, and the session ends when the host quits.
   The host's `ISessionMatchData` writes a game's match data into the welcome. Helpers: `NetEntities` (the ids a host gives
   the entities it sends, with a byte kind the game defines, checked alive at every lookup; `PlayerIds`), `TickRing` (the last
   16 values by sender tick, since unreliable messages may arrive out of order), and `JitterPlayback` (a few ticks' delay for
-  smooth playback). A game tests its messages with damaged bodies and hostile values in every field. Player and body
-  replication between peers is a game's today.
-- **Players move themselves**: each client runs its own mover, as offline, and a game sends its position, velocity, and
-  look, which the host checks (finite numbers, a speed limit, not inside voxels) and trusts. The mover is not the same to the
-  last bit on every machine, so a host that moved everyone would have to correct clients near every loose body and slope. A
-  client's tool use is a request: the host applies it and sends the numbered edit to everyone, and nothing shows early on
-  the client.
+  smooth playback). A game tests its messages with damaged bodies and hostile values in every field.
+- **Replication** (`Replication/`, `.claude/rules/replication.md`, the reasons in `docs/replication.md`): a game
+  registers kinds of entity at its run's start (`ReplicatedKinds`: fields as quantised lanes, a handler, a reach, a
+  priority) and marks entities on the host (`ReplicationService.Add`). Thirty times a second the host sends each client
+  the entities in its reach with a state the client has not acknowledged, highest priority first, each as its changes
+  from the client's last acknowledged state, in unreliable packets that fit one transport packet, until that client's
+  64 KB/s is spent (what a send leaves is kept, up to a send's share of 128 KB/s); removals go in the same packets until
+  acknowledged. A client replies every
+  step with the packets it read, estimates the host's tick, and shows each entity 100 ms behind it, blended between the
+  states round that time (`ReplicationSendSystem`, `ReplicationReceiveSystem`, `ReplicationReplySystem`). The kinds'
+  fingerprint is in the hello. A client's own player is its own game's to move; the host leaves it out of what it sends
+  it until prediction with the host's correction comes. A client's tool use is a request: the host applies it and sends
+  the numbered edit to everyone, and nothing shows early on the client.
 - **The host quitting** says so (`Bye`): its clients go back to the menu with the reason, or, when the options started the
   match, end with exit code 0; a lost connection or a protocol error does the same, with exit code 1 for a match the options
   started. Each match has a session of its own (Scoped), on the run's transports, which close at its end and open again for
@@ -1626,10 +1633,10 @@ Engine work that is known and not done:
   something is, with the renderer's level choice counting a column's height (a camera high over the ground meshes no
   fine level under it). Left: separate physics simulations for far peers, a tint map that moves with the view,
   atmospheres by region, and navigation windows per group of players, for a game that needs them.
-- **Player and body replication between peers.** The engine carries a game's messages, ids, and playback helpers, but no
-  engine system replicates players, thrown bodies, or characters; the Zorf TD archive has a working design (a player's
-  state every step with the host's checks and corrections, bodies as kinematic mirrors played back a few ticks behind,
-  states for crowds sent by distance with dead reckoning). It should come back as engine systems or a documented pattern.
+- **What replication does not do yet** (`docs/replication.md`): prediction of a client's own player with the host's
+  correction, loose bodies as replicated kinds (a client moving its copy of each to the host's poses), a group far from
+  every player sent as one record, a short history of positions for judging hits, and edits stamped with the host's
+  tick.
 - **An exact method for the joins between levels of detail**, closing the holes of a voxel or two where the levels disagree on
   which cells the surface crosses.
 - **Voxel objects finer than the terrain** (built 2026-10-12): kinds of finer voxels placed by the generator, drawn as

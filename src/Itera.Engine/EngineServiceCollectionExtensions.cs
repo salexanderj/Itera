@@ -18,6 +18,7 @@ using Itera.Engine.Rendering.Memory;
 using Itera.Engine.Rendering.Meshes;
 using Itera.Engine.Rendering.Shaders;
 using Itera.Engine.Rendering.Voxels;
+using Itera.Engine.Replication;
 using Itera.Engine.Saves;
 using Itera.Engine.Settings;
 using Itera.Engine.Systems;
@@ -195,6 +196,10 @@ public static class EngineServiceCollectionExtensions
         services.TryAddScoped<WorldResets>();
         services.TryAddScoped<CharacterTriggers>();
         services.TryAddSingleton<MovementKeys>();
+        // Replication: the run's kinds a game registers at its start, and each match's service, which attaches to the
+        // session as the match starts (MatchServices takes it).
+        services.TryAddSingleton<ReplicatedKinds>();
+        services.TryAddScoped<ReplicationService>();
         // The transports live for the run; each match's session opens and closes the one it uses.
         services.TryAddSingleton<NetworkService>();
         services.TryAddSingleton<SteamService>();

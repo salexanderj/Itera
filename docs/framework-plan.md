@@ -271,7 +271,7 @@ In all, about 6 to 10 days, plus 2 to 3 with the full character kit.
 
 ### Left in the archive, general but not moved
 
-Player and body replication between peers, the crowd's push-apart, the flow-field follower (`CreepLanes`), the debug dig
+Player and body replication between peers (since returned as the engine's replication, `docs/replication.md`), the crowd's push-apart, the flow-field follower (`CreepLanes`), the debug dig
 and place tools, bodies from shapes, cutting a model into pieces, hit queries against posed parts, far flipbooks, the
 tree kit, the polyline index, and the sound helpers. Each can be taken from the archive's tag `zorftd-shelved` when a
 game needs it.

@@ -118,6 +118,12 @@ Where tests live:
   sharing their meshes is right), a second dig allocating nothing; `ObjectDamageMatchTests`: a body on a rock in a match of the engine's real
   composition, falling when the rock is dug away; a trunk's top cut off falling as a body onto its stump; a cut alone
   dropping the top).
+- `Itera.Engine.Tests/Replication/`: `ReplicatedStateCodecTests` (fields read back within their steps, changes from a
+  baseline, damaged records refused or read within range, the blend, schemas and kinds) and `ReplicationServiceTests`
+  over `ReplicationHarness` (a host and a client in one process without terrain, test movers and players, the clock
+  stepped after the join; `SimulatedNetwork` for delay, jitter, and loss): following a little behind, through 100 ms
+  each way, removals, reach, the budget, refused kinds, damaged snapshots, a bad reply; the replication systems'
+  behaviour and allocation in `Systems/`.
 - `Itera.Engine.Tests/Maths/` and `Animation/`: the deterministic maths and rotations, the octahedral encoding, the
   origin's conversions at up to ±160 km (`WorldOriginTests`), and skeletons, clips, aiming, and foot IK over a humanoid
   test skeleton (`HumanoidTestSkeleton`).

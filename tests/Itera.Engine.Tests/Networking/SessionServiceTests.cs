@@ -310,6 +310,7 @@ public sealed class SessionServiceTests : IDisposable
         hello.WriteInt(s_generator.Version);
         hello.WriteInt(60);
         hello.WriteString("Twice");
+        hello.WriteULong(0);
 
         raw.Send(hello.Written);
         host.Poll();
@@ -443,6 +444,7 @@ public sealed class SessionServiceTests : IDisposable
         writer.WriteInt(1);
         writer.WriteInt(60);
         writer.WriteString(new string('n', 500));
+        writer.WriteULong(0);
         raw.Send(writer.Written);
 
         host.Poll();
