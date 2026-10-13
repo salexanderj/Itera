@@ -56,8 +56,9 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   step's start (`OriginShifts.RequestFollow`), before the jump, so a jump of any length lands exactly; the jump moves
   the fly camera and the active camera with the player, so a second step before the next frame does not follow the
   camera back.
-- `PlayerCameraSystem` (frame) puts the active camera at the eye between the last two steps, looking where the command
-  looks plus the mouse since the step, or behind the right shoulder (`ThirdPersonCamera`: 2.5 m back, 1.5 to 5 m by the
+- `PlayerCameraSystem` (frame) puts the active camera at the eye between the last two steps (with a client's eased
+  correction, `EyeSmoothing.Correction`, `.claude/rules/replication.md`), looking where the command looks plus the mouse
+  since the step, or behind the right shoulder (`ThirdPersonCamera`: 2.5 m back, 1.5 to 5 m by the
   wheel, pulled in by voxels, and by the voxel objects where the game gives it `ObjectRays`); it makes the camera entity from a start pose (`CameraRules.CreateCamera`).
   `DebugFlyCameraSystem` flies it while the player flies (`flyspeed`; with `Engine:Voxels:DebugWalkSpeed` above 0 it
   flies a 100 m circle round the map's middle `Engine:Camera:CircleHeightMetres` up, which must clear the game's hills),

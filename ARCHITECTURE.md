@@ -1306,9 +1306,12 @@ there is no host migration, and the session ends when the host quits.
   acknowledged. A client replies every
   step with the packets it read, estimates the host's tick, and shows each entity 100 ms behind it, blended between the
   states round that time (`ReplicationSendSystem`, `ReplicationReceiveSystem`, `ReplicationReplySystem`). The kinds'
-  fingerprint is in the hello. A client's own player is its own game's to move; the host leaves it out of what it sends
-  it until prediction with the host's correction comes. A client's tool use is a request: the host applies it and sends
-  the numbered edit to everyone, and nothing shows early on the client.
+  fingerprint is in the hello. A client's own player is predicted (`Predict`): it moves at once from its commands, which
+  go to the host with every reply (the last 8, quantised as the host reads them); the host moves its copy from them,
+  and sends the client its state after the last command applied; a client that predicted otherwise (1 cm, or another
+  contact) takes the host's state, runs its later commands again (`CharacterStepper`), and eases what is drawn
+  (`EyeSmoothing.Correction`). A client's tool use is a request: the host applies it and sends the numbered edit to
+  everyone, and nothing shows early on the client.
 - **The host quitting** says so (`Bye`): its clients go back to the menu with the reason, or, when the options started the
   match, end with exit code 0; a lost connection or a protocol error does the same, with exit code 1 for a match the options
   started. Each match has a session of its own (Scoped), on the run's transports, which close at its end and open again for
@@ -1633,8 +1636,7 @@ Engine work that is known and not done:
   something is, with the renderer's level choice counting a column's height (a camera high over the ground meshes no
   fine level under it). Left: separate physics simulations for far peers, a tint map that moves with the view,
   atmospheres by region, and navigation windows per group of players, for a game that needs them.
-- **What replication does not do yet** (`docs/replication.md`): prediction of a client's own player with the host's
-  correction, loose bodies as replicated kinds (a client moving its copy of each to the host's poses), a group far from
+- **What replication does not do yet** (`docs/replication.md`): loose bodies as replicated kinds (a client moving its copy of each to the host's poses), a group far from
   every player sent as one record, a short history of positions for judging hits, and edits stamped with the host's
   tick.
 - **An exact method for the joins between levels of detail**, closing the holes of a voxel or two where the levels disagree on

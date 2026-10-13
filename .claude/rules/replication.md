@@ -37,8 +37,14 @@ What a game does:
   `Replicated`; `Entity.Null` leaves it unshown), `Apply` sets it each step (a pose kept for drawing copies its last
   into its previous one first, as any fixed system does), and `Despawn` removes it. They run on the main thread
   outside queries.
-- Registers the systems in its fixed order: `ReplicationReceiveSystem` early (after `OriginShiftSystem`, before what
-  reads the shown entities), `ReplicationReplySystem` after the input, and `ReplicationSendSystem` last. Each does
+- On a client, marks its own player for prediction (`ReplicationService.Predict(entity)`, an entity with the components
+  `PlayerMovementSystem` moves by); on the host, replicates each client's player under its slot's id with those
+  components (a `RemotePlayer`), which the host moves from the client's commands.
+- Registers the systems in its fixed order: `ReplicationReceiveSystem` early (after `OriginShiftSystem`, before the
+  input and the move: a client's check and correction, what it shows, and a host's commands written into the clients'
+  players), `ReplicationReplySystem` after the input and before the move (a client's command quantised and sent), and
+  `ReplicationSendSystem` last. A game's sounds and effects of the predicted player skip steps run while
+  `ReplicationService.Replaying`. Each does
   nothing in a role it does not serve; `replication` (prints what is sent or shown; `replication delay MS` sets the
   interpolation delay) is the send system's command.
 
@@ -49,7 +55,8 @@ How it works:
   1,000).
 - The host captures each entity's state `Engine:Replication:SendHz` (30) times a second (every second step at 60),
   keeping its last 32 states, each from the tick it changed. For each joined client it takes the entities within reach that have a state
-  the client has not acknowledged (its own player is left out: its game moves it), by priority (each send adds the
+  the client has not acknowledged (its own player is left out: it predicts it, and the owner's block below carries the
+  host's state of it), by priority (each send adds the
   kind's priority times one plus its nearness, twice for an entity the client has none of; a sent one goes back to 0),
   and writes each as a record (id, kind, how many ticks back its baseline is, 0 for whole followed by the id's
   generation, and its changes from it: `ReplicatedStateCodec`) into packets that fit `MaxUnreliableBytes`, at most 32 a
@@ -75,6 +82,24 @@ How it works:
   the first, past the newest the newest; after a gap longer than two sends in which other snapshots were read (so the
   entity was unchanged, or waited for the budget), the move takes the last send's time, and across a gap with no
   snapshot read (loss) it is blended straight.
+- A client's own player (`Predict`, `ReplicationService.Prediction.cs`): each step the reply system quantises its
+  command in place (the move in 1/127ths, the yaw in 65,536ths of a turn, the pitch in 32,767ths of a quarter turn: what
+  the host reads, bit for bit) and keeps it, and the reply carries the last 8 (newest first, the newest's tick). The
+  player moves at once by the engine's movement. The host keeps each client's commands by its tick (also those it has
+  passed), and at each step's start writes the next into the client's player: it starts once two steps of them wait
+  beyond the first, so two wait against jitter; when more than eight wait it skips ahead; a missing one is the last
+  without its jump and the game's actions (after 30 missed, standing still); and when none has waited for 3 steps while
+  the client's still arrive (the client stalled and dropped steps, or the delay grew), it starts again from the newest
+  less two, taking those steps' commands again, which corrects the client once. The client keeps 128 steps. Each send's first
+  packet to a client carries the owner's block: the tick of the last command applied and the player's state after it
+  (feet absolute, velocity, contact, mode, size, and a `Climber`'s state; one with a number that is not finite, or a
+  place past a message's reach, is not sent, and every number is checked when read, against bounds past any game's). At the step's
+  start the client keeps the state the last step left with its command; when the host's state at a command differs from
+  the one predicted (the feet more than 1 cm apart, or on the ground, crouched, or climbing where the other is not), it
+  takes the host's and runs the later commands again through `CharacterStepper` (`Replaying`). What is drawn eases from
+  where it was (`EyeSmoothing.Correction`, which the camera adds: 0.85 of it kept a step; past 2 m at once). While the
+  player flies the debug camera nothing is predicted or sent. The host and the client start a few steps apart (the
+  host's copy moves before the first command), so the first owner's state corrects once.
 - Positions in states are absolute, so no buffer moves with the origin. Measured figures (lag, budget) are in
   `docs/replication.md`.
 
@@ -84,12 +109,17 @@ movers and players, a host system that moves them, the clock real until the join
 `SimulatedNetwork`): following the delay behind (and a set delay), through 100 ms each way with jitter and loss, a
 send of several packets, removals (also through loss, and `Remove`), an id added again under another kind, an id
 freed offline, reach, the budget, a client that takes a leaver's place, refused kinds, damaged snapshots and replies, a
-bad reply; the systems' behaviour and allocation tests; and the wire fingerprint of the snapshot and reply
-(`WireFingerprintTests`).
+bad reply; the systems' behaviour and allocation tests; the wire fingerprint of the snapshot and reply, a predicted
+player's commands and owner's block among them (`WireFingerprintTests`); and `PredictionTests` (over the harness's test
+floor: a client's player moving at once and the host's copy ending where it does with no correction after the first
+second, also through 100 ms each way with jitter and loss; a host that moves the player correcting the client, also
+while it walks through 100 ms each way, the drawn jump starting where the player was drawn and easing out; after a
+client stall that drops steps, the host starting again and the corrections stopping; commands read as quantised,
+numbers that are not finite among them; damaged replies with commands; no allocation).
 
 ### Files in `src/Itera.Engine`
 
-  - `Replication/`: `ReplicationService` (`.Host.cs`, `.Client.cs`), `ReplicatedKinds` with `IReplicatedKind`,
+  - `Replication/`: `ReplicationService` (`.Host.cs`, `.Client.cs`, `.Prediction.cs` with `PredictedState`), `ReplicatedKinds` with `IReplicatedKind`,
     `ReplicatedKind`, `ReplicatedKindId`, and `ReplicationContext`, `ReplicatedSchema`, the fields and
     `ReplicatedState` (`ReplicatedFields.cs`), and `ReplicatedStateCodec`. `Networking/IReplicationEndpoint` is the
     session's side.

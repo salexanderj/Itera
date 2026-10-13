@@ -104,30 +104,51 @@ public sealed class WireFingerprintTests : IDisposable
 
         Assert.Equal(4, clientWorld.EditCount);
         WireFingerprint.AssertPinned(
-            40,
-            "12694C668615A925",
+            41,
+            "D52A1890F4442BBD",
             WireFingerprint.Of([.. hostTransport.Recorded, .. clientTransport.Recorded])
         );
     }
 
     /// <summary>
-    /// The replication's messages: a host's snapshots of three movers (whole, then as changes) and a client's replies,
-    /// over ten steps after a join.
+    /// The replication's messages: a host's snapshots of three movers (whole, then as changes) with the owner's block of
+    /// the client's predicted player, and the client's replies with its player's commands, over ten steps after a join.
     /// </summary>
     [Fact]
     public void The_replications_messages_have_the_shape_this_protocol_pins()
     {
-        using var harness = Replication.ReplicationHarness.Start(new Replication.MoverPlan { Count = 3, Speed = 2 });
+        using var harness = Replication.ReplicationHarness.Start(
+            new Replication.MoverPlan
+            {
+                Count = 3,
+                Speed = 2,
+                Characters = true,
+            },
+            clientPlan: new Replication.MoverPlan
+            {
+                Characters = true,
+                Script = tick => new Components.PlayerCommand
+                {
+                    Move = new System.Numerics.Vector2(0, 1),
+                    Yaw = tick * 0.01f,
+                    Buttons = tick % 30 == 0 ? Components.PlayerButtons.Jump : Components.PlayerButtons.None,
+                },
+            }
+        );
+        harness.Step(20);
         harness.HostTransport.Recorded = [];
         harness.ClientTransport.Recorded = [];
 
         harness.Step(10);
 
         Assert.Contains(harness.HostTransport.Recorded, message => message[0] == (byte)MessageKind.Snapshot);
-        Assert.Contains(harness.ClientTransport.Recorded, message => message[0] == (byte)MessageKind.Reply);
+        Assert.Contains(
+            harness.ClientTransport.Recorded,
+            message => message[0] == (byte)MessageKind.Reply && message.Length > 40
+        );
         WireFingerprint.AssertPinned(
-            40,
-            "2EB853E0ECAD1FB9",
+            41,
+            "56E0E43481328FEA",
             WireFingerprint.Of([.. harness.HostTransport.Recorded, .. harness.ClientTransport.Recorded])
         );
     }

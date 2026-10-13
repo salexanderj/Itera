@@ -138,8 +138,9 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
     }
 
     /// <summary>
-    /// The eye drawn <paramref name="alpha"/> of the way from the last step to this one: the feet between the two, the
-    /// eye's height, and the eye's ease after a step or a crouch between the two.
+    /// The eye drawn <paramref name="alpha"/> of the way from the last step to this one: the feet between the two (with a
+    /// client's correction easing out between the two), the eye's height, and the eye's ease after a step or a crouch
+    /// between the two.
     /// </summary>
     public static Vector3 EyeAt(
         in CharacterPosition position,
@@ -148,7 +149,9 @@ public sealed class PlayerCameraSystem : BaseSystem<World, FrameTime>, IFrameUpd
         float alpha
     )
     {
-        var feet = Vector3.Lerp(position.PreviousFeet, position.Feet, alpha);
+        var feet =
+            Vector3.Lerp(position.PreviousFeet, position.Feet, alpha)
+            + Vector3.Lerp(smoothing.PreviousCorrection, smoothing.Correction, alpha);
         var offset =
             smoothing.PreviousOffset
             + (smoothing.Offset - smoothing.PreviousOffset) * alpha

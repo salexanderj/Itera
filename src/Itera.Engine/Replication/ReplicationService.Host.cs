@@ -133,6 +133,7 @@ public sealed partial class ReplicationService
         var reader = new MessageReader(body);
         var newest = (uint)reader.ReadVarInt();
         var bits = reader.ReadULong();
+        ReadCommands(ref reader, _clients[slot]);
         reader.EnsureEnd();
         if (newest != 0 && (_clients[slot] is not { } client || newest >= client.NextPacket))
         {
@@ -363,7 +364,8 @@ public sealed partial class ReplicationService
 
     /// <summary>
     /// The entities a client is sent this time, highest priority first: within its reach and with a state it has not
-    /// acknowledged; one that left its reach is removed from it instead. Its own player is left out (its own game moves it).
+    /// acknowledged; one that left its reach is removed from it instead. Its own player is left out: it predicts it, and the
+    /// owner's block carries the host's state of it.
     /// </summary>
     private void Choose(HostClient client)
     {
@@ -469,8 +471,8 @@ public sealed partial class ReplicationService
     }
 
     /// <summary>
-    /// Starts a client's next packet: its number, the tick, and, in a send's first, the ids it removes (up to a packet's
-    /// share).
+    /// Starts a client's next packet: its number, the tick, and, in a send's first, the owner's block (its player's state
+    /// after the last command applied) and the ids it removes (up to a packet's share).
     /// </summary>
     private void StartPacket(HostClient client, int tick, bool removals)
     {
@@ -482,6 +484,15 @@ public sealed partial class ReplicationService
         _packet.WriteByte((byte)MessageKind.Snapshot);
         _packet.WriteVarInt((int)sequence);
         _packet.WriteVarInt(tick);
+        if (removals)
+        {
+            WriteOwner(client);
+        }
+        else
+        {
+            _packet.WriteByte(0);
+        }
+
         var count = removals ? Math.Min(client.Removals.Count, MostRemovalsPerPacket) : 0;
         _packet.WriteVarInt(count);
         for (var i = 0; i < count; i++)
@@ -559,7 +570,7 @@ public sealed partial class ReplicationService
             context.Print(
                 string.Create(
                     culture,
-                    $"  client {client.Slot}: {known} entities acknowledged, {client.Removals.Count} removals waiting, {client.PacketsSent} packets ({client.AcknowledgedPackets} acknowledged), {client.BytesSent} bytes"
+                    $"  client {client.Slot}: {known} entities acknowledged, {client.Removals.Count} removals waiting, {client.PacketsSent} packets ({client.AcknowledgedPackets} acknowledged), {client.BytesSent} bytes; its commands {client.NewestCommand - client.NewestApplied} waiting, {client.MissedTotal} missed"
                 )
             );
         }
@@ -686,6 +697,27 @@ public sealed partial class ReplicationService
 
         /// <summary>Ids it is to remove, each numbered, until a packet that carried that removal is acknowledged.</summary>
         public readonly List<Removal> Removals = [];
+
+        /// <summary>Its player's commands by its tick (the tick plus one in <see cref="CommandTicks"/>; 0 for none).</summary>
+        public readonly PlayerCommand[] Commands = new PlayerCommand[CommandRing];
+        public readonly int[] CommandTicks = new int[CommandRing];
+
+        /// <summary>The newest command's tick it sent, the next to apply, and the last applied; -1 for none.</summary>
+        public int NewestCommand = -1;
+        public int NextCommand = -1;
+        public int NewestApplied = -1;
+        public PlayerCommand LastCommand;
+
+        /// <summary>The first command's tick it sent; -1 before.</summary>
+        public int FirstCommand = -1;
+
+        /// <summary>True when a command newer than any before arrived since the host last applied one.</summary>
+        public bool Arrived;
+
+        /// <summary>The steps in a row its next command was missing, and in all; and the steps in a row none waited.</summary>
+        public int Missed;
+        public long MissedTotal;
+        public int Starved;
         private int _nextRemoval;
 
         /// <summary>By entity index: the tick of the newest state it acknowledged, or -1 when it has none.</summary>

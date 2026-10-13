@@ -217,6 +217,15 @@ public struct EyeSmoothing
 
     /// <summary>The eye's height the last step moved with, in metres, to see it change; 0 before the first.</summary>
     public float EyeMetres;
+
+    /// <summary>
+    /// On a client, the body's offset after a correction of its prediction (the host's state put it elsewhere): what it
+    /// is drawn off by, easing to none (<c>ReplicationService.CorrectionEase</c>); a direction, not a position. With
+    /// <see cref="PreviousCorrection"/>, its value at the step before.
+    /// </summary>
+    public Vector3 Correction;
+
+    public Vector3 PreviousCorrection;
 }
 
 /// <summary>

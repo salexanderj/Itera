@@ -93,7 +93,7 @@ internal static class SessionProtocol
     /// Raised whenever any message changes shape or meaning or a kind is added, the game's included: the game's messages
     /// have no version of their own, so a mismatch is refused in the handshake with this number instead of failing later.
     /// </summary>
-    public const int Version = 40;
+    public const int Version = 41;
 
     /// <summary>Lobby data: the players in the session now, the host's included (<c>SessionService</c> writes it).</summary>
     public const string LobbyPlayersKey = "itera_players";

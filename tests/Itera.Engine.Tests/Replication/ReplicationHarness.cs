@@ -73,19 +73,32 @@ internal sealed class ReplicationHarness : IDisposable
         var network = new FakeNetwork();
         harness._network = network;
         harness._options = options;
+        // Characters walk on the test floor, so both worlds have terrain.
+        var terrain = plan.Characters || harness.ClientPlan.Characters;
         harness.HostTransport = new FakeTransport(network);
         harness.ClientTransport = new FakeTransport(network);
-        harness.HostProvider = Build(options, plan, harness.Wrap(harness.HostTransport, hostConditions, 11));
+        harness.HostProvider = Build(options, plan, harness.Wrap(harness.HostTransport, hostConditions, 11), terrain);
         harness.ClientProvider = Build(
             options,
             harness.ClientPlan,
-            harness.Wrap(harness.ClientTransport, clientConditions, 12)
+            harness.Wrap(harness.ClientTransport, clientConditions, 12),
+            terrain
         );
         harness.Host = new HeadlessRun(harness.HostProvider).Host(seed: 3);
+        if (terrain)
+        {
+            harness.Host.Match.Voxels.SetCenters([System.Numerics.Vector3.Zero]);
+        }
+
         Assert.True(harness.Host.WaitUntilLoaded());
         harness.Client = new HeadlessRun(harness.ClientProvider).Join(harness.Host);
         // From here the test's steps move the clock.
         harness._manual = harness._wall.ElapsedMilliseconds;
+        if (terrain)
+        {
+            harness.Client.Match.Voxels.SetCenters([System.Numerics.Vector3.Zero]);
+        }
+
         Assert.True(harness.Client.WaitUntilLoaded());
         return harness;
     }
@@ -107,6 +120,9 @@ internal sealed class ReplicationHarness : IDisposable
 
     /// <summary>Runs <paramref name="ticks"/> steps of the host, then the client, the clock a 60th of a second each.</summary>
     public void Step(int ticks) => Step(ticks, clientToo: true);
+
+    /// <summary>Runs <paramref name="ticks"/> steps of the host alone, as while the client stalls and drops its steps.</summary>
+    public void StepHost(int ticks) => Step(ticks, clientToo: false);
 
     private void Step(int ticks, bool clientToo)
     {
@@ -143,11 +159,15 @@ internal sealed class ReplicationHarness : IDisposable
     private ISessionTransport Wrap(FakeTransport transport, NetworkConditions conditions, int seed) =>
         conditions.Any ? new SimulatedNetwork(transport, conditions, () => NowMilliseconds, seed) : transport;
 
-    /// <summary>The engine's services, the test kinds, the mover system, and the replication's systems, over <paramref name="transport"/>.</summary>
+    /// <summary>
+    /// The engine's services, the test kinds, the mover and character systems, a client's input from the plan's script,
+    /// the engine's movement, and the replication's systems, over <paramref name="transport"/>.
+    /// </summary>
     public static ServiceProvider Build(
         IReadOnlyDictionary<string, string?>? options,
         MoverPlan plan,
-        ISessionTransport transport
+        ISessionTransport transport,
+        bool terrain = false
     ) =>
         EngineComposition.Build(
             options,
@@ -168,9 +188,27 @@ internal sealed class ReplicationHarness : IDisposable
                     sp.GetRequiredService<WorldOrigin>(),
                     plan
                 ));
+                services.AddScoped<IFixedUpdateSystem>(sp => new TestCharacterSystem(
+                    sp.GetRequiredService<EcsWorld>().World,
+                    sp.GetRequiredService<ReplicationService>(),
+                    sp.GetRequiredService<SessionService>(),
+                    plan
+                ));
+                // The client's command from the plan's script, after the step's start and before the reply records it.
+                services.AddScoped<IFixedUpdateSystem>(sp => new TestInputSystem(
+                    sp.GetRequiredService<EcsWorld>().World,
+                    plan
+                ));
                 services.AddScoped<IFixedUpdateSystem>(sp => new ReplicationReplySystem(
                     sp.GetRequiredService<EcsWorld>().World,
                     sp.GetRequiredService<ReplicationService>()
+                ));
+                services.AddScoped<IFixedUpdateSystem>(sp => new PlayerMovementSystem(
+                    sp.GetRequiredService<EcsWorld>().World,
+                    sp.GetRequiredService<Itera.Engine.Physics.VoxelCharacterMover>(),
+                    sp.GetRequiredService<PlayArea>(),
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger<PlayerMovementSystem>.Instance,
+                    physics: sp.GetRequiredService<Itera.Engine.Physics.PhysicsWorld>()
                 ));
                 services.AddScoped<IFixedUpdateSystem>(sp => new ReplicationSendSystem(
                     sp.GetRequiredService<EcsWorld>().World,
@@ -178,7 +216,7 @@ internal sealed class ReplicationHarness : IDisposable
                     sp.GetRequiredService<ConsoleCommands>()
                 ));
             },
-            terrain: false
+            terrain
         );
 
     private sealed class Transports(ISessionTransport transport) : ISessionTransports
@@ -207,6 +245,22 @@ internal sealed class MoverPlan
     public ReplicatedKindId Mover { get; set; }
 
     public ReplicatedKindId Player { get; set; }
+
+    public ReplicatedKindId Character { get; set; }
+
+    /// <summary>
+    /// Characters that walk (the engine's movement components) on the test floor: on a client its own player, predicted,
+    /// moved by <see cref="Script"/>; on the host each client's player, moved by the client's commands.
+    /// </summary>
+    public bool Characters { get; set; }
+
+    /// <summary>On a client, its player's command at each tick; none stands still.</summary>
+    public Func<ulong, Components.PlayerCommand>? Script { get; set; }
+
+    /// <summary>On a client, its own player; on the host, each slot's.</summary>
+    public Entity Own { get; set; } = Entity.Null;
+
+    public Entity[] Remote { get; } = new Entity[SessionService.MaxSlots];
 
     /// <summary>On the host: the movers made, in order.</summary>
     public List<(Entity Entity, uint Id)> Movers { get; } = [];
@@ -249,11 +303,14 @@ internal sealed class TestKinds(ReplicatedKinds kinds, MoverPlan plan) : IRunSta
     public static readonly IntegerField MoverPhase = MoverSchema.AddInteger("phase", 0, 99);
     public static readonly ReplicatedSchema PlayerSchema = new();
     public static readonly PositionField PlayerAt = PlayerSchema.AddPosition("feet");
+    public static readonly ReplicatedSchema CharacterSchema = new();
+    public static readonly PositionField CharacterAt = CharacterSchema.AddPosition("feet");
 
     public void Start()
     {
         plan.Mover = kinds.Register("test.mover", MoverSchema, new MoverKind(plan), plan.RelevanceMetres, priority: 1);
         plan.Player = kinds.Register("test.player", PlayerSchema, new PlayerKind(plan), priority: 4);
+        plan.Character = kinds.Register("test.character", CharacterSchema, new CharacterKind(plan), priority: 4);
         if (plan.ExtraKind)
         {
             kinds.Register("test.extra", new ReplicatedSchema(), new PlayerKind(plan));
@@ -290,6 +347,30 @@ internal sealed class TestKinds(ReplicatedKinds kinds, MoverPlan plan) : IRunSta
             plan.Despawns++;
             context.World.Destroy(entity);
         }
+    }
+
+    private sealed class CharacterKind(MoverPlan plan) : IReplicatedKind
+    {
+        public void Capture(in ReplicationContext context, Entity entity, ref ReplicatedState state) =>
+            CharacterAt.Set(
+                ref state,
+                context.Origin.ToWorld(context.World.Get<Components.CharacterPosition>(entity).Feet)
+            );
+
+        public Entity Spawn(in ReplicationContext context, in ReplicatedState state)
+        {
+            plan.Spawns++;
+            return context.World.Create(new TestShown());
+        }
+
+        public void Apply(in ReplicationContext context, Entity entity, in ReplicatedState state)
+        {
+            ref var shown = ref context.World.Get<TestShown>(entity);
+            shown.At = CharacterAt.Get(in state);
+            shown.Applied++;
+        }
+
+        public void Despawn(in ReplicationContext context, Entity entity) => context.World.Destroy(entity);
     }
 
     private sealed class PlayerKind(MoverPlan plan) : IReplicatedKind
@@ -361,7 +442,8 @@ internal sealed class TestMoverSystem(
         }
 
         var players = session.Players;
-        for (var slot = 1; slot < SessionService.MaxSlots; slot++)
+        // With characters, the clients' players are those (TestCharacterSystem).
+        for (var slot = 1; slot < SessionService.MaxSlots && !plan.Characters; slot++)
         {
             if (!_joins.Changed(players, slot))
             {
@@ -402,6 +484,92 @@ internal sealed class TestMoverSystem(
             mover.Position.X += Step;
             mover.Heading += 0.01f;
             mover.Phase = (mover.Phase + 1) % 100;
+        }
+    }
+}
+
+/// <summary>
+/// Characters that walk: on a client with the plan's <see cref="MoverPlan.Characters"/>, its own player made at the start
+/// on the test floor at the middle and predicted; on the host, each joining client's player made there with the same
+/// components and replicated under its slot's id (removed when the client leaves).
+/// </summary>
+internal sealed class TestCharacterSystem(
+    World world,
+    ReplicationService replication,
+    SessionService session,
+    MoverPlan plan
+) : BaseSystem<World, FixedStepTime>(world), IFixedUpdateSystem
+{
+    private readonly SlotJoins _joins = new();
+
+    public override void Initialize()
+    {
+        if (session.Role == SessionRole.Client && plan.Characters)
+        {
+            plan.Own = Create(World);
+            World.Add(plan.Own, new Components.LocalPlayer());
+            replication.Predict(plan.Own);
+        }
+    }
+
+    public override void Update(in FixedStepTime step)
+    {
+        if (session.Role != SessionRole.Host || !plan.Characters)
+        {
+            return;
+        }
+
+        var players = session.Players;
+        for (var slot = 1; slot < SessionService.MaxSlots; slot++)
+        {
+            if (!_joins.Changed(players, slot))
+            {
+                continue;
+            }
+
+            if (World.IsAlive(plan.Remote[slot]))
+            {
+                World.Destroy(plan.Remote[slot]);
+                replication.Remove(PlayerIds.Of(slot));
+            }
+
+            plan.Remote[slot] = Entity.Null;
+            if (slot < players.Length && players[slot].Present)
+            {
+                plan.Remote[slot] = Create(World);
+                World.Add(plan.Remote[slot], new Components.RemotePlayer());
+                replication.Add(plan.Remote[slot], plan.Character, PlayerIds.Of(slot));
+            }
+        }
+    }
+
+    /// <summary>A 1.7 m character standing on the floor at the middle, waiting for its first step.</summary>
+    public static Entity Create(World world)
+    {
+        var feet = new Vector3(0, 0.05f, 0);
+        return world.Create(
+            new Components.PlayerCommand(),
+            new Components.PlayerMode(),
+            Components.CharacterSize.ForHeight(1.7f),
+            new Components.CharacterPosition { Feet = feet, PreviousFeet = feet },
+            new Components.CharacterVelocity(),
+            new Components.CharacterContact { Waiting = true },
+            new Components.EyeSmoothing(),
+            Components.MovementStats.Default
+        );
+    }
+}
+
+/// <summary>On a client, its player's command each step from the plan's script.</summary>
+internal sealed class TestInputSystem(World world, MoverPlan plan)
+    : BaseSystem<World, FixedStepTime>(world),
+        IFixedUpdateSystem
+{
+    public override void Update(in FixedStepTime step)
+    {
+        if (plan.Script is { } script && World.IsAlive(plan.Own))
+        {
+            World.Get<Components.PlayerCommand>(plan.Own) = script(step.Tick);
         }
     }
 }

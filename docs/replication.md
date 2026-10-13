@@ -3,8 +3,8 @@
 Itera carried a session's messages, its edits, and its seed, but no entity: `NetEntities`, `TickRing`, and
 `JitterPlayback` were helpers nothing used, and replicating players and bodies was each game's work. On 2026-10-12 the
 engine gained replication as engine systems any game uses (`src/Itera.Engine/Replication/`, `.claude/rules/replication.md`).
-This file records what was chosen, what else was offered, and why. Prediction of a client's own player with the host's
-correction comes next, on top of it.
+This file records what was chosen, what else was offered, and why, with a client's own player predicted and corrected by
+the host on top of it.
 
 ## What came before, and what was taken from it
 
@@ -63,6 +63,30 @@ amounts cost 110 to 140 KB/s until changes under a millimetre went unsent.
   one ends the session through the session's own error path; only making, showing, and removing entities touch the ECS,
   in the receive system.
 
+## A client's own player
+
+- **Host-corrected prediction.** Offered: the client moves its player and the host checks and trusts it (what the
+  first form did, because the mover is not the same to the last bit on every machine); the host moves it from the
+  client's commands and the client predicts and is corrected. Chosen: the second, once a check showed the two move
+  alike: two matches of a game's world given the same input, one with its origin at the player and one 2 km off, as a
+  host's is, drifted at most 3.1 mm in 20 steps walking, sprinting, jumping, crouching, and pushing into balls, under the
+  1 cm a correction needs; climbing 2 km from the host's origin differed (one pull-up a step apart), and is corrected
+  and eased. Every effect on movement the host decides (a knockdown, a blast's push) then reaches the client through the
+  same path.
+- **The same numbers on both sides.** The client quantises its command in place before it moves (the move in
+  1/127ths, the yaw in 65,536ths of a turn, the pitch in 32,767ths of a quarter turn), so the host moves the player by
+  exactly what the client did. Each reply carries the last 8 commands, so a lost reply costs nothing.
+- **The host's buffer.** Two steps of a client's commands wait before the host applies them, against jitter; a missing
+  one is the last without its jump. A host that falls ahead of a client's commands for good (the client stalled and
+  dropped steps, its clock runs slow, or the delay grew) would otherwise run that player on stand-ins from then on: when
+  none has waited for three steps while commands still arrive, it starts again from the newest less two, and the client
+  is corrected once. (A review found the first form of the buffer never recovered; a test that stalls the client a
+  third of a second ends a metre apart without the restart.)
+- **Correcting.** The owner's block in each send's first packet gives the host's state after the last command it
+  applied. A client that predicted otherwise there (1 cm, or another contact, crouch, or climb) takes the host's state
+  and runs its later commands again with the same step the movement system uses (`CharacterStepper`), and eases what is
+  drawn from where it was (0.85 a step kept, so a jump is mostly gone in a quarter second; past 2 m at once).
+
 ## Measured
 
 The service's tests run a host and a client in one process (`ReplicationHarness`, 2026-10-12). With no delay, a mover
@@ -70,12 +94,13 @@ is shown 5.99 to 6.02 steps behind the host: the interpolation delay (100 ms) al
 to 9.03 steps. Through 100 ms each way with 10 ms of jitter and 5 % loss in each direction, 12.2 steps at the median
 (the delay and the one-way delay make 12), 12.6 at nine in ten, 14.0 at 99 in 100, and at most 18.0, where a send was
 lost or late. 400 movers under a budget of 8,192 bytes a second are sent 8,035 bytes a second of snapshots, and every
-one reaches the client within two seconds. The tests hold these figures within a tenth or two of a step.
+one reaches the client within two seconds. The tests hold these figures within a tenth or two of a step. A predicted
+player walking, sprinting, and jumping for 12 seconds is not corrected after its first second, with no delay and through
+100 ms each way with 10 ms of jitter and 5 % loss, and ends where the host's copy does (within a millimetre with no
+delay); a host that moves the player a metre corrects the client within 20 steps.
 
 ## Left for later
 
-- Prediction of a client's own player and the host's correction (the host leaves a client's own player out of what it
-  sends it for now).
 - A short history of positions on the host for judging hits against what a client saw.
 - A group far from every player sent as one record for the whole group, rather than one for each member, when crowds
   need it.

@@ -38,6 +38,8 @@ public sealed class OriginShiftsTests : IDisposable
         "CharacterVelocity.Wanted",
         "CharacterVelocity.Push",
         "CharacterContact.Downhill",
+        "EyeSmoothing.Correction",
+        "EyeSmoothing.PreviousCorrection",
         "CharacterContact.WallNormal",
         "Climber.Normal",
         "BodyBox.Min",

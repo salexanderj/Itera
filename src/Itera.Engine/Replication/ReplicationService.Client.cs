@@ -63,6 +63,8 @@ public sealed partial class ReplicationService
             throw new InvalidDataException("A snapshot without a number.");
         }
 
+        ReadOwner(ref reader);
+
         var removals = reader.ReadVarInt();
         if (removals > MostRemovalsPerPacket)
         {
@@ -254,20 +256,23 @@ public sealed partial class ReplicationService
     }
 
     /// <summary>
-    /// A client's reply (<c>ReplicationReplySystem</c>, every step): the newest snapshot it read and which of the 64 before
-    /// it arrived, so the host knows which states it holds.
+    /// A client's reply (<c>ReplicationReplySystem</c>, every step after the input, before the move): the newest snapshot it
+    /// read and which of the 64 before it arrived, so the host knows which states it holds, and its own player's last
+    /// commands, this step's quantised in place and kept first.
     /// </summary>
-    internal void SendReply()
+    internal void SendReply(ulong tick)
     {
         if (_session.Role != SessionRole.Client)
         {
             return;
         }
 
+        RecordCommand(tick);
         _reply.Reset();
         _reply.WriteByte((byte)MessageKind.Reply);
         _reply.WriteVarInt((int)_newestPacket);
         _reply.WriteULong(_receivedBits);
+        WriteCommands(tick);
         _session.SendEngineToHost(_reply.Written);
     }
 
@@ -382,7 +387,7 @@ public sealed partial class ReplicationService
         context.Print(
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"Showing {_shownIndex.Count} entities {InterpolationMilliseconds} ms behind the host; {_snapshots} snapshots read ({_unusable} without their baselines), newest {_newestPacket}; the host's clock {_clockOffset * millisecondsPerTick:F0} ms ahead of this one."
+                $"Showing {_shownIndex.Count} entities {InterpolationMilliseconds} ms behind the host; {_snapshots} snapshots read ({_unusable} without their baselines), newest {_newestPacket}; the host's clock {_clockOffset * millisecondsPerTick:F0} ms ahead of this one; {_corrections} corrections of this player, the last {_lastCorrectionMetres * 100:F1} cm."
             )
         );
     }
