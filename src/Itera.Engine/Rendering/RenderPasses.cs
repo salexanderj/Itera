@@ -78,6 +78,14 @@ public interface IRenderPass : IReloadsShaders, IDisposable
 
     /// <summary>Makes its pipelines again when <paramref name="setup"/>'s formats or samples differ from its own. Render thread, device idle.</summary>
     void OnTargetsChanged(RenderPassSetup setup);
+
+    /// <summary>
+    /// True when the pass reads the picture under it in the frame of slot <paramref name="slot"/> (the Screen stage
+    /// alone): the engine then copies the screen's picture for it, which <see cref="RenderPassContext.Picture"/> samples
+    /// (a blur, a change of colour over the whole screen). A pass sets what it answers in <see cref="Write"/>; the engine
+    /// asks on the render thread, only in frames whose passes were written. None by default: nothing is copied.
+    /// </summary>
+    bool ReadsPicture(int slot) => false;
 }
 
 /// <summary>What a game's pass is given at <see cref="IRenderPass.Write"/>: the frame's time and view.</summary>
@@ -92,13 +100,19 @@ public readonly record struct RenderPassFrame(FrameTime Time, ViewConstants View
 /// <param name="View">The view constants, their width and height the stage's (the drawn or the screen's size).</param>
 /// <param name="Extent">The size drawn to.</param>
 /// <param name="MeshSet">The mesh pass's descriptor set (its lighting, shadow maps, sky field, lights, and look).</param>
+/// <param name="Picture">
+/// At the Screen stage, in a frame where a pass reads the picture (<see cref="IRenderPass.ReadsPicture"/>), the set that
+/// samples a copy of it (<see cref="RenderPassSetup.PictureSetLayout"/>); otherwise none (its handle 0): a pass that
+/// needs it then draws nothing.
+/// </param>
 public readonly record struct RenderPassContext(
     CommandBuffer CommandBuffer,
     int Slot,
     bool Fresh,
     ViewConstants View,
     Extent2D Extent,
-    DescriptorSet MeshSet
+    DescriptorSet MeshSet,
+    DescriptorSet Picture = default
 );
 
 /// <summary>
@@ -118,7 +132,8 @@ public sealed class RenderPassSetup
         SampleCountFlags samples,
         Format depthFormat,
         DescriptorSetLayout meshSetLayout,
-        DescriptorSet meshSet
+        DescriptorSet meshSet,
+        DescriptorSetLayout pictureSetLayout
     )
     {
         Context = context;
@@ -130,6 +145,7 @@ public sealed class RenderPassSetup
         DepthFormat = depthFormat;
         MeshSetLayout = meshSetLayout;
         MeshSet = meshSet;
+        PictureSetLayout = pictureSetLayout;
     }
 
     public VulkanContext Context { get; }
@@ -154,6 +170,13 @@ public sealed class RenderPassSetup
 
     /// <summary>The mesh pass's descriptor set (also in each frame's <see cref="RenderPassContext.MeshSet"/>).</summary>
     public DescriptorSet MeshSet { get; }
+
+    /// <summary>
+    /// At the Screen stage, the layout of <see cref="RenderPassContext.Picture"/>'s set: binding 0 a combined image
+    /// sampler (linear, clamped to the edge) of the screen's picture, read by the fragment stage, the swapchain's format,
+    /// so it reads what the stage's target holds. None (its handle 0) at the other stages.
+    /// </summary>
+    public DescriptorSetLayout PictureSetLayout { get; }
 
     /// <summary>The frame slots: a pass keeps a region of its per-frame memory for each.</summary>
     public static int FramesInFlight => FrameSync.FramesInFlight;
@@ -368,8 +391,8 @@ public sealed unsafe class RenderPassBufferSet : IDisposable
 /// <see cref="GpuTimings.MostGamePasses"/>, named apart), written each frame after the frame systems, recorded by the
 /// mesh pass (Compute, Opaque, Transparent) and the frame renderer (Scene, Screen: the rendering begun here, after a
 /// barrier from the frame's earlier writes, with the viewport set), each timed on its own, made again with the
-/// swapchain, and reloaded with the engine's shaders. With none registered, it records nothing. Created before the
-/// render thread starts.
+/// swapchain, and reloaded with the engine's shaders; the Screen stage's passes may read the picture under them
+/// (<c>RenderPasses.Picture.cs</c>). With none registered, it records nothing. Created before the render thread starts.
 /// </summary>
 public sealed unsafe partial class RenderPasses : IDisposable
 {
@@ -428,6 +451,15 @@ public sealed unsafe partial class RenderPasses : IDisposable
         foreach (var pass in _passes)
         {
             _atStage[(int)pass.Stage] = true;
+        }
+
+        if (_atStage[(int)RenderStage.Screen])
+        {
+            CreatePictureObjects();
+        }
+
+        foreach (var pass in _passes)
+        {
             pass.Initialize(SetupFor(pass.Stage));
         }
 
@@ -477,6 +509,9 @@ public sealed unsafe partial class RenderPasses : IDisposable
         {
             pass.Write(slot, in frame);
         }
+
+        // Read by the render thread with the slot's frame, which the exchange hands over after this.
+        _written[slot] = true;
     }
 
     /// <summary>The frame's slot (for memory), its timer slot, and whether it is fresh, for the stages' records. Render thread.</summary>
@@ -485,6 +520,10 @@ public sealed unsafe partial class RenderPasses : IDisposable
         _slot = slot;
         _timerSlot = timerSlot;
         _fresh = fresh;
+        // Whether the passes wrote this frame's data (a frame without a match's world has none); the slot's next frame
+        // is written only after this one was recorded.
+        _passesWritten = _written[slot];
+        _written[slot] = false;
     }
 
     /// <summary>
@@ -535,10 +574,17 @@ public sealed unsafe partial class RenderPasses : IDisposable
     }
 
     /// <summary>
-    /// The Screen stage's passes, in a rendering of the screen's <paramref name="target"/> (no depth) begun here, the
-    /// view's size the screen's. Render thread, after the upscale.
+    /// The Screen stage's passes, in a rendering of the screen's <paramref name="target"/> (the view of the swapchain's
+    /// <paramref name="image"/>; no depth) begun here, the view's size the screen's; first, when one reads the picture,
+    /// its copy, timed with the first pass that reads it. Render thread, after the upscale.
     /// </summary>
-    public void RecordScreen(CommandBuffer commandBuffer, ImageView target, Extent2D screen, in ViewConstants view)
+    public void RecordScreen(
+        CommandBuffer commandBuffer,
+        Image image,
+        ImageView target,
+        Extent2D screen,
+        in ViewConstants view
+    )
     {
         if (!_atStage[(int)RenderStage.Screen])
         {
@@ -548,8 +594,36 @@ public sealed unsafe partial class RenderPasses : IDisposable
         var constants = view;
         constants.Width = screen.Width;
         constants.Height = screen.Height;
+        var reader = _swapchain.CanCopyImages ? FirstPictureReader() : -1;
+        var picture = default(DescriptorSet);
+        if (reader >= 0)
+        {
+            _timer.BeginGame(commandBuffer, _timerSlot, reader);
+            picture = CopyPicture(commandBuffer, image, screen);
+        }
+        else
+        {
+            _pictures.NotUsed(_slot, PictureFramesBeforeFree);
+        }
+
         BeginRendering(commandBuffer, target, default, screen);
-        Record(RenderStage.Screen, commandBuffer, in constants, screen);
+        var context = new RenderPassContext(commandBuffer, _slot, _fresh, constants, screen, _meshPass.Set, picture);
+        for (var i = 0; i < _passes.Length; i++)
+        {
+            if (_passes[i].Stage != RenderStage.Screen)
+            {
+                continue;
+            }
+
+            if (i != reader)
+            {
+                _timer.BeginGame(commandBuffer, _timerSlot, i);
+            }
+
+            _passes[i].Record(in context);
+            _timer.EndGame(commandBuffer, _timerSlot, i);
+        }
+
         _context.Vk.CmdEndRendering(commandBuffer);
     }
 
@@ -561,6 +635,7 @@ public sealed unsafe partial class RenderPasses : IDisposable
             return;
         }
 
+        _pictures.Clear();
         foreach (var pass in _passes)
         {
             pass.OnTargetsChanged(SetupFor(pass.Stage));
@@ -581,6 +656,8 @@ public sealed unsafe partial class RenderPasses : IDisposable
         {
             pass.Dispose();
         }
+
+        DestroyPictureObjects();
     }
 
     /// <summary>The setup of a stage: its targets' formats and samples now.</summary>
@@ -600,7 +677,8 @@ public sealed unsafe partial class RenderPasses : IDisposable
             inWorld ? _meshPass.Samples : SampleCountFlags.Count1Bit,
             depth,
             _meshPass.SetLayout,
-            _meshPass.Set
+            _meshPass.Set,
+            stage == RenderStage.Screen ? _pictureSetLayout : default
         );
     }
 

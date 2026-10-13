@@ -615,7 +615,13 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         }
 
         // A game's passes over the screen's picture, before the UI.
-        _renderPasses.RecordScreen(commandBuffer, _swapchain.ImageViews[(int)imageIndex], screen, in view);
+        _renderPasses.RecordScreen(
+            commandBuffer,
+            _swapchain.Images[(int)imageIndex],
+            _swapchain.ImageViews[(int)imageIndex],
+            screen,
+            in view
+        );
     }
 
     /// <summary>True for the sRGB formats a swapchain may have: an image of one encodes the linear colour it is given.</summary>

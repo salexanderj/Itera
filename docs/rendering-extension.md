@@ -85,6 +85,16 @@ A game registers `IRenderPass` singletons, each recorded at one of five stages.
 - The example. Offered: a highlight on the block the player aims at (Transparent stage); a full-screen effect (Screen
   stage); both. Chosen: the highlight (the mesh sample's `AimHighlightPass`), since it shows a game's own draw, shader,
   and per-frame data, and helps climbing.
+- Reading the picture (added 2026-10-13, for a game's blur when a player's head is hurt and its grey when downed). A
+  pass cannot sample the image it draws into, so an effect over the whole screen needs a copy. Offered: effects the
+  engine owns (a blur and a grey a game sets each frame, in the engine's shader); a game's `Screen` pass that asks for a
+  copy of the picture, frame by frame. Chosen: the second, since any full-screen effect then belongs to the game, and the
+  engine keeps only the copy. The pass says per frame whether it reads the picture (`IRenderPass.ReadsPicture`), so a
+  frame with no effect copies nothing; the copy is of the swapchain image, after the upscale, into one image of the
+  screen's size kept as the upscale's images are, and its descriptor set and layout come from the engine, so the game
+  makes no Vulkan object but its pipeline. Cost: with no pass reading, none; a blur of 24 taps over a disc and a
+  grey, with the copy, took about 0.12 ms a frame at 849x1390 and about 0.16 to 0.22 ms at 1280x720 offscreen (before its
+  taps' offsets became a constant table, 0.63 ms at 2560x1440).
 
 ## Orthographic lenses
 

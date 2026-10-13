@@ -434,7 +434,20 @@ slot, whether the frame is fresh, the view constants with the stage's size, the 
 reloads (`IReloadsShaders`), and `Dispose` (perhaps twice, and perhaps without `Initialize`, so a pass's constructor
 makes no Vulkan object; after the engine gave up on a stuck device, `VulkanContext.IsAbandoned`, it destroys nothing).
 The mesh pass sets its viewport, scissor, set, and constants again after the `Opaque` stage. A game's passes draw into
-the frame alone, not into image views (below). `RenderPassSetup` gives the device, the allocator, the shader compiler,
+the frame alone, not into image views (below). A `Screen` pass may read the picture under it (a blur, a change of colour
+over the whole screen): it answers `ReadsPicture(slot)` (false by default) from what it wrote in that slot's `Write`, and
+in a frame where one says yes (asked only in frames whose passes were written, so never in the menu's), the engine
+copies the swapchain image, before the stage's rendering, into an image of the screen's size and the swapchain's format
+(`RenderPasses.Picture.cs`: the swapchain image to `TransferSrcOptimal` and back, the picture from `Undefined` after
+earlier frames' fragment reads to `TransferDstOptimal`, then to `ShaderReadOnlyOptimal` for the fragment stage), and
+`RenderPassContext.Picture` is a set that samples it (binding 0, a combined image sampler, linear, clamped to the edge;
+its layout `RenderPassSetup.PictureSetLayout`, given at the `Screen` stage alone); otherwise its handle is 0 and the pass
+draws nothing that needs it. The copy is timed with the first pass that reads it. The image is made on the render thread
+the first time it is asked for, made again for a new screen size (dropped with the swapchain), and freed once no pass has
+read it for 600 frames (`RenderPasses.PictureFramesBeforeFree`, `FrameImages`); where the surface offers no copy
+(`VulkanSwapchain.CanCopyImages`) a Warning says so at the "render passes" step and no pass gets one. Nothing is copied
+while no pass reads it. A copy at 2560x1440 moves about 30 MB; a blur of 24 taps and a grey over it took about 0.12 ms
+at 849x1390 (`docs/rendering-extension.md`). `RenderPassSetup` gives the device, the allocator, the shader compiler,
 the stage's colour and depth formats and samples, `MeshPass`'s set and its layout (a pipeline whose set 0 it is reads
 the look, the lighting, and the shadow maps), and helpers: `CreateLayout`, `CreateTriangles` (a pipeline for the stage's
 targets with no vertex input, depth compared Greater when tested, its colour blended as `ColorBlend` says: `None`,

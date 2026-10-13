@@ -140,7 +140,10 @@ colour-target row is the upscale's source, which EASU samples below
 render scale 1, and SMAA's scene, edges, and weights images. Barriers the table does not list are in their passes' files: the upscale's
 discards to the colour attachment layout (`UpscalePass` and `SmaaPass`: Undefined to ColorAttachmentOptimal after
 earlier frames' fragment reads), the screenshot's copy of the swapchain image (`ScreenshotPass`: ColorAttachmentOptimal to
-TransferSrcOptimal and on, then Copy / TransferWrite to Host / HostRead), the UI's (`UiPass`), and the loading
+TransferSrcOptimal and on, then Copy / TransferWrite to Host / HostRead), the copy of the picture for a game's Screen
+passes that read it (`RenderPasses.Picture.cs`: the swapchain image ColorAttachmentOptimal to TransferSrcOptimal and
+back; the picture Undefined to TransferDstOptimal after earlier frames' FragmentShader reads, then to
+ShaderReadOnlyOptimal for the FragmentShader), the UI's (`UiPass`), and the loading
 screen's (`LoadingPass`). The particles' barriers before the compute passes (last frame's reads before this frame's
 writes, the clear and fill before compute, spawn before simulate) are in `ParticlePass.RecordSimulate`.
 The first mesh heap row is an execution dependency on earlier frames' reads of the heap (a write after read needs no

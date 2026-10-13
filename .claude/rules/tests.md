@@ -203,7 +203,7 @@ Where tests live:
   `RenderViewsTests` (declaring, the cadence, panels), `Memory/GpuRangeHeapTests`, `GpuLayoutTests` (of
   `tests/Shared/GpuLayout`, also `DescriptorSets`), `Memory/GpuMemoryAllocatorTests`, `DeviceChoiceTests`,
   `RenderThreadTests` (a fake renderer), `RenderPassesTests` (a game's pass at every stage in `EngineComposition`, none
-  made or written without graphics; too many, or names empty or used twice, refused), the passes' shaders against their
+  made or written without graphics; too many, or names empty or used twice, refused; no picture read unless a pass says so), the passes' shaders against their
   push constants (`UiPassTests`, `UpscalePassTests`, `LoadingPassTests`, `ParticlePassTests`, with the pool's origin), `ScreenshotTests`,
   `ShaderReloadTests`.
 - Elsewhere in `Itera.Engine.Tests`: `Configuration/` (`EngineOptionsValidatorTests`), `Networking/` (`SessionServiceTests`, `SessionTuningTests` (a host's match tunables reaching a joining client and

@@ -11,7 +11,7 @@ namespace Itera.Engine.Tests.Rendering;
 /// A game's render passes (<see cref="IRenderPass"/>) in the engine's composition: one at every stage resolves with the
 /// loop, in the order the game registered them; without graphics none is made, written, or recorded, and each is
 /// disposed once however often the engine disposes them; more than can be timed, or two of one name, or a pass without
-/// one, stop the run's step.
+/// one, stop the run's step; a pass reads no picture unless it says so.
 /// </summary>
 public sealed class RenderPassesTests
 {
@@ -41,6 +41,15 @@ public sealed class RenderPassesTests
         renderPasses.Dispose();
 
         Assert.All(passes, pass => Assert.Equal((0, 0, 1), (pass.Initialized, pass.Written, pass.Disposed)));
+    }
+
+    [Fact]
+    public void A_pass_reads_no_picture_unless_it_says_so()
+    {
+        IRenderPass pass = new TestPass("screen", RenderStage.Screen);
+
+        Assert.All(Enumerable.Range(0, RenderPassSetup.FramesInFlight), slot => Assert.False(pass.ReadsPicture(slot)));
+        Assert.Equal(0ul, default(RenderPassContext).Picture.Handle);
     }
 
     [Fact]
