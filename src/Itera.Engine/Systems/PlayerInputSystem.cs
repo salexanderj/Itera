@@ -23,8 +23,9 @@ namespace Itera.Engine.Systems;
 /// (the benchmark and the automatic path). While flying, the command holds no movement, jump, or sprint and takes its
 /// look from the <see cref="ActiveCamera"/>, so walking resumes looking where the camera looked; reading a pose a
 /// frame system wrote is a debug case. Third person (Tab) switches the local player's camera between its eye and
-/// behind its right shoulder (<see cref="ThirdPersonView"/>; not while flying), and the wheel moves the shoulder camera
-/// in and out (<see cref="ThirdPersonCamera.Wheel"/>); the console's <c>camera</c> does what Third person does. While
+/// behind its right shoulder (<see cref="ThirdPersonView"/>; not while flying; a game may leave the key out,
+/// <see cref="MovementKeys.ThirdPerson"/>), and the wheel moves the shoulder camera in and out
+/// (<see cref="ThirdPersonCamera.Wheel"/>); the console's <c>camera</c> does what Third person does. While
 /// <see cref="PlayerInputBlock.Blocked"/> the local player's input does nothing, as if no key were down. Reads
 /// <see cref="ITickInput"/> and <see cref="CameraPose"/>; writes <see cref="PlayerCommand"/>, <see cref="PlayerMode"/>,
 /// and <see cref="ThirdPersonView"/>; no structural changes.
@@ -185,7 +186,7 @@ public sealed partial class PlayerInputSystem : BaseSystem<World, FixedStepTime>
         // Tab and the wheel, after the fly switch, so neither does anything while flying.
         var view = new View
         {
-            Toggle = keys.WasPressed(in input, keys.ThirdPerson),
+            Toggle = keys.ThirdPerson is { } thirdPerson && keys.WasPressed(in input, thirdPerson),
             Request = _cameraRequest,
             Scroll = input.Scroll,
         };

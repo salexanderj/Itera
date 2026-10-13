@@ -8,12 +8,17 @@ namespace Itera.Engine.Systems;
 /// <see cref="KeyBindings"/> as this is made, in the order the Keybindings tab lists them: walking (the fly camera moves
 /// by the same keys, Jump up and Sprint faster, and has its own Fly down), crouching, and the third-person camera (the
 /// wheel moves it, fixed). A game makes this once a run, before its own keys (an <c>IRunStartup</c>), so its own keys
-/// list after these. Main thread.
+/// list after these. A game whose camera is always over the shoulder leaves the third-person key out (its own
+/// registration after the engine's: <c>new MovementKeys(bindings, thirdPersonKey: false)</c>). Main thread.
 /// </summary>
 public sealed class MovementKeys
 {
     /// <param name="bindings">The engine's keybindings, which get the movement actions.</param>
-    public MovementKeys(KeyBindings bindings)
+    /// <param name="thirdPersonKey">
+    /// False to leave out the key that switches the camera between the eye and the shoulder (<see cref="ThirdPerson"/>
+    /// is then null; the console's <c>camera</c> still switches it).
+    /// </param>
+    public MovementKeys(KeyBindings bindings, bool thirdPersonKey = true)
     {
         ArgumentNullException.ThrowIfNull(bindings);
         Bindings = bindings;
@@ -30,12 +35,14 @@ public sealed class MovementKeys
         );
         Crouch = bindings.Register("crouch", "Crouch", "Crouches while held.", InputBinding.Of(Key.ControlLeft));
         FlyDown = bindings.Register("fly-down", "Fly down", "Flies down (the fly camera).", InputBinding.Of(Key.C));
-        ThirdPerson = bindings.Register(
-            "third-person",
-            "Third person",
-            "The camera at the eye, or behind the right shoulder.",
-            InputBinding.Of(Key.Tab)
-        );
+        ThirdPerson = thirdPersonKey
+            ? bindings.Register(
+                "third-person",
+                "Third person",
+                "The camera at the eye, or behind the right shoulder.",
+                InputBinding.Of(Key.Tab)
+            )
+            : null;
         bindings.RegisterFixed("Camera distance", "Wheel", "Moves the third-person camera in and out.");
     }
 
@@ -50,7 +57,9 @@ public sealed class MovementKeys
     public KeyAction Sprint { get; }
     public KeyAction Crouch { get; }
     public KeyAction FlyDown { get; }
-    public KeyAction ThirdPerson { get; }
+
+    /// <summary>The key that switches the camera between the eye and the shoulder; null when the game left it out.</summary>
+    public KeyAction? ThirdPerson { get; }
 
     /// <summary>A fresh set on keybindings of their own, at their defaults: tests and tools.</summary>
     public static MovementKeys Defaults() => new(new KeyBindings());

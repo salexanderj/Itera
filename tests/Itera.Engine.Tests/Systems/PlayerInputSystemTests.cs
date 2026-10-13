@@ -128,6 +128,37 @@ public sealed class PlayerInputSystemTests
         Assert.False(world.Get<ThirdPersonView>(player).On);
     }
 
+    /// <summary>
+    /// A game that leaves the third-person key out (its camera always over the shoulder): Tab does nothing and the
+    /// Keybindings tab lists no such action, while the wheel and the console's <c>camera</c> still work.
+    /// </summary>
+    [Fact]
+    public void Without_the_third_person_key_tab_does_nothing()
+    {
+        using var world = World.Create();
+        var bindings = new KeyBindings();
+        var keys = new MovementKeys(bindings, thirdPersonKey: false);
+        var commands = NewCommands();
+        using var system = Create(world, commands: commands, keys: keys);
+        var player = Player(world);
+        world.Add(player, new ThirdPersonView { On = true, Metres = ThirdPersonCamera.StartMetres });
+
+        _events.KeyDown(Key.Tab);
+        Tick(system);
+        var afterTab = world.Get<ThirdPersonView>(player).On;
+        _events.AddScroll(2);
+        Tick(system);
+        var metres = world.Get<ThirdPersonView>(player).Metres;
+        commands.Execute("camera first", new RecordingOutput());
+        Tick(system);
+
+        Assert.Null(keys.ThirdPerson);
+        Assert.DoesNotContain(bindings.Rows, row => row.Label == "Third person");
+        Assert.True(afterTab);
+        Assert.Equal(ThirdPersonCamera.StartMetres - 2 * ThirdPersonCamera.WheelStepMetres, metres, 4);
+        Assert.False(world.Get<ThirdPersonView>(player).On);
+    }
+
     [Fact]
     public void The_camera_command_switches_the_view_and_says_where_it_is()
     {

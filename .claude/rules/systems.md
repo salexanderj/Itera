@@ -26,8 +26,9 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
 
 - `PlayerInputSystem` (fixed) builds the local player's `PlayerCommand` from the step's input by the movement keys
   (`MovementKeys`: Forward, Back, Left, Right, W A S D; Jump, Space, once a press; Sprint, Shift; Crouch, Ctrl; Fly down,
-  C; Third person, Tab; the wheel moves the shoulder camera), and the look from the mouse while the pointer is captured;
-  `fly` and `camera` are its commands. A game's own buttons go in `PlayerCommand.Actions`, set by the game's input
+  C; Third person, Tab, which a game whose camera is always over the shoulder leaves out, `new MovementKeys(bindings,
+  thirdPersonKey: false)` registered after the engine's; the wheel moves the shoulder camera), and the look from the
+  mouse while the pointer is captured; `fly` and `camera` are its commands. A game's own buttons go in `PlayerCommand.Actions`, set by the game's input
   system after it. While `PlayerInputBlock.Blocked`, the input reads as nothing pressed; a `Bodiless` player only looks
   about.
 - `PlayerMovementSystem` (fixed) moves every entity with a command and `MovementStats` through the voxels with
