@@ -270,6 +270,52 @@ public sealed class HitHistoryTests : IDisposable
         Assert.True(_history.Raycast(new(5, 0.5f, -4), Vector3.UnitZ, 10, 1, Entity.Null, out _));
     }
 
+    /// <summary>
+    /// An entity's capsules read at a tick are those <see cref="HitHistory.Raycast"/> tests: moved between the two steps
+    /// round the tick, an unmatched one where its step has it, none for an entity not there or not kept, and no more than
+    /// the room given; reading allocates nothing.
+    /// </summary>
+    [Fact]
+    public void An_entitys_capsules_at_a_tick_are_those_the_ray_tests()
+    {
+        var entity = _world.Create();
+        var other = _world.Create();
+        _history.Record(
+            entity,
+            1,
+            [new(new(0, 0, 0), new(0, 1, 0), 0.3f, 1), new(new(5, 0, 0), new(5, 1, 0), 0.2f, 2)]
+        );
+        _history.Record(entity, 2, [new(new(1, 0, 0), new(1, 2, 0), 0.5f, 1)]);
+        Span<HitCapsule> into = stackalloc HitCapsule[4];
+
+        var halfway = _history.CapsulesAt(entity, 1.5, into);
+        var moved = into[0];
+        var stayed = into[1];
+        var atTwo = _history.CapsulesAt(entity, 2, into);
+        var short1 = _history.CapsulesAt(entity, 1.5, into[..1]);
+        var late = _history.CapsulesAt(entity, 40, into);
+        var unknown = _history.CapsulesAt(other, 1.5, into);
+
+        Assert.Equal(2, halfway);
+        Assert.Equal(new HitCapsule(new(0.5f, 0, 0), new(0.5f, 1.5f, 0), 0.4f, 1), moved);
+        Assert.Equal(new HitCapsule(new(5, 0, 0), new(5, 1, 0), 0.2f, 2), stayed);
+        Assert.Equal(1, atTwo);
+        Assert.Equal(1, short1);
+        Assert.Equal((0, 0), (late, unknown));
+        // What the ray meets at the tick lies on a capsule read there.
+        Assert.True(_history.Raycast(new(0.5f, 0.5f, -4), Vector3.UnitZ, 10, 1.5, Entity.Null, out var hit));
+        Assert.True(HitShapes.RaycastCapsule(new(0.5f, 0.5f, -4), Vector3.UnitZ, moved.A, moved.B, moved.Radius, out var distance, out _));
+        Assert.Equal(hit.Distance, distance, 1e-5f);
+
+        var start = SystemAllocation.StartMeasurement();
+        for (var i = 0; i < 1000; i++)
+        {
+            _ = _history.CapsulesAt(entity, 1.25, into);
+        }
+
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - start);
+    }
+
     [Fact]
     public void A_ring_keeps_the_last_steps_and_no_more()
     {

@@ -175,35 +175,10 @@ public sealed class HitHistory(WorldOrigin origin)
         var best = new Best { Distance = maxMetres };
         foreach (var track in _tracks)
         {
-            if (!track.InUse || track.Entity == ignore)
+            if (track.InUse && track.Entity != ignore && StepsOf(track, floor, fraction, out var before, out var after))
             {
-                continue;
+                TestTrack(track, before, after, fraction, in ray, ref best);
             }
-
-            // Present from a step before the tick to a step after it.
-            var ceiling = fraction > 0 ? floor + 1 : floor;
-            if (track.Newest < floor - 1 || track.Oldest > ceiling + 1)
-            {
-                continue;
-            }
-
-            var before = track.Find(floor);
-            var after = track.Find(floor + 1);
-            if (before < 0 && after < 0)
-            {
-                before = track.Find(floor - 1);
-                if (before < 0 && fraction > 0)
-                {
-                    before = track.Find(floor + 2);
-                }
-
-                if (before < 0)
-                {
-                    continue;
-                }
-            }
-
-            TestTrack(track, before, after, fraction, in ray, ref best);
         }
 
         if (!best.Found)
@@ -213,6 +188,54 @@ public sealed class HitHistory(WorldOrigin origin)
 
         hit = new HitResult(best.Entity, best.Part, best.Distance, from + ray.Direction * best.Distance, best.Normal);
         return true;
+    }
+
+    /// <summary>
+    /// Writes into <paramref name="into"/> <paramref name="entity"/>'s capsules where they were at
+    /// <paramref name="tick"/>, in local metres as the origin is now, chosen and moved between steps as
+    /// <see cref="Raycast"/> takes them (a capsule with no match in the other step is the one of the step it has); returns
+    /// how many it wrote, 0 for an entity that was not there (or is not kept) and at most <paramref name="into"/>'s length.
+    /// For a game testing its own shapes along a ray past the first a <see cref="Raycast"/> meets (a body's organs inside
+    /// a part it hit). Allocates nothing.
+    /// </summary>
+    public int CapsulesAt(Entity entity, double tick, Span<HitCapsule> into)
+    {
+        if (!double.IsFinite(tick) || Math.Abs(tick) > 1e15 || !_slots.TryGetValue(entity, out var slot))
+        {
+            return 0;
+        }
+
+        var track = _tracks[slot];
+        var floor = (long)Math.Floor(tick);
+        var fraction = (float)(tick - floor);
+        if (!StepsOf(track, floor, fraction, out var before, out var after))
+        {
+            return 0;
+        }
+
+        var ray = new Ray(Vector3.Zero, Vector3.UnitX, origin.Metres);
+        var origin0 = before >= 0 ? ray.Local(track.Anchors[before]) : Vector3.Zero;
+        var origin1 = after >= 0 ? ray.Local(track.Anchors[after]) : Vector3.Zero;
+        var count0 = before >= 0 ? track.Counts[before] : 0;
+        var count1 = after >= 0 ? track.Counts[after] : 0;
+        var written = 0;
+        for (var i = 0; i < Math.Max(count0, count1) && written < into.Length; i++)
+        {
+            var c0 = i < count0 ? track.Capsules[before * MostCapsules + i] : default;
+            var c1 = i < count1 ? track.Capsules[after * MostCapsules + i] : default;
+            into[written++] =
+                i < count0 && i < count1 && c0.Part == c1.Part
+                    ? new HitCapsule(
+                        Vector3.Lerp(origin0 + c0.A, origin1 + c1.A, fraction),
+                        Vector3.Lerp(origin0 + c0.B, origin1 + c1.B, fraction),
+                        float.Lerp(c0.Radius, c1.Radius, fraction),
+                        c0.Part
+                    )
+                : i < count0 ? new HitCapsule(origin0 + c0.A, origin0 + c0.B, c0.Radius, c0.Part)
+                : new HitCapsule(origin1 + c1.A, origin1 + c1.B, c1.Radius, c1.Part);
+        }
+
+        return written;
     }
 
     /// <summary>Drops <paramref name="entity"/>'s records (nothing, for one not kept) and keeps its storage for another.</summary>
@@ -348,6 +371,35 @@ public sealed class HitHistory(WorldOrigin origin)
                 Test(track, in ray, origin1 + c1.A, origin1 + c1.B, c1.Radius, c1.Part, ref best);
             }
         }
+    }
+
+    /// <summary>
+    /// The two steps a tick falls between that a track holds (-1 for one it lacks), or false when it was not there: present
+    /// from a step before the tick to a step after it, with neither step held taking the step before the tick, or the one
+    /// after it when the tick falls between steps.
+    /// </summary>
+    private static bool StepsOf(Track track, long floor, float fraction, out int before, out int after)
+    {
+        before = -1;
+        after = -1;
+        var ceiling = fraction > 0 ? floor + 1 : floor;
+        if (track.Newest < floor - 1 || track.Oldest > ceiling + 1)
+        {
+            return false;
+        }
+
+        before = track.Find(floor);
+        after = track.Find(floor + 1);
+        if (before < 0 && after < 0)
+        {
+            before = track.Find(floor - 1);
+            if (before < 0 && fraction > 0)
+            {
+                before = track.Find(floor + 2);
+            }
+        }
+
+        return before >= 0 || after >= 0;
     }
 
     private static Vector4 Sphere(Vector3 anchor, Vector4 bounds) =>

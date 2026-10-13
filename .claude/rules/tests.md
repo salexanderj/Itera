@@ -178,7 +178,8 @@ Where tests live:
   `MeshDensityGroundFarTests`; rays, a ball, and mesh rays against the middle's bit for bit, a walk within 0.1 mm);
   the origin moved under Bepu (`PhysicsShiftTests`: sleeping, kinematic, and moving bodies and statics) and under loose
   bodies on voxels (`ShiftedBodiesTests`: a resting ball, and a move's cost with 384 bodies, logged); lag compensation's hit history
-  (`HitHistoryTests`: the ray against a capsule by hand and against a march, a character met where it was at a fractional
+  (`HitHistoryTests`: the ray against a capsule by hand and against a march, an entity's capsules read at a tick as the
+  ray takes them, a character met where it was at a fractional
   tick and not where it is, the shooter ignored, the nearer entity and the part, an entity met only near its records, the
   ring's 32 steps, a move of the origin between records, `Forget` and `Clear`, the limits, no allocation).
 - `Itera.Engine.Tests/Rendering/`: `Materials/MaterialTextureSetsTests` (DDS files read back, sets loaded and left out,
