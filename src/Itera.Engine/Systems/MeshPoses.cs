@@ -11,17 +11,40 @@ namespace Itera.Engine.Systems;
 /// joints as it wants, through the rig's tools (<see cref="Rig.Blend"/> and <see cref="Rig.Mask"/> for an upper body
 /// playing its own clip, <see cref="Rig.Turn"/> for a spine bent to an aim, <see cref="Rig.ReachTwoBone"/> for a hand on a
 /// rifle), reading the entity's own components. The same code serves a host posing a body to judge a hit
-/// (<see cref="MeshPoses"/>). A scoped service the game registers; called inside the draw system's query, so it makes no
-/// structural change, and it allocates nothing.
+/// (<see cref="MeshPoses"/>), told so by its <see cref="MeshPosePurpose"/>. A scoped service the game registers; called
+/// inside the draw system's query, so it makes no structural change, and it allocates nothing.
 /// </summary>
 public interface IMeshPoseShaper
 {
     /// <summary>
     /// Shapes <paramref name="entity"/>'s pose: <paramref name="locals"/> (one a joint of <paramref name="rig"/>), at the
-    /// frame's <paramref name="alpha"/> of the way from the last step to this one; <paramref name="globals"/> is scratch,
-    /// one a joint.
+    /// frame's <paramref name="alpha"/> of the way from the last step to this one, for <paramref name="purpose"/>;
+    /// <paramref name="globals"/> is scratch, one a joint.
     /// </summary>
-    void Shape(World world, Entity entity, Rig rig, Span<JointTransform> locals, Span<Matrix4x4> globals, float alpha);
+    void Shape(
+        World world,
+        Entity entity,
+        Rig rig,
+        Span<JointTransform> locals,
+        Span<Matrix4x4> globals,
+        float alpha,
+        MeshPosePurpose purpose
+    );
+}
+
+/// <summary>Why a pose is shaped (<see cref="IMeshPoseShaper"/>): to be drawn, or for the hit shapes a game records of it.</summary>
+public enum MeshPosePurpose
+{
+    /// <summary>Drawn this frame (<see cref="MeshDrawSystem"/>: the mesh, or what it holds at a joint).</summary>
+    Drawing,
+
+    /// <summary>
+    /// Posed for a body's hit shapes, which a host judges hits against. What follows from the state every game is given
+    /// (an aim, a hand on what it holds, feet on the ground) belongs here as in drawing; what a game keeps of its own
+    /// recent frames (springs, smoothed changes of clip, locked feet, a ragdoll) is for drawing alone, so a body is never
+    /// hit where it is not drawn.
+    /// </summary>
+    HitShapes,
 }
 
 /// <summary>

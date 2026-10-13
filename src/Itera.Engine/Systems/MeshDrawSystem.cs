@@ -160,7 +160,7 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
         }
 
         var locals = _locals.AsSpan(0, rig.JointCount);
-        _shaper?.Shape(World, entity, rig, locals, _globals, alpha);
+        _shaper?.Shape(World, entity, rig, locals, _globals, alpha, MeshPosePurpose.Drawing);
         var palette = _instances.AddPosed(mesh.Asset, in transform, rig.JointCount, mesh.Tint, mesh.Shadow);
         if (!palette.IsEmpty)
         {
@@ -197,7 +197,7 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
                 var locals = _locals.AsSpan(0, rig.JointCount);
                 if (World.Has<ShapedPose>(holder))
                 {
-                    _shaper?.Shape(World, holder, rig, locals, _globals, alpha);
+                    _shaper?.Shape(World, holder, rig, locals, _globals, alpha, MeshPosePurpose.Drawing);
                 }
 
                 at = MeshPoses.JointInWorld(rig, locals, attachment.Joint, in placed, _globals);

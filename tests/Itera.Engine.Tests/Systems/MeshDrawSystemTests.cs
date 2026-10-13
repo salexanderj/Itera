@@ -386,6 +386,7 @@ public sealed class MeshDrawSystemTests
         system.Update(new FrameTime(1f / 240, 1, 1, 1));
 
         Assert.Equal([shaped], shaper.Shaped);
+        Assert.Equal([MeshPosePurpose.Drawing], shaper.Purposes);
         var rig = _assets[2].Rig!;
         var locals = new JointTransform[2];
         var globals = new Matrix4x4[2];
@@ -476,6 +477,8 @@ public sealed class MeshDrawSystemTests
 
         public List<Entity> Shaped { get; } = [];
 
+        public List<MeshPosePurpose> Purposes { get; } = [];
+
         public bool Keep { get; init; } = true;
 
         public void Shape(
@@ -484,12 +487,14 @@ public sealed class MeshDrawSystemTests
             Rig rig,
             Span<JointTransform> locals,
             Span<Matrix4x4> globals,
-            float alpha
+            float alpha,
+            MeshPosePurpose purpose
         )
         {
             if (Keep)
             {
                 Shaped.Add(entity);
+                Purposes.Add(purpose);
             }
 
             rig.Turn(locals, 1, Turn, globals);

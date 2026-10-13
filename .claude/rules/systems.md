@@ -114,11 +114,13 @@ same share of its length as the clip is of its own, so two gaits keep step, each
 between the last two steps at the frame's `Alpha`, `BlendShare`): directional movement between a forward clip and a
 sideways one; the clip's own times stay the main clip's (a game's footfalls read them). One with a
 `ShapedPose` is then shaped by the game's `IMeshPoseShaper` (scoped, given to the system: layers, aim, IK through the
-rig's tools, reading the entity's own components; no structural changes, no allocation). An entity with a
+rig's tools, reading the entity's own components; no structural changes, no allocation), told why it poses
+(`MeshPosePurpose`: `Drawing` here, `HitShapes` where a game poses a body for its hit shapes; what a game keeps of its
+own recent frames, such as springs or a ragdoll, is for drawing alone, so a body is never hit where it is not drawn). An entity with a
 `MeshAttachment` and a `DrawnMesh` (no placement) is drawn at its holder's joint as the holder is posed (and shaped)
 this frame, then its offset and turn in the joint's space (a rifle in a hand); nothing once the holder is gone.
 `MeshPoses` (`Placed`, `Sample`, `JointInWorld`) poses a mesh as the system draws it, for a game posing a body it does
-not draw (a host judging a hit).
+not draw (a host judging a hit, its shaper told `MeshPosePurpose.HitShapes`).
 `MeshAnimatorSystem` (fixed, after every system that chooses a clip) moves each clip's time on by its speed, so clips
 follow the match's time and stop while it is paused; at a looping clip's end it wraps both times together; during a
 fade it moves the old clip and the fade on too, and ends the fade a step after it is whole. `meshes` is
