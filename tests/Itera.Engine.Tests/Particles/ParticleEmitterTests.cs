@@ -8,8 +8,8 @@ namespace Itera.Engine.Tests.Particles;
 
 /// <summary>
 /// <see cref="ParticleEmitter"/>: bursts take the ring's slots in one piece and in order, a frame's caps drop the rest,
-/// the frame stays active for the longest life, off drops everything, the recipes table checks its values, and
-/// emitting and draining allocate nothing.
+/// the frame stays active for the longest life, off drops everything, a frame without graphics drops its queue without
+/// counting drops, the recipes table checks its values, and emitting and draining allocate nothing.
 /// </summary>
 public sealed class ParticleEmitterTests
 {
@@ -136,6 +136,25 @@ public sealed class ParticleEmitterTests
         Assert.Equal(0, emitter.StressBursts);
         Assert.False(next.Clear);
         Assert.False(emitter.Drain(target, 2.7).Active);
+    }
+
+    [Fact]
+    public void Discard_drops_the_queue_without_counting_drops_or_clearing_the_pool()
+    {
+        var emitter = Create(bursts: 16);
+        var target = new GpuParticleBurst[16];
+        for (var i = 0; i < 40; i++)
+        {
+            emitter.Emit(Burst(5));
+            emitter.Discard();
+        }
+
+        var discarded = (emitter.QueuedBursts, emitter.QueuedSpawns, emitter.DroppedBursts);
+        emitter.Emit(Burst(7));
+
+        // A frame without graphics drops each frame's bursts, so the queue never fills; one that draws makes the rest.
+        Assert.Equal((0, 0, 0L), discarded);
+        Assert.Equal(new ParticleFrame(1, 7, true), emitter.Drain(target, 0));
     }
 
     [Fact]

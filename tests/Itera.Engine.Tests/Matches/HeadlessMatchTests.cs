@@ -12,8 +12,8 @@ namespace Itera.Engine.Tests.Matches;
 /// <summary>
 /// <see cref="HeadlessRun"/> and <see cref="HeadlessMatch"/> over the engine's real services and a test game: a match
 /// played with no window or GPU, its fixed steps each followed by a frame, the run's view of it kept up, a retired
-/// model removed after a frame, an image view's ask and panel forgotten at the next frame, and the match ended when
-/// disposed; and a host and a client in one process over an in-memory transport, the client's world downloaded with
+/// model removed after a frame, an image view's ask and panel forgotten at the next frame, the particles queued before a
+/// frame dropped by it, and the match ended when disposed; and a host and a client in one process over an in-memory transport, the client's world downloaded with
 /// terrain and following the host's edits, and a join with no host refused.
 /// </summary>
 public sealed class HeadlessMatchTests
@@ -151,6 +151,29 @@ public sealed class HeadlessMatchTests
         // The test game's frame systems ask for nothing, so nothing is asked for or shown after the frame.
         Assert.False(views.Asked(view, out _));
         Assert.Equal(0, views.Panels.Length);
+    }
+
+    [Fact]
+    public void A_frame_drops_the_particles_queued_before_it_as_no_pool_makes_them()
+    {
+        using var provider = EngineComposition.Build(terrain: false);
+        var run = new HeadlessRun(provider);
+        using var match = run.Play(seed: 9);
+        var particles = provider.GetRequiredService<Itera.Engine.Particles.ParticleEmitter>();
+        particles.Enabled = true;
+        var recipe = particles.Recipes.Register("headless test", new Itera.Engine.Particles.ParticleRecipe());
+        for (var i = 0; i < particles.MaxBursts; i++)
+        {
+            particles.Emit(new Itera.Engine.Particles.ParticleBurst { Recipe = recipe, Count = 1 });
+        }
+
+        var queued = particles.QueuedBursts;
+        match.Frame();
+
+        // A run without graphics would otherwise fill the queue and drop every burst after it, with a warning.
+        Assert.Equal(particles.MaxBursts, queued);
+        Assert.Equal(0, particles.QueuedBursts);
+        Assert.Equal(0, particles.DroppedBursts);
     }
 
     [Fact]

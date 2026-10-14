@@ -89,6 +89,7 @@ public sealed class HeadlessMatch : IDisposable
     private readonly MeshInstances _meshes;
     private readonly PointLights _lights;
     private readonly RenderViews _views;
+    private readonly Particles.ParticleEmitter _particles;
     private readonly int _editColumns;
     private readonly float _stepSeconds;
     private ulong _frame;
@@ -108,6 +109,7 @@ public sealed class HeadlessMatch : IDisposable
         _meshes = services.GetRequiredService<MeshInstances>();
         _lights = services.GetRequiredService<PointLights>();
         _views = services.GetRequiredService<RenderViews>();
+        _particles = services.GetRequiredService<Particles.ParticleEmitter>();
         Input = services.GetRequiredService<InputService>();
         _editColumns = options.Voxels.EditColumnsPerStep;
         _stepSeconds = 1f / options.FixedStepHz;
@@ -235,7 +237,8 @@ public sealed class HeadlessMatch : IDisposable
     /// <summary>
     /// Runs the frame group once, as the main loop's frame does before it draws: the frame's input, then the systems,
     /// which hand the camera, the models, the lights, the lines, and the image views they ask for to the renderer's
-    /// CPU-side objects (the last frame's forgotten first); nothing is drawn.
+    /// CPU-side objects (the last frame's forgotten first, and the particles queued since it dropped,
+    /// <see cref="Particles.ParticleEmitter.Discard"/>); nothing is drawn.
     /// Models retired before it go after it, as an upload would remove them.
     /// </summary>
     public void Frame()
@@ -247,6 +250,7 @@ public sealed class HeadlessMatch : IDisposable
         _meshes.Clear();
         _lights.BeginFrame(Seconds);
         _views.BeginFrame();
+        _particles.Discard();
         // Just before the next step: the frame shows the last step's state.
         var frame = new FrameTime(_stepSeconds, Seconds, _frame++, 0.999999f);
         Match.Ecs.Update(in frame);

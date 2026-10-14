@@ -13,7 +13,9 @@ paths:
 Particles (`Engine:Particles`, `ParticleEmitter`, `ParticlePass`) live on the GPU. Game code queues bursts of a recipe
 by name (`ParticleRecipes`, registered once a run; `StockEffects` registers seven general ones, `flare`, `sparks`,
 `embers`, `debris`, `smoke`, `dust-puff`, and `grit`, with helpers to emit them, when a game makes it); a spawn and a simulate compute pass make and move them after
-the world's pass, in frames that draw the world (under the loading screen they wait). They meet the world through the
+the world's pass, in frames that draw the world (under the loading screen they wait); a frame without graphics (the
+loop's with `Engine:Window:Mode=None`, and `HeadlessMatch.Frame`) has no pool, and drops the bursts queued since the
+last at its start (`ParticleEmitter.Discard`), so the queue never fills. They meet the world through the
 camera's depth image (`DepthTarget`, handed to the compute pass and back): a particle that moves to just behind what
 the image shows (0.3 m and its step) bounces off that surface, sticks, or dies as its recipe says, with the surface's
 slope from the neighbouring depths (it comes to rest on one that faces against the match's gravity); off the image,

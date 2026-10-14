@@ -935,6 +935,8 @@ public sealed partial class GameLoop
         _meshInstances.Clear();
         _pointLights.BeginFrame(now);
         _renderViews.BeginFrame();
+        // No pool makes the particles queued since the last frame: they go, so the queue never fills.
+        _particles.Discard();
         match.Ecs.Update(in frame);
         _mods.Update(in frame);
         // No uploader waits to draw a retired model until the world's meshes hold its voxels.

@@ -192,6 +192,17 @@ public sealed partial class ParticleEmitter
     }
 
     /// <summary>
+    /// Drops the bursts queued so far, as a frame without graphics does, which has no pool to make them in (a run with
+    /// <c>Engine:Window:Mode=None</c>, a headless match): the queue never fills, and nothing is counted as dropped.
+    /// Main thread.
+    /// </summary>
+    public void Discard()
+    {
+        _queued = 0;
+        _queuedSpawns = 0;
+    }
+
+    /// <summary>
     /// Writes the queued bursts, and the stress test's, into <paramref name="destination"/> with their pool slots, and
     /// empties the queue. <paramref name="now"/> is the frame's time in seconds. Main thread, once per frame built.
     /// </summary>
