@@ -7,7 +7,8 @@ namespace Itera.Engine.Tests.Assets;
 /// Shaping a rig's pose before it is drawn (<see cref="Rig"/>), on a rig made here: a chain of three joints a metre apart
 /// up from a root, and a branch off the root along +x. A joint found by name; the joints' places in the asset's space,
 /// which the palette is made of; a mask over a joint and every joint below it; two poses blended joint by joint; a joint
-/// turned in the asset's space under a turned parent, its children swinging round it; two-bone IK reaching a point, and
+/// turned in the asset's space under a turned parent, its children swinging round it; a joint moved in the asset's
+/// space under a turned and scaled parent, its children with it; two-bone IK reaching a point, and
 /// stretching towards one out of reach, bent towards its pole; and no allocation.
 /// </summary>
 public sealed class RigShapingTests
@@ -81,6 +82,29 @@ public sealed class RigShapingTests
     }
 
     [Fact]
+    public void A_move_in_the_assets_space_shifts_the_joint_and_its_children_under_a_turned_parent()
+    {
+        var locals = Rest();
+        // The root turned a quarter about +y and doubled in size, so the joints' own frames are not the asset's.
+        locals[0] = locals[0] with
+        {
+            Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2),
+            Scale = new Vector3(2),
+        };
+        var globals = new Matrix4x4[5];
+        s_rig.Globals(locals, globals);
+        var (joint, tip, branch) = (globals[1].Translation, globals[3].Translation, globals[4].Translation);
+        var offset = new Vector3(0.3f, -0.2f, 0.1f);
+
+        s_rig.Move(locals, 1, offset, globals);
+
+        s_rig.Globals(locals, globals);
+        Assert.True(Vector3.Distance(joint + offset, globals[1].Translation) < 1e-5f, $"{globals[1].Translation}");
+        Assert.True(Vector3.Distance(tip + offset, globals[3].Translation) < 1e-5f, $"{globals[3].Translation}");
+        Assert.True(Vector3.Distance(branch, globals[4].Translation) < 1e-5f, $"{globals[4].Translation}");
+    }
+
+    [Fact]
     public void Two_bones_reach_a_point_bent_to_the_pole_and_stretch_towards_one_out_of_reach()
     {
         var locals = Rest();
@@ -111,7 +135,7 @@ public sealed class RigShapingTests
     }
 
     [Fact]
-    public void Turning_and_reaching_allocate_nothing()
+    public void Turning_moving_and_reaching_allocate_nothing()
     {
         var locals = Rest();
         var globals = new Matrix4x4[5];
@@ -125,6 +149,7 @@ public sealed class RigShapingTests
         {
             s_rig.Turn(locals, 2, turn, globals);
             s_rig.ReachTwoBone(locals, 1, 2, 3, new Vector3(0.5f, 2, i * 0.001f), Vector3.UnitZ, globals);
+            s_rig.Move(locals, 1, new Vector3(0, -0.001f, 0), globals);
             Rig.Blend(locals, locals, weights, locals);
             s_rig.Mask(1, weights, 1);
         }

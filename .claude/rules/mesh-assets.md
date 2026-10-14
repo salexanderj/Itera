@@ -39,7 +39,8 @@ offset * parent's Global`, `Globals` alone) allocate nothing. A pose can be shap
 nothing: `FindJoint(name)`; `Mask(root, weights, weight)` (a joint and every joint below it) and `Blend(under, over,
 weights, into)` (joint by joint, rotations the shorter way: legs from one clip, the upper body from another); `Turn(locals,
 joint, turn, globals)` (a rotation in the asset's space about the joint's own place, the joints below swinging round it:
-a spine bent to an aim); `ReachTwoBone(locals, upper, lower, end, target, pole, globals)` (an arm or a leg reaching a
+a spine bent to an aim); `Move(locals, joint, offset, globals)` (a move in the asset's space, the joints below
+going with it: hips lowered to let a foot reach lower ground); `ReachTwoBone(locals, upper, lower, end, target, pole, globals)` (an arm or a leg reaching a
 point in the asset's space, or stretched towards it, the middle joint bending towards the pole: a hand on a rifle). In
 floats, so never for what peers must agree on: for drawing, and for what one peer alone judges (a host's hits on posed
 bodies); the deterministic skeletons for bodies, aim, and foot IK are `Animation.Skeleton`'s

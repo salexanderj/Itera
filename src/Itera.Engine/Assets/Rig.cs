@@ -249,6 +249,31 @@ public sealed class Rig
     }
 
     /// <summary>
+    /// Moves joint <paramref name="joint"/> of a pose by <paramref name="offset"/> in the asset's space: it and every joint
+    /// below it shift by that much, turned as they were (hips lowered so a foot reaches lower ground).
+    /// <paramref name="globals"/> is scratch, one a joint. Allocates nothing.
+    /// </summary>
+    public void Move(Span<JointTransform> locals, int joint, Vector3 offset, Span<Matrix4x4> globals)
+    {
+        if ((uint)joint >= (uint)Names.Length)
+        {
+            return;
+        }
+
+        Globals(locals, globals);
+        // The joint's place is its local translation through its frame (its offset and its parent's global), so a move in
+        // the asset's space is the same move turned back through the frame.
+        var frame = Parents[joint] < 0 ? Offsets[joint] : Offsets[joint] * globals[Parents[joint]];
+        if (!Matrix4x4.Invert(frame, out var inverse))
+        {
+            return;
+        }
+
+        var local = locals[joint];
+        locals[joint] = local with { Translation = local.Translation + Vector3.TransformNormal(offset, inverse) };
+    }
+
+    /// <summary>
     /// Bends the chain <paramref name="upper"/>, <paramref name="lower"/>, <paramref name="end"/> (a shoulder, an elbow,
     /// a hand; a hip, a knee, a foot) so the end joint reaches <paramref name="target"/>, in the asset's space, or points at
     /// it as far as the chain stretches; the middle joint bends towards <paramref name="pole"/> (where the elbow or knee
