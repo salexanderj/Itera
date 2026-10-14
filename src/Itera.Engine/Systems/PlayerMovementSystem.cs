@@ -746,6 +746,15 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
                 v = Steer(in command, in contact, ref velocity, in stats, out jumped);
             }
 
+            // A mode that changed the body's size this step (a roll, a slide): the eye starts where it was and moves to
+            // its new height, as it does for a crouch, in this step and not the next.
+            if (eye.EyeMetres > 0 && size.EyeMetres != eye.EyeMetres)
+            {
+                eye.Height += eye.EyeMetres - size.EyeMetres;
+                eye.PreviousHeight = eye.Height;
+                eye.EyeMetres = size.EyeMetres;
+            }
+
             var shape = new CharacterShape(
                 size.HeightMetres,
                 size.RadiusMetres,

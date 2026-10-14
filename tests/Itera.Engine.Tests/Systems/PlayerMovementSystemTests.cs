@@ -806,6 +806,26 @@ public sealed class PlayerMovementSystemTests : IDisposable
     }
 
     [Fact]
+    public void A_movement_mode_that_changes_the_bodys_size_eases_the_eye_from_where_it_was_in_the_same_step()
+    {
+        using var world = World.Create();
+        using var system = Create(world, new Vector3(0, 1.6f, 0), mode: new Shrinking());
+        Run(world, system, 30, default);
+        var player = Player(world);
+        var standing = world.Get<CharacterSize>(player).EyeMetres;
+
+        Run(world, system, 1, new PlayerCommand { Buttons = PlayerButtons.Jump });
+
+        // The camera's eye is where it was this step, not a step later: it moves down from there.
+        var eye = world.Get<EyeSmoothing>(player);
+        var small = world.Get<CharacterSize>(player).EyeMetres;
+        Assert.True(small < standing - 0.5f, $"Eye at {small} m against {standing} m.");
+        Assert.Equal(standing - small, eye.Height, 4);
+        Assert.Equal(eye.Height, eye.PreviousHeight, 4);
+        Assert.Equal(small, eye.EyeMetres, 4);
+    }
+
+    [Fact]
     public void Update_with_a_movement_mode_allocates_nothing()
     {
         using var world = World.Create();
@@ -876,6 +896,22 @@ public sealed class PlayerMovementSystemTests : IDisposable
             move.Velocity = new Vector3(1, up, 0);
             move.StepMetres = input.Size.StepMetres;
             move.StepsInAir = StepsInAir;
+            return true;
+        }
+    }
+
+    /// <summary>A movement mode that takes every step, falling, and on Jump shrinks the body to 0.9 m (a roll's).</summary>
+    private sealed class Shrinking : IMovementMode
+    {
+        public bool Steer(in MovementModeInput input, ref MovementModeMove move)
+        {
+            if ((input.Command.Buttons & PlayerButtons.Jump) != 0)
+            {
+                input.World.Get<CharacterSize>(input.Entity) = CharacterSize.ForHeight(0.9f);
+            }
+
+            move.Velocity = new Vector3(0, input.Velocity.Y - input.Stats.Gravity * input.Seconds, 0);
+            move.StepMetres = input.Size.StepMetres;
             return true;
         }
     }

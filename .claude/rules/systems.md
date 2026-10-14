@@ -37,7 +37,8 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   takes 1.8 s to reach walking speed and as long to stop), jumping, gravity (its own times the match's
   share of the Earth's, given the match's `PhysicsWorld`; a jump keeps its own launch speed), sliding on steep ground,
   pushes from loose bodies, the eye eased after a step (`EyeSmoothing.Offset`) and to a new eye height at 2 m/s
-  (`EyeSmoothing.Height`). Each character crouches while Crouch is held (0.77 of its height and eye, 0.4 of its
+  (`EyeSmoothing.Height`; a size a movement mode sets, a roll's or a slide's, is eased from the eye's height before it
+  in the same step, as a crouch is). Each character crouches while Crouch is held (0.77 of its height and eye, 0.4 of its
   speed, no jump or sprint; it stands once the standing body fits) and moves backwards at 0.7 of its speed without
   sprint: the local player, a remote one a host moves from its commands, and a game's characters alike. One
   character's step is also `CharacterStepper.Step` (scoped, with the game's movement mode): the same code on one entity,
