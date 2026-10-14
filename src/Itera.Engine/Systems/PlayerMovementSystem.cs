@@ -705,6 +705,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             var v = velocity.MetresPerSecond;
             var jumped = false;
             var step = size.StepMetres;
+            var stepsInAir = false;
             var taken = new MovementModeMove { Velocity = v, StepMetres = step };
             if (
                 Mode is not null
@@ -728,10 +729,12 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
                 )
             )
             {
-                // The game's mode took the step: its velocity, with the loose bodies' push, its step height, and its jump.
+                // The game's mode took the step: its velocity, with the loose bodies' push, its step height (in the air too
+                // where it asks), and its jump.
                 v = taken.Velocity + velocity.Push;
                 velocity.Push = default;
                 jumped = taken.Jumped;
+                stepsInAir = taken.StepsInAir;
                 step = float.IsFinite(taken.StepMetres) ? Math.Max(0, taken.StepMetres) : 0;
                 if (!IsFinite(v))
                 {
@@ -743,7 +746,13 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
                 v = Steer(in command, in contact, ref velocity, in stats, out jumped);
             }
 
-            var shape = new CharacterShape(size.HeightMetres, size.RadiusMetres, step, stats.MaxSlopeDegrees);
+            var shape = new CharacterShape(
+                size.HeightMetres,
+                size.RadiusMetres,
+                step,
+                stats.MaxSlopeDegrees,
+                stepsInAir
+            );
             velocity.Wanted = v;
             var result = Mover.Move(ref position.Feet, ref v, in shape, Seconds);
             velocity.MetresPerSecond = v;

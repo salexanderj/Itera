@@ -9,11 +9,16 @@ namespace Itera.Engine.Physics;
 /// <param name="RadiusMetres">Radius of the body seen from above.</param>
 /// <param name="StepMetres">The highest ledge the body walks up onto without jumping.</param>
 /// <param name="MaxSlopeDegrees">The steepest slope the body walks up, and stands on without sliding.</param>
+/// <param name="StepsInAir">
+/// True when the body also steps up onto a ledge within <see cref="StepMetres"/> while in the air, as it does walking: a
+/// jump whose feet come that near a wall's top lands on it. False: only from the ground.
+/// </param>
 public readonly record struct CharacterShape(
     float HeightMetres,
     float RadiusMetres,
     float StepMetres,
-    float MaxSlopeDegrees = 45
+    float MaxSlopeDegrees = 45,
+    bool StepsInAir = false
 );
 
 /// <summary>What happened to a body in one <see cref="VoxelCharacterMover.Move"/>.</summary>
@@ -456,7 +461,8 @@ public sealed class VoxelCharacterMover
         }
 
         var grounded = IsGrounded(px, py, pz, r);
-        var canStep = grounded && step > 0 && !IsSteep(px, py, pz, r, step, slope, out _, out _);
+        // On steep ground a body does not step up; in the air it does only where its shape asks to.
+        var canStep = step > 0 && (grounded ? !IsSteep(px, py, pz, r, step, slope, out _, out _) : shape.StepsInAir);
         var stepped = 0.0;
         double vx = velocity.X,
             vz = velocity.Z;

@@ -63,7 +63,8 @@ nothing). `DebugBallSystem` does not check a ball's space and `MapResetSystem`'s
 reset without a world.
 
 The character mover (`VoxelCharacterMover`): an upright cylinder that slides along walls, steps up onto ledges up to its
-step height, walks up no slope past its max slope (steeper ground slides it down and it cannot jump there), lands, and
+step height (from the ground; in the air too where its shape asks, `CharacterShape.StepsInAir`, a movement mode's
+`MovementModeMove.StepsInAir`), walks up no slope past its max slope (steeper ground slides it down and it cannot jump there), lands, and
 walks through passable materials (`IVoxelPassability`). On voxels coarser than 1 cm it stands on the ground's surface
 inside a voxel, where its density crosses one half (`VoxelWorld.SurfaceOver`), blended between neighbouring columns that
 differ by less than the slope limit over a voxel; its distances are in centimetres, but the steepness rule looks at

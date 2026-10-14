@@ -11,6 +11,7 @@ using Itera.Engine.Particles;
 using Itera.Engine.Physics;
 using Itera.Engine.Rendering;
 using Itera.Engine.Systems;
+using Itera.Engine.Tests.Voxels;
 using Itera.Engine.Voxels;
 using Itera.Modding;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -781,6 +782,30 @@ public sealed class PlayerMovementSystemTests : IDisposable
     }
 
     [Fact]
+    public void A_movement_mode_s_step_in_the_air_lands_a_jump_on_a_ledge_it_nearly_clears()
+    {
+        // A 1 m block on the floor (x from 0.5 m, top at 3 m): a mode walks the body into it and jumps 0.8 m, its feet
+        // coming 20 cm under the top, within the body's step.
+        var block = new VoxelBox(50, 200, -150, 149, 299, 149, BoxesGenerator.Stone);
+        using var voxels = LoadWorld(new BoxesGenerator(200, [block]), new Vector3(0, 2, 0));
+        var mover = new VoxelCharacterMover(voxels, new NothingPassable());
+        var heights = new float[2];
+        foreach (var stepsInAir in new[] { false, true })
+        {
+            using var world = World.Create();
+            var mode = new Leaping { StepsInAir = stepsInAir };
+            using var system = Create(world, new Vector3(-0.5f, 3.6f, 0), mover: mover, mode: mode);
+            Run(world, system, 60, default);
+            Run(world, system, 1, new PlayerCommand { Buttons = PlayerButtons.Jump });
+            Run(world, system, 60, default);
+            heights[stepsInAir ? 1 : 0] = Read(world).Position.Feet.Y;
+        }
+
+        Assert.Equal(2, heights[0], 0.01f);
+        Assert.Equal(3, heights[1], 0.01f);
+    }
+
+    [Fact]
     public void Update_with_a_movement_mode_allocates_nothing()
     {
         using var world = World.Create();
@@ -829,6 +854,28 @@ public sealed class PlayerMovementSystemTests : IDisposable
             move.Velocity = Vector3.UnitY;
             move.StepMetres = 0;
             move.Jumped = Jumping;
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// A movement mode that takes every step, walking the body along +x at 1 m/s under gravity, jumping 0.8 m from the
+    /// ground on Jump, and stepping up in the air where <see cref="StepsInAir"/>.
+    /// </summary>
+    private sealed class Leaping : IMovementMode
+    {
+        public bool StepsInAir;
+
+        public bool Steer(in MovementModeInput input, ref MovementModeMove move)
+        {
+            var gravity = input.Stats.Gravity;
+            var up =
+                input.Contact.Grounded && (input.Command.Buttons & PlayerButtons.Jump) != 0
+                    ? MathF.Sqrt(2 * gravity * 0.8f)
+                    : input.Velocity.Y - gravity * input.Seconds;
+            move.Velocity = new Vector3(1, up, 0);
+            move.StepMetres = input.Size.StepMetres;
+            move.StepsInAir = StepsInAir;
             return true;
         }
     }

@@ -402,6 +402,24 @@ public abstract class MoverFeatureTests
     }
 
     [Fact]
+    public void A_jump_that_nearly_clears_a_ledge_steps_onto_it_only_where_the_body_steps_in_the_air()
+    {
+        // The 1 m platform (lot 240, 80; x from 2.2 m, top at 3 m) from the west, walking into it: a jump that lifts the
+        // feet 80 cm brings them 20 cm under its top, within the body's 41 cm step.
+        var stepped = Metres(180, 200, 80);
+        var velocity = new Vector3(0, JumpSpeed(0.8f), 0);
+        Run(ref stepped, ref velocity, new Vector2(1, 0), 40, jumpFirst: true, shape: Shape with { StepsInAir = true });
+        var fell = Metres(180, 200, 80);
+        velocity = new Vector3(0, JumpSpeed(0.8f), 0);
+        Run(ref fell, ref velocity, new Vector2(1, 0), 40, jumpFirst: true);
+
+        Assert.Equal(3.00f, stepped.Y, 3);
+        Assert.True(stepped.X > 2.20f + Shape.RadiusMetres, $"Stepped to {stepped}.");
+        Assert.Equal(2.00f, fell.Y, 3);
+        Assert.True(fell.X <= 2.20f - Shape.RadiusMetres + 0.01f, $"Fell to {fell}.");
+    }
+
+    [Fact]
     public void A_50_cm_step_is_too_high()
     {
         var feet = Metres(-280, 200, -80);
@@ -717,7 +735,8 @@ public abstract class MoverFeatureTests
 
     /// <summary>
     /// Runs ticks that set the horizontal velocity to <paramref name="wanted"/> and add gravity, as a movement system
-    /// would. With <paramref name="jumpFirst"/>, the first tick keeps the vertical velocity it was given.
+    /// would, for a body of <paramref name="shape"/> (the tests' person by default). With <paramref name="jumpFirst"/>, the
+    /// first tick keeps the vertical velocity it was given.
     /// </summary>
     protected CharacterMoveResult Run(
         ref Vector3 feet,
@@ -725,9 +744,11 @@ public abstract class MoverFeatureTests
         Vector2 wanted,
         int ticks,
         Action<CharacterMoveResult>? each = null,
-        bool jumpFirst = false
+        bool jumpFirst = false,
+        CharacterShape? shape = null
     )
     {
+        var body = shape ?? s_shape;
         var result = default(CharacterMoveResult);
         for (var i = 0; i < ticks; i++)
         {
@@ -738,7 +759,7 @@ public abstract class MoverFeatureTests
                 velocity.Y -= Gravity * Step;
             }
 
-            result = _mover.Move(ref feet, ref velocity, in s_shape, Step);
+            result = _mover.Move(ref feet, ref velocity, in body, Step);
             Assert.NotEqual(CharacterMoveStatus.Waiting, result.Status);
             Assert.NotEqual(CharacterMoveStatus.Stuck, result.Status);
             each?.Invoke(result);

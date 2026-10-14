@@ -44,7 +44,9 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   for running a step again (a client replaying its commands after the host's correction); a flying one only stops. While flying, its feet follow the fly camera. A game's `IMovementMode` (registered in the match's scope, given
   to the system) is offered each walking player's step first, with the player's entity and world for a component of
   its own (no structural changes in it): it may take the step with its own velocity, step height (0: no stepping
-  up), and jump (`MovementModeMove.Jumped`, kept in `CharacterContact.Jumped` as the engine's own), and the move,
+  up), whether the body steps up in the air too (`MovementModeMove.StepsInAir`: a jump whose feet come within the step
+  of a wall's top lands on it), and jump (`MovementModeMove.Jumped`, kept in `CharacterContact.Jumped` as the engine's
+  own), and the move,
   contact (`CharacterContact.WallNormal` among it), and eye then go on as for any step. It sees the command as the
   engine's walking limits it (`MovementModeInput.Command`: crouched, without Jump or Sprint and at a crouch's pace) and
   as the player asked it (`Asked`), so a game tells a crouch pressed while sprinting (a slide) from a plain one; the

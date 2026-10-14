@@ -64,4 +64,11 @@ public struct MovementModeMove
 
     /// <summary>True when the step is a jump: kept in the contact (<see cref="CharacterContact.Jumped"/>), as the engine's own.</summary>
     public bool Jumped;
+
+    /// <summary>
+    /// True when the body steps up onto a ledge within <see cref="StepMetres"/> in the air too, as it does walking: a jump
+    /// whose feet come that near a wall's top lands on it (<see cref="Physics.CharacterShape.StepsInAir"/>). False (the
+    /// engine's own walking): only from the ground.
+    /// </summary>
+    public bool StepsInAir;
 }

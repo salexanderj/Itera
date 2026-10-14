@@ -1176,7 +1176,8 @@ changes collision at once:
   coarser than 1 cm its distances are in centimetres and it stands on the ground's surface inside a voxel, where its density
   crosses one half, blended bilinearly between neighbouring columns whose surfaces differ by less than the slope limit over
   one voxel (so a slope under the limit is a ramp and a ledge, a stair, or a wall stays sharp). It steps up onto ledges no
-  higher than its step, keeps to the ground walking down, lands falls, stops jumps at ceilings, and lifts a body out of
+  higher than its step (from the ground, and in the air where a movement mode asks, `CharacterShape.StepsInAir`, so a
+  jump that nearly clears a wall lands on it), keeps to the ground walking down, lands falls, stops jumps at ceilings, and lifts a body out of
   voxels placed into it. It never moves a body while a column its body and move cover is not resident. The map's edge is a
   wall at every height. Passable materials (`IVoxelPassability`: foliage) let it through.
 - It reads a game's mesh colliders (`MeshColliders`) as the same cells (`MeshColumns`: the spans each triangle makes in
