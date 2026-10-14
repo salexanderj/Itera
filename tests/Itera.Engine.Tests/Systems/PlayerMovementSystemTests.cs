@@ -739,7 +739,45 @@ public sealed class PlayerMovementSystemTests : IDisposable
 
         Assert.True(Read(world).Contact.Jumped);
         Assert.True(Read(world).Position.Feet.Y > standing);
-        Assert.True(mode.Asked > 30);
+        Assert.True(mode.Offered > 30);
+    }
+
+    [Fact]
+    public void A_movement_mode_sees_the_command_as_asked_before_the_crouch_limits_it()
+    {
+        using var world = World.Create();
+        var mode = new Rising { Taking = false };
+        using var system = Create(world, new Vector3(0, 1.6f, 0), mode: mode);
+        Run(world, system, 30, default);
+
+        var crouched = new PlayerCommand
+        {
+            Move = Vector2.UnitY,
+            Buttons = PlayerButtons.Crouch | PlayerButtons.Sprint | PlayerButtons.Jump,
+        };
+        Run(world, system, 1, crouched);
+
+        Assert.True(world.Get<PlayerMode>(Player(world)).Crouching);
+        Assert.Equal(PlayerButtons.Crouch, mode.Command.Buttons);
+        Assert.Equal(PlayerMovementSystem.CrouchSpeedShare, mode.Command.Move.Y, 1e-5f);
+        Assert.Equal(crouched.Buttons, mode.Asked.Buttons);
+        Assert.Equal(1, mode.Asked.Move.Y, 1e-5f);
+    }
+
+    [Fact]
+    public void A_movement_mode_s_jump_is_kept_in_the_contact()
+    {
+        using var world = World.Create();
+        var mode = new Rising { Taking = true, Jumping = true };
+        using var system = Create(world, new Vector3(0, 1.6f, 0), mode: mode);
+        Run(world, system, 30, default);
+
+        Run(world, system, 1, new PlayerCommand { Buttons = PlayerButtons.Jump });
+        Assert.True(Read(world).Contact.Jumped);
+
+        mode.Jumping = false;
+        Run(world, system, 1, new PlayerCommand { Buttons = PlayerButtons.Jump });
+        Assert.False(Read(world).Contact.Jumped);
     }
 
     [Fact]
@@ -764,17 +802,25 @@ public sealed class PlayerMovementSystemTests : IDisposable
         Assert.Equal(0, SystemAllocation.BytesAllocated(system, Step));
     }
 
-    /// <summary>A movement mode that takes every step (while Jump is held) at 1 m/s straight up with no step, or none.</summary>
+    /// <summary>
+    /// A movement mode that takes every step (while Jump is held) at 1 m/s straight up with no step, reporting a jump while
+    /// <see cref="Jumping"/>, or none; it keeps the last command it was given, as limited and as asked.
+    /// </summary>
     private sealed class Rising : IMovementMode
     {
         public bool Taking;
-        public int Asked;
+        public bool Jumping;
+        public int Offered;
+        public PlayerCommand Command;
+        public PlayerCommand Asked;
         public Entity Entity = Entity.Null;
 
         public bool Steer(in MovementModeInput input, ref MovementModeMove move)
         {
-            Asked++;
+            Offered++;
             Entity = input.Entity;
+            Command = input.Command;
+            Asked = input.Asked;
             if (!Taking || (input.Command.Buttons & PlayerButtons.Jump) == 0)
             {
                 return false;
@@ -782,6 +828,7 @@ public sealed class PlayerMovementSystemTests : IDisposable
 
             move.Velocity = Vector3.UnitY;
             move.StepMetres = 0;
+            move.Jumped = Jumping;
             return true;
         }
     }

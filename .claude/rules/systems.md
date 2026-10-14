@@ -43,8 +43,11 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   character's step is also `CharacterStepper.Step` (scoped, with the game's movement mode): the same code on one entity,
   for running a step again (a client replaying its commands after the host's correction); a flying one only stops. While flying, its feet follow the fly camera. A game's `IMovementMode` (registered in the match's scope, given
   to the system) is offered each walking player's step first, with the player's entity and world for a component of
-  its own (no structural changes in it): it may take the step with its own velocity and step height (0: no stepping
-  up), and the move, contact (`CharacterContact.WallNormal` among it), and eye then go on as for any step; the
+  its own (no structural changes in it): it may take the step with its own velocity, step height (0: no stepping
+  up), and jump (`MovementModeMove.Jumped`, kept in `CharacterContact.Jumped` as the engine's own), and the move,
+  contact (`CharacterContact.WallNormal` among it), and eye then go on as for any step. It sees the command as the
+  engine's walking limits it (`MovementModeInput.Command`: crouched, without Jump or Sprint and at a crouch's pace) and
+  as the player asked it (`Asked`), so a game tells a crouch pressed while sprinting (a slide) from a plain one; the
   engine's `MovementProbes` find a wall ahead, its ledge's top, and room to stand (`.claude/rules/physics.md`). The
   engine's `ClimbingMode` is a ready-made one, registered with the surface tags it climbs, for players with a `Climber`:
   Space with such a wall within 0.3 m ahead grabs it instead of jumping; on it W and S climb at 1.5 m/s, A and D move

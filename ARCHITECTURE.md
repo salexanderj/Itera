@@ -709,7 +709,7 @@ and `Alpha`, how far the frame lies between the last two steps). Components are 
   a host moves, and a game's characters; one character's step is also `CharacterStepper.Step` (scoped), to run a step
   again (a client's replay after the host's correction). The eye eases after a step or a change of eye
   height (`EyeSmoothing`). A game's `IMovementMode` may take a walking player's step first (a climb), giving the
-  velocity and step height, with `MovementProbes` (a wall ahead by three rays of the shared ray, its ledge's top by a
+  velocity, step height, and whether it jumped, and seeing the command both as the crouch limits it and as asked, with `MovementProbes` (a wall ahead by three rays of the shared ray, its ledge's top by a
   ray down, room to stand by the mover) and the move's `WallNormal`; `ClimbingMode` is the engine's ready-made one
   (grab, climb, hang, jump off, let go, pull up), which the starter registers for its boulders. `pos` and `tp` are its
   commands.

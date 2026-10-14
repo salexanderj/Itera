@@ -26,7 +26,14 @@ public interface IMovementMode
 /// <summary>What a movement mode knows of a player's step (<see cref="IMovementMode"/>).</summary>
 /// <param name="Entity">The player.</param>
 /// <param name="World">The match's ECS world, for the game's own component of the player.</param>
-/// <param name="Command">What the player asks this step, made safe (<see cref="PlayerMovementSystem.Sanitize"/>).</param>
+/// <param name="Command">
+/// What the player asks this step, made safe (<see cref="PlayerMovementSystem.Sanitize"/>) and limited as the engine's
+/// walking limits it: a crouched command without Jump or Sprint and held to a crouch's pace, a backward one held back.
+/// </param>
+/// <param name="Asked">
+/// The same command as the player asked it, made safe but not limited: what a mode reads to tell a crouch pressed while
+/// sprinting (a slide), or Jump pressed while crouched (a jump out of a slide), from a plain crouch.
+/// </param>
 /// <param name="Size">The body's size.</param>
 /// <param name="Feet">Where its feet are, in metres.</param>
 /// <param name="Velocity">Its velocity after the last step, in metres per second.</param>
@@ -37,6 +44,7 @@ public readonly record struct MovementModeInput(
     Entity Entity,
     World World,
     PlayerCommand Command,
+    PlayerCommand Asked,
     CharacterSize Size,
     Vector3 Feet,
     Vector3 Velocity,
@@ -53,4 +61,7 @@ public struct MovementModeMove
 
     /// <summary>The highest ledge the body steps up onto this step, in metres; 0 for none (and no keeping to the ground).</summary>
     public float StepMetres;
+
+    /// <summary>True when the step is a jump: kept in the contact (<see cref="CharacterContact.Jumped"/>), as the engine's own.</summary>
+    public bool Jumped;
 }

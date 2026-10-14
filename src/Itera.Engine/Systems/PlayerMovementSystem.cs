@@ -662,6 +662,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         )
         {
             Sanitize(ref command);
+            var asked = command;
             Crouch.Step(Mover, in command, ref mode, ref size, in position);
             Limit.Apply(ref command, in mode);
             if (!IsFinite(velocity.MetresPerSecond) || !IsFinite(velocity.Push) || !IsFinite(position.Feet))
@@ -712,6 +713,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
                         entity,
                         World,
                         command,
+                        asked,
                         size,
                         position.Feet,
                         v,
@@ -726,9 +728,10 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
                 )
             )
             {
-                // The game's mode took the step: its velocity, with the loose bodies' push, and its step height.
+                // The game's mode took the step: its velocity, with the loose bodies' push, its step height, and its jump.
                 v = taken.Velocity + velocity.Push;
                 velocity.Push = default;
+                jumped = taken.Jumped;
                 step = float.IsFinite(taken.StepMetres) ? Math.Max(0, taken.StepMetres) : 0;
                 if (!IsFinite(v))
                 {
