@@ -75,7 +75,9 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   kept to the play area (`PlayArea`: the world and 1 km round it, absolute: `Contains`, `HoldsEye`, and `ClampEye` take
   `WorldPoint`s); it too reads nothing while `PlayerInputBlock.Blocked`. `CameraExtractSystem` hands
   the camera to the renderer with its lens (`CameraLens`: perspective, drawn at the player's field of view and then
-  `Zoom` times closer, a game's aim down sights, or orthographic, `CameraLens.Orthographic`, drawn as it is;
+  `Zoom` times closer, a game's aim down sights, or below 1 wider, to `CameraLens.LeastZoom` (0.5), a game's view
+  at speed; or orthographic, `CameraLens.Orthographic`, drawn as it is; the pose's `Roll` turns the picture about the way it
+  looks, a game's tilt, set again each frame after `PlayerCameraSystem`, which writes the pose whole;
   `.claude/rules/rendering.md`), `AtmosphereSystem` the sky and the look (`RenderLook`) from a game's
   `IAtmosphereSource`, asked at the camera's absolute place (`WorldPoint`).
 - `ToolAim` (static) gives where the local player aims from and along (through the third-person camera, with the voxel

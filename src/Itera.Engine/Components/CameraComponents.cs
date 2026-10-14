@@ -5,13 +5,16 @@ namespace Itera.Engine.Components;
 
 /// <summary>
 /// Where a camera is and where it looks, in world metres and radians. Yaw turns about +Y: 0 looks along -Z and a
-/// positive yaw turns left. Pitch tilts the view: positive looks up.
+/// positive yaw turns left. Pitch tilts the view: positive looks up. Roll turns the picture about the way it looks:
+/// positive turns it anticlockwise (a game's tilt of the view; <c>PlayerCameraSystem</c> writes the pose whole, so a
+/// game that tilts it sets it again each frame after that system).
 /// </summary>
 public struct CameraPose
 {
     public Vector3 Position;
     public float Yaw;
     public float Pitch;
+    public float Roll;
 }
 
 /// <summary>
@@ -44,9 +47,13 @@ public struct CameraLens
 
     /// <summary>
     /// How many times closer a perspective lens draws than its field of view (aiming down sights): 2 halves the field's
-    /// tangent; 0 or 1, none. It applies on top of the player's field of view (<c>CameraExtractSystem</c>).
+    /// tangent; 0 or 1, none; below 1, wider (a game's view widened at speed), down to <see cref="LeastZoom"/>. It applies
+    /// on top of the player's field of view (<c>CameraExtractSystem</c>).
     /// </summary>
     public float Zoom;
+
+    /// <summary>The widest a lens's <see cref="Zoom"/> draws: twice the field's tangent.</summary>
+    public const float LeastZoom = 0.5f;
 
     /// <summary>
     /// An orthographic lens: an image <paramref name="heightMetres"/> high, round the camera's position, from

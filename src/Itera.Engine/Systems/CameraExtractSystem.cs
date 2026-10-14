@@ -13,8 +13,8 @@ namespace Itera.Engine.Systems;
 /// Hands the <see cref="ActiveCamera"/> to the renderer (<see cref="RenderView"/>) (frame group, registered after every
 /// system that moves the camera, so it sees the frame's final pose). Reads <see cref="CameraPose"/> and
 /// <see cref="CameraLens"/>; writes no components. With the player's settings a perspective lens draws with their field of
-/// view instead of its own, and then closer by the lens's <see cref="CameraLens.Zoom"/>; an orthographic lens keeps its
-/// size.
+/// view instead of its own, and then closer (or, below 1, wider) by the lens's <see cref="CameraLens.Zoom"/>; an
+/// orthographic lens keeps its size. The pose's <see cref="CameraPose.Roll"/> turns the picture about the way it looks.
 /// </summary>
 public sealed class CameraExtractSystem : BaseSystem<World, FrameTime>, IFrameUpdateSystem
 {
@@ -59,7 +59,7 @@ public sealed class CameraExtractSystem : BaseSystem<World, FrameTime>, IFrameUp
     public static CameraView ToView(in CameraPose pose, in CameraLens lens) =>
         new(
             pose.Position,
-            Quaternion.CreateFromYawPitchRoll(pose.Yaw, pose.Pitch, 0),
+            Quaternion.CreateFromYawPitchRoll(pose.Yaw, pose.Pitch, float.IsFinite(pose.Roll) ? pose.Roll : 0),
             lens.VerticalFovRadians,
             lens.NearMetres,
             lens.Projection,
@@ -90,9 +90,10 @@ public sealed class CameraExtractSystem : BaseSystem<World, FrameTime>, IFrameUp
                 View = View with { VerticalFovRadians = FieldOfView };
             }
 
-            if (lens.Zoom > 1 && float.IsFinite(lens.Zoom))
+            if (lens.Zoom > 0 && lens.Zoom != 1 && float.IsFinite(lens.Zoom))
             {
-                View = View with { VerticalFovRadians = Zoomed(View.VerticalFovRadians, lens.Zoom) };
+                var zoom = MathF.Max(lens.Zoom, CameraLens.LeastZoom);
+                View = View with { VerticalFovRadians = Zoomed(View.VerticalFovRadians, zoom) };
             }
 
             Found = true;
