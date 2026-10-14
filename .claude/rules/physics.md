@@ -67,7 +67,10 @@ step height (from the ground; in the air too where its shape asks, `CharacterSha
 `MovementModeMove.StepsInAir`), walks up no slope past its max slope (steeper ground slides it down and it cannot jump there), lands, and
 walks through passable materials (`IVoxelPassability`). On voxels coarser than 1 cm it stands on the ground's surface
 inside a voxel, where its density crosses one half (`VoxelWorld.SurfaceOver`), blended between neighbouring columns that
-differ by less than the slope limit over a voxel; its distances are in centimetres, but the steepness rule looks at
+differ by less than the slope limit over a voxel; the ground's read reaches a cell or two over the feet, so a column
+whose voxels or objects are open at the feet's cell with something over it (the lintel over a door, which on cells as
+coarse as 1 m lies within that read over a body rising under it) has its ground under that, not on the ceiling (mesh
+colliders, which have no inside, are read as they are); its distances are in centimetres, but the steepness rule looks at
 least 0.8 of a cell around the body, so on voxels coarser than 10 cm a slope too steep to walk still reads as one (a
 coarse voxel blurs a slope's foot, which a body may step onto). On cells wider than the body's radius, a slope past the
 limit whose columns each rise less than the step height is the same voxels as steep stairs and is climbed a tread at a

@@ -212,6 +212,11 @@ public sealed class VoxelCharacterMover
     private readonly int[] _objectTops;
     private readonly double[] _surfaces;
 
+    // The voxels' and the objects' tops up to the ground's reference cell, where a ceiling over open space lies over it
+    // (ReadSurfaces).
+    private readonly int[] _columnTopsUnder;
+    private readonly int[] _objectTopsUnder;
+
     // The columns' surfaces read within one move or query (VoxelWorld.SurfaceOver), by column and top: a move reads
     // the same columns several times (a large body's about 6,700 reads of 1,100 columns). Slotted by the column's place in a
     // square of 128 columns that repeats across the world: a move reads less than that across, so no two of its columns
@@ -321,6 +326,8 @@ public sealed class VoxelCharacterMover
         _meshTops = new int[side * side];
         _objectTops = new int[side * side];
         _surfaces = new double[side * side];
+        _columnTopsUnder = new int[side * side];
+        _objectTopsUnder = new int[side * side];
     }
 
     /// <summary>The run's physics materials, for the ground's (<see cref="CharacterMoveResult.GroundMaterial"/>); none gives the default.</summary>
@@ -1100,7 +1107,8 @@ public sealed class VoxelCharacterMover
     /// <see cref="double.NegativeInfinity"/> where none lies there. On a grid of 1 cm a voxel's top, below the limit's
     /// cell; else the blended surface's highest point under the footprint (<see cref="Surface"/>), read up to the voxel
     /// over the limit's: a neighbour whose surface lies over the feet still shapes the blend under the footprint, which
-    /// never reaches its centre.
+    /// never reaches its centre. A column open at the limit's cell with something over it (the lintel over a door, which
+    /// on coarse cells that read reaches over the head) has its ground under that cell, not on the ceiling.
     /// </summary>
     private double Ground(in CircleFootprint footprint, int y0, double limit, bool bodies = true)
     {
@@ -1116,7 +1124,7 @@ public sealed class VoxelCharacterMover
         // And from where a neighbour joined to ground near the limit can sink to, so every read blends the same.
         var y1 = (int)Math.Floor(limit + _ramp) + 1;
         var low = Math.Min(y0, (int)Math.Floor(limit - _ramp)) - 1;
-        var ground = Surface(in footprint, low, y1);
+        var ground = Surface(in footprint, low, y1, (int)Math.Floor(limit));
         if (bodies && _bodies is not null && _bodies.Count > 0)
         {
             var body = _bodies.HighestTop(in footprint, y0, (int)Math.Ceiling(limit) - 1);
@@ -1135,9 +1143,10 @@ public sealed class VoxelCharacterMover
     /// (<see cref="Blended"/>), or <see cref="double.NegativeInfinity"/>. A cell whose surface, and the joined
     /// neighbours', lie no higher than the best so far is skipped, so flat ground reads one cell; any other is measured at
     /// the corners, edges' middles, and middle of its square, each moved into the footprint, where the blend is highest
-    /// (it is bilinear between them).
+    /// (it is bilinear between them). With a <paramref name="reference"/> cell, a column open there under something
+    /// higher reads its ground under it (<see cref="ReadSurfaces"/>).
     /// </summary>
-    private double Surface(in CircleFootprint footprint, int y0, int y1)
+    private double Surface(in CircleFootprint footprint, int y0, int y1, int reference = int.MaxValue)
     {
         ReadSurfaces(
             footprint.MinX - 1,
@@ -1146,7 +1155,8 @@ public sealed class VoxelCharacterMover
             footprint.MaxZ - footprint.MinZ + 3,
             y0,
             y1,
-            double.PositiveInfinity
+            double.PositiveInfinity,
+            reference
         );
         var best = double.NegativeInfinity;
         double cx = footprint.CentreX,
@@ -1195,9 +1205,23 @@ public sealed class VoxelCharacterMover
 
     /// <summary>
     /// Reads the surface (<see cref="VoxelWorld.SurfaceOver"/>) of the highest ground from y0 to y1 of every column of the
-    /// window, NaN where none lies there or it lies above <paramref name="limit"/>, into <see cref="_surfaces"/>.
+    /// window, NaN where none lies there or it lies above <paramref name="limit"/>, into <see cref="_surfaces"/>. Where a
+    /// column's voxels or objects have their highest top over the <paramref name="reference"/> cell and neither blocks
+    /// that cell, what lies over it is a ceiling over open space, not ground (the lintel over a door, under which a body
+    /// rises): their ground there is their highest top up to the reference cell, or none. A wall blocks the cell, so it
+    /// reads its top as before. The mesh colliders' tops are read as they are: a mesh has no inside, so an empty cell
+    /// under a triangle (a ramp's) is no sign of a ceiling.
     /// </summary>
-    private void ReadSurfaces(int windowX, int windowZ, int width, int depth, int y0, int y1, double limit)
+    private void ReadSurfaces(
+        int windowX,
+        int windowZ,
+        int width,
+        int depth,
+        int y0,
+        int y1,
+        double limit,
+        int reference = int.MaxValue
+    )
     {
         _surfaceX = windowX;
         _surfaceZ = windowZ;
@@ -1227,13 +1251,55 @@ public sealed class VoxelCharacterMover
             Objects!.ColumnTops(windowX, windowZ, width, depth, y0, y1, objectTops);
         }
 
+        // The voxels' and the objects' tops up to the reference cell, read only where some column's lie over it.
+        var under = false;
+        if (reference >= y0 && reference < y1)
+        {
+            for (var i = 0; i < tops.Length && !under; i++)
+            {
+                under = tops[i] > reference || (objects && objectTops[i] > reference);
+            }
+        }
+
+        var topsUnder = _columnTopsUnder.AsSpan(0, width * depth);
+        var objectTopsUnder = _objectTopsUnder.AsSpan(0, width * depth);
+        if (under)
+        {
+            if (_world is null)
+            {
+                topsUnder.Fill(int.MinValue);
+            }
+            else
+            {
+                _world.ColumnTops(windowX, windowZ, width, depth, y0, reference, in _passable, topsUnder);
+            }
+
+            if (objects)
+            {
+                Objects!.ColumnTops(windowX, windowZ, width, depth, y0, reference, objectTopsUnder);
+            }
+        }
+
         for (var i = 0; i < tops.Length; i++)
         {
             // The highest of the sources' tops, its surface read from whichever has it (all that meet there).
             var worldTop = tops[i];
             var meshTop = meshes ? meshTops[i] : int.MinValue;
             var objectTop = objects ? objectTops[i] : int.MinValue;
+            if (under && Math.Max(worldTop, objectTop) > reference)
+            {
+                var worldUnder = topsUnder[i];
+                var objectUnder = objects ? objectTopsUnder[i] : int.MinValue;
+                if (Math.Max(worldUnder, objectUnder) < reference)
+                {
+                    // Open at the reference cell: a ceiling over it, and the ground (if any) under it.
+                    worldTop = worldUnder;
+                    objectTop = objectUnder;
+                }
+            }
+
             var top = Math.Max(worldTop, Math.Max(meshTop, objectTop));
+
             int x = windowX + i % width,
                 z = windowZ + i / width;
             var surface =

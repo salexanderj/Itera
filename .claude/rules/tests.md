@@ -166,7 +166,9 @@ Where tests live:
   and 10,000 random moves that never leave it inside a voxel, the same test bodies run on voxels and on triangles built
   from the same features (`MoverFeatureTests`: `VoxelCharacterMoverTests` and `MeshMoverFeatureTests` over a world of
   air; `DensityGroundTests` at 10 cm: `DensityMoverTests` and `MeshDensityGroundTests` with no world, both from
-  `TestTriangles`), the mover over colliders alone (`MeshMoverTests`: a thin wall, a slope along no axis, a collider
+  `TestTriangles`), the mover in 1 m cells under a lintel (`CoarseCeilingMoverTests`, over `OpeningGenerator`: a body
+  rising under it falls back and is never grounded in the air, one on its top stands there, a wall beside the opening
+  stops one in the air, and one walks through), the mover over colliders alone (`MeshMoverTests`: a thin wall, a slope along no axis, a collider
   added and removed, the map's edge), and over voxels and colliders in the same cells (`MixedGroundMoverTests`); loose
   bodies without voxel terrain (`LooseBodiesWithoutTerrainTests`, over `Systems/MeshGroundHarness`: mesh ground, models
   in their own memory, the mover reading the bodies); the movement modes' probes over meshes and voxels
