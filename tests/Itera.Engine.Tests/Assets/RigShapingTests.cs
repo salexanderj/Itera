@@ -8,7 +8,8 @@ namespace Itera.Engine.Tests.Assets;
 /// up from a root, and a branch off the root along +x. A joint found by name; the joints' places in the asset's space,
 /// which the palette is made of; a mask over a joint and every joint below it; two poses blended joint by joint; a joint
 /// turned in the asset's space under a turned parent, its children swinging round it; a joint moved in the asset's
-/// space under a turned and scaled parent, its children with it; joints placed at given transforms in one pass, the
+/// space under a turned and scaled parent, its children with it; reaching where the end already is, or a hair off it,
+/// leaving the pose finite; joints placed at given transforms in one pass, the
 /// others following their parents; two-bone IK reaching a point, and
 /// stretching towards one out of reach, bent towards its pole; and no allocation.
 /// </summary>
@@ -103,6 +104,46 @@ public sealed class RigShapingTests
         Assert.True(Vector3.Distance(joint + offset, globals[1].Translation) < 1e-5f, $"{globals[1].Translation}");
         Assert.True(Vector3.Distance(tip + offset, globals[3].Translation) < 1e-5f, $"{globals[3].Translation}");
         Assert.True(Vector3.Distance(branch, globals[4].Translation) < 1e-5f, $"{globals[4].Translation}");
+    }
+
+    [Fact]
+    public void Reaching_where_the_end_already_is_or_nearly_leaves_the_pose_finite_and_in_place()
+    {
+        // Bent at random, each chain reaches where its end already is, or a hair off it: a turn from two ways that round
+        // to one, which once came out not finite.
+        var random = new Random(11);
+        var globals = new Matrix4x4[5];
+        for (var trial = 0; trial < 5_000; trial++)
+        {
+            var pose = Rest();
+            for (var joint = 1; joint <= 3; joint++)
+            {
+                var axis = Vector3.Normalize(
+                    new Vector3(
+                        (float)random.NextDouble() - 0.5f,
+                        (float)random.NextDouble() - 0.5f,
+                        (float)random.NextDouble() - 0.5f
+                    )
+                );
+                pose[joint] = pose[joint] with
+                {
+                    Rotation = Quaternion.CreateFromAxisAngle(axis, (float)random.NextDouble() * 2),
+                };
+            }
+
+            s_rig.Globals(pose, globals);
+            var end = globals[3].Translation;
+            var off = (float)(random.NextDouble() - 0.5) * 2e-6f * (trial % 2);
+            var pole = globals[2].Translation + new Vector3(0, 0, 0.5f);
+
+            s_rig.ReachTwoBone(pose, 1, 2, 3, end + new Vector3(off, -off, off), pole, globals);
+
+            s_rig.Globals(pose, globals);
+            Assert.True(
+                Vector3.Distance(end, globals[3].Translation) < 1e-3f,
+                $"Trial {trial}: reaching its own place put the end at {globals[3].Translation}, from {end}."
+            );
+        }
     }
 
     [Fact]

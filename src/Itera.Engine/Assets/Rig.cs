@@ -371,20 +371,25 @@ public sealed class Rig
     /// <summary>The shortest turn from one direction to another (neither zero).</summary>
     private static Quaternion Arc(Vector3 from, Vector3 to)
     {
-        var f = Vector3.Normalize(from);
-        var t = Vector3.Normalize(to);
-        var dot = Math.Clamp(Vector3.Dot(f, t), -1, 1);
-        if (dot > 1 - 1e-7f)
+        var lengths = from.Length() * to.Length();
+        if (!(lengths > 1e-12f) || !float.IsFinite(lengths))
         {
             return Quaternion.Identity;
         }
 
-        if (dot < -1 + 1e-7f)
+        // The axis's length is the angle's sine: two ways that are nearly one turn by nothing, or by half a turn about any
+        // axis square to them when nearly opposite (normalising a cross product rounded to nothing would not be finite).
+        var dot = Vector3.Dot(from, to) / lengths;
+        var axis = Vector3.Cross(from, to) / lengths;
+        var sin = axis.Length();
+        if (!(sin > 1e-6f))
         {
-            return Quaternion.CreateFromAxisAngle(Perpendicular(f), MathF.PI);
+            return dot >= 0
+                ? Quaternion.Identity
+                : Quaternion.CreateFromAxisAngle(Perpendicular(Vector3.Normalize(from)), MathF.PI);
         }
 
-        return Quaternion.CreateFromAxisAngle(Vector3.Normalize(Vector3.Cross(f, t)), MathF.Acos(dot));
+        return Quaternion.CreateFromAxisAngle(axis / sin, MathF.Atan2(sin, dot));
     }
 
     private static Vector3 Perpendicular(Vector3 direction) =>
