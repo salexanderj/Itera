@@ -19,9 +19,12 @@ namespace Itera.Engine.Systems;
 /// pose blended by <see cref="FrameTime.Alpha"/> and scaled; one that also has a <see cref="MeshAnimator"/> is posed by
 /// its clip at the blend of its last two times (its rig's skinning matrices, <c>Rig.WritePalette</c>), and while it fades
 /// from another clip by both, each joint blended by the fade (rotations along the shorter way); one with a
-/// <see cref="ShapedPose"/> is then shaped by the game's <see cref="IMeshPoseShaper"/>. An entity with a
-/// <see cref="MeshAttachment"/> is drawn at its holder's joint as the holder is posed this frame (<see cref="MeshPoses"/>).
-/// Reads those; writes no components. Registers the console's <c>meshes</c> (the run's assets and their clips; placing one or many in
+/// <see cref="ShapedPose"/> is then shaped by the game's <see cref="IMeshPoseShaper"/>, and one with a
+/// <see cref="SmoothedPose"/> has its changes smoothed as it is drawn, after the shaping (<see cref="PoseSmoothing"/>: each
+/// starts from the pose drawn the frame before, moving as it was). An entity with a <see cref="MeshAttachment"/> is drawn
+/// at its holder's joint as the holder is posed this frame (<see cref="MeshPoses"/>; a smoothed holder as it was
+/// drawn). Reads those; writes only the
+/// slot a <see cref="SmoothedPose"/> keeps. Registers the console's <c>meshes</c> (the run's assets and their clips; placing one or many in
 /// front of the camera, on the ground where a voxel world is, playing a clip or held at a time of it, tagged
 /// <see cref="ConsoleMesh"/>; removing those).
 /// </summary>
@@ -38,13 +41,10 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
         .WithNone<MeshAnimator>();
     private static readonly QueryDescription s_posed = new QueryDescription()
         .WithAll<MeshPlacement, DrawnMesh, MeshAnimator>()
-        .WithNone<ShapedPose>();
-    private static readonly QueryDescription s_shaped = new QueryDescription().WithAll<
-        MeshPlacement,
-        DrawnMesh,
-        MeshAnimator,
-        ShapedPose
-    >();
+        .WithNone<ShapedPose, SmoothedPose>();
+    private static readonly QueryDescription s_shaped = new QueryDescription()
+        .WithAll<MeshPlacement, DrawnMesh, MeshAnimator>()
+        .WithAny<ShapedPose, SmoothedPose>();
     private static readonly QueryDescription s_attached = new QueryDescription().WithAll<MeshAttachment, DrawnMesh>();
     private static readonly QueryDescription s_placed = new QueryDescription().WithAll<ConsoleMesh>();
     private static readonly QueryDescription s_camera = new QueryDescription().WithAll<CameraPose, ActiveCamera>();
@@ -54,6 +54,7 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     private readonly VoxelWorld? _voxels;
     private readonly ConsoleCommands? _commands;
     private readonly IMeshPoseShaper? _shaper;
+    private readonly PoseSmoothing _smoothing = new();
     private JointTransform[] _locals = [];
     private JointTransform[] _fromLocals = [];
     private Matrix4x4[] _globals = [];
@@ -85,7 +86,7 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     {
         EcsChecks.RequireAll<MeshPlacement, DrawnMesh>(in s_static);
         EcsChecks.RequireAll<MeshPlacement, DrawnMesh, MeshAnimator>(in s_posed);
-        EcsChecks.RequireAll<MeshPlacement, DrawnMesh, MeshAnimator, ShapedPose>(in s_shaped);
+        EcsChecks.RequireAll<MeshPlacement, DrawnMesh, MeshAnimator>(in s_shaped);
         EcsChecks.RequireAll<MeshAttachment, DrawnMesh>(in s_attached);
         EcsChecks.RequireAll<CameraPose, ActiveCamera>(in s_camera);
 
@@ -108,6 +109,9 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
         );
     }
 
+    /// <summary>The smoothed meshes' last poses (for tests).</summary>
+    public PoseSmoothing Smoothing => _smoothing;
+
     public override void Update(in FrameTime time)
     {
         var still = new AddMeshes { Instances = _instances, Alpha = time.Alpha };
@@ -126,9 +130,56 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
             var placements = chunk.GetSpan<MeshPlacement>();
             var meshes = chunk.GetSpan<DrawnMesh>();
             var animators = chunk.GetSpan<MeshAnimator>();
+            var shaped = chunk.Has<ShapedPose>();
+            var smoothed = chunk.Has<SmoothedPose>();
+            var smoothings = smoothed ? chunk.GetSpan<SmoothedPose>() : default;
             foreach (var index in chunk)
             {
-                DrawPosed(chunk.Entity(index), in placements[index], in meshes[index], in animators[index], time.Alpha);
+                var entity = chunk.Entity(index);
+                var transform = MeshPoses.Placed(in placements[index], time.Alpha);
+                ref readonly var mesh = ref meshes[index];
+                if (
+                    !MeshPoses.Sample(
+                        _assets,
+                        mesh.Asset,
+                        in animators[index],
+                        time.Alpha,
+                        _locals,
+                        _fromLocals,
+                        out var rig
+                    )
+                )
+                {
+                    _instances.Add(mesh.Asset, in transform, mesh.Tint, mesh.Shadow);
+                    continue;
+                }
+
+                var locals = _locals.AsSpan(0, rig.JointCount);
+                if (shaped)
+                {
+                    _shaper?.Shape(World, entity, rig, locals, _globals, time.Alpha, MeshPosePurpose.Drawing);
+                }
+
+                // The pose as drawn, shaping and all, so a switch of the game's own layer is smoothed as a clip's change.
+                if (smoothed)
+                {
+                    ref var smoothing = ref smoothings[index];
+                    smoothing.Slot = _smoothing.Smooth(
+                        entity,
+                        smoothing.Slot,
+                        animators[index].Changes,
+                        smoothing.Seconds,
+                        locals,
+                        time.DeltaSeconds,
+                        time.FrameIndex
+                    );
+                }
+
+                var palette = _instances.AddPosed(mesh.Asset, in transform, rig.JointCount, mesh.Tint, mesh.Shadow);
+                if (!palette.IsEmpty)
+                {
+                    rig.WritePalette(locals, palette);
+                }
             }
         }
 
@@ -138,38 +189,16 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
             var meshes = chunk.GetSpan<DrawnMesh>();
             foreach (var index in chunk)
             {
-                DrawAttached(in attachments[index], in meshes[index], time.Alpha);
+                DrawAttached(in attachments[index], in meshes[index], time.Alpha, time.FrameIndex);
             }
         }
-    }
 
-    /// <summary>A posed mesh shaped by the game's shaper, then drawn.</summary>
-    private void DrawPosed(
-        Entity entity,
-        in MeshPlacement placement,
-        in DrawnMesh mesh,
-        in MeshAnimator animator,
-        float alpha
-    )
-    {
-        var transform = MeshPoses.Placed(in placement, alpha);
-        if (!MeshPoses.Sample(_assets, mesh.Asset, in animator, alpha, _locals, _fromLocals, out var rig))
-        {
-            _instances.Add(mesh.Asset, in transform, mesh.Tint, mesh.Shadow);
-            return;
-        }
-
-        var locals = _locals.AsSpan(0, rig.JointCount);
-        _shaper?.Shape(World, entity, rig, locals, _globals, alpha, MeshPosePurpose.Drawing);
-        var palette = _instances.AddPosed(mesh.Asset, in transform, rig.JointCount, mesh.Tint, mesh.Shadow);
-        if (!palette.IsEmpty)
-        {
-            rig.WritePalette(locals, palette);
-        }
+        // A smoothed mesh not drawn this frame is gone, or no longer smoothed.
+        _smoothing.Sweep(time.FrameIndex);
     }
 
     /// <summary>A mesh at its holder's joint, the holder posed (and shaped) as it is drawn this frame.</summary>
-    private void DrawAttached(in MeshAttachment attachment, in DrawnMesh mesh, float alpha)
+    private void DrawAttached(in MeshAttachment attachment, in DrawnMesh mesh, float alpha, ulong frame)
     {
         var holder = attachment.Holder;
         if (!World.IsAlive(holder) || !World.Has<MeshPlacement>(holder) || !World.Has<DrawnMesh>(holder))
@@ -180,7 +209,29 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
         var placed = MeshPoses.Placed(in World.Get<MeshPlacement>(holder), alpha);
         var at = placed;
         var asset = World.Get<DrawnMesh>(holder).Asset;
-        if (World.Has<MeshAnimator>(holder))
+        if (
+            _assets.TryGet(asset, out var drawn)
+            && drawn.Rig is { } drawnRig
+            && drawnRig.JointCount <= _locals.Length
+            && World.Has<SmoothedPose>(holder)
+            && _smoothing.TryDrawn(
+                holder,
+                World.Get<SmoothedPose>(holder).Slot,
+                frame,
+                _locals.AsSpan(0, drawnRig.JointCount)
+            )
+        )
+        {
+            // A smoothed holder as it was drawn this frame, shaped and smoothed, so what it holds stays in its hand.
+            at = MeshPoses.JointInWorld(
+                drawnRig,
+                _locals.AsSpan(0, drawnRig.JointCount),
+                attachment.Joint,
+                in placed,
+                _globals
+            );
+        }
+        else if (World.Has<MeshAnimator>(holder))
         {
             if (
                 MeshPoses.Sample(

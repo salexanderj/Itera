@@ -113,6 +113,28 @@ public sealed class MeshAnimatorSystemTests
     }
 
     [Fact]
+    public void A_fade_another_clip_blended_in_and_a_mark_count_as_changes_and_playing_on_does_not()
+    {
+        var animator = MeshAnimator.Playing(0);
+        animator.SetBlend(-1, 0);
+        var start = animator.Changes;
+        animator.SetBlend(1, 0.5f);
+        var blended = animator.Changes;
+        animator.SetBlend(1, 0.7f);
+        var weighed = animator.Changes;
+        animator.FadeTo(1, 0);
+        var faded = animator.Changes;
+        animator.FadeTo(0, 0.2f);
+        var refaded = animator.Changes;
+        animator.MarkChange();
+
+        Assert.Equal(
+            (start + 1, start + 1, start + 2, start + 3, start + 4),
+            (blended, weighed, faded, refaded, animator.Changes)
+        );
+    }
+
+    [Fact]
     public void A_step_allocates_nothing()
     {
         using var world = World.Create();

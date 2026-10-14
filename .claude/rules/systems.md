@@ -116,16 +116,24 @@ pose blended by the frame's `Alpha`; one with a `MeshAnimator` (a clip of the as
 for the rest pose; its time at the last two steps; a speed, 0 to hold; `Once` to stop at the end) is posed by the clip
 at the blend of its two times, wrapped by a looping clip's length (`MeshInstances.AddPosed`, `Rig.WritePalette`). A
 change of clip may fade (`MeshAnimator.FadeTo(clip, seconds)`: the old clip goes on at its own speed, and each joint
-blends from it to the new one, rotations along the shorter way, by `FadeWeight` at the frame's `Alpha`). A second clip may be blended in (`MeshAnimator.SetBlend(clip, weight)`, set by a fixed system each step: posed at the
-same share of its length as the clip is of its own, so two gaits keep step, each joint moved towards it by the weight
+blends from it to the new one, rotations along the shorter way, by `FadeWeight` at the frame's `Alpha`). A second clip may be blended in (`MeshAnimator.SetBlend(clip, weight, shift)`, set by a fixed system each step: posed at the
+same share of its length as the clip is of its own, and `shift` of its length further (`BlendShift`: clips whose steps
+fall at different shares kept in step), so two gaits keep step, each joint moved towards it by the weight
 between the last two steps at the frame's `Alpha`, `BlendShare`): directional movement between a forward clip and a
 sideways one; the clip's own times stay the main clip's (a game's footfalls read them). One with a
 `ShapedPose` is then shaped by the game's `IMeshPoseShaper` (scoped, given to the system: layers, aim, IK through the
 rig's tools, reading the entity's own components; no structural changes, no allocation), told why it poses
 (`MeshPosePurpose`: `Drawing` here, `HitShapes` where a game poses a body for its hit shapes; what a game keeps of its
-own recent frames, such as springs or a ragdoll, is for drawing alone, so a body is never hit where it is not drawn). An entity with a
-`MeshAttachment` and a `DrawnMesh` (no placement) is drawn at its holder's joint as the holder is posed (and shaped)
-this frame, then its offset and turn in the joint's space (a rifle in a hand); nothing once the holder is gone.
+own recent frames, such as springs or a ragdoll, is for drawing alone, so a body is never hit where it is not drawn). One with a
+`SmoothedPose` has its changes smoothed as it is drawn, after the shaping (`PoseSmoothing`, dead blending, in place of a
+cross-fade; drawn only): each change its animator marks (`MeshAnimator.Changes`: every `FadeTo`, a `SetBlend` of
+another clip, and a game's `MarkChange` when its own layer switches at once) starts from the pose drawn the frame before,
+each joint going on at the speed it had, slowing, and blends into the new pose, eased, over `SmoothedPose.Seconds` (0.2 s
+by default); a change during another starts from what was drawn; at most 256 at once, each slot checked against its
+entity and let go when not drawn. So a game may change clips at once and let the smoothing carry them. An entity with a
+`MeshAttachment` and a `DrawnMesh` (no placement) is drawn at its holder's joint as the holder is posed (and shaped,
+and smoothed) this frame, then its offset and turn in the joint's space (a rifle in a hand); nothing once the holder is
+gone.
 `MeshPoses` (`Placed`, `Sample`, `JointInWorld`) poses a mesh as the system draws it, for a game posing a body it does
 not draw (a host judging a hit, its shaper told `MeshPosePurpose.HitShapes`).
 `MeshAnimatorSystem` (fixed, after every system that chooses a clip) moves each clip's time on by its speed, so clips

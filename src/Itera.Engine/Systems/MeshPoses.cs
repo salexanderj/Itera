@@ -68,7 +68,7 @@ public static class MeshPoses
     /// <paramref name="animator"/>'s pose of asset <paramref name="asset"/> at <paramref name="alpha"/> of the way between
     /// its last two steps, into <paramref name="locals"/>: its clip at the blend of its two times (wrapped by a looping
     /// clip's length), and while it fades, the last clip's pose (sampled into <paramref name="from"/>) blended into it by
-    /// the fade; then its blended clip, posed at the same share of its length (sampled into <paramref name="from"/>),
+    /// the fade; then its blended clip, posed at the same share of its length and its shift further (sampled into <paramref name="from"/>),
     /// blended into that by its weight. False, and nothing written, for an asset without a rig, or a rig with more joints
     /// than the spans hold.
     /// </summary>
@@ -133,10 +133,18 @@ public static class MeshPoses
         var blend = animator.BlendShare(alpha);
         if (blend > 0)
         {
-            // The blended clip at the same share of its length as the clip is of its own, so two walks keep step.
+            // The blended clip at the same share of its length as the clip is of its own, and its shift further, so two
+            // walks keep step.
             var duration = MeshAnimatorSystem.DurationOf(assets, asset, animator.Clip);
             var blendDuration = MeshAnimatorSystem.DurationOf(assets, asset, animator.BlendClip);
-            var blendSeconds = duration > 0 && blendDuration > 0 ? seconds / duration * blendDuration : seconds;
+            var blendSeconds = seconds;
+            if (duration > 0 && blendDuration > 0)
+            {
+                // Wrapped only when shifted: a clip played once and held at its end keeps its blend at the end too.
+                var share = seconds / duration + animator.BlendShift;
+                share = animator.BlendShift != 0 ? share - MathF.Floor(share) : share;
+                blendSeconds = share * blendDuration;
+            }
             var other = from[..rig.JointCount];
             rig.Pose(animator.BlendClip, blendSeconds, other);
             for (var j = 0; j < joints.Length; j++)

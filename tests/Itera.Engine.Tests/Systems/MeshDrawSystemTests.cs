@@ -15,8 +15,10 @@ namespace Itera.Engine.Tests.Systems;
 /// <summary>
 /// <see cref="MeshDrawSystem"/>: each placed mesh is drawn at its pose between the last two fixed steps, scaled, with its
 /// tint and shadow, a posed one with its clip's skinning matrices at the blend of its last two times, and while it fades
-/// with each joint blended between its two clips, and with a <see cref="ShapedPose"/> shaped by the game's shaper; a mesh
-/// attached to a joint of another's pose drawn there, and nothing when its holder is gone; the console's
+/// with each joint blended between its two clips, a blended clip posed its shift further through its length, and with a <see cref="ShapedPose"/> shaped by the game's shaper; with a
+/// <see cref="SmoothedPose"/> a change of clip starting from the pose drawn before and settling into the new one, an
+/// unsmoothed one changing at once, a marked switch of the game's shaping smoothed too, a new entity in a gone one's slot starting afresh, and what it holds following it; a
+/// mesh attached to a joint of another's pose drawn there, and nothing when its holder is gone; the console's
 /// <c>meshes</c> lists the assets and their clips, places one or many in front of the camera facing it, playing a clip or
 /// held at a time of it, and clears only those it placed; and drawing allocates nothing.
 /// </summary>
@@ -152,6 +154,25 @@ public sealed class MeshDrawSystemTests
         }
 
         Assert.Equal((0f, 1f), (animator.PreviousBlendWeight, animator.BlendWeight));
+    }
+
+    [Fact]
+    public void A_shifted_blend_poses_its_clip_that_share_further_through_its_length()
+    {
+        using var world = World.Create();
+        using var system = Create(world);
+        var duration = _assets[2].Rig!.Clips[0].Duration;
+        // The clip at a fifth of its length, itself blended in whole a quarter further on: the clip at 0.45 of it.
+        var animator = MeshAnimator.Playing(0, seconds: 0.2f * duration, speed: 0);
+        animator.SetBlend(0, 1, 0.25f);
+        animator.SetBlend(0, 1, 0.25f);
+        world.Create(MeshPlacement.At(Vector3.Zero, Quaternion.Identity), DrawnMesh.Of(2), animator);
+
+        Frame(system, 1);
+
+        var drawn = DrawnTip(0);
+        Assert.True(Vector3.Distance(drawn, Tip(0, 0.45f * duration)) < 1e-4f, $"Drawn at {drawn}.");
+        Assert.True(Vector3.Distance(drawn, Tip(0, 0.2f * duration)) > 1e-3f, "The shift moved nothing.");
     }
 
     [Fact]
@@ -440,6 +461,114 @@ public sealed class MeshDrawSystemTests
     }
 
     [Fact]
+    public void A_smoothed_change_of_clip_starts_where_the_last_pose_was_and_settles_into_the_new_one()
+    {
+        using var world = World.Create();
+        using var system = Create(world);
+        // Two meshes held at the bend's 0.4 s, one smoothed; then each changes at once to the rest pose.
+        var smoothed = world.Create(
+            MeshPlacement.At(Vector3.Zero, Quaternion.Identity),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f, speed: 0),
+            SmoothedPose.Of(0.2f)
+        );
+        var plain = world.Create(
+            MeshPlacement.At(new Vector3(10, 0, 0), Quaternion.Identity),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f, speed: 0)
+        );
+        var (bent, rest) = (Tip(0, 0.4f), Tip(-1, 0));
+        Frame(system, 1);
+        world.Get<MeshAnimator>(smoothed).FadeTo(-1, 0);
+        world.Get<MeshAnimator>(plain).FadeTo(-1, 0);
+
+        Frame(system, 2);
+        var (smoothedAfter, plainAfter) = (DrawnTip(0), DrawnTip(10));
+        var settled = Vector3.Zero;
+        for (ulong frame = 3; frame < 63; frame++)
+        {
+            Frame(system, frame);
+            settled = DrawnTip(0);
+        }
+
+        // A frame after the change the smoothed tip is nearly where it was; the plain one is at the rest pose at once.
+        Assert.True(Share(smoothedAfter, bent, rest) > 0.9f, $"At {Share(smoothedAfter, bent, rest)} of the way back.");
+        Assert.True(Vector3.Distance(plainAfter, rest) < 1e-4f, $"Plain at {plainAfter}.");
+        // A second later it is the rest pose.
+        Assert.True(Vector3.Distance(settled, rest) < 1e-3f, $"Settled at {settled}, the rest pose's tip at {rest}.");
+        Assert.Equal(1, system.Smoothing.Count);
+    }
+
+    [Fact]
+    public void A_marked_switch_of_the_shaping_is_smoothed_as_a_change_of_clip_is()
+    {
+        using var world = World.Create();
+        var shaper = new TurningShaper { Keep = false };
+        using var system = Create(world, shaper: shaper);
+        var animator = MeshAnimator.Playing(-1, 0, speed: 0);
+        var mesh = world.Create(
+            MeshPlacement.At(Vector3.Zero, Quaternion.Identity),
+            DrawnMesh.Of(2),
+            animator,
+            new ShapedPose(),
+            SmoothedPose.Of(0.2f)
+        );
+        Frame(system, 1);
+        var turned = DrawnTip(0);
+        // The shaper's turn switched off at once, and marked.
+        shaper.Turning = false;
+        world.Get<MeshAnimator>(mesh).MarkChange();
+        Frame(system, 2);
+        var after = DrawnTip(0);
+        for (ulong frame = 3; frame < 63; frame++)
+        {
+            Frame(system, frame);
+        }
+
+        var rest = Tip(-1, 0);
+        Assert.True(Share(after, turned, rest) > 0.9f, $"At {Share(after, turned, rest)} of the way back.");
+        Assert.True(Vector3.Distance(DrawnTip(0), rest) < 1e-3f, $"Settled at {DrawnTip(0)}.");
+    }
+
+    [Fact]
+    public void A_new_entity_in_a_gone_ones_slot_starts_afresh_and_what_a_smoothed_mesh_holds_follows_it()
+    {
+        using var world = World.Create();
+        using var system = Create(world);
+        var gone = world.Create(
+            MeshPlacement.At(Vector3.Zero, Quaternion.Identity),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f, speed: 0),
+            SmoothedPose.Of()
+        );
+        Frame(system, 1);
+        var slot = world.Get<SmoothedPose>(gone).Slot;
+        world.Destroy(gone);
+        Frame(system, 2);
+        // A new mesh at the rest pose, given the gone one's slot, and holding a box at its tip.
+        var holder = world.Create(
+            MeshPlacement.At(Vector3.Zero, Quaternion.Identity),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(-1, 0, speed: 0),
+            new SmoothedPose { Seconds = 0.2f, Slot = slot }
+        );
+        world.Create(DrawnMesh.Of(0), MeshAttachment.To(holder, 1, Vector3.Zero, Quaternion.Identity));
+        Frame(system, 3);
+        var fresh = DrawnTip(0);
+        // Then a change to the bend: a frame later the box is still at the smoothed joint, not the bend's.
+        world.Get<MeshAnimator>(holder).FadeTo(0, 0, 0.4f, 0);
+        Frame(system, 4);
+
+        var rig = _assets[2].Rig!;
+        var joint = _instances.Palettes[_instances.Instances.ToArray().Single(i => i.Asset == 2).FirstJoint + 1];
+        var box = _instances.Instances.ToArray().Single(i => i.Asset == 0).Transform.Translation;
+        var bind = Matrix4x4.Invert(rig.InverseBinds[1], out var bound) ? bound : Matrix4x4.Identity;
+        var drawnJoint = (bind * joint).Translation;
+        Assert.True(Vector3.Distance(fresh, Tip(-1, 0)) < 1e-4f, $"The new mesh started at {fresh}.");
+        Assert.True(Vector3.Distance(box, drawnJoint) < 1e-4f, $"The box at {box}, the drawn joint at {drawnJoint}.");
+    }
+
+    [Fact]
     public void Drawing_allocates_nothing()
     {
         using var world = World.Create();
@@ -458,13 +587,21 @@ public sealed class MeshDrawSystemTests
             DrawnMesh.Of(2),
             MeshAnimator.Playing(0, 0.3f)
         );
+        var smoothed = MeshAnimator.Playing(0, 0.3f);
+        smoothed.FadeTo(-1, 0);
+        world.Create(
+            MeshPlacement.At(Vector3.UnitY, Quaternion.Identity),
+            DrawnMesh.Of(2),
+            smoothed,
+            SmoothedPose.Of()
+        );
 
-        // The list is cleared between frames by the loop; here every update adds three, far below the limit.
+        // The list is cleared between frames by the loop; here every update adds six, far below the limit.
         Assert.Equal(
             0,
             SystemAllocation.BytesAllocated(system, new FrameTime(1f / 240, 1, 1, 0.5f), warmup: 10, measured: 100)
         );
-        Assert.Equal(550, _instances.Count);
+        Assert.Equal(660, _instances.Count);
     }
 
     private static ConsoleCommands NewCommands() =>
@@ -480,6 +617,9 @@ public sealed class MeshDrawSystemTests
         public List<MeshPosePurpose> Purposes { get; } = [];
 
         public bool Keep { get; init; } = true;
+
+        /// <summary>False: the pose is left as sampled.</summary>
+        public bool Turning { get; set; } = true;
 
         public void Shape(
             World world,
@@ -497,9 +637,43 @@ public sealed class MeshDrawSystemTests
                 Purposes.Add(purpose);
             }
 
-            rig.Turn(locals, 1, Turn, globals);
+            if (Turning)
+            {
+                rig.Turn(locals, 1, Turn, globals);
+            }
         }
     }
+
+    /// <summary>A frame of the system at 60 a second, numbered <paramref name="frame"/>, the instances cleared first.</summary>
+    private void Frame(MeshDrawSystem system, ulong frame)
+    {
+        _instances.Clear();
+        system.Update(new FrameTime(1f / 60, frame / 60.0, frame, 1));
+    }
+
+    /// <summary>Where the bending mesh's tip is in clip <paramref name="clip"/> at <paramref name="seconds"/>, placed at the origin.</summary>
+    private Vector3 Tip(int clip, float seconds)
+    {
+        var rig = _assets[2].Rig!;
+        var locals = new JointTransform[2];
+        var palette = new Matrix4x4[2];
+        rig.Pose(clip, seconds, locals);
+        rig.WritePalette(locals, palette);
+        return Vector3.Transform(new Vector3(2, 0, 0), palette[1]);
+    }
+
+    /// <summary>The drawn tip, in the model's space, of the bending mesh placed at x = <paramref name="x"/>.</summary>
+    private Vector3 DrawnTip(float x)
+    {
+        var instance = _instances
+            .Instances.ToArray()
+            .Single(i => i.Asset == 2 && MathF.Abs(i.Transform.Translation.X - x) < 1e-3f);
+        return Vector3.Transform(new Vector3(2, 0, 0), _instances.Palettes[instance.FirstJoint + 1]);
+    }
+
+    /// <summary>How far <paramref name="at"/> lies from <paramref name="to"/> back towards <paramref name="from"/>, 0 to 1.</summary>
+    private static float Share(Vector3 at, Vector3 from, Vector3 to) =>
+        Vector3.Distance(at, to) / MathF.Max(Vector3.Distance(from, to), 1e-6f);
 
     private MeshDrawSystem Create(World world, ConsoleCommands? commands = null, IMeshPoseShaper? shaper = null)
     {

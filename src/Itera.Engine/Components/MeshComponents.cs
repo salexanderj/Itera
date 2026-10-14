@@ -59,6 +59,29 @@ public struct ConsoleMesh;
 public struct ShapedPose;
 
 /// <summary>
+/// A posed mesh drawn with its changes smoothed: each change its <see cref="MeshAnimator"/> marks
+/// (<see cref="MeshAnimator.Changes"/>: a new clip, a fade, another clip blended in, or a game's own mark) starts from the
+/// pose drawn the frame before, moving as it was, and blends into the new one over <see cref="Seconds"/>, its joints'
+/// turns and places alike, as it is drawn, after the game's shaping (<c>PoseSmoothing</c>: dead blending, in place of a
+/// cross-fade). Drawn only, from each game's own frames: a
+/// pose posed for hit shapes is never smoothed. The draw system keeps the slot of its last poses (<see cref="Slot"/>).
+/// </summary>
+public struct SmoothedPose
+{
+    /// <summary>How long a change takes to blend into the new clip, in seconds; 0 or less: <see cref="DefaultSeconds"/>.</summary>
+    public float Seconds;
+
+    /// <summary>Where the draw system keeps this mesh's last poses; it checks the slot is still this entity's.</summary>
+    public int Slot;
+
+    /// <summary>How long a change takes unless another time is given, in seconds.</summary>
+    public const float DefaultSeconds = 0.2f;
+
+    /// <summary>Smoothing whose changes take <paramref name="seconds"/>.</summary>
+    public static SmoothedPose Of(float seconds = DefaultSeconds) => new() { Seconds = seconds, Slot = -1 };
+}
+
+/// <summary>
 /// A mesh drawn at a joint of another entity's posed mesh (a rifle in a hand), with the attached entity's
 /// <see cref="DrawnMesh"/> and no placement of its own: <see cref="Holder"/>'s joint <see cref="Joint"/> (from
 /// <c>Rig.FindJoint</c>) as its pose is drawn this frame, shaped included, then <see cref="Offset"/> and
@@ -90,8 +113,9 @@ public struct MeshAttachment
 /// (<see cref="FadeTo"/>): the clip it played goes on at its own speed, and each joint blends from it to the new one over
 /// <see cref="FadeSeconds"/> of the match's time. A second clip may be blended in (<see cref="SetBlend"/>): posed at the
 /// same share of its length as the clip is of its own (two walks in step), each joint moved towards it by
-/// <see cref="BlendWeight"/> (directional movement: a forward clip and a sideways one). Drawing only: the pose is never
-/// the same on every machine, so nothing peers agree on reads it.
+/// <see cref="BlendWeight"/> (directional movement: a forward clip and a sideways one). Each change of clip and of the
+/// clip blended in counts in <see cref="Changes"/>, which a <see cref="SmoothedPose"/> smooths. Drawing only: the pose is
+/// never the same on every machine, so nothing peers agree on reads it.
 /// </summary>
 public struct MeshAnimator
 {
@@ -126,12 +150,32 @@ public struct MeshAnimator
     public float PreviousBlendWeight;
 
     /// <summary>
-    /// Blends <paramref name="clip"/> in by <paramref name="weight"/> from this step (0 for none), the weight before kept
-    /// for the frames between (none to blend from when the clip changes).
+    /// How much further through its length than the clip the blended clip is posed, a share of its length (0: the same
+    /// share): clips whose steps fall at different shares kept in step.
     /// </summary>
-    public void SetBlend(int clip, float weight)
+    public float BlendShift;
+
+    /// <summary>
+    /// How many times the pose has changed other than by playing on: each <see cref="FadeTo"/>, each
+    /// <see cref="SetBlend"/> that blends in another clip, and each <see cref="MarkChange"/>; it wraps round. A
+    /// <see cref="SmoothedPose"/> smooths each.
+    /// </summary>
+    public uint Changes;
+
+    /// <summary>
+    /// Blends <paramref name="clip"/> in by <paramref name="weight"/> from this step (0 for none), the weight before kept
+    /// for the frames between (none to blend from when the clip changes), posed <paramref name="shift"/> of its length
+    /// further through it than the clip is through its own.
+    /// </summary>
+    public void SetBlend(int clip, float weight, float shift = 0)
     {
+        BlendShift = float.IsFinite(shift) ? shift - MathF.Floor(shift) : 0;
         var clamped = float.IsFinite(weight) ? Math.Clamp(weight, 0, 1) : 0;
+        if (clip != BlendClip && (clamped > 0 || BlendWeight > 0))
+        {
+            Changes = unchecked(Changes + 1);
+        }
+
         PreviousBlendWeight = clip == BlendClip ? BlendWeight : clamped;
         BlendClip = clip;
         BlendWeight = clamped;
@@ -148,6 +192,7 @@ public struct MeshAnimator
     /// </summary>
     public void FadeTo(int clip, float fadeSeconds, float seconds = 0, float speed = 1, bool once = false)
     {
+        Changes = unchecked(Changes + 1);
         if (fadeSeconds > 0)
         {
             FromClip = Clip;
@@ -166,6 +211,12 @@ public struct MeshAnimator
         Speed = speed;
         Once = once;
     }
+
+    /// <summary>
+    /// Marks a change of the pose other than by the clips (a game's own layer on it switched at once, such as what the
+    /// hands hold), which a <see cref="SmoothedPose"/> smooths as a change of clip.
+    /// </summary>
+    public void MarkChange() => Changes = unchecked(Changes + 1);
 
     /// <summary>How much of the new clip a frame draws: 1 when it fades from nothing.</summary>
     public readonly float FadeWeight(float alpha) =>

@@ -689,8 +689,9 @@ and `Alpha`, how far the frame lies between the last two steps). Components are 
 - Physics: `LooseBody` (the Bepu body's handle and birth stamp), `BodyPose`, `BodyBox`, `CutPiece`, `RemoteBody`, and
   `CharacterStandIn`.
 - Mesh assets: `MeshPlacement` (the pose at the last two steps and a scale), `DrawnMesh` (the asset's index, a tint, a
-  `ModelShadow`), `MeshAnimator` (a clip, its time at the last two steps, a speed, and the clip it fades from), and the
-  tag `ConsoleMesh` (placed by
+  `ModelShadow`), `MeshAnimator` (a clip, its time at the last two steps, a speed, the clip it fades from, a clip
+  blended in with its weight and shift, and a count of its changes), `SmoothedPose` (a mesh whose changes are smoothed as
+  it is drawn), and the tag `ConsoleMesh` (placed by
   the console's `meshes`).
 - Networking: `NetEntity`, the stable id a host gives an entity it sends. Entities are local to each game; this id is what
   every game shares.
@@ -734,7 +735,8 @@ and `Alpha`, how far the frame lies between the last two steps). Components are 
   debug lines. `TriggerCharacterSystem` (fixed, after the stand-ins) tests the characters with a `TriggerSensor` against
   the match's trigger zones and writes `CharacterTriggers`.
 - `MeshDrawSystem` (frame) hands every placed mesh asset to the renderer, its pose blended by `Alpha`, a posed one with
-  its clip's skinning matrices (blended between two clips while one fades into the other); `meshes` is its command
+  its clip's skinning matrices (blended between two clips while one fades into the other), a smoothed one's changes
+  carried from the pose drawn before (`PoseSmoothing`: dead blending, drawn only); `meshes` is its command
   (list, place, test, clear, with clips). `MeshAnimatorSystem` (fixed) moves the clips' times and fades on.
 
 **The benchmark.** `BenchmarkSystem` (frame, after the fly camera; a game registers it when `Engine:Benchmark:Enabled`, with
