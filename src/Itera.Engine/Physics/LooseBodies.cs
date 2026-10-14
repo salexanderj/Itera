@@ -22,7 +22,7 @@ namespace Itera.Engine.Physics;
 /// (<see cref="TryCreate(ReadOnlySpan{LoosePart}, float, Vector3, float, out BodyHandle)"/>): a compound of one hull
 /// per model, with no piece in the edit log, so it never goes back into the grid (<see cref="IsCut"/>); it is removed
 /// instead, with the models it owns. It touches only the voxels (<see cref="BodyKind.Cut"/>): not other bodies, thrown
-/// pieces, or characters. Such bodies can be joined into a ragdoll (<see cref="TryCreateRagdoll"/>), whose bodies rest,
+/// pieces, or characters. Such bodies can be joined into a ragdoll (<see cref="TryCreateRagdoll(ReadOnlySpan{LoosePart}, ReadOnlySpan{int}, ReadOnlySpan{RagdollJoint}, float, Vector3, float, List{BepuPhysics.BodyHandle})"/>, or of shapes, <see cref="TryCreateRagdoll(ReadOnlySpan{RagdollShape}, ReadOnlySpan{RagdollJoint}, Vector3, List{BepuPhysics.BodyHandle})"/>), whose bodies rest,
 /// and so go, together. The hull of a part the body shares (a character kind's,
 /// whose tree never changes) is kept by its tree, so the next body with that part builds its hull from the hull's own
 /// corners (about 100) rather than every voxel box's (about 1,500). Entities hold only the body's handle; this service
@@ -366,7 +366,7 @@ public sealed partial class LooseBodies
         }
     }
 
-    /// <summary>The ragdoll the body belongs to (<see cref="TryCreateRagdoll"/>), or 0 for none.</summary>
+    /// <summary>The ragdoll the body belongs to (<see cref="TryCreateRagdoll(ReadOnlySpan{LoosePart}, ReadOnlySpan{int}, ReadOnlySpan{RagdollJoint}, float, Vector3, float, List{BepuPhysics.BodyHandle})"/>, <see cref="TryCreateRagdoll(ReadOnlySpan{RagdollShape}, ReadOnlySpan{RagdollJoint}, Vector3, List{BepuPhysics.BodyHandle})"/>), or 0 for none.</summary>
     public int RagdollOf(BodyHandle body) => _bodies[body].Ragdoll;
 
     /// <summary>When <paramref name="body"/> was made: a number that grows with each body made, so the oldest is the least.</summary>
@@ -597,12 +597,20 @@ internal readonly record struct LoosePose(
 );
 
 /// <summary>
-/// A joint of a ragdoll (<see cref="LooseBodies.TryCreateRagdoll"/>): bodies <paramref name="BodyA"/> and
+/// A joint of a ragdoll (<see cref="LooseBodies.TryCreateRagdoll(ReadOnlySpan{LoosePart}, ReadOnlySpan{int}, ReadOnlySpan{RagdollJoint}, float, Vector3, float, List{BepuPhysics.BodyHandle})"/>, <see cref="LooseBodies.TryCreateRagdoll(ReadOnlySpan{RagdollShape}, ReadOnlySpan{RagdollJoint}, Vector3, List{BepuPhysics.BodyHandle})"/>): bodies <paramref name="BodyA"/> and
 /// <paramref name="BodyB"/> (indices into the ragdoll's bodies) held together at <paramref name="Point"/> (metres, in
 /// the world as the parts lie) by a ball socket, and kept within <paramref name="MaxSwingRadians"/> of their angle
 /// about <paramref name="Axis"/> (the world direction the child part points along) by a swing limit.
 /// </summary>
 public readonly record struct RagdollJoint(int BodyA, int BodyB, Vector3 Point, Vector3 Axis, float MaxSwingRadians);
+
+/// <summary>
+/// One body of a ragdoll made of shapes (<see cref="LooseBodies.TryCreateRagdoll(ReadOnlySpan{RagdollShape}, ReadOnlySpan{RagdollJoint}, Vector3, List{BepuPhysics.BodyHandle})"/>):
+/// a capsule from <paramref name="From"/> to <paramref name="To"/> (metres, in the world), <paramref name="RadiusMetres"/>
+/// round, or a sphere where the two meet, weighing <paramref name="MassKilograms"/>: a figure drawn from a mesh, whose
+/// bodies the game reads to pose it.
+/// </summary>
+public readonly record struct RagdollShape(Vector3 From, Vector3 To, float RadiusMetres, float MassKilograms);
 
 /// <summary>
 /// One joint of a ragdoll as Bepu holds it: the two bodies and their ball socket, swing limit, and twist limit, kept so

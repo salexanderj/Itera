@@ -36,7 +36,11 @@ where their own level is not loaded they collide with the finest coarser level t
 ragdoll's bodies freeze and thaw together, and its joints, which Bepu drops between kinematic bodies, are added again at
 the thaw (`VoxelColliders.GroupThawed`). Cut bodies go 30 s after they rest (also when frozen) and at the latest 60 s
 after they were made (`LooseBodySystem.CutRestSeconds`, `CutMostSeconds`). A ragdoll is made from a model's parts with
-joints from its skeleton (`LooseBodies.TryCreateRagdoll`); no engine code calls it today. `PhysicsReadSystem` reads each
+joints from its skeleton (`LooseBodies.TryCreateRagdoll`), or from shapes (`RagdollShape`: a capsule between two points,
+or a sphere, of a radius and a mass, a body each) for a figure drawn from a mesh: those bodies have no models, so
+nothing draws them, and the game reads their poses (`PivotOf`, `OrientationOf`; `Holds` with `BornOf` tells a reused
+handle) to pose what it draws (the rig's `Place`); no engine code calls either today. A body made still counts as
+resting at once. `PhysicsReadSystem` reads each
 body's pose and each stand-in's push after a step; `LooseBodyModelSystem` hands the bodies' models to the renderer.
 When the match's origin moves, `PhysicsWorld.Shift` moves every body (awake, asleep, kinematic) and every static by the
 whole metres it moved, writing their poses and the broad phase's bounds alone: nothing wakes, and velocities, joints,

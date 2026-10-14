@@ -135,6 +135,155 @@ public sealed partial class LooseBodies
         }
 
         _ragdolls[ragdoll] = members;
+        var joined = JoinRagdoll(ragdoll, handles, joints);
+        LogRagdoll(ragdoll, members.Count, joined, parts.Length);
+        return true;
+    }
+
+    /// <summary>
+    /// Makes a ragdoll of <paramref name="shapes"/>, a body each (a figure drawn from a mesh, falling where it died),
+    /// moving at <paramref name="velocity"/>, joined by <paramref name="joints"/> as
+    /// <see cref="TryCreateRagdoll(ReadOnlySpan{LoosePart}, ReadOnlySpan{int}, ReadOnlySpan{RagdollJoint}, float, Vector3, float, List{BodyHandle})"/>
+    /// joins its bodies. Its bodies have no models: nothing draws them, and the game reads their poses
+    /// (<see cref="PivotOf"/>, <see cref="OrientationOf"/>) to pose what it draws. As every body cut off a character, they
+    /// touch only the voxels and the mesh colliders (<see cref="BodyKind.Cut"/>), so neither characters nor other bodies
+    /// nor what the world's rays meet; they rest, freeze, thaw, and go together. The bodies made are added to
+    /// <paramref name="made"/> in the order of <paramref name="shapes"/>. False, with nothing made, when the bodies would
+    /// pass <see cref="MaxBodies"/>, a shape is not finite, its radius or mass not above 0, or a joint names a body outside
+    /// <paramref name="shapes"/> or joins a body to itself.
+    /// </summary>
+    public bool TryCreateRagdoll(
+        ReadOnlySpan<RagdollShape> shapes,
+        ReadOnlySpan<RagdollJoint> joints,
+        Vector3 velocity,
+        List<BodyHandle> made
+    )
+    {
+        ArgumentNullException.ThrowIfNull(made);
+        if (shapes.IsEmpty || _bodies.Count + shapes.Length > _maxBodies)
+        {
+            return false;
+        }
+
+        foreach (ref readonly var shape in shapes)
+        {
+            if (
+                !float.IsFinite(shape.From.X + shape.From.Y + shape.From.Z + shape.To.X + shape.To.Y + shape.To.Z)
+                || !(shape.RadiusMetres > 0)
+                || !(shape.MassKilograms > 0)
+                || !float.IsFinite(shape.RadiusMetres + shape.MassKilograms)
+            )
+            {
+                return false;
+            }
+        }
+
+        foreach (ref readonly var joint in joints)
+        {
+            if (
+                joint.BodyA < 0
+                || joint.BodyA >= shapes.Length
+                || joint.BodyB < 0
+                || joint.BodyB >= shapes.Length
+                || joint.BodyA == joint.BodyB
+            )
+            {
+                return false;
+            }
+        }
+
+        var ragdoll = ++_lastRagdoll;
+        var handles = new BodyHandle?[shapes.Length];
+        var members = new List<BodyHandle>(shapes.Length);
+        for (var b = 0; b < shapes.Length; b++)
+        {
+            var body = BuildShape(in shapes[b], velocity, ragdoll);
+            handles[b] = body;
+            members.Add(body);
+            made.Add(body);
+        }
+
+        _ragdolls[ragdoll] = members;
+        var joined = JoinRagdoll(ragdoll, handles, joints);
+        LogRagdoll(ragdoll, members.Count, joined, shapes.Length);
+        return true;
+    }
+
+    /// <summary>
+    /// A cut body of <paramref name="form"/>'s capsule (or sphere), centred on its middle, unturned, the capsule turned
+    /// in it along its ends, belonging to <paramref name="ragdoll"/>.
+    /// </summary>
+    private BodyHandle BuildShape(in RagdollShape form, Vector3 velocity, int ragdoll)
+    {
+        var simulation = _physics.Simulation;
+        var along = form.To - form.From;
+        var length = along.Length();
+        var middle = (form.From + form.To) / 2;
+        using var builder = new CompoundBuilder(_physics.Pool, simulation.Shapes, 1);
+        if (length > 1e-4f)
+        {
+            // Bepu's capsule lies along its own +y.
+            builder.Add(
+                new Capsule(form.RadiusMetres, length),
+                new RigidPose(middle, ArcFromUp(along / length)),
+                form.MassKilograms
+            );
+        }
+        else
+        {
+            builder.Add(new Sphere(form.RadiusMetres), new RigidPose(middle), form.MassKilograms);
+        }
+
+        builder.BuildDynamicCompound(out var children, out var inertia, out var centre);
+        var shape = simulation.Shapes.Add(new Compound(children));
+        var body = simulation.Bodies.Add(
+            BodyDescription.CreateDynamic(
+                new RigidPose(centre),
+                new BodyVelocity(velocity),
+                inertia,
+                new CollidableDescription(shape, ContinuousDetection.Passive),
+                new BodyActivityDescription(0.01f)
+            )
+        );
+        _physics.Kinds.Set(body, BodyKind.Cut, 0, ragdoll);
+        var reach = new Vector3(form.RadiusMetres);
+        _bodies.Add(
+            body,
+            new Loose(default, Vector3.Zero, shape, form.MassKilograms, -1, [], [], true, 0, ragdoll)
+            {
+                BoxMin = Vector3.Min(form.From, form.To) - reach - centre,
+                BoxMax = Vector3.Max(form.From, form.To) + reach - centre,
+                Born = ++_births,
+            }
+        );
+        return body;
+    }
+
+    /// <summary>The shortest turn from +y to <paramref name="direction"/> (of length 1).</summary>
+    private static Quaternion ArcFromUp(Vector3 direction)
+    {
+        var dot = Math.Clamp(direction.Y, -1, 1);
+        if (dot > 1 - 1e-6f)
+        {
+            return Quaternion.Identity;
+        }
+
+        if (dot < -1 + 1e-6f)
+        {
+            return Quaternion.CreateFromAxisAngle(Vector3.UnitX, MathF.PI);
+        }
+
+        var axis = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, direction));
+        return Quaternion.CreateFromAxisAngle(axis, MathF.Acos(dot));
+    }
+
+    /// <summary>
+    /// Joins <paramref name="ragdoll"/>'s bodies (<paramref name="handles"/>, by index; null for one not made) by
+    /// <paramref name="joints"/>: a ball socket at each joint's point, a swing limit about its axis, and a twist limit of
+    /// <see cref="RagdollTwistRadians"/> about it, kept for a thaw to put back; the number joined.
+    /// </summary>
+    private int JoinRagdoll(int ragdoll, BodyHandle?[] handles, ReadOnlySpan<RagdollJoint> joints)
+    {
         var simulation = _physics.Simulation;
         var joined = 0;
         var links = new List<RagdollLink>(joints.Length);
@@ -182,8 +331,7 @@ public sealed partial class LooseBodies
         }
 
         _links[ragdoll] = links;
-        LogRagdoll(ragdoll, members.Count, joined, parts.Length);
-        return true;
+        return joined;
     }
 
     /// <summary>Adds a joint's ball socket, swing limit, and twist limit to the solver.</summary>

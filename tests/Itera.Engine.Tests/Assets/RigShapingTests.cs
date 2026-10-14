@@ -8,7 +8,8 @@ namespace Itera.Engine.Tests.Assets;
 /// up from a root, and a branch off the root along +x. A joint found by name; the joints' places in the asset's space,
 /// which the palette is made of; a mask over a joint and every joint below it; two poses blended joint by joint; a joint
 /// turned in the asset's space under a turned parent, its children swinging round it; a joint moved in the asset's
-/// space under a turned and scaled parent, its children with it; two-bone IK reaching a point, and
+/// space under a turned and scaled parent, its children with it; joints placed at given transforms in one pass, the
+/// others following their parents; two-bone IK reaching a point, and
 /// stretching towards one out of reach, bent towards its pole; and no allocation.
 /// </summary>
 public sealed class RigShapingTests
@@ -105,6 +106,39 @@ public sealed class RigShapingTests
     }
 
     [Fact]
+    public void Placed_joints_take_their_transforms_and_the_others_follow_their_parents()
+    {
+        var locals = Rest();
+        locals[0] = locals[0] with { Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2) };
+        var globals = new Matrix4x4[5];
+        s_rig.Globals(locals, globals);
+        var upper = globals[1];
+        var middle = globals[2];
+        var placed = new Matrix4x4[5];
+        bool[] placing = [false, true, false, true, false];
+        // The upper joint lifted and turned; the end set apart where it is put.
+        placed[1] =
+            Matrix4x4.CreateFromQuaternion(Quaternion.CreateFromAxisAngle(Vector3.UnitX, 0.5f))
+            * Matrix4x4.CreateTranslation(new Vector3(0.2f, 1.5f, -0.3f));
+        placed[3] = Matrix4x4.CreateTranslation(new Vector3(2, 0.5f, 1));
+
+        s_rig.Place(locals, placed, placing, globals);
+
+        var placedGlobals = (Matrix4x4[])globals.Clone();
+        s_rig.Globals(locals, globals);
+        Assert.Equal(placedGlobals, globals);
+        Assert.True(Vector3.Distance(placed[1].Translation, globals[1].Translation) < 1e-5f);
+        Assert.True(Vector3.Distance(placed[3].Translation, globals[3].Translation) < 1e-5f);
+        // The middle joint keeps its place under the upper joint as it was.
+        var before = middle * Inverse(upper);
+        var after = globals[2] * Inverse(globals[1]);
+        Assert.True(Vector3.Distance(before.Translation, after.Translation) < 1e-5f);
+    }
+
+    private static Matrix4x4 Inverse(Matrix4x4 matrix) =>
+        Matrix4x4.Invert(matrix, out var inverse) ? inverse : throw new InvalidOperationException("Not invertible.");
+
+    [Fact]
     public void Two_bones_reach_a_point_bent_to_the_pole_and_stretch_towards_one_out_of_reach()
     {
         var locals = Rest();
@@ -135,11 +169,14 @@ public sealed class RigShapingTests
     }
 
     [Fact]
-    public void Turning_moving_and_reaching_allocate_nothing()
+    public void Turning_moving_placing_and_reaching_allocate_nothing()
     {
         var locals = Rest();
         var globals = new Matrix4x4[5];
         var weights = new float[5];
+        var placed = new Matrix4x4[5];
+        placed[3] = Matrix4x4.CreateTranslation(1, 1, 0);
+        bool[] placing = [false, false, false, true, false];
         var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitX, 0.1f);
         s_rig.Turn(locals, 2, turn, globals);
         s_rig.ReachTwoBone(locals, 1, 2, 3, new Vector3(0.5f, 2, 0), Vector3.UnitZ, globals);
@@ -150,6 +187,7 @@ public sealed class RigShapingTests
             s_rig.Turn(locals, 2, turn, globals);
             s_rig.ReachTwoBone(locals, 1, 2, 3, new Vector3(0.5f, 2, i * 0.001f), Vector3.UnitZ, globals);
             s_rig.Move(locals, 1, new Vector3(0, -0.001f, 0), globals);
+            s_rig.Place(locals, placed, placing, globals);
             Rig.Blend(locals, locals, weights, locals);
             s_rig.Mask(1, weights, 1);
         }

@@ -10,10 +10,12 @@ using Microsoft.Extensions.Options;
 namespace Itera.Engine.Tests.Physics;
 
 /// <summary>
-/// Ragdolls of loose bodies (<see cref="LooseBodies.TryCreateRagdoll"/>): a chain of overlapping parts dropped on the
-/// floor stays joined and within its swing limits and rests as one; a part spun about its joint's axis stops within the
-/// twist limit; its bodies, as every body cut off a character, touch only the voxels, falling through each other, other
-/// bodies, and stand-ins; its joints go with its bodies; and a ragdoll that would pass the body limit is not made.
+/// Ragdolls of loose bodies (<see cref="LooseBodies.TryCreateRagdoll(ReadOnlySpan{LoosePart}, ReadOnlySpan{int}, ReadOnlySpan{RagdollJoint}, float, Vector3, float, List{BodyHandle})"/>):
+/// a chain of overlapping parts dropped on the floor stays joined and within its swing limits and rests as one; a part
+/// spun about its joint's axis stops within the twist limit; its bodies, as every body cut off a character, touch only
+/// the voxels, falling through each other, other bodies, and stand-ins; its joints go with its bodies; and a ragdoll that
+/// would pass the body limit is not made. A ragdoll of shapes (capsules, a figure drawn from a mesh) dropped on the floor
+/// stays joined and rests as one, with no models; bad shapes and joints make nothing; removed, its bodies and joints go.
 /// </summary>
 public sealed class RagdollTests : IDisposable
 {
@@ -127,7 +129,9 @@ public sealed class RagdollTests : IDisposable
         }
 
         var restsTogether = true;
-        var steps = 0;
+        // Made still, it counts as resting at once: it falls a second first.
+        Run(60);
+        var steps = 60;
         while (steps < 8 * 60 && !_bodies.IsAtRest(made[0]))
         {
             Run(1);
@@ -150,11 +154,11 @@ public sealed class RagdollTests : IDisposable
             Assert.True(dot > MathF.Cos(0.8f) - 0.05f, $"Joint {j} swung to {MathF.Acos(dot)} radians.");
         }
 
-        // All above the floor, none sunk into it.
+        // All on the floor, none sunk into it.
         foreach (var body in made)
         {
             _bodies.BoundsOf(body, out var min, out _);
-            Assert.True(min.Y > 1.97f, $"A part sank to {min.Y} m.");
+            Assert.True(min.Y > 1.97f && min.Y < 2.1f, $"A part lay at {min.Y} m.");
         }
     }
 
@@ -418,6 +422,98 @@ public sealed class RagdollTests : IDisposable
         Assert.Equal(0, _physics.Simulation.Solver.CountConstraints());
         // The same parts and joint, well formed, still make a ragdoll: the refusals left nothing behind.
         Assert.True(_bodies.TryCreateRagdoll(parts, [0, 1], [joint], 1000, Vector3.Zero, 0, made));
+        Assert.Equal(2, made.Count);
+    }
+
+    [Fact]
+    public void A_ragdoll_of_shapes_dropped_on_the_floor_stays_joined_and_rests_as_one_with_no_models()
+    {
+        var made = new List<BodyHandle>();
+        // A hip, a thigh, and a shin hanging from 3.2 m, tipped so the leg folds as it lands.
+        RagdollShape[] shapes =
+        [
+            new(new Vector3(-0.1f, 3.2f, 0), new Vector3(0.1f, 3.2f, 0), 0.1f, 12),
+            new(new Vector3(0.1f, 3.15f, 0), new Vector3(0.25f, 2.75f, 0), 0.07f, 8),
+            new(new Vector3(0.25f, 2.75f, 0), new Vector3(0.3f, 2.35f, 0), 0.05f, 4),
+        ];
+        RagdollJoint[] joints =
+        [
+            new(0, 1, new Vector3(0.1f, 3.15f, 0), Vector3.Normalize(new Vector3(0.15f, -0.4f, 0)), 1.2f),
+            new(1, 2, new Vector3(0.25f, 2.75f, 0), Vector3.Normalize(new Vector3(0.05f, -0.4f, 0)), 1.2f),
+        ];
+
+        Assert.True(_bodies.TryCreateRagdoll(shapes, joints, Vector3.Zero, made));
+        Assert.Equal(3, made.Count);
+        Assert.Equal(6, _physics.Simulation.Solver.CountConstraints());
+        Assert.True(made.TrueForAll(body => _bodies.IsCut(body) && _bodies.PartsOf(body).IsEmpty));
+        Assert.Equal(_bodies.RagdollOf(made[0]), _bodies.RagdollOf(made[2]));
+        // Its mass is the shapes', each body centred on its shape's middle.
+        Assert.Equal(8, _bodies.MassOf(made[1]), 1e-3f);
+        Assert.True(Vector3.Distance(new Vector3(0.175f, 2.95f, 0), _bodies.PivotOf(made[1])) < 1e-3f);
+        var offsets = new (Vector3 A, Vector3 B)[joints.Length];
+        for (var j = 0; j < joints.Length; j++)
+        {
+            offsets[j] = (Local(made[joints[j].BodyA], joints[j].Point), Local(made[joints[j].BodyB], joints[j].Point));
+        }
+
+        // A second to fall (made still, it counts as resting at once), then until it rests.
+        Run(60);
+        var steps = 60;
+        while (steps < 8 * 60 && !_bodies.IsAtRest(made[0]))
+        {
+            Run(1);
+            steps++;
+        }
+
+        Assert.True(_bodies.IsAtRest(made[0]) && _bodies.IsAtRest(made[2]), "The ragdoll did not come to rest.");
+        for (var j = 0; j < joints.Length; j++)
+        {
+            var a = World(made[joints[j].BodyA], offsets[j].A);
+            var b = World(made[joints[j].BodyB], offsets[j].B);
+            Assert.True(Vector3.Distance(a, b) < 0.02f, $"Joint {j} came apart by {Vector3.Distance(a, b)} m.");
+        }
+
+        foreach (var body in made)
+        {
+            _bodies.BoundsOf(body, out var min, out _);
+            Assert.True(min.Y > 1.97f && min.Y < 2.3f, $"A shape lay at {min.Y} m.");
+        }
+
+        // Removed, its bodies and joints go.
+        foreach (var body in made)
+        {
+            _bodies.Remove(body);
+        }
+
+        Assert.Equal(0, _bodies.Count);
+        Assert.Equal(0, _physics.Simulation.Solver.CountConstraints());
+    }
+
+    [Fact]
+    public void Bad_shapes_and_joints_make_no_ragdoll_of_shapes()
+    {
+        var made = new List<BodyHandle>();
+        RagdollShape good = new(new Vector3(0, 3, 0), new Vector3(0, 2.6f, 0), 0.05f, 4);
+        var joint = new RagdollJoint(0, 1, new Vector3(0, 2.6f, 0), -Vector3.UnitY, 0.8f);
+
+        Assert.False(_bodies.TryCreateRagdoll([good, good with { RadiusMetres = 0 }], [joint], Vector3.Zero, made));
+        Assert.False(_bodies.TryCreateRagdoll([good, good with { MassKilograms = -1 }], [joint], Vector3.Zero, made));
+        Assert.False(
+            _bodies.TryCreateRagdoll(
+                [good, good with { To = new Vector3(float.NaN, 0, 0) }],
+                [joint],
+                Vector3.Zero,
+                made
+            )
+        );
+        Assert.False(_bodies.TryCreateRagdoll([good, good], [joint with { BodyB = 2 }], Vector3.Zero, made));
+        Assert.False(_bodies.TryCreateRagdoll([good, good], [joint with { BodyB = 0 }], Vector3.Zero, made));
+        Assert.False(_bodies.TryCreateRagdoll(new RagdollShape[9], [], Vector3.Zero, made));
+
+        Assert.Empty(made);
+        Assert.Equal(0, _bodies.Count);
+        // A sphere where the ends meet, well formed, is made.
+        Assert.True(_bodies.TryCreateRagdoll([good, good with { To = good.From }], [joint], Vector3.Zero, made));
         Assert.Equal(2, made.Count);
     }
 

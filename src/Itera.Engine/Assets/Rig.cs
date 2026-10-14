@@ -249,6 +249,37 @@ public sealed class Rig
     }
 
     /// <summary>
+    /// Sets each joint whose <paramref name="placing"/> entry is true to the transform in the asset's space that
+    /// <paramref name="placed"/> gives it (a ragdoll's bodies posing the figure they stand for), the others keeping their
+    /// locals and so following their parents: one pass, parents first, the pose's globals left in
+    /// <paramref name="globals"/>. All three spans are one a joint. Allocates nothing.
+    /// </summary>
+    public void Place(
+        Span<JointTransform> locals,
+        ReadOnlySpan<Matrix4x4> placed,
+        ReadOnlySpan<bool> placing,
+        Span<Matrix4x4> globals
+    )
+    {
+        for (var j = 0; j < Names.Length; j++)
+        {
+            // A joint's global is its local through its frame (its offset and its parent's global), so the local that
+            // places it is the placed transform back through the frame.
+            var frame = Parents[j] < 0 ? Offsets[j] : Offsets[j] * globals[Parents[j]];
+            if (
+                placing[j]
+                && Matrix4x4.Invert(frame, out var inverse)
+                && Matrix4x4.Decompose(placed[j] * inverse, out var scale, out var rotation, out var translation)
+            )
+            {
+                locals[j] = new JointTransform(translation, Quaternion.Normalize(rotation), scale);
+            }
+
+            globals[j] = locals[j].ToMatrix() * frame;
+        }
+    }
+
+    /// <summary>
     /// Moves joint <paramref name="joint"/> of a pose by <paramref name="offset"/> in the asset's space: it and every joint
     /// below it shift by that much, turned as they were (hips lowered so a foot reaches lower ground).
     /// <paramref name="globals"/> is scratch, one a joint. Allocates nothing.
