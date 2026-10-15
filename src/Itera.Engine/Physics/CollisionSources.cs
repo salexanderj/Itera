@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Objects;
 using Itera.Engine.Voxels;
 
@@ -6,8 +7,9 @@ namespace Itera.Engine.Physics;
 
 /// <summary>
 /// What a match's rays and its character mover meet: the voxel terrain and the voxel objects its world places
-/// (<see cref="ObjectRays"/>), when the match has terrain, and the mesh colliders a game registered
-/// (<see cref="MeshColliders"/>). <see cref="Raycast"/> answers from all of them, the nearest winning, each hit with its
+/// (<see cref="ObjectRays"/>), when the match has terrain, the mesh colliders a game registered
+/// (<see cref="MeshColliders"/>), and the solid models a game places (<see cref="SolidModelVoxels"/>, a gate's leaf; with
+/// the loose bodies' voxels and the match's origin, which the solids' poses are absolute in). <see cref="Raycast"/> answers from all of them, the nearest winning, each hit with its
 /// surface's tags (<see cref="IVoxelSurfaceTags"/> for voxels, the objects' too, the collider's material's for meshes).
 /// The voxel tools' own ray, past passable voxels, is <c>ToolAim.Raycast</c>. Scoped to the match; main thread.
 /// </summary>
@@ -15,7 +17,9 @@ public sealed class CollisionSources(
     MeshColliders meshes,
     IVoxelSurfaceTags voxelTags,
     VoxelWorld? voxels = null,
-    ObjectRays? objects = null
+    ObjectRays? objects = null,
+    LooseBodyVoxels? bodies = null,
+    WorldOrigin? worldOrigin = null
 )
 {
     /// <summary>The match's mesh colliders.</summary>
@@ -57,6 +61,29 @@ public sealed class CollisionSources(
         )
         {
             hit = FromObject(origin, d, in met, voxelTags);
+            found = true;
+        }
+
+        if (
+            bodies is { Solids.Count: > 0 }
+            && worldOrigin is not null
+            && bodies.Solids.Raycast(
+                worldOrigin.ToWorld(origin),
+                direction,
+                found ? hit.Distance : maxMetres,
+                out var solid
+            )
+            && (!found || solid.DistanceMetres < hit.Distance)
+        )
+        {
+            hit = new SurfaceHit(
+                origin + d * solid.DistanceMetres,
+                solid.Normal,
+                solid.DistanceMetres,
+                0,
+                SurfaceSource.SolidModel,
+                Collider: solid.Id
+            );
             found = true;
         }
 

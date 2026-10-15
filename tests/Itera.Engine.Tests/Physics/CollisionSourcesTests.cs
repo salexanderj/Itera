@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Physics;
 using Itera.Engine.Tests.Systems;
 using Itera.Engine.Voxels;
@@ -45,6 +46,78 @@ public sealed class CollisionSourcesTests : IDisposable
         );
         Assert.Equal(2, voxel.Distance, 1e-3f);
         Assert.Equal(Vector3.UnitY, voxel.Normal);
+    }
+
+    /// <summary>A solid model (a 1 m box 1 m over the ground) is met before the ground under it, by its id; removed, the ground is.</summary>
+    [Fact]
+    public void A_solid_model_is_met_as_the_nearest_with_its_id()
+    {
+        var solids = _harness.BodyVoxels.Solids;
+        var sources = new CollisionSources(
+            _colliders,
+            new StoneTags(),
+            _harness.Voxels,
+            bodies: _harness.BodyVoxels,
+            worldOrigin: _harness.Voxels.Origin
+        );
+        var chunk = new byte[VoxelConstants.ChunkVoxels];
+        for (var z = 0; z < 10; z++)
+        {
+            for (var y = 0; y < 10; y++)
+            {
+                for (var x = 0; x < 10; x++)
+                {
+                    chunk[x + VoxelConstants.ChunkSize * (y + VoxelConstants.ChunkSize * z)] = 1;
+                }
+            }
+        }
+
+        var id = solids.Add(
+            SolidColumns.Build(chunk, new VoxelCoord(10, 10, 10)),
+            0,
+            Vector3.Zero,
+            unitCentimetres: 10
+        );
+        solids.SetPose(id, new WorldPoint(0, 1, 0), 0);
+
+        Assert.True(sources.Raycast(new Vector3(0.5f, 5, 0.5f), -Vector3.UnitY, 10, out var solid));
+        solids.Remove(id);
+        Assert.True(sources.Raycast(new Vector3(0.5f, 5, 0.5f), -Vector3.UnitY, 10, out var ground));
+
+        Assert.Equal((SurfaceSource.SolidModel, id, Vector3.UnitY), (solid.Source, solid.Collider, solid.Normal));
+        Assert.Equal(3, solid.Distance, 1e-3f);
+        Assert.Equal(new Vector3(0.5f, 2, 0.5f), solid.Point);
+        Assert.Equal(SurfaceSource.Voxel, ground.Source);
+        Assert.Equal(5, ground.Distance, 1e-3f);
+    }
+
+    /// <summary>The ray, local to a match's origin 100 m out, meets a solid placed at an absolute point there.</summary>
+    [Fact]
+    public void A_solid_model_is_met_from_a_moved_origin()
+    {
+        var origin = new WorldOrigin();
+        origin.StartAt(new WorldPoint(100, 0, 0));
+        var solids = _harness.BodyVoxels.Solids;
+        var sources = new CollisionSources(
+            _colliders,
+            new StoneTags(),
+            bodies: _harness.BodyVoxels,
+            worldOrigin: origin
+        );
+        var chunk = new byte[VoxelConstants.ChunkVoxels];
+        for (var y = 0; y < 10; y++)
+        {
+            chunk[VoxelConstants.ChunkSize * y] = 1;
+        }
+
+        var id = solids.Add(SolidColumns.Build(chunk, new VoxelCoord(1, 10, 1)), 0, Vector3.Zero, unitCentimetres: 10);
+        solids.SetPose(id, new WorldPoint(100.5, 1, 0.5), 0);
+
+        Assert.True(sources.Raycast(new Vector3(0.55f, 5, 0.55f), -Vector3.UnitY, 10, out var hit));
+        Assert.False(sources.Raycast(new Vector3(100.55f, 5, 0.55f), -Vector3.UnitY, 10, out _));
+        Assert.Equal((SurfaceSource.SolidModel, id), (hit.Source, hit.Collider));
+        Assert.Equal(3, hit.Distance, 1e-3f);
+        solids.Remove(id);
     }
 
     [Fact]

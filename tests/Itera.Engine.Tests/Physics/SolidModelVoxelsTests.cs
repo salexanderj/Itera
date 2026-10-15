@@ -13,7 +13,7 @@ namespace Itera.Engine.Tests.Physics;
 /// <summary>
 /// Solid models that are not loose bodies (<see cref="SolidModelVoxels"/>, a model of a head) and the character mover
 /// among them: their columns (<see cref="SolidColumns"/>), queries that match a voxel-by-voxel walk of the world voxels
-/// whose centres land in the model at any turn about y, nothing reached below them, and the mover stopped by one,
+/// whose centres land in the model at any turn about y, rays meeting them where a march does, nothing reached below them, and the mover stopped by one,
 /// standing on one, and carried up by one rising under its feet, allocating nothing.
 /// </summary>
 public sealed class SolidModelVoxelsTests : IDisposable
@@ -128,6 +128,83 @@ public sealed class SolidModelVoxelsTests : IDisposable
             Assert.Equal(highest, solids.HighestTop(in footprint, y0, y1));
             Assert.Equal(lowest, solids.LowestBottom(in footprint, y0, y1));
         }
+    }
+
+    /// <summary>
+    /// Rays from all round, aimed near the solid's middle, meet it where a fine march along each finds its first voxel,
+    /// at any turn about y, on worlds of 1 and 10 cm; those aimed away or stopped short meet nothing.
+    /// </summary>
+    [Theory]
+    [InlineData(0f, 2, 1, 1)]
+    [InlineData(0.7f, 2, 10, 1)]
+    [InlineData(-1.9f, 0, 10, 1)]
+    [InlineData(2.6f, 1, 10, 3)]
+    public void Rays_meet_a_solid_where_a_march_does(float yaw, int level, int worldCentimetres, int unit)
+    {
+        var chunk = Lopsided(out var size);
+        var solids = new SolidModelVoxels(worldCentimetres);
+        var pivot = new Vector3(size.X * 0.4f, 1.3f, size.Z * 0.55f);
+        var id = solids.Add(SolidColumns.Build(chunk, size), level, pivot, unit);
+        var at = new Vector3(37.3f, 251.6f, -12.8f) / worldCentimetres;
+        solids.SetPoseInCells(id, at.X, at.Y, at.Z, yaw);
+        var scale = (unit << level) / (float)worldCentimetres;
+        var reach = size.X * scale * 2;
+        var middle = at + new Vector3(0, size.Y * scale * 0.4f, 0);
+        var perMetre = 100.0 / worldCentimetres;
+        var random = new Random(7);
+        var met = 0;
+        for (var i = 0; i < 60; i++)
+        {
+            var from = middle + RandomUnit(random) * reach;
+            var target = middle + RandomUnit(random) * reach * 0.2f;
+            var way = Vector3.Normalize(target - from);
+            var expected = March(chunk, size, scale, pivot, at, yaw, from, way, reach * 3);
+            var origin = new WorldPoint(from.X / perMetre, from.Y / perMetre, from.Z / perMetre);
+
+            var hit = solids.Raycast(origin, way, (float)(reach * 3 / perMetre), out var solid);
+
+            Assert.Equal(expected.HasValue, hit);
+            if (expected is { } cells)
+            {
+                met++;
+                Assert.Equal(id, solid.Id);
+                Assert.Equal(cells / perMetre, solid.DistanceMetres, 0.002 * scale / perMetre + 1e-4);
+                Assert.True(
+                    Vector3.Dot(solid.Normal, way) < 0,
+                    $"The face {solid.Normal} does not face the ray {way}."
+                );
+                Assert.False(solids.Raycast(origin, way, (float)(cells / perMetre) * 0.98f, out _));
+                Assert.False(solids.Raycast(origin, -way, (float)(reach * 3 / perMetre), out _));
+            }
+        }
+
+        Assert.True(met > 20, $"Only {met} rays met the solid.");
+    }
+
+    /// <summary>A ray along -x into an unturned box meets its +x face square on.</summary>
+    [Fact]
+    public void A_ray_meets_a_boxs_face_square_on()
+    {
+        var solids = new SolidModelVoxels(10);
+        var id = solids.Add(Block(10, 10, 10), 0, Vector3.Zero, unitCentimetres: 10);
+        solids.SetPose(id, new WorldPoint(2, 0, 0), 0);
+
+        Assert.True(solids.Raycast(new WorldPoint(10, 0.5, 0.5), -Vector3.UnitX, 20, out var hit));
+
+        Assert.Equal(7, hit.DistanceMetres, 4);
+        Assert.Equal(Vector3.UnitX, hit.Normal);
+        Assert.True(solids.Raycast(new WorldPoint(2.5, 5, 0.5), -Vector3.UnitY, 20, out var top));
+        Assert.Equal((4f, Vector3.UnitY), (MathF.Round(top.DistanceMetres, 4), top.Normal));
+
+        // Turned a quarter: its +z face now faces +x, its box from x 2 to 3 and z -1 to 0.
+        solids.SetPose(id, new WorldPoint(2, 0, 0), MathF.PI / 2);
+        Assert.True(solids.Raycast(new WorldPoint(10, 0.5, -0.5), -Vector3.UnitX, 20, out var turned));
+        Assert.Equal(7, turned.DistanceMetres, 3);
+        Assert.Equal(1, turned.Normal.X, 4);
+        Assert.Equal(0, turned.Normal.Z, 4);
+        Assert.True(solids.Raycast(new WorldPoint(2.5, 0.5, -10), Vector3.UnitZ, 20, out var side));
+        Assert.Equal(9, side.DistanceMetres, 3);
+        Assert.Equal(-1, side.Normal.Z, 4);
     }
 
     [Fact]
@@ -300,6 +377,59 @@ public sealed class SolidModelVoxelsTests : IDisposable
         }
 
         return SolidColumns.Build(chunk, new VoxelCoord(x, y, z));
+    }
+
+    /// <summary>
+    /// The distance in world voxels along <paramref name="way"/> from <paramref name="from"/> at which a march of small
+    /// steps first lies in one of the solid's voxels, or none within <paramref name="most"/>.
+    /// </summary>
+    private static float? March(
+        byte[] chunk,
+        VoxelCoord size,
+        float scale,
+        Vector3 pivot,
+        Vector3 at,
+        float yaw,
+        Vector3 from,
+        Vector3 way,
+        float most
+    )
+    {
+        float cos = MathF.Cos(yaw),
+            sin = MathF.Sin(yaw);
+        var step = scale * 0.002f;
+        for (var t = 0f; t <= most; t += step)
+        {
+            var p = from + way * t;
+            float dx = p.X - at.X,
+                dz = p.Z - at.Z;
+            var lx = (int)MathF.Floor((dx * cos - dz * sin) / scale + pivot.X);
+            var lz = (int)MathF.Floor((dx * sin + dz * cos) / scale + pivot.Z);
+            var ly = (int)MathF.Floor((p.Y - at.Y) / scale + pivot.Y);
+            if (
+                (uint)lx < (uint)size.X
+                && (uint)ly < (uint)size.Y
+                && (uint)lz < (uint)size.Z
+                && chunk[lx + Edge * ly + Edge * Edge * lz] != 0
+            )
+            {
+                return t;
+            }
+        }
+
+        return null;
+    }
+
+    private static Vector3 RandomUnit(Random random)
+    {
+        while (true)
+        {
+            var v = new Vector3(random.NextSingle() * 2 - 1, random.NextSingle() * 2 - 1, random.NextSingle() * 2 - 1);
+            if (v.LengthSquared() is > 0.01f and <= 1)
+            {
+                return Vector3.Normalize(v);
+            }
+        }
     }
 
     /// <summary>A ball with a box sticking out of one side and a hole through it: runs of air in its columns.</summary>

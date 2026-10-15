@@ -97,6 +97,16 @@ public sealed class SolidColumns
         return -1;
     }
 
+    /// <summary>
+    /// The runs of column (x, z), lowest first, in pairs: each run's lowest voxel and one above its highest. The column
+    /// must lie in the box.
+    /// </summary>
+    public ReadOnlySpan<ushort> Runs(int x, int z)
+    {
+        var column = x + Size.X * z;
+        return _spans.AsSpan(_offsets[column], _offsets[column + 1] - _offsets[column]);
+    }
+
     /// <summary>The lowest solid voxel of column (x, z) from y <paramref name="from"/> to <paramref name="to"/>, or −1.</summary>
     public int Lowest(int x, int z, int from, int to)
     {

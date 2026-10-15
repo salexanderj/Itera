@@ -12,7 +12,8 @@ namespace Itera.Engine.Physics;
 /// <see cref="SetPose"/>: that point in the world (absolute) and a turn about the vertical axis only. With the turn about y alone,
 /// a world column lands in one column of the model and a world voxel's height in one of its heights, so each query reads
 /// one column of spans per world cell instead of sampling bricks. <see cref="LooseBodyVoxels"/> holds these and adds
-/// them to its queries, so the mover reads both. Main thread; allocates nothing once a solid is added.
+/// them to its queries, so the mover reads both, and rays meet them (<see cref="Raycast"/>, which
+/// <see cref="CollisionSources"/> asks). Main thread; allocates nothing once a solid is added.
 /// </summary>
 public sealed class SolidModelVoxels
 {
@@ -91,6 +92,50 @@ public sealed class SolidModelVoxels
     {
         var solid = _solids[id] ?? throw new ArgumentException("No such solid.", nameof(id));
         solid.Place(x, y, z, yaw);
+    }
+
+    /// <summary>
+    /// The nearest placed solid's voxel a ray from the absolute point <paramref name="origin"/> along
+    /// <paramref name="direction"/> (any length but zero) meets within <paramref name="maxMetres"/>, from outside: its id,
+    /// the distance, and the face entered turned into the world (against the ray for one that starts inside a voxel, at
+    /// 0). Each solid is walked column by column through its box in its own voxels, each column's runs met by height.
+    /// Allocates nothing.
+    /// </summary>
+    public bool Raycast(in WorldPoint origin, Vector3 direction, float maxMetres, out SolidHit hit)
+    {
+        hit = default;
+        var length = direction.Length();
+        if (Count == 0 || !(length > 0) || !(maxMetres > 0))
+        {
+            return false;
+        }
+
+        var way = direction / length;
+        var perMetre = VoxelConstants.CentimetresPerMetre / (double)_worldVoxelCentimetres;
+        var nearest = (float)(maxMetres * perMetre);
+        var found = false;
+        for (var i = 0; i < _solids.Count; i++)
+        {
+            if (
+                _solids[i] is { Placed: true } solid
+                && solid.Raycast(
+                    origin.X * perMetre,
+                    origin.Y * perMetre,
+                    origin.Z * perMetre,
+                    way,
+                    nearest,
+                    out var cells,
+                    out var normal
+                )
+            )
+            {
+                nearest = cells;
+                hit = new SolidHit(i, (float)(cells / perMetre), normal);
+                found = true;
+            }
+        }
+
+        return found;
     }
 
     /// <summary>True when some placed solid's bounds reach the box from (x0, y0, z0) to (x1, y1, z1).</summary>
@@ -287,6 +332,189 @@ public sealed class SolidModelVoxels
         public bool Overlaps(int x0, int y0, int z0, int x1, int y1, int z1) =>
             Min.X <= x1 && Max.X >= x0 && Min.Y <= y1 && Max.Y >= y0 && Min.Z <= z1 && Max.Z >= z0;
 
+        /// <summary>
+        /// The first of the solid's voxels a ray from (<paramref name="x"/>, <paramref name="y"/>, <paramref name="z"/>)
+        /// along the unit <paramref name="direction"/>, in absolute world voxels, meets within <paramref name="most"/>
+        /// of them: its distance in world voxels and the face entered, turned into the world.
+        /// </summary>
+        public bool Raycast(
+            double x,
+            double y,
+            double z,
+            Vector3 direction,
+            float most,
+            out float distance,
+            out Vector3 normal
+        )
+        {
+            distance = 0;
+            normal = default;
+            // Into the model's voxels, as Column takes a cell's centre: the turn undone, over the scale, from the pivot.
+            float dx = (float)(x - _pivotX),
+                dy = (float)(y - _pivotY),
+                dz = (float)(z - _pivotZ);
+            var start = new Vector3(
+                (dx * _cos - dz * _sin) / scale + pivot.X,
+                dy / scale + pivot.Y,
+                (dx * _sin + dz * _cos) / scale + pivot.Z
+            );
+            var way = new Vector3(
+                (direction.X * _cos - direction.Z * _sin) / scale,
+                direction.Y / scale,
+                (direction.X * _sin + direction.Z * _cos) / scale
+            );
+            var size = new Vector3(Columns.Size.X, Columns.Size.Y, Columns.Size.Z);
+
+            // Where the ray is in the box, and the face it enters by (-1: it starts inside).
+            float enter = 0,
+                exit = most;
+            var enteredBy = -1;
+            for (var axis = 0; axis < 3; axis++)
+            {
+                if (way[axis] == 0)
+                {
+                    if (start[axis] < 0 || start[axis] > size[axis])
+                    {
+                        return false;
+                    }
+
+                    continue;
+                }
+
+                float near = (0 - start[axis]) / way[axis],
+                    far = (size[axis] - start[axis]) / way[axis];
+                if (near > far)
+                {
+                    (near, far) = (far, near);
+                }
+
+                if (near > enter)
+                {
+                    (enter, enteredBy) = (near, axis);
+                }
+
+                exit = MathF.Min(exit, far);
+                if (enter > exit)
+                {
+                    return false;
+                }
+            }
+
+            // Column by column across x and z, from where it enters.
+            var at = start + way * enter;
+            var column = Math.Clamp((int)MathF.Floor(at.X), 0, Columns.Size.X - 1);
+            var row = Math.Clamp((int)MathF.Floor(at.Z), 0, Columns.Size.Z - 1);
+            int stepX = Math.Sign(way.X),
+                stepZ = Math.Sign(way.Z);
+            float nextX = way.X > 0 ? (column + 1 - start.X) / way.X
+                : way.X < 0 ? (column - start.X) / way.X
+                : float.PositiveInfinity,
+                nextZ = way.Z > 0 ? (row + 1 - start.Z) / way.Z
+                : way.Z < 0 ? (row - start.Z) / way.Z
+                : float.PositiveInfinity;
+            float acrossX = way.X != 0 ? 1 / MathF.Abs(way.X) : float.PositiveInfinity,
+                acrossZ = way.Z != 0 ? 1 / MathF.Abs(way.Z) : float.PositiveInfinity;
+            var from = enter;
+            while (from <= exit)
+            {
+                var to = MathF.Min(exit, MathF.Min(nextX, nextZ));
+                if (InColumn(column, row, start, way, from, to, enteredBy, out distance, out var face))
+                {
+                    var local = face switch
+                    {
+                        0 => new Vector3(-stepX, 0, 0),
+                        1 => new Vector3(0, -MathF.Sign(way.Y), 0),
+                        2 => new Vector3(0, 0, -stepZ),
+                        _ => Vector3.Zero,
+                    };
+                    // Out of the model's axes as Place turns its corners; against the ray where it started inside.
+                    normal =
+                        face < 0
+                            ? -direction
+                            : new Vector3(local.X * _cos + local.Z * _sin, local.Y, -local.X * _sin + local.Z * _cos);
+                    return true;
+                }
+
+                if (nextX <= nextZ)
+                {
+                    column += stepX;
+                    from = nextX;
+                    nextX += acrossX;
+                    enteredBy = 0;
+                    if ((uint)column >= (uint)Columns.Size.X)
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    row += stepZ;
+                    from = nextZ;
+                    nextZ += acrossZ;
+                    enteredBy = 2;
+                    if ((uint)row >= (uint)Columns.Size.Z)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// The first run of column (<paramref name="column"/>, <paramref name="row"/>) the ray meets while it crosses the
+        /// column, from <paramref name="from"/> to <paramref name="to"/>: entering it inside a run (by the face it came
+        /// into the column through), or meeting a run's bottom going up or its top going down.
+        /// </summary>
+        private bool InColumn(
+            int column,
+            int row,
+            Vector3 start,
+            Vector3 way,
+            float from,
+            float to,
+            int enteredBy,
+            out float distance,
+            out int face
+        )
+        {
+            distance = float.MaxValue;
+            face = -2;
+            float low = start.Y + way.Y * from,
+                high = start.Y + way.Y * to;
+            var runs = Columns.Runs(column, row);
+            for (var i = 0; i + 1 < runs.Length; i += 2)
+            {
+                float bottom = runs[i],
+                    top = runs[i + 1];
+                if (low >= bottom && low < top)
+                {
+                    (distance, face) = (from, enteredBy);
+                    return true;
+                }
+
+                if (way.Y > 0 && low < bottom && high >= bottom)
+                {
+                    var t = (bottom - start.Y) / way.Y;
+                    if (t < distance)
+                    {
+                        (distance, face) = (t, 1);
+                    }
+                }
+                else if (way.Y < 0 && low >= top && high < top)
+                {
+                    var t = (top - start.Y) / way.Y;
+                    if (t < distance)
+                    {
+                        (distance, face) = (t, 1);
+                    }
+                }
+            }
+
+            return face != -2;
+        }
+
         /// <summary>The model's column world cell (x, z)'s centre lands in; false outside its box.</summary>
         public bool Column(int x, int z, out int lx, out int lz)
         {
@@ -324,3 +552,9 @@ public sealed class SolidModelVoxels
         public int HighestWorldY(int local) => LowestWorldY(local + 1) - 1;
     }
 }
+
+/// <summary>
+/// Where a ray met a solid model (<see cref="SolidModelVoxels.Raycast"/>): the solid's id, the distance in metres, and
+/// the face entered, turned into the world.
+/// </summary>
+public readonly record struct SolidHit(int Id, float DistanceMetres, Vector3 Normal);

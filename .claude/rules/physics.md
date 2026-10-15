@@ -45,9 +45,12 @@ body's pose and each stand-in's push after a step; `LooseBodyModelSystem` hands 
 When the match's origin moves, `PhysicsWorld.Shift` moves every body (awake, asleep, kinematic) and every static by the
 whole metres it moved, writing their poses and the broad phase's bounds alone: nothing wakes, and velocities, joints,
 and contacts, which are relative, keep (`OriginShifts`, `.claude/rules/engine.md`).
-Solid models that are not loose bodies (`SolidModelVoxels`, `SolidColumns`) are solid to the mover alone, placed each
-step at an absolute point (`SetPose` takes a `WorldPoint`: a local position with the match's origin), their voxels the
-model's unit at their level (`Add`'s unit, 1 cm by default). Cut parts are hulled and weighed in their model's voxels.
+Solid models that are not loose bodies (`SolidModelVoxels`, `SolidColumns`) are solid to the mover and met by rays
+(not by Bepu's bodies or the camera), placed each step at an absolute point (`SetPose` takes a `WorldPoint`: a local
+position with the match's origin), their voxels the model's unit at their level (`Add`'s unit, 1 cm by default). A ray
+(`SolidModelVoxels.Raycast`, from an absolute point; `CollisionSources` asks it) is walked column by column through each
+placed solid's box in its own voxels, each column's runs met by height (`SolidColumns.Runs`), giving the solid's id, the
+distance, and the face entered turned into the world (`SolidHit`); it allocates nothing. Cut parts are hulled and weighed in their model's voxels.
 
 Without voxel terrain (the core registers `VoxelModels`, `LooseBodies`, and `LooseBodyVoxels` either way): the models
 keep their trees in their own memory (with terrain, the world's, where a lifted piece lies), freed when the match
@@ -279,9 +282,11 @@ from the front as Bepu asks (glTF's are counter-clockwise), one-sided in Bepu, a
 touches it whatever its voxel level (`SetGameStatic`; `ClearStatic` on removal). Surface tags are up to 32 bits a game
 defines: voxel materials through its `IVoxelSurfaceTags` (none by default), mesh materials by name at registration.
 `CollisionSources` (scoped) is what rays meet: `Raycast` answers from the terrain (`VoxelWorld.Raycast`), the voxel
-objects the world places (`ObjectRays`, `.claude/rules/objects.md`), and the colliders (two-sided, nearest first through
-the buckets), the nearest winning, as a `SurfaceHit` (point, normal turned towards the origin, distance, tags, source,
-and the voxel's material, the collider and triangle, or the object's voxel's material and `ObjectId`). The voxel tools'
+objects the world places (`ObjectRays`, `.claude/rules/objects.md`), the colliders (two-sided, nearest first through
+the buckets), and the solid models (`SolidModelVoxels`, given the loose bodies' voxels and the match's origin), the
+nearest winning, as a `SurfaceHit` (point, normal turned towards the origin, distance, tags, source, and the voxel's
+material, the collider and triangle, the object's voxel's material and `ObjectId`, or a solid model's id in
+`Collider`, `SurfaceSource.SolidModel`, with no material or tags). The voxel tools'
 ray over the terrain alone (`ToolAim.Raycast(VoxelWorld, ...)`) stays; `ToolAim.Raycast(CollisionSources, ...)` meets
 all three, past the terrain's and the objects' passable voxels round the eye.
 
