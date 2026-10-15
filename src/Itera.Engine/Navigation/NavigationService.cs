@@ -52,6 +52,11 @@ namespace Itera.Engine.Navigation;
 /// its box, and each change of an object's copy (<see cref="ObjectDamage.ReadChanges"/>) has the cells under its reach
 /// read again where loaded.
 /// </para>
+/// <para>
+/// A game closes boxes of cells to every walker whatever the world holds there (<see cref="Close"/>: a gate's leaf, a
+/// door), moves them (<see cref="MoveClosed"/>), and opens them (<see cref="Open"/>): a closed cell's headroom reads as
+/// none through every read of the voxels, refill, and move of the window, and the cells a box leaves are read again.
+/// </para>
 /// A session client builds nothing: the host moves every walker.
 /// </summary>
 public sealed partial class NavigationService : IDisposable
@@ -86,6 +91,8 @@ public sealed partial class NavigationService : IDisposable
     private readonly AutoResetEvent _wake = new(false);
     private readonly Action<int> _changed;
     private readonly List<StampedEdit> _stamped = [];
+    private readonly List<Closure> _closures = [];
+    private readonly List<Closure> _reopens = [];
     private readonly NavArea _area;
     private readonly int _windowCells;
     private readonly List<VoxelEdit> _stripEdits = [];
@@ -196,7 +203,7 @@ public sealed partial class NavigationService : IDisposable
                     : NavArea.Of(voxels.Grid)
             );
         _windowCells = Math.Min(windowCells, _area.Cells);
-        _changed = MarkDirty;
+        _changed = Stamped;
     }
 
     /// <summary>True once the grid and every field are built and handed to the main thread.</summary>
@@ -253,6 +260,66 @@ public sealed partial class NavigationService : IDisposable
     {
         _focus = focus;
         _followed = true;
+    }
+
+    /// <summary>How many boxes a game has closed (<see cref="Close"/>) and not opened again.</summary>
+    public int Closed { get; private set; }
+
+    /// <summary>
+    /// Closes the cells whose centres lie in the box from (<paramref name="minX"/>, <paramref name="minZ"/>) up to, not
+    /// on, (<paramref name="maxX"/>, <paramref name="maxZ"/>), absolute centimetres, to every walker, whatever the world
+    /// holds there: a gate's leaf, a door. Their headroom reads as none (their floor as it was) from now until the box
+    /// moves (<see cref="MoveClosed"/>) or opens (<see cref="Open"/>), through every read of the voxels, refill, and move of
+    /// the window, so a field charges them as it charges a wall and a path goes round them (the fields at their next job,
+    /// within about <see cref="JobIntervalSeconds"/>; the grid's paths at once). Returns the box's number. Main thread; on
+    /// a game that keeps no grid (a client) it is kept and changes nothing. Throws for a box that holds nothing. Allocates
+    /// only when the boxes outgrow their list.
+    /// </summary>
+    public int Close(int minX, int minZ, int maxX, int maxZ)
+    {
+        var closure = Checked(minX, minZ, maxX, maxZ);
+        var index = _closures.FindIndex(static c => !c.Used);
+        if (index < 0)
+        {
+            index = _closures.Count;
+            _closures.Add(closure);
+        }
+        else
+        {
+            _closures[index] = closure;
+        }
+
+        Closed++;
+        Shut(in closure);
+        return index;
+    }
+
+    /// <summary>
+    /// Moves the closed box <paramref name="closure"/> to the box from (<paramref name="minX"/>, <paramref name="minZ"/>)
+    /// up to (<paramref name="maxX"/>, <paramref name="maxZ"/>), absolute centimetres: the cells it leaves are read
+    /// again from the world, those it comes to closed. Main thread; allocates nothing but as a read's queue grows.
+    /// </summary>
+    public void MoveClosed(int closure, int minX, int minZ, int maxX, int maxZ)
+    {
+        var old = Find(closure);
+        var moved = Checked(minX, minZ, maxX, maxZ);
+        if (old == moved)
+        {
+            return;
+        }
+
+        _closures[closure] = moved;
+        Reopen(in old);
+        Shut(in moved);
+    }
+
+    /// <summary>Opens the closed box <paramref name="closure"/>: its cells are read again from the world. Main thread.</summary>
+    public void Open(int closure)
+    {
+        var old = Find(closure);
+        _closures[closure] = default;
+        Closed--;
+        Reopen(in old);
     }
 
     /// <summary>
@@ -374,6 +441,16 @@ public sealed partial class NavigationService : IDisposable
             CheckStamped();
         }
 
+        if (_reopens.Count > 0 && !_moving && !_refilling)
+        {
+            foreach (var closure in System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_reopens))
+            {
+                Reopen(in closure);
+            }
+
+            _reopens.Clear();
+        }
+
         if (!_busy && !Refilling)
         {
             FollowFocus();
@@ -461,6 +538,7 @@ public sealed partial class NavigationService : IDisposable
             // The thread is waiting: its grid, filled again from the layout, becomes the main thread's.
             _grid!.CopyRows(_work!, 0, _grid.Depth - 1);
             _refilling = false;
+            ShutAll();
             LogRefilled(timings.FillMilliseconds, _specs.Length, timings.FieldsMilliseconds);
             return;
         }
@@ -475,6 +553,7 @@ public sealed partial class NavigationService : IDisposable
         {
             Ready = true;
             _queued = new byte[_grid!.Count];
+            ShutAll();
             LogReady(
                 _grid.Width,
                 _grid.Depth,
@@ -828,6 +907,7 @@ public sealed partial class NavigationService : IDisposable
         }
 
         _moving = false;
+        ShutAll();
         Moves++;
         LogMoved(
             grid.OriginX / (double)VoxelConstants.CentimetresPerMetre,
@@ -860,7 +940,8 @@ public sealed partial class NavigationService : IDisposable
                 continue;
             }
 
-            if (_scanner.Rescan(grid, cell))
+            // A closed cell stays closed whatever the voxels say.
+            if (_scanner.Rescan(grid, cell) | Shut(grid, cell))
             {
                 MarkDirty(cell);
             }
@@ -952,6 +1033,124 @@ public sealed partial class NavigationService : IDisposable
                 _queue[(_queueHead + _queueCount) % _queue.Length] = cell;
                 _queueCount++;
                 _queued[cell] = 1;
+            }
+        }
+    }
+
+    /// <summary>A cell the scanner stamped on the main thread's grid: closed again where a box closes it, and marked.</summary>
+    private void Stamped(int cell)
+    {
+        Shut(_grid!, cell);
+        MarkDirty(cell);
+    }
+
+    /// <summary>A box from its corners; throws for one that holds nothing.</summary>
+    private static Closure Checked(int minX, int minZ, int maxX, int maxZ) =>
+        maxX > minX && maxZ > minZ
+            ? new Closure(minX, minZ, maxX, maxZ)
+            : throw new ArgumentOutOfRangeException(
+                nameof(maxX),
+                $"A closed box's far corner lies past its near one on x and z ({minX}, {minZ} to {maxX}, {maxZ})."
+            );
+
+    /// <summary>The closed box <paramref name="closure"/>; throws for one that is not closed.</summary>
+    private Closure Find(int closure) =>
+        (uint)closure < (uint)_closures.Count && _closures[closure].Used
+            ? _closures[closure]
+            : throw new ArgumentException("No such closed box.", nameof(closure));
+
+    /// <summary>True when <paramref name="cell"/>'s centre lies in a closed box, and its headroom was not none: now it is.</summary>
+    private bool Shut(NavGrid grid, int cell)
+    {
+        if (_closures.Count == 0 || grid.Clear[cell] == 0)
+        {
+            return false;
+        }
+
+        var x = grid.CentreX(grid.Column(cell));
+        var z = grid.CentreZ(grid.Row(cell));
+        foreach (var closure in System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_closures))
+        {
+            if (closure.Used && closure.Holds(x, z))
+            {
+                grid.Clear[cell] = 0;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Closes <paramref name="closure"/>'s cells in the main thread's grid, once it is ready.</summary>
+    private void Shut(in Closure closure)
+    {
+        if (!Ready || _grid is not { } grid || !closure.TryCells(grid, out var c0, out var r0, out var c1, out var r1))
+        {
+            return;
+        }
+
+        for (var row = r0; row <= r1; row++)
+        {
+            for (var column = c0; column <= c1; column++)
+            {
+                var cell = grid.Index(column, row);
+                if (grid.Clear[cell] != 0)
+                {
+                    grid.Clear[cell] = 0;
+                    MarkDirty(cell);
+                }
+            }
+        }
+    }
+
+    /// <summary>Closes every closed box's cells: after the grid was taken whole from the thread.</summary>
+    private void ShutAll()
+    {
+        for (var i = 0; i < _closures.Count; i++)
+        {
+            if (_closures[i].Used)
+            {
+                Shut(_closures[i]);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Has the cells <paramref name="closure"/> closed read again from the world: queued for the voxels' read with a
+    /// scanner (a box still closing one keeps it closed), else filled from the source on the main thread, once the
+    /// navigation thread fills nothing (after a move of the window or a refill under way).
+    /// </summary>
+    private void Reopen(in Closure closure)
+    {
+        if (!Ready || _grid is not { } grid || !closure.TryCells(grid, out var c0, out var r0, out var c1, out var r1))
+        {
+            return;
+        }
+
+        if (_scanner is not null)
+        {
+            var firstColumn = grid.OriginX / NavGrid.CellCentimetres;
+            var firstRow = grid.OriginZ / NavGrid.CellCentimetres;
+            Queue(new StampedEdit(firstColumn + c0, firstRow + r0, firstColumn + c1, firstRow + r1));
+            return;
+        }
+
+        // The source fills on the thread during a move of the window or a refill, which then hands its grid over whole:
+        // the box's cells are filled after that, at a step when the thread fills nothing.
+        if (_moving || _refilling)
+        {
+            _reopens.Add(closure);
+            return;
+        }
+
+        _source!.Fill(grid, c0, r0, c1, r1);
+        for (var row = r0; row <= r1; row++)
+        {
+            for (var column = c0; column <= c1; column++)
+            {
+                var cell = grid.Index(column, row);
+                Shut(grid, cell);
+                MarkDirty(cell);
             }
         }
     }
@@ -1117,6 +1316,29 @@ public sealed partial class NavigationService : IDisposable
 
     /// <summary>A rectangle of cells in the window, inclusive: one strip a move of the window brings in.</summary>
     private readonly record struct Strip(int FirstColumn, int FirstRow, int LastColumn, int LastRow);
+
+    /// <summary>A closed box, absolute centimetres: the cells whose centres lie from its low corner up to, not on, its high one.</summary>
+    private readonly record struct Closure(int MinX, int MinZ, int MaxX, int MaxZ)
+    {
+        public bool Used => MaxX > MinX && MaxZ > MinZ;
+
+        public bool Holds(int x, int z) => x >= MinX && x < MaxX && z >= MinZ && z < MaxZ;
+
+        /// <summary>The window's cells whose centres it holds; false for none.</summary>
+        public bool TryCells(NavGrid grid, out int firstColumn, out int firstRow, out int lastColumn, out int lastRow)
+        {
+            const int cell = NavGrid.CellCentimetres;
+            // A cell's centre is its corner and half a cell: the first whose centre is at or past the low side, the last
+            // whose centre is short of the high one.
+            firstColumn = Math.Max(0, CeilingDivide(MinX - grid.OriginX - cell / 2, cell));
+            lastColumn = Math.Min(grid.Width - 1, CeilingDivide(MaxX - grid.OriginX - cell / 2, cell) - 1);
+            firstRow = Math.Max(0, CeilingDivide(MinZ - grid.OriginZ - cell / 2, cell));
+            lastRow = Math.Min(grid.Depth - 1, CeilingDivide(MaxZ - grid.OriginZ - cell / 2, cell) - 1);
+            return Used && firstColumn <= lastColumn && firstRow <= lastRow;
+        }
+
+        private static int CeilingDivide(int value, int divisor) => -NavGrid.FloorDivide(-value, divisor);
+    }
 
     /// <summary>
     /// The cells an edit's bounds cover, with one more on each side for the rounding of cell centres, as absolute cell

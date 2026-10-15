@@ -21,7 +21,10 @@ public interface INavGridSource
     /// <paramref name="lastColumn"/> and rows <paramref name="firstRow"/> to <paramref name="lastRow"/> (inclusive, in
     /// the grid's window: <see cref="NavGrid.CentreX"/> gives a column's absolute x) from the world as generated, before
     /// any edit; it leaves every other cell as it is. Called for the whole window at start and after every reset of the
-    /// world, and for the strips a move of the window brings in, on the navigation thread; it may use other threads.
+    /// world, and for the strips a move of the window brings in, on the navigation thread; it may use other threads. In a
+    /// world without voxel terrain it is also called on the main thread for the cells a closed box leaves
+    /// (<see cref="NavigationService.Open"/>, <see cref="NavigationService.MoveClosed"/>), never while the navigation
+    /// thread fills.
     /// </summary>
     void Fill(NavGrid grid, int firstColumn, int firstRow, int lastColumn, int lastRow);
 

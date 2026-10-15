@@ -37,6 +37,16 @@ that changed it wait for their own reads; those during a refill are read after i
 bottom lies within `LowCentimetres` over the ground stands on the floor, in a stamp as in a read. A stamp keeps the headroom's top where an object raised the floor, and a read looks up from the new floor, so the
 two differ in headroom there.
 
+A game closes boxes of cells to every walker whatever the world holds there (`NavigationService.Close(minX, minZ, maxX,
+maxZ)`, absolute centimetres, the cells whose centres lie in the box; a gate's leaf, a door, a thing it draws and makes
+solid itself), moves them (`MoveClosed`), and opens them (`Open`), on the main thread: a closed cell's headroom reads as
+none (its floor as it was) at once, through every read of the voxels, stamp, refill, and move of the window (applied to
+the main thread's grid after each, and the rows marked for the next job), so a field charges it as a block (a price to
+break through or a wall, by its cost table) and paths go round it; the cells a box leaves are queued to be read again
+from the voxels (filled from the source without terrain), a box still holding one keeping it closed. A box closed before
+the grid is ready closes its cells once it is; a client keeps its boxes and changes nothing. `Closed` counts them; a
+move allocates nothing.
+
 The grid is a window (`NavArea`, the map's square of whole cells; `Engine:Navigation:WindowCells`, 1024 by default, 256
 to 4096): a map that fits is covered whole and the window never moves; on a larger one it starts round the match's
 start (the origin) and follows a focus, what the game gives `NavigationService.Follow(WorldPoint)` (a point among its

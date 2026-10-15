@@ -13,7 +13,9 @@ namespace Itera.Engine.Tests.Navigation;
 /// own thread and handed over at a fixed step, a session client builds nothing, a game without a source builds
 /// nothing, and taking fields in allocates nothing. Over a flat voxel floor: a live edit changes the grid's cells and
 /// the fields are built again; cells are read again at most so many a step; edits made before the start (a save's)
-/// and edits where no voxels are loaded are stamped from their shapes, then read from the voxels once loaded.
+/// and edits where no voxels are loaded are stamped from their shapes, then read from the voxels once loaded; a box a
+/// game closes stays closed through reads, a refill, and its moves until it opens, with a world or without one, its
+/// moves allocating nothing.
 /// </summary>
 public sealed class NavigationServiceTests
 {
@@ -460,6 +462,114 @@ public sealed class NavigationServiceTests
         Assert.Equal(1, service.UncheckedEdits);
         Assert.Equal(Floor, grid.Floor[grid.Index(56, 32)]);
         Assert.Equal(Floor - 30, grid.Floor[grid.Index(8, 32)]);
+    }
+
+    /// <summary>
+    /// A box a game closes (a gate's leaf across column 32, rows 26 to 37) closes its cells at once, and the fields are
+    /// built again round it; a dig in it, read again from the voxels, and a reset of the world, which fills the grid from
+    /// the layout again, leave it closed; moved, the cells it left are read open again and those it came to closed; and
+    /// opened, they are all open.
+    /// </summary>
+    [Fact]
+    public void A_closed_box_stays_closed_through_reads_and_a_refill_and_moves_and_opens()
+    {
+        using var world = FlatWorld();
+        using var service = WithWorld(world);
+        var grid = service.Grid;
+
+        var closure = service.Close(0, -300, 50, 300);
+        var closed = (grid.IsBlocked(grid.Index(32, 26)), grid.IsBlocked(grid.Index(32, 37)), service.Recomputing);
+        Assert.True(service.Settle(Timeout));
+        var size = new NavSize("small", 200, 30, 45, 64);
+        var cell = grid.Index(50, 32);
+        for (var i = 0; i < 200 && service.Field(0).Directions[cell] != FlowField.Goal; i++)
+        {
+            cell = service.Field(0).Next(cell);
+            Assert.False(
+                grid.IsBlocked(cell),
+                $"The route crosses the box at ({grid.Column(cell)}, {grid.Row(cell)})."
+            );
+        }
+
+        world.Apply(VoxelEdit.Sphere(new VoxelCoord(25, Floor, 25), 40, VoxelEditOperation.Clear));
+        Assert.True(service.Settle(Timeout));
+        var dug = (grid.IsBlocked(grid.Index(32, 32)), grid.Floor[grid.Index(32, 32)] < Floor);
+        world.Reset();
+        TestWorlds.WaitUntilLoaded(world);
+        Assert.True(service.Settle(Timeout));
+        var refilled = grid.IsBlocked(grid.Index(32, 32));
+
+        service.MoveClosed(closure, 400, -300, 450, 300);
+        Assert.True(service.Settle(Timeout));
+        var moved = (grid.IsBlocked(grid.Index(32, 32)), grid.IsBlocked(grid.Index(40, 32)));
+        service.Open(closure);
+        Assert.True(service.Settle(Timeout));
+
+        Assert.Equal((true, true, true), closed);
+        Assert.False(grid.IsBlocked(grid.Index(32, 25)));
+        Assert.False(grid.IsBlocked(grid.Index(32, 38)));
+        Assert.Equal((true, true), dug);
+        Assert.True(refilled);
+        Assert.Equal((false, true), moved);
+        Assert.False(grid.IsBlocked(grid.Index(40, 32)));
+        Assert.Equal(0, service.Closed);
+        Assert.True(size.IsWalkable(grid, grid.Index(40, 32)));
+    }
+
+    /// <summary>With no world, a box's cells are filled from the source again as it opens; a box closed before the grid is ready closes its cells once it is.</summary>
+    [Fact]
+    public void Without_a_world_a_box_closed_before_the_grid_is_ready_closes_then_opens_from_the_source()
+    {
+        var source = new FakeSource();
+        using var service = new NavigationService(
+            source,
+            () => true,
+            NullLogger<NavigationService>.Instance,
+            area: Area
+        );
+        service.Initialize();
+        var closure = service.Close(-1600, -1600, -1500, -1500);
+        Assert.True(service.WaitUntilPublished(Timeout));
+        service.AfterFixedStep();
+        var grid = service.Grid;
+        var closed = (
+            grid.IsBlocked(grid.Index(0, 0)),
+            grid.IsBlocked(grid.Index(1, 1)),
+            grid.IsBlocked(grid.Index(2, 2))
+        );
+
+        service.Open(closure);
+
+        Assert.Equal((true, true, false), closed);
+        Assert.False(grid.IsBlocked(grid.Index(1, 1)));
+        Assert.Equal(2, source.Fills);
+        Assert.Throws<ArgumentException>(() => service.Open(closure));
+        Assert.Throws<ArgumentOutOfRangeException>(() => service.Close(0, 0, 0, 100));
+        Assert.Throws<ArgumentOutOfRangeException>(() => service.Close(0, 100, 50, 50));
+        Assert.Equal(0, service.Closed);
+    }
+
+    [Fact]
+    public void Moving_a_closed_box_allocates_nothing()
+    {
+        using var world = FlatWorld();
+        using var service = WithWorld(world);
+        var closure = service.Close(0, -300, 50, 300);
+        void Moves()
+        {
+            for (var i = 0; i < 100; i++)
+            {
+                service.MoveClosed(closure, 50 * (i % 4), -300, 50 * (i % 4) + 50, 300);
+                service.AfterFixedStep();
+            }
+        }
+
+        Moves();
+        Assert.True(service.Settle(Timeout));
+        var before = SystemAllocation.StartMeasurement();
+        Moves();
+
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
 
     private const int Floor = 200;

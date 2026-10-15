@@ -268,6 +268,46 @@ public sealed class NavigationWindowTests(ITestOutputHelper output)
     private static void Dig(VoxelWorld world, int x) =>
         world.Apply(VoxelEdit.Sphere(new VoxelCoord(x, Floor, 25), 30, VoxelEditOperation.Clear));
 
+    /// <summary>
+    /// A closed box stays closed as the window moves past it (with a world, its cells read from the voxels); and, with no
+    /// world, one opened while the window moves opens once the move is taken, its cells filled from the source then.
+    /// </summary>
+    [Fact]
+    public void A_closed_box_stays_closed_through_a_move_and_one_opened_during_a_move_opens_after_it()
+    {
+        using var world = FlatWorld();
+        using var service = Started(new FlatSource([new VoxelCoord(0, 0, 0)]), FourKilometres, windowCells: 256, world);
+        var closure = service.Close(1_000, -300, 1_100, 300);
+        Assert.True(service.Settle(Timeout));
+        service.Follow(new WorldPoint(40, 2, 0));
+        Assert.True(service.Settle(Timeout));
+        var grid = service.Grid;
+        Assert.Equal(1, service.Moves);
+        Assert.True(grid.IsBlocked(Cell(grid, 1_025, 0)));
+        Assert.False(grid.IsBlocked(Cell(grid, 1_125, 0)));
+        service.Open(closure);
+        Assert.True(service.Settle(Timeout));
+        Assert.False(grid.IsBlocked(Cell(grid, 1_025, 0)));
+
+        using var bare = Started(new FlatSource([new VoxelCoord(0, 0, 0)]), FourKilometres, windowCells: 256);
+        var box = bare.Close(1_000, -300, 1_100, 300);
+        Assert.True(bare.Settle(Timeout));
+        bare.Follow(new WorldPoint(40, 2, 0));
+        bare.AfterFixedStep();
+        Assert.True(bare.Moving);
+        bare.Open(box);
+        Assert.True(bare.Settle(Timeout));
+        Assert.Equal(1, bare.Moves);
+        Assert.False(bare.Grid.IsBlocked(Cell(bare.Grid, 1_025, 0)));
+        Assert.Equal(0, bare.Closed);
+    }
+
+    private static int Cell(NavGrid grid, int x, int z)
+    {
+        Assert.True(grid.TryCell(x, z, out var cell));
+        return cell;
+    }
+
     /// <summary>A flat floor 2 m up on 1 cm voxels, its map ±500 m, loaded 40 m round the middle.</summary>
     private static VoxelWorld FlatWorld() =>
         TestWorlds.Load(new BoxesGenerator(Floor), new Vector3(0, 2, 0), radiusMetres: 40);
