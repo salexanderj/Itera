@@ -76,6 +76,57 @@ public sealed class ThirdPersonCameraTests : IDisposable
         Assert.True(Vector3.Distance(Vector3.Normalize(met - s_eye), aim) < 1e-4f, $"{aim}");
     }
 
+    /// <summary>
+    /// Through the match's shared ray the aim and the look stop at a solid model (a gate's leaf 10 m ahead), which the aim
+    /// over the voxels, objects, and colliders alone passes.
+    /// </summary>
+    [Fact]
+    public void Through_the_shared_ray_the_aim_stops_at_a_solid_model()
+    {
+        using var harness = new PhysicsTestHarness();
+        using var colliders = new Itera.Engine.Physics.MeshColliders(
+            harness.Physics,
+            NullLogger<Itera.Engine.Physics.MeshColliders>.Instance
+        );
+        var surfaces = new Itera.Engine.Physics.CollisionSources(
+            colliders,
+            new Itera.Engine.Voxels.NoVoxelSurfaceTags(),
+            harness.Voxels,
+            bodies: harness.BodyVoxels,
+            worldOrigin: harness.Voxels.Origin
+        );
+        var chunk = new byte[VoxelConstants.ChunkVoxels];
+        for (var z = 0; z < 10; z++)
+        {
+            for (var y = 0; y < 50; y++)
+            {
+                for (var x = 0; x < 100; x++)
+                {
+                    chunk[x + VoxelConstants.ChunkSize * (y + VoxelConstants.ChunkSize * z)] = 1;
+                }
+            }
+        }
+
+        var solids = harness.BodyVoxels.Solids;
+        var leaf = solids.Add(
+            Itera.Engine.Physics.SolidColumns.Build(chunk, new VoxelCoord(100, 50, 10)),
+            0,
+            Vector3.Zero,
+            unitCentimetres: 10
+        );
+        solids.SetPose(leaf, new Itera.Engine.Maths.WorldPoint(-5, 0, -10.5), 0);
+        var none = new Itera.Engine.Physics.IgnoreEntity(Arch.Core.Entity.Null);
+
+        var point = ThirdPersonCamera.AimPoint(surfaces, s_eye, 0, 0, 2.5f, 0, null, 0, in none);
+        var look = ThirdPersonCamera.LookPoint(surfaces, s_eye, 0, 0, null, 0, in none);
+        var past = ThirdPersonCamera.AimPoint(harness.Voxels, s_eye, 0, 0, 2.5f);
+
+        Assert.Equal(-9.5f, point.Z, 3);
+        Assert.Equal(-9.5f, look.Z, 3);
+        Assert.True(past.Z < -50, $"{past}");
+        solids.Remove(leaf);
+    }
+
     [Fact]
     public void A_characters_hit_shape_on_the_crosshair_stops_the_aim_and_the_aimers_own_does_not()
     {

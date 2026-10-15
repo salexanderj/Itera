@@ -208,6 +208,97 @@ public static class ThirdPersonCamera
         return eye + forward * Reach(voxels, eye, forward, objects, meshes, bodies, tick, in filter);
     }
 
+    /// <summary>
+    /// <see cref="Aim{TFilter}(VoxelWorld?, Vector3, float, float, float, ObjectRays?, MeshColliders?, float, HitHistory?, double, in TFilter)"/>
+    /// through the match's shared ray (<see cref="CollisionSources"/>): its aim meets what rounds meet, the solid models a
+    /// game places too (a gate's leaf); the camera's place is found from its voxels, objects, and colliders, as before.
+    /// </summary>
+    public static Vector3 Aim<TFilter>(
+        CollisionSources surfaces,
+        Vector3 eye,
+        float yaw,
+        float pitch,
+        float metres,
+        float left,
+        HitHistory? bodies,
+        double tick,
+        in TFilter filter
+    )
+        where TFilter : struct, IHitFilter
+    {
+        var towards = AimPoint(surfaces, eye, yaw, pitch, metres, left, bodies, tick, in filter) - eye;
+        return towards.LengthSquared() > 1e-8f ? Vector3.Normalize(towards) : Forward(yaw, pitch);
+    }
+
+    /// <summary>
+    /// <see cref="AimPoint{TFilter}(VoxelWorld?, Vector3, float, float, float, ObjectRays?, MeshColliders?, float, HitHistory?, double, in TFilter)"/>
+    /// through the match's shared ray (<see cref="CollisionSources"/>), solid models among what it meets.
+    /// </summary>
+    public static Vector3 AimPoint<TFilter>(
+        CollisionSources surfaces,
+        Vector3 eye,
+        float yaw,
+        float pitch,
+        float metres,
+        float left,
+        HitHistory? bodies,
+        double tick,
+        in TFilter filter
+    )
+        where TFilter : struct, IHitFilter
+    {
+        ArgumentNullException.ThrowIfNull(surfaces);
+        var camera = Position(surfaces.Voxels, eye, yaw, pitch, metres, surfaces.Objects, surfaces.Meshes, left);
+        var forward = Forward(yaw, pitch);
+        var start = camera + forward * MathF.Max(0, Vector3.Dot(eye - camera, forward));
+        return start + forward * Reach(surfaces, start, forward, bodies, tick, in filter);
+    }
+
+    /// <summary>
+    /// <see cref="LookPoint{TFilter}(VoxelWorld?, Vector3, float, float, ObjectRays?, MeshColliders?, HitHistory?, double, in TFilter)"/>
+    /// through the match's shared ray (<see cref="CollisionSources"/>), solid models among what it meets.
+    /// </summary>
+    public static Vector3 LookPoint<TFilter>(
+        CollisionSources surfaces,
+        Vector3 eye,
+        float yaw,
+        float pitch,
+        HitHistory? bodies,
+        double tick,
+        in TFilter filter
+    )
+        where TFilter : struct, IHitFilter
+    {
+        ArgumentNullException.ThrowIfNull(surfaces);
+        var forward = Forward(yaw, pitch);
+        return eye + forward * Reach(surfaces, eye, forward, bodies, tick, in filter);
+    }
+
+    /// <summary>How far along <paramref name="forward"/> the shared ray and the bodies first meet something, at most <see cref="AimMetres"/>.</summary>
+    private static float Reach<TFilter>(
+        CollisionSources surfaces,
+        Vector3 start,
+        Vector3 forward,
+        HitHistory? bodies,
+        double tick,
+        in TFilter filter
+    )
+        where TFilter : struct, IHitFilter
+    {
+        var far = AimMetres;
+        if (surfaces.Raycast(start, forward, far, out var hit, coarse: true))
+        {
+            far = hit.Distance;
+        }
+
+        if (bodies is not null && bodies.Raycast(start, forward, far, tick, in filter, out var body))
+        {
+            far = body.Distance;
+        }
+
+        return far;
+    }
+
     /// <summary>How far along <paramref name="forward"/> from <paramref name="start"/> the first thing met lies, at most <see cref="AimMetres"/>.</summary>
     private static float Reach<TFilter>(
         VoxelWorld? voxels,

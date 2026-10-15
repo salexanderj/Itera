@@ -69,7 +69,9 @@ The player (the starter's `PlayerSpawnSystem` makes it with these components):
   wheel, the right shoulder unless `ThirdPersonView.Left` (1 the left, a game easing it between to swap), pulled in by
   voxels, by the voxel objects where the game gives it `ObjectRays`, and by the mesh colliders where it gives it
   `MeshColliders`; the aim the same, and stopped by a character's hit shape where the game gives it a `HitHistory` and
-  a tick, the aimer's own left out, so a crosshair on a character sends a shot from the eye into it), turned by a
+  a tick, the aimer's own left out, so a crosshair on a character sends a shot from the eye into it; `Aim`, `AimPoint`,
+  and `LookPoint` also take the match's `CollisionSources` in place of its voxels, objects, and colliders, so the aim
+  meets what rays meet, the solid models a game places among them), turned by a
   game's kick of the view (`LookKick` on the local player, radians up and to the left: a weapon's recoil, which the
   game also adds to what it aims through the camera; the command's look is left as it was); it makes the camera entity
   from a start pose (`CameraRules.CreateCamera`).
