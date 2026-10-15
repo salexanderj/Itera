@@ -103,6 +103,45 @@ public sealed class ThirdPersonCameraTests : IDisposable
     }
 
     [Fact]
+    public void A_filter_lets_the_aim_pass_the_characters_it_leaves_out()
+    {
+        using var world = Arch.Core.World.Create();
+        var friend = world.Create();
+        var foe = world.Create();
+        var bodies = new Itera.Engine.Physics.HitHistory(new Itera.Engine.Maths.WorldOrigin());
+        var near = new Vector3(ThirdPersonCamera.RightMetres, s_eye.Y + ThirdPersonCamera.UpMetres, -10);
+        var far = new Vector3(ThirdPersonCamera.RightMetres, s_eye.Y + ThirdPersonCamera.UpMetres, -30);
+        bodies.Record(friend, 4, [new(near + new Vector3(0, -0.5f, 0), near + new Vector3(0, 0.5f, 0), 0.3f, 1)]);
+        bodies.Record(foe, 4, [new(far + new Vector3(0, -0.5f, 0), far + new Vector3(0, 0.5f, 0), 0.3f, 1)]);
+        var passes = new Passing(friend);
+
+        var stopped = ThirdPersonCamera.AimPoint(null, s_eye, 0, 0, 2.5f, bodies: bodies, tick: 4);
+        var past = ThirdPersonCamera.AimPoint(null, s_eye, 0, 0, 2.5f, null, null, 0, bodies, 4, in passes);
+        var aim = ThirdPersonCamera.Aim(null, s_eye, 0, 0, 2.5f, null, null, 0, bodies, 4, in passes);
+        var look = ThirdPersonCamera.LookPoint(null, s_eye, 0, 0, null, null, bodies, 4, in passes);
+
+        Assert.True(Vector3.Distance(near + new Vector3(0, 0, 0.3f), stopped) < 1e-3f, $"{stopped}");
+        Assert.True(Vector3.Distance(far + new Vector3(0, 0, 0.3f), past) < 1e-3f, $"{past}");
+        Assert.True(Vector3.Distance(Vector3.Normalize(past - s_eye), aim) < 1e-5f, $"{aim}");
+        // Straight along the look from the eye, nothing is in the way of either: the farthest point.
+        Assert.Equal(ThirdPersonCamera.AimMetres, Vector3.Distance(s_eye, look), 2);
+
+        var start = SystemAllocation.StartMeasurement();
+        for (var i = 0; i < 100; i++)
+        {
+            ThirdPersonCamera.AimPoint(null, s_eye, 0, 0, 2.5f, null, null, 0, bodies, 4, in passes);
+        }
+
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - start);
+    }
+
+    /// <summary>A filter that leaves out one character.</summary>
+    private readonly record struct Passing(Arch.Core.Entity Left) : Itera.Engine.Physics.IHitFilter
+    {
+        public bool Includes(Arch.Core.Entity entity) => entity != Left;
+    }
+
+    [Fact]
     public void The_aim_point_is_where_the_crosshair_meets_a_shape_and_the_look_point_where_the_look_does()
     {
         using var world = Arch.Core.World.Create();

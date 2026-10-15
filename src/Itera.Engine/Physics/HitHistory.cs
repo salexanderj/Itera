@@ -23,14 +23,32 @@ public readonly record struct HitCapsule(Vector3 A, Vector3 B, float Radius, int
 public readonly record struct HitResult(Entity Entity, int Part, float Distance, Vector3 Point, Vector3 Normal);
 
 /// <summary>
+/// Which entities a <see cref="HitHistory.Raycast{TFilter}"/> may meet. A game gives a struct, so the test is inlined and
+/// nothing is boxed: the shooter's own side left out, say.
+/// </summary>
+public interface IHitFilter
+{
+    /// <summary>True when the ray may meet <paramref name="entity"/>'s capsules; false to pass through them as if they were not there.</summary>
+    bool Includes(Entity entity);
+}
+
+/// <summary>A filter that leaves out one entity (the shooter), or none for <see cref="Entity.Null"/>.</summary>
+public readonly record struct IgnoreEntity(Entity Entity) : IHitFilter
+{
+    public bool Includes(Entity entity) => entity != Entity;
+}
+
+/// <summary>
 /// Where characters' hit shapes were over the last <see cref="Steps"/> steps, so that a host judges a shot against where
 /// its targets were when the shooter saw them (lag compensation), not where they are now. A game records each
 /// character's capsules once a step (<see cref="Record"/>) and asks with the tick the shooter saw
 /// (<see cref="Raycast"/>), which may fall between two steps: each capsule is then taken as far between its two records
 /// as the fraction says. Records are kept in absolute terms (an anchor and offsets from it), so a move of the match's
 /// origin between steps changes nothing. A character with no record near the tick is not there and is not met. Each
-/// entity's storage is made at its first record and reused after <see cref="Forget"/>; once an entity is kept, recording,
-/// asking, and forgetting allocate nothing. Scoped to the match; main thread.
+/// entity's storage is made at its first record and reused after <see cref="Forget"/>, or once the entity has gone
+/// <see cref="Steps"/> steps unrecorded and room is needed for a new one, so a game that removes entities without
+/// forgetting them never fills it; once an entity is kept, recording, asking, and forgetting allocate nothing. Scoped to
+/// the match; main thread.
 /// </summary>
 public sealed class HitHistory(WorldOrigin origin)
 {
@@ -57,14 +75,17 @@ public sealed class HitHistory(WorldOrigin origin)
     /// <summary>
     /// Records <paramref name="entity"/>'s capsules at step <paramref name="tick"/>, in local metres as the origin is now.
     /// Recording a tick again replaces it. A tick 32 or more steps older than a newer one kept is dropped. An empty list
-    /// records that the entity is there with no shape.
+    /// records that the entity is there with no shape. A new entity when <see cref="MostEntities"/> are kept first forgets
+    /// every one not recorded for <see cref="Steps"/> steps before <paramref name="tick"/>.
     /// </summary>
     /// <exception cref="ArgumentException">
     /// The entity is null, there are more than <see cref="MostCapsules"/> capsules, or a capsule has a radius below 0 or a
     /// number that is not finite.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">The tick is below 0.</exception>
-    /// <exception cref="InvalidOperationException">The entity is new and <see cref="MostEntities"/> are kept.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The entity is new and <see cref="MostEntities"/> are kept, each recorded within <see cref="Steps"/> steps.
+    /// </exception>
     public void Record(Entity entity, long tick, ReadOnlySpan<HitCapsule> capsules)
     {
         if (entity == Entity.Null)
@@ -94,6 +115,11 @@ public sealed class HitHistory(WorldOrigin origin)
 
         if (!_slots.TryGetValue(entity, out var slot))
         {
+            if (_slots.Count >= MostEntities)
+            {
+                ForgetStale(tick);
+            }
+
             if (_slots.Count >= MostEntities)
             {
                 throw new InvalidOperationException($"{MostEntities} entities are kept; {entity} is one more.");
@@ -152,7 +178,29 @@ public sealed class HitHistory(WorldOrigin origin)
     /// starts inside a capsule meets it at distance 0 with the normal opposite the ray. Returns false for a zero or
     /// non-finite direction or start, a negative or non-finite range, or a tick that is not finite. Allocates nothing.
     /// </summary>
-    public bool Raycast(Vector3 from, Vector3 direction, float maxMetres, double tick, Entity ignore, out HitResult hit)
+    public bool Raycast(
+        Vector3 from,
+        Vector3 direction,
+        float maxMetres,
+        double tick,
+        Entity ignore,
+        out HitResult hit
+    ) => Raycast(from, direction, maxMetres, tick, new IgnoreEntity(ignore), out hit);
+
+    /// <summary>
+    /// <see cref="Raycast(Vector3, Vector3, float, double, Entity, out HitResult)"/> with a filter in place of the one
+    /// entity to skip: an entity the filter does not include is passed through as if it were not there (a ray that starts
+    /// inside its capsule does not meet it), so a game leaves out a whole side. Allocates nothing for a struct filter.
+    /// </summary>
+    public bool Raycast<TFilter>(
+        Vector3 from,
+        Vector3 direction,
+        float maxMetres,
+        double tick,
+        in TFilter filter,
+        out HitResult hit
+    )
+        where TFilter : struct, IHitFilter
     {
         hit = default;
         var lengthSquared = direction.LengthSquared();
@@ -175,7 +223,11 @@ public sealed class HitHistory(WorldOrigin origin)
         var best = new Best { Distance = maxMetres };
         foreach (var track in _tracks)
         {
-            if (track.InUse && track.Entity != ignore && StepsOf(track, floor, fraction, out var before, out var after))
+            if (
+                track.InUse
+                && filter.Includes(track.Entity)
+                && StepsOf(track, floor, fraction, out var before, out var after)
+            )
             {
                 TestTrack(track, before, after, fraction, in ray, ref best);
             }
@@ -245,6 +297,22 @@ public sealed class HitHistory(WorldOrigin origin)
         {
             _tracks[slot].InUse = false;
             _free[_freeCount++] = slot;
+        }
+    }
+
+    /// <summary>
+    /// Forgets every entity whose newest record is <see cref="Steps"/> or more steps before <paramref name="tick"/>: no ray
+    /// near the tick can meet it, and a removed entity is never recorded again.
+    /// </summary>
+    private void ForgetStale(long tick)
+    {
+        for (var slot = 0; slot < _tracks.Count; slot++)
+        {
+            var track = _tracks[slot];
+            if (track.InUse && track.Newest <= tick - Steps)
+            {
+                Forget(track.Entity);
+            }
         }
     }
 

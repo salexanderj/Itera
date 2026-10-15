@@ -496,6 +496,30 @@ public sealed class HitHistoryTests : IDisposable
     }
 
     [Fact]
+    public void A_new_entity_when_full_takes_the_room_of_those_not_recorded_for_its_steps()
+    {
+        var kept = _world.Create();
+        for (var i = 1; i < HitHistory.MostEntities; i++)
+        {
+            _history.Record(_world.Create(), 0, []);
+        }
+
+        _history.Record(kept, 0, []);
+        _history.Record(kept, HitHistory.Steps - 1, []);
+        Assert.Equal(HitHistory.MostEntities, _history.Count);
+
+        // Within the steps every one may still be met, so there is no room.
+        Assert.Throws<InvalidOperationException>(() => _history.Record(_world.Create(), HitHistory.Steps - 1, []));
+
+        // Past them, those not recorded since go: the new one and the one still recorded are kept.
+        var fresh = _world.Create();
+        _history.Record(fresh, HitHistory.Steps, []);
+        Assert.Equal(2, _history.Count);
+        _history.Record(kept, HitHistory.Steps, [new(Vector3.Zero, Vector3.UnitY, 0.5f, 0)]);
+        Assert.Equal(1, _history.CapsulesAt(kept, HitHistory.Steps, new HitCapsule[HitHistory.MostCapsules]));
+    }
+
+    [Fact]
     public void A_ray_that_is_not_usable_meets_nothing()
     {
         var entity = _world.Create();
@@ -584,6 +608,57 @@ public sealed class HitHistoryTests : IDisposable
         capsules[0] = new HitCapsule(new(x, 0.3f, 0), new(x, 1.2f, 0), Radius, 0);
         capsules[1] = new HitCapsule(new(x, 1.55f, 0), new(x, 1.55f, 0), 0.25f, 1);
         capsules[2] = new HitCapsule(new(x + 0.4f, 0.5f, 0), new(x + 0.4f, 1.2f, 0), 0.1f, 2);
+    }
+
+    [Fact]
+    public void A_filter_passes_through_the_entities_it_leaves_out_and_meets_the_next_behind_them()
+    {
+        var near = _world.Create();
+        var far = _world.Create();
+        var shooter = _world.Create();
+        Record(near, 1, 0, z: 0);
+        Record(far, 1, 0, z: 5);
+        Record(shooter, 1, 0, z: -2);
+        var skipNear = new Skipping(near, shooter);
+
+        Assert.True(_history.Raycast(new(0, 1, -5), Vector3.UnitZ, 20, 1, shooter, out var first));
+        Assert.True(_history.Raycast(new(0, 1, -5), Vector3.UnitZ, 20, 1, in skipNear, out var past));
+        var skipAll = new Skipping(near, far);
+        // A ray that starts inside a capsule the filter leaves out meets nothing of it; the shooter's too.
+        Assert.False(_history.Raycast(new(0, 1, 0), Vector3.UnitZ, 4, 1, in skipAll, out _));
+        Assert.True(_history.Raycast(new(0, 1, 0), Vector3.UnitZ, 20, 1, in skipNear, out var inside));
+
+        Assert.Equal(near, first.Entity);
+        Assert.Equal(far, past.Entity);
+        Assert.Equal(far, inside.Entity);
+        Assert.Equal(first.Distance + 5, past.Distance, 1e-3f);
+    }
+
+    [Fact]
+    public void The_one_entity_overload_is_a_filter_of_that_entity_and_a_filter_allocates_nothing()
+    {
+        var near = _world.Create();
+        var far = _world.Create();
+        Record(near, 1, 0, z: 0);
+        Record(far, 1, 0, z: 5);
+        var skipNear = new Skipping(near, Entity.Null);
+        Assert.True(Raycast(0, 1, near, out var byEntity));
+        Assert.True(_history.Raycast(new(0, 1, -5), Vector3.UnitZ, 20, 1, in skipNear, out var byFilter));
+
+        var start = Itera.TestSupport.SystemAllocation.StartMeasurement();
+        for (var i = 0; i < 1000; i++)
+        {
+            _history.Raycast(new(0, 1, -5), Vector3.UnitZ, 20, 1, in skipNear, out _);
+        }
+
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - start);
+        Assert.Equal(byEntity, byFilter);
+    }
+
+    /// <summary>A filter that leaves out two entities.</summary>
+    private readonly record struct Skipping(Entity First, Entity Second) : IHitFilter
+    {
+        public bool Includes(Entity entity) => entity != First && entity != Second;
     }
 
     /// <summary>Records a character at step <paramref name="tick"/>: a 1.8 m capsule standing at (x, 0, z).</summary>

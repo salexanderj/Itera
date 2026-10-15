@@ -92,7 +92,31 @@ public static class ThirdPersonCamera
         Entity? ignore = null
     )
     {
-        var towards = AimPoint(voxels, eye, yaw, pitch, metres, objects, meshes, left, bodies, tick, ignore) - eye;
+        var filter = new IgnoreEntity(ignore ?? Entity.Null);
+        return Aim(voxels, eye, yaw, pitch, metres, objects, meshes, left, bodies, tick, in filter);
+    }
+
+    /// <summary>
+    /// <see cref="Aim(VoxelWorld?, Vector3, float, float, float, ObjectRays?, MeshColliders?, float, HitHistory?, double, Entity?)"/>
+    /// with a <paramref name="filter"/> of the characters its ray may meet in place of the one to leave out: a game leaves
+    /// out a whole side.
+    /// </summary>
+    public static Vector3 Aim<TFilter>(
+        VoxelWorld? voxels,
+        Vector3 eye,
+        float yaw,
+        float pitch,
+        float metres,
+        ObjectRays? objects,
+        MeshColliders? meshes,
+        float left,
+        HitHistory? bodies,
+        double tick,
+        in TFilter filter
+    )
+        where TFilter : struct, IHitFilter
+    {
+        var towards = AimPoint(voxels, eye, yaw, pitch, metres, objects, meshes, left, bodies, tick, in filter) - eye;
         return towards.LengthSquared() > 1e-8f ? Vector3.Normalize(towards) : Forward(yaw, pitch);
     }
 
@@ -114,10 +138,33 @@ public static class ThirdPersonCamera
         Entity? ignore = null
     )
     {
+        var filter = new IgnoreEntity(ignore ?? Entity.Null);
+        return AimPoint(voxels, eye, yaw, pitch, metres, objects, meshes, left, bodies, tick, in filter);
+    }
+
+    /// <summary>
+    /// <see cref="AimPoint(VoxelWorld?, Vector3, float, float, float, ObjectRays?, MeshColliders?, float, HitHistory?, double, Entity?)"/>
+    /// with a <paramref name="filter"/> of the characters its ray may meet.
+    /// </summary>
+    public static Vector3 AimPoint<TFilter>(
+        VoxelWorld? voxels,
+        Vector3 eye,
+        float yaw,
+        float pitch,
+        float metres,
+        ObjectRays? objects,
+        MeshColliders? meshes,
+        float left,
+        HitHistory? bodies,
+        double tick,
+        in TFilter filter
+    )
+        where TFilter : struct, IHitFilter
+    {
         var camera = Position(voxels, eye, yaw, pitch, metres, objects, meshes, left);
         var forward = Forward(yaw, pitch);
         var start = camera + forward * MathF.Max(0, Vector3.Dot(eye - camera, forward));
-        return start + forward * Reach(voxels, start, forward, objects, meshes, bodies, tick, ignore);
+        return start + forward * Reach(voxels, start, forward, objects, meshes, bodies, tick, in filter);
     }
 
     /// <summary>
@@ -136,12 +183,33 @@ public static class ThirdPersonCamera
         Entity? ignore = null
     )
     {
+        var filter = new IgnoreEntity(ignore ?? Entity.Null);
+        return LookPoint(voxels, eye, yaw, pitch, objects, meshes, bodies, tick, in filter);
+    }
+
+    /// <summary>
+    /// <see cref="LookPoint(VoxelWorld?, Vector3, float, float, ObjectRays?, MeshColliders?, HitHistory?, double, Entity?)"/>
+    /// with a <paramref name="filter"/> of the characters its ray may meet.
+    /// </summary>
+    public static Vector3 LookPoint<TFilter>(
+        VoxelWorld? voxels,
+        Vector3 eye,
+        float yaw,
+        float pitch,
+        ObjectRays? objects,
+        MeshColliders? meshes,
+        HitHistory? bodies,
+        double tick,
+        in TFilter filter
+    )
+        where TFilter : struct, IHitFilter
+    {
         var forward = Forward(yaw, pitch);
-        return eye + forward * Reach(voxels, eye, forward, objects, meshes, bodies, tick, ignore);
+        return eye + forward * Reach(voxels, eye, forward, objects, meshes, bodies, tick, in filter);
     }
 
     /// <summary>How far along <paramref name="forward"/> from <paramref name="start"/> the first thing met lies, at most <see cref="AimMetres"/>.</summary>
-    private static float Reach(
+    private static float Reach<TFilter>(
         VoxelWorld? voxels,
         Vector3 start,
         Vector3 forward,
@@ -149,8 +217,9 @@ public static class ThirdPersonCamera
         MeshColliders? meshes,
         HitHistory? bodies,
         double tick,
-        Entity? ignore
+        in TFilter filter
     )
+        where TFilter : struct, IHitFilter
     {
         var far = AimMetres;
         if (voxels is not null && voxels.Raycast(start, forward, far, out var hit, coarse: true))
@@ -168,7 +237,7 @@ public static class ThirdPersonCamera
             far = surface.Distance;
         }
 
-        if (bodies is not null && bodies.Raycast(start, forward, far, tick, ignore ?? Entity.Null, out var body))
+        if (bodies is not null && bodies.Raycast(start, forward, far, tick, in filter, out var body))
         {
             far = body.Distance;
         }
