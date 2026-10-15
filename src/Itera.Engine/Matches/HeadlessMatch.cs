@@ -193,15 +193,17 @@ public sealed class HeadlessMatch : IDisposable
 
     /// <summary>
     /// Runs two steps, which place the streaming centres (a game's streaming system, or <c>SetCenters</c>), then waits
-    /// until every column they want is resident (the view loaded, as far as no GPU is concerned): the worker threads
-    /// generate them in real time, so it waits on the clock, at most <paramref name="mostSeconds"/>, taking finished
-    /// columns as the main loop does, with no more steps. True once loaded; the match then counts as playing.
+    /// until every column they want is resident (the view loaded, as far as no GPU is concerned) and the navigation grid
+    /// is taken, as the loading screen waits for both: the worker threads and the navigation thread work in real time, so
+    /// it waits on the clock, at most <paramref name="mostSeconds"/>, taking finished columns and the finished grid as the
+    /// main loop does, with no more steps. True once loaded; the match then counts as playing. Without the grid's wait a
+    /// game's brains that need it started at a step that hung on how busy the machine was.
     /// </summary>
     public bool WaitUntilLoaded(double mostSeconds = 60)
     {
         Step(2);
         var deadline = Stopwatch.GetTimestamp() + (long)(mostSeconds * Stopwatch.Frequency);
-        while (Match.Terrain is { } terrain && !terrain.Voxels.WantedColumnsResident)
+        while (Match.Terrain is { } terrain && !(terrain.Voxels.WantedColumnsResident && Settled(terrain.Navigation)))
         {
             if (Stopwatch.GetTimestamp() > deadline)
             {
@@ -209,12 +211,22 @@ public sealed class HeadlessMatch : IDisposable
             }
 
             terrain.Update(Seconds);
+            if (!terrain.Navigation.Ready)
+            {
+                // Takes the grid the navigation thread finished, as the step after it would.
+                terrain.Navigation.AfterFixedStep();
+            }
+
             Thread.Sleep(1);
         }
 
         _matches.Phase = MatchPhase.Playing;
         return true;
     }
+
+    /// <summary>The navigation grid taken, or none to wait for (as the loading screen's Navigation task reads it).</summary>
+    private static bool Settled(Navigation.NavigationService navigation) =>
+        (navigation.Ready && !navigation.Refilling) || !navigation.Enabled || navigation.Failed;
 
     /// <summary>
     /// Runs <paramref name="ticks"/> fixed steps, each after a poll of the session (nothing offline) and followed by a

@@ -39,8 +39,8 @@ Pitfalls:
 - `pause`, `resume`, `step`, and `timescale` work only offline; `pause` and `step` refuse while the world loads.
 - Physics repeats run to run only with `Engine:Physics:Threads=1` (a test or comparison that needs equal results sets
   it); the default spreads it over threads.
-- `HeadlessMatch.WaitUntilLoaded` waits on the clock: the column workers need real time, so stepping alone never loads
-  the world.
+- `HeadlessMatch.WaitUntilLoaded` waits on the clock: the column workers and the navigation thread need real time, so
+  stepping alone never loads the world; it returns once the columns are resident and the navigation grid is taken.
 - Debug never optimises the engine's code (voxel work runs about 5 times slower): time game logic in Release.
 - The console's `settings`, `shadows`, and `sound volume` write the data folder's `settings.json`: run in the agent
   data folder (`game.py` and the tools do).
