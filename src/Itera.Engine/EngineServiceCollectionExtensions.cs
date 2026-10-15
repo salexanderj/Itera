@@ -230,10 +230,11 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<UiCommands>();
         services.TryAddSingleton<ParticleCommands>();
         services.TryAddSingleton<SoundCommands>();
-        // The loading screen and the engine's loading tasks of each match, shown in this order: Sounds, then the terrain's
-        // (AddIteraVoxels), then the game's own.
+        // The loading screen and the engine's loading tasks of each match, shown in this order: Sounds and Physics, then the
+        // terrain's (AddIteraVoxels), then the game's own.
         services.TryAddSingleton<LoadingScreen>();
         services.AddScoped<ILoadingTask, SoundsLoadingTask>();
+        services.AddScoped<ILoadingTask, PhysicsWarmUpLoadingTask>();
         // The run's UI layers, drawn in this order (later on top), the console over the match's (IMatchUiLayer).
         services.TryAddSingleton<LoadingLayer>();
         services.AddSingleton<IUiLayer>(sp => sp.GetRequiredService<LoadingLayer>());

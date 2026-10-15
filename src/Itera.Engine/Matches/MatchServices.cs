@@ -207,7 +207,7 @@ public sealed partial class MatchServices
         var steps = new List<EngineStep>
         {
             new("origin", StartOrigin, () => { }),
-            new("physics", Physics.Initialize, Physics.Dispose),
+            new("physics", InitializePhysics, Physics.Dispose),
         };
         if (Terrain is { } terrain)
         {
@@ -243,6 +243,13 @@ public sealed partial class MatchServices
         steps.Add(new("mods", () => _mods.MatchStarted(_scope), _mods.MatchEnded));
         steps.Add(new("loading", () => BeginLoading(now()), _loading.End));
         return steps;
+    }
+
+    private void InitializePhysics()
+    {
+        Physics.Initialize();
+        // Compiles Bepu's code for the engine's bodies and joints in the background, so the first ragdoll does not stall.
+        Physics.StartWarmUp();
     }
 
     private void InitializeVoxels(VoxelWorld voxels)

@@ -95,7 +95,7 @@ The stats line (F1, `stats`, `Engine:Ui:Stats`) shows frames per second, frame a
 steps per second, the session, and the living particles.
 
 The loading screen (`LoadingScreen`, `Engine:Loading`) covers the picture from the main loop's first iteration until
-every loading task (`ILoadingTask`, a DI service) is done: the engine's Sounds, World, Navigation, and Warm-up, and the
+every loading task (`ILoadingTask`, a DI service) is done: the engine's Sounds, Physics, World, Navigation, and Warm-up, and the
 game's own after them (`ModelsLoadingTask` waits for a list of models to reach the GPU); at most
 `Engine:Loading:MaxSeconds` (15), then a Warning. The loop runs as usual meanwhile, but the game's input is blocked
 (Escape and the console still work). The render thread draws `loading.frag` (`LoadingPass`) instead of the world,

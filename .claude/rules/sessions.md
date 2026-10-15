@@ -32,8 +32,8 @@ runs with exit code 0, and a refused or failed join ends the run with an Error l
 (the console's `play`, `host`, `join`, or the menu's) goes back to a screen with no match and the reason, also after an
 exception in its work (`MatchFlow.EndAfterFault`: logged at Error, not saved), and the commands that start another
 (`MatchControl`, `MatchCommands`); `leave` ends a match. One run may play many matches;
-a match's services are freed when it ends (its voxel memory to 0 MB, logged), and the edit warm-up runs once a run
-(`WarmUps`). Leaving while a match loads waits for the navigation thread (5 s at most; its fill cannot stop
+a match's services are freed when it ends (its voxel memory to 0 MB, logged), and the edit and physics warm-ups run once
+a run (`WarmUps`). Leaving while a match loads waits for the navigation thread (5 s at most; its fill cannot stop
 early) and for what a game's loading tasks wait on.
 
 What a game sends: its own messages, each kind a byte with the way it may travel (host to clients, clients to host,

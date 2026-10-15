@@ -260,7 +260,7 @@ public sealed partial class LooseBodies
     }
 
     /// <summary>The shortest turn from +y to <paramref name="direction"/> (of length 1).</summary>
-    private static Quaternion ArcFromUp(Vector3 direction)
+    internal static Quaternion ArcFromUp(Vector3 direction)
     {
         var dot = Math.Clamp(direction.Y, -1, 1);
         if (dot > 1 - 1e-6f)

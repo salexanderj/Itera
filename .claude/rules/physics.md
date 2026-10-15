@@ -122,6 +122,16 @@ that need more at once make chunks again at every read); making one allocates un
 triangles alone costs more than one over voxels, more so in small cells (columns are read one by one, voxels a brick's
 mask at a time; the figures are in ARCHITECTURE.md).
 
+The physics warm-up (`PhysicsWorld.StartWarmUp`, `PhysicsWorld.WarmUp.cs`; from the match's physics step, once a run,
+`WarmUps.Physics`; the loading screen's Physics task waits for it): a world of its own with the match's settings and Bepu
+callbacks, on a thread of its own, into which two people's ragdolls, a pile of convex hulls, a kinematic mirror, a cut
+part, a stand-in, and a trigger zone fall onto a voxel cell's static of boxes and a mesh ramp, 4 s of steps, then all
+taken away and freed. Bepu makes its solver's and collision code for each joint, pair of shapes, and kind of contact at
+run time, which ReadyToRun cannot compile ahead, so without it the first ragdoll of a run took a step of 44 ms (composite
+ReadyToRun) or 66 ms (Debug) compiling them; with it, 4.9 ms at most. A new kind of body, shape, or joint the engine makes goes into it too
+(`Exercise`); check it with the run's JIT list (`DOTNET_JitStdOutFile` and `DOTNET_JitDisasmSummary=1` on a Release
+build: first-time compiles are those not marked Tier1). Disposing the world stops it at its next step.
+
 ## A game's own bodies and statics, and the records
 
 The engine keeps a record for each Bepu body and static by handle (`BodyKinds`: a body's `BodyKind`, the voxel level
@@ -300,6 +310,7 @@ its far end `Reach` times the way between them, its radius scaled with the place
 ### Files in `src/Itera.Engine`
 
   - `Physics/`: the Bepu simulation and stand-ins (`PhysicsWorld`; a game's bodies and statics in `PhysicsWorld.Bodies.cs`;
+    the warm-up in `PhysicsWorld.WarmUp.cs`;
     the records by handle, `BodyKinds`; physics materials, `PhysicsMaterials`, the bounces, `PhysicsContacts`, the layers, `PhysicsLayers`, and the trigger zones,
     `PhysicsWorld.Triggers.cs`, `PhysicsTriggers`, `TriggerOverlap`), voxel box statics (`VoxelColliders`), loose bodies
     (`LooseBodies`: table, rest, and removal; `.Pieces.cs` balls and lifted pieces; `.Parts.cs` cut parts and ragdolls;

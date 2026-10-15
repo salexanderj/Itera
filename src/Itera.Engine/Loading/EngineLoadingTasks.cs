@@ -1,5 +1,6 @@
 using Itera.Engine.Audio;
 using Itera.Engine.Navigation;
+using Itera.Engine.Physics;
 using Itera.Engine.Rendering;
 using Itera.Engine.Voxels;
 
@@ -22,6 +23,17 @@ public sealed class SoundsLoadingTask(AudioService audio) : ILoadingTask
             return LoadingProgress.Part(audio.AllRendered, fraction);
         }
     }
+}
+
+/// <summary>
+/// The physics warm-up (<see cref="PhysicsWorld.StartWarmUp"/>): Bepu's code for the engine's bodies and joints compiled,
+/// so the first ragdoll does not stall. Done at once when none runs (an earlier match of the run warmed up).
+/// </summary>
+public sealed class PhysicsWarmUpLoadingTask(PhysicsWorld physics) : ILoadingTask
+{
+    public string Name => "Physics";
+
+    public LoadingProgress Progress => LoadingProgress.When(physics.WarmUpDone);
 }
 
 /// <summary>

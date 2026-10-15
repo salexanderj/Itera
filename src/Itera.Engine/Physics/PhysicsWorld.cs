@@ -5,6 +5,7 @@ using BepuPhysics;
 using BepuPhysics.Collidables;
 using BepuUtilities;
 using BepuUtilities.Memory;
+using Itera.Engine.Matches;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -31,7 +32,11 @@ public sealed partial class PhysicsWorld : IDisposable
     private readonly PhysicsMaterials? _materials;
     private readonly PhysicsLayers? _layers;
     private PhysicsContacts? _contacts;
-    private bool _disposed;
+    private readonly IOptions<EngineOptions>? _options;
+    private readonly WarmUps? _warmUps;
+
+    // Read by the warm-up's thread, which stops once it is set.
+    private volatile bool _disposed;
 
     // What the last step ran with, for reading what bodies did to a stand-in in it (PushOn).
     private Vector3 _stepGravity;
@@ -45,16 +50,20 @@ public sealed partial class PhysicsWorld : IDisposable
     /// </param>
     /// <param name="materials">The run's physics materials, sealed as the match begins; none for the engine's alone.</param>
     /// <param name="layers">The run's collision layers, sealed as the match begins; none for the default alone.</param>
+    /// <param name="warmUps">What the run has warmed up already (<see cref="StartWarmUp"/>); none for a world that never warms up.</param>
     public PhysicsWorld(
         ILogger<PhysicsWorld> logger,
         IOptions<EngineOptions>? options = null,
         PhysicsMaterials? materials = null,
-        PhysicsLayers? layers = null
+        PhysicsLayers? layers = null,
+        WarmUps? warmUps = null
     )
     {
         _logger = logger;
+        _options = options;
         _materials = materials;
         _layers = layers;
+        _warmUps = warmUps;
         _settings = options?.Value.Physics ?? new PhysicsSettings();
         _threads = _settings.Threads;
         _integration = new IntegrationSettings(_kinds)
@@ -68,6 +77,9 @@ public sealed partial class PhysicsWorld : IDisposable
 
     /// <summary>Bepu's worker threads asked for; 0 for <see cref="ThreadCount"/> of the processors.</summary>
     private readonly int _threads;
+
+    /// <summary>How long <see cref="Dispose"/> waits for the warm-up to stop.</summary>
+    private static readonly TimeSpan WarmUpStopTimeout = TimeSpan.FromSeconds(2);
 
     /// <summary>The Earth's gravity, the default: 9.81 metres per second squared, down.</summary>
     public static Vector3 DefaultGravity => new(0f, -StandardGravity, 0f);
@@ -494,6 +506,12 @@ public sealed partial class PhysicsWorld : IDisposable
         }
 
         _disposed = true;
+        // The warm-up's world is its own; it stops at its next step once _disposed is set.
+        if (!StopWarmUp(WarmUpStopTimeout))
+        {
+            LogWarmUpStuck(WarmUpStopTimeout.TotalSeconds);
+        }
+
         _simulation?.Dispose();
         _simulation = null;
         _dispatcher?.Dispose();

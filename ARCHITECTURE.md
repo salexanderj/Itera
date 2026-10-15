@@ -165,7 +165,7 @@ Rules:
 | `Particles/` | `ParticleEmitter` (bursts queued for the next frame, the pool's ring, attractors, the stress test), `ParticleBurst`, `ParticleRecipe` and `ParticleRecipes` (by name, at most 128), `ParticleStats`, `ParticleColours`, `StockEffects` (seven general recipes); the GPU side is `Rendering/ParticlePass` |
 | `Native/` | Valve's `steam_api` library for each platform (`Native/Steam/`, with a README naming the release), copied next to the game. |
 | `Audio/` | `AudioService` (where game code queues sounds), `AudioMixer` (the audio thread's work), `RecipeRenderer`, `AudioExchange`, `AudioStats`, `SoundRecipe` (`OneShotRecipe`, `StreamRecipe`, `SoundGenerator`; `FileRecipe`, `FileOneShotRecipe`, and `FileLoopRecipe`, sounds read from files) and `SoundRecipes` (by name, at most 256), `Files/` (the WAV and Ogg Vorbis readers), the music (`MusicPlayer`, `MusicTrack`, `MusicExchange`, `MusicFeed`, `MusicStreamer`, `MusicDecks`), `SoundEvent` and `SoundLoop`, `EngineSounds`, `SoundCache`, `WavWriter`; `Synthesis/` (`SoundRandom`, `Dsp`, `OnePole`, `StateVariableFilter`, `NoiseSource`, `ModalBank`); the device (`IAudioDevice`, `OpenAlAudioDevice`, `NullAudioDevice`, `AudioDeviceFactory`) |
-| `Loading/` | `LoadingScreen`, `ILoadingTask` and `LoadingProgress`, `EngineLoadingTasks` (Sounds, World, Navigation, Warm-up), `ModelsLoadingTask` (waits for a list of models to reach the GPU) |
+| `Loading/` | `LoadingScreen`, `ILoadingTask` and `LoadingProgress`, `EngineLoadingTasks` (Sounds, Physics, World, Navigation, Warm-up), `ModelsLoadingTask` (waits for a list of models to reach the GPU) |
 | `Ecs/` | `EcsWorld` (Arch world plus fixed and frame system groups), `IFixedUpdateSystem`, `IFrameUpdateSystem`, `EcsChecks` and `CheckedWorldExtensions` (Debug-only precondition checks for Arch calls) |
 | `Components/` | The ECS components the engine's systems share: cameras, characters and players, loose bodies, and `NetEntity` |
 | `Systems/` | The systems a game registers: the player, the cameras, physics glue, streaming centres, the benchmark, and debug aids (see "The engine's components and systems") |
@@ -221,7 +221,8 @@ exit.
 
 A match's, `MatchServices`: first the session (offline and hosting settle the match at once; a client connects, and
 `SessionService.PollJoin` carries the join on once a loop iteration while the menu shows its progress, until the host's
-edit log is downloaded), then, once a frame saying "Starting…" has been shown, physics, voxels (memory and worker
+edit log is downloaded), then, once a frame saying "Starting…" has been shown, physics (the physics warm-up once per
+run), voxels (memory and worker
 threads, for the match's seed; the edit warm-up once per run), joined world (a client loads the host's edits, a named
 save its own), navigation, voxel physics, objects (the object kinds' models, `VoxelObjects`, the placed objects, `ObjectWorld`, and their damage, `ObjectDamage`), save (the
 last save written at the match's end, after an autosave still being written), tint (the match's tint map for the
@@ -311,7 +312,7 @@ rule: the main thread only queues screenshots (`Screenshots`) and shader reloads
 
 **Loading screen (`LoadingScreen`, `Engine:Loading`).** From the loop's first iteration the loading screen covers the
 picture until every `ILoadingTask` is done: the engine's Sounds (every one-shot recipe in buffers, rendered or read from
-`SoundCache/` in the data folder), World (every column the streaming centres want, at every level, resident, then an
+`SoundCache/` in the data folder), Physics (the physics warm-up), World (every column the streaming centres want, at every level, resident, then an
 upload that has seen them), Navigation (the grid and fields taken, or none on a client or without a source), and Warm-up
 (the edit warm-up), then the game's own tasks, registered after them (`ModelsLoadingTask` waits for a list of models to
 reach the GPU). Loading is a phase of the loop, not a wait before it: streaming, uploads, fixed steps, the session, and
@@ -1242,6 +1243,16 @@ a piece's boxes was tried first and cost up to 137 ms a step.
   bodies rest, freezes and thaws as one (its joints are added again at the thaw), and is removed whole. The engine's
   ragdoll and cut-body physics are tested but have no caller until a game cuts models. Cut bodies collide without sweeps
   (passive continuous detection), which keeps piles of them cheap.
+- **The physics warm-up.** Bepu makes its solver's code for each kind of joint and its collision code for each pair of
+  shapes and kind of contact at run time (through reflection and generics over its own structs), so ahead-of-time
+  compilation (ReadyToRun) covers none of it: in a game's first ragdoll the main thread waited while about 400 of Bepu's
+  methods were compiled, a step of 44 ms in a composite ReadyToRun build and 66 ms in a Debug build (2026-10-15). `PhysicsWorld.StartWarmUp` (from the match's physics step, once a run, `WarmUps.Physics`) builds a world of
+  its own with the match's settings and Bepu callbacks on a thread of its own, drops into it what the engine's bodies are
+  made of (two people's ragdolls onto a voxel cell's static of boxes and a mesh ramp, a pile of convex hulls of three
+  sizes, a client's kinematic mirror, a cut part's compound of hulls, a stand-in, and a trigger zone), steps it 4 s (they
+  land, sleep, wake, and a ragdoll freezes and thaws), takes it all away, and frees it, in about 0.2 s; the loading screen
+  waits for it (Physics). The first deaths then took a step of 4.9 ms at most, and a few kinds of contact are still
+  compiled as they first occur, a few at a step.
 
 ### A game sets the physics
 
