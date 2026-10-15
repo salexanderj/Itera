@@ -179,6 +179,8 @@ public sealed class FrameStatsTests
         stats.Update(0.5, 1000);
         stats.RecordFrame(0.5);
         stats.Update(1.0, 1000 + 4096);
+        // Kept alive past the summary: in Release the JIT otherwise drops an array read only for its length.
+        GC.KeepAlive(garbage);
 
         var summary = Assert.NotNull(stats.LastSummary);
         Assert.InRange(summary.AllocatedBytes, garbage.Length, garbage.Length + 16 * 1024);
