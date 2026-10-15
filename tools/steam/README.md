@@ -22,6 +22,7 @@ tools/steam/upload.sh --branch NAME  # set it live on beta branch NAME instead o
   STEAM_WINDOWS_DEPOT=1234562   # the app's depot IDs (Steamworks: SteamPipe, Depots)
   STEAM_LINUX_DEPOT=1234563
   STEAM_BUILDER=builder-account  # the steamcmd account (see steamcmd below)
+  STEAM_EXECUTABLE=MyGame        # optional: the executable's name in the depots (MyGame.exe, MyGame); default Game
   ```
 
 The script refuses to upload with uncommitted changes, so every build is a commit. Its description on the Steamworks
@@ -30,13 +31,17 @@ Everything it writes goes under `publish/steam/` (ignored by git): `content/<rid
 (the build scripts it wrote), and `output/` (the test, publish, and steamcmd logs, and steamcmd's cache, which makes
 later uploads faster; keep it).
 
+Each configuration's tests run after its build, with the build servers shut down between the two: with SDK 10.0.112 a
+test run started straight after a build has aborted at once with "Internal CLR error (0x80131506)" and no results. A
+run that aborts that way runs once more; a failing test stops the upload.
+
 ## What goes into the depots
 
 Each depot is `dotnet publish -c Release -r <rid> --self-contained` with composite ReadyToRun and a single file. The
 install folder holds about 13 entries:
 
 ```
-Game (Game.exe)         the game, its packages, and .NET in one file
+Game (Game.exe)         the game, its packages, and .NET in one file (named STEAM_EXECUTABLE when set)
 libglfw.so.3            glfw3.dll           windows and input
 libopenal.so            soft_oal.dll        audio
 libshaderc_shared.so    shaderc_shared.dll  the shader compiler
@@ -74,8 +79,9 @@ and line numbers. Release, because Debug turns on the Vulkan validation layers.
 
 - The two depots in the Developer Comp package, the Beta Testing package the testers' keys come from, and the store
   package.
-- Launch options for Windows (`Game.exe`) and Linux (`Game`): "Play", and "Host a game through Steam"
-  (`--Engine:Session:Mode=Host --Engine:Session:Transport=Steam`). Steam asks which one on Play.
+- Launch options for Windows (`Game.exe`) and Linux (`Game`), or the names `STEAM_EXECUTABLE` gives: "Play", and
+  "Host a game through Steam" (`--Engine:Session:Mode=Host --Engine:Session:Transport=Steam`). Steam asks which one on
+  Play.
 - Linux runtime: Steam Linux Runtime 3.0 (sniper).
 - Branch `testing`, no password. The Builds page shows no branch controls until the app has a build, so the first build
   goes up with `--no-live`; then make the branch there and set that build live on it and on the default branch.

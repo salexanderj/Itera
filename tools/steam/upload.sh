@@ -12,6 +12,7 @@
 # src/Game/steam.env (the game's own; shell assignments, sourced) gives:
 #   STEAM_WINDOWS_DEPOT and STEAM_LINUX_DEPOT  the app's depot IDs (Steamworks: SteamPipe, Depots)
 #   STEAM_BUILDER  the steamcmd account; it must have logged in by hand once
+#   STEAM_EXECUTABLE  optional: the game's executable as the app's launch options name it (default Game, the project's)
 # Writes everything under publish/steam/ (ignored by git): content/<rid>/, scripts/, and output/ (steamcmd's logs and
 # its cache, which makes later uploads faster). Development tool, not game code.
 set -euo pipefail
@@ -62,6 +63,7 @@ fi
 windows_depot="${STEAM_WINDOWS_DEPOT:?set STEAM_WINDOWS_DEPOT in src/Game/steam.env}"
 linux_depot="${STEAM_LINUX_DEPOT:?set STEAM_LINUX_DEPOT in src/Game/steam.env}"
 builder="${STEAM_BUILDER:?set STEAM_BUILDER in src/Game/steam.env}"
+executable="${STEAM_EXECUTABLE:-Game}"
 
 # Every build is a commit, so the log header's version (1.0.0+<commit>) names the build a tester ran. A preview uploads
 # nothing, so it only warns.
@@ -76,6 +78,25 @@ fi
 commit="$(git rev-parse --short HEAD)"
 description="$name $commit $(date +%Y-%m-%d)"
 
+# Builds configuration $1 and runs its tests, writing both into the log $2. The build servers are shut down between the
+# two: with SDK 10.0.112 a test run started straight after a build has aborted at once with "Internal CLR error
+# (0x80131506)" and no results (twice in a row at the Release tests, after the Debug run). A run that aborts that way is
+# tried once more; a run with a failing test is not.
+test_configuration() {
+    local configuration="$1" log="$2" attempt
+    dotnet build -c "$configuration" -nodeReuse:false > "$log" 2>&1 || return 1
+    for attempt in 1 2; do
+        dotnet build-server shutdown > /dev/null 2>&1 || true
+        if dotnet test -c "$configuration" --no-build >> "$log" 2>&1; then
+            return 0
+        fi
+        if [[ "$attempt" == 2 ]] || ! grep -q "Internal CLR error" "$log"; then
+            return 1
+        fi
+        echo "dotnet test aborted with an internal CLR error, not a failing test; running it again" | tee -a "$log" >&2
+    done
+}
+
 mkdir -p "$root/output" "$root/scripts"
 if [[ "$run_tests" == 1 ]]; then
     # Debug runs the extra checks (EcsChecks, Debug-only throws); Release is what ships, and some code differs there, so
@@ -83,7 +104,7 @@ if [[ "$run_tests" == 1 ]]; then
     for configuration in Debug Release; do
         log="$root/output/test-$configuration.log"
         echo "Testing in $configuration (output in publish/steam/output/test-$configuration.log)..."
-        if ! dotnet test -c "$configuration" > "$log" 2>&1; then
+        if ! test_configuration "$configuration" "$log"; then
             tail -30 "$log" >&2
             echo "tests failed in $configuration; nothing uploaded" >&2
             exit 1
@@ -110,14 +131,21 @@ for rid in win-x64 linux-x64; do
     fi
 done
 
-for file in win-x64/Game.exe win-x64/steam_api64.dll linux-x64/Game linux-x64/libsteam_api.so; do
+# The executable takes the name the app's launch options give it (STEAM_EXECUTABLE): a single-file build runs under any
+# name, and the project keeps its own (Game) for the tools that run it from the repository.
+if [[ "$executable" != Game ]]; then
+    mv "$root/content/win-x64/Game.exe" "$root/content/win-x64/$executable.exe"
+    mv "$root/content/linux-x64/Game" "$root/content/linux-x64/$executable"
+fi
+
+for file in "win-x64/$executable.exe" win-x64/steam_api64.dll "linux-x64/$executable" linux-x64/libsteam_api.so; do
     if [[ ! -f "$root/content/$file" ]]; then
         echo "publish/steam/content/$file is missing; nothing uploaded" >&2
         exit 1
     fi
 done
-if [[ ! -x "$root/content/linux-x64/Game" ]]; then
-    echo "publish/steam/content/linux-x64/Game is not executable; nothing uploaded" >&2
+if [[ ! -x "$root/content/linux-x64/$executable" ]]; then
+    echo "publish/steam/content/linux-x64/$executable is not executable; nothing uploaded" >&2
     exit 1
 fi
 
