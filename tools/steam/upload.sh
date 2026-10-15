@@ -78,23 +78,35 @@ fi
 commit="$(git rev-parse --short HEAD)"
 description="$name $commit $(date +%Y-%m-%d)"
 
-# Builds configuration $1 and runs its tests, writing both into the log $2. The build servers are shut down between the
-# two: with SDK 10.0.112 a test run started straight after a build has aborted at once with "Internal CLR error
-# (0x80131506)" and no results (twice in a row at the Release tests, after the Debug run). A run that aborts that way is
-# tried once more; a run with a failing test is not.
-test_configuration() {
-    local configuration="$1" log="$2" attempt
-    dotnet build -c "$configuration" -nodeReuse:false > "$log" 2>&1 || return 1
+# Runs dotnet with the arguments after the log $1, adding its output to the log. With SDK 10.0.112 the dotnet CLI has
+# aborted as it starts with "Internal CLR error (0x80131506)" (a build, a publish, and a test run, most often one
+# started straight after a build: twice in a row at the Release tests, after the Debug run), which is no failure of the
+# build or the tests. A run that aborts that way runs once more, after the build servers are shut down; any other
+# failure stops.
+dotnet_once_more() {
+    local log="$1" attempt size
+    shift
     for attempt in 1 2; do
-        dotnet build-server shutdown > /dev/null 2>&1 || true
-        if dotnet test -c "$configuration" --no-build >> "$log" 2>&1; then
+        size="$(wc -c < "$log")"
+        if dotnet "$@" >> "$log" 2>&1; then
             return 0
         fi
-        if [[ "$attempt" == 2 ]] || ! grep -q "Internal CLR error" "$log"; then
+        if [[ "$attempt" == 2 ]] || ! tail -c "+$((size + 1))" "$log" | grep -q "Internal CLR error"; then
             return 1
         fi
-        echo "dotnet test aborted with an internal CLR error, not a failing test; running it again" | tee -a "$log" >&2
+        echo "dotnet $1 aborted with an internal CLR error, not a failure of its own; running it again" \
+            | tee -a "$log" >&2
+        dotnet build-server shutdown > /dev/null 2>&1 || true
     done
+}
+
+# Builds configuration $1 and runs its tests, writing both into the log $2, the build servers shut down between them.
+test_configuration() {
+    local configuration="$1" log="$2"
+    : > "$log"
+    dotnet_once_more "$log" build -c "$configuration" -nodeReuse:false || return 1
+    dotnet build-server shutdown > /dev/null 2>&1 || true
+    dotnet_once_more "$log" test -c "$configuration" --no-build
 }
 
 mkdir -p "$root/output" "$root/scripts"
@@ -122,11 +134,12 @@ fi
 for rid in win-x64 linux-x64; do
     echo "Publishing $rid..."
     rm -rf "$root/content/$rid"
-    if ! dotnet publish src/Game -c Release -r "$rid" --self-contained -o "$root/content/$rid" \
-        -p:PublishReadyToRun=true -p:PublishReadyToRunComposite=true -p:PublishSingleFile=true \
-        > "$root/output/publish-$rid.log" 2>&1; then
+    : > "$root/output/publish-$rid.log"
+    if ! dotnet_once_more "$root/output/publish-$rid.log" publish src/Game -c Release -r "$rid" --self-contained \
+        -o "$root/content/$rid" -p:PublishReadyToRun=true -p:PublishReadyToRunComposite=true \
+        -p:PublishSingleFile=true; then
         tail -30 "$root/output/publish-$rid.log" >&2
-        echo "publish failed for $rid (exit code 134 is the dotnet CLI crashing; run again); nothing uploaded" >&2
+        echo "publish failed for $rid; nothing uploaded" >&2
         exit 1
     fi
 done

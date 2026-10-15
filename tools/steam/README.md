@@ -31,9 +31,10 @@ Everything it writes goes under `publish/steam/` (ignored by git): `content/<rid
 (the build scripts it wrote), and `output/` (the test, publish, and steamcmd logs, and steamcmd's cache, which makes
 later uploads faster; keep it).
 
-Each configuration's tests run after its build, with the build servers shut down between the two: with SDK 10.0.112 a
-test run started straight after a build has aborted at once with "Internal CLR error (0x80131506)" and no results. A
-run that aborts that way runs once more; a failing test stops the upload.
+Each configuration's tests run after its build, with the build servers shut down between the two. With SDK 10.0.112
+the dotnet CLI has aborted as it starts with "Internal CLR error (0x80131506)", most often in a test run started
+straight after a build; any build, test run, or publish of the script's that aborts that way runs once more. A failed
+build or test stops the upload.
 
 ## What goes into the depots
 
