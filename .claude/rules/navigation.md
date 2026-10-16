@@ -37,7 +37,7 @@ an object placed or removed whole during play (`PlaceObject`, `RemoveObject`: th
 so they are not stamped at a fill), changes the cells under its box (read once loaded; its stamp changes nothing); a
 world whose generator places nothing reads objects wherever the run has kinds (`ObjectWorld.IsEnabled`), and each change of an object's copy
 (`ObjectDamage.ReadChanges`: an edit or a cut, a replay, a copy made again after the cap dropped it, a reset's healing)
-has the cells under its reach read again where loaded, else once loaded (one lost past the ring is passed over: the edits
+has the cells under its box read again (what an edit changed, or the object's whole reach) where loaded, else once loaded (one lost past the ring is passed over: the edits
 that changed it wait for their own reads; those during a refill are read after it). A run of an object's voxels whose
 bottom lies within `LowCentimetres` over the ground stands on the floor, in a stamp as in a read. A stamp keeps the headroom's top where an object raised the floor, and a read looks up from the new floor, so the
 two differ in headroom there.

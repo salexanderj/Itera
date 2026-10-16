@@ -137,15 +137,20 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   `IObjectEdits`), which applies it at once to the objects of the filled areas the edit's bounds reach where the log
   indexes it in a level-0 column under the object's reach (`VoxelWorld.IndexesUnder`: what a replay finds; an edit wholly
   past the map's sides, or above or below its height, changes no object), in the log's order (`ObjectEditing`, integer maths through `ObjectTurns.FromObject`, each voxel's sample points turned into the
-  world's centimetres and read by the edit's own `Contains`): clears, clears of some materials, sets of air, and lifts
+  world's centimetres and read by the edit's own `Contains`): clears, clears of some materials (boxes, and spheres,
+  `VoxelEdit.MaterialsSphere`: a crater of the ground's materials leaves objects of their own whole), sets of air, and lifts
   (whose object voxels go, not into the piece) take a voxel by the share they cover (`VoxelEditing.ChangeByShare` on
-  `VoxelEditing.Parts` of it); a paint recolours a solid voxel whose middle it covers (a paint of air changes no object); fills, sets of a material, and
+  `VoxelEditing.Parts` of it; a voxel a clear of some materials cannot change, and one whose sample points' box misses a
+  sphere, is passed over before its share is counted, which changes no result: a crater of 1.5 m across a gate of 10 cm
+  voxels took 8 ms a pass in Release counting the voxels round the sphere one point at a time; whether an edit changes
+  an object at all is answered at its first changed voxel); a paint recolours a solid voxel whose middle it covers (a paint of air changes no object); fills, sets of a material, and
   pieces put back change only the world, so objects never gain voxels. A clear with a maker counts what it takes from
   them, in cubic centimetres, into the game's `IVoxelRemovals` with the world's, before anything changes (not from an object whose copy the cap
   dropped, which may differ between peers). An object an
   edit changes keeps a `DamagedObject`: its changed 8-voxel bricks over its kind's voxels (copied whole at their first
   change), read through it (`IObjectVoxelSource`, as the kinds and shapes are); its parts' models are made again once an
-  update, at most `PartsPerUpdate` (8) parts an update in the order the objects changed, from those voxels by the kind's
+  update, at most `PartsPerUpdate` (1) part an update (a part of 128 by 128 by 58 voxels takes 3 to 4 ms in Release;
+  the buffers it is made in, 8 MB, are made at `Initialize` where the run has kinds) in the order the objects changed, from those voxels by the kind's
   rule (`PartLevel.Build`'s sampling; level 0 the kind's with the changed bricks
   over it, the coarser levels sampled again over each changed brick), a part whose border holds a changed brick with
   it, each a model of its own owning its kind's window (the old trees freed after `VoxelModels.Replace`), drawn once on
@@ -158,8 +163,10 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   for bit; when an area drops, its objects' copies go. A reset drops every copy. At most `Engine:Objects:MostDamaged`
   (256) objects keep a copy: past it, the copy of the damaged object farthest from every streaming centre goes (a
   Warning once a match), and it is made again by replay, `RebuildsPerUpdate` (2) an update, once it is nearer than the
-  farthest kept. Readers keep what they read until `ObjectDamage.ReadChanges` names the object (a ring of 256 changes;
-  past it, read everything again): the mover's chunks under its reach are made again, its statics' shapes swapped for
+  farthest kept. Readers keep what they read until `ObjectDamage.ReadChanges` names the object with a box (a ring of 256
+  changes; past it, read everything again): an edit's change the edit's bounds and two of the object's voxels and 2 cm round
+  them, within its reach (so a crater in a long wall has its readers read the columns round it again, not the wall's),
+  and a copy placed, removed, dropped, healed, or cut its whole reach; the mover's chunks under the box are made again, its statics' shapes swapped for
   compounds of its own voxels, and rays read it as they go. The far copies take the world's edits at its coarse levels
   as any voxel does; a removed part's are cleared by the host (below). The rule is `ObjectEditing.RuleVersion`, hashed into the kinds' fingerprint (so the match's
   identity) with the copies' rule: raise it with any change to what an edit does to objects. The cap counts objects,

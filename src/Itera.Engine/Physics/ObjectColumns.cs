@@ -315,7 +315,7 @@ internal sealed class ObjectColumns
             {
                 ref readonly var change = ref _damageChanges[i];
                 _damageSeen = change.Version;
-                // The chunks whose columns the object's reach meets.
+                // The chunks whose columns the change's box meets: what an edit changed, or the object's whole reach.
                 var side = (long)ChunkSide * _cell;
                 long cx0 = DeterministicMath.FloorDivide(change.MinX, side),
                     cx1 = DeterministicMath.FloorDivide(change.MaxX, side),

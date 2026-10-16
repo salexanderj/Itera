@@ -49,8 +49,8 @@ namespace Itera.Engine.Navigation;
 /// The voxel objects a world places block as solid does: every fill from the source has the objects as generated stamped
 /// onto it (<see cref="NavGridScanner.StampObjects"/>), and a read takes them as they are, with the voxels, from the
 /// mover's reading of them, once they are known round the cell. A removal of an object's part changes the cells under
-/// its box, and each change of an object's copy (<see cref="ObjectDamage.ReadChanges"/>) has the cells under its reach
-/// read again where loaded.
+/// its box, and each change of an object's copy (<see cref="ObjectDamage.ReadChanges"/>) has the cells under its box
+/// (what an edit changed, or the object's whole reach) read again where loaded.
 /// </para>
 /// <para>
 /// A game closes boxes of cells to every walker whatever the world holds there (<see cref="Close"/>: a gate's leaf, a
@@ -637,8 +637,9 @@ public sealed partial class NavigationService : IDisposable
     /// <summary>
     /// Reads the objects' changes since the last step (<see cref="ObjectDamage.ReadChanges"/>: any change of an object's
     /// copy: an edit or a cut, a replay, a copy made again after the cap dropped it, a reset's healing): the cells under
-    /// each changed object's reach (and a cell round it) are read again where loaded and its objects known, else wait with
-    /// the stamped edits (a change repeated for one object, as a replay records each edit, counts once). Changes lost past
+    /// each change's box (what an edit changed, or the object's whole reach; and a cell round it) are read again where
+    /// loaded and its objects known, else wait with the stamped edits (a change repeated for one object and box, as a
+    /// replay of a cut may record, counts once). Changes lost past
     /// the ring are passed over (the edits that made them wait for their own reads); those made during a refill are read
     /// after it, as the edits are.
     /// </summary>
@@ -662,7 +663,7 @@ public sealed partial class NavigationService : IDisposable
             {
                 ref readonly var change = ref _damageChanges[i];
                 _damageSeen = change.Version;
-                if (i > 0 && change.Object == _damageChanges[i - 1].Object)
+                if (i > 0 && change with { Version = 0 } == _damageChanges[i - 1] with { Version = 0 })
                 {
                     continue;
                 }

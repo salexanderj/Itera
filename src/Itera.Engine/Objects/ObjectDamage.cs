@@ -5,8 +5,10 @@ using Microsoft.Extensions.Options;
 namespace Itera.Engine.Objects;
 
 /// <summary>
-/// One change to a placed object's voxels (<see cref="ObjectDamage.ReadChanges"/>): the object, and the box its kind
-/// reaches round its anchor (absolute centimetres across x and z, inclusive), whose collision readers read again.
+/// One change to a placed object's voxels (<see cref="ObjectDamage.ReadChanges"/>): the object, and the box whose
+/// collision readers read again (absolute centimetres across x and z, inclusive): what an edit changed, within the
+/// object's reach round its anchor, or the whole reach where the copy changed at once (placed, removed, dropped, healed,
+/// or a part cut off).
 /// </summary>
 internal readonly record struct ObjectDamageChange(
     long Version,
@@ -45,9 +47,10 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
 
     /// <summary>
     /// The damaged parts whose models are made again in one update; the rest wait for the next, the objects in the order
-    /// they were changed.
+    /// they were changed. One: a part of 10 cm voxels (128 by 128 by 58) takes about 3 to 4 ms to make again in Release,
+    /// and eight of them in one update held a frame for about 30 ms.
     /// </summary>
-    public const int PartsPerUpdate = 8;
+    public const int PartsPerUpdate = 1;
 
     private readonly VoxelWorld _world;
     private readonly ObjectWorld _objects;
@@ -121,6 +124,12 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         _world.ObjectEdits = this;
         _objects.Listener = this;
         _labeller.Start();
+        if (_kinds.Count > 0)
+        {
+            // The part models' buffers, 8 MB, made here behind the loading screen rather than at the first damage.
+            MakeBuffers();
+        }
+
         IsInitialized = true;
     }
 
@@ -480,6 +489,8 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
 
         if (!_damaged.TryGetValue(placement.Id, out var damaged))
         {
+            // Asked whether it changes the object at all (an answer at its first changed voxel), so an edit that only
+            // passes near makes no copy.
             if (!ObjectEditing.Apply(in edit, in placement, kind, null, false, default))
             {
                 return;
@@ -495,7 +506,7 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         if (ObjectEditing.Apply(in edit, in placement, kind, damaged, true, default))
         {
             damaged.Touched();
-            Record(in placement);
+            Record(in placement, in edit);
             if (!damaged.Queued)
             {
                 damaged.Queued = true;
@@ -872,19 +883,39 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         }
     }
 
-    /// <summary>Notes a change to the object's voxels for the readers that keep what they read.</summary>
+    /// <summary>Notes a change anywhere in the object's voxels for the readers that keep what they read: its whole reach.</summary>
     private void Record(in ObjectPlacement placement)
     {
         var reach = _kinds[placement.Kind].ReachCentimetres;
         var anchor = placement.Anchor;
-        _changes[Version % KeptChanges] = new ObjectDamageChange(
-            Version + 1,
+        Record(placement.Id, anchor.X - reach, anchor.X + reach, anchor.Z - reach, anchor.Z + reach);
+    }
+
+    /// <summary>
+    /// Notes the change <paramref name="edit"/> made to the object's voxels: the edit's bounds and two of the object's
+    /// voxels and 2 cm round them (a voxel it changed reaches past its bounds by less than its turned diagonal and a
+    /// centimetre of rounding, and a reader's column reads the voxel its centre lands in), within its reach. So a crater in a long wall has the readers read
+    /// again the columns round it, not the whole wall's.
+    /// </summary>
+    private void Record(in ObjectPlacement placement, in VoxelEdit edit)
+    {
+        var kind = _kinds[placement.Kind];
+        var reach = kind.ReachCentimetres;
+        var margin = 2 * kind.UnitCentimetres + 2;
+        var anchor = placement.Anchor;
+        edit.GetBounds(out var min, out var end);
+        Record(
             placement.Id,
-            anchor.X - reach,
-            anchor.X + reach,
-            anchor.Z - reach,
-            anchor.Z + reach
+            Math.Max(anchor.X - reach, min.X - margin),
+            Math.Min(anchor.X + reach, end.X - 1 + margin),
+            Math.Max(anchor.Z - reach, min.Z - margin),
+            Math.Min(anchor.Z + reach, end.Z - 1 + margin)
         );
+    }
+
+    private void Record(ObjectId id, int minX, int maxX, int minZ, int maxZ)
+    {
+        _changes[Version % KeptChanges] = new ObjectDamageChange(Version + 1, id, minX, maxX, minZ, maxZ);
         Version++;
     }
 
@@ -952,13 +983,7 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         const int edge = VoxelConstants.ChunkSize;
         const int border = ObjectPart.BorderVoxels;
         const int brick = VoxelConstants.BrickSize;
-        if (_levelZero.Length == 0)
-        {
-            _levelZero = new byte[VoxelConstants.ChunkVoxels];
-            _levelZeroDensities = new byte[VoxelConstants.ChunkVoxels];
-            _level = new byte[VoxelConstants.ChunkVoxels];
-            _levelDensities = new byte[VoxelConstants.ChunkVoxels];
-        }
+        MakeBuffers();
 
         var kind = damaged.Kind;
         var part = kind.Parts[index];
@@ -1061,6 +1086,18 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         for (var level = 0; level < VoxelModels.MaxLevels; level++)
         {
             _models.Free(new ModelTree(old[level]));
+        }
+    }
+
+    /// <summary>The buffers a part's levels are decoded into and made again in, once.</summary>
+    private void MakeBuffers()
+    {
+        if (_levelZero.Length == 0)
+        {
+            _levelZero = new byte[VoxelConstants.ChunkVoxels];
+            _levelZeroDensities = new byte[VoxelConstants.ChunkVoxels];
+            _level = new byte[VoxelConstants.ChunkVoxels];
+            _levelDensities = new byte[VoxelConstants.ChunkVoxels];
         }
     }
 

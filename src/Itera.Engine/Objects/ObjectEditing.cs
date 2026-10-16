@@ -91,8 +91,16 @@ internal static class ObjectEditing
                         kind.Voxel(x, y, z, out material, out density);
                     }
 
-                    // Removals and paints change only what is there: air of no density stays.
-                    if (density == VoxelDensity.Empty && material == VoxelConstants.Air)
+                    // Removals and paints change only what is there: air of no density stays. A clear of some materials
+                    // changes only a solid voxel of one of them (ChangeByShare), so the rest are passed over before their
+                    // shares are counted: a crater of the ground's materials then costs an object of others a read a voxel.
+                    if (
+                        (density == VoxelDensity.Empty && material == VoxelConstants.Air)
+                        || (
+                            edit.Operation == VoxelEditOperation.ClearMaterials
+                            && (material == VoxelConstants.Air || !edit.ClearsMaterial(material))
+                        )
+                    )
                     {
                         continue;
                     }
@@ -132,6 +140,12 @@ internal static class ObjectEditing
                     }
 
                     changed = true;
+                    if (!write && removed.IsEmpty)
+                    {
+                        // Only asked whether it would change: it would.
+                        return true;
+                    }
+
                     if (!removed.IsEmpty && lost > 0)
                     {
                         removed[before] += lost * volume;
@@ -251,6 +265,14 @@ internal static class ObjectEditing
             return 0;
         }
 
+        if (
+            edit.Shape == VoxelEditShape.Sphere
+            && MissesSphere(in edit, minX, maxX, anchor.Y + firstY, anchor.Y + lastY, minZ, maxZ)
+        )
+        {
+            return 0;
+        }
+
         var covered = 0;
         for (var rz = 0; rz < rows; rz++)
         {
@@ -267,6 +289,30 @@ internal static class ObjectEditing
         }
 
         return covered;
+    }
+
+    /// <summary>
+    /// True when no point of the box (absolute centimetres, inclusive) lies in the sphere: its nearest point to the centre
+    /// is farther than the radius. Every sample point of a voxel lies in the box of its eight extreme ones (the turn is the
+    /// floor of a sum linear in each axis, so each coordinate's least and most are at the corners), so a voxel whose box
+    /// misses the sphere has none covered, as counting them would find; most of a sphere's bounds are such voxels.
+    /// </summary>
+    private static bool MissesSphere(
+        in VoxelEdit edit,
+        long minX,
+        long maxX,
+        long minY,
+        long maxY,
+        long minZ,
+        long maxZ
+    )
+    {
+        var centre = edit.Origin;
+        long dx = Math.Clamp(centre.X, minX, maxX) - centre.X,
+            dy = Math.Clamp(centre.Y, minY, maxY) - centre.Y,
+            dz = Math.Clamp(centre.Z, minZ, maxZ) - centre.Z,
+            r = edit.Radius;
+        return dx * dx + dy * dy + dz * dz > r * r;
     }
 
     /// <summary>True when the edit covers the point (ox, oy, oz) along the object's own axes from its anchor.</summary>

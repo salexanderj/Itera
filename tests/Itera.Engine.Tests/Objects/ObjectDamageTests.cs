@@ -270,6 +270,105 @@ public sealed class ObjectDamageTests : IDisposable
     }
 
     /// <summary>
+    /// A sphere clearing the ground's stone, reaching the trunk of bark beside it, digs the ground and makes no copy and
+    /// names no change; one clearing stone and bark takes from the trunk the solid voxels a plain clear does (the plain
+    /// clear also thins the air voxels' densities, which a clear of some materials leaves).
+    /// </summary>
+    [Fact]
+    public void A_sphere_clearing_some_materials_leaves_objects_of_others_whole()
+    {
+        var stoneOnly = Make();
+        var both = Make();
+        var plain = Make();
+        var centre = new VoxelCoord(60, 0, 0);
+
+        stoneOnly.World.Apply(VoxelEdit.MaterialsSphere(centre, 120, [Systems.FlatTestGenerator.Stone]));
+        both.World.Apply(VoxelEdit.MaterialsSphere(centre, 120, [Systems.FlatTestGenerator.Stone, Bark]));
+        plain.World.Apply(VoxelEdit.Sphere(centre, 120, VoxelEditOperation.Clear));
+
+        var trunk = stoneOnly.Placements[0];
+        Assert.Equal((0, 0L), (stoneOnly.Damage.Count, stoneOnly.Damage.Version));
+        Assert.True(stoneOnly.World.Raycast(new Vector3(0.6f, 1, 0), -Vector3.UnitY, 5, out var hit));
+        Assert.Equal(2.2f, hit.DistanceMetres, 0.05f);
+        var expected = plain.Damage.Find(trunk.Id);
+        var actual = both.Damage.Find(trunk.Id);
+        Assert.NotNull(expected);
+        Assert.NotNull(actual);
+        var size = expected.Kind.Size;
+        var taken = 0;
+        for (var z = 0; z < size.Z; z++)
+        {
+            for (var y = 0; y < size.Y; y++)
+            {
+                for (var x = 0; x < size.X; x++)
+                {
+                    expected.Voxel(x, y, z, out var material, out var density);
+                    actual.Voxel(x, y, z, out var got, out var gotDensity);
+                    expected.Kind.Voxel(x, y, z, out var was, out _);
+                    Assert.Equal(material, got);
+                    if (material != VoxelConstants.Air)
+                    {
+                        Assert.Equal(density, gotDensity);
+                    }
+
+                    taken += was != VoxelConstants.Air && material == VoxelConstants.Air ? 1 : 0;
+                }
+            }
+        }
+
+        Assert.True(taken > 50, $"{taken} voxels taken from the trunk");
+    }
+
+    /// <summary>
+    /// A mover's columns of 2 cm read over the turned rock before each of a dozen small craters across it read what a
+    /// fresh mover's do after it: the change each crater names covers what it changed, though it is a small part of the
+    /// rock's reach.
+    /// </summary>
+    [Fact]
+    public void A_mover_reading_before_each_crater_reads_what_a_fresh_one_does()
+    {
+        var scene = Make();
+        var passability = new NothingPassable();
+        var behind = new Itera.Engine.Physics.ObjectColumns(scene.Objects, scene.Kinds, passability, 2, scene.Damage);
+        const int windowX = -200,
+            windowZ = 100,
+            width = 100,
+            depth = 100;
+        var tops = new int[width * depth];
+        var fresh = new int[width * depth];
+        behind.ColumnTops(windowX, windowZ, width, depth, -10, 40, tops);
+        var rock = scene.Placements[1];
+        var reach = scene.Kinds[rock.Kind].ReachCentimetres;
+        var changes = new ObjectDamageChange[1];
+        var random = new Random(5);
+
+        for (var i = 0; i < 12; i++)
+        {
+            var at = new VoxelCoord(-300 + random.Next(-60, 61), random.Next(0, 50), 300 + random.Next(-60, 61));
+            scene.World.Apply(VoxelEdit.Sphere(at, random.Next(6, 16), VoxelEditOperation.Clear));
+            if (scene.Damage.Version > 0)
+            {
+                scene.Damage.ReadChanges(scene.Damage.Version - 1, changes, out _);
+                Assert.True(changes[0].MaxX - changes[0].MinX < reach, $"crater {i} named {changes[0]}");
+            }
+
+            behind.ColumnTops(windowX, windowZ, width, depth, -10, 40, tops);
+            new Itera.Engine.Physics.ObjectColumns(scene.Objects, scene.Kinds, passability, 2, scene.Damage).ColumnTops(
+                windowX,
+                windowZ,
+                width,
+                depth,
+                -10,
+                40,
+                fresh
+            );
+            Assert.Equal(fresh, tops);
+        }
+
+        Assert.True(scene.Damage.Version >= 8, $"{scene.Damage.Version} craters reached the rock");
+    }
+
+    /// <summary>
     /// The trunk's top, cut off and removed, goes with every voxel joined to it and none below the cut; applied live it
     /// falls (a part for a body), replayed it does not.
     /// </summary>
@@ -735,8 +834,9 @@ public sealed class ObjectDamageTests : IDisposable
     }
 
     /// <summary>
-    /// A dig across the border of a kind two parts wide makes both parts' models again: each holds its box's voxels as
-    /// the damage left them, and its coarser levels what the kind's rule makes of them.
+    /// A dig across the border of a kind two parts wide makes both parts' models again, one an update
+    /// (<see cref="ObjectDamage.PartsPerUpdate"/>): each holds its box's voxels as the damage left them, and its coarser
+    /// levels what the kind's rule makes of them.
     /// </summary>
     [Fact]
     public void Damaged_parts_models_are_their_voxels_at_three_levels()
@@ -748,8 +848,11 @@ public sealed class ObjectDamageTests : IDisposable
             VoxelEdit.Sphere(new VoxelCoord(wall.Anchor.X + 94, 30, wall.Anchor.Z), 15, VoxelEditOperation.Clear)
         );
         scene.Damage.Update();
-
         var damaged = scene.Damage.Find(wall.Id)!;
+        Assert.Equal(1, ObjectDamage.PartsPerUpdate);
+        Assert.Equal(1, damaged.Models.Count(model => model >= 0));
+        scene.Damage.Update();
+
         var kind = scene.Kinds[wall.Kind];
         Assert.Equal(2, kind.PartCount);
         var materials = new byte[VoxelConstants.ChunkVoxels];
