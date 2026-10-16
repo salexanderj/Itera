@@ -15,8 +15,8 @@ Sessions (`Engine:Session`, `SessionService`): `Mode=Host` listens on UDP port 4
 `Address=host:port` joins it. A match is a DI scope of its own (`MatchServices`), started after the run's steps, so
 the window is open; the loading screen's ring shows `Joining ...` and the download (`SessionService.PollJoin`). The
 client says hello; the host answers with the match (seed, step rate, and identity: `IMatchIdentity`, the generator's id
-and version with voxel terrain, with the object kinds' fingerprint where the world places objects, else the
-application's name) and its edit log with the pieces, sent
+and version with voxel terrain, with the object kinds' fingerprint where the run has kinds, else the application's
+name) and its edit log with the pieces, sent
 from its polls as the transport has room (`ISessionTransport.ReliableRoom`), and the client's world is built from the
 host's seed whatever its own options say; a game may send match data of its own in the welcome and refuse a client
 whose rules differ (`ISessionMatchData`: its hash). A game without voxel terrain sends a payload of the edit log's
@@ -108,12 +108,12 @@ damaged file as `NAME.save.damaged`, not as the backup), while a save that is wh
 build (`EditLogSerializer.IsMismatch`), or that cannot be opened, ends the start with both files left, and a deleted
 save starts a new world whatever its backup; a failed write leaves the old save, deletes its temporary file, and is told
 at the menu.
-Save names refuse Windows device names (CON, NUL, COM1, ...). The file is the edit log stream, format 8 (it may hold
-resets, capsule edits, clears of some materials, removals of voxel objects' parts, and clears of their far copies, and
-ends with the game's sections, at most 256, none in a join payload; its generator id is the world's, with the object
-kinds' fingerprint where the world places objects, `VoxelObjectKinds.WorldId`, so a save of other kinds is refused;
-formats 1 to 7 still read, those before 7 with their plain generator id taken for such a world too, and an older build
-refuses format 8). A client never saves. The log indexes at most 2^24 column entries since its last
+Save names refuse Windows device names (CON, NUL, COM1, ...). The file is the edit log stream, format 9 (it may hold
+resets, capsule edits, clears of some materials, removals of voxel objects' parts, clears of their far copies, and
+objects placed and removed whole during play, and ends with the game's sections, at most 256, none in a join payload;
+its generator id is the world's, with the object kinds' fingerprint where the run has kinds,
+`VoxelObjectKinds.WorldId`, so a save of other kinds is refused; formats 1 to 8 still read, those before 7 with their
+plain generator id taken for such a world too, and an older build refuses format 9). A client never saves. The log indexes at most 2^24 column entries since its last
 reset (`EditLog.MaxIndexEntries`, counted over all ten levels whatever `Engine:Voxels:Levels` is, so every game
 agrees): a save, a join payload, or a host's edit past that is refused, and a game's edits
 (`VoxelWorld.TryApply`, which also refuses an edit far outside the map) stop short of it.
