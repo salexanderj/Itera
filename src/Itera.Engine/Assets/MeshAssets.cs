@@ -1,11 +1,13 @@
 using System.Diagnostics;
+using System.Numerics;
 using Microsoft.Extensions.Logging;
 
 namespace Itera.Engine.Assets;
 
 /// <summary>
-/// The run's mesh assets (<see cref="MeshAsset"/>): models a game declares from glTF files (<see cref="Declare"/>) and
-/// meshes it builds in code (<see cref="Add"/>), each known by its name and its index (<see cref="Find"/>). A game
+/// The run's mesh assets (<see cref="MeshAsset"/>): models a game declares from glTF files (<see cref="Declare"/>),
+/// meshes it builds in code (<see cref="Add"/>), and variants of either with some materials' base colours replaced
+/// (<see cref="DeclareVariant"/>: a team's colours), each known by its name and its index (<see cref="Find"/>). A game
 /// declares them at its run startup (<c>IRunStartup</c>, the run's "game" step), mods at theirs; the run's "mesh assets"
 /// step, after the mods', reads every declared file on worker threads (<see cref="LoadAll"/>), and a file that cannot be
 /// read stops the run with a message naming it. Assets stay for the whole run, so an index never goes stale and needs no
@@ -49,6 +51,47 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
     {
         ArgumentNullException.ThrowIfNull(asset);
         return AddEntry(name, new Entry(name, null, 1f, asset));
+    }
+
+    /// <summary>
+    /// Declares the asset <paramref name="name"/> as a variant of the asset <paramref name="of"/> (declared or added
+    /// before it): the same vertices, indices, primitives, textures, rig, and clips, with the base colour of each of its
+    /// materials named in <paramref name="baseColours"/> (linear RGBA) replaced, so a model can be drawn in a team's
+    /// colours. Made at the run's "mesh assets" step, after the files are read; a material name the source lacks stops
+    /// the step, naming it. Returns its index. Before that step only.
+    /// </summary>
+    public int DeclareVariant(string name, string of, IReadOnlyDictionary<string, Vector4> baseColours)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(of);
+        ArgumentNullException.ThrowIfNull(baseColours);
+        if (!_byName.ContainsKey(of))
+        {
+            throw new InvalidOperationException(
+                $"The mesh asset '{name}' is a variant of '{of}', which is not declared or added before it."
+            );
+        }
+
+        foreach (var (material, colour) in baseColours)
+        {
+            if (
+                !float.IsFinite(colour.X)
+                || !float.IsFinite(colour.Y)
+                || !float.IsFinite(colour.Z)
+                || !float.IsFinite(colour.W)
+            )
+            {
+                throw new ArgumentException($"The colour of material '{material}' is not finite.", nameof(baseColours));
+            }
+        }
+
+        return AddEntry(
+            name,
+            new Entry(name, null, 1f, null)
+            {
+                Of = of,
+                Colours = new Dictionary<string, Vector4>(baseColours, StringComparer.Ordinal),
+            }
+        );
     }
 
     /// <summary>The index of the asset <paramref name="name"/>, or -1 when there is none.</summary>
@@ -146,6 +189,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
             throw new InvalidOperationException($"{failed} mesh asset(s) could not be read; the first: {firstFailure}");
         }
 
+        MakeVariants();
         Loaded = true;
         long triangles = 0;
         long textureBytes = 0;
@@ -173,6 +217,49 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
             textures ? "" : " (not decoded: no graphics)",
             milliseconds
         );
+    }
+
+    /// <summary>Makes each variant from its source, in the order declared, so a variant of a variant follows it.</summary>
+    private void MakeVariants()
+    {
+        foreach (var entry in _entries)
+        {
+            if (entry.Of is null || entry.Asset is not null)
+            {
+                continue;
+            }
+
+            var source = _entries[_byName[entry.Of]].Asset!;
+            var colours = entry.Colours!;
+            var missing = colours.Keys.Where(material => !Array.Exists(source.Materials, m => m.Name == material));
+            if (missing.Any())
+            {
+                throw new InvalidOperationException(
+                    $"The mesh asset '{entry.Name}' recolours material(s) {string.Join(", ", missing)}, which '{entry.Of}' lacks."
+                );
+            }
+
+            var materials = Array.ConvertAll(
+                source.Materials,
+                material =>
+                    colours.TryGetValue(material.Name, out var colour)
+                        ? material with
+                        {
+                            BaseColour = colour,
+                        }
+                        : material
+            );
+            entry.Asset = new MeshAsset(
+                entry.Name,
+                source.Vertices,
+                source.Indices,
+                source.Primitives,
+                materials,
+                source.Textures,
+                source.Rig,
+                source.Skin
+            );
+        }
     }
 
     private int AddEntry(string name, Entry entry)
@@ -203,6 +290,12 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
         public float MetresPerUnit { get; } = metresPerUnit;
 
         public MeshAsset? Asset { get; set; } = asset;
+
+        /// <summary>The asset a variant is made from, or null for a file or a mesh built in code.</summary>
+        public string? Of { get; init; }
+
+        /// <summary>A variant's base colours by material name.</summary>
+        public Dictionary<string, Vector4>? Colours { get; init; }
     }
 
     [LoggerMessage(

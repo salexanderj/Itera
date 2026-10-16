@@ -86,6 +86,61 @@ public sealed class MeshAssetsTests : IDisposable
         Assert.Throws<ArgumentOutOfRangeException>(() => _assets.Declare("nan", WriteTriangle("nan"), float.NaN));
     }
 
+    [Fact]
+    public void A_variant_shares_its_sources_mesh_and_recolours_the_materials_named()
+    {
+        var body = MeshMaterialData.Default with { Name = "body", BaseColour = new Vector4(1, 0.5f, 0, 1) };
+        var bands = MeshMaterialData.Default with { Name = "bands", BaseColour = new Vector4(0.4f, 0.1f, 0.7f, 1) };
+        var mesh = new MeshAsset(
+            "person",
+            [new MeshAssetVertex()],
+            [0, 0, 0],
+            [new(0, 3, 0), new(0, 3, 1)],
+            [body, bands],
+            []
+        );
+        _assets.Add("person", mesh);
+        var file = _assets.Declare("file", WriteTriangle("file"));
+
+        var variant = _assets.DeclareVariant(
+            "soldier",
+            "person",
+            new Dictionary<string, Vector4> { ["body"] = new(0.2f, 0.2f, 0.25f, 1) }
+        );
+        _assets.LoadAll(textures: false);
+
+        var made = _assets[variant];
+        Assert.Equal("soldier", made.Name);
+        Assert.Same(mesh.Vertices, made.Vertices);
+        Assert.Same(mesh.Indices, made.Indices);
+        Assert.Same(mesh.Primitives, made.Primitives);
+        Assert.Equal(new Vector4(0.2f, 0.2f, 0.25f, 1), made.Materials[0].BaseColour);
+        Assert.Equal("body", made.Materials[0].Name);
+        Assert.Same(bands, made.Materials[1]);
+        Assert.Equal(new Vector4(1, 0.5f, 0, 1), mesh.Materials[0].BaseColour);
+        Assert.Equal((1, 2), (file, variant));
+        Assert.Equal(variant, _assets.Find("soldier"));
+    }
+
+    [Fact]
+    public void A_variant_of_nothing_or_of_a_material_its_source_lacks_is_refused()
+    {
+        var mesh = new MeshAsset("plane", [new MeshAssetVertex()], [], [], [MeshMaterialData.Default], []);
+        _assets.Add("plane", mesh);
+        var colours = new Dictionary<string, Vector4> { ["paint"] = Vector4.One };
+
+        Assert.Throws<InvalidOperationException>(() => _assets.DeclareVariant("ghost", "nothing", colours));
+        Assert.Throws<ArgumentException>(() =>
+            _assets.DeclareVariant("nan", "plane", new Dictionary<string, Vector4> { [""] = new(float.NaN, 0, 0, 1) })
+        );
+        _assets.DeclareVariant("painted", "plane", colours);
+        var error = Assert.Throws<InvalidOperationException>(() => _assets.LoadAll(textures: false));
+
+        Assert.Contains("paint", error.Message, StringComparison.Ordinal);
+        Assert.Contains("'plane' lacks", error.Message, StringComparison.Ordinal);
+        Assert.False(_assets.Loaded);
+    }
+
     private string WriteTriangle(string name)
     {
         var gltf = new GltfBuilder();

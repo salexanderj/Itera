@@ -51,7 +51,11 @@ bodies); the deterministic skeletons for bodies, aim, and foot IK are `Animation
 `MeshAssets` (run-wide singleton) holds the run's assets by name and index. A game declares its models at its run
 startup (`IRunStartup`, the run's "game" step): `Declare(name, path, metresPerUnit)` (a relative path from the
 executable's folder; 0.01 for a file in centimetres) or `Add(name, MeshAsset)` for a mesh built in code; mods may at
-theirs. The run's "mesh assets" step, after the mods', reads every declared file on worker threads (`LoadAll`): without
+theirs. `DeclareVariant(name, of, baseColours)` declares a variant of an asset declared or added before it: the same
+vertices, indices, primitives, textures, rig, and clips (the arrays shared, so its clips' indices are its source's), with
+the base colour of each material named replaced (linear RGBA; a team's colours, where a tint, which multiplies every
+colour, cannot turn one hue into another), made at the step after the files are read; a material its source lacks stops
+the step, naming it. The run's "mesh assets" step, after the mods', reads every declared file on worker threads (`LoadAll`): without
 graphics (`Engine:Window:Mode=None`, and `HeadlessRun`) it decodes no images and materials name no textures. A file
 that cannot be read stops the run with an Error line naming it; warnings (an image it cannot decode, an unlit
 material, lines or points left out, `KHR_texture_transform` not applied) are Warning lines. Then `Mesh assets: N
