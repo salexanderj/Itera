@@ -87,8 +87,20 @@ out reads the cells a move at the middle does. It also reads the match's mesh co
 world places (`ObjectColumns`, `.claude/rules/objects.md`), combined with the voxels by the highest top, the lowest
 bottom, and any cell; without terrain it reads them and the loose bodies in cells
 of `Engine:Physics:CollisionCentimetres` (10 by default), with no column to wait for, and its map edge at the play
-area's world edge. The core makes it (`AddIteraEngine`: the world's constructor with terrain,
-`VoxelCharacterMover(passability, colliders, cell, edge, bodies)` without), and the play area (`PlayArea`, round the
+area's world edge. Over terrain its cells may be finer than the voxels (`Engine:Physics:TerrainCellCentimetres`, a whole
+divisor of them; 0, the default, for the voxels'): it then meets objects, solid models, meshes, and loose bodies at
+their own size, and reads the voxels through `FineGround`: a run of blocking voxels is ground in the fine cells from its
+bottom (whole) up to its surface (the density's over its highest voxel), blended across the voxels' columns with no
+seam where neighbours' surfaces lie within the ramp of each other (bilinear over each quarter of a column between its
+centre, its sides' middles, the mean of the two columns where they join, and its corner, the mean of the joined group
+of the four columns there; where all join, the coarse mover's blend between centres), a fine cell solid where its
+centre lies under it, so every fine column's surface lies within half a cell of its top as on a fine grid. A voxel's
+column and those round it must be resident for the fine cells over it. On smooth hills of 1 m voxels a 10 cm mover's
+feet keep within about 2 cm of the 1 m mover's (`FineMoverTests`), but a ledge under a voxel high is a step no higher
+than the body's, where 1 m cells walk a column up to a cell over the feet (their allowance is a cell); a walking move
+costs about 2.4 times as much (41 against 17 microseconds in Release). Navigation keeps its own reading of the objects
+in the voxels' cells. The core makes it (`AddIteraEngine`: `VoxelCharacterMover(world, cell, passability, bodies,
+colliders)` with terrain, `VoxelCharacterMover(passability, colliders, cell, edge, bodies)` without), and the play area (`PlayArea`, round the
 grid, or `PlayArea.WithoutTerrain`, a 10 cm grid's bounds, with a bounds constructor for a game to register its own).
 Where a mesh's top is over the voxels' but its surface lies under theirs (a steep triangle half in the ground), the
 voxels' surface holds the body.

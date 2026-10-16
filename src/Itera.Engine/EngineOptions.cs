@@ -632,6 +632,21 @@ public sealed class PhysicsSettings
     public const int MostCollisionCentimetres = 10;
 
     /// <summary>
+    /// The edge of the character mover's cells over voxel terrain, in centimetres: 0 (the default) for the world's
+    /// level-0 voxels; else a whole divisor of them, 1 to <see cref="MostTerrainCellCentimetres"/> (a match whose world's
+    /// voxels it does not divide does not start). Finer than the voxels, the mover meets voxel objects, solid models,
+    /// mesh colliders, and loose bodies at their own size (a 10 cm wall blocks 10 cm, not a whole voxel's column), and
+    /// reads the voxels as cells of ground under their surfaces, blended between the voxels' columns as coarse cells are
+    /// (<c>FineGround</c>): on smooth hills of 1 m voxels the feet keep within about 2 cm of the 1 m cells' path, where a
+    /// ledge under a voxel high is a step (no higher than the body's) rather than a ramp, and a walking move costs about
+    /// 2.4 times as much at 10 cm (41 against 17 microseconds in Release).
+    /// </summary>
+    public int TerrainCellCentimetres { get; set; }
+
+    /// <summary>The largest <see cref="TerrainCellCentimetres"/>.</summary>
+    public const int MostTerrainCellCentimetres = 100;
+
+    /// <summary>
     /// The solver's substeps in each fixed step, 1 to <see cref="MostSubsteps"/>: more keep fast, stacked, or jointed
     /// bodies steadier, at more cost (Bepu solves the constraints, and moves the bodies that have any, once a substep).
     /// A game may change it during a match (<c>PhysicsWorld.SetSolver</c>).

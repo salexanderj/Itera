@@ -102,7 +102,9 @@ lists the game's). Commonly used:
 - Other systems: `--Engine:Physics:SettleSeconds` (0.5 to 60), `MaxLooseBodies` (1 to 1024), `Substeps` (1; 1 to 8),
   `VelocityIterations` (8; 1 to 32), `LinearDamping` and `AngularDamping` (0.03; 0 to 1), `Gravity:X`, `Gravity:Y`, `Gravity:Z` (0, -9.81, 0; each -100
   to 100), `CollisionCentimetres`
-  (the character mover's cells without voxel terrain, 1 to 10, default 10); `--Engine:Objects:HandOverLevel` (2; 1 to
+  (the character mover's cells without voxel terrain, 1 to 10, default 10), `TerrainCellCentimetres` (its cells over
+  terrain: 0, the default, for the world's level-0 voxels, else a whole divisor of them, 1 to 100, so it meets objects
+  at their own size over coarse ground); `--Engine:Objects:HandOverLevel` (2; 1 to
   9: the world level from which voxel objects are drawn as copies in its voxels), `MostDamaged` (256; 1 to 65,536: the
   damaged voxel objects that keep their copies at once, the farthest from every streaming centre dropped past it);
   `--Engine:Particles:Enabled=false` (`Capacity` 16,384 to 1,048,576); `--Engine:Audio:Enabled=false` (`Volume` 0 to

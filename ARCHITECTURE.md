@@ -1192,7 +1192,11 @@ changes collision at once:
   the lower bottom, or either cell of the two, without virtual calls. Only the cells a triangle passes through block (a
   closed mesh has no inside), one on a cell's boundary the cell behind its front, so a closed mesh of a voxel box blocks
   the box's outer voxels, and a column's surface is the triangle's plane at the column's centre, so a mesh slope is
-  walked as a ramp. Without terrain it reads the colliders alone in cells of `Engine:Physics:CollisionCentimetres` (10 by
+  walked as a ramp. Over terrain its cells may be finer than the voxels (`Engine:Physics:TerrainCellCentimetres`), so it
+  meets objects, solid models, and meshes at their own size over coarse ground: it then reads the voxels as fine cells of
+  ground under their surfaces, blended across the voxels' columns with no seam (`FineGround`; on smooth 1 m hills the 10
+  cm mover's feet keep within about 2 cm of the 1 m mover's, and a walking move costs about 2.4 times as much). Without
+  terrain it reads the colliders alone in cells of `Engine:Physics:CollisionCentimetres` (10 by
   default), with no column to wait for, and its map edge at the play area's world edge (`PlayArea.WorldEdgeMetres`). Its
   tests run the same bodies on voxels and on triangles built from the same features (`MoverFeatureTests`,
   `DensityGroundTests`). A move over triangles alone in 10 cm cells costs about 1.5

@@ -160,6 +160,13 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
             1,
             PhysicsSettings.MostCollisionCentimetres
         );
+        Range(
+            failures,
+            "Physics:TerrainCellCentimetres",
+            physics.TerrainCellCentimetres,
+            0,
+            PhysicsSettings.MostTerrainCellCentimetres
+        );
         Range(failures, "Physics:Substeps", physics.Substeps, 1, PhysicsSettings.MostSubsteps);
         Range(
             failures,

@@ -160,7 +160,12 @@ public sealed partial class NavigationService : IDisposable
             NavArea.Of(voxels.Grid),
             options.Value.Navigation.WindowCells,
             placed,
-            mover.Objects,
+            // The objects in the world's voxels' cells, as the navigation's cells read the voxels: the mover's reading
+            // where it is in them, else one of its own.
+            mover.CellCentimetres == voxels.Grid.BaseCentimetres
+            || mover.Objects is null
+                ? mover.Objects
+                : new ObjectColumns(placed, placed.Kinds, passability, voxels.Grid.BaseCentimetres, damage),
             damage
         ) { }
 

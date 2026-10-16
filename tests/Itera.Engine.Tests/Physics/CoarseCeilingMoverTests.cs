@@ -18,11 +18,16 @@ public sealed class CoarseCeilingFixture : IDisposable
     {
         World = TestWorlds.Load(new OpeningGenerator(), new Vector3(0, 2, 1), radiusMetres: 12);
         Mover = new VoxelCharacterMover(World, new NothingPassable());
+        Fine = new VoxelCharacterMover(World, 10, new NothingPassable());
     }
 
     public VoxelWorld World { get; }
 
+    /// <summary>The mover in the world's 1 m cells.</summary>
     public VoxelCharacterMover Mover { get; }
+
+    /// <summary>The mover in 10 cm cells over the same world (<c>FineGround</c>).</summary>
+    public VoxelCharacterMover Fine { get; }
 
     public void Dispose() => World.Dispose();
 }
@@ -33,7 +38,17 @@ public sealed class CoarseCeilingFixture : IDisposable
 /// coarse reaches over the head); a body on the lintel's top stands on it; a wall beside the opening still stops a
 /// body in the air.
 /// </summary>
-public sealed class CoarseCeilingMoverTests(CoarseCeilingFixture fixture) : IClassFixture<CoarseCeilingFixture>
+public sealed class CoarseCeilingMoverTests(CoarseCeilingFixture fixture)
+    : CeilingMoverTests(fixture.Mover),
+        IClassFixture<CoarseCeilingFixture>;
+
+/// <summary>The same in 10 cm cells over the 1 m voxels (<c>FineGround</c>).</summary>
+public sealed class FineCeilingMoverTests(CoarseCeilingFixture fixture)
+    : CeilingMoverTests(fixture.Fine),
+        IClassFixture<CoarseCeilingFixture>;
+
+/// <summary>A mover over the 1 m world of <see cref="CoarseCeilingFixture"/> under its lintel.</summary>
+public abstract class CeilingMoverTests(VoxelCharacterMover mover)
 {
     private const float Step = 1f / 60;
     private const float Gravity = 20;
@@ -41,7 +56,7 @@ public sealed class CoarseCeilingMoverTests(CoarseCeilingFixture fixture) : ICla
     // A person 1.75 m tall whose feet step onto a top in the air, as a game's jump asks.
     private static readonly CharacterShape s_shape = new(1.75f, 0.2625f, 0.42f, StepsInAir: true);
 
-    private readonly VoxelCharacterMover _mover = fixture.Mover;
+    private readonly VoxelCharacterMover _mover = mover;
 
     /// <summary>
     /// A body in the corner of the opening's mouth (the east jamb and the wall's face), rising fast with a push into the

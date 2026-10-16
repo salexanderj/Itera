@@ -273,8 +273,10 @@ public static class EngineServiceCollectionExtensions
         var tags = services.GetRequiredService<IVoxelSurfaceTags>();
         if (services.GetService<VoxelWorld>() is { } world)
         {
+            var terrainCell = TerrainCell(services, world);
             return new VoxelCharacterMover(
                 world,
+                terrainCell,
                 passability,
                 services.GetRequiredService<LooseBodyVoxels>(),
                 colliders
@@ -282,13 +284,13 @@ public static class EngineServiceCollectionExtensions
             {
                 Materials = materials,
                 SurfaceTags = tags,
-                // The objects the world places, as its ground.
+                // The objects the world places, as its ground, in the mover's cells.
                 Objects = services.GetService<ObjectWorld>() is { } placed
                     ? new ObjectColumns(
                         placed,
                         services.GetRequiredService<VoxelObjectKinds>(),
                         passability,
-                        world.Grid.BaseCentimetres,
+                        terrainCell,
                         services.GetService<ObjectDamage>()
                     )
                     : null,
@@ -307,6 +309,13 @@ public static class EngineServiceCollectionExtensions
         {
             Materials = materials,
         };
+    }
+
+    /// <summary>The character mover's cells over <paramref name="world"/>: <c>Engine:Physics:TerrainCellCentimetres</c>, or its voxels.</summary>
+    internal static int TerrainCell(IServiceProvider services, VoxelWorld world)
+    {
+        var cell = services.GetRequiredService<IOptions<EngineOptions>>().Value.Physics.TerrainCellCentimetres;
+        return cell > 0 ? cell : world.Grid.BaseCentimetres;
     }
 
     private static LooseBodies CreateLooseBodies(IServiceProvider services)
@@ -340,7 +349,7 @@ public static class EngineServiceCollectionExtensions
         var passability = services.GetRequiredService<IVoxelPassability>();
         if (services.GetService<VoxelWorld>() is { } world)
         {
-            return new LooseBodyVoxels(bodies, world, passability);
+            return new LooseBodyVoxels(bodies, passability, TerrainCell(services, world));
         }
 
         var cell = services.GetRequiredService<IOptions<EngineOptions>>().Value.Physics.CollisionCentimetres;
