@@ -76,6 +76,9 @@ internal sealed class ObjectColumns
     /// <summary>The chunks of columns kept now.</summary>
     internal int ChunkCount => _chunks.Count;
 
+    /// <summary>The edge of its cells, in centimetres: the mover's.</summary>
+    public int CellCentimetres => _cell;
+
     /// <summary>
     /// True when the objects that may stand in the cells from (<paramref name="x0"/>, <paramref name="z0"/>) to
     /// (<paramref name="x1"/>, <paramref name="z1"/>) are all known: the areas under them within the map, widened by the

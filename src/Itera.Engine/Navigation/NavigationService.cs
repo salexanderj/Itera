@@ -160,12 +160,13 @@ public sealed partial class NavigationService : IDisposable
             NavArea.Of(voxels.Grid),
             options.Value.Navigation.WindowCells,
             placed,
-            // The objects in the world's voxels' cells, as the navigation's cells read the voxels: the mover's reading
-            // where it is in them, else one of its own.
+            // The objects in the mover's cells: its own reading where those are the world's voxels; where they are
+            // finer, one of navigation's own in them (its reads, spread over the window, would push the mover's
+            // chunks out of its cache), so a cell reads every object's voxel in its square.
             mover.CellCentimetres == voxels.Grid.BaseCentimetres
             || mover.Objects is null
                 ? mover.Objects
-                : new ObjectColumns(placed, placed.Kinds, passability, voxels.Grid.BaseCentimetres, damage),
+                : new ObjectColumns(placed, placed.Kinds, passability, mover.CellCentimetres, damage),
             damage
         ) { }
 
@@ -177,7 +178,7 @@ public sealed partial class NavigationService : IDisposable
     /// <param name="area">The square the window may cover (the map); none for <paramref name="voxels"/>'s map.</param>
     /// <param name="windowCells">The most cells the window is across.</param>
     /// <param name="placed">The objects the world places, with <paramref name="voxels"/>; null for none.</param>
-    /// <param name="objectColumns">The objects as the mover reads them (shared with it), with <paramref name="placed"/>.</param>
+    /// <param name="objectColumns">The objects as the mover reads them, in its cells, with <paramref name="placed"/>.</param>
     /// <param name="damage">What edits did to the objects, with <paramref name="placed"/>.</param>
     internal NavigationService(
         INavGridSource? source,

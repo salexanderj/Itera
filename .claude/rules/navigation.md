@@ -27,7 +27,10 @@ the cells (`NavGridScanner.StampObjects`: the placer's objects in the areas the 
 mover's cells by `ObjectColumnReader`): each run of an object's blocking voxels in a cell's centre column blocks the cell
 where it rises more than `LowCentimetres` over the ground (a trunk), raises the floor where lower (a flat stone), and
 lowers the headroom where it hangs over the floor (a branch); passable voxels (leaves) change nothing. A read takes the
-objects as they are (damaged too) from the mover's `ObjectColumns` (`NavGridScanner.Objects`, shared, main thread), by
+objects as they are (damaged too) from the mover's `ObjectColumns` (`NavGridScanner.Objects`, main thread: the
+mover's own where its cells are the voxels'; where they are finer, `Engine:Physics:TerrainCellCentimetres`, one of
+navigation's own in the same cells, and a cell reads every object's column in its 50 cm square, so a 10 cm wall
+anywhere in it blocks it and a 30 cm block raises its floor, `NavigationPlacedObjectsTests`), by
 the highest top and the lowest bottom with the voxels, and waits, with the stamped edits, until the objects round the
 cell are known (their areas filled, `ObjectsKnown`). A removal of an object's part (`VoxelEditOperation.RemovePart`), and
 an object placed or removed whole during play (`PlaceObject`, `RemoveObject`: the generator's placer does not know them,
