@@ -362,7 +362,13 @@ public sealed class ObjectPlacingTests : IDisposable
                 new EngineOptions { Objects = new ObjectSettings { HandOverLevel = copied ? 2 : 1 } }
             );
             Objects = new ObjectWorld(World, Kinds, generator, options, NullLogger<ObjectWorld>.Instance);
-            KindModels = new VoxelObjects(Kinds, World, Models, NullLogger<VoxelObjects>.Instance);
+            KindModels = new VoxelObjects(
+                Kinds,
+                World,
+                Models,
+                new NothingPassable(),
+                NullLogger<VoxelObjects>.Instance
+            );
             Damage = new ObjectDamage(
                 World,
                 Objects,

@@ -8,16 +8,15 @@ namespace Itera.Engine.Physics;
 /// Reads one object's runs of blocked cells in one column of the mover's cells (the world's level-0 voxels): the cells
 /// whose centres, turned into the object, land on its solid voxels that are not passable, each run with the height of the
 /// object's surface over the column's centre and that voxel's material. <see cref="ObjectColumns"/> reads the placed
-/// objects through it, and navigation the objects as generated (<c>Navigation.NavObjects</c>), so the two agree. It
-/// keeps a table of each kind's columns' lowest and highest blocking voxels, made at the kind's first read, so only the
-/// cells that can hold them are read; one thread at a time.
+/// objects through it, and navigation the objects as generated (<c>Navigation.NavObjects</c>), so the two agree. The cells
+/// come from the kind's columns' runs (<see cref="VoxelObjectKind.ColumnRuns"/>, made once a run and shared by every
+/// reader): an object as its kind is takes them whole, and a damaged one reads, through its damage, only the cells over
+/// its kind's solid voxels. Any thread, one at a time.
 /// </summary>
 internal sealed class ObjectColumnReader
 {
     private readonly MaterialSet _passable;
     private readonly int _cell;
-    private readonly Dictionary<VoxelObjectKindId, ColumnRange[]> _ranges = [];
-    private readonly Dictionary<VoxelObjectKindId, ColumnRange[]> _solidRanges = [];
 
     /// <param name="passable">The materials characters pass through.</param>
     /// <param name="cellCentimetres">The edge of the mover's cells: the world's level-0 voxels.</param>
@@ -34,7 +33,7 @@ internal sealed class ObjectColumnReader
     /// <summary>
     /// Adds to <paramref name="column"/>, lowest first, the runs of cells the object blocks in column
     /// (<paramref name="x"/>, <paramref name="z"/>) of the cells, read through <paramref name="voxels"/> (its kind, or its
-    /// damage with <paramref name="damaged"/>: then within its kind's solid voxels, passable ones too, since edits only
+    /// damage with <paramref name="damaged"/>: then over its kind's solid voxels, passable ones too, since edits only
     /// take voxels away but a paint may make a passable one blocking).
     /// </summary>
     public void AddColumn(
@@ -63,32 +62,80 @@ internal sealed class ObjectColumnReader
             return;
         }
 
-        // Only the cells that can hold the column's solid voxels.
-        var range = RangesOf(placement.Kind, kind, passableToo: damaged)[vx + kind.Size.X * vz];
-        if (range.Low > range.High)
+        var runs = kind.ColumnRuns(in _passable);
+        var index = vx + kind.Size.X * vz;
+        // Whole runs of cells over the kind's runs, the cells between two runs that meet joined.
+        int lo = int.MinValue,
+            hi = int.MinValue;
+        foreach (var run in damaged ? runs.Solid(index) : runs.Blocking(index))
         {
+            if (!CellsOf(kind, anchor, run, out var from, out var to))
+            {
+                continue;
+            }
+
+            if (lo != int.MinValue && from == hi + 1)
+            {
+                hi = to;
+                continue;
+            }
+
+            if (lo != int.MinValue)
+            {
+                Add(voxels, kind, anchor, vx, vz, damaged, lo, hi, column);
+            }
+
+            lo = from;
+            hi = to;
+        }
+
+        if (lo != int.MinValue)
+        {
+            Add(voxels, kind, anchor, vx, vz, damaged, lo, hi, column);
+        }
+    }
+
+    /// <summary>
+    /// The cells from <paramref name="from"/> to <paramref name="to"/> whose centres land in the run of the object's voxel
+    /// column; false when none does.
+    /// </summary>
+    private bool CellsOf(VoxelObjectKind kind, VoxelCoord anchor, VoxelRun run, out int from, out int to)
+    {
+        // Cell y's centre, y * cell + cell / 2, lies in voxel floor((centre - anchor.Y + the kind's anchor) / unit).
+        var unit = kind.UnitCentimetres;
+        var shift = (long)anchor.Y - kind.AnchorCentimetres.Y - _cell / 2;
+        from = (int)-DeterministicMath.FloorDivide(-((long)run.Low * unit + shift), _cell);
+        to = (int)DeterministicMath.FloorDivide((long)(run.High + 1) * unit - 1 + shift, _cell);
+        return from <= to;
+    }
+
+    /// <summary>
+    /// Adds the cells from <paramref name="lo"/> to <paramref name="hi"/>: as one span for an object as its kind is, else
+    /// each run of them whose centres land on a solid voxel of its damage that is not passable.
+    /// </summary>
+    private void Add(
+        IObjectVoxelSource voxels,
+        VoxelObjectKind kind,
+        VoxelCoord anchor,
+        int vx,
+        int vz,
+        bool damaged,
+        int lo,
+        int hi,
+        List<ObjectSpan> column
+    )
+    {
+        if (!damaged)
+        {
+            column.Add(Span(voxels, kind, anchor, vx, vz, lo, hi));
             return;
         }
 
-        var y0 = (int)DeterministicMath.FloorDivide((long)anchor.Y + kind.BottomCentimetres, _cell);
-        var y1 = (int)DeterministicMath.FloorDivide((long)anchor.Y + kind.TopCentimetres - 1, _cell);
-        var from = (int)
-            Math.Max(
-                y0,
-                DeterministicMath.FloorDivide((long)range.Low * unit - kind.AnchorCentimetres.Y + anchor.Y, _cell)
-            );
-        var to = (int)
-            Math.Min(
-                y1,
-                DeterministicMath.FloorDivide(
-                    (long)(range.High + 1) * unit - 1 - kind.AnchorCentimetres.Y + anchor.Y,
-                    _cell
-                )
-            );
+        var half = _cell / 2.0;
         var runStart = int.MinValue;
-        for (var y = from; y <= to + 1; y++)
+        for (var y = lo; y <= hi + 1; y++)
         {
-            var solid = y <= to && Solid(voxels, vx, CellVoxelY(kind, anchor, y, half), vz);
+            var solid = y <= hi && Solid(voxels, vx, CellVoxelY(kind, anchor, y, half), vz);
             if (solid && runStart == int.MinValue)
             {
                 runStart = y;
@@ -148,68 +195,6 @@ internal sealed class ObjectColumnReader
         voxels.Voxel(vx, CellVoxelY(kind, anchor, hi, _cell / 2.0), vz, out var centre, out _);
         return new ObjectSpan(lo, hi, hi + 1, centre);
     }
-
-    /// <summary>
-    /// The lowest and highest solid voxel that is not passable (with <paramref name="passableToo"/>, any solid voxel) of
-    /// each of the kind's voxel columns (index <c>x + Size.X * z</c>; Low over High for none), made from its parts' bricks
-    /// at its first read: so a column reads only the cells an object's column can block.
-    /// </summary>
-    private ColumnRange[] RangesOf(VoxelObjectKindId id, VoxelObjectKind kind, bool passableToo)
-    {
-        var table = passableToo ? _solidRanges : _ranges;
-        if (table.TryGetValue(id, out var found))
-        {
-            return found;
-        }
-
-        var size = kind.Size;
-        var ranges = new ColumnRange[size.X * size.Z];
-        Array.Fill(ranges, new ColumnRange(short.MaxValue, short.MinValue));
-        const int border = ObjectPart.BorderVoxels;
-        const int brick = VoxelConstants.BrickSize;
-        foreach (var part in kind.Parts)
-        {
-            var level = part.Levels[0];
-            for (var b = 0; b < level.Bricks.Length; b++)
-            {
-                var packed = level.Bricks[b];
-                // The brick's corner in the kind's voxels; only the part's own voxels count (its border is another's).
-                int bx = ((packed & 15) << 3) - border + part.Offset.X,
-                    by = (((packed >> 4) & 15) << 3) - border + part.Offset.Y,
-                    bz = (((packed >> 8) & 15) << 3) - border + part.Offset.Z;
-                var payload = level.PayloadStart[b];
-                for (var j = 0; j < brick * brick * brick; j++)
-                {
-                    int x = bx + (j & 7),
-                        y = by + ((j >> 3) & 7),
-                        z = bz + (j >> 6);
-                    var material = level.Uniform[b] ? level.Payload[payload] : level.Payload[payload + j];
-                    if (
-                        material == VoxelConstants.Air
-                        || (!passableToo && _passable.Contains(material))
-                        || x < part.Offset.X
-                        || y < part.Offset.Y
-                        || z < part.Offset.Z
-                        || x >= part.Offset.X + part.OwnSize.X
-                        || y >= part.Offset.Y + part.OwnSize.Y
-                        || z >= part.Offset.Z + part.OwnSize.Z
-                    )
-                    {
-                        continue;
-                    }
-
-                    ref var range = ref ranges[x + size.X * z];
-                    range = new ColumnRange((short)Math.Min(range.Low, y), (short)Math.Max(range.High, y));
-                }
-            }
-        }
-
-        table[id] = ranges;
-        return ranges;
-    }
-
-    /// <summary>A kind's voxel column's lowest and highest solid voxel that blocks.</summary>
-    private readonly record struct ColumnRange(short Low, short High);
 }
 
 /// <summary>One run of blocked cells of a column: lowest and highest cell, the surface's height in cells, its material.</summary>

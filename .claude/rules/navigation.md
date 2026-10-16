@@ -24,7 +24,8 @@ without an `INavGridSource` has no navigation (its loading task is done at once)
 The voxel objects a world places (`.claude/rules/objects.md`) block as solid does. After each fill from the source (the
 window at the start, a refill after a reset, a move's strips) the navigation thread stamps the objects as generated onto
 the cells (`NavGridScanner.StampObjects`: the placer's objects in the areas the match keeps, `NavObjects`, read in the
-mover's cells by `ObjectColumnReader`): each run of an object's blocking voxels in a cell's centre column blocks the cell
+mover's cells by `ObjectColumnReader`, from the kinds' columns' runs, which `Initialize` makes before the thread starts,
+`VoxelObjectKinds.MakeColumnRuns`): each run of an object's blocking voxels in a cell's centre column blocks the cell
 where it rises more than `LowCentimetres` over the ground (a trunk), raises the floor where lower (a flat stone), and
 lowers the headroom where it hangs over the floor (a branch); passable voxels (leaves) change nothing. A read takes the
 objects as they are (damaged too) from the mover's `ObjectColumns` (`NavGridScanner.Objects`, main thread: the

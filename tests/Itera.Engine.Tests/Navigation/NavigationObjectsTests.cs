@@ -300,7 +300,8 @@ public sealed class NavigationObjectsTests
             Models = new VoxelModels(World);
             var options = Options.Create(new EngineOptions());
             Objects = new ObjectWorld(World, kinds, generator, options, NullLogger<ObjectWorld>.Instance);
-            var kindModels = new VoxelObjects(kinds, World, Models, NullLogger<VoxelObjects>.Instance);
+            var passability = new LeavesPass();
+            var kindModels = new VoxelObjects(kinds, World, Models, passability, NullLogger<VoxelObjects>.Instance);
             Damage = new ObjectDamage(
                 World,
                 Objects,
@@ -311,7 +312,6 @@ public sealed class NavigationObjectsTests
                 NullLogger<ObjectDamage>.Instance
             );
             Damage.Labeller.Manual = true;
-            var passability = new LeavesPass();
             Columns = new ObjectColumns(Objects, kinds, passability, 10, Damage);
             Navigation = new NavigationService(
                 Source,

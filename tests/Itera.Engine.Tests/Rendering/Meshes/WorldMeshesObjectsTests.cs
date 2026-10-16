@@ -283,7 +283,13 @@ public sealed partial class WorldMeshesTests
             World.SetCenters([new Vector3(0, 3, 0)]);
             TestWorlds.WaitUntilLoaded(World);
             _models = new VoxelModels(World);
-            _objectModels = new VoxelObjects(_kinds, World, _models, NullLogger<VoxelObjects>.Instance);
+            _objectModels = new VoxelObjects(
+                _kinds,
+                World,
+                _models,
+                new NothingPassable(),
+                NullLogger<VoxelObjects>.Instance
+            );
             _objectModels.Initialize();
             _objects = new ObjectWorld(
                 World,

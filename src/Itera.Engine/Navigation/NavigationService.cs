@@ -368,8 +368,13 @@ public sealed partial class NavigationService : IDisposable
             // Objects only where reads see them too (the mover's reading of them).
             if (placer is not null && _objectColumns is not null && _placed!.Kinds.Count > 0)
             {
-                // The navigation thread reads the kinds' voxels: their tables are made here, before it starts.
+                // The navigation thread reads the kinds' voxels and their columns' runs: their tables are made here,
+                // before it starts.
                 _placed.Kinds.MakeTables();
+                var started = Stopwatch.GetTimestamp();
+                _placed.Kinds.MakeColumnRuns(MaterialSet.Passable(_passability));
+                var columnRunsMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                LogColumnRuns(_placed.Kinds.Count, columnRunsMs);
 
                 _objects = new NavObjects(
                     placer,
@@ -1390,6 +1395,12 @@ public sealed partial class NavigationService : IDisposable
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Navigation: off; {Reason}")]
     private partial void LogOff(string reason);
+
+    [LoggerMessage(
+        Level = LogLevel.Debug,
+        Message = "Navigation: the columns' runs of {Kinds} object kind(s) made in {Ms:F1} ms"
+    )]
+    private partial void LogColumnRuns(int kinds, double ms);
 
     [LoggerMessage(
         Level = LogLevel.Information,

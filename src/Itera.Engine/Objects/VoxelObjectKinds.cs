@@ -167,6 +167,19 @@ public sealed class VoxelObjectKinds
     }
 
     /// <summary>
+    /// Makes every kind's columns' runs with <paramref name="passable"/> passed through
+    /// (<see cref="VoxelObjectKind.ColumnRuns"/>), which the mover and navigation read objects by; those made already are
+    /// kept. At the match's start, before a reading of the objects needs them.
+    /// </summary>
+    internal void MakeColumnRuns(in MaterialSet passable)
+    {
+        foreach (var kind in _kinds)
+        {
+            kind.ColumnRuns(in passable);
+        }
+    }
+
+    /// <summary>
     /// Seals the kinds for a world of <paramref name="grid"/>: no kind is registered from then on, and every kind's voxels
     /// must be finer than the world's. Throws naming the first kind whose voxels are not. At each match's start.
     /// </summary>
@@ -280,6 +293,45 @@ public sealed class VoxelObjectKind : IObjectVoxelSource
         foreach (var part in Parts)
         {
             part.Voxel(0, 0, 0, out _, out _);
+        }
+    }
+
+    // Its columns' runs for each set of passable materials asked for, replaced whole as one is added.
+    private ObjectColumnRuns[] _columnRuns = [];
+    private readonly Lock _columnRunsLock = new();
+
+    /// <summary>
+    /// Its voxel columns' runs with <paramref name="passable"/> passed through (<see cref="ObjectColumnRuns"/>), made at
+    /// the first ask for that set and kept for the run. Any thread.
+    /// </summary>
+    internal ObjectColumnRuns ColumnRuns(in MaterialSet passable)
+    {
+        foreach (var runs in Volatile.Read(ref _columnRuns))
+        {
+            if (runs.Passable.SameAs(in passable))
+            {
+                return runs;
+            }
+        }
+
+        return MakeColumnRuns(in passable);
+    }
+
+    private ObjectColumnRuns MakeColumnRuns(in MaterialSet passable)
+    {
+        lock (_columnRunsLock)
+        {
+            foreach (var runs in _columnRuns)
+            {
+                if (runs.Passable.SameAs(in passable))
+                {
+                    return runs;
+                }
+            }
+
+            var made = ObjectColumnRuns.Build(Size, Parts, Materials, in passable);
+            Volatile.Write(ref _columnRuns, [.. _columnRuns, made]);
+            return made;
         }
     }
 

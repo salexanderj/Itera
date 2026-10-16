@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using Itera.Engine.Loading;
 using Itera.Engine.Rendering;
@@ -8,13 +9,16 @@ namespace Itera.Engine.Objects;
 
 /// <summary>
 /// A match's object kinds as models (scoped; with voxel terrain): at the match's start (<see cref="Initialize"/>) it seals
-/// the run's kinds (<see cref="VoxelObjectKinds"/>) for the world's grid and makes each kind's parts into models of three
-/// levels that keep their densities, in the world's voxel memory, which the renderer then meshes. Main thread.
+/// the run's kinds (<see cref="VoxelObjectKinds"/>) for the world's grid, makes each kind's parts into models of three
+/// levels that keep their densities, in the world's voxel memory, which the renderer then meshes, and makes each kind's
+/// columns' runs, which the mover and navigation read objects by (<see cref="VoxelObjectKinds.MakeColumnRuns"/>). Main
+/// thread.
 /// </summary>
 public sealed partial class VoxelObjects(
     VoxelObjectKinds kinds,
     VoxelWorld world,
     VoxelModels models,
+    IVoxelPassability passability,
     ILogger<VoxelObjects> logger
 )
 {
@@ -28,7 +32,8 @@ public sealed partial class VoxelObjects(
 
     /// <summary>
     /// Seals the kinds for the world's grid (a kind whose voxels are not finer than the world's throws) and makes their
-    /// models. At the match's start, once the world's memory exists.
+    /// models and their columns' runs (kept for the run: a later match finds them made). At the match's start, once the
+    /// world's memory exists.
     /// </summary>
     public void Initialize()
     {
@@ -47,10 +52,14 @@ public sealed partial class VoxelObjects(
             parts += made.Length;
         }
 
+        // The mover's and navigation's readings of the objects take their columns from these.
+        var started = Stopwatch.GetTimestamp();
+        kinds.MakeColumnRuns(MaterialSet.Passable(passability));
+        var columnsMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         IsInitialized = true;
         if (kinds.Count > 0)
         {
-            LogMade(kinds.Count, parts);
+            LogMade(kinds.Count, parts, columnsMs);
         }
     }
 
@@ -106,8 +115,11 @@ public sealed partial class VoxelObjects(
         return made;
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Objects: {Kinds} kind(s) made into {Parts} part model(s)")]
-    private partial void LogMade(int kinds, int parts);
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Objects: {Kinds} kind(s) made into {Parts} part model(s); their columns' runs ready in {Ms:F1} ms"
+    )]
+    private partial void LogMade(int kinds, int parts, double ms);
 
     /// <summary>True when every kind's every model is on the GPU.</summary>
     public bool AllUploaded()

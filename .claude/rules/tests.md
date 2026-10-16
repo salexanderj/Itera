@@ -158,7 +158,10 @@ Where tests live:
   lands on a collider's Bepu static at any voxel level) and the shared ray (`CollisionSourcesTests`); the colliders as
   the mover's cells (`MeshColumnsTests`); the voxel objects as its cells (`ObjectColumnsTests`: cells against a
   cell-by-cell reference, a trunk, a rock's top, material, and tags, a low stone, a bush, waiting for unfilled areas, the
-  map's edge, chunks made again when the objects change, no allocation) and as statics near bodies (`ObjectCollidersTests`,
+  map's edge, chunks made again when the objects change, no allocation; `ObjectColumnReaderTests`: a kind's columns'
+  runs against its shape's voxels across its parts, one object's spans against a cell-by-cell reference for cells as
+  wide as its voxels, wider, and narrower, at four headings, below its anchor, with passable voxels, and damaged, and the
+  runs made once a set of passable materials) and as statics near bodies (`ObjectCollidersTests`,
   made before the objects' world is initialised as a match makes them: a ball on a rock's top, a ball rolled at a trunk,
   a plank turned from its anchor, passable leaves, two physics materials, a body frozen until the objects are known,
   statics going with the cells and kept while the objects change, a cut body on a trunk, a kind's boxes against its

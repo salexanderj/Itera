@@ -16,8 +16,9 @@ namespace Itera.Engine.Physics;
 /// takes them as the ground's. The spans are made a chunk of 32 by 32 columns at a time, the first time a query reads
 /// it, and kept until the objects change (<see cref="ObjectWorld.Version"/>) or one under it is damaged
 /// (<see cref="ObjectDamage.ReadChanges"/>), at most <see cref="MostChunks"/>; a chunk
-/// reads only the cells that can hold each object's column's solid voxels (<see cref="ObjectColumnReader"/>, which
-/// navigation's reading of the objects as generated shares). Making a chunk allocates until the cache holds that many and
+/// takes each object's columns from its kind's columns' runs, a damaged one's read through its damage over its kind's
+/// solid voxels (<see cref="ObjectColumnReader"/>, which navigation's reading of the objects as generated shares). Making a
+/// chunk allocates until the cache holds that many and
 /// their arrays have grown to the largest; every other read allocates nothing. Main thread: the mover and navigation
 /// share it (<c>VoxelCharacterMover.Objects</c>).
 /// </summary>

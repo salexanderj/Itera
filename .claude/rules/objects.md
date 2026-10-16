@@ -26,7 +26,13 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
 - `VoxelObjects` (scoped, with voxel terrain; `MatchVoxels.Objects`) makes every part a model at the match's "objects"
   step, after the voxel physics: three levels with densities (`VoxelModels.Add(levels, size, 0, unit, densities:
   true)`), each part's corner from the kind's anchor (`PartsOf`); `ObjectsLoadingTask` waits for them on the GPU (done once
-  made without graphics).
+  made without graphics). It also makes every kind's columns' runs for the run's passable materials
+  (`VoxelObjectKinds.MakeColumnRuns`, which navigation calls first, before its thread starts, logging its time at
+  Debug; the "Objects:" line gives the time left for this step, nothing where navigation made them all): `ObjectColumnRuns`, for each of the kind's voxel columns the runs of its blocking voxels and of
+  all its solid voxels, made from its parts' bricks (a brick of one material at once) and kept on the kind for the run
+  (`VoxelObjectKind.ColumnRuns`, one for each set of passable materials asked for, made under a lock, read on any thread):
+  measured with a game's 65 kinds, the largest 30 by 21 by 30 m of 10 cm voxels: 22 ms in Release and 96 ms in Debug, where each
+  reader made its own table of a kind at its first read (that largest one in 186 ms in Debug, a stall during play).
 - A world places its objects through its generator (`IChunkGenerator.Objects`, an `IObjectPlacer`, null for none; a
   `HeightfieldGenerator` subclass overrides its virtual `Objects`, since a property of its own would not stand for the
   interface's; thread
@@ -110,8 +116,12 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   surface over the column's centre (the top of the highest solid voxel there) and that voxel's material, which the mover
   reads as the ground's (`PhysicsMaterials.OfVoxel`, `IVoxelSurfaceTags`). It answers the voxel world's and the mesh
   colliders' queries, made 32 by 32 columns at a time and kept until `ObjectWorld.Version` changes (an area filled or
-  gone) or `ObjectDamage.ReadChanges` names an object under it, at most 256 chunks; a move waits where the areas round it within the map are not filled (`Known`, `ObjectWorld.IsKnown`). Kinds read a voxel through
-  their parts' brick tables (`VoxelObjectKind.Voxel`).
+  gone) or `ObjectDamage.ReadChanges` names an object under it, at most 256 chunks; a move waits where the areas round it within the map are not filled (`Known`, `ObjectWorld.IsKnown`). An object's column
+  (`ObjectColumnReader`) takes its cells from its kind's columns' runs (`ObjectColumnRuns`): an object as its kind is
+  turns each run of blocking voxels into the cells whose centres land in it, runs whose cells meet joined, reading a
+  voxel or two only for the top's surface and material; a damaged one reads each cell through its damage, only over
+  its kind's solid runs (passable ones too: a paint may make one blocking). Kinds read a voxel through their parts'
+  brick tables (`VoxelObjectKind.Voxel`).
 - Rays meet objects (`ObjectRays`, scoped with terrain): the first solid voxel of any object along a ray (passable ones
   too, as the world's ray), as an `ObjectHit` (the object, its kind, its voxel's index in the kind, the face entered
   turned into the world's frame, zero from inside, the material, and where the ray enters and leaves that voxel); a ray
@@ -236,7 +246,7 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   wherever the run has kinds (`VoxelObjectKinds.WorldId`).
 - Navigation meets objects (`.claude/rules/navigation.md`): the objects as generated are stamped onto the cells a
   source fills, on the navigation thread (`NavObjects`, a placer read with `ObjectColumnReader`, the mover's column
-  rule), and reads take them from the mover's `ObjectColumns`, once known; a part's removal and each change of an
+  rule, from the kinds' columns' runs made before the thread starts), and reads take them from the mover's `ObjectColumns`, once known; a part's removal and each change of an
   object's copy read its cells again.
 - Models may have a voxel size of their own (`VoxelModels.Add` with a unit; `UnitCentimetres`, `VoxelMetres`) and keep
   densities (`Encode(voxels, densities, extent)`, `DecodeDensities`, `HasDensities`), which the renderer meshes them with.

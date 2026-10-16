@@ -69,7 +69,13 @@ public sealed class NavigationPlacedObjectsTests : IDisposable
         _models = new VoxelModels(_world);
         var options = Options.Create(new EngineOptions());
         _objects = new ObjectWorld(_world, kinds, generator, options, NullLogger<ObjectWorld>.Instance);
-        var kindModels = new VoxelObjects(kinds, _world, _models, NullLogger<VoxelObjects>.Instance);
+        var kindModels = new VoxelObjects(
+            kinds,
+            _world,
+            _models,
+            new NothingPassable(),
+            NullLogger<VoxelObjects>.Instance
+        );
         _damage = new ObjectDamage(
             _world,
             _objects,

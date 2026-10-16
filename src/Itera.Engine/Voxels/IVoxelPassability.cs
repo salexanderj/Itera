@@ -77,6 +77,22 @@ internal readonly struct MaterialSet
     /// <summary>True when the set holds <paramref name="material"/>.</summary>
     public bool Contains(byte material) => ((_words[material >> 6] >> (material & 63)) & 1) != 0;
 
+    /// <summary>True when the two sets hold the same materials.</summary>
+    public bool SameAs(in MaterialSet other) =>
+        _words[0] == other._words[0]
+        && _words[1] == other._words[1]
+        && _words[2] == other._words[2]
+        && _words[3] == other._words[3];
+
+    /// <summary>True when some material is in both sets.</summary>
+    public bool Overlaps(in MaterialSet other) =>
+        (
+            (_words[0] & other._words[0])
+            | (_words[1] & other._words[1])
+            | (_words[2] & other._words[2])
+            | (_words[3] & other._words[3])
+        ) != 0;
+
     [InlineArray(4)]
     private struct Words
     {

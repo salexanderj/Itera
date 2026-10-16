@@ -9,7 +9,7 @@ namespace Itera.Engine.Navigation;
 /// the cells it fills (<see cref="NavGridScanner.StampObjects"/>): the placer's objects whose anchors lie in the areas the
 /// match's objects are kept in (<see cref="ObjectWorld.KeptBox"/>), each read in the mover's cells as the mover reads it
 /// (<see cref="ObjectColumnReader"/>), so a cell stamped here reads the same once read from the placed objects. Made on
-/// the main thread with every kind's tables made; used by the navigation thread alone.
+/// the main thread with every kind's tables and columns' runs made; used by the navigation thread alone.
 /// </summary>
 internal sealed class NavObjects
 {
@@ -23,7 +23,10 @@ internal sealed class NavObjects
 
     /// <param name="placer">The world's placer.</param>
     /// <param name="seed">The world's seed.</param>
-    /// <param name="kinds">The run's kinds, sealed, with their tables made (<see cref="VoxelObjectKind.MakeTables"/>).</param>
+    /// <param name="kinds">
+    /// The run's kinds, sealed, with their tables and columns' runs made (<see cref="VoxelObjectKind.MakeTables"/>,
+    /// <see cref="VoxelObjectKinds.MakeColumnRuns"/>).
+    /// </param>
     /// <param name="passability">The materials characters pass through.</param>
     /// <param name="cellCentimetres">The mover's cells: the world's level-0 voxels.</param>
     /// <param name="kept">The box whose objects are placed (<see cref="ObjectWorld.KeptBox"/>).</param>

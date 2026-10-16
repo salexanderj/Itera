@@ -45,7 +45,13 @@ public sealed class VoxelObjectsTests : IDisposable
         shape.FillEllipsoid(150, 1300, 150, 140, 190, 140, Leaves);
         var kinds = new VoxelObjectKinds();
         var id = kinds.Register("tree", shape);
-        var objects = new VoxelObjects(kinds, _world, _models, NullLogger<VoxelObjects>.Instance);
+        var objects = new VoxelObjects(
+            kinds,
+            _world,
+            _models,
+            new NothingPassable(),
+            NullLogger<VoxelObjects>.Instance
+        );
 
         objects.Initialize();
 
@@ -105,7 +111,13 @@ public sealed class VoxelObjectsTests : IDisposable
         kinds.Register("crate", shape);
 
         var error = Assert.Throws<InvalidOperationException>(
-            new VoxelObjects(kinds, _world, _models, NullLogger<VoxelObjects>.Instance).Initialize
+            new VoxelObjects(
+                kinds,
+                _world,
+                _models,
+                new NothingPassable(),
+                NullLogger<VoxelObjects>.Instance
+            ).Initialize
         );
         Assert.Contains("crate", error.Message, StringComparison.Ordinal);
     }
@@ -120,7 +132,13 @@ public sealed class VoxelObjectsTests : IDisposable
         shape.FillEllipsoid(25, 25, 25, 20, 20, 20, Leaves);
         var kinds = new VoxelObjectKinds();
         kinds.Register("bush", shape);
-        var objects = new VoxelObjects(kinds, _world, _models, NullLogger<VoxelObjects>.Instance);
+        var objects = new VoxelObjects(
+            kinds,
+            _world,
+            _models,
+            new NothingPassable(),
+            NullLogger<VoxelObjects>.Instance
+        );
         var task = new ObjectsLoadingTask(objects, new NoGpuWorld());
 
         Assert.False(task.Progress.Done);
@@ -128,7 +146,13 @@ public sealed class VoxelObjectsTests : IDisposable
         Assert.True(task.Progress.Done);
         Assert.False(objects.AllUploaded());
 
-        var none = new VoxelObjects(new VoxelObjectKinds(), _world, _models, NullLogger<VoxelObjects>.Instance);
+        var none = new VoxelObjects(
+            new VoxelObjectKinds(),
+            _world,
+            _models,
+            new NothingPassable(),
+            NullLogger<VoxelObjects>.Instance
+        );
         none.Initialize();
         Assert.True(none.AllUploaded());
     }
