@@ -4,8 +4,8 @@ using Itera.Engine.Voxels;
 namespace Itera.Engine.Tests.Navigation;
 
 /// <summary>
-/// <see cref="FlowFieldBuilder"/> on small hand-made grids of 64 by 64 cells: routes to the goal, round walls through
-/// gaps, never across a corner, through a corridor only for the size that fits, up a ramp rather than a step, and the
+/// <see cref="FlowFieldBuilder"/> on small hand-made grids of 64 by 64 cells: routes to the goal, straight until they
+/// must turn (cells side by side leading straight ahead to a wide goal), round walls through gaps, never across a corner, through a corridor only for the size that fits, up a ramp rather than a step, and the
 /// cost of breaking through against walking round (a profile with a low break-through cost breaks a thin or 4 m wall
 /// rather than take a long detour, but walks round a very thick one; a profile with a high one walks round every wall
 /// and crosses only a fully sealed goal).
@@ -36,6 +36,37 @@ public sealed class FlowFieldTests
         Assert.True(route.Arrived);
         Assert.Equal(36, route.Cells.Count);
         Assert.All(route.Cells, cell => Assert.Equal(32, grid.Row(cell)));
+    }
+
+    [Fact]
+    public void A_route_goes_straight_until_it_must_turn()
+    {
+        var grid = Grid(Road);
+        var route = Build(grid, NavSize0(), s_breaking, [grid.Index(40, 60)]).Follow(grid.Index(20, 4));
+        Assert.True(route.Arrived);
+        // 36 cells straight up column 20, then the 20 diagonals to the goal: no diagonal while a straight step ties it.
+        Assert.Equal(56, route.Cells.Count);
+        Assert.All(route.Cells.Take(36), cell => Assert.Equal(20, grid.Column(cell)));
+    }
+
+    [Fact]
+    public void Cells_side_by_side_lead_straight_ahead_to_a_wide_goal()
+    {
+        var grid = Grid(Road);
+        // Goals every other cell across row 60, as a game's line of goal places a metre apart over 50 cm cells.
+        var result = Build(
+            grid,
+            NavSize0(),
+            s_breaking,
+            [.. Enumerable.Range(0, Size / 2).Select(i => grid.Index(i * 2, 60))]
+        );
+        for (var row = 0; row < 59; row++)
+        {
+            for (var column = 0; column < Size; column++)
+            {
+                Assert.Equal(2, result.Field.Directions[grid.Index(column, row)]);
+            }
+        }
     }
 
     [Fact]

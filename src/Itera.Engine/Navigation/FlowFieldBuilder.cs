@@ -4,7 +4,9 @@ namespace Itera.Engine.Navigation;
 /// Builds a <see cref="FlowField"/> by Dijkstra's search backwards from its goal cells over the eight neighbours of each
 /// cell, with a ring of buckets for the queue (every cost is a small whole number). Entering a cell costs its class's
 /// cost, or the break cost where the walker's size cannot stand, or the steep cost for a rise past its climb; a
-/// diagonal step needs both cells beside it walkable, so routes never cut a corner. Blocked cells are expensive rather
+/// diagonal step needs both cells beside it walkable, so routes never cut a corner. Where a straight step and a diagonal
+/// one cost the same, a cell takes the straight one, so a route goes straight until it must turn (a road's cells lead
+/// down it side by side, not diagonally into the few lines that pass its obstacles). Blocked cells are expensive rather
 /// than closed, so every cell of the grid gets a route. Keeps its arrays between builds and allocates nothing once
 /// they have grown; one thread at a time.
 /// </summary>
@@ -140,6 +142,12 @@ public sealed class FlowFieldBuilder
                         directions[from] = (byte)((direction + 4) & 7);
                         Push(total % ring, from);
                         pending++;
+                    }
+                    else if (total == cost[from] && !diagonal && FlowField.IsDiagonal(directions[from]))
+                    {
+                        // A straight step as cheap as the diagonal it has: straight, so a route goes straight until it
+                        // must turn, and cells side by side lead ahead rather than into the lines their diagonals meet.
+                        directions[from] = (byte)((direction + 4) & 7);
                     }
                 }
             }
