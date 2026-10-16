@@ -207,6 +207,14 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         if (edit.Operation == VoxelEditOperation.Reset)
         {
             Heal();
+            // And the objects placed and removed before it are as if never: every area fills again.
+            _objects.RefillAll();
+            return;
+        }
+
+        if (edit.IsObjectPlacing)
+        {
+            Place(in edit);
             return;
         }
 
@@ -255,9 +263,45 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
 
     void IObjectWorldListener.Filled(List<ObjectPlacement> objects)
     {
+        if (objects.Count == 0)
+        {
+            return;
+        }
+
+        // The edits that reach any of the area's objects, read once, in order: each object takes those under its reach
+        // from its placing on (a column's list is walked once a fill, not once an object).
+        long minX = long.MaxValue,
+            maxX = long.MinValue,
+            minZ = long.MaxValue,
+            maxZ = long.MinValue;
         foreach (var placement in objects)
         {
-            Replay(in placement);
+            var reach = _kinds[placement.Kind].ReachCentimetres;
+            (minX, maxX) = (Math.Min(minX, placement.Anchor.X - reach), Math.Max(maxX, placement.Anchor.X + reach));
+            (minZ, maxZ) = (Math.Min(minZ, placement.Anchor.Z - reach), Math.Max(maxZ, placement.Anchor.Z + reach));
+        }
+
+        _replay.Clear();
+        _world.CollectEdits(
+            new VoxelCoord((int)minX, 0, (int)minZ),
+            new VoxelCoord((int)maxX + 1, 0, (int)maxZ + 1),
+            _replay
+        );
+        _replay.RemoveAll(static edit => !ObjectEditing.Changes(in edit));
+        if (_replay.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var placement in objects)
+        {
+            foreach (var edit in _replay)
+            {
+                if (edit.Sequence > placement.Since && IndexedFor(in edit, in placement))
+                {
+                    Damage(in edit, in placement);
+                }
+            }
         }
     }
 
@@ -391,6 +435,31 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         _near.Clear();
         edit.GetBounds(out var min, out var end);
         _objects.Near(min.X, end.X - 1, min.Z, end.Z - 1, _near);
+    }
+
+    /// <summary>
+    /// An object placed or removed whole by an edit (<see cref="VoxelEdit.IsObjectPlacing"/>): into or out of its filled
+    /// area (<see cref="ObjectWorld"/>), a removed one's copy freed, and the change named for the readers that keep what
+    /// they read (the mover's columns, the colliders' statics, navigation's cells). Nothing where its area is not filled:
+    /// its fill reads the edit from the log.
+    /// </summary>
+    private void Place(in VoxelEdit edit)
+    {
+        if (!_objects.TakePlacing(in edit, out var placement))
+        {
+            return;
+        }
+
+        if (edit.Operation == VoxelEditOperation.RemoveObject)
+        {
+            _dropped.Remove(placement.Id);
+            if (_damaged.Remove(placement.Id, out var damaged))
+            {
+                Free(damaged);
+            }
+        }
+
+        Record(in placement);
     }
 
     /// <summary>Applies an edit to one object: through its copy, made when the edit first changes it.</summary>
@@ -728,7 +797,10 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         return damaged;
     }
 
-    /// <summary>Applies every edit since the last reset that reaches the object, in order: its copy, if any.</summary>
+    /// <summary>
+    /// Applies every edit since the last reset that reaches the object, in order, from its placing on for one placed
+    /// during play (<see cref="ObjectPlacement.Since"/>): its copy, if any.
+    /// </summary>
     private void Replay(in ObjectPlacement placement)
     {
         var kind = _kinds[placement.Kind];
@@ -742,7 +814,7 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
         );
         foreach (var edit in _replay)
         {
-            if (ObjectEditing.Changes(in edit) && IndexedFor(in edit, in placement))
+            if (edit.Sequence > placement.Since && ObjectEditing.Changes(in edit) && IndexedFor(in edit, in placement))
             {
                 Damage(in edit, in placement);
             }

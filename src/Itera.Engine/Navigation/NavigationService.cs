@@ -382,7 +382,9 @@ public sealed partial class NavigationService : IDisposable
 
             _scanner = new NavGridScanner(_voxels, _passability, _source.LowCentimetres, _source)
             {
-                Objects = _objects is null ? null : _objectColumns,
+                // The objects wherever the world has any: those its generator places (stamped as generated above) and
+                // those placed during play (read under their edits' boxes once loaded).
+                Objects = _placed is { IsEnabled: true } ? _objectColumns : null,
             };
             _editsSeen = _voxels.EditCount;
             // Edits before the last reset changed nothing that is left; nor does one that changes no cell.
@@ -620,7 +622,8 @@ public sealed partial class NavigationService : IDisposable
     /// <summary>
     /// False for an edit that cannot change a cell: painting, a clear of only what walkers pass through, a clear of
     /// objects' far copies, or one that covers no cell's centre column (outside the window, among others). A removal of
-    /// an object's part changes the cells under its box (read once loaded; its stamp changes nothing).
+    /// an object's part, and an object placed or removed whole, changes the cells under its box (read once loaded; its
+    /// stamp changes nothing).
     /// </summary>
     private bool Changes(in VoxelEdit edit) =>
         edit.Operation
@@ -640,7 +643,7 @@ public sealed partial class NavigationService : IDisposable
     /// </summary>
     private void ReadDamage()
     {
-        if (_damage is null || _objects is null || Refilling)
+        if (_damage is null || _scanner?.Objects is null || Refilling)
         {
             return;
         }

@@ -127,13 +127,12 @@ public sealed partial class VoxelWorld : IDisposable
     private readonly int _objectHandOverLevel;
 
     /// <summary>
-    /// The widest reach of the object kinds (<c>VoxelObjectKind.ReachCentimetres</c>), in metres, where the world's
-    /// generator places objects; 0 where it places none: how far round a body the objects that may touch it lie.
+    /// The widest reach of the object kinds (<c>VoxelObjectKind.ReachCentimetres</c>), in metres, where the world may
+    /// hold objects (its generator places some, or the run registered kinds to place during play); 0 where it holds none:
+    /// how far round a body the objects that may touch it lie.
     /// </summary>
     public double ObjectReachMetres =>
-        _kinds is { } kinds && _generator.Objects is not null
-            ? kinds.MostReachCentimetres / (double)VoxelConstants.CentimetresPerMetre
-            : 0;
+        _kinds is { Count: > 0 } kinds ? kinds.MostReachCentimetres / (double)VoxelConstants.CentimetresPerMetre : 0;
 
     public VoxelWorld(
         IOptions<EngineOptions> options,

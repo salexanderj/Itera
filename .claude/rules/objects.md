@@ -205,6 +205,28 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   voxels and the objects' statics, gone 30 s after it rests or 60 s after it was made; each peer makes its own, and none
   where its copy was dropped or its area not filled) with its entity (`LooseBody`, `CutPiece`), room made
   as for a thrown ball.
+- Objects placed and removed during play (since save format 9, protocol 45, and `ObjectEditing.RuleVersion` 2): the
+  world's owner (a session's host, or an offline game) places an object with `ObjectWorld.TryPlace(kind, anchor,
+  heading, maker, out placement)` and removes a whole one, its own or the generator's, with `TryRemove(placement,
+  maker)`, each an edit of its own (`VoxelEditOperation.PlaceObject`, `RemoveObject`; `VoxelEdit.PlaceObject` and
+  `RemoveObject` of a placement and its kind's reach, bottom, and top): a box of air over the object's reach across its
+  anchor and its height, the id in `Piece` (`ObjectId.Placed`: a hash of the anchor, kind, heading, and the edit's
+  sequence, so a save's renumbering keeps it), and the kind, heading, and the anchor's height over the box's floor in
+  `Turn` (`VoxelEdit.PlacementOf`). The world's voxels never change (`ChangesWorld` false), and the world checks each
+  against the run's kinds as it takes it (`VoxelWorld.ObjectProblem`: a kind of the run's, not copied, the box its
+  kind's; a host's `TryApply` refuses one, a client's world throws, which ends its session). `ObjectWorld` keeps
+  objects wherever the run has kinds, a generator's placer or not (`IsEnabled`, known before its `Initialize`); a live
+  placing or removal goes into or out of the filled area holding the anchor at once (`TakePlacing`, after the area's
+  others; `ObjectDamage` frees a removed one's copy and names the change, `Record`, for the mover's columns and
+  navigation, and `SetVersion` rises, which the colliders follow), and an area's fill reads them from the log after
+  the generator's objects, in the log's order (`AddLogged`). A placed object takes the log's edits from its placing on
+  (`ObjectPlacement.Since`), live and on replay, and a fill reads its area's edits once for all its objects (an area
+  of 2,000 placed blocks, 101 of them dug into by 200 digs, fills in about 100 ms in Release). A reset
+  fills every area again at once (`RefillAll`). Far copies come from the generator's placer alone (with none, nothing
+  is copied), so a kind copied into the world's coarse levels is neither placed nor removed by an edit
+  (`ObjectWorld.CanPlaceOrRemove`); a game whose view ends before the hand-over to copies registers its kinds without
+  them (`Register`'s limit under the coarsest copied voxel). The match's identity carries the kinds' fingerprint
+  wherever the run has kinds (`VoxelObjectKinds.WorldId`).
 - Navigation meets objects (`.claude/rules/navigation.md`): the objects as generated are stamped onto the cells a
   source fills, on the navigation thread (`NavObjects`, a placer read with `ObjectColumnReader`, the mover's column
   rule), and reads take them from the mover's `ObjectColumns`, once known; a part's removal and each change of an

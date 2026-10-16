@@ -224,6 +224,8 @@ public sealed class VoxelModels : IDisposable
                     or VoxelEditOperation.Reset
                     or VoxelEditOperation.RemovePart
                     or VoxelEditOperation.ClearCopies
+                    or VoxelEditOperation.PlaceObject
+                    or VoxelEditOperation.RemoveObject
         )
         {
             throw new ArgumentException("A model takes sphere, capsule, and box edits only.", nameof(edit));

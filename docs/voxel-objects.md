@@ -160,7 +160,8 @@ fades (507ef41); the fades draw an object's model over its copy out to about 143
 - Lifts from objects (a lift takes only the world's voxels; an object's voxels in it just go).
 - A support check when the ground is dug from under an object: it floats.
 - Felled parts that stay: a cut part is a cut body, gone 30 to 60 s after it rests.
-- Objects that move, and kinds read from `.vox` or other files (kinds are built in code).
+- Objects that move, and kinds read from `.vox` or other files (kinds are built in code). (Objects placed and removed
+  whole during play came on 2026-10-15: `PlaceObject` and `RemoveObject` edits, of kinds with no far copies.)
 - Far forests past a kind's highest copied level (a game's own canopy features), and a hand-over level per kind.
 - The world pass over its budget looking down over a forest (`forest-high`, 4.72 ms): GPU culling of the models, fewer
   far copies' triangles, or a shorter hand-over fade would each cut some of it, unmeasured.

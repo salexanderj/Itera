@@ -1165,6 +1165,11 @@ are never written into the world's fine levels.
   bodies, `ObjectRays`, `NavObjects`); edits damage them by share, the same live and on replay, and a part cut off is
   removed by an edit of its own (`RemovePart`), the world's owner deciding the cut, and falls as a cut body each peer
   makes.
+- A game places objects during play, and removes whole ones (its own or the generator's), by edits of their own
+  (`PlaceObject`, `RemoveObject`, logged by the world's owner through `ObjectWorld.TryPlace` and `TryRemove`), which
+  every peer replays from the log as it does any edit: an area's fill takes them after the generator's objects, in the
+  log's order. Far copies come from the generator's placer alone, so a kind that is copied is neither placed nor
+  removed this way; a game whose view ends before the hand-over to copies registers its kinds without them.
 - Cost: the world pass stays within 4 ms in the starter's views but one, looking down over a forest from 40 m (4.72 ms),
   left as future work.
 

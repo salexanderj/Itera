@@ -132,6 +132,20 @@ internal sealed class ObjectCopies
     /// <summary>True when some kind has a copy at <paramref name="level"/>.</summary>
     public bool CopiesAt(int level) => level >= FirstLevel && level <= LastLevel;
 
+    /// <summary>True when <paramref name="kind"/> is copied at any level. Any thread.</summary>
+    public bool IsCopied(VoxelObjectKindId kind)
+    {
+        for (var level = FirstLevel; level <= LastLevel; level++)
+        {
+            if (GridFor(kind, level) is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>The copy of <paramref name="kind"/> at <paramref name="level"/>, or null where it is not copied. Any thread.</summary>
     public ObjectShareGrid? GridFor(VoxelObjectKindId kind, int level) =>
         level >= FirstLevel && level <= LastLevel ? _copies[kind.Value][level] : null;

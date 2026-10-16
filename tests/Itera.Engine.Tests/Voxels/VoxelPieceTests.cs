@@ -293,7 +293,7 @@ public sealed class VoxelPieceTests : IDisposable
 
         var written = stream.ToArray();
         // The format version follows the 4-byte magic; the last 4 bytes count the sections, none in a world's log alone.
-        Assert.Equal(8, written[4]);
+        Assert.Equal(9, written[4]);
         Assert.Equal([0, 0, 0, 0], written[^4..]);
         var bytes = written[..^4];
         bytes[4] = 4;

@@ -136,16 +136,37 @@ public sealed class ObjectWorldTests : IDisposable
         Assert.Contains("kind 2", error.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>A world whose generator places nothing keeps no areas, and its query is whole and empty.</summary>
+    /// <summary>
+    /// A world whose generator places nothing and whose run has no kinds keeps no areas, and its query is whole and
+    /// empty; with kinds, it keeps its areas for objects placed during play, and they hold none until some are.
+    /// </summary>
     [Fact]
-    public void Without_a_placer_nothing_is_kept()
+    public void Without_a_placer_and_kinds_nothing_is_kept_and_with_kinds_the_areas_wait_for_placings()
     {
+        var none = new ObjectWorld(
+            _world,
+            new VoxelObjectKinds(),
+            new FlatTestGenerator(new VoxelGrid(10)),
+            Options.Create(new EngineOptions()),
+            NullLogger<ObjectWorld>.Instance
+        );
+        none.Initialize();
+        none.Update();
         var objects = World(new FlatTestGenerator(new VoxelGrid(10)));
-        objects.Update();
+        for (var i = 0; i < 100 && objects.WaitingAreas > 0; i++)
+        {
+            objects.Update();
+        }
 
-        Assert.Equal(0, objects.AreaCount);
+        Assert.False(none.IsEnabled);
+        Assert.Equal(0, none.AreaCount);
         var found = new List<ObjectPlacement>();
-        Assert.True(objects.Near(-10_000, 10_000, -10_000, 10_000, found));
+        Assert.True(none.Near(-10_000, 10_000, -10_000, 10_000, found));
+        Assert.Empty(found);
+        Assert.True(objects.IsEnabled);
+        Assert.True(objects.AreaCount > 0);
+        Assert.Equal(0, objects.Count);
+        Assert.True(objects.Near(-1_000, 1_000, -1_000, 1_000, found));
         Assert.Empty(found);
     }
 

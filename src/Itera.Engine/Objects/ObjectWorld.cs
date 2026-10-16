@@ -7,14 +7,16 @@ namespace Itera.Engine.Objects;
 
 /// <summary>
 /// The objects a match's world places near where it is loaded (scoped, with voxel terrain): its generator's placer
-/// (<see cref="IChunkGenerator.Objects"/>) asked for areas a level-K column wide (K: <c>Engine:Objects:HandOverLevel</c>),
+/// (<see cref="IChunkGenerator.Objects"/>), and the objects placed and removed during play by the log's edits
+/// (<see cref="TryPlace"/>, <see cref="TryRemove"/>: <see cref="VoxelEditOperation.PlaceObject"/>,
+/// <see cref="VoxelEditOperation.RemoveObject"/>), in areas a level-K column wide (K: <c>Engine:Objects:HandOverLevel</c>),
 /// each kept while any of its columns of a level below K is resident (the levels drawn finer than the objects' far
 /// copies, and level 0, which characters and bodies meet, round every streaming centre). It follows the world's change
 /// list each loop iteration (<see cref="Update"/>, after the world's), fills at most <see cref="FillsPerUpdate"/> areas
 /// an update, those nearest a streaming centre first, and answers which objects may touch a box (<see cref="Near"/>).
-/// The placements are absolute, so a move of the origin changes nothing. Without a placer it keeps nothing. With a
-/// hand-over level at or past the world's levels every streamed level counts. Main thread; allocates only as its tables
-/// grow.
+/// The placements are absolute, so a move of the origin changes nothing. Without a placer and with no kinds registered it
+/// keeps nothing. With a hand-over level at or past the world's levels every streamed level counts. Main thread;
+/// allocates only as its tables grow.
 /// </summary>
 public sealed partial class ObjectWorld(
     VoxelWorld world,
@@ -33,7 +35,9 @@ public sealed partial class ObjectWorld(
     private readonly List<ColumnKey> _resident = [];
     private readonly List<Area> _gone = [];
     private readonly VoxelChange[] _changes = new VoxelChange[256];
+    private readonly List<VoxelEdit> _logged = [];
     private IObjectPlacer? _placer;
+    private bool _enabled;
     private VoxelChangeCursor? _cursor;
     private int _level;
     private long _areaCentimetres;
@@ -48,6 +52,12 @@ public sealed partial class ObjectWorld(
 
     /// <summary>True when the world's generator places objects.</summary>
     public bool HasPlacer => _placer is not null;
+
+    /// <summary>
+    /// True when the world has objects to keep: its generator places some, or the run registered kinds a game may place
+    /// during play. Known before <see cref="Initialize"/>.
+    /// </summary>
+    public bool IsEnabled => generator.Objects is not null || kinds.Count > 0;
 
     /// <summary>The world's placer (<see cref="IChunkGenerator.Objects"/>), or null; known before <see cref="Initialize"/>.</summary>
     internal IObjectPlacer? Placer => generator.Objects;
@@ -87,13 +97,20 @@ public sealed partial class ObjectWorld(
     /// <summary>A number that changes whenever an area is filled or goes: what is near a place may have changed.</summary>
     public int Version { get; private set; }
 
+    /// <summary>
+    /// A number that changes whenever the objects kept change: an area filled or gone (<see cref="Version"/>), or an
+    /// object placed or removed in a filled area (which <c>ObjectDamage.ReadChanges</c> also names, with its box).
+    /// </summary>
+    public int SetVersion { get; private set; }
+
     /// <summary>Starts following the world's columns, those resident already among them. At the match's start, after the world's.</summary>
     public void Initialize()
     {
         _placer = generator.Objects;
+        _enabled = IsEnabled;
         _level = options.Value.Objects.HandOverLevel;
         _areaCentimetres = (long)VoxelConstants.ChunkSize * world.Grid.Edge(0) << _level;
-        if (_placer is null)
+        if (!_enabled)
         {
             return;
         }
@@ -182,13 +199,12 @@ public sealed partial class ObjectWorld(
     /// Adds to <paramref name="found"/> every object of the filled areas that may reach into the box from
     /// (<paramref name="minX"/>, <paramref name="minZ"/>) to (<paramref name="maxX"/>, <paramref name="maxZ"/>), absolute
     /// centimetres, inclusive: those whose anchor lies within their kind's reach of it. Returns false when an area under the
-    /// box is not filled yet (or not wanted), so some of its objects may be missing; true without a placer, which places
-    /// none.
+    /// box is not filled yet (or not wanted), so some of its objects may be missing; true for a world with no objects.
     /// </summary>
     public bool Near(int minX, int maxX, int minZ, int maxZ, List<ObjectPlacement> found)
     {
         ArgumentNullException.ThrowIfNull(found);
-        if (_placer is null)
+        if (!_enabled)
         {
             return true;
         }
@@ -227,12 +243,12 @@ public sealed partial class ObjectWorld(
     /// <summary>
     /// True when every object that may reach into the box from (<paramref name="minX"/>, <paramref name="minZ"/>) to
     /// (<paramref name="maxX"/>, <paramref name="maxZ"/>), absolute centimetres, inclusive, is known: the areas within the
-    /// widest kind's reach of it, inside the map, are filled (<see cref="Near"/> would return true). True without a placer.
-    /// Allocates nothing.
+    /// widest kind's reach of it, inside the map, are filled (<see cref="Near"/> would return true). True for a world with
+    /// no objects. Allocates nothing.
     /// </summary>
     public bool IsKnown(long minX, long maxX, long minZ, long maxZ)
     {
-        if (_placer is null)
+        if (!_enabled)
         {
             return true;
         }
@@ -339,13 +355,14 @@ public sealed partial class ObjectWorld(
         area.Filled = false;
         _spare.Push(area);
         Version++;
+        SetVersion++;
     }
 
     private void Fill(Area area)
     {
         var x0 = area.X * _areaCentimetres;
         var z0 = area.Z * _areaCentimetres;
-        _placer!.Find(
+        _placer?.Find(
             world.Seed,
             (int)x0,
             (int)(x0 + _areaCentimetres),
@@ -373,10 +390,249 @@ public sealed partial class ObjectWorld(
             }
         }
 
+        AddLogged(area, x0, z0);
         area.Filled = true;
         Count += area.Objects.Count;
         Version++;
+        SetVersion++;
         Listener?.Filled(area.Objects);
+    }
+
+    /// <summary>
+    /// The area's objects placed and removed during play since the last reset, in the log's order: each placing whose
+    /// anchor lies in the area adds its object after the generator's, each removal takes the object it names (the
+    /// generator's too). Edits the world took were checked against the kinds.
+    /// </summary>
+    private void AddLogged(Area area, long x0, long z0)
+    {
+        _logged.Clear();
+        world.CollectEdits(
+            new VoxelCoord((int)x0, 0, (int)z0),
+            new VoxelCoord((int)(x0 + _areaCentimetres), 0, (int)(z0 + _areaCentimetres)),
+            _logged
+        );
+        foreach (var edit in _logged)
+        {
+            if (!edit.IsObjectPlacing)
+            {
+                continue;
+            }
+
+            var placement = edit.PlacementOf();
+            if (AreaAt(placement.Anchor.X, placement.Anchor.Z) != (area.X, area.Z))
+            {
+                continue;
+            }
+
+            if (edit.Operation == VoxelEditOperation.PlaceObject)
+            {
+                area.Objects.Add(placement);
+            }
+            else
+            {
+                var at = IndexOf(area.Objects, placement.Id);
+                if (at >= 0)
+                {
+                    area.Objects.RemoveAt(at);
+                }
+            }
+        }
+    }
+
+    /// <summary>The index of the object <paramref name="id"/> in an area's list, or -1.</summary>
+    private static int IndexOf(List<ObjectPlacement> objects, ObjectId id)
+    {
+        var span = CollectionsMarshal.AsSpan(objects);
+        for (var i = 0; i < span.Length; i++)
+        {
+            if (span[i].Id == id)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Places an object of <paramref name="kind"/> during play with its anchor at <paramref name="anchor"/> (absolute
+    /// centimetres) turned by <paramref name="heading"/>: logs its <see cref="VoxelEditOperation.PlaceObject"/> edit,
+    /// which every peer replays (a session's clients as they follow the host, a save's resumption, a joiner), its id
+    /// from its place, kind, heading, and edit (<see cref="ObjectId.Placed"/>). False, with nothing changed, on a world
+    /// that follows a host, for a kind not of the run's or one copied into the world's coarse levels
+    /// (<see cref="CanPlaceOrRemove"/>), a heading past a turn, an anchor outside the map, or an edit the world refuses.
+    /// Its area need not be filled: it holds the object once it is. Main thread.
+    /// </summary>
+    public bool TryPlace(
+        VoxelObjectKindId kind,
+        VoxelCoord anchor,
+        int heading,
+        int maker,
+        out ObjectPlacement placement
+    )
+    {
+        placement = default;
+        if (!_enabled || world.FollowsHost || !CanPlaceOrRemove(kind) || (uint)heading >= ObjectPlacement.HeadingSteps)
+        {
+            return false;
+        }
+
+        var (minX, endX, minZ, endZ) = KeptBox();
+        if (anchor.X < minX || anchor.X >= endX || anchor.Z < minZ || anchor.Z >= endZ)
+        {
+            return false;
+        }
+
+        var sequence = world.EditCount + 1;
+        var id = ObjectId.Placed(anchor, kind, heading, sequence);
+        for (var attempt = 1; IsLive(id, anchor); attempt++)
+        {
+            id = ObjectId.Placed(anchor, kind, heading, sequence, attempt);
+        }
+
+        var candidate = new ObjectPlacement(id, kind, anchor, heading, sequence);
+        var k = kinds[kind];
+        if (
+            !world.TryApply(
+                VoxelEdit.PlaceObject(in candidate, k.ReachCentimetres, k.BottomCentimetres, k.TopCentimetres),
+                maker,
+                out var applied
+            )
+        )
+        {
+            return false;
+        }
+
+        placement = candidate with { Since = applied };
+        return true;
+    }
+
+    /// <summary>
+    /// Removes a whole object during play, one the world's generator placed or one placed during play: logs its
+    /// <see cref="VoxelEditOperation.RemoveObject"/> edit, which every peer replays. False, with nothing changed, on a
+    /// world that follows a host, for a kind copied into the world's coarse levels, an object not in a filled area as
+    /// <paramref name="placement"/> names it (its id, kind, anchor, and heading), or an edit the world refuses. Main
+    /// thread.
+    /// </summary>
+    public bool TryRemove(in ObjectPlacement placement, int maker)
+    {
+        if (!_enabled || world.FollowsHost || !CanPlaceOrRemove(placement.Kind))
+        {
+            return false;
+        }
+
+        if (!_areas.TryGetValue(AreaAt(placement.Anchor.X, placement.Anchor.Z), out var area) || !area.Filled)
+        {
+            return false;
+        }
+
+        var at = IndexOf(area.Objects, placement.Id);
+        if (at < 0)
+        {
+            return false;
+        }
+
+        var kept = area.Objects[at];
+        if (kept.Kind != placement.Kind || kept.Anchor != placement.Anchor || kept.Heading != placement.Heading)
+        {
+            return false;
+        }
+
+        var k = kinds[placement.Kind];
+        return world.TryApply(
+            VoxelEdit.RemoveObject(in kept, k.ReachCentimetres, k.BottomCentimetres, k.TopCentimetres),
+            maker,
+            out _
+        );
+    }
+
+    /// <summary>
+    /// True when objects of <paramref name="kind"/> may be placed or removed by an edit: a kind of the run's that the
+    /// world does not copy into its coarse levels (a copy comes from the generator alone), within an edit's box (its
+    /// reach at most half of <see cref="VoxelConstants.MaxEditExtent"/>, its height at most all of it).
+    /// </summary>
+    public bool CanPlaceOrRemove(VoxelObjectKindId kind)
+    {
+        if (kind.Value >= kinds.Count)
+        {
+            return false;
+        }
+
+        var k = kinds[kind];
+        return 2L * k.ReachCentimetres <= VoxelConstants.MaxEditExtent
+            && (long)k.TopCentimetres - k.BottomCentimetres <= VoxelConstants.MaxEditExtent
+            && world.Copies?.IsCopied(kind) != true;
+    }
+
+    /// <summary>True when the filled area holding <paramref name="anchor"/> keeps an object <paramref name="id"/>.</summary>
+    private bool IsLive(ObjectId id, VoxelCoord anchor) =>
+        _areas.TryGetValue(AreaAt(anchor.X, anchor.Z), out var area) && area.Filled && IndexOf(area.Objects, id) >= 0;
+
+    /// <summary>
+    /// After a reset (<see cref="VoxelEditOperation.Reset"/>): every filled area lets its objects go and fills again at
+    /// once, from the generator and the log since the reset, which holds none of the placings and removals before it.
+    /// Main thread, as the world applies the reset (after its log takes it).
+    /// </summary>
+    internal void RefillAll()
+    {
+        if (!_enabled)
+        {
+            return;
+        }
+
+        foreach (var area in _areas.Values)
+        {
+            if (!area.Filled)
+            {
+                continue;
+            }
+
+            Listener?.Dropping(area.Objects);
+            Count -= area.Objects.Count;
+            area.Objects.Clear();
+            area.Filled = false;
+            Fill(area);
+        }
+    }
+
+    /// <summary>
+    /// Takes a logged placing or removal (<see cref="VoxelEdit.IsObjectPlacing"/>) into the filled area holding its
+    /// anchor: the object added after the area's others, or the one it names taken out (<paramref name="placement"/> as
+    /// kept). False where its area is not filled (its fill reads the edit from the log) or a removal names no object
+    /// there. Main thread, as the world applies the edit.
+    /// </summary>
+    internal bool TakePlacing(in VoxelEdit edit, out ObjectPlacement placement)
+    {
+        placement = edit.PlacementOf();
+        if (
+            !_enabled
+            || !_areas.TryGetValue(AreaAt(placement.Anchor.X, placement.Anchor.Z), out var area)
+            || !area.Filled
+        )
+        {
+            return false;
+        }
+
+        if (edit.Operation == VoxelEditOperation.PlaceObject)
+        {
+            area.Objects.Add(placement);
+            Count++;
+        }
+        else
+        {
+            var at = IndexOf(area.Objects, placement.Id);
+            if (at < 0)
+            {
+                return false;
+            }
+
+            placement = area.Objects[at];
+            area.Objects.RemoveAt(at);
+            Count--;
+        }
+
+        SetVersion++;
+        return true;
     }
 
     /// <summary>Hears of the objects as areas fill and drop (<c>ObjectDamage</c>), or null. Main thread.</summary>

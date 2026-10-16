@@ -55,7 +55,7 @@ projects used as references.
     game's `appsettings.json` (`ShippedSettingsTests`).
   - A console command added or removed: the list in the `run-game` skill.
   - Code that reads the edit log: handle `VoxelEditOperation.Reset`, an empty box after which no earlier edit counts,
-    and `RemovePart`, which changes objects alone (`VoxelEdit.ChangesWorld`).
+    and `RemovePart`, `PlaceObject`, and `RemoveObject`, which change objects alone (`VoxelEdit.ChangesWorld`).
   - A local position a component or service keeps across steps moves when the origin does (`OriginShifts` and its
     `ShiftedComponents`; the game's `IOriginShiftHandler`s). A component's vector field left out fails `OriginShiftsTests`
     or the game's `ChecklistTests`.

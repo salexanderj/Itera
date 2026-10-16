@@ -59,14 +59,16 @@ internal sealed record StoredPiece(long Sequence, VoxelCoord Min, VoxelCoord Siz
 /// objects' parts (<see cref="VoxelEditOperation.RemovePart"/>), and its generator id is the world's
 /// (<c>VoxelObjectKinds.WorldId</c>: with the object kinds' fingerprint where the world places objects). Format 8
 /// (2026-10-12) adds, after the pieces, a game's sections (<see cref="SavedSection"/>: their count, then each one's
-/// name, version, length, and bytes; a join payload has none). Format 1 to 7 streams, which have none (format 1 to 6 no
+/// name, version, length, and bytes; a join payload has none). Format 9 (2026-10-15) has the same layout as format 8,
+/// and its edits may include objects placed and removed whole during play (<see cref="VoxelEditOperation.PlaceObject"/>,
+/// <see cref="VoxelEditOperation.RemoveObject"/>). Format 1 to 8 streams (format 1 to 8 no objects placed or removed, format 1 to 7 no sections, format 1 to 6 no
 /// removals of objects' parts, format 1 to 5 no clears of some materials, format 1 to 4 no capsules, format 1 to 3 no
 /// resets, formats 1 and 2 no match settings, and format 1 no pieces), still read. A save file is this stream.
 /// </summary>
 internal static class EditLogSerializer
 {
     /// <summary>Format version written into every stream.</summary>
-    public const int FormatVersion = 8;
+    public const int FormatVersion = 9;
 
     /// <summary>The most sections a stream may hold.</summary>
     public const int MaxSections = 256;
@@ -362,6 +364,13 @@ internal static class EditLogSerializer
                 if (problem is not null)
                 {
                     throw Invalid($"Edit {i} is invalid: {problem}.");
+                }
+
+                if (format < 9 && edit.IsObjectPlacing)
+                {
+                    throw Invalid(
+                        $"A format {format} edit log cannot hold objects placed or removed whole (edit {i})."
+                    );
                 }
 
                 if (format < 7 && edit.Operation is VoxelEditOperation.RemovePart or VoxelEditOperation.ClearCopies)

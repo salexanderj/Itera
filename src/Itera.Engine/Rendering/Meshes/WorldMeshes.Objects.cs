@@ -53,7 +53,7 @@ public sealed unsafe partial class WorldMeshes
     {
         _damage = damage;
         // Followed only where the world places objects of some kind.
-        _objects = objects is { HasPlacer: true } && objectModels is { Kinds.Count: > 0 } ? objects : null;
+        _objects = objects is { IsEnabled: true } && objectModels is { Kinds.Count: > 0 } ? objects : null;
         _objectModels = objectModels;
         _handOver = objects?.HandOverLevel ?? 0;
         _objectModelsReady = false;

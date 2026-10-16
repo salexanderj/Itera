@@ -245,13 +245,44 @@ public sealed class EditLogTests
     public void A_log_of_a_newer_format_is_refused_by_its_version()
     {
         var bytes = Written(new EditLog(1, VoxelGrid.Unit)).ToArray();
-        bytes[4] = 9;
+        bytes[4] = 10;
 
         var ex = Assert.Throws<InvalidDataException>(() =>
             EditLogSerializer.ReadHeader(new MemoryStream(bytes), "test.gen", 3)
         );
 
-        Assert.Contains("format version 9; this build reads 1 to 8", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("format version 10; this build reads 1 to 9", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An object placed and one removed during play read back from a format 9 log; a format 8 log, the same layout, holds
+    /// none.
+    /// </summary>
+    [Fact]
+    public void Objects_placed_and_removed_read_back_and_a_format_8_log_has_none()
+    {
+        var log = new EditLog(1, VoxelGrid.Unit);
+        var placement = new Itera.Engine.Objects.ObjectPlacement(
+            new Itera.Engine.Objects.ObjectId(0xFEEDF00D),
+            new Itera.Engine.Objects.VoxelObjectKindId(3),
+            new VoxelCoord(1200, -50, -700),
+            1024
+        );
+        log.Append(VoxelEdit.PlaceObject(in placement, 75, 0, 100) with { Sequence = 1 });
+        log.Append(VoxelEdit.RemoveObject(in placement, 75, 0, 100) with { Sequence = 2 });
+        var bytes = Written(log).ToArray();
+        var edits = new List<VoxelEdit>();
+
+        EditLogSerializer.Read(new MemoryStream(bytes), "test.gen", 3, edits, []);
+        bytes[4] = 8;
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            EditLogSerializer.Read(new MemoryStream(bytes), "test.gen", 3, [], [])
+        );
+
+        Assert.Equal([log[1], log[2]], edits);
+        Assert.Equal(placement with { Since = 1 }, edits[0].PlacementOf());
+        Assert.Equal(placement, edits[1].PlacementOf());
+        Assert.Contains("cannot hold objects placed or removed whole", ex.Message, StringComparison.Ordinal);
     }
 
     /// <summary>

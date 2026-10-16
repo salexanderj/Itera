@@ -29,8 +29,10 @@ where it rises more than `LowCentimetres` over the ground (a trunk), raises the 
 lowers the headroom where it hangs over the floor (a branch); passable voxels (leaves) change nothing. A read takes the
 objects as they are (damaged too) from the mover's `ObjectColumns` (`NavGridScanner.Objects`, shared, main thread), by
 the highest top and the lowest bottom with the voxels, and waits, with the stamped edits, until the objects round the
-cell are known (their areas filled, `ObjectsKnown`). A removal of an object's part (`VoxelEditOperation.RemovePart`)
-changes the cells under its box (read once loaded; its stamp changes nothing), and each change of an object's copy
+cell are known (their areas filled, `ObjectsKnown`). A removal of an object's part (`VoxelEditOperation.RemovePart`), and
+an object placed or removed whole during play (`PlaceObject`, `RemoveObject`: the generator's placer does not know them,
+so they are not stamped at a fill), changes the cells under its box (read once loaded; its stamp changes nothing); a
+world whose generator places nothing reads objects wherever the run has kinds (`ObjectWorld.IsEnabled`), and each change of an object's copy
 (`ObjectDamage.ReadChanges`: an edit or a cut, a replay, a copy made again after the cap dropped it, a reset's healing)
 has the cells under its reach read again where loaded, else once loaded (one lost past the ring is passed over: the edits
 that changed it wait for their own reads; those during a refill are read after it). A run of an object's voxels whose

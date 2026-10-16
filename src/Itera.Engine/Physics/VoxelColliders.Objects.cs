@@ -69,12 +69,12 @@ public sealed partial class VoxelColliders
     /// <summary>When the objects changed, makes every cell find its objects again; their statics stay where kept.</summary>
     private void FollowObjects()
     {
-        if (_objects is null || _objects.Version == _objectsVersion)
+        if (_objects is null || _objects.SetVersion == _objectsVersion)
         {
             return;
         }
 
-        _objectsVersion = _objects.Version;
+        _objectsVersion = _objects.SetVersion;
         // Every cell's new objects first, then the old ones let go, so an object both reach keeps its statics.
         _keys.Clear();
         _keys.AddRange(_cells.Keys);

@@ -115,14 +115,14 @@ public sealed class VoxelObjectKinds
 
     /// <summary>
     /// The id of the world <paramref name="generator"/> makes with <paramref name="kinds"/>: the generator's, and where
-    /// it places objects of any kind, the kinds' <see cref="Fingerprint"/> after it (<c>game.world+objects-…</c>), so
-    /// games, saves, and joins whose kinds or rules differ refuse each other. The match's identity and a save's header
-    /// carry it.
+    /// the run has kinds (which the generator places, or a game places during play), the kinds'
+    /// <see cref="Fingerprint"/> after it (<c>game.world+objects-…</c>), so games, saves, and joins whose kinds or rules
+    /// differ refuse each other. The match's identity and a save's header carry it.
     /// </summary>
     public static string WorldId(IChunkGenerator generator, VoxelObjectKinds? kinds)
     {
         ArgumentNullException.ThrowIfNull(generator);
-        return generator.Objects is not null && kinds is { Count: > 0 }
+        return kinds is { Count: > 0 }
             ? string.Create(
                 System.Globalization.CultureInfo.InvariantCulture,
                 $"{generator.Id}+objects-{kinds.Fingerprint:x16}"

@@ -16,9 +16,10 @@ internal static class ObjectEditing
 {
     /// <summary>
     /// The version of this rule (the share, the turn, what changes objects), part of the kinds' fingerprint and so of the
-    /// match's identity: raise it with any change to what an edit does to objects, which peers must compute alike.
+    /// match's identity: raise it with any change to what an edit does to objects, which peers must compute alike. 2
+    /// since objects are placed and removed whole by edits (2026-10-15).
     /// </summary>
-    public const int RuleVersion = 1;
+    public const int RuleVersion = 2;
 
     /// <summary>
     /// True when <paramref name="edit"/> changes objects: a removal or a paint, not of a piece, or the removal of an

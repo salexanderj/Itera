@@ -52,7 +52,7 @@ public sealed partial class VoxelWorld
     /// </summary>
     public bool CanApply(in VoxelEdit edit)
     {
-        var problem = (edit with { Sequence = _edits.Count + 1 }).Validate();
+        var problem = (edit with { Sequence = _edits.Count + 1 }).Validate() ?? ObjectProblem(in edit);
         if (problem is not null)
         {
             LogRefusedEdit(problem);
@@ -71,6 +71,33 @@ public sealed partial class VoxelWorld
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Null for an edit that is not an object's placing or removal, or one whose object is of the run's kinds
+    /// (<see cref="Objects.VoxelObjectKinds"/>), not copied into the world's coarse levels, with its box its kind's
+    /// reach and height round its anchor; else the reason it cannot be applied.
+    /// </summary>
+    private string? ObjectProblem(in VoxelEdit edit)
+    {
+        if (!edit.IsObjectPlacing)
+        {
+            return null;
+        }
+
+        var kind = new Objects.VoxelObjectKindId((ushort)(edit.Turn & 0xFFFF));
+        if (_kinds is null || kind.Value >= _kinds.Count)
+        {
+            return "an object's kind is not one of the run's";
+        }
+
+        if (Copies?.IsCopied(kind) == true)
+        {
+            return "an object of a kind copied into the world's coarse levels is neither placed nor removed by an edit";
+        }
+
+        var k = _kinds[kind];
+        return edit.CheckObjectBox(k.ReachCentimetres, k.BottomCentimetres, k.TopCentimetres);
     }
 
     /// <summary>
@@ -592,7 +619,7 @@ public sealed partial class VoxelWorld
 
     private void ApplyChecked(in VoxelEdit edit, int maker)
     {
-        var problem = edit.Validate();
+        var problem = edit.Validate() ?? ObjectProblem(in edit);
         if (problem is not null)
         {
             throw new ArgumentException("Invalid voxel edit: " + problem + ".", nameof(edit));
@@ -620,7 +647,7 @@ public sealed partial class VoxelWorld
         _edits.Append(in edit, maker);
         _stats.Edits++;
         ObjectEdits?.Applied(in edit);
-        if (edit.Operation == VoxelEditOperation.RemovePart)
+        if (edit.Operation == VoxelEditOperation.RemovePart || edit.IsObjectPlacing)
         {
             // An object's alone: the world's voxels stay.
             return;

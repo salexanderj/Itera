@@ -301,6 +301,8 @@ public sealed class NavGridScanner
             case VoxelEditOperation.Reset:
             case VoxelEditOperation.RemovePart:
             case VoxelEditOperation.ClearCopies:
+            case VoxelEditOperation.PlaceObject:
+            case VoxelEditOperation.RemoveObject:
                 return false;
             case VoxelEditOperation.Clear:
             case VoxelEditOperation.Lift:

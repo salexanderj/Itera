@@ -176,7 +176,7 @@ public sealed class ObjectDamageTests : IDisposable
             scene.Placements.Select(p => scene.Damage.Find(p.Id) is { } damaged ? Snapshot(damaged) : "-")
         );
 
-        Assert.Equal(1, ObjectEditing.RuleVersion);
+        Assert.Equal(2, ObjectEditing.RuleVersion);
         Assert.Equal(
             pinned,
             Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(all)))[

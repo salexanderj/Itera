@@ -109,8 +109,8 @@ public sealed class WireFingerprintTests : IDisposable
 
         Assert.Equal(4, clientWorld.EditCount);
         WireFingerprint.AssertPinned(
-            44,
-            "A62AF78D25DD166A",
+            45,
+            "9129BBB861D9D09B",
             WireFingerprint.Of([.. hostTransport.Recorded, .. clientTransport.Recorded])
         );
     }
@@ -152,7 +152,7 @@ public sealed class WireFingerprintTests : IDisposable
             message => message[0] == (byte)MessageKind.Reply && message.Length > 40
         );
         WireFingerprint.AssertPinned(
-            44,
+            45,
             "D761F8814488E272",
             WireFingerprint.Of([.. harness.HostTransport.Recorded, .. harness.ClientTransport.Recorded])
         );

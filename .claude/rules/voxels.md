@@ -83,7 +83,8 @@ only where every voxel is wholly so (the voxels' edges are tested, not their sam
 - A world voxel has a material and a density (`VoxelDensity`: how much of it is solid, 0 to 255; a solid voxel's 128
   to 255, an air voxel's 0 to 127, fitted where stored). The world's sphere, capsule, and box clears, fills, sets, and
   clears of some materials change each voxel by the share of it they cover (a removal of an object's part,
-  `VoxelEditOperation.RemovePart`, changes no world voxel, and a clear of objects' far copies, `ClearCopies`, one level's
+  `VoxelEditOperation.RemovePart`, and an object placed or removed whole, `PlaceObject` and `RemoveObject`, change no
+  world voxel, and a clear of objects' far copies, `ClearCopies`, one level's
   by sample point: `.claude/rules/objects.md`) (up to 10 x 10 sub-rows along y and z, each
   to the centimetre along x: a 10 cm voxel's cubic centimetres), its density with it, and the material follows the
   density across one half (`VoxelEditing.Densities.cs`: `ApplyToWorldChunk`, the dense `ApplyToRegion` with densities,

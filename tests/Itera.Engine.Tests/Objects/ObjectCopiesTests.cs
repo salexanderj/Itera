@@ -443,16 +443,23 @@ public sealed class ObjectCopiesTests : IDisposable
         }
     }
 
-    /// <summary>A world that places objects is another match for each set of kinds: the identity carries their fingerprint.</summary>
+    /// <summary>
+    /// A world with object kinds is another match for each set of them, whether its generator places them or a game
+    /// places them during play: the identity carries their fingerprint; with none, the generator's id alone.
+    /// </summary>
     [Fact]
-    public void The_match_identity_carries_the_kinds_fingerprint_where_the_world_places_objects()
+    public void The_match_identity_carries_the_kinds_fingerprint_where_the_run_has_kinds()
     {
         var placing = new Placing([]);
         var identity = new GeneratorMatchIdentity(placing, _kinds);
         Assert.Equal($"test.copies+objects-{_kinds.Fingerprint:x16}", identity.Id);
         Assert.Equal(1, identity.Version);
-        Assert.Equal("test.flat", new GeneratorMatchIdentity(new FlatTestGenerator(s_grid), _kinds).Id);
+        Assert.Equal(
+            $"test.flat+objects-{_kinds.Fingerprint:x16}",
+            new GeneratorMatchIdentity(new FlatTestGenerator(s_grid), _kinds).Id
+        );
         Assert.Equal("test.copies", new GeneratorMatchIdentity(placing, new VoxelObjectKinds()).Id);
+        Assert.Equal("test.flat", new GeneratorMatchIdentity(new FlatTestGenerator(s_grid), new VoxelObjectKinds()).Id);
     }
 
     /// <summary>The copied columns' voxels are pinned: a change to the copies' rule or the turns must show here.</summary>

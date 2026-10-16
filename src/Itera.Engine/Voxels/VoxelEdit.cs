@@ -81,6 +81,24 @@ public enum VoxelEditOperation : byte
     /// (<see cref="VoxelEdit.ClearCopies"/>).
     /// </summary>
     ClearCopies = 8,
+
+    /// <summary>
+    /// A voxel object is placed during play (since save format 9 and protocol 45): the object <see cref="VoxelEdit.Piece"/>
+    /// names (its <c>ObjectId</c>), of the kind and at the heading <see cref="VoxelEdit.Turn"/> holds, its anchor in the
+    /// middle of the box across x and z and its kind's bottom under it at the box's floor
+    /// (<see cref="VoxelEdit.PlacementOf"/>). The world's voxels do not change: its box (of air) is the object's reach and
+    /// height, for the log's index. Made by a session's host, or an offline game (<c>ObjectWorld.TryPlace</c>); its kind
+    /// has no far copies.
+    /// </summary>
+    PlaceObject = 9,
+
+    /// <summary>
+    /// A voxel object goes whole (since save format 9 and protocol 45), placed by the world's generator or during play:
+    /// the object <see cref="VoxelEdit.Piece"/> names, with its placement in the edit as
+    /// <see cref="PlaceObject"/>'s. The world's voxels do not change. Made by a session's host, or an offline game
+    /// (<c>ObjectWorld.TryRemove</c>); its kind has no far copies.
+    /// </summary>
+    RemoveObject = 10,
 }
 
 /// <summary>
@@ -237,6 +255,88 @@ public readonly record struct VoxelEdit(
     }
 
     /// <summary>
+    /// The placing of an object during play (<see cref="VoxelEditOperation.PlaceObject"/>) at
+    /// <paramref name="placement"/>, of a kind that reaches <paramref name="reachCentimetres"/> across its anchor and
+    /// from <paramref name="bottomCentimetres"/> to <paramref name="topCentimetres"/> over it (its kind's).
+    /// </summary>
+    public static VoxelEdit PlaceObject(
+        in Objects.ObjectPlacement placement,
+        int reachCentimetres,
+        int bottomCentimetres,
+        int topCentimetres
+    ) => OfObject(VoxelEditOperation.PlaceObject, in placement, reachCentimetres, bottomCentimetres, topCentimetres);
+
+    /// <summary>
+    /// The removal of a whole object (<see cref="VoxelEditOperation.RemoveObject"/>) at <paramref name="placement"/>, as
+    /// <see cref="PlaceObject"/> names one.
+    /// </summary>
+    public static VoxelEdit RemoveObject(
+        in Objects.ObjectPlacement placement,
+        int reachCentimetres,
+        int bottomCentimetres,
+        int topCentimetres
+    ) => OfObject(VoxelEditOperation.RemoveObject, in placement, reachCentimetres, bottomCentimetres, topCentimetres);
+
+    private static VoxelEdit OfObject(
+        VoxelEditOperation operation,
+        in Objects.ObjectPlacement placement,
+        int reach,
+        int bottom,
+        int top
+    )
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(reach);
+        ArgumentOutOfRangeException.ThrowIfLessThan(top, bottom);
+        if ((uint)placement.Heading >= Objects.ObjectPlacement.HeadingSteps)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(placement),
+                placement.Heading,
+                "A heading is a step of a turn."
+            );
+        }
+
+        var anchor = placement.Anchor;
+        return new(
+            0,
+            VoxelEditShape.Box,
+            operation,
+            VoxelConstants.Air,
+            new VoxelCoord(anchor.X - reach, anchor.Y + bottom, anchor.Z - reach),
+            new VoxelCoord(2 * reach, top - bottom, 2 * reach),
+            (long)placement.Id.Value,
+            placement.Kind.Value | ((long)placement.Heading << 16) | ((long)-bottom << 32)
+        );
+    }
+
+    /// <summary>
+    /// The object a <see cref="VoxelEditOperation.PlaceObject"/> or <see cref="VoxelEditOperation.RemoveObject"/> edit
+    /// names, as placed: its id, kind, anchor, and heading, and its edit's sequence as where its edits start (from its
+    /// placing on, for one placed during play).
+    /// </summary>
+    public Objects.ObjectPlacement PlacementOf() =>
+        new(
+            new Objects.ObjectId((ulong)Piece),
+            new Objects.VoxelObjectKindId((ushort)(Turn & 0xFFFF)),
+            new VoxelCoord(Origin.X + Extent.X / 2, Origin.Y + (int)(Turn >> 32), Origin.Z + Extent.Z / 2),
+            (int)((Turn >> 16) & 0xFFFF),
+            Operation == VoxelEditOperation.PlaceObject ? Sequence : 0
+        );
+
+    /// <summary>
+    /// For a <see cref="VoxelEditOperation.PlaceObject"/> or <see cref="VoxelEditOperation.RemoveObject"/> edit: null
+    /// when its box is its kind's reach and height round its anchor (<paramref name="reachCentimetres"/>,
+    /// <paramref name="bottomCentimetres"/>, <paramref name="topCentimetres"/>), or the reason it is not.
+    /// </summary>
+    public string? CheckObjectBox(int reachCentimetres, int bottomCentimetres, int topCentimetres) =>
+        Extent.X == 2 * reachCentimetres
+        && Extent.Z == 2 * reachCentimetres
+        && Extent.Y == topCentimetres - bottomCentimetres
+        && (int)(Turn >> 32) == -bottomCentimetres
+            ? null
+            : "an object's edit's box is its kind's reach and height round its anchor";
+
+    /// <summary>
     /// True when the edit can change the world's voxels of <paramref name="level"/>: a clear of copies only its own level
     /// (<see cref="VoxelEditOperation.ClearCopies"/>), any other edit every level.
     /// </summary>
@@ -252,7 +352,15 @@ public readonly record struct VoxelEdit(
     /// True when the edit can change the world's own voxels: not a reset (which unloads them instead) nor the removal of
     /// an object's part. Columns replay only these.
     /// </summary>
-    public bool ChangesWorld => Operation is not VoxelEditOperation.Reset and not VoxelEditOperation.RemovePart;
+    public bool ChangesWorld =>
+        Operation
+            is not VoxelEditOperation.Reset
+                and not VoxelEditOperation.RemovePart
+                and not VoxelEditOperation.PlaceObject
+                and not VoxelEditOperation.RemoveObject;
+
+    /// <summary>True for an edit that places or removes a whole object (<see cref="VoxelEditOperation.PlaceObject"/>, <see cref="VoxelEditOperation.RemoveObject"/>).</summary>
+    public bool IsObjectPlacing => Operation is VoxelEditOperation.PlaceObject or VoxelEditOperation.RemoveObject;
 
     /// <summary>
     /// A piece edit: puts the piece lifted by edit <paramref name="piece"/> back with its pivot at voxel corner
@@ -409,7 +517,10 @@ public readonly record struct VoxelEdit(
             VoxelEditOperation.Set => Material,
             VoxelEditOperation.Clear or VoxelEditOperation.Lift => VoxelConstants.Air,
             VoxelEditOperation.Fill => current == VoxelConstants.Air ? Material : current,
-            VoxelEditOperation.Reset or VoxelEditOperation.RemovePart => current,
+            VoxelEditOperation.Reset
+            or VoxelEditOperation.RemovePart
+            or VoxelEditOperation.PlaceObject
+            or VoxelEditOperation.RemoveObject => current,
             VoxelEditOperation.ClearMaterials or VoxelEditOperation.ClearCopies => ClearsMaterial(current)
                 ? VoxelConstants.Air
                 : current,
@@ -425,7 +536,10 @@ public readonly record struct VoxelEdit(
                 VoxelEditOperation.Set => Material == material,
                 VoxelEditOperation.Clear or VoxelEditOperation.Lift => material == VoxelConstants.Air,
                 VoxelEditOperation.Fill => material != VoxelConstants.Air || Material == VoxelConstants.Air,
-                VoxelEditOperation.Reset or VoxelEditOperation.RemovePart => true,
+                VoxelEditOperation.Reset
+                or VoxelEditOperation.RemovePart
+                or VoxelEditOperation.PlaceObject
+                or VoxelEditOperation.RemoveObject => true,
                 VoxelEditOperation.ClearMaterials or VoxelEditOperation.ClearCopies => !ClearsMaterial(material),
                 _ => material == VoxelConstants.Air || Material == material,
             };
@@ -435,7 +549,7 @@ public readonly record struct VoxelEdit(
     {
         // Plain comparisons, not Enum.IsDefined: that keeps its value list in a runtime cache that any garbage
         // collection can drop, and rebuilding it allocates about 480 bytes inside the next edit.
-        if (Shape > VoxelEditShape.Capsule || Operation > VoxelEditOperation.ClearCopies)
+        if (Shape > VoxelEditShape.Capsule || Operation > VoxelEditOperation.RemoveObject)
         {
             return "unknown shape or operation";
         }
@@ -464,6 +578,24 @@ public readonly record struct VoxelEdit(
             if ((Turn >> 48) != 0 || seed.X >= MostSeed || seed.Y >= MostSeed || seed.Z >= MostSeed)
             {
                 return "a part's seed lies in an object kind's box";
+            }
+        }
+
+        if (IsObjectPlacing)
+        {
+            if (Shape != VoxelEditShape.Box || Material != VoxelConstants.Air)
+            {
+                return "an object's placing or removal is a box of air";
+            }
+
+            if (Extent.X != Extent.Z || (Extent.X & 1) != 0 || ((Turn >> 28) & 0xF) != 0)
+            {
+                return "an object's edit's box is square across x and z, even, round its anchor";
+            }
+
+            if (((Turn >> 16) & 0xFFFF) >= Objects.ObjectPlacement.HeadingSteps)
+            {
+                return "an object's heading is a step of a turn";
             }
         }
 
@@ -556,6 +688,8 @@ public readonly record struct VoxelEdit(
                 is not VoxelEditOperation.ClearMaterials
                     and not VoxelEditOperation.RemovePart
                     and not VoxelEditOperation.ClearCopies
+                    and not VoxelEditOperation.PlaceObject
+                    and not VoxelEditOperation.RemoveObject
         )
         {
             return "only a piece edit names a piece or a turn";
