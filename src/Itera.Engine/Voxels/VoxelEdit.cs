@@ -57,9 +57,10 @@ public enum VoxelEditOperation : byte
 
     /// <summary>
     /// Every covered voxel of a material in the edit's set becomes air; the others stay (since save format 6 and protocol
-    /// 31: a player's removal of one material). Only a box of material air takes it; the
-    /// set (<see cref="VoxelEdit.MaterialsBox"/>, <see cref="VoxelEdit.ClearsMaterial"/>) holds materials 0 to 127, air
-    /// never.
+    /// 31: a player's removal of one material). Only a box of material air takes it, and since save format 10 and
+    /// protocol 46 a sphere of material air too (a blast's crater that leaves voxel objects of other materials whole); the
+    /// set (<see cref="VoxelEdit.MaterialsBox"/>, <see cref="VoxelEdit.MaterialsSphere"/>,
+    /// <see cref="VoxelEdit.ClearsMaterial"/>) holds materials 0 to 127, air never.
     /// </summary>
     ClearMaterials = 6,
 
@@ -107,8 +108,8 @@ public enum VoxelEditOperation : byte
 /// same order gets the same voxels. <see cref="Sequence"/> is the edit's position in the world's edit log, starting at
 /// 1; it is 0 until the world assigns it. <see cref="Piece"/> and <see cref="Turn"/> are 0 except for
 /// <see cref="VoxelEditShape.Piece"/> edits; a capsule holds its radius in <see cref="Piece"/>, and a
-/// <see cref="VoxelEditOperation.ClearMaterials"/> box its set of materials in both (0 to 63 in <see cref="Piece"/>, 64 to
-/// 127 in <see cref="Turn"/>, a bit each).
+/// <see cref="VoxelEditOperation.ClearMaterials"/> box or sphere its set of materials in both (0 to 63 in
+/// <see cref="Piece"/>, 64 to 127 in <see cref="Turn"/>, a bit each).
 /// </summary>
 public readonly record struct VoxelEdit(
     long Sequence,
@@ -190,6 +191,33 @@ public readonly record struct VoxelEdit(
     /// </summary>
     public static VoxelEdit MaterialsBox(VoxelCoord min, VoxelCoord size, ReadOnlySpan<byte> materials)
     {
+        var (low, high) = MaterialSet(materials);
+        return new(0, VoxelEditShape.Box, VoxelEditOperation.ClearMaterials, VoxelConstants.Air, min, size, low, high);
+    }
+
+    /// <summary>
+    /// A sphere of <paramref name="radius"/> centimetres round <paramref name="centre"/> that clears only the materials in
+    /// <paramref name="materials"/> (<see cref="VoxelEditOperation.ClearMaterials"/>), each below
+    /// <see cref="MaterialSetSize"/>: a crater that leaves voxel objects of other materials whole.
+    /// </summary>
+    public static VoxelEdit MaterialsSphere(VoxelCoord centre, int radius, ReadOnlySpan<byte> materials)
+    {
+        var (low, high) = MaterialSet(materials);
+        return new(
+            0,
+            VoxelEditShape.Sphere,
+            VoxelEditOperation.ClearMaterials,
+            VoxelConstants.Air,
+            centre,
+            new VoxelCoord(radius, radius, radius),
+            low,
+            high
+        );
+    }
+
+    /// <summary>A clear's set of materials: 0 to 63 a bit each in the first, 64 to 127 in the second.</summary>
+    private static (long Low, long High) MaterialSet(ReadOnlySpan<byte> materials)
+    {
         long low = 0;
         long high = 0;
         foreach (var material in materials)
@@ -205,7 +233,7 @@ public readonly record struct VoxelEdit(
             }
         }
 
-        return new(0, VoxelEditShape.Box, VoxelEditOperation.ClearMaterials, VoxelConstants.Air, min, size, low, high);
+        return (low, high);
     }
 
     /// <summary>True when a <see cref="VoxelEditOperation.ClearMaterials"/> edit clears voxels of <paramref name="material"/>.</summary>
@@ -601,9 +629,9 @@ public readonly record struct VoxelEdit(
 
         if (Operation == VoxelEditOperation.ClearMaterials)
         {
-            if (Shape != VoxelEditShape.Box || Material != VoxelConstants.Air)
+            if (Shape is not VoxelEditShape.Box and not VoxelEditShape.Sphere || Material != VoxelConstants.Air)
             {
-                return "a clear of some materials is a box of air";
+                return "a clear of some materials is a box or sphere of air";
             }
 
             if ((Piece == 0 && Turn == 0) || (Piece & 1) != 0)

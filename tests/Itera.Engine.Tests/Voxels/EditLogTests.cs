@@ -245,13 +245,53 @@ public sealed class EditLogTests
     public void A_log_of_a_newer_format_is_refused_by_its_version()
     {
         var bytes = Written(new EditLog(1, VoxelGrid.Unit)).ToArray();
-        bytes[4] = 10;
+        bytes[4] = 11;
 
         var ex = Assert.Throws<InvalidDataException>(() =>
             EditLogSerializer.ReadHeader(new MemoryStream(bytes), "test.gen", 3)
         );
 
-        Assert.Contains("format version 10; this build reads 1 to 9", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("format version 11; this build reads 1 to 10", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A sphere clearing some materials reads back from a format 10 log with its set; a format 9 log, the same layout,
+    /// holds none (a box clearing some materials it still holds).
+    /// </summary>
+    [Fact]
+    public void A_sphere_clearing_some_materials_reads_back_and_a_format_9_log_has_none()
+    {
+        var log = new EditLog(1, VoxelGrid.Unit);
+        log.Append(VoxelEdit.MaterialsSphere(new VoxelCoord(40, -20, 70), 150, [3, 9, 100]) with { Sequence = 1 });
+        var bytes = Written(log).ToArray();
+        var boxes = new EditLog(1, VoxelGrid.Unit);
+        boxes.Append(
+            VoxelEdit.MaterialsBox(new VoxelCoord(40, -20, 70), new VoxelCoord(10, 20, 30), [3]) with
+            {
+                Sequence = 1,
+            }
+        );
+        var boxBytes = Written(boxes).ToArray();
+        var edits = new List<VoxelEdit>();
+
+        EditLogSerializer.Read(new MemoryStream(bytes), "test.gen", 3, edits, []);
+        bytes[4] = 9;
+        boxBytes[4] = 9;
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            EditLogSerializer.Read(new MemoryStream(bytes), "test.gen", 3, [], [])
+        );
+        var fromFormat9 = new List<VoxelEdit>();
+        EditLogSerializer.Read(new MemoryStream(boxBytes), "test.gen", 3, fromFormat9, []);
+
+        Assert.Equal([log[1]], edits);
+        Assert.Equal(
+            (VoxelEditShape.Sphere, VoxelEditOperation.ClearMaterials, 150),
+            (edits[0].Shape, edits[0].Operation, edits[0].Radius)
+        );
+        Assert.True(edits[0].ClearsMaterial(3) && edits[0].ClearsMaterial(9) && edits[0].ClearsMaterial(100));
+        Assert.False(edits[0].ClearsMaterial(4));
+        Assert.Contains("cannot hold spheres clearing some materials", ex.Message, StringComparison.Ordinal);
+        Assert.Equal([boxes[1]], fromFormat9);
     }
 
     /// <summary>

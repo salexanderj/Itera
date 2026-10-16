@@ -293,7 +293,7 @@ public sealed class VoxelPieceTests : IDisposable
 
         var written = stream.ToArray();
         // The format version follows the 4-byte magic; the last 4 bytes count the sections, none in a world's log alone.
-        Assert.Equal(9, written[4]);
+        Assert.Equal(10, written[4]);
         Assert.Equal([0, 0, 0, 0], written[^4..]);
         var bytes = written[..^4];
         bytes[4] = 4;
@@ -303,8 +303,9 @@ public sealed class VoxelPieceTests : IDisposable
 
         // Pinned: the bytes are the save file and the join payload; a change here needs a new format version. Formats 4
         // to 7 changed only the version from format 3 (resets, then capsules, then clears of some materials, then removals
-        // of objects' parts may follow; this world places no objects, so its id is its generator's), and format 8 added
-        // the sections' count at the end, so with 4 or 3 put back and the count left off the old pins hold.
+        // of objects' parts may follow; this world places no objects, so its id is its generator's), format 8 added
+        // the sections' count at the end, and formats 9 and 10 only the version again (objects placed and removed, then
+        // spheres clearing some materials), so with 4 or 3 put back and the count left off the old pins hold.
         Assert.Equal(7552161417393775388UL, asFormat4);
         Assert.Equal(14899856787725782161UL, asFormat3);
 

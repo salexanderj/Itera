@@ -58,6 +58,7 @@ public sealed class VoxelEditingTests : IDisposable
             // A fill and a clear of some materials over whole bricks of one material and over mixed ones.
             VoxelEdit.Box(Offset(origin, 8, 56, 8), new VoxelCoord(64, 48, 67), VoxelEditOperation.Fill, 12),
             VoxelEdit.MaterialsBox(Offset(origin, 0, 30, 0), new VoxelCoord(128, 90, 61), [9, 12, Stone]),
+            VoxelEdit.MaterialsSphere(Offset(origin, 64, 60, 64), 40, [11, 12]),
             VoxelEdit.Box(Offset(origin, 0, 0, 0), new VoxelCoord(128, 20, 128), VoxelEditOperation.Clear),
         ];
         var changed = new int[VoxelConstants.BricksPerChunk];

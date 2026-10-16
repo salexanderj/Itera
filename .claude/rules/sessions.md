@@ -108,12 +108,13 @@ damaged file as `NAME.save.damaged`, not as the backup), while a save that is wh
 build (`EditLogSerializer.IsMismatch`), or that cannot be opened, ends the start with both files left, and a deleted
 save starts a new world whatever its backup; a failed write leaves the old save, deletes its temporary file, and is told
 at the menu.
-Save names refuse Windows device names (CON, NUL, COM1, ...). The file is the edit log stream, format 9 (it may hold
-resets, capsule edits, clears of some materials, removals of voxel objects' parts, clears of their far copies, and
-objects placed and removed whole during play, and ends with the game's sections, at most 256, none in a join payload;
+Save names refuse Windows device names (CON, NUL, COM1, ...). The file is the edit log stream, format 10 (it may hold
+resets, capsule edits, clears of some materials (boxes, and since format 10 spheres), removals of voxel objects' parts,
+clears of their far copies, and objects placed and removed whole during play, and ends with the game's sections, at
+most 256, none in a join payload;
 its generator id is the world's, with the object kinds' fingerprint where the run has kinds,
-`VoxelObjectKinds.WorldId`, so a save of other kinds is refused; formats 1 to 8 still read, those before 7 with their
-plain generator id taken for such a world too, and an older build refuses format 9). A client never saves. The log indexes at most 2^24 column entries since its last
+`VoxelObjectKinds.WorldId`, so a save of other kinds is refused; formats 1 to 9 still read, those before 7 with their
+plain generator id taken for such a world too, and an older build refuses format 10). A client never saves. The log indexes at most 2^24 column entries since its last
 reset (`EditLog.MaxIndexEntries`, counted over all ten levels whatever `Engine:Voxels:Levels` is, so every game
 agrees): a save, a join payload, or a host's edit past that is refused, and a game's edits
 (`VoxelWorld.TryApply`, which also refuses an edit far outside the map) stop short of it.

@@ -187,7 +187,7 @@ public sealed class VoxelEditTests
     }
 
     [Fact]
-    public void A_clear_of_some_materials_takes_only_those_and_is_a_box_of_air_that_names_at_least_one()
+    public void A_clear_of_some_materials_takes_only_those_and_is_a_box_or_sphere_of_air_that_names_at_least_one()
     {
         var edit = VoxelEdit.MaterialsBox(new VoxelCoord(-5, 2, 3), new VoxelCoord(10, 10, 10), [2, 63, 64, 127]);
 
@@ -204,13 +204,26 @@ public sealed class VoxelEditTests
         Assert.True(edit.LeavesUniform(3));
         Assert.False(edit.LeavesUniform(64));
 
-        Assert.NotNull((edit with { Shape = VoxelEditShape.Sphere }).Validate());
+        var sphere = VoxelEdit.MaterialsSphere(new VoxelCoord(-5, 2, 3), 75, [2, 63, 64, 127]);
+        Assert.Null(sphere.Validate());
+        Assert.Equal((VoxelEditShape.Sphere, VoxelEditOperation.ClearMaterials), (sphere.Shape, sphere.Operation));
+        Assert.Equal((edit.Piece, edit.Turn, 75), (sphere.Piece, sphere.Turn, sphere.Radius));
+        Assert.True(sphere.Contains(-5, 2 + 75, 3) && !sphere.Contains(-5, 2 + 76, 3));
+        Assert.Equal(VoxelConstants.Air, sphere.Apply(64));
+        Assert.Equal(3, sphere.Apply(3));
+
+        Assert.NotNull((edit with { Shape = VoxelEditShape.Capsule }).Validate());
+        Assert.NotNull((sphere with { Material = 2 }).Validate());
+        Assert.NotNull((sphere with { Piece = 0, Turn = 0 }).Validate());
         Assert.NotNull((edit with { Material = 2 }).Validate());
         Assert.NotNull((edit with { Piece = 0, Turn = 0 }).Validate());
         Assert.NotNull((edit with { Piece = edit.Piece | 1 }).Validate());
         Assert.NotNull((edit with { Operation = VoxelEditOperation.Clear }).Validate());
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             VoxelEdit.MaterialsBox(default, new VoxelCoord(1, 1, 1), [VoxelEdit.MaterialSetSize])
+        );
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            VoxelEdit.MaterialsSphere(default, 1, [VoxelEdit.MaterialSetSize])
         );
     }
 

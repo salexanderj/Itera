@@ -93,7 +93,7 @@ public sealed class NavGridScanner
     /// <summary>
     /// True when <paramref name="edit"/> clears only materials walkers pass through (a blast stripping leaves and
     /// flowers): it changes no floor or headroom, so its cells need neither reading again nor stamping (stamped from its
-    /// shape, a clear of some materials counts as a dig of its whole box). Any thread; allocates nothing.
+    /// shape, a clear of some materials counts as a dig of its whole shape). Any thread; allocates nothing.
     /// </summary>
     public bool ClearsOnlyPassable(in VoxelEdit edit)
     {
