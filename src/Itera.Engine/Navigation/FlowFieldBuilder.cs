@@ -3,12 +3,13 @@ namespace Itera.Engine.Navigation;
 /// <summary>
 /// Builds a <see cref="FlowField"/> by Dijkstra's search backwards from its goal cells over the eight neighbours of each
 /// cell, with a ring of buckets for the queue (every cost is a small whole number). Entering a cell costs its class's
-/// cost, or the break cost where the walker's size cannot stand, or the steep cost for a rise past its climb or a drop
-/// past its drop (<see cref="NavSize.DropCentimetres"/>); a diagonal step needs both cells beside it walkable, so
-/// routes never cut a corner. Where a straight step and a diagonal one cost the same, a cell takes the straight one, so
-/// a route goes straight until it must turn (a road's cells lead down it side by side, not diagonally into the few
-/// lines that pass its obstacles). Blocked cells are expensive rather than closed, so every cell of the grid gets a
-/// route. Keeps its arrays between builds and allocates nothing once they have grown; one thread at a time.
+/// cost (and a step down its table's cost for the drop, <see cref="NavCostTable.WithDrop"/>), or the break cost where the
+/// walker's size cannot stand, or the steep cost for a rise past its climb or a drop past its drop
+/// (<see cref="NavSize.DropCentimetres"/>); a diagonal step needs both cells beside it walkable, so routes never cut a
+/// corner. Where a straight step and a diagonal one cost the same, a cell takes the straight one, so a route goes
+/// straight until it must turn (a road's cells lead down it side by side, not diagonally into the few lines that pass
+/// its obstacles). Blocked cells are expensive rather than closed, so every cell of the grid gets a route. Keeps its
+/// arrays between builds and allocates nothing once they have grown; one thread at a time.
 /// </summary>
 public sealed class FlowFieldBuilder
 {
@@ -136,7 +137,11 @@ public sealed class FlowFieldBuilder
                     }
                     else
                     {
-                        step = diagonal ? costs.DiagonalCost(enterClass) : costs.Straight(enterClass);
+                        step = costs.WithDrop(
+                            diagonal ? costs.DiagonalCost(enterClass) : costs.Straight(enterClass),
+                            floor[from] - enterFloor,
+                            diagonal ? costs.DiagonalSteep : costs.Steep
+                        );
                     }
 
                     var total = distance + step;

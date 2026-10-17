@@ -191,6 +191,35 @@ public sealed class NavPathFinderTests
         );
     }
 
+    /// <summary>A path crosses a pit 30 cm deep with no cost for drops, and goes round it where a step down costs.</summary>
+    [Fact]
+    public void A_shallow_pit_is_walked_round_where_drops_cost()
+    {
+        var grid = Grid();
+        for (var z = 30; z <= 33; z++)
+        {
+            for (var x = 20; x <= 23; x++)
+            {
+                grid.Floor[grid.Index(x, z)] = -30;
+            }
+        }
+
+        var dropping = new NavCostTable([10], 20_000, 3000, dropPerMetre: 100);
+        var finder = new NavPathFinder();
+        var path = new int[256];
+        Assert.Equal(
+            NavPathResult.Reached,
+            finder.Find(grid, s_point, s_avoiding, grid.Index(4, 31), grid.Index(40, 31), path, out var length)
+        );
+        Assert.Contains(path[..length], cell => grid.Floor[cell] < 0);
+
+        Assert.Equal(
+            NavPathResult.Reached,
+            finder.Find(grid, s_point, dropping, grid.Index(4, 31), grid.Index(40, 31), path, out length)
+        );
+        Assert.DoesNotContain(path[..length], cell => grid.Floor[cell] < 0);
+    }
+
     [Fact]
     public void A_sealed_goal_or_one_past_the_budget_ends_at_the_nearest_cell_reached()
     {

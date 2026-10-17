@@ -11,8 +11,11 @@ own thread from a game's `INavGridSource` (which fills a rectangle of cells from
 ground's height at a column, and what blocks it) and builds the flow fields a game asks for (`NavFieldSpec`: goals as
 absolute places, a body size (`NavSize`: its height, radius, highest climb, and deepest drop, any drop unless it gives
 one), and a cost table, `NavCostTable`: what each kind of cell costs, whether a block is a price to break through or a
-wall to walk round, and the steep cost of a rise past the climb or a drop past the drop, so routes go round a pit the
-walker would not climb back out of). The engine knows nothing of teams; a game's fields are its own. Each fixed step reads new edits into the grid (at most 128 cells read from the level-0 voxels, or stamped from the
+wall to walk round, the steep cost of a rise past the climb or a drop past the drop, so routes go round a pit the
+walker would not climb back out of, and a cost a metre of each walkable step down, none unless it gives one, never more
+than the steep cost, so routes go round a hole where the way round is short: every route between two places drops as
+far as it climbs, less the height between them, so only going down and back up costs). The engine knows nothing of
+teams; a game's fields are its own. Each fixed step reads new edits into the grid (at most 128 cells read from the level-0 voxels, or stamped from the
 edit's shape where they are not loaded, and read once they load: a dig under the floor lowers it under the same ceiling; an edit that covers no cell's centre column, or lies
 outside the grid, is passed over; a read takes the floor from the surface the voxels' density gives,
 `VoxelWorld.SurfaceOver`, within about a centimetre of the source's ground), and the thread builds the fields again
@@ -73,8 +76,8 @@ and the fields are absolute (corners and floors in centimetres); their helpers i
 A walker whose goal changes (a character moving to cover) asks for a path instead (`NavPathFinder`, A*, on the main
 thread over `NavigationService.Grid`): `Find(grid, size, costs, start, goal, path, out length, budget)` writes the cells
 after the start into a span (the first of a longer path), by a flow field's steps (eight neighbours, a diagonal only
-where both cells beside it are walkable, a walkable cell's class cost, the steep cost for a rise past the size's climb
-or a drop past its drop),
+where both cells beside it are walkable, a walkable cell's class cost and a step down's cost for its drop, the steep
+cost for a rise past the size's climb or a drop past its drop),
 but a cell the size cannot stand in is closed instead of priced, so a path walks round what blocks it; the heuristic is
 the octile distance at the cheapest class's cost, so a path found costs what a flow field's route does. At most a
 budget of cells is expanded (`DefaultBudget`, 4,096); past it, or where the goal is closed off or outside the grid, the

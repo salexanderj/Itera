@@ -6,7 +6,7 @@ namespace Itera.Engine.Tests.Navigation;
 /// <summary>
 /// <see cref="FlowFieldBuilder"/> on small hand-made grids of 64 by 64 cells: routes to the goal, straight until they
 /// must turn (cells side by side leading straight ahead to a wide goal), round walls through gaps, never across a corner, through a corridor only for the size that fits, up a ramp rather than a step, down one rather than a drop
-/// past the size's drop, and the
+/// past the size's drop, round a shallow pit where a table prices drops (and across one with no way round), and the
 /// cost of breaking through against walking round (a profile with a low break-through cost breaks a thin or 4 m wall
 /// rather than take a long detour, but walks round a very thick one; a profile with a high one walks round every wall
 /// and crosses only a fully sealed goal).
@@ -213,6 +213,49 @@ public sealed class FlowFieldTests
         );
     }
 
+    /// <summary>
+    /// A step down costs its cell and the table's cost a metre of its drop, rounded, at most the steep cost; a step up or
+    /// level, or a table with no drop cost, its cell alone.
+    /// </summary>
+    [Fact]
+    public void A_step_downs_cost_grows_with_its_drop_up_to_the_steep_cost()
+    {
+        var costs = new NavCostTable([10], 400, 3000, dropPerMetre: 100);
+
+        Assert.Equal(10, costs.WithDrop(10, 0, costs.Steep));
+        Assert.Equal(10, costs.WithDrop(10, -50, costs.Steep));
+        Assert.Equal(40, costs.WithDrop(10, 30, costs.Steep));
+        Assert.Equal(64, costs.WithDrop(14, 50, costs.DiagonalSteep));
+        Assert.Equal(3000, costs.WithDrop(10, 10_000, costs.Steep));
+        Assert.Equal(10, s_breaking.WithDrop(10, 30, s_breaking.Steep));
+    }
+
+    /// <summary>
+    /// A pit 30 cm deep, within the size's climb: a route crosses it with no cost for drops, and goes round it where a
+    /// step down costs 1 a centimetre; across the whole grid, with no way round, it is crossed all the same.
+    /// </summary>
+    [Fact]
+    public void A_shallow_pit_is_walked_round_where_drops_cost_and_crossed_where_there_is_no_way_round()
+    {
+        var dropping = new NavCostTable([200, 10], 400, 3000, dropPerMetre: 100);
+        var grid = Grid(Road);
+        Floor(grid, 20, 23, 30, 33, -30);
+        bool InPit(int cell) => grid.Floor[cell] < 0;
+
+        var through = Build(grid, s_small, s_breaking, [grid.Index(40, 31)]).Follow(grid.Index(4, 31));
+        Assert.True(through.Arrived);
+        Assert.Contains(through.Cells, InPit);
+
+        var round = Build(grid, s_small, dropping, [grid.Index(40, 31)]).Follow(grid.Index(4, 31));
+        Assert.True(round.Arrived);
+        Assert.DoesNotContain(round.Cells, InPit);
+
+        Floor(grid, 0, Size - 1, 30, 33, -30);
+        var across = Build(grid, s_small, dropping, [grid.Index(40, 50)]).Follow(grid.Index(40, 4));
+        Assert.True(across.Arrived);
+        Assert.Contains(across.Cells, InPit);
+    }
+
     [Fact]
     public void A_sealed_goal_is_broken_into_at_its_thinnest()
     {
@@ -359,6 +402,18 @@ public sealed class FlowFieldTests
         var field = new FlowField(grid);
         new FlowFieldBuilder().Build(grid, new NavFieldSpec("test", size, costs, Places(grid, goals)), walkable, field);
         return new Result(grid, size, field, walkable);
+    }
+
+    /// <summary>Sets the floor of columns <paramref name="x0"/> to <paramref name="x1"/>, rows <paramref name="z0"/> to <paramref name="z1"/>.</summary>
+    private static void Floor(NavGrid grid, int x0, int x1, int z0, int z1, int centimetres)
+    {
+        for (var z = z0; z <= z1; z++)
+        {
+            for (var x = x0; x <= x1; x++)
+            {
+                grid.Floor[grid.Index(x, z)] = centimetres;
+            }
+        }
     }
 
     /// <summary>How far the floor drops from <paramref name="from"/> to <paramref name="to"/>, in centimetres.</summary>

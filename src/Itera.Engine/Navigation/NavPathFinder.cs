@@ -20,12 +20,13 @@ public enum NavPathResult : byte
 /// Paths from one cell of a <see cref="NavGrid"/> to another for one walker (A*), for a walker whose goal changes (a
 /// character moving to cover), where a <see cref="FlowField"/> serves many walkers bound for one goal. Its steps are a
 /// flow field's (<see cref="FlowFieldBuilder"/>): the eight neighbours, a diagonal only where both cells beside it are
-/// walkable, a walkable cell's class cost, and the steep cost for a rise past the size's climb or a drop past its drop;
-/// but a cell the size cannot stand in is closed instead of priced, so a path walks round what blocks it and never
-/// through. The heuristic is the octile distance at the cheapest class's cost, so a path found is a cheapest one. At
-/// most a budget of cells is expanded; past it, or where the goal cannot be reached, the path ends at the expanded cell
-/// nearest the goal. Keeps its arrays (an entry a grid cell, and a heap) between searches and allocates nothing once
-/// they have grown; one thread at a time (on the main thread, over <see cref="NavigationService.Grid"/>).
+/// walkable, a walkable cell's class cost (with a step down's cost for its drop), and the steep cost for a rise past the
+/// size's climb or a drop past its drop; but a cell the size cannot stand in is closed instead of priced, so a path
+/// walks round what blocks it and never through. The heuristic is the octile distance at the cheapest class's cost, so a
+/// path found is a cheapest one. At most a budget of cells is expanded; past it, or where the goal cannot be reached, the
+/// path ends at the expanded cell nearest the goal. Keeps its arrays (an entry a grid cell, and a heap) between searches
+/// and allocates nothing once they have grown; one thread at a time (on the main thread, over
+/// <see cref="NavigationService.Grid"/>).
 /// </summary>
 public sealed class NavPathFinder
 {
@@ -158,9 +159,11 @@ public sealed class NavPathFinder
                         ? isDiagonal
                             ? costs.DiagonalSteep
                             : costs.Steep
-                        : isDiagonal
-                            ? costs.DiagonalCost(classes[to])
-                            : costs.Straight(classes[to]);
+                        : costs.WithDrop(
+                            isDiagonal ? costs.DiagonalCost(classes[to]) : costs.Straight(classes[to]),
+                            fromFloor - floor[to],
+                            isDiagonal ? costs.DiagonalSteep : costs.Steep
+                        );
                 var total = _cost[cell] + step;
                 if (_seen[to] != _stamp || total < _cost[to])
                 {
