@@ -1,6 +1,7 @@
 using System.Numerics;
 using Arch.Core;
 using Arch.System;
+using BepuPhysics;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
 using Itera.Engine.Physics;
@@ -17,7 +18,8 @@ namespace Itera.Engine.Systems;
 /// <see cref="PushAcceleration"/> times the step towards the velocity the character wanted
 /// (<see cref="CharacterVelocity.Wanted"/>): a character pushes a body it walks into with about its own weight, as
 /// footing allows, so it rolls a ball along but not a heavy block, however it runs at it. A <see cref="Bodiless"/>
-/// character has no stand-in: one it had is removed at the next step. Reads <see cref="CharacterPosition"/>, <see cref="CharacterSize"/>,
+/// character has no stand-in: one it had is removed at the next step, as is one whose character is destroyed or loses
+/// its <see cref="CharacterStandIn"/>. Reads <see cref="CharacterPosition"/>, <see cref="CharacterSize"/>,
 /// <see cref="CharacterVelocity"/>, and <see cref="PlayerMode"/>; writes <see cref="CharacterStandIn"/> (a field, not a
 /// structural change).
 /// </summary>
@@ -42,6 +44,11 @@ public sealed class StandInSystem : BaseSystem<World, FixedStepTime>, IFixedUpda
     private readonly PhysicsWorld _physics;
     private readonly LooseBodies _bodies;
 
+    // The stand-ins the last step kept, and those this one keeps, by body and which body took the handle: one of the
+    // last step's this one did not visit lost its character (destroyed, or its component removed) and is removed.
+    private List<(BodyHandle Body, long Born)> _kept = [];
+    private List<(BodyHandle Body, long Born)> _keeping = [];
+
     public StandInSystem(World world, PhysicsWorld physics, LooseBodies bodies)
         : base(world)
     {
@@ -63,6 +70,7 @@ public sealed class StandInSystem : BaseSystem<World, FixedStepTime>, IFixedUpda
             Physics = _physics,
             Bodies = _bodies,
             MaxGain = PushAcceleration * step.StepSeconds,
+            Keeping = _keeping,
         };
         World.InlineQuery<Keep, CharacterStandIn, CharacterPosition, CharacterSize, CharacterVelocity, PlayerMode>(
             in s_characters,
@@ -70,6 +78,22 @@ public sealed class StandInSystem : BaseSystem<World, FixedStepTime>, IFixedUpda
         );
         var drop = new Drop { Physics = _physics };
         World.InlineQuery<Drop, CharacterStandIn>(in s_bodiless, ref drop);
+        RemoveLeft();
+    }
+
+    /// <summary>Removes each stand-in the last step kept that this step did not visit, while it is still the same body.</summary>
+    private void RemoveLeft()
+    {
+        foreach (var kept in _kept)
+        {
+            if (!_keeping.Contains(kept) && _physics.Holds(kept.Body, kept.Born))
+            {
+                _physics.RemoveStandIn(kept.Body);
+            }
+        }
+
+        (_kept, _keeping) = (_keeping, _kept);
+        _keeping.Clear();
     }
 
     /// <summary>Removes the stand-in of a character that became bodiless.</summary>
@@ -92,6 +116,7 @@ public sealed class StandInSystem : BaseSystem<World, FixedStepTime>, IFixedUpda
         public PhysicsWorld Physics;
         public LooseBodies Bodies;
         public float MaxGain;
+        public List<(BodyHandle Body, long Born)> Keeping;
 
         public readonly void Update(
             ref CharacterStandIn standIn,
@@ -133,6 +158,7 @@ public sealed class StandInSystem : BaseSystem<World, FixedStepTime>, IFixedUpda
 
                 standIn.Placed = velocity.MetresPerSecond + gain;
                 Physics.PlaceStandIn(standIn.Body, middle, standIn.Placed);
+                Keeping.Add((standIn.Body, Physics.BornOf(standIn.Body)));
             }
         }
     }

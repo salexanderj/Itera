@@ -224,7 +224,9 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   as for a thrown ball.
 - Objects placed and removed during play (since save format 9, protocol 45, and `ObjectEditing.RuleVersion` 2): the
   world's owner (a session's host, or an offline game) places an object with `ObjectWorld.TryPlace(kind, anchor,
-  heading, maker, out placement)` and removes a whole one, its own or the generator's, with `TryRemove(placement,
+  heading, maker, out placement)` (refused where `CanPlaceAt` says no: among its checks, an object whose box the log
+  would not index under its anchor's area, wholly above or below the map's height, which a fill would never find again)
+  and removes a whole one, its own or the generator's, with `TryRemove(placement,
   maker)`, each an edit of its own (`VoxelEditOperation.PlaceObject`, `RemoveObject`; `VoxelEdit.PlaceObject` and
   `RemoveObject` of a placement and its kind's reach, bottom, and top): a box of air over the object's reach across its
   anchor and its height, the id in `Piece` (`ObjectId.Placed`: a hash of the anchor, kind, heading, and the edit's

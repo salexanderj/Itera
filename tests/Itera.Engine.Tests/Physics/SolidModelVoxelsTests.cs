@@ -298,6 +298,33 @@ public sealed class SolidModelVoxelsTests : IDisposable
         Assert.Equal(3.23f, feet.Y, 0.005f);
     }
 
+    /// <summary>
+    /// A post taller than the body slid into a character standing still (as a gate's leaf shuts on one) never carries it
+    /// up its face: the character stays on the floor where it stood, overlapping the post, where it rose a step's height
+    /// at each move to the post's top.
+    /// </summary>
+    [Fact]
+    public void A_tall_solid_moved_into_a_character_never_lifts_it_up_its_face()
+    {
+        var (mover, bodyVoxels) = MoverWorld();
+        // A post 40 cm square and 2.4 m tall, of 8 cm voxels.
+        var id = bodyVoxels.Solids.Add(Block(5, 30, 5), 2, Vector3.Zero, unitCentimetres: 2);
+        var feet = new Vector3(0, 2, 0);
+        var velocity = Vector3.Zero;
+
+        for (var i = 0; i < 60; i++)
+        {
+            // From 0.6 m east of the body's axis to 0.6 m west, 2 cm a step, its middle on the body's line.
+            bodyVoxels.Solids.SetPose(id, new WorldPoint(0.6 - 0.02 * i, FloorMetres, -0.2), 0);
+            velocity = new Vector3(0, velocity.Y - 0.3f, 0);
+            var result = mover.Move(ref feet, ref velocity, in s_shape, Step);
+
+            Assert.NotEqual(CharacterMoveStatus.Lifted, result.Status);
+        }
+
+        Assert.Equal(2, feet.Y, 0.01f);
+    }
+
     [Fact]
     public void A_wide_body_beside_a_turning_solid_moves_quickly_and_allocates_nothing()
     {

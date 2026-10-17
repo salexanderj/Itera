@@ -175,6 +175,40 @@ public sealed class StandInSystemTests : IDisposable
         Assert.True(nearBall);
     }
 
+    /// <summary>
+    /// A stand-in whose character is destroyed, or loses its stand-in component, is removed at the next step, where it
+    /// stayed in the physics for the rest of the match; one made that step for a character that took the destroyed
+    /// one's id is kept.
+    /// </summary>
+    [Fact]
+    public void A_stand_in_whose_character_is_gone_is_removed_at_the_next_step()
+    {
+        using var world = World.Create();
+        using var system = new StandInSystem(world, _physics.Physics, _physics.Bodies);
+        system.Initialize();
+        _physics.ThrowBall(new Vector3(1, 0.2f, 0));
+        var destroyed = Character(world, Vector3.Zero);
+        var stripped = Character(world, new Vector3(0, 0, 1));
+        system.Update(in Step);
+        var first = world.Get<CharacterStandIn>(destroyed).Body;
+        var second = world.Get<CharacterStandIn>(stripped).Body;
+        var firstBorn = _physics.Physics.BornOf(first);
+        var secondBorn = _physics.Physics.BornOf(second);
+
+        world.Destroy(destroyed);
+        world.Remove<CharacterStandIn>(stripped);
+        var next = Character(world, new Vector3(0, 0, -1));
+        system.Update(in Step);
+        system.Update(in Step);
+
+        Assert.False(_physics.Physics.Holds(first, firstBorn));
+        Assert.False(_physics.Physics.Holds(second, secondBorn));
+        var kept = world.Get<CharacterStandIn>(next);
+        Assert.True(kept.Present);
+        Assert.Equal(BodyKind.StandIn, _physics.Physics.KindOf(kept.Body));
+        Assert.Equal(0, SystemAllocation.BytesAllocated(system, Step));
+    }
+
     [Fact]
     public void Placing_a_stand_in_allocates_nothing()
     {
@@ -193,6 +227,15 @@ public sealed class StandInSystemTests : IDisposable
 
         Assert.Equal(0, SystemAllocation.BytesAllocated(system, Step));
     }
+
+    private static Entity Character(World world, Vector3 feet) =>
+        world.Create(
+            new CharacterStandIn(),
+            new CharacterPosition { Feet = feet },
+            CharacterSize.ForHeight(1.7f),
+            new CharacterVelocity(),
+            new PlayerMode()
+        );
 
     private (PhysicsReadSystem Read, StandInSystem StandIns) CreateSystems(World world)
     {

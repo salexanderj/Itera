@@ -731,7 +731,7 @@ and `Alpha`, how far the frame lies between the last two steps). Components are 
 - `MapResetSystem` (fixed, first) runs the console's `cleanup` (every loose body and particle) and `reset` (the world back
   to the seed's, counted in `WorldResets` for a game's systems to put their own things back).
 - `PhysicsReadSystem` reads each loose body's pose and each stand-in's push after a physics step. `StandInSystem` gives a
-  character near a thrown body a stand-in. `LooseBodySystem` puts bodies that rested 3 s back into the grid and removes
+  character near a thrown body a stand-in, and removes one whose character is gone. `LooseBodySystem` puts bodies that rested 3 s back into the grid and removes
   cut bodies. `LooseBodyRoom` makes room when the body limit is reached. `LooseBodyModelSystem` hands the bodies' models to
   the renderer. `DebugBallSystem` is the console's `balls`. `DebugOutlineSystem` draws bodies' boxes and stand-ins with the
   debug lines. `TriggerCharacterSystem` (fixed, after the stand-ins) tests the characters with a `TriggerSensor` against

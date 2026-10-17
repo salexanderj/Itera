@@ -459,9 +459,8 @@ public sealed partial class ObjectWorld(
     /// centimetres) turned by <paramref name="heading"/>: logs its <see cref="VoxelEditOperation.PlaceObject"/> edit,
     /// which every peer replays (a session's clients as they follow the host, a save's resumption, a joiner), its id
     /// from its place, kind, heading, and edit (<see cref="ObjectId.Placed"/>). False, with nothing changed, on a world
-    /// that follows a host, for a kind not of the run's or one copied into the world's coarse levels
-    /// (<see cref="CanPlaceOrRemove"/>), a heading past a turn, an anchor outside the map, or an edit the world refuses.
-    /// Its area need not be filled: it holds the object once it is. Main thread.
+    /// that follows a host, where <see cref="CanPlaceAt"/> says no, for a heading past a turn, or for an edit the world
+    /// refuses. Its area need not be filled: it holds the object once it is. Main thread.
     /// </summary>
     public bool TryPlace(
         VoxelObjectKindId kind,
@@ -472,13 +471,7 @@ public sealed partial class ObjectWorld(
     )
     {
         placement = default;
-        if (!_enabled || world.FollowsHost || !CanPlaceOrRemove(kind) || (uint)heading >= ObjectPlacement.HeadingSteps)
-        {
-            return false;
-        }
-
-        var (minX, endX, minZ, endZ) = KeptBox();
-        if (anchor.X < minX || anchor.X >= endX || anchor.Z < minZ || anchor.Z >= endZ)
+        if (world.FollowsHost || (uint)heading >= ObjectPlacement.HeadingSteps || !CanPlaceAt(kind, anchor))
         {
             return false;
         }
@@ -505,6 +498,44 @@ public sealed partial class ObjectWorld(
 
         placement = candidate with { Since = applied };
         return true;
+    }
+
+    /// <summary>
+    /// True when an object of <paramref name="kind"/> may stand with its anchor at <paramref name="anchor"/> (absolute
+    /// centimetres), as <see cref="TryPlace"/> asks on the world's owner (a client may ask it too, for a preview): a
+    /// kind of the run's not copied into the world's coarse levels (<see cref="CanPlaceOrRemove"/>), an anchor within
+    /// the map, and the object's box where the log indexes it under the anchor's area, so the area's fill finds it again
+    /// (one wholly above or below the map's height would be held while the area stays filled and lost at its next fill,
+    /// a joiner's, or a save's).
+    /// </summary>
+    public bool CanPlaceAt(VoxelObjectKindId kind, VoxelCoord anchor)
+    {
+        if (!_enabled || !CanPlaceOrRemove(kind))
+        {
+            return false;
+        }
+
+        var (minX, endX, minZ, endZ) = KeptBox();
+        if (anchor.X < minX || anchor.X >= endX || anchor.Z < minZ || anchor.Z >= endZ)
+        {
+            return false;
+        }
+
+        var k = kinds[kind];
+        var box = VoxelEdit.PlaceObject(
+            new ObjectPlacement(default, kind, anchor, 0),
+            k.ReachCentimetres,
+            k.BottomCentimetres,
+            k.TopCentimetres
+        );
+        var (areaX, areaZ) = AreaAt(anchor.X, anchor.Z);
+        long x0 = (long)areaX * _areaCentimetres,
+            z0 = (long)areaZ * _areaCentimetres;
+        return world.IndexesUnder(
+            in box,
+            new VoxelCoord((int)x0, 0, (int)z0),
+            new VoxelCoord((int)(x0 + _areaCentimetres), 0, (int)(z0 + _areaCentimetres))
+        );
     }
 
     /// <summary>

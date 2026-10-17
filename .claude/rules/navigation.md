@@ -12,7 +12,7 @@ ground's height at a column, and what blocks it) and builds the flow fields a ga
 absolute places, a body size (`NavSize`), and a cost table, `NavCostTable`: what each kind of cell costs, and whether a
 block is a price to break through or a wall to walk round). The engine knows nothing of teams; a game's fields are its
 own. Each fixed step reads new edits into the grid (at most 128 cells read from the level-0 voxels, or stamped from the
-edit's shape where they are not loaded, and read once they load; an edit that covers no cell's centre column, or lies
+edit's shape where they are not loaded, and read once they load: a dig under the floor lowers it under the same ceiling; an edit that covers no cell's centre column, or lies
 outside the grid, is passed over; a read takes the floor from the surface the voxels' density gives,
 `VoxelWorld.SurfaceOver`, within about a centimetre of the source's ground), and the thread builds the fields again
 while their users keep the old ones. A read or a stamp judges solid from the source's ground there

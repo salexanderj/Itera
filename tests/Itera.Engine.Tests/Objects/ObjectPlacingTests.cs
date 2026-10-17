@@ -204,6 +204,39 @@ public sealed class ObjectPlacingTests : IDisposable
             client.World.ApplySequenced(good with { Sequence = 2, Turn = good.Turn | 0xFFFF })
         );
         Assert.False(client.Objects.TryPlace(client.Block, new VoxelCoord(-200, 0, 0), 0, VoxelEdit.NoMaker, out _));
+        // It may still ask where one could stand, for a preview.
+        Assert.True(client.Objects.CanPlaceAt(client.Block, new VoxelCoord(-200, 0, 0)));
+    }
+
+    /// <summary>
+    /// A placing whose box the log would not index under its area (wholly above or below the map's height) is refused,
+    /// and <see cref="ObjectWorld.CanPlaceAt"/> says so first, where it was held while its area stayed filled and lost at
+    /// the area's next fill; one on the ground is taken, and a world that loads its area after it holds it.
+    /// </summary>
+    [Fact]
+    public void A_placing_the_log_would_not_find_again_is_refused()
+    {
+        var scene = Make();
+        var edge = scene.World.Grid.Edge(0);
+        var above = new VoxelCoord(200, scene.World.Grid.EndVoxelY * edge + 500, 0);
+        var below = new VoxelCoord(200, scene.World.Grid.MinVoxelY * edge - 500, 0);
+        var ground = new VoxelCoord(200, 0, 0);
+
+        Assert.False(scene.Objects.CanPlaceAt(scene.Block, above));
+        Assert.False(scene.Objects.CanPlaceAt(scene.Block, below));
+        Assert.True(scene.Objects.CanPlaceAt(scene.Block, ground));
+        Assert.False(scene.Objects.TryPlace(scene.Block, above, 0, VoxelEdit.NoMaker, out _));
+        Assert.False(scene.Objects.TryPlace(scene.Block, below, 0, VoxelEdit.NoMaker, out _));
+        Assert.True(scene.Objects.TryPlace(scene.Block, ground, 0, VoxelEdit.NoMaker, out _));
+        var replayed = Make(fill: false);
+        foreach (var edit in Edits(scene.World))
+        {
+            replayed.World.Apply(edit);
+        }
+
+        replayed.Fill();
+
+        AssertSameObjects(scene, replayed);
     }
 
     /// <summary>

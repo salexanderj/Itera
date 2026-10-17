@@ -142,6 +142,32 @@ public sealed class NavGridScannerTests : IDisposable
         Assert.False(_scanner.ClearsOnlyPassable(VoxelEdit.Box(box, size, VoxelEditOperation.Clear)));
     }
 
+    /// <summary>
+    /// A dig under an overhang lowers the floor under the same ceiling, so the headroom grows by the dig's depth, stamped
+    /// as a read finds it (the stamp raised the ceiling too, twice the depth).
+    /// </summary>
+    [Fact]
+    public void A_dig_under_an_overhang_stamps_the_headroom_a_read_finds()
+    {
+        var grid = Scanned();
+        var cell = grid.Index(7, 11);
+        var dig = VoxelEdit.Box(
+            Centre(grid, cell, Floor) - new VoxelCoord(20, 30, 20),
+            new VoxelCoord(40, 30, 40),
+            VoxelEditOperation.Clear
+        );
+        var stamped = Copy(grid);
+
+        _scanner.Stamp(stamped, in dig);
+        _world.Apply(in dig);
+        _scanner.Rescan(grid, cell);
+
+        Assert.Equal(Floor - 30, grid.Floor[cell]);
+        Assert.Equal(180, grid.ClearCentimetres(cell));
+        Assert.Equal(grid.Floor[cell], stamped.Floor[cell]);
+        Assert.Equal(grid.ClearCentimetres(cell), stamped.ClearCentimetres(cell));
+    }
+
     [Fact]
     public void Stamping_keeps_a_tunnel_through_a_block_closed_until_its_voxels_are_read()
     {

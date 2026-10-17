@@ -827,9 +827,11 @@ public sealed class VoxelCharacterMover
     }
 
     /// <summary>
-    /// Loose bodies the body overlaps where it starts (voxels): one under the feet, within the step, carries it up onto
-    /// it, and <paramref name="py"/> rises to its top (returns true); one overlapping it higher up (it hit the body from
-    /// the side) stops blocking where the body stands for this move.
+    /// Loose bodies the body overlaps where it starts (voxels): one under the feet, within the step, with room for the
+    /// body over it, carries it up onto it, and <paramref name="py"/> rises to its top (returns true); one overlapping it
+    /// higher up (it hit the body from the side), or one under the feet that goes on up past the step (a wall or a
+    /// solid's face moved into it, which would carry it up a step a move), stops blocking where the body stands for this
+    /// move.
     /// </summary>
     private bool StandOnBodies(double px, ref double py, double pz, double r, double h, double step)
     {
@@ -845,7 +847,18 @@ public sealed class VoxelCharacterMover
             (int)Math.Floor(py + _edge),
             (int)Math.Floor(py + step + _edge) - 1
         );
-        var lifted = carried != int.MinValue && carried > py;
+        if (carried == int.MinValue || carried <= py)
+        {
+            carried = int.MinValue;
+        }
+        else if (_bodies.HighestTop(in _start, carried, (int)Math.Ceiling(carried + h - _edge) - 1) != int.MinValue)
+        {
+            // No room over that top: the body stays where it is, and what overlaps it there does not hold it.
+            _ignoreStart = true;
+            return false;
+        }
+
+        var lifted = carried != int.MinValue;
         if (lifted)
         {
             py = carried;

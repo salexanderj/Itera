@@ -586,10 +586,8 @@ public sealed class NavGridScanner
         var ceiling = floor + grid.ClearCentimetres(cell);
         if (y0 < floor && y1 >= floor)
         {
-            // Dug into the ground under the floor: the floor drops to the dig's bottom.
-            var drop = floor - y0;
+            // Dug into the ground under the floor: the floor drops to the dig's bottom, under the same ceiling.
             floor = y0;
-            ceiling += drop;
         }
 
         if (blocked)

@@ -28,9 +28,11 @@ into the grid as a sphere of its material filled into the air after 3 s at rest 
 (`Engine:Physics:MaxLooseBodies`); more removes the oldest, a ragdoll whole (`LooseBodyRoom`). Bepu runs on
 `Engine:Physics:Threads` worker threads (0: a quarter of the processors, 1 to 6; 1 makes the steps repeat run to run,
 for tests and fast-forward runs). The mover reads balls as
-voxels (`LooseBodyVoxels`: characters are blocked by them and stand on them, but push rather than climb them), and a
-character near one has a stand-in, a Bepu cylinder of its mass (`StandInSystem`, `CharacterStandIn`; not while
-`Bodiless`). Cut bodies (`BodyKind.Cut`, a `CutPiece` entity) touch only the voxels, not other bodies or characters;
+voxels (`LooseBodyVoxels`: characters are blocked by them and stand on them, but push rather than climb them; one under
+the feet within the step carries a character up onto it only where the character fits over its top, so a solid's face
+moved into a character, a gate's leaf, never carries it up a step a move: it stays, and what overlaps it does not hold
+it), and a character near one has a stand-in, a Bepu cylinder of its mass (`StandInSystem`, `CharacterStandIn`; not
+while `Bodiless`; removed at the next step when its character is destroyed or loses the component). Cut bodies (`BodyKind.Cut`, a `CutPiece` entity) touch only the voxels, not other bodies or characters;
 where their own level is not loaded they collide with the finest coarser level that is, up to the coarse collider level
 (`BodyKinds.BaseLevel`, `Level`). A body with no level loaded round it freezes (made kinematic) until one loads; a
 ragdoll's bodies freeze and thaw together, and its joints, which Bepu drops between kinematic bodies, are added again at
