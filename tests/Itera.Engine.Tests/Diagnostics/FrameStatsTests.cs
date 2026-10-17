@@ -257,7 +257,11 @@ public sealed class FrameStatsTests
         var steps = Assert.Single(lines, l => l.StartsWith("Fixed steps", StringComparison.Ordinal));
         Assert.Contains("large edits avg 4.000 ms max 8.00 ms", steps, StringComparison.Ordinal);
         // The step's tail (mods, navigation, the session, and the saves) is timed and counts towards the longest step.
-        Assert.Contains("mods, navigation, session, and saves avg 1.000 ms max 1.00 ms", steps, StringComparison.Ordinal);
+        Assert.Contains(
+            "mods, navigation, session, and saves avg 1.000 ms max 1.00 ms",
+            steps,
+            StringComparison.Ordinal
+        );
         Assert.Contains("longest 13.50 ms", steps, StringComparison.Ordinal);
         var slowest = Assert.Single(lines, l => l.StartsWith("Fixed systems", StringComparison.Ordinal));
         Assert.EndsWith(
