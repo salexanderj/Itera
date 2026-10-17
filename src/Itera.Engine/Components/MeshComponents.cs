@@ -32,7 +32,8 @@ public struct MeshPlacement
 /// <summary>
 /// The mesh asset an entity draws where its <see cref="MeshPlacement"/> is: the asset's index in <c>MeshAssets</c> (from
 /// its <c>Find</c>, looked up once), a tint its colours are multiplied by (linear RGBA bytes, red in the low byte;
-/// <see cref="MeshInstances.NoTint"/> for none), and how it meets the camera and the shadows.
+/// <see cref="MeshInstances.NoTint"/> for none), how it meets the camera and the shadows, and whether a posed one is
+/// skinned before the others (<see cref="SkinFirst"/>).
 /// </summary>
 public struct DrawnMesh
 {
@@ -40,12 +41,25 @@ public struct DrawnMesh
     public uint Tint;
     public ModelShadow Shadow;
 
-    public static DrawnMesh Of(int asset, uint tint = MeshInstances.NoTint, ModelShadow shadow = ModelShadow.Casts) =>
+    /// <summary>
+    /// True for a posed mesh skinned before those without it when a frame cannot skin every posed mesh
+    /// (<c>Engine:Renderer:SkinMegabytes</c>), such as the players' figures; within each the nearest the camera go first,
+    /// and those left over are drawn as their asset stores them.
+    /// </summary>
+    public bool SkinFirst;
+
+    public static DrawnMesh Of(
+        int asset,
+        uint tint = MeshInstances.NoTint,
+        ModelShadow shadow = ModelShadow.Casts,
+        bool skinFirst = false
+    ) =>
         new()
         {
             Asset = asset,
             Tint = tint,
             Shadow = shadow,
+            SkinFirst = skinFirst,
         };
 }
 

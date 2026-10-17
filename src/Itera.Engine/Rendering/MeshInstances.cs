@@ -54,14 +54,17 @@ public sealed class MeshInstances
     /// <summary>
     /// Draws skinned mesh asset <paramref name="asset"/> posed: as <see cref="Add"/>, and returns where its
     /// <paramref name="joints"/> skinning matrices go (its rig's joint count; <c>Rig.WritePalette</c>), to be written
-    /// before the frame is built; an empty span when the frame is full, and the instance is dropped.
+    /// before the frame is built; an empty span when the frame is full, and the instance is dropped. With
+    /// <paramref name="skinFirst"/> it is skinned before the instances without it when the frame cannot skin them all
+    /// (<see cref="MeshInstance.SkinFirst"/>).
     /// </summary>
     public Span<Matrix4x4> AddPosed(
         int asset,
         in Matrix4x4 transform,
         int joints,
         uint tint = NoTint,
-        ModelShadow shadow = ModelShadow.Casts
+        ModelShadow shadow = ModelShadow.Casts,
+        bool skinFirst = false
     )
     {
         if (Count == MaxInstances || joints <= 0 || PaletteJoints + joints > MaxPaletteJoints)
@@ -72,7 +75,7 @@ public sealed class MeshInstances
 
         var first = PaletteJoints;
         PaletteJoints += joints;
-        _instances[Count++] = new MeshInstance(asset, transform, tint, shadow, first, joints);
+        _instances[Count++] = new MeshInstance(asset, transform, tint, shadow, first, joints, skinFirst);
         return _palettes.AsSpan(first, joints);
     }
 
@@ -95,13 +98,18 @@ public sealed class MeshInstances
 /// <param name="Shadow">Whether it is drawn and whether it casts the sun's shadow.</param>
 /// <param name="FirstJoint">A posed instance's first skinning matrix in <see cref="MeshInstances.Palettes"/>; -1 for none.</param>
 /// <param name="Joints">A posed instance's skinning matrices; 0 for an instance drawn as its asset stores it.</param>
+/// <param name="SkinFirst">
+/// True for a posed instance skinned before those without it when the frame's room for skinned vertices cannot hold them
+/// all (the nearest the camera first within each); those left over are drawn as their asset stores them.
+/// </param>
 public readonly record struct MeshInstance(
     int Asset,
     Matrix4x4 Transform,
     uint Tint,
     ModelShadow Shadow,
     int FirstJoint = -1,
-    int Joints = 0
+    int Joints = 0,
+    bool SkinFirst = false
 )
 {
     /// <summary>True for a skinned asset drawn in a pose of its own.</summary>

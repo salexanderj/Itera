@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using Itera.Engine.Rendering.GpuData;
 using Microsoft.Extensions.Logging;
@@ -17,8 +18,9 @@ namespace Itera.Engine.Rendering.Meshes;
 /// <see cref="MeshAssetPass.MaxCommands"/> commands (the last in the layout's order) are not drawn in it, each with one
 /// Warning a run. A posed instance (<see cref="MeshInstance.Posed"/>) any list draws is bounded by its joints' posed places
 /// and reaches, gets a skin group (<see cref="MeshSkinGroup"/>) and its skinning matrices in the slot's regions, and its
-/// draws read its skinned copy (<see cref="MeshAssetDraw.VertexDelta"/>); past the slot's room it is drawn as its asset
-/// stores it, with one Warning a run. Blended primitives (<see cref="MeshAssetRange.Blended"/>) are in no list's ranges and
+/// draws read its skinned copy (<see cref="MeshAssetDraw.VertexDelta"/>); when the slot's room cannot take every one,
+/// those marked <see cref="MeshInstance.SkinFirst"/> are skinned first, then the rest, each nearest the camera first, and
+/// those left over are drawn as their asset stores it, with one Warning a run. Blended primitives (<see cref="MeshAssetRange.Blended"/>) are in no list's ranges and
 /// cast no shadow: each seen instance's are drawn in the slot's blended list (<see cref="MeshAssetPass.BlendedList"/>),
 /// instances sorted back to front by their sphere's centre, each primitive one draw and command (a two-sided one two: its
 /// back faces, then its front faces, <see cref="MeshAssetDraw.Sides"/>), at most <see cref="MeshAssetPass.MaxCommands"/>
@@ -45,6 +47,11 @@ public sealed partial class MeshAssetDraws
     private readonly float[][] _viewKeys = NewViewKeys();
     private int _viewCount;
     private readonly int[] _deltas = new int[MeshInstances.MaxInstances];
+
+    // The posed instances to skin this frame, as their keys (SkinKey); an instance's index is a key's low bits.
+    private readonly long[] _skinKeys = new long[MeshInstances.MaxInstances];
+    private const int SkinIndexBits = 14;
+    private const long SkinIndexMask = (1L << SkinIndexBits) - 1;
     private readonly MeshAssetDraw[] _draws = new MeshAssetDraw[MeshAssetPass.MaxDraws];
     private readonly DrawIndexedIndirectCommand[] _commands = new DrawIndexedIndirectCommand[MeshAssetPass.MaxCommands];
 
@@ -78,6 +85,10 @@ public sealed partial class MeshAssetDraws
     /// <summary>The draws over a target of a test's own.</summary>
     internal MeshAssetDraws(IMeshAssetTarget target, ILogger<MeshAssetDraws> logger)
     {
+        Debug.Assert(
+            MeshInstances.MaxInstances <= 1 << SkinIndexBits,
+            "An instance's index must fit a skin key's bits."
+        );
         _target = target;
         _logger = logger;
     }
@@ -167,8 +178,10 @@ public sealed partial class MeshAssetDraws
     }
 
     /// <summary>
-    /// For each posed instance a list draws, its skin group and skinning matrices in the slot's regions (written once, in
-    /// order) and its vertex delta; others draw their asset's vertices. Returns the groups written.
+    /// For each posed instance a list draws, its skin group and skinning matrices in the slot's regions (written once) and
+    /// its vertex delta; others draw their asset's vertices. When the slot's room cannot take them all, those marked
+    /// <see cref="MeshInstance.SkinFirst"/> go first, then the rest, each nearest the camera first, as long as each fits,
+    /// and those left over are drawn as their asset stores them. Returns the groups written.
     /// </summary>
     private int WriteSkins(
         int slot,
@@ -181,10 +194,10 @@ public sealed partial class MeshAssetDraws
     {
         mostVertices = 0;
         joints = 0;
+        Array.Clear(_deltas, 0, instances.Length);
         var capacity = _target.SkinVertexCapacity;
         if (capacity == 0)
         {
-            Array.Clear(_deltas, 0, instances.Length);
             return 0;
         }
 
@@ -192,11 +205,14 @@ public sealed partial class MeshAssetDraws
         var region = _target.PalettesOf(slot);
         var outputBase = _target.SkinVertexBase(slot);
         var paletteBase = MeshAssetPass.PaletteBase(slot);
-        int written = 0,
-            vertices = 0;
+
+        // Each posed instance to skin, and what skinning them all would take.
+        var candidates = 0;
+        long needVertices = 0,
+            needJoints = 0;
+        var tooLarge = false;
         for (var i = 0; i < instances.Length; i++)
         {
-            _deltas[i] = 0;
             ref readonly var instance = ref instances[i];
             if (
                 !instance.Posed
@@ -208,19 +224,37 @@ public sealed partial class MeshAssetDraws
             }
 
             ref readonly var place = ref layout.Assets[instance.Asset];
+            if (place.VertexCount > MeshAssetPass.MostSkinnedVertices || place.VertexCount > capacity)
+            {
+                tooLarge = true;
+                continue;
+            }
+
+            _skinKeys[candidates++] = SkinKey(in instance, _distances[i], i);
+            needVertices += place.VertexCount;
+            needJoints += place.Joints;
+        }
+
+        var full = needVertices > capacity || needJoints > region.Length || candidates > groups.Length;
+        if (full)
+        {
+            // The marked first, then the nearest: the order of their keys.
+            Array.Sort(_skinKeys, 0, candidates);
+        }
+
+        int written = 0,
+            vertices = 0;
+        for (var c = 0; c < candidates; c++)
+        {
+            var i = (int)(_skinKeys[c] & SkinIndexMask);
+            ref readonly var instance = ref instances[i];
+            ref readonly var place = ref layout.Assets[instance.Asset];
             if (
                 vertices + place.VertexCount > capacity
-                || place.VertexCount > MeshAssetPass.MostSkinnedVertices
                 || written == groups.Length
                 || joints + place.Joints > region.Length
             )
             {
-                if (!_skinFullReported)
-                {
-                    _skinFullReported = true;
-                    LogSkinFull(capacity, written);
-                }
-
                 continue;
             }
 
@@ -239,7 +273,25 @@ public sealed partial class MeshAssetDraws
             mostVertices = Math.Max(mostVertices, place.VertexCount);
         }
 
+        if ((full || tooLarge) && !_skinFullReported)
+        {
+            _skinFullReported = true;
+            LogSkinFull(capacity, written, candidates + (tooLarge ? 1 : 0));
+        }
+
         return written;
+    }
+
+    /// <summary>
+    /// A posed instance's place in the order skinning takes them when the room is short, smallest first: not
+    /// <see cref="MeshInstance.SkinFirst"/> in the top bit, then its centre's key nearest first (a float never below 0
+    /// orders as its bits), then its index, so each key is distinct and names its instance.
+    /// </summary>
+    private static long SkinKey(in MeshInstance instance, float distance, int index)
+    {
+        var bits = (long)BitConverter.SingleToInt32Bits(MathF.Max(distance, 0)) & int.MaxValue;
+        var later = instance.SkinFirst ? 0L : 1L;
+        return (later << (31 + SkinIndexBits)) | (bits << SkinIndexBits) | (uint)index;
     }
 
     /// <summary>
@@ -725,9 +777,9 @@ public sealed partial class MeshAssetDraws
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Mesh assets: the frame slot's room for skinned vertices ({Vertices} vertices; Engine:Renderer:SkinMegabytes) is full after {Groups} instance(s), or an asset has more vertices than one skinning takes; the posed instances that do not fit are drawn unposed"
+        Message = "Mesh assets: the frame slot's room for skinned vertices ({Vertices} vertices; Engine:Renderer:SkinMegabytes) took {Groups} of {Posed} posed instance(s), or an asset has more vertices than one skinning takes; those marked to skin first and then the nearest were skinned, and the rest are drawn unposed"
     )]
-    private partial void LogSkinFull(int vertices, int groups);
+    private partial void LogSkinFull(int vertices, int groups, int posed);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

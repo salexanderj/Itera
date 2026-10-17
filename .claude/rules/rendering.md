@@ -345,8 +345,10 @@ and the two cascades', each in four ranges of pipeline (`MeshAssetRange`: opaque
 at most `MeshAssetPass.MaxDraws` (16,384) draws and `MaxCommands` (4,096) commands a list, a full list warning once.
 Each posed instance any list draws gets a skin group (`MeshSkinGroup`: its asset's first vertex and skin entry, its output's
 first vertex, its first skinning matrix, its vertex count) and its matrices in the slot's regions, and its draws read
-its skinned copy (`MeshAssetDraw.VertexDelta`, added to `gl_VertexIndex`); past the slot's room, or with matrices that
-do not match its rig, it is drawn unposed, with one Warning a run. The counts travel in `RenderFrame.MeshAssets`
+its skinned copy (`MeshAssetDraw.VertexDelta`, added to `gl_VertexIndex`). When the slot's room cannot take every one,
+those marked `DrawnMesh.SkinFirst` (`MeshInstance.SkinFirst`: a game's players, say) are skinned first, then the rest,
+each nearest the camera first; those left over, or with matrices that do not match their rig, are drawn unposed, with
+one Warning a run. The counts travel in `RenderFrame.MeshAssets`
 (`MeshAssetFrame`, with the skin groups, their most vertices, and their matrices).
 
 `MeshAssetPass` (`Rendering/Meshes/`) is made at the run's step "mesh assets on the gpu", after "mesh assets" and before

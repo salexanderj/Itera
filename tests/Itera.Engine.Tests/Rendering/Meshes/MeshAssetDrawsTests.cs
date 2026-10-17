@@ -13,7 +13,8 @@ namespace Itera.Engine.Tests.Rendering.Meshes;
 /// <see cref="MeshAssetDraws"/> over regions in memory: instances culled by the view and the cascades as their shadow
 /// allows, grouped into one command per primitive with its instances' draws, by pipeline range; posed instances bounded
 /// by their joints, given skin groups and skinning matrices in the slot's regions, their draws reading their skinned
-/// copies, and drawn unposed past the slot's room or with the wrong joints; nothing allocated.
+/// copies, and past the slot's room the marked and then the nearest skinned and the rest drawn unposed, as are those
+/// with the wrong joints; nothing allocated.
 /// </summary>
 public sealed class MeshAssetDrawsTests
 {
@@ -247,6 +248,37 @@ public sealed class MeshAssetDrawsTests
         Assert.Equal(0, written[1].VertexDelta);
     }
 
+    /// <summary>
+    /// With room for two of three posed instances, the one marked to skin first is skinned first though it is the farthest,
+    /// then the nearest; the one between them is drawn unposed.
+    /// </summary>
+    [Fact]
+    public void A_short_room_skins_the_marked_instance_and_then_the_nearest()
+    {
+        var (targets, view, draws) = Skinned(capacity: 6);
+        view.Begin(0, LookingAlongMinusZ(shadows: false));
+        var middle = new MeshInstance(
+            1,
+            Matrix4x4.CreateTranslation(0, 0, -20),
+            MeshInstances.NoTint,
+            ModelShadow.Casts,
+            0,
+            2
+        );
+        var near = middle with { Transform = Matrix4x4.CreateTranslation(0, 0, -10) };
+        var far = middle with { Transform = Matrix4x4.CreateTranslation(0, 0, -40), SkinFirst = true };
+        Matrix4x4[] palettes = [Matrix4x4.Identity, Matrix4x4.Identity];
+
+        var frame = draws.Write(0, view, [middle, near, far], palettes);
+
+        Assert.Equal((2, 4), (frame.SkinGroups, frame.SkinJoints));
+        // The draws in the instances' order: the middle one reads its asset's vertices, the far one the room's first
+        // copy, and the near one the next.
+        var written = targets.Draws(0, 0);
+        var first = targets.SkinVertexBase(0) - targets.Layout.Assets[1].FirstVertex;
+        Assert.Equal((0, first + 3, first), (written[0].VertexDelta, written[1].VertexDelta, written[2].VertexDelta));
+    }
+
     [Fact]
     public void A_posed_instance_with_the_wrong_joints_is_drawn_unposed()
     {
@@ -267,10 +299,13 @@ public sealed class MeshAssetDrawsTests
         Assert.Equal(0, targets.Draws(0, 0)[0].VertexDelta);
     }
 
-    [Fact]
-    public void A_frame_of_posed_instances_allocates_nothing()
+    /// <summary>A frame of posed instances allocates nothing, with room for them all (1,000) and short of it (100).</summary>
+    [Theory]
+    [InlineData(1000)]
+    [InlineData(100)]
+    public void A_frame_of_posed_instances_allocates_nothing(int capacity)
     {
-        var (_, view, draws) = Skinned(capacity: 1000);
+        var (_, view, draws) = Skinned(capacity);
         var constants = LookingAlongMinusZ(shadows: true);
         var instances = new MeshInstance[100];
         var palettes = new Matrix4x4[200];

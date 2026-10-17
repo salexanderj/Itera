@@ -175,7 +175,14 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
                     );
                 }
 
-                var palette = _instances.AddPosed(mesh.Asset, in transform, rig.JointCount, mesh.Tint, mesh.Shadow);
+                var palette = _instances.AddPosed(
+                    mesh.Asset,
+                    in transform,
+                    rig.JointCount,
+                    mesh.Tint,
+                    mesh.Shadow,
+                    mesh.SkinFirst
+                );
                 if (!palette.IsEmpty)
                 {
                     rig.WritePalette(locals, palette);
@@ -548,7 +555,14 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
                 return;
             }
 
-            var palette = Instances.AddPosed(mesh.Asset, in transform, rig.JointCount, mesh.Tint, mesh.Shadow);
+            var palette = Instances.AddPosed(
+                mesh.Asset,
+                in transform,
+                rig.JointCount,
+                mesh.Tint,
+                mesh.Shadow,
+                mesh.SkinFirst
+            );
             if (!palette.IsEmpty)
             {
                 rig.WritePalette(Locals.AsSpan(0, rig.JointCount), palette);
