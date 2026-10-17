@@ -214,6 +214,35 @@ public sealed class NavPathFinderTests
         Assert.Equal([1, 2, 3, 4], path.Select(grid.Column));
     }
 
+    /// <summary>
+    /// One finder shared by walkers that search in turn (the navigation service's, which every brain uses) finds each its
+    /// own path: searches of other grids, sizes, and goals between two of one walker's give that walker the same path and
+    /// cost as a finder of its own.
+    /// </summary>
+    [Fact]
+    public void Searches_in_turn_on_one_finder_find_what_finders_of_their_own_find()
+    {
+        var walls = Grid();
+        Wall(walls, 30, 31, 0, 60);
+        Unblock(walls, 30, 31, 40, 44);
+        var open = Grid();
+        var shared = new NavPathFinder();
+        var path = new int[256];
+        var other = new int[256];
+
+        var first = shared.Find(walls, s_wide, s_avoiding, walls.Index(10, 10), walls.Index(50, 10), path, out var length);
+        var cost = shared.Cost;
+        shared.Find(open, s_point, s_avoiding, open.Index(40, 50), open.Index(2, 3), other, out _);
+        var again = shared.Find(walls, s_wide, s_avoiding, walls.Index(10, 10), walls.Index(50, 10), other, out var length2);
+        var own = new NavPathFinder();
+        var alone = own.Find(walls, s_wide, s_avoiding, walls.Index(10, 10), walls.Index(50, 10), path, out var length3);
+
+        Assert.Equal((NavPathResult.Reached, NavPathResult.Reached, NavPathResult.Reached), (first, again, alone));
+        Assert.Equal((length, cost), (length2, shared.Cost));
+        Assert.Equal(other[..length2], path[..length3]);
+        Assert.Equal(cost, own.Cost);
+    }
+
     [Fact]
     public void A_second_search_allocates_nothing()
     {

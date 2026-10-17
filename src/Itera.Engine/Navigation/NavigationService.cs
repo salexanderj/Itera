@@ -224,6 +224,16 @@ public sealed partial class NavigationService : IDisposable
     /// <summary>The grid as the world stands (edits read at each fixed step); valid once <see cref="Ready"/>.</summary>
     public NavGrid Grid => Ready ? _grid! : throw new InvalidOperationException("The navigation grid is not ready.");
 
+    /// <summary>
+    /// A path finder over <see cref="Grid"/> for every walker of the match to share, made at its first use: its scratch is
+    /// a few arrays as long as the grid (about 88 MB for a window of 2,048 cells square), which one search at a time
+    /// needs and each finder of its own held again. Main thread; a search's path is written to the caller's buffer and
+    /// nothing of one is kept for the next.
+    /// </summary>
+    public NavPathFinder PathFinder => _pathFinder ??= new NavPathFinder();
+
+    private NavPathFinder? _pathFinder;
+
     /// <summary>The fields kept, in the source's order.</summary>
     public IReadOnlyList<NavFieldSpec> Fields => _specs;
 

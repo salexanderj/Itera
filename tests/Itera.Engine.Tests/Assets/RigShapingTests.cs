@@ -236,6 +236,206 @@ public sealed class RigShapingTests
         Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
     }
 
+    /// <summary>
+    /// The tools work out only the globals they need (the joints up to the one they shape), and shape any pose exactly as
+    /// when they worked out every joint's (<see cref="EveryJoint"/>, their code before): the same bits.
+    /// </summary>
+    [Fact]
+    public void Turning_moving_and_reaching_shape_exactly_as_with_every_joints_globals()
+    {
+        var random = new Random(7);
+        var globals = new Matrix4x4[5];
+        for (var trial = 0; trial < 300; trial++)
+        {
+            var pose = Rest();
+            for (var j = 0; j < pose.Length; j++)
+            {
+                pose[j] = pose[j] with { Rotation = Rotation(random) };
+            }
+
+            var joint = random.Next(5);
+            var (shaped, before) = (pose.ToArray(), pose.ToArray());
+            switch (trial % 3)
+            {
+                case 0:
+                    var turn = Rotation(random);
+                    s_rig.Turn(shaped, joint, turn, globals);
+                    EveryJoint.Turn(s_rig, before, joint, turn, globals);
+                    break;
+                case 1:
+                    var offset = Point(random);
+                    s_rig.Move(shaped, joint, offset, globals);
+                    EveryJoint.Move(s_rig, before, joint, offset, globals);
+                    break;
+                default:
+                    var (target, pole) = (Point(random), Point(random));
+                    Assert.Equal(
+                        EveryJoint.ReachTwoBone(s_rig, before, 1, 2, 3, target, pole, globals),
+                        s_rig.ReachTwoBone(shaped, 1, 2, 3, target, pole, globals)
+                    );
+                    break;
+            }
+
+            Assert.Equal(before, shaped);
+        }
+    }
+
+    private static Quaternion Rotation(Random random) =>
+        Quaternion.Normalize(
+            new Quaternion(
+                random.NextSingle() * 2 - 1,
+                random.NextSingle() * 2 - 1,
+                random.NextSingle() * 2 - 1,
+                random.NextSingle() * 2 - 1
+            )
+        );
+
+    private static Vector3 Point(Random random) =>
+        new(random.NextSingle() * 4 - 2, random.NextSingle() * 4 - 2, random.NextSingle() * 4 - 2);
+
+    /// <summary>The rig's turn, move, and two-bone reach as they were before, each working out every joint's globals.</summary>
+    private static class EveryJoint
+    {
+        public static void Globals(Rig rig, ReadOnlySpan<JointTransform> locals, Span<Matrix4x4> globals)
+        {
+            for (var j = 0; j < rig.Names.Length; j++)
+            {
+                var global = locals[j].ToMatrix() * rig.Offsets[j];
+                globals[j] = rig.Parents[j] < 0 ? global : global * globals[rig.Parents[j]];
+            }
+        }
+
+        public static void Turn(Rig rig, Span<JointTransform> locals, int joint, Quaternion turn, Span<Matrix4x4> globals)
+        {
+            if ((uint)joint >= (uint)rig.Names.Length)
+            {
+                return;
+            }
+
+            Globals(rig, locals, globals);
+            // The joint's global is local * frame, where frame is its offset and its parent's global. Turned in the asset's
+            // space after it, the global becomes local * frame * turn, so the new local is local * frame * turn * frame⁻¹.
+            var frame = rig.Parents[joint] < 0 ? rig.Offsets[joint] : rig.Offsets[joint] * globals[rig.Parents[joint]];
+            if (!Matrix4x4.Decompose(frame, out _, out var frameRotation, out _))
+            {
+                return;
+            }
+
+            var local = locals[joint];
+            // Quaternions here read right to left (the right one first): the local, then the frame, then the turn, then back.
+            var rotation = Quaternion.Inverse(frameRotation) * turn * frameRotation * local.Rotation;
+            locals[joint] = local with { Rotation = Quaternion.Normalize(rotation) };
+        }
+
+        public static void Move(Rig rig, Span<JointTransform> locals, int joint, Vector3 offset, Span<Matrix4x4> globals)
+        {
+            if ((uint)joint >= (uint)rig.Names.Length)
+            {
+                return;
+            }
+
+            Globals(rig, locals, globals);
+            // The joint's place is its local translation through its frame (its offset and its parent's global), so a move in
+            // the asset's space is the same move turned back through the frame.
+            var frame = rig.Parents[joint] < 0 ? rig.Offsets[joint] : rig.Offsets[joint] * globals[rig.Parents[joint]];
+            if (!Matrix4x4.Invert(frame, out var inverse))
+            {
+                return;
+            }
+
+            var local = locals[joint];
+            locals[joint] = local with { Translation = local.Translation + Vector3.TransformNormal(offset, inverse) };
+        }
+
+        public static bool ReachTwoBone(
+            Rig rig,
+            Span<JointTransform> locals,
+            int upper,
+            int lower,
+            int end,
+            Vector3 target,
+            Vector3 pole,
+            Span<Matrix4x4> globals
+        )
+        {
+            if (
+                (uint)end >= (uint)rig.Names.Length
+                || (uint)lower >= (uint)rig.Names.Length
+                || (uint)upper >= (uint)rig.Names.Length
+                || rig.Parents[end] != lower
+                || rig.Parents[lower] != upper
+            )
+            {
+                return false;
+            }
+
+            Globals(rig, locals, globals);
+            var a = globals[upper].Translation;
+            var b = globals[lower].Translation;
+            var c = globals[end].Translation;
+            var upperLength = Vector3.Distance(a, b);
+            var lowerLength = Vector3.Distance(b, c);
+            var toTarget = target - a;
+            var reach = toTarget.Length();
+            if (upperLength < 1e-6f || lowerLength < 1e-6f || reach < 1e-6f)
+            {
+                return false;
+            }
+
+            var direction = toTarget / reach;
+            reach = Math.Clamp(reach, MathF.Abs(upperLength - lowerLength) + 1e-4f, upperLength + lowerLength - 1e-4f);
+            // The middle joint's new place: along the target's direction by the law of cosines, out towards the pole.
+            var along = (upperLength * upperLength - lowerLength * lowerLength + reach * reach) / (2 * reach);
+            var across = MathF.Sqrt(MathF.Max(0, upperLength * upperLength - along * along));
+            var bend = pole - a;
+            bend -= direction * Vector3.Dot(bend, direction);
+            if (bend.LengthSquared() < 1e-10f)
+            {
+                // A pole on the line: bend the way the middle joint already does.
+                bend = b - a;
+                bend -= direction * Vector3.Dot(bend, direction);
+            }
+
+            bend = bend.LengthSquared() > 1e-10f ? Vector3.Normalize(bend) : Perpendicular(direction);
+            var middle = a + direction * along + bend * across;
+            Turn(rig, locals, upper, Arc(b - a, middle - a), globals);
+            Globals(rig, locals, globals);
+            var bent = globals[lower].Translation;
+            Turn(rig, locals, lower, Arc(globals[end].Translation - bent, a + direction * reach - bent), globals);
+            return true;
+        }
+
+        private static Quaternion Arc(Vector3 from, Vector3 to)
+        {
+            var lengths = from.Length() * to.Length();
+            if (!(lengths > 1e-12f) || !float.IsFinite(lengths))
+            {
+                return Quaternion.Identity;
+            }
+
+            // The axis's length is the angle's sine: two ways that are nearly one turn by nothing, or by half a turn about any
+            // axis square to them when nearly opposite (normalising a cross product rounded to nothing would not be finite).
+            var dot = Vector3.Dot(from, to) / lengths;
+            var axis = Vector3.Cross(from, to) / lengths;
+            var sin = axis.Length();
+            if (!(sin > 1e-6f))
+            {
+                return dot >= 0
+                    ? Quaternion.Identity
+                    : Quaternion.CreateFromAxisAngle(Perpendicular(Vector3.Normalize(from)), MathF.PI);
+            }
+
+            return Quaternion.CreateFromAxisAngle(axis / sin, MathF.Atan2(sin, dot));
+        }
+
+        private static Vector3 Perpendicular(Vector3 direction) =>
+            Vector3.Normalize(
+                MathF.Abs(direction.X) < 0.9f
+                    ? Vector3.Cross(direction, Vector3.UnitX)
+                    : Vector3.Cross(direction, Vector3.UnitY)
+            );
+    }
+
     /// <summary>Root at the origin; upper, lower, and end a metre apart up +y; a branch off the root a metre along +x.</summary>
     private static Rig Chain()
     {

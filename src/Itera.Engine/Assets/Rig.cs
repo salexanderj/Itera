@@ -159,9 +159,17 @@ public sealed class Rig
     /// <paramref name="globals"/> (one a joint): <c>local * offset * parent's</c>, parents before children; a joint's place
     /// is its <c>Translation</c>. Allocates nothing.
     /// </summary>
-    public void Globals(ReadOnlySpan<JointTransform> locals, Span<Matrix4x4> globals)
+    public void Globals(ReadOnlySpan<JointTransform> locals, Span<Matrix4x4> globals) =>
+        GlobalsUpTo(locals, globals, Names.Length - 1);
+
+    /// <summary>
+    /// <see cref="Globals(ReadOnlySpan{JointTransform}, Span{Matrix4x4})"/> for the joints up to <paramref name="last"/>
+    /// alone: parents come before their children, so each of those joints' parents is among them. The others' entries are
+    /// left as they were. Allocates nothing.
+    /// </summary>
+    private void GlobalsUpTo(ReadOnlySpan<JointTransform> locals, Span<Matrix4x4> globals, int last)
     {
-        for (var j = 0; j < Names.Length; j++)
+        for (var j = 0; j <= last; j++)
         {
             var global = locals[j].ToMatrix() * Offsets[j];
             globals[j] = Parents[j] < 0 ? global : global * globals[Parents[j]];
@@ -224,7 +232,8 @@ public sealed class Rig
     /// <summary>
     /// Turns joint <paramref name="joint"/> of a pose by <paramref name="turn"/>, a rotation in the asset's space about the
     /// joint's own place: the joint stays where it is and everything below it swings round it (a spine bent to an aim, a
-    /// head turned to a target). <paramref name="globals"/> is scratch, one a joint. Allocates nothing.
+    /// head turned to a target). <paramref name="globals"/> is scratch, one a joint (only the joint's parent and the
+    /// joints before it are worked out: read none of it after). Allocates nothing.
     /// </summary>
     public void Turn(Span<JointTransform> locals, int joint, Quaternion turn, Span<Matrix4x4> globals)
     {
@@ -233,7 +242,7 @@ public sealed class Rig
             return;
         }
 
-        Globals(locals, globals);
+        GlobalsUpTo(locals, globals, Parents[joint]);
         // The joint's global is local * frame, where frame is its offset and its parent's global. Turned in the asset's
         // space after it, the global becomes local * frame * turn, so the new local is local * frame * turn * frame⁻¹.
         var frame = Parents[joint] < 0 ? Offsets[joint] : Offsets[joint] * globals[Parents[joint]];
@@ -282,7 +291,8 @@ public sealed class Rig
     /// <summary>
     /// Moves joint <paramref name="joint"/> of a pose by <paramref name="offset"/> in the asset's space: it and every joint
     /// below it shift by that much, turned as they were (hips lowered so a foot reaches lower ground).
-    /// <paramref name="globals"/> is scratch, one a joint. Allocates nothing.
+    /// <paramref name="globals"/> is scratch, one a joint (only the joint's parent and the joints before it are worked
+    /// out: read none of it after). Allocates nothing.
     /// </summary>
     public void Move(Span<JointTransform> locals, int joint, Vector3 offset, Span<Matrix4x4> globals)
     {
@@ -291,7 +301,7 @@ public sealed class Rig
             return;
         }
 
-        Globals(locals, globals);
+        GlobalsUpTo(locals, globals, Parents[joint]);
         // The joint's place is its local translation through its frame (its offset and its parent's global), so a move in
         // the asset's space is the same move turned back through the frame.
         var frame = Parents[joint] < 0 ? Offsets[joint] : Offsets[joint] * globals[Parents[joint]];
@@ -308,8 +318,9 @@ public sealed class Rig
     /// Bends the chain <paramref name="upper"/>, <paramref name="lower"/>, <paramref name="end"/> (a shoulder, an elbow,
     /// a hand; a hip, a knee, a foot) so the end joint reaches <paramref name="target"/>, in the asset's space, or points at
     /// it as far as the chain stretches; the middle joint bends towards <paramref name="pole"/> (where the elbow or knee
-    /// points). The end joint keeps its own turn. <paramref name="globals"/> is scratch, one a joint. Returns false, the
-    /// pose unchanged, for joints that are not such a chain. Allocates nothing.
+    /// points). The end joint keeps its own turn. <paramref name="globals"/> is scratch, one a joint (only the end joint
+    /// and the joints before it are worked out: read none of it after). Returns false, the pose unchanged, for joints that
+    /// are not such a chain. Allocates nothing.
     /// </summary>
     public bool ReachTwoBone(
         Span<JointTransform> locals,
@@ -332,7 +343,7 @@ public sealed class Rig
             return false;
         }
 
-        Globals(locals, globals);
+        GlobalsUpTo(locals, globals, end);
         var a = globals[upper].Translation;
         var b = globals[lower].Translation;
         var c = globals[end].Translation;
@@ -362,7 +373,7 @@ public sealed class Rig
         bend = bend.LengthSquared() > 1e-10f ? Vector3.Normalize(bend) : Perpendicular(direction);
         var middle = a + direction * along + bend * across;
         Turn(locals, upper, Arc(b - a, middle - a), globals);
-        Globals(locals, globals);
+        GlobalsUpTo(locals, globals, end);
         var bent = globals[lower].Translation;
         Turn(locals, lower, Arc(globals[end].Translation - bent, a + direction * reach - bent), globals);
         return true;

@@ -77,7 +77,9 @@ but a cell the size cannot stand in is closed instead of priced, so a path walks
 the octile distance at the cheapest class's cost, so a path found costs what a flow field's route does. At most a
 budget of cells is expanded (`DefaultBudget`, 4,096); past it, or where the goal is closed off or outside the grid, the
 path ends at the cell searched nearest the goal (`NavPathResult.Nearest`; `None` for a start the size cannot stand in).
-It keeps its arrays (an entry a grid cell, and a heap) between searches and allocates nothing once they have grown.
+It keeps its arrays (an entry a grid cell, and a heap) between searches and allocates nothing once they have grown;
+for a window of 2,048 cells square they hold about 88 MB, so a match's walkers share one,
+`NavigationService.PathFinder` (made at its first use; a search keeps nothing of the one before).
 
 ### Files in `src/Itera.Engine`
 

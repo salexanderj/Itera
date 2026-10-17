@@ -132,7 +132,7 @@ Where tests live:
   .glb's BIN chunk, PNG images, skins, joints, and animations) read by `GltfImportTests` and `RigImportTests` (a rig
   posed against SharpGLTF's own world matrices); `RigClipTests` (step, linear, and cubic sampling); `RigShapingTests` (a
   joint by name, the globals, a mask and a blend, a turn in the asset's space under a turned parent, two-bone IK reaching
-  and stretching, no allocation); `MeshAssetsTests`,
+  and stretching, turning, moving, and reaching shaped exactly as with every joint's globals worked out, no allocation); `MeshAssetsTests`,
   `TextureDecodeTests`, `MipChainTests`, `MeshTangentsTests`; a model's compressed textures (`CompressedTexturesTests`:
   read where they match, each mismatch decoded with a warning, the image's hash wherever the model keeps it).
 - `Itera.Engine.Tests/Physics/`: a game's bodies and the records by handle (`PhysicsBodiesTests`: a reused handle
@@ -219,7 +219,8 @@ autosave on a background thread, a section that throws when captured, a capture 
 a save is due), `SaveMatchTests` (the last save captured while the ECS world lives, restored before the first step), and
 `SaveFilesTests` (a temporary folder), `Matches/JoinRequestsTests`, `Matches/MatchControlStatesTests` (the hooks for a game's menu tests against a real match), `Navigation/`
   (flow fields on small grids, paths on them (`NavPathFinderTests`: a flow field's cost, round walls, no corner cut, a
-  ramp before a step, a sealed goal and the budget ending nearest, no allocation), the scanner with a floor 409 m down,
+  ramp before a step, a sealed goal and the budget ending nearest, searches in turn on one finder finding what finders
+  of their own find, no allocation), the scanner with a floor 409 m down,
   and the service; the voxel objects,
   `NavigationObjectsTests`: as generated stamped onto the fill and read alike, a trunk cut through opening once its top
   is removed and blocked again after a reset, a cell waiting until its objects are known and a removal logged before
