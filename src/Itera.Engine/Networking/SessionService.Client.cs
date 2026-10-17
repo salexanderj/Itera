@@ -133,6 +133,7 @@ public sealed partial class SessionService
         _writer.WriteInt(_fixedStepHz);
         _writer.WriteString(_playerName);
         _writer.WriteULong(_replication?.KindsFingerprint ?? 0);
+        _writer.WriteULong(_matchData?.Fingerprint ?? 0);
         Send(peer);
     }
 

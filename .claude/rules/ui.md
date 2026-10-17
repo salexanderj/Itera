@@ -87,8 +87,8 @@ enemy's), each registered once at the run's start (`Register(name, value, least,
 letters, digits, '.', '-', or '_', a default within its range; sealed by the first match) and read as
 `Tunable.Value`, which allocates nothing. The console's `tune` lists them, reads one, sets one within its range, or puts
 them back (`TuningCommands`). A `Match` tunable (what a client predicts must move by the host's numbers) is set only
-offline or on a host, which sends its value by name to its clients after the step it changed and, for those not at
-their defaults, as each client joins (the session's `Tune` message, `.claude/rules/sessions.md`); a client's go back to
+offline or on a host, which sends its value by name to its clients after the step it changed, and every one as each
+client joins, at its default too (the session's `Tune` message, `.claude/rules/sessions.md`); a client's go back to
 their defaults when its session ends. A `Local` one is each game's own.
 
 The stats line (F1, `stats`, `Engine:Ui:Stats`) shows frames per second, frame and GPU time, the render scale, fixed

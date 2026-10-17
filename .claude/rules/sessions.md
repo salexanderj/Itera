@@ -18,8 +18,10 @@ client says hello; the host answers with the match (seed, step rate, and identit
 and version with voxel terrain, with the object kinds' fingerprint where the run has kinds, else the application's
 name) and its edit log with the pieces, sent
 from its polls as the transport has room (`ISessionTransport.ReliableRoom`), and the client's world is built from the
-host's seed whatever its own options say; a game may send match data of its own in the welcome and refuse a client
-whose rules differ (`ISessionMatchData`: its hash). A game without voxel terrain sends a payload of the edit log's
+host's seed whatever its own options say; a game may send match data of its own in the welcome
+(`ISessionMatchData.Write`), and give a fingerprint of what a host and a client must share beyond the engine's checks
+(`ISessionMatchData.Fingerprint`: its content files, its own messages' version), which every hello carries and a host
+refuses when it differs from its own (`RejectReason.GameData`). A game without voxel terrain sends a payload of the edit log's
 header alone (its match identity where a world writes its generator, `EditLogSerializer.WriteEmpty`), and its client
 refuses any edit. A client drops a game message that arrives before the download ends. A hello that arrives before
 the host's world is made takes its slot and waits for it (`VoxelWorld.IsInitialized`). A client fails its join with no
@@ -43,7 +45,7 @@ early) and for what a game's loading tasks wait on.
 What a game sends: its own messages, each kind a byte with the way it may travel (host to clients, clients to host,
 or both), through `ISessionGameHandler`s it registers in a match's scope (`GameMessageHandler` hands one kind to a
 method) and `SessionService.BeginMessage`; the engine drops a message that travels the wrong way and the peer with it.
-A host's match tunables go to its clients by name, reliably, after the step they changed and as each joins
+A host's match tunables go to its clients by name, reliably, after the step they changed, and every one as each joins
 (`MessageKind.Tune`, `Tunables`, `.claude/rules/ui.md`); a client sets those it has within its own ranges and passes over
 the rest. Three channels (`SessionChannel`): `Reliable` (once, in order), `Sequenced` (may be lost; LiteNetLib drops one older than
 the newest it has), and `Unreliable` (may be lost or come out of order, none dropped for its age: for messages that

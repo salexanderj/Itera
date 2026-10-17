@@ -44,9 +44,9 @@ projects used as references.
 - When you change these, also do this (details in the area's file; the `scaffold` skill has the steps and templates,
   and the checklist tests, `ChecklistTests`, `ShippedSettingsTests`, `SystemOrderTests`, and `WorldTests`, fail when one
   is missed):
-  - Anything sent between games: raise `SessionProtocol.Version` and pin the new fingerprint in the engine's
-    `WireFingerprintTests`. A game's own messages are the game's; test them with damaged bodies (`HostileValues` and
-    `Watchdog` in `tests/Shared`).
+  - Anything the engine sends between games: raise `SessionProtocol.Version` and pin the new fingerprint in the
+    engine's `WireFingerprintTests`. A game's own messages are the game's: it versions them in its
+    `ISessionMatchData.Fingerprint` and tests them with damaged bodies (`HostileValues` and `Watchdog` in `tests/Shared`).
   - What a generator makes, or its grid's size: a changed world hash or grid means its `Version` must rise (the
     starter's `GameGenerator`, pinned in `tests/Game.Tests/WorldTests`).
   - A new system: a zero-allocation test and a behaviour test; an engine system's in `tests/Itera.Engine.Tests/Systems`,

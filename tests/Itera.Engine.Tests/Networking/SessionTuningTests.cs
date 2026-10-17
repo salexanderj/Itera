@@ -7,8 +7,8 @@ namespace Itera.Engine.Tests.Networking;
 
 /// <summary>
 /// Tunables through a session (<see cref="Tunables"/>, <see cref="SessionService"/>), a host and a client without a world
-/// over <see cref="FakeTransport"/>: a joining client takes the host's match tunables not at their defaults, and each
-/// change after its step; local ones stay each game's; a name the client has not got is passed over and a value past its
+/// over <see cref="FakeTransport"/>: a joining client takes every one of the host's match tunables, those at their
+/// defaults too, and each change after its step; local ones stay each game's; a name the client has not got is passed over and a value past its
 /// range left out; and a client's go back to their defaults when its session ends.
 /// </summary>
 public sealed class SessionTuningTests : IDisposable
@@ -65,6 +65,26 @@ public sealed class SessionTuningTests : IDisposable
 
         Assert.Equal(4.5f, clientSpeed.Value);
         Assert.Equal(SessionEnd.None, client.End);
+    }
+
+    /// <summary>
+    /// A client takes the host's match tunables at their defaults too: one it changed earlier in its run (as a host of
+    /// another match) goes back to the host's, and one whose default differs in its build takes the host's.
+    /// </summary>
+    [Fact]
+    public void A_client_takes_the_hosts_match_tunables_at_their_defaults_too()
+    {
+        var (hostTunables, _, _, _) = Make(mostSpeed: 20);
+        var clientTunables = new Tunables();
+        var clientSpeed = clientTunables.Register("move.walk", 5f, 0, 20, "");
+        var clientExtra = clientTunables.Register("test.extra", 1, 0, 5, "");
+        clientTunables.TrySet(clientExtra, 4);
+        var host = Host(hostTunables);
+
+        Join(host, clientTunables);
+
+        Assert.Equal(4.5f, clientSpeed.Value);
+        Assert.Equal(1f, clientExtra.Value);
     }
 
     /// <summary>A walking speed and an extra (match), and a camera's ease (local).</summary>

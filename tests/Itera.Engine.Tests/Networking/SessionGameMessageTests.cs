@@ -236,6 +236,30 @@ public sealed class SessionGameMessageTests : IDisposable
         Assert.Equal([7, 8, 9], host.Match.Game);
     }
 
+    /// <summary>
+    /// A client whose game data's fingerprint differs from the host's is refused with both numbers, and one whose
+    /// matches joins; a game that registers no match data sends 0.
+    /// </summary>
+    [Fact]
+    public void A_client_whose_game_data_differs_is_refused_and_one_whose_matches_joins()
+    {
+        var host = StartHost(new Recorder(), new Data([], fingerprint: 0xABC));
+
+        var other = Assert.Throws<SessionStartException>(() =>
+            Join(host, [new Recorder()], data: new Data([], fingerprint: 0xDEF))
+        );
+        var none = Assert.Throws<SessionStartException>(() => Join(host, [new Recorder()]));
+        Join(host, [new Recorder()], data: new Data([], fingerprint: 0xABC));
+
+        Assert.Contains(
+            "other game data (the host's 0000000000000abc, the client's 0000000000000def)",
+            other.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Contains("the client's 0000000000000000", none.Message, StringComparison.Ordinal);
+        Assert.Equal(1, host.JoinedPeers);
+    }
+
     [Fact]
     public void Two_handlers_of_one_kind_are_refused()
     {
@@ -285,7 +309,8 @@ public sealed class SessionGameMessageTests : IDisposable
         SessionService host,
         ISessionGameHandler[] handlers,
         string name = "Client",
-        FakeTransport? transport = null
+        FakeTransport? transport = null,
+        ISessionMatchData? data = null
     )
     {
         var world = new VoxelWorld(
@@ -307,7 +332,7 @@ public sealed class SessionGameMessageTests : IDisposable
             Address = "host:47600",
             PlayerName = name,
         };
-        var client = Session(settings, world, transport ?? new FakeTransport(_network), host.Poll, handlers);
+        var client = Session(settings, world, transport ?? new FakeTransport(_network), host.Poll, handlers, data);
         client.Initialize();
         world.Initialize(client.Match.Seed);
         client.LoadJoinedWorld();
@@ -390,8 +415,10 @@ public sealed class SessionGameMessageTests : IDisposable
         ) => Entries.Add((logLevel, exception));
     }
 
-    private sealed class Data(byte[] bytes) : ISessionMatchData
+    private sealed class Data(byte[] bytes, ulong fingerprint = 0) : ISessionMatchData
     {
+        public ulong Fingerprint => fingerprint;
+
         public void Write(MessageWriter writer) => writer.WriteBytes(bytes);
     }
 }

@@ -84,6 +84,9 @@ internal enum RejectReason : byte
 
     /// <summary>Other replicated kinds: the names and fields of the entities the two replicate differ.</summary>
     ReplicatedKinds = 7,
+
+    /// <summary>Other game data: the game's fingerprints differ (<c>ISessionMatchData.Fingerprint</c>).</summary>
+    GameData = 8,
 }
 
 /// <summary>
@@ -94,10 +97,11 @@ internal enum RejectReason : byte
 internal static class SessionProtocol
 {
     /// <summary>
-    /// Raised whenever any message changes shape or meaning or a kind is added, the game's included: the game's messages
-    /// have no version of their own, so a mismatch is refused in the handshake with this number instead of failing later.
+    /// Raised whenever any of the engine's messages changes shape or meaning or a kind is added, so a mismatch is refused
+    /// in the handshake instead of failing later. A game versions its own messages in its
+    /// <c>ISessionMatchData.Fingerprint</c>, which the hello carries.
     /// </summary>
-    public const int Version = 46;
+    public const int Version = 47;
 
     /// <summary>Lobby data: the players in the session now, the host's included (<c>SessionService</c> writes it).</summary>
     public const string LobbyPlayersKey = "itera_players";

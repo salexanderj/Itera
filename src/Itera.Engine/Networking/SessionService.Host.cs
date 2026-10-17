@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using Itera.Engine.Settings;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging;
@@ -60,6 +61,7 @@ public sealed partial class SessionService
         var fixedStepHz = reader.ReadInt();
         var name = reader.ReadString();
         var kinds = reader.ReadULong();
+        var gameData = reader.ReadULong();
         reader.EnsureEnd();
         var match = Match;
         if (
@@ -88,6 +90,20 @@ public sealed partial class SessionService
         if (kinds != (_replication?.KindsFingerprint ?? 0))
         {
             Reject(peer, RejectReason.ReplicatedKinds, "the host and the client replicate other kinds of entity");
+            return;
+        }
+
+        var ownGameData = _matchData?.Fingerprint ?? 0;
+        if (gameData != ownGameData)
+        {
+            Reject(
+                peer,
+                RejectReason.GameData,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"the host and the client have other game data (the host's {ownGameData:x16}, the client's {gameData:x16})"
+                )
+            );
             return;
         }
 
@@ -207,7 +223,8 @@ public sealed partial class SessionService
         client.Joined = true;
         client.Join = ++_lastJoin;
         UpdateRoster();
-        // The host's numbers that are not the run's defaults, before anything moves by them.
+        // Every match number the host plays by, before anything moves by them: the client's may have been changed
+        // earlier in its run, or its defaults may differ.
         if (WriteTuning(changedSince: -1))
         {
             Send(peer);
@@ -339,8 +356,8 @@ public sealed partial class SessionService
     }
 
     /// <summary>
-    /// Writes a tuning message of the match tunables changed since version <paramref name="changedSince"/> (-1: those not
-    /// at their defaults); false when there are none.
+    /// Writes a tuning message of the match tunables changed since version <paramref name="changedSince"/> (-1: every
+    /// one); false when there are none.
     /// </summary>
     private bool WriteTuning(long changedSince)
     {
@@ -376,8 +393,7 @@ public sealed partial class SessionService
     }
 
     private static bool Sends(Tunable tunable, long changedSince) =>
-        tunable.Scope == TuningScope.Match
-        && (changedSince < 0 ? tunable.Value != tunable.Default : tunable.Version > changedSince);
+        tunable.Scope == TuningScope.Match && (changedSince < 0 || tunable.Version > changedSince);
 
     private void SendNewEdits()
     {

@@ -22,12 +22,21 @@ public readonly record struct MatchSettings(
 );
 
 /// <summary>
-/// Writes the game's own match data (its rules) into the welcome, on the host and offline, so a client knows them
-/// before its systems are built. Registered by the game; optional.
+/// The game's own part of a match, registered by the game; optional. Its match data (its rules) goes into the welcome,
+/// written on the host and offline, so a client knows them before its systems are built; its fingerprint goes into
+/// every hello, and a host refuses a client whose fingerprint differs from its own.
 /// </summary>
 public interface ISessionMatchData
 {
-    void Write(MessageWriter writer);
+    /// <summary>Writes the match data a client takes from its host (nothing by default).</summary>
+    void Write(MessageWriter writer) { }
+
+    /// <summary>
+    /// A number that stands for what the host and a client must share beyond the engine's checks: the game's content
+    /// files, the shape of its own messages. A host refuses a client whose number differs (0 by default, which a game
+    /// without this registered also sends).
+    /// </summary>
+    ulong Fingerprint => 0;
 }
 
 /// <summary>Which way a game message may travel.</summary>

@@ -1294,15 +1294,16 @@ there is no host migration, and the session ends when the host quits.
   join and edits) or a sequenced one (per-tick state). Each message starts with a kind byte; numbers are little-endian and
   strings UTF-8 behind a 16-bit length, written into one reused `MessageWriter`, so sending allocates nothing, and read by
   `MessageReader`, which throws on anything short or oversized (a peer is not trusted). `SessionProtocol.Version` rises
-  whenever any message changes shape or a kind is added, a game's included. `WireFingerprintTests` pin a fingerprint of
+  whenever any of the engine's messages changes shape or a kind is added; a game versions its own messages in its
+  `ISessionMatchData.Fingerprint`, which the hello carries. `WireFingerprintTests` pin a fingerprint of
   every message's bytes with the version, so a change to the wire fails them until the version rises.
   `SimulatedNetwork` wraps a transport to add delay, jitter, and loss (`Engine:Session:AddedDelayMilliseconds`,
   `AddedJitterMilliseconds`, `AddedLossPercent`), so a host and a client can be tested as if far apart.
 - **The handshake** is plain messages, so every transport shares it: the client sends `Hello` (protocol version, the
-  match identity's id and version (`IMatchIdentity`: the generator's with voxel terrain, its object kinds' fingerprint after its id where the world places objects), fixed step rate, name); the
+  match identity's id and version (`IMatchIdentity`: the generator's with voxel terrain, its object kinds' fingerprint after its id where the world places objects), fixed step rate, name, the replicated kinds' fingerprint, and the game's data fingerprint, `ISessionMatchData.Fingerprint`); the
   host answers `Welcome` (the client's slot from 1, the match: seed, step rate, identity; the join payload's size and edit
-  count; a game's match data), or refuses by closing the connection with a reason (another protocol, identity, or step
-  rate, a full session, no hello within the connect timeout, or, through
+  count; a game's match data), or refuses by closing the connection with a reason (another protocol, identity, step
+  rate, replicated kinds, or game data, a full session, no hello within the connect timeout, or, through
   Steam, a player neither in the host's lobby nor its friend). A second hello is a protocol error. `MaxPlayers` counts the
   host. A hello that comes before the host's world is made (`VoxelWorld.IsInitialized`; the session polls from the
   match's start) takes its slot and waits, and its welcome goes out from the poll once the world is. A client gives up
