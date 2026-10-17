@@ -11,7 +11,8 @@ namespace Itera.Engine.Rendering.Memory;
 /// allocation. Buffers and optimal-tiling images use separate blocks, so <c>bufferImageGranularity</c> never applies.
 /// Host-visible memory is mapped once, when it is allocated, and stays mapped. One thread at a time: the main thread
 /// before the render thread starts, the render thread while it runs (the lock guards the bookkeeping only), but for the
-/// main thread's flush of the staging region and invalidate of the probe on the frame slot it builds.
+/// main thread's flushes of what it writes for the frame slot it builds (<see cref="Flush"/>, which has no externally
+/// synchronized parameter). Every <see cref="Invalidate"/> runs on the render thread.
 /// </summary>
 public sealed unsafe partial class GpuMemoryAllocator : IDisposable
 {
