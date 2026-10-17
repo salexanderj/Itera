@@ -498,6 +498,78 @@ public sealed class SessionServiceTests : IDisposable
     }
 
     [Fact]
+    public void A_hello_before_the_hosts_world_is_made_waits_for_it_and_then_joins()
+    {
+        var (hostWorld, host) = StartHost(worldMade: false);
+        var client = NewClient(new FakeTransport(_network));
+        client.Begin();
+        for (var i = 0; i < 5; i++)
+        {
+            Assert.Equal(JoinStage.Welcoming, client.PollJoin().Stage);
+            host.Poll();
+        }
+
+        // Its slot is taken at the hello, so the host does not drop it as silent while the world is made.
+        _hostClock += 11;
+        host.Poll();
+        Assert.Equal(JoinStage.Welcoming, client.PollJoin().Stage);
+
+        hostWorld.Initialize(HostSeed);
+        JoinProgress progress;
+        var polls = 0;
+        do
+        {
+            host.Poll();
+            progress = client.PollJoin();
+        } while (progress.Stage is not (JoinStage.Joined or JoinStage.Failed) && ++polls < 100);
+
+        Assert.Null(progress.Failure);
+        Assert.Equal(JoinStage.Joined, progress.Stage);
+        Assert.Equal(HostSeed, client.Match.Seed);
+    }
+
+    [Fact]
+    public void A_client_and_host_whose_generator_id_is_longer_than_a_refusal_quotes_join()
+    {
+        var generator = new BoxesGenerator(Floor) { Id = "test." + new string('l', 95) };
+        var (_, host) = StartHost(generator: generator);
+
+        var (_, client) = Join(host, generator: generator);
+
+        Assert.Equal(1, host.JoinedPeers);
+        Assert.Equal(generator.Id, client.Match.Identity);
+    }
+
+    [Fact]
+    public void A_client_hears_no_peer_but_its_host()
+    {
+        var (hostWorld, host) = StartHost();
+        var (clientWorld, client) = Join(host);
+        var stranger = 99;
+        var writer = new MessageWriter();
+        writer.WriteByte((byte)MessageKind.Welcome);
+        writer.WriteByte(3);
+
+        client.OnConnected(stranger);
+        client.OnReceive(stranger, writer.Written);
+        writer.Reset();
+        SessionProtocol.WriteDisconnect(writer, DisconnectKind.Bye, 0, "a stranger left");
+        client.OnDisconnected(stranger, TransportDisconnect.Closed, writer.Written);
+        client.Poll();
+        host.Poll();
+
+        // The host's next edit still reaches it: the stranger took nothing of the join.
+        hostWorld.Apply(VoxelEdit.Sphere(new VoxelCoord(-10, 250, 10), 12, VoxelEditOperation.Clear));
+        host.AfterFixedStep();
+        client.Poll();
+
+        Assert.Equal(SessionEnd.None, client.End);
+        Assert.Equal(1, host.JoinedPeers);
+        Assert.Equal(1, client.Slot);
+        Assert.Equal(1, clientWorld.EditCount);
+    }
+
+    [Fact]
     public void A_join_polled_once_a_step_goes_through_its_stages_without_waiting()
     {
         var (hostWorld, host) = StartHost();
@@ -558,6 +630,32 @@ public sealed class SessionServiceTests : IDisposable
 
         Assert.Equal(JoinStage.Failed, progress.Stage);
         Assert.Contains("no welcome within 10 s", progress.Failure, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_download_that_stalls_fails_its_poll_after_the_connect_timeout_with_no_data()
+    {
+        var raw = new RawHost(_network, payloadBytes: 200, chunk: new byte[100], done: false);
+        var client = NewClient(new FakeTransport(_network));
+        client.Begin();
+        JoinProgress progress = default;
+        for (var i = 0; i < 10 && progress.Stage != JoinStage.Downloading; i++)
+        {
+            raw.Poll();
+            progress = client.PollJoin();
+        }
+
+        Assert.Equal(JoinStage.Downloading, progress.Stage);
+
+        // Most of the timeout passes with no more data: still downloading.
+        _clientClock += 9;
+        Assert.Equal(JoinStage.Downloading, client.PollJoin().Stage);
+
+        _clientClock += 1.5;
+        progress = client.PollJoin();
+
+        Assert.Equal(JoinStage.Failed, progress.Stage);
+        Assert.Contains("no data from the host within 10 s", progress.Failure, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -789,9 +887,15 @@ public sealed class SessionServiceTests : IDisposable
         Assert.Equal(0, allocated);
     }
 
-    private (VoxelWorld World, SessionService Session) StartHost(int maxPlayers = 4)
+    private (VoxelWorld World, SessionService Session) StartHost(
+        int maxPlayers = 4,
+        IChunkGenerator? generator = null,
+        bool worldMade = true
+    )
     {
-        var world = TestWorlds.Load(s_generator, Vector3.Zero, seed: HostSeed);
+        var world = worldMade
+            ? TestWorlds.Load(generator ?? s_generator, Vector3.Zero, seed: HostSeed)
+            : new VoxelWorld(WorldSettings(HostSeed), 0, generator ?? s_generator, NullLogger<VoxelWorld>.Instance);
         _owned.Add(world);
         var settings = new SessionSettings { Mode = SessionMode.Host, MaxPlayers = maxPlayers };
         var session = CreateSession(

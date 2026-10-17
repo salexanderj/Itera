@@ -256,6 +256,9 @@ public sealed partial class VoxelWorld : IDisposable
     /// <summary>Bytes of voxel storage in use.</summary>
     public long UsedBytes => _memory?.UsedBytes ?? 0;
 
+    /// <summary>True once <see cref="Initialize(ulong)"/> has made the world: its seed set and its memory made.</summary>
+    public bool IsInitialized => _memory is not null;
+
     /// <summary>True while streaming has stopped because memory reached the budget.</summary>
     public bool IsMemoryFull => _memoryFull;
 

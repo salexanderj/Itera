@@ -315,6 +315,59 @@ public sealed class LoopbackTests
         Assert.Contains($"could not bind UDP port {holder.LocalPort}", failure.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A client's socket takes no connection: a stranger who reaches its port with the session's key is refused, and the
+    /// client hears only the host it connected to.
+    /// </summary>
+    [Fact]
+    public void A_client_takes_no_connection_but_its_hosts()
+    {
+        using var host = Transport();
+        host.Listen(0);
+        using var client = Transport();
+        client.Connect($"127.0.0.1:{host.LocalPort}");
+        var hostHeard = new Heard();
+        var clientHeard = new Heard();
+        var deadline = Stopwatch.StartNew();
+        while (clientHeard.Connected.Count == 0 && deadline.Elapsed.TotalSeconds < 5)
+        {
+            host.Poll(hostHeard);
+            client.Poll(clientHeard);
+            Thread.Sleep(1);
+        }
+
+        Assert.Single(clientHeard.Connected);
+        using var stranger = Transport();
+        stranger.Connect($"127.0.0.1:{client.LocalPort}");
+        var strangerHeard = new Heard();
+        deadline.Restart();
+        while (deadline.Elapsed.TotalSeconds < 1.5)
+        {
+            host.Poll(hostHeard);
+            client.Poll(clientHeard);
+            stranger.Poll(strangerHeard);
+            Thread.Sleep(1);
+        }
+
+        Assert.Single(clientHeard.Connected);
+        Assert.Empty(strangerHeard.Connected);
+    }
+
+    private static NetworkService Transport() =>
+        new(NullLogger<NetworkService>.Instance, NullLoggerFactory.Instance, disconnectTimeoutSeconds: 5);
+
+    /// <summary>What a transport told its listener.</summary>
+    private sealed class Heard : ISessionTransportListener
+    {
+        public List<int> Connected { get; } = [];
+
+        public void OnConnected(int peer) => Connected.Add(peer);
+
+        public void OnDisconnected(int peer, TransportDisconnect reason, ReadOnlySpan<byte> data) { }
+
+        public void OnReceive(int peer, ReadOnlySpan<byte> data) { }
+    }
+
     private static SessionService Session(
         SessionSettings settings,
         VoxelWorld world,

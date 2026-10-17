@@ -552,9 +552,14 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         {
             _peers[peer] = new HostPeer(_clock());
         }
-        else
+        else if (_host < 0 && _join == JoinState.Connecting)
         {
             OnConnectedToHost(peer);
+        }
+        else
+        {
+            // A client's one peer is the host it reached first; any other is dropped unheard.
+            _transport.Disconnect(peer, []);
         }
     }
 
@@ -571,8 +576,9 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
                 UpdateRoster();
             }
         }
-        else
+        else if (peer == _host || (_host < 0 && _join == JoinState.Connecting))
         {
+            // Before the host answers, the transport reports a failed connect under no peer of the host's.
             OnDisconnectedFromHost(reason, data);
         }
     }
@@ -587,7 +593,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
             {
                 ReceiveAsHost(peer, data);
             }
-            else
+            else if (peer == _host)
             {
                 ReceiveAsClient(data);
             }
@@ -836,6 +842,9 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
 
         /// <summary>The newest edit this client has been sent (while it downloads, the newest its payload holds).</summary>
         public long SentThrough { get; set; }
+
+        /// <summary>True while its accepted hello waits for the match's world to be made, before its join starts.</summary>
+        public bool HelloHeld { get; set; }
 
         /// <summary>Its join payload while it downloads, or null.</summary>
         public MemoryStream? Download { get; set; }

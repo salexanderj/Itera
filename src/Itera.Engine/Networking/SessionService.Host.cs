@@ -54,8 +54,8 @@ public sealed partial class SessionService
             return;
         }
 
-        // Quoted in a refusal, so kept short: a peer's strings are not trusted.
-        var identity = SessionProtocol.Cut(reader.ReadString(), 64);
+        // Compared whole (a match's identity may pass 64 bytes); cut short only where a refusal quotes it.
+        var identity = reader.ReadString();
         var identityVersion = reader.ReadInt();
         var fixedStepHz = reader.ReadInt();
         var name = reader.ReadString();
@@ -70,7 +70,7 @@ public sealed partial class SessionService
             Reject(
                 peer,
                 RejectReason.Identity,
-                $"the host's match is {match.Identity} version {match.IdentityVersion}, the client's {identity} version {identityVersion}"
+                $"the host's match is {match.Identity} version {match.IdentityVersion}, the client's {SessionProtocol.Cut(identity, 64)} version {identityVersion}"
             );
             return;
         }
@@ -100,8 +100,20 @@ public sealed partial class SessionService
 
         client.Name = SessionProtocol.CutName(name);
         client.Slot = slot;
-        SendWorld(peer, client);
+        if (WorldReady)
+        {
+            SendWorld(peer, client);
+        }
+        else
+        {
+            // The match's world is still being made (its session polls from the match's start): the world goes out
+            // once it is, from the poll (SendDownloads). The slot is taken now, so the peer is not dropped as silent.
+            client.HelloHeld = true;
+        }
     }
+
+    /// <summary>True once the match's world can be saved for a join: no voxel terrain, or the world initialised.</summary>
+    private bool WorldReady => _voxels is null || _voxels.IsInitialized;
 
     /// <summary>
     /// Starts a client's join: the welcome, then the join payload (the edit log, saved now; without a world, its header
@@ -143,12 +155,20 @@ public sealed partial class SessionService
         SendDownload(peer, client);
     }
 
-    /// <summary>Sends each joining client the next shares of its payload its transport has room for.</summary>
+    /// <summary>
+    /// Starts the join of each client whose hello waited for the world, once it is ready, and sends each joining client
+    /// the next shares of its payload its transport has room for.
+    /// </summary>
     private void SendDownloads()
     {
         foreach (var (id, peer) in _peers)
         {
-            if (peer.Download is not null)
+            if (peer.HelloHeld && WorldReady)
+            {
+                peer.HelloHeld = false;
+                SendWorld(id, peer);
+            }
+            else if (peer.Download is not null)
             {
                 SendDownload(id, peer);
             }

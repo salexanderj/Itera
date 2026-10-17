@@ -65,6 +65,12 @@ public sealed partial class ReplicationService
     /// <summary>The steps of the tick a reply's shown ticks are in: 1/16 of a step.</summary>
     private const int ShownSteps = 16;
 
+    /// <summary>
+    /// The latest command tick a reply may name: past half of an int's range (about 414 days of steps at 60 Hz), so a
+    /// command's tick plus the host's buffer never wraps past <see cref="int.MaxValue"/>.
+    /// </summary>
+    internal const int MostCommandTick = int.MaxValue / 2;
+
     private readonly PredictionEntry[] _history = new PredictionEntry[PredictionHistory];
     private Entity _predicted = Entity.Null;
     private int _lastCommandTick = -1;
@@ -271,6 +277,11 @@ public sealed partial class ReplicationService
             throw new InvalidDataException("A reply's commands start before the match.");
         }
 
+        if (newest > MostCommandTick)
+        {
+            throw new InvalidDataException("A reply's commands are past any tick.");
+        }
+
         Span<PlayerCommand> commands = stackalloc PlayerCommand[CommandsPerReply];
         for (var i = 0; i < count; i++)
         {
@@ -278,10 +289,12 @@ public sealed partial class ReplicationService
         }
 
         var shown = 0L;
+        const long mostShown = (long)int.MaxValue * ShownSteps;
         for (var i = 0; i < count; i++)
         {
+            // Compared both ways rather than by Math.Abs, which throws for long.MinValue.
             var value = reader.ReadVarLong();
-            if (Math.Abs(value) > (long)int.MaxValue * ShownSteps)
+            if (value < -mostShown || value > mostShown)
             {
                 throw new InvalidDataException("A reply's shown tick is out of range.");
             }
@@ -645,12 +658,28 @@ internal struct PredictedState
         && float.IsFinite(Contact.Downhill.Y)
         && float.IsFinite(Contact.WallNormal.X)
         && float.IsFinite(Contact.WallNormal.Y)
-        && float.IsFinite(Size.HeightMetres)
-        && float.IsFinite(Size.RadiusMetres)
-        && float.IsFinite(Size.EyeMetres)
-        && float.IsFinite(Size.StepMetres)
-        && float.IsFinite(Size.MassKilograms)
+        && SizeFits(in Size)
         && PartsValid(kinds);
+
+    /// <summary>The tallest body an owner's block may carry, in metres: past any game's, short of what the mover reads slowly.</summary>
+    internal const float MostHeightMetres = 100;
+
+    /// <summary>
+    /// True when the character mover takes a body of <paramref name="size"/> (it throws for a radius past
+    /// <see cref="VoxelCharacterMover.MaxRadiusMetres"/>, a height or radius of 0, or a negative step), its height and eye
+    /// within <see cref="MostHeightMetres"/>, and its mass above 0: what a host may send and a client takes.
+    /// </summary>
+    private static bool SizeFits(in CharacterSize size) =>
+        size.RadiusMetres > 0
+        && size.RadiusMetres <= VoxelCharacterMover.MaxRadiusMetres
+        && size.HeightMetres > 0
+        && size.HeightMetres <= MostHeightMetres
+        && size.EyeMetres >= 0
+        && size.EyeMetres <= MostHeightMetres
+        && size.StepMetres >= 0
+        && size.StepMetres <= size.HeightMetres
+        && size.MassKilograms > 0
+        && size.MassKilograms <= 1e9f;
 
     private readonly bool PartsValid(ReplicatedKinds kinds)
     {
@@ -775,8 +804,9 @@ internal struct PredictedState
         state.Size.EyeMetres = Positive(ref reader);
         state.Size.StepMetres = Finite(ref reader, 1e4f);
         state.Size.MassKilograms = Positive(ref reader);
-        if (state.Size.HeightMetres > 1e4f || state.Size.RadiusMetres > 1e4f || state.Size.EyeMetres > 1e4f)
+        if (!SizeFits(in state.Size))
         {
+            // A size the mover would throw on at the correction's step would end the client's match.
             throw new InvalidDataException("A player's size is out of range.");
         }
 

@@ -150,7 +150,8 @@ grim; the in-game `shot` could replace that later.
 ## Protocol
 
 The port is TCP on 127.0.0.1 (default 47650). Each request and each reply is one JSON object on one line, for example
-`{"id":1,"op":"run","line":"shadows off"}`. The ops are `run` (with `"script": true`, a script: waits and screenshots
+`{"id":1,"op":"run","line":"shadows off"}`. A line that does not start with `{` is answered with an error and ends the
+connection, and a last line without its end is never run, so a web page's request to the port runs nothing. The ops are `run` (with `"script": true`, a script: waits and screenshots
 hold the commands after them, and the reply comes when all have run), `log`, `wait`, `gpu`, `status`, `query`, `shot`,
 `reload`, and `input`. `ControlService` documents their fields.
 

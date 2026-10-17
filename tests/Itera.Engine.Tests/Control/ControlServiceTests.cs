@@ -151,12 +151,12 @@ public sealed class ControlServiceTests : IDisposable
     }
 
     [Fact]
-    public void A_line_that_is_not_a_request_gets_an_error_and_the_connection_goes_on()
+    public void A_request_that_is_not_one_gets_an_error_and_the_connection_goes_on()
     {
         var service = Start();
         using var client = Connect(service);
 
-        var bad = Ask(client, "not json");
+        var bad = Ask(client, "{not json");
         var noOp = Ask(client, """{"id":3}""");
         var unknown = Ask(client, """{"op":"fly"}""");
         var good = Ask(client, """{"op":"run","line":"say still"}""");
@@ -166,6 +166,54 @@ public sealed class ControlServiceTests : IDisposable
         Assert.False(noOp.GetProperty("ok").GetBoolean());
         Assert.False(unknown.GetProperty("ok").GetBoolean());
         Assert.Equal(["still"], Strings(good, "answers"));
+    }
+
+    /// <summary>A line that is not a JSON object is answered with an error and ends its connection.</summary>
+    [Fact]
+    public void A_line_that_is_not_a_json_object_is_refused_and_ends_the_connection()
+    {
+        var service = Start();
+        using var client = Connect(service);
+
+        var reply = Parse(client.Ask("not json"));
+
+        Assert.False(reply.GetProperty("ok").GetBoolean());
+        Assert.StartsWith("not a request", reply.GetProperty("error").GetString(), StringComparison.Ordinal);
+        Assert.Throws<IOException>(() => client.Ask("""{"op":"log"}"""));
+        using var another = Connect(service);
+        Assert.True(Ask(another, """{"op":"log"}""").GetProperty("ok").GetBoolean());
+    }
+
+    /// <summary>
+    /// A web page's POST to the port (a browser sends one to any address a page names) runs nothing: its first line
+    /// ends the connection before its body is read, and a body sent alone without a line's end is never a request.
+    /// </summary>
+    [Theory]
+    [InlineData(
+        "POST / HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: text/plain\r\n\r\n{\"op\":\"run\",\"line\":\"say from a page\"}"
+    )]
+    [InlineData("{\"op\":\"run\",\"line\":\"say from a page\"}")]
+    public void A_web_pages_post_runs_nothing(string sent)
+    {
+        var service = Start();
+        using (var raw = new TcpClient { ReceiveTimeout = 15_000 })
+        {
+            raw.Connect(IPAddress.Loopback, service.Port);
+            var stream = raw.GetStream();
+            stream.Write(Encoding.UTF8.GetBytes(sent));
+            raw.Client.Shutdown(SocketShutdown.Send);
+            using var reader = new StreamReader(stream, new UTF8Encoding(false));
+            // The game closes the connection: after an error for the first case, at once for the second.
+            while (reader.ReadLine() is not null) { }
+        }
+
+        using var client = Connect(service);
+        Assert.True(Ask(client, """{"op":"log"}""").GetProperty("ok").GetBoolean());
+
+        Assert.DoesNotContain(
+            Enumerable.Range(0, _console.ScrollbackCount),
+            i => _console.ScrollbackLine(i).Text == "from a page"
+        );
     }
 
     /// <summary>

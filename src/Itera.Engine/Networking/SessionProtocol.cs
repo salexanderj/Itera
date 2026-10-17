@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Globalization;
 using System.Numerics;
 using System.Text;
+using Itera.Engine.Diagnostics;
 using Itera.Engine.Maths;
 using Itera.Engine.Voxels;
 
@@ -215,7 +216,7 @@ internal static class SessionProtocol
     {
         var seed = reader.ReadULong();
         var fixedStepHz = reader.ReadInt();
-        var identity = reader.ReadString();
+        var identity = LogText.Printable(reader.ReadString());
         var identityVersion = reader.ReadInt();
         var length = reader.ReadInt();
         if (length < 0 || length > MaxMatchGameBytes)
@@ -238,14 +239,14 @@ internal static class SessionProtocol
     }
 
     /// <summary>
-    /// <paramref name="name"/> cut to <see cref="MaxNameLength"/> characters, never inside a surrogate pair: a client's
-    /// name as the host keeps it, and this player's Steam name.
+    /// <paramref name="name"/> cut to <see cref="MaxNameLength"/> characters, never inside a surrogate pair, and made
+    /// <see cref="LogText.Printable"/>: a client's name as the host keeps it, and this player's Steam name.
     /// </summary>
     public static string CutName(string name)
     {
         if (name.Length <= MaxNameLength)
         {
-            return name;
+            return LogText.Printable(name);
         }
 
         var length = MaxNameLength;
@@ -254,12 +255,16 @@ internal static class SessionProtocol
             length--;
         }
 
-        return name[..length];
+        return LogText.Printable(name[..length]);
     }
 
-    /// <summary><paramref name="text"/>, shortened by whole characters to at most <paramref name="maxBytes"/> of UTF-8.</summary>
+    /// <summary>
+    /// <paramref name="text"/>, shortened by whole characters to at most <paramref name="maxBytes"/> of UTF-8, and made
+    /// <see cref="LogText.Printable"/>.
+    /// </summary>
     public static string Cut(string text, int maxBytes)
     {
+        text = LogText.Printable(text);
         if (Encoding.UTF8.GetByteCount(text) <= maxBytes)
         {
             return text;
@@ -280,7 +285,10 @@ internal static class SessionProtocol
         return string.Concat(text.AsSpan(0, length), "...");
     }
 
-    /// <summary>Reads a disconnect's data; false when it is empty or not one this build wrote.</summary>
+    /// <summary>
+    /// Reads a disconnect's data, its text made <see cref="LogText.Printable"/>; false when it is empty or not one this build
+    /// wrote.
+    /// </summary>
     public static bool TryReadDisconnect(
         ReadOnlySpan<byte> data,
         out DisconnectKind kind,
@@ -296,7 +304,7 @@ internal static class SessionProtocol
             var reader = new MessageReader(data);
             kind = (DisconnectKind)reader.ReadByte();
             reason = reader.ReadByte();
-            text = reader.ReadString();
+            text = LogText.Printable(reader.ReadString());
             return kind is DisconnectKind.Reject or DisconnectKind.Bye or DisconnectKind.ProtocolError;
         }
         catch (InvalidDataException)

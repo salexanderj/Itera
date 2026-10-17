@@ -52,7 +52,8 @@ public sealed partial class SessionService
 
     /// <summary>
     /// Carries a client's join on: takes what arrived from the host and says how far the join is, or why it failed
-    /// (no answer or no welcome within the connect timeout, a refusal, a world this game cannot accept). Once a step
+    /// (no answer or no welcome within the connect timeout, no data from the host for that long while the world
+    /// downloads, a refusal, a world this game cannot accept). Once a step
     /// of the main loop until it says <see cref="JoinStage.Joined"/> (the host's world is downloaded; its world step
     /// loads it) or fails. On a host or offline, joined at once. A failed join stays failed; ending the match closes it.
     /// </summary>
@@ -85,9 +86,14 @@ public sealed partial class SessionService
         }
 
         var now = _clock();
-        if (_join < JoinState.Downloading && now > _joinDeadline)
+        if (_join < JoinState.Downloaded && now > _joinDeadline)
         {
-            var stage = _join == JoinState.Connecting ? "no answer" : "no welcome";
+            var stage = _join switch
+            {
+                JoinState.Connecting => "no answer",
+                JoinState.Welcoming => "no welcome",
+                _ => "no data from the host",
+            };
             _joinFailure = $"Could not join {_joinAddress}: {stage} within {_settings.ConnectTimeoutSeconds} s.";
             return Failed();
         }
@@ -189,6 +195,8 @@ public sealed partial class SessionService
         {
             case (JoinState.Welcoming, MessageKind.Welcome):
                 ReadWelcome(ref reader);
+                // The download's deadline is a stall's: no data from the host for the connect timeout.
+                _joinDeadline = _clock() + _settings.ConnectTimeoutSeconds;
                 break;
             case (JoinState.Downloading, MessageKind.JoinChunk):
                 var chunk = reader.ReadRest();
@@ -198,6 +206,7 @@ public sealed partial class SessionService
                 }
 
                 _payload.Write(chunk);
+                _joinDeadline = _clock() + _settings.ConnectTimeoutSeconds;
                 break;
             case (JoinState.Downloading, MessageKind.JoinDone):
                 reader.EnsureEnd();

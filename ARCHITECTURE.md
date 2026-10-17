@@ -281,7 +281,8 @@ GPU memory of the request's frame slot.
 **Control port (`ControlService`, `Engine:Control`).** A development tool, so a check needs no restart: off unless
 `Engine:Control:Enabled` is true, it listens on TCP 127.0.0.1 (port 47650), and `tools/control/game.py` drives it. Any
 program on the machine can connect, so shipped builds never turn it on. Each line a tool sends is a JSON request and gets
-one JSON reply line. A thread accepts connections, and a thread per connection reads its requests one at a time, queues
+one JSON reply line; a line that is not a JSON object ends its connection, and a last line without its end is never run,
+so a web page's request (which a browser sends to any address a page names) runs nothing. A thread accepts connections, and a thread per connection reads its requests one at a time, queues
 each for the main thread, and wakes the loop (`WindowService.Wake`); only `log` is answered on the connection thread, from
 `ControlLog`. The main thread starts them in `RunPending`, between fixed steps where console commands run, and checks the
 waiting ones each iteration against the game's clock and the frames built. The ops:
@@ -1303,7 +1304,12 @@ there is no host migration, and the session ends when the host quits.
   count; a game's match data), or refuses by closing the connection with a reason (another protocol, identity, or step
   rate, a full session, no hello within the connect timeout, or, through
   Steam, a player neither in the host's lobby nor its friend). A second hello is a protocol error. `MaxPlayers` counts the
-  host.
+  host. A hello that comes before the host's world is made (`VoxelWorld.IsInitialized`; the session polls from the
+  match's start) takes its slot and waits, and its welcome goes out from the poll once the world is. A client gives up
+  with no welcome within the connect timeout, or with no part of the download for that long; it takes no connection but
+  its host's (LiteNetLib refuses any request on a client's socket, and the session hears no other peer). A string a peer
+  sends (a name, a refusal's or leaving's text, an identity, a log's section name) is made printable before it is logged
+  (`LogText.Printable`).
 - **The join payload** is the host's saved edit log (`SaveEdits`, `EditLogSerializer`), saved when the hello is accepted,
   in chunks of 16 KB behind the welcome, sent from the host's polls while the transport has room for them
   (`ISessionTransport.ReliableRoom`: any amount on LiteNetLib, 256 KB queued at most on Steam), then `JoinDone`; the client
@@ -1387,7 +1393,8 @@ overlay and fossilize Vulkan layers into the game; the overlay draws one best-pr
   of a new lobby member after the member's connection arrives.
 - The menu's join page lists the friends who host (`SteamFriendList`): each friend whose game is this app in a lobby, or
   whose rich presence's `connect` names one, with the lobby's players and limit and "Other version" where its match key is
-  not this build's. Steam's persona, lobby-data, and avatar callbacks reach it through a second listener
+  not this build's (made at each read: the match identity carries the run's object kinds, registered after the list is
+  built). Steam's persona, lobby-data, and avatar callbacks reach it through a second listener
   (`ISteamFriendsListener`).
 - The handshake, the join, and the edits are the same messages as on LiteNetLib: reliable messages on channel 0, unreliable
   ones (no Nagle delay) on channel 1. A disconnect's kind, reason, and text travel as Steam's end reason in the app range.

@@ -103,8 +103,10 @@ How it works:
   less two, taking those steps' commands again, which corrects the client once. The client keeps 128 steps. Each send's first
   packet to a client carries the owner's block: the tick of the last command applied and the player's state after it
   (feet absolute, velocity, contact, mode, size, and the run's predicted parts' bytes: the engine's climber, then a
-  game's own; one with a number that is not finite, a place past a message's reach, or a part that is not valid, is not
-  sent, and every number and part is checked when read, against bounds past any game's). At the step's
+  game's own; one with a number that is not finite, a place past a message's reach, a size the mover refuses (a radius
+  past `VoxelCharacterMover.MaxRadiusMetres` or none, a height past 100 m or none, a step past the height), or a part that
+  is not valid, is not sent, and every number and part is checked when read, against bounds past any game's). A reply
+  whose newest command lies past `int.MaxValue / 2` or whose shown tick lies past any tick is refused as damaged. At the step's
   start the client keeps the state the last step left with its command; when the host's state at a command differs from
   the one predicted (the feet more than 1 cm apart, on the ground or crouched where the other is not, or a part that
   says so: a climb in another state), it

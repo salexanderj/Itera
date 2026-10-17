@@ -35,7 +35,7 @@ internal sealed class BoxesGenerator : IChunkGenerator
     /// <summary>First level-0 y above the dirt.</summary>
     public int Floor { get; }
 
-    public string Id => "test.boxes";
+    public string Id { get; init; } = "test.boxes";
 
     public int Version => 1;
 

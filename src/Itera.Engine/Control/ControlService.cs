@@ -1046,7 +1046,8 @@ public sealed partial class ControlService : IDisposable
 
         /// <summary>
         /// The next line, without its end, read into <paramref name="buffer"/>; past <see cref="MostLineChars"/> it stops
-        /// reading and returns what it has, longer than that. Null at the end of the stream.
+        /// reading and returns what it has, longer than that. Null at the end of the stream, a last line without its end
+        /// too: a tool ends each request with one, and a web page's request body has none.
         /// </summary>
         internal static string? ReadLine(TextReader reader, StringBuilder buffer)
         {
@@ -1056,7 +1057,7 @@ public sealed partial class ControlService : IDisposable
                 var next = reader.Read();
                 if (next < 0)
                 {
-                    return buffer.Length > 0 ? buffer.ToString() : null;
+                    return null;
                 }
 
                 if (next == '\n')
@@ -1153,6 +1154,15 @@ public sealed partial class ControlService : IDisposable
                     if (string.IsNullOrWhiteSpace(line))
                     {
                         continue;
+                    }
+
+                    if (line.AsSpan().TrimStart()[0] != '{')
+                    {
+                        // Every request is a JSON object. Anything else (a web page's request, which a browser may send
+                        // to a port on this machine) ends the connection before its body is read.
+                        writer.WriteLine(ControlRequest.ErrorReply("not a request: each line is one JSON object"));
+                        reason = "a line that is not a request";
+                        return;
                     }
 
                     writer.WriteLine(Answer(line));

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Itera.Engine.Diagnostics;
 
 namespace Itera.Engine.Voxels;
 
@@ -492,7 +493,8 @@ internal static class EditLogSerializer
             throw Invalid($"The edit log has format version {format}; this build reads 1 to {FormatVersion}.");
         }
 
-        var generatorId = reader.ReadString();
+        // A host's log arrives in a join, so its strings are a peer's.
+        var generatorId = LogText.Printable(reader.ReadString());
         var generatorVersion = reader.ReadInt32();
         var seed = reader.ReadUInt64();
         // Before format 7 the id was the generator's alone, as a world's whose objects it did not name.
@@ -618,7 +620,7 @@ internal static class EditLogSerializer
         var names = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < count; i++)
         {
-            var name = reader.ReadString();
+            var name = LogText.Printable(reader.ReadString());
             var version = reader.ReadInt32();
             var length = reader.ReadInt32();
             if (SectionProblem(name, version) is { } problem)

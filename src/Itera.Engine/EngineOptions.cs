@@ -757,8 +757,9 @@ public sealed class SessionSettings
     public int MaxPlayers { get; set; } = 4;
 
     /// <summary>
-    /// How long a client waits to be welcomed before it gives up, and how long a host waits for a new connection's
-    /// hello before it drops it, in seconds. (LiteNetLib itself stops trying to reach a host after about 5 s.)
+    /// How long a client waits to be welcomed, or for the next part of the host's world while it downloads, before it
+    /// gives up, and how long a host waits for a new connection's hello before it drops it, in seconds. (LiteNetLib
+    /// itself stops trying to reach a host after about 5 s.)
     /// </summary>
     public double ConnectTimeoutSeconds { get; set; } = 10;
 

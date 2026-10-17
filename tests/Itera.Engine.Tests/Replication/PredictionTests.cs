@@ -298,6 +298,40 @@ public sealed class PredictionTests(ITestOutputHelper output)
     }
 
     /// <summary>
+    /// A reply whose shown tick is the most negative long (ten bytes no client writes) is refused as damaged, where it
+    /// threw an overflow that ended the host's match; and one whose newest command tick lies past any tick is refused too.
+    /// </summary>
+    [Fact]
+    public void A_reply_with_the_most_negative_shown_tick_or_a_command_past_any_tick_is_refused()
+    {
+        using var harness = ReplicationHarness.Start(
+            new MoverPlan { Count = 0, Characters = true },
+            clientPlan: new MoverPlan { Characters = true, Script = tick => Walk(tick, ulong.MaxValue) }
+        );
+        harness.Step(30);
+        IReplicationEndpoint endpoint = harness.HostReplication;
+        var mostNegative = Reply(10, long.MinValue);
+        var pastAnyTick = Reply(int.MaxValue - 1, 0);
+
+        Assert.Throws<InvalidDataException>(() => endpoint.ReceiveReply(1, mostNegative));
+        Assert.Throws<InvalidDataException>(() => endpoint.ReceiveReply(1, pastAnyTick));
+        harness.Host.Step(10);
+    }
+
+    /// <summary>A reply's body: nothing acknowledged, then one command at <paramref name="newest"/> made at <paramref name="shown"/>.</summary>
+    private static byte[] Reply(int newest, long shown)
+    {
+        var writer = new MessageWriter();
+        writer.WriteVarInt(0);
+        writer.WriteULong(0);
+        writer.WriteVarInt(1);
+        writer.WriteVarInt(newest);
+        ReplicationService.WriteCommand(writer, new PlayerCommand());
+        writer.WriteVarLong(shown);
+        return writer.Written.ToArray();
+    }
+
+    /// <summary>
     /// A game's own movement state (the test's boost, kept in a component of the test's) registered as a predicted part
     /// is put back with the host's state when the client is corrected, so the client runs its later commands again as
     /// the host ran them: one correction each time the host pushes the player in the middle of a boost. Not registered,

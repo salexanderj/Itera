@@ -44,7 +44,7 @@ public sealed partial class SteamFriendList : ISteamFriendsListener
     public const double RefreshSeconds = 5;
 
     private readonly SteamService _steam;
-    private readonly string _matchKey;
+    private readonly Func<string> _matchKey;
     private readonly ILogger<SteamFriendList> _logger;
     private readonly Dictionary<ulong, FriendAvatar?> _avatars = [];
     private List<FriendHost> _hosts = [];
@@ -58,12 +58,21 @@ public sealed partial class SteamFriendList : ISteamFriendsListener
         IOptions<EngineOptions> options,
         ILogger<SteamFriendList> logger
     )
-        : this(steam, SessionProtocol.MatchKey(identity.Id, identity.Version, options.Value.FixedStepHz), logger) { }
+        // The key is made at each read, not here: a voxel world's identity carries the run's object kinds, which the
+        // run's start registers after this list is built.
+        : this(steam, () => SessionProtocol.MatchKey(identity.Id, identity.Version, options.Value.FixedStepHz), logger)
+    { }
 
     /// <param name="steam">Steam, when it runs.</param>
     /// <param name="matchKey">This build's match key (<see cref="SessionProtocol.MatchKey"/>).</param>
     /// <param name="logger">Logger.</param>
     internal SteamFriendList(SteamService steam, string matchKey, ILogger<SteamFriendList> logger)
+        : this(steam, () => matchKey, logger) { }
+
+    /// <param name="steam">Steam, when it runs.</param>
+    /// <param name="matchKey">Makes this build's match key (<see cref="SessionProtocol.MatchKey"/>) when the list is read.</param>
+    /// <param name="logger">Logger.</param>
+    internal SteamFriendList(SteamService steam, Func<string> matchKey, ILogger<SteamFriendList> logger)
     {
         _steam = steam;
         _matchKey = matchKey;
@@ -157,6 +166,7 @@ public sealed partial class SteamFriendList : ISteamFriendsListener
     private void Refresh(ISteamPlatform platform, bool requestData)
     {
         var hosts = new List<FriendHost>();
+        var matchKey = _matchKey();
         var count = platform.FriendCount;
         for (var i = 0; i < count; i++)
         {
@@ -180,7 +190,7 @@ public sealed partial class SteamFriendList : ISteamFriendsListener
                     lobby,
                     Number(platform.LobbyData(lobby, SessionProtocol.LobbyPlayersKey)),
                     Number(platform.LobbyData(lobby, SessionProtocol.LobbyMaxKey)),
-                    key.Length > 0 && !string.Equals(key, _matchKey, StringComparison.Ordinal),
+                    key.Length > 0 && !string.Equals(key, matchKey, StringComparison.Ordinal),
                     Avatar(platform, friend)
                 )
             );

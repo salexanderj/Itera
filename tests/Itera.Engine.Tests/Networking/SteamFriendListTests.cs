@@ -1,5 +1,10 @@
+using Itera.Engine.Matches;
 using Itera.Engine.Networking;
+using Itera.Engine.Objects;
+using Itera.Engine.Tests.Systems;
+using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Itera.Engine.Tests.Networking;
 
@@ -57,6 +62,30 @@ public sealed class SteamFriendListTests : IDisposable
             _friends.Hosts
         );
         Assert.Equal([alice, carol], _me.RequestedLobbies.Order());
+    }
+
+    [Fact]
+    public void A_host_of_the_same_world_is_not_another_version_though_its_object_kinds_came_after_the_list()
+    {
+        var kinds = new VoxelObjectKinds();
+        var generator = new FlatTestGenerator(VoxelGrid.Unit);
+        var identity = new GeneratorMatchIdentity(generator, kinds);
+        var friends = new SteamFriendList(
+            _steam,
+            identity,
+            Options.Create(new EngineOptions()),
+            NullLogger<SteamFriendList>.Instance
+        );
+        // The run's start registers the kinds after the list is built, as the game loop builds it.
+        var shape = new VoxelObjectShape(10, new VoxelCoord(4, 4, 4), new VoxelCoord(20, 0, 20));
+        shape.FillBox(0, 0, 0, 40, 40, 40, 3);
+        kinds.Register("crate", shape);
+        var key = SessionProtocol.MatchKey(identity.Id, identity.Version, new EngineOptions().FixedStepHz);
+        Host(Alice, players: 1, max: 4, key);
+
+        friends.Update(0, watching: true);
+
+        Assert.False(Assert.Single(friends.Hosts).OtherVersion);
     }
 
     [Fact]

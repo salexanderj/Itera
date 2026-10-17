@@ -23,6 +23,9 @@ public sealed partial class NetworkService : ISessionTransport, IDisposable
     private ISessionTransportListener? _polling;
     private bool _disposed;
 
+    // A host takes connections; a client takes none, so the one peer it has is the host it connected to.
+    private bool _listening;
+
     // A host name being looked up for Connect, and the port to connect to once it is.
     private Task<IPAddress[]>? _resolving;
     private string _resolvingHost = "";
@@ -60,6 +63,7 @@ public sealed partial class NetworkService : ISessionTransport, IDisposable
     public void Listen(int port)
     {
         Start(port);
+        _listening = true;
         LogListening(LocalPort);
     }
 
@@ -180,6 +184,7 @@ public sealed partial class NetworkService : ISessionTransport, IDisposable
 
         _manager.Stop();
         _manager = null;
+        _listening = false;
         _peers.Clear();
         _resolving = null;
         LogStopped();
@@ -251,6 +256,13 @@ public sealed partial class NetworkService : ISessionTransport, IDisposable
 
     private void OnConnectionRequest(ConnectionRequest request)
     {
+        if (!_listening)
+        {
+            // A client: another peer reaching its socket is not its host.
+            request.RejectForce();
+            return;
+        }
+
         request.AcceptIfKey(SessionProtocol.ConnectKey);
     }
 

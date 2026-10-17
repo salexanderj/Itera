@@ -367,6 +367,42 @@ public sealed class ReplicatedStateCodecTests
         Assert.False(nan.CanWrite(kinds));
     }
 
+    /// <summary>
+    /// An owner's block whose body the character mover refuses (it throws for a radius past its widest, a radius or height
+    /// of 0, or a negative step; and a mass of 0 or a body far taller than any game's) is not sent, and a client refuses
+    /// one a host sends, where it ended the client's match at its next correction.
+    /// </summary>
+    [Theory]
+    [InlineData(2.5f, 1.7f, 0.4f, 75f)]
+    [InlineData(0f, 1.7f, 0.4f, 75f)]
+    [InlineData(0.26f, 0f, 0f, 75f)]
+    [InlineData(0.26f, 1.7f, -1f, 75f)]
+    [InlineData(0.26f, 1.7f, 0.4f, 0f)]
+    [InlineData(0.26f, 500f, 0.4f, 75f)]
+    public void An_owners_block_with_a_body_the_mover_refuses_is_neither_sent_nor_read(
+        float radius,
+        float height,
+        float step,
+        float mass
+    )
+    {
+        var kinds = new ReplicatedKinds();
+        var state = default(PredictedState);
+        state.Size = Components.CharacterSize.ForHeight(1.7f) with
+        {
+            RadiusMetres = radius,
+            HeightMetres = height,
+            StepMetres = step,
+            MassKilograms = mass,
+        };
+        var writer = new MessageWriter();
+        state.Write(writer, kinds);
+        var bytes = writer.Written.ToArray();
+
+        Assert.False(state.CanWrite(kinds));
+        Assert.Throws<InvalidDataException>(() => ReadState(bytes, kinds));
+    }
+
     private static PredictedState ReadState(byte[] bytes, ReplicatedKinds kinds)
     {
         var reader = new MessageReader(bytes);

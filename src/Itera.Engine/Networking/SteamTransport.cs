@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Globalization;
+using Itera.Engine.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -314,6 +315,8 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
         string endDebug
     )
     {
+        // The other side may write its own close text.
+        endDebug = LogText.Printable(endDebug);
         if (state == SteamConnectionState.Connecting)
         {
             if (!incoming || _listenSocket == 0 || _platform is null)

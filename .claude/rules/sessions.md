@@ -21,7 +21,11 @@ from its polls as the transport has room (`ISessionTransport.ReliableRoom`), and
 host's seed whatever its own options say; a game may send match data of its own in the welcome and refuse a client
 whose rules differ (`ISessionMatchData`: its hash). A game without voxel terrain sends a payload of the edit log's
 header alone (its match identity where a world writes its generator, `EditLogSerializer.WriteEmpty`), and its client
-refuses any edit. A client drops a game message that arrives before the download ends. After each fixed step the host sends
+refuses any edit. A client drops a game message that arrives before the download ends. A hello that arrives before
+the host's world is made takes its slot and waits for it (`VoxelWorld.IsInitialized`). A client fails its join with no
+welcome within `ConnectTimeoutSeconds`, or with no part of the download for that long, and hears no peer but its host
+(LiteNetLib refuses connections on a client's socket). Strings a peer sends pass through `LogText.Printable` before they
+are logged (`SessionProtocol.CutName`, `Cut`, and `TryReadDisconnect` do it). After each fixed step the host sends
 each client its new edits, and a client's world follows the host (`VoxelWorld.FollowHost`). The protocol version is
 `SessionProtocol.Version`; raise it with any change to the wire, and pin the new fingerprint in the engine's
 `WireFingerprintTests`. The roster gives each slot's player a join number (`SessionPlayer.Join`); per-slot systems keep a
@@ -84,7 +88,8 @@ lobby data gives its players (`itera_players`), limit
 (`itera_max`), and match key (`itera_match`: protocol, the match identity's id and version, step rate; `SessionProtocol.MatchKey`,
 `ISessionTransport.SetLobbyData`). The menu's join page lists the friends who host (`SteamFriendList`, through a second
 listener, `ISteamFriendsListener`; the loop updates it whatever menu shows, and keeps it fresh while a menu sets
-`Watching`), with "Other version" where the match key differs. A friend's "Join game" in the Steam overlay
+`Watching`), with "Other version" where the match key differs (made at each read, as the run's object kinds come after
+the list). A friend's "Join game" in the Steam overlay
 (`JoinRequests`) joins at once with no match, and during a match waits for the menu to ask (`Pending`, `Accept`,
 `Decline`).
 
