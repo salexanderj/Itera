@@ -34,8 +34,11 @@ with `ClearTextFocus`; ` too while the console is off), with the characters type
 game; the keys held as it is set are let go. The mouse, the wheel, and the pointer stay the game's, and ` still opens
 the console. Silk.NET passes on no key repeats, so `InputService` repeats a key a text box says repeats (Backspace,
 Delete, Left, Right; `ITextInput.KeyDown` returns true) after 0.4 s, 30 times a second, for the menu's box too; the
-console repeats its own. The box's callbacks and `IEscapeHandler.Escape` run inside the window's key event: short, never
-throwing, no ECS changes. Characters
+console repeats its own. The box's callbacks and `IEscapeHandler.Escape` run inside the window's key event: short, no
+ECS changes, and better not throwing: what a handler throws inside a window callback is kept (an exception through
+GLFW's native frames ends the process unsaved) and thrown again on the loop's thread after the window's events are
+pumped (`InputService.ThrowIfCallbackFailed`, also first in `Update`), where it ends the match as any fault in its work
+does. Characters
 arrive whole (`Rune`): `WindowService.SetCharacterCallback` takes GLFW's code points, since Silk.NET's `KeyChar` cuts
 one past U+FFFF to 16 bits, and `TextLine` keeps a UTF-16 pair whole; a glyph the UI font lacks draws as its box.
 GLFW 3.4 has no IME composition (preedit) support. Escape goes, in order, to the console when open, the menu when open,

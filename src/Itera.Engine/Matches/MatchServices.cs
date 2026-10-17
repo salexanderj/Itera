@@ -159,14 +159,7 @@ public sealed partial class MatchServices
         var bodyVoxelsStart = Stopwatch.GetTimestamp();
         // The character mover reads loose bodies where this step left them.
         BodyVoxels.Refresh();
-        stats?.RecordStepParts(
-            stepStart,
-            editsStart,
-            collidersStart,
-            physicsStart,
-            bodyVoxelsStart,
-            Stopwatch.GetTimestamp()
-        );
+        var tailStart = Stopwatch.GetTimestamp();
         mods?.FixedUpdate(in step);
         // Fields the navigation thread finished are taken in between steps, never while a system reads them.
         terrain?.Navigation.AfterFixedStep();
@@ -174,6 +167,15 @@ public sealed partial class MatchServices
         Session.AfterFixedStep();
         // An autosave captures the match as the step left it, and writes it on a background thread.
         Saves.AfterFixedStep();
+        stats?.RecordStepParts(
+            stepStart,
+            editsStart,
+            collidersStart,
+            physicsStart,
+            bodyVoxelsStart,
+            tailStart,
+            Stopwatch.GetTimestamp()
+        );
     }
 
     /// <summary>

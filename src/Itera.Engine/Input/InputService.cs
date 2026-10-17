@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using Itera.Engine.Windowing;
 using Microsoft.Extensions.Logging;
@@ -45,6 +46,13 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
     /// from Silk.NET's <c>KeyChar</c>, which cuts one past U+FFFF to 16 bits.
     /// </summary>
     private bool _codePoints;
+
+    /// <summary>
+    /// The first exception a handler threw inside a window callback since the loop last looked: kept here, since one
+    /// thrown through GLFW's native frames ends the process unsaved, and thrown again on the loop's thread
+    /// (<see cref="ThrowIfCallbackFailed"/>), where it ends the match as any fault in its work does.
+    /// </summary>
+    private ExceptionDispatchInfo? _callbackFault;
 
     /// <summary>A game's screens that Escape closes before the menu opens, oldest first (<see cref="AddEscapeHandler"/>).</summary>
     private readonly List<IEscapeHandler> _escapeHandlers = [];
@@ -433,6 +441,7 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
     /// </summary>
     public void Update()
     {
+        ThrowIfCallbackFailed();
         RepeatText(Clock());
         var wanted = _pointer.Update(_injectedCapture || (_mouse is not null && _windowService.IsFocused));
         if (wanted != _captured)
@@ -446,6 +455,23 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
             _injectedCapture = false;
         }
     }
+
+    /// <summary>
+    /// Throws again, on the calling thread, the first exception a handler threw inside a window callback since the last
+    /// call (a game's key binding, text box, or Escape handler), and forgets it. The loop calls it after it pumps the
+    /// window's events; <see cref="Update"/> calls it first.
+    /// </summary>
+    public void ThrowIfCallbackFailed()
+    {
+        if (_callbackFault is { } fault)
+        {
+            _callbackFault = null;
+            fault.Throw();
+        }
+    }
+
+    /// <summary>Keeps the first exception a window callback's handler threw (<see cref="ThrowIfCallbackFailed"/>).</summary>
+    private void CallbackFailed(Exception exception) => _callbackFault ??= ExceptionDispatchInfo.Capture(exception);
 
     /// <summary>Turns the input collected since the previous frame into <see cref="Frame"/>. Call once per frame built.</summary>
     public void BeginFrame()
@@ -617,22 +643,72 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
         mouse.Scroll -= OnScroll;
     }
 
-    private void OnKeyDown(IKeyboard keyboard, Key key, int scancode) => HandleKeyDown(key, keyboard);
+    // Each window callback below runs inside GLFW's native frames: what its handlers throw is kept for the loop's
+    // thread (CallbackFailed), never let through.
 
-    private void OnKeyUp(IKeyboard keyboard, Key key, int scancode) => HandleKeyUp(key);
+    private void OnKeyDown(IKeyboard keyboard, Key key, int scancode)
+    {
+        try
+        {
+            HandleKeyDown(key, keyboard);
+        }
+        catch (Exception exception)
+        {
+            CallbackFailed(exception);
+        }
+    }
+
+    private void OnKeyUp(IKeyboard keyboard, Key key, int scancode)
+    {
+        try
+        {
+            HandleKeyUp(key);
+        }
+        catch (Exception exception)
+        {
+            CallbackFailed(exception);
+        }
+    }
 
     /// <summary>Silk.NET's character, cut to 16 bits: only without the window's own callback (<see cref="_codePoints"/>).</summary>
     private void OnKeyChar(IKeyboard keyboard, char character)
     {
-        if (!char.IsSurrogate(character))
+        try
         {
-            HandleCharacter(character);
+            if (!char.IsSurrogate(character))
+            {
+                HandleCharacter(character);
+            }
+        }
+        catch (Exception exception)
+        {
+            CallbackFailed(exception);
         }
     }
 
-    private void OnMouseDown(IMouse mouse, MouseButton button) => HandleMouseDown(button);
+    private void OnMouseDown(IMouse mouse, MouseButton button)
+    {
+        try
+        {
+            HandleMouseDown(button);
+        }
+        catch (Exception exception)
+        {
+            CallbackFailed(exception);
+        }
+    }
 
-    private void OnScroll(IMouse mouse, ScrollWheel wheel) => HandleScroll(wheel.Y);
+    private void OnScroll(IMouse mouse, ScrollWheel wheel)
+    {
+        try
+        {
+            HandleScroll(wheel.Y);
+        }
+        catch (Exception exception)
+        {
+            CallbackFailed(exception);
+        }
+    }
 
     /// <summary>A key went down. <paramref name="keyboard"/> gives the clipboard for Ctrl+V; null has none (tests).</summary>
     internal void HandleKeyDown(Key key, IKeyboard? keyboard)
@@ -931,12 +1007,22 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
         }
     }
 
-    /// <summary>A code point from the window's character callback: whole, also past U+FFFF; one that is no character is dropped.</summary>
+    /// <summary>
+    /// A code point from the window's character callback: whole, also past U+FFFF; one that is no character is dropped.
+    /// What its handlers throw is kept for <see cref="ThrowIfCallbackFailed"/>.
+    /// </summary>
     internal void OnCodePoint(uint codePoint)
     {
-        if (codePoint <= int.MaxValue && Rune.TryCreate((int)codePoint, out var character))
+        try
         {
-            HandleCharacter(character);
+            if (codePoint <= int.MaxValue && Rune.TryCreate((int)codePoint, out var character))
+            {
+                HandleCharacter(character);
+            }
+        }
+        catch (Exception exception)
+        {
+            CallbackFailed(exception);
         }
     }
 
@@ -1055,7 +1141,17 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
         return true;
     }
 
-    private void OnMouseUp(IMouse mouse, MouseButton button) => HandleMouseUp(button);
+    private void OnMouseUp(IMouse mouse, MouseButton button)
+    {
+        try
+        {
+            HandleMouseUp(button);
+        }
+        catch (Exception exception)
+        {
+            CallbackFailed(exception);
+        }
+    }
 
     /// <summary>A mouse button came up: for the game, and the menu's click when it went down there.</summary>
     internal void HandleMouseUp(MouseButton button)
@@ -1076,6 +1172,18 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
     }
 
     private void OnMouseMove(IMouse mouse, Vector2 position)
+    {
+        try
+        {
+            MouseMoved(position);
+        }
+        catch (Exception exception)
+        {
+            CallbackFailed(exception);
+        }
+    }
+
+    private void MouseMoved(Vector2 position)
     {
         _pointerPosition = position;
         _injectedPointer = null;
@@ -1137,6 +1245,18 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
 
     private void OnFocusChanged(bool focused)
     {
+        try
+        {
+            FocusChanged(focused);
+        }
+        catch (Exception exception)
+        {
+            CallbackFailed(exception);
+        }
+    }
+
+    private void FocusChanged(bool focused)
+    {
         if (!focused)
         {
             // Release events for keys held now may go to another window.
@@ -1149,6 +1269,18 @@ public sealed partial class InputService : IFrameInput, ITickInput, IDisposable
     }
 
     private void OnConnectionChanged(IInputDevice device, bool connected)
+    {
+        try
+        {
+            ConnectionChanged(device, connected);
+        }
+        catch (Exception exception)
+        {
+            CallbackFailed(exception);
+        }
+    }
+
+    private void ConnectionChanged(IInputDevice device, bool connected)
     {
         // A device that appears after startup needs the same handlers as the ones present at startup.
         if (device is IKeyboard keyboard)

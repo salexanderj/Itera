@@ -161,7 +161,8 @@ in step 5.
   MemoryUsage, name)`; never call `vkAllocateMemory` elsewhere. `MaxMemoryAllocationCount` can be as low
   as 4096.
 - The allocator picks the memory type (`MemoryTypeSelector`: `DeviceLocal`, `Upload`, `Readback`, with a
-  fallback to the next acceptable type when a heap is full), takes 64 MB blocks (an eighth of a smaller
+  fallback to the next acceptable type when a heap is full; a resource that finds no room for a new block in a type
+  first takes memory of its own there, with a Warning once), takes 64 MB blocks (an eighth of a smaller
   heap), keeps buffers and optimal-tiling images in separate blocks so `BufferImageGranularity` never
   applies, and gives resources of half a block or more, or that the driver asks for, a dedicated
   allocation. It never picks a type that needs a device feature (AMD device-coherent, protected, lazily

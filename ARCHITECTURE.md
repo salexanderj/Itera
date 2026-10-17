@@ -435,7 +435,8 @@ shows Information and above. Serilog sits behind `Microsoft.Extensions.Logging`,
   from log lines, and the render thread's should be 0. Each system's own zero-allocation test runs with tiered
   compilation off in the test projects, so every method is optimised at its first call and no test measures what
   unoptimised library code allocates; the suite takes about 4 % longer for it. A Debug line gives the fixed steps' CPU
-  time by part and the eight slowest fixed systems (`SystemTimes`).
+  time by part (the systems, the large edits, the voxel colliders, the physics, the bodies as voxels, and the step's
+  tail: the mods, navigation, the session, and the saves) and the eight slowest fixed systems (`SystemTimes`).
 - `VoxelWorld` logs one line per stats interval: columns resident and pending, mixed chunks, stored bricks, memory used
   and reserved against the budget, columns loaded and unloaded, jobs that ran out of memory, average and maximum column
   job time, the longest `Update` split into install, rebuild, unload, and queue, and edits. These come from running counts,

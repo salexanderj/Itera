@@ -10,7 +10,8 @@ namespace Itera.Engine.Diagnostics;
 /// dropped steps, bytes allocated on the main thread and on the render thread, garbage collections, heap size, and the
 /// GPU time per frame (<see cref="GpuTimings"/>, with its percentiles too), with a Debug line per GPU pass and a Debug line of the fixed steps' CPU
 /// time by part (<see cref="RecordStepParts"/>): the fixed group of systems, the large edits applied in the step, the voxel
-/// colliders, the physics step, and the loose bodies as voxels, with the most steps one loop iteration ran (a step longer
+/// colliders, the physics step, the loose bodies as voxels, and the step's tail (the mods, navigation's finished fields,
+/// the session, and the autosave's capture), with the most steps one loop iteration ran (a step longer
 /// than the step length makes the loop run several in the next frame), and a Debug line of the slowest fixed systems
 /// (<see cref="SystemTimes"/>).
 /// Dropped steps also produce a warning, at most one per interval. Steps and frames are counted separately: while
@@ -43,7 +44,7 @@ public sealed partial class FrameStats
     private int _frameTimeCount;
 
     /// <summary>Parts of a fixed step timed by <see cref="RecordStepParts"/>.</summary>
-    private const int StepParts = 5;
+    private const int StepParts = 6;
 
     /// <summary>How many of the slowest fixed systems the Debug line names.</summary>
     public const int SlowestSystems = 8;
@@ -105,15 +106,25 @@ public sealed partial class FrameStats
     /// <summary>
     /// Records one fixed step's CPU time by part, from <see cref="System.Diagnostics.Stopwatch.GetTimestamp"/> values
     /// taken before the fixed group of systems, before the large edits applied in the step, before the voxel colliders,
-    /// before the physics step, before the loose bodies as voxels, and after them.
+    /// before the physics step, before the loose bodies as voxels, before the step's tail (the mods, navigation, the
+    /// session, and the saves), and after it.
     /// </summary>
-    public void RecordStepParts(long start, long edits, long colliders, long physics, long bodyVoxels, long end)
+    public void RecordStepParts(
+        long start,
+        long edits,
+        long colliders,
+        long physics,
+        long bodyVoxels,
+        long tail,
+        long end
+    )
     {
         Part(0, edits - start);
         Part(1, colliders - edits);
         Part(2, physics - colliders);
         Part(3, bodyVoxels - physics);
-        Part(4, end - bodyVoxels);
+        Part(4, tail - bodyVoxels);
+        Part(5, end - tail);
         _longestStep = Math.Max(_longestStep, end - start);
     }
 
@@ -320,6 +331,8 @@ public sealed partial class FrameStats
             var physicsMax = Ms(_partMax[3]);
             var bodyVoxels = Ms(_partSum[4]) / steps;
             var bodyVoxelsMax = Ms(_partMax[4]);
+            var tail = Ms(_partSum[5]) / steps;
+            var tailMax = Ms(_partMax[5]);
             LogStepParts(
                 summary.Seconds,
                 steps,
@@ -334,7 +347,9 @@ public sealed partial class FrameStats
                 physics,
                 physicsMax,
                 bodyVoxels,
-                bodyVoxelsMax
+                bodyVoxelsMax,
+                tail,
+                tailMax
             );
             if (_systems is { Count: > 0 })
             {
@@ -466,7 +481,7 @@ public sealed partial class FrameStats
 
     [LoggerMessage(
         Level = LogLevel.Debug,
-        Message = "Fixed steps over {Seconds:F1} s ({Steps} steps): longest {LongestMs:F2} ms, at most {MostSteps} in one loop iteration; systems avg {SystemsAverageMs:F3} ms max {SystemsMaxMs:F2} ms, large edits avg {EditsAverageMs:F3} ms max {EditsMaxMs:F2} ms, voxel colliders avg {CollidersAverageMs:F3} ms max {CollidersMaxMs:F2} ms, physics avg {PhysicsAverageMs:F3} ms max {PhysicsMaxMs:F2} ms, bodies as voxels avg {BodyVoxelsAverageMs:F3} ms max {BodyVoxelsMaxMs:F2} ms"
+        Message = "Fixed steps over {Seconds:F1} s ({Steps} steps): longest {LongestMs:F2} ms, at most {MostSteps} in one loop iteration; systems avg {SystemsAverageMs:F3} ms max {SystemsMaxMs:F2} ms, large edits avg {EditsAverageMs:F3} ms max {EditsMaxMs:F2} ms, voxel colliders avg {CollidersAverageMs:F3} ms max {CollidersMaxMs:F2} ms, physics avg {PhysicsAverageMs:F3} ms max {PhysicsMaxMs:F2} ms, bodies as voxels avg {BodyVoxelsAverageMs:F3} ms max {BodyVoxelsMaxMs:F2} ms, mods, navigation, session, and saves avg {TailAverageMs:F3} ms max {TailMaxMs:F2} ms"
     )]
     private partial void LogStepParts(
         double seconds,
@@ -482,7 +497,9 @@ public sealed partial class FrameStats
         double physicsAverageMs,
         double physicsMaxMs,
         double bodyVoxelsAverageMs,
-        double bodyVoxelsMaxMs
+        double bodyVoxelsMaxMs,
+        double tailAverageMs,
+        double tailMaxMs
     );
 
     [LoggerMessage(

@@ -255,6 +255,24 @@ public sealed class TextFocusTests : IDisposable
         Assert.Equal(typed, entry.Line.Text);
     }
 
+    /// <summary>
+    /// A game's text box that throws as a window callback hands it a character does not throw through the callback
+    /// (through GLFW's native frames it ended the process unsaved): the exception comes out of the next update, once,
+    /// where the loop ends the match with it.
+    /// </summary>
+    [Fact]
+    public void A_handler_that_throws_in_a_window_callback_throws_at_the_next_update_once()
+    {
+        _input.SetTextFocus(new Throwing());
+
+        _input.OnCodePoint('a');
+        _input.OnCodePoint('b');
+
+        var thrown = Assert.Throws<InvalidOperationException>(_input.Update);
+        Assert.Equal("a", thrown.Message);
+        _input.Update();
+    }
+
     [Fact]
     public void The_control_ports_console_key_then_type_reaches_the_console_whole()
     {
@@ -620,5 +638,17 @@ public sealed class TextFocusTests : IDisposable
     private sealed class Panel(List<string> calls) : IPanelInput
     {
         public void Escape() => calls.Add("panel");
+    }
+
+    /// <summary>A text box that throws at every character, naming it.</summary>
+    private sealed class Throwing : ITextInput
+    {
+        public bool KeyDown(Key key, bool control) => false;
+
+        public void KeyUp(Key key) { }
+
+        public void Character(Rune character) => throw new InvalidOperationException(character.ToString());
+
+        public void Paste(string text) { }
     }
 }

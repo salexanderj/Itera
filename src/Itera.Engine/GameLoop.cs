@@ -713,6 +713,7 @@ public sealed partial class GameLoop
         {
             // The input that came while the fixed steps ran reaches this frame too.
             _window.PollEvents();
+            _input.ThrowIfCallbackFailed();
             if (_flow.Playing is { } match)
             {
                 BuildFrame(in request, match);

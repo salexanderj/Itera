@@ -32,6 +32,9 @@ public sealed unsafe partial class GpuMemoryAllocator : IDisposable
     private ulong _usedBytes;
     private bool _disposed;
 
+    // True once a resource took memory of its own for want of room for a new block (logged once a run).
+    private bool _blockRefused;
+
     public GpuMemoryAllocator(VulkanContext context, ILogger<GpuMemoryAllocator> logger)
     {
         _context = context;
@@ -485,6 +488,24 @@ public sealed unsafe partial class GpuMemoryAllocator : IDisposable
                         name,
                         out allocation
                     );
+                if (!placement.Dedicated && result is Result.ErrorOutOfDeviceMemory or Result.ErrorOutOfHostMemory)
+                {
+                    // No room in this type for another whole block: the resource alone may still fit in it.
+                    result = TryAllocateDedicated(
+                        type,
+                        requirements.Size,
+                        dedicatedBuffer,
+                        dedicatedImage,
+                        name,
+                        out allocation
+                    );
+                    if (result == Result.Success && !_blockRefused)
+                    {
+                        _blockRefused = true;
+                        LogBlockRefused(blockSize / (1024.0 * 1024.0), type, name);
+                    }
+                }
+
                 if (result == Result.Success)
                 {
                     _liveAllocations++;
@@ -747,6 +768,12 @@ public sealed unsafe partial class GpuMemoryAllocator : IDisposable
         Message = "GPU memory: dedicated {SizeMb:F2} MB in type {Type} ({Flags}) for {Name}"
     )]
     private partial void LogDedicated(string name, double sizeMb, int type, MemoryPropertyFlags flags);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "GPU memory: no room for a new {BlockMb:F0} MB block in type {Type}; {Name} took memory of its own (said once)"
+    )]
+    private partial void LogBlockRefused(double blockMb, int type, string name);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "GPU memory: freed dedicated {SizeMb:F2} MB of {Name}")]
     private partial void LogDedicatedFreed(string name, double sizeMb);

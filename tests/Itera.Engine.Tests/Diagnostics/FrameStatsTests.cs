@@ -248,7 +248,7 @@ public sealed class FrameStatsTests
             var start = 1_000_000L;
             var edits = start + Ticks(movementMs + streamingMs + cameraMs);
             var colliders = edits + Ticks(editsMs);
-            stats.RecordStepParts(start, edits, colliders, colliders, colliders, colliders);
+            stats.RecordStepParts(start, edits, colliders, colliders, colliders, colliders, colliders + Ticks(1));
         }
 
         stats.RecordSteps(2, 0);
@@ -256,6 +256,9 @@ public sealed class FrameStatsTests
 
         var steps = Assert.Single(lines, l => l.StartsWith("Fixed steps", StringComparison.Ordinal));
         Assert.Contains("large edits avg 4.000 ms max 8.00 ms", steps, StringComparison.Ordinal);
+        // The step's tail (mods, navigation, the session, and the saves) is timed and counts towards the longest step.
+        Assert.Contains("mods, navigation, session, and saves avg 1.000 ms max 1.00 ms", steps, StringComparison.Ordinal);
+        Assert.Contains("longest 13.50 ms", steps, StringComparison.Ordinal);
         var slowest = Assert.Single(lines, l => l.StartsWith("Fixed systems", StringComparison.Ordinal));
         Assert.EndsWith(
             ": PlayerMovementSystem 4.000 max 5.00, StreamingCentreSystem 1.000 max 1.00, CameraExtractSystem 0.250 max 0.50",
@@ -272,7 +275,7 @@ public sealed class FrameStatsTests
         var a = start + Ticks(systems);
         var b = a + Ticks(colliders);
         var c = b + Ticks(physics);
-        stats.RecordStepParts(start, a, a, b, c, c + Ticks(bodyVoxels));
+        stats.RecordStepParts(start, a, a, b, c, c + Ticks(bodyVoxels), c + Ticks(bodyVoxels));
     }
 
     private static FrameStats Started(long renderAllocatedBytes = 0)

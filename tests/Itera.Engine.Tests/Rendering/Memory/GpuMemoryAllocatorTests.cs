@@ -8,8 +8,9 @@ namespace Itera.Engine.Tests.Rendering.Memory;
 /// <summary>
 /// <see cref="GpuMemoryAllocator"/>'s decisions without a device: the range a flush or invalidate covers,
 /// rounded to whole atoms and running to the end of a dedicated allocation that rounds past it; where a resource goes
-/// (dedicated or a block, whole atoms for non-coherent memory); the block size for a heap; and the fall back to the next
-/// acceptable memory type when one is full, with no block kept for the full one. This machine's host-visible memory is
+/// (dedicated or a block, whole atoms for non-coherent memory); the block size for a heap; a small resource taking
+/// memory of its own where its type has no room for a new block; and the fall back to the next acceptable memory type
+/// when one is full, with no block kept for the full one. This machine's host-visible memory is
 /// all coherent and its heaps never fill, so none of these paths run in the game here.
 /// </summary>
 public sealed unsafe class GpuMemoryAllocatorTests
@@ -111,10 +112,42 @@ public sealed unsafe class GpuMemoryAllocatorTests
         );
 
         Assert.Equal(1, allocation.TypeIndex);
-        Assert.Equal([0, 1], memory.Tried);
+        // The first type's block, then the buffer alone there, then the next type's block.
+        Assert.Equal([0, 0, 1], memory.Tried);
         Assert.Equal(0, allocator.BlockCount(0, ResourceKind.Linear));
         Assert.Equal(1, allocator.BlockCount(1, ResourceKind.Linear));
         Assert.Equal(GpuMemoryAllocator.BlockSize(1UL << 30), allocator.ReservedBytes);
+    }
+
+    /// <summary>
+    /// A small resource whose type has no room for a new block takes memory of its own in that type, where it went to the
+    /// next type or failed.
+    /// </summary>
+    [Fact]
+    public void A_type_with_no_room_for_a_block_still_takes_a_small_resource_alone()
+    {
+        var memory = new FakeMemory(failingType: 1, mostBytes: 1 << 20);
+        var allocator = Allocator(memory);
+
+        var allocation = allocator.Allocate(
+            new MemoryRequirements
+            {
+                Size = 4096,
+                Alignment = 256,
+                MemoryTypeBits = 0b11,
+            },
+            MemoryUsage.DeviceLocal,
+            ResourceKind.Linear,
+            driverWantsDedicated: false,
+            default,
+            default,
+            "test buffer"
+        );
+
+        Assert.Equal(0, allocation.TypeIndex);
+        Assert.Equal([0, 0], memory.Tried);
+        Assert.Equal(0, allocator.BlockCount(0, ResourceKind.Linear));
+        Assert.Equal(4096UL, allocator.ReservedBytes);
     }
 
     [Fact]
@@ -153,8 +186,11 @@ public sealed unsafe class GpuMemoryAllocatorTests
             memory.Allocate
         );
 
-    /// <summary>Stands for vkAllocateMemory: <c>failingType</c> is out of memory (-1: every type).</summary>
-    private sealed class FakeMemory(int failingType)
+    /// <summary>
+    /// Stands for vkAllocateMemory: <c>failingType</c> is out of memory (-1: every type), and every type past
+    /// <c>mostBytes</c> in one allocation.
+    /// </summary>
+    private sealed class FakeMemory(int failingType, ulong mostBytes = ulong.MaxValue)
     {
         private ulong _next = 1;
 
@@ -164,7 +200,7 @@ public sealed unsafe class GpuMemoryAllocatorTests
         {
             Tried.Add(type);
             mapped = null;
-            if (failingType < 0 || type == failingType)
+            if (failingType < 0 || type == failingType || size > mostBytes)
             {
                 memory = default;
                 return Result.ErrorOutOfDeviceMemory;
