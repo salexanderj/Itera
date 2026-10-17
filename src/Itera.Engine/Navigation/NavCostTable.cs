@@ -3,8 +3,8 @@ namespace Itera.Engine.Navigation;
 /// <summary>
 /// What entering a cell costs one kind of walker: a cost per cost class (<see cref="NavGrid.Class"/>) for a walkable
 /// cell, <see cref="Break"/> for a cell the walker's size cannot stand in (it would have to break through), and
-/// <see cref="Steep"/> for a rise past the size's climb. Straight moves cost the table's numbers; diagonal moves cost
-/// 1.4 times as much, rounded. Every cost is at least 1, so a route never loops.
+/// <see cref="Steep"/> for a rise past the size's climb or a drop past its drop. Straight moves cost the table's
+/// numbers; diagonal moves cost 1.4 times as much, rounded. Every cost is at least 1, so a route never loops.
 /// </summary>
 public sealed class NavCostTable
 {
@@ -13,7 +13,7 @@ public sealed class NavCostTable
 
     /// <param name="classCosts">Straight cost of each class, by class number; classes past its end cost the last one.</param>
     /// <param name="breakCost">Straight cost of entering a cell the size cannot stand in.</param>
-    /// <param name="steepCost">Straight cost of a rise past the size's climb.</param>
+    /// <param name="steepCost">Straight cost of a rise past the size's climb or a drop past its drop.</param>
     public NavCostTable(ReadOnlySpan<int> classCosts, int breakCost, int steepCost)
     {
         if (classCosts.IsEmpty)
@@ -48,13 +48,13 @@ public sealed class NavCostTable
     /// <summary>Straight cost of entering a cell the size cannot stand in.</summary>
     public int Break { get; }
 
-    /// <summary>Straight cost of a rise past the size's climb.</summary>
+    /// <summary>Straight cost of a rise past the size's climb or a drop past its drop.</summary>
     public int Steep { get; }
 
     /// <summary>Diagonal cost of entering a cell the size cannot stand in.</summary>
     public int DiagonalBreak { get; }
 
-    /// <summary>Diagonal cost of a rise past the size's climb.</summary>
+    /// <summary>Diagonal cost of a rise past the size's climb or a drop past its drop.</summary>
     public int DiagonalSteep { get; }
 
     /// <summary>The cheapest class's straight cost.</summary>

@@ -2,8 +2,9 @@ namespace Itera.Engine.Navigation;
 
 /// <summary>
 /// A clearance size for walkers, in centimetres: the height that must fit under the headroom, the radius of the
-/// body, and the highest rise between neighbouring cells that counts as walking (straight and diagonal). A cell is
-/// walkable for the size when it and every cell the body's circle overlaps from its centre have the headroom.
+/// body, and the highest rise and the deepest drop between neighbouring cells that count as walking (straight and
+/// diagonal; a drop has no limit unless one is given). A cell is walkable for the size when it and every cell the body's
+/// circle overlaps from its centre have the headroom.
 /// </summary>
 public sealed class NavSize
 {
@@ -15,18 +16,24 @@ public sealed class NavSize
         int heightCentimetres,
         int radiusCentimetres,
         int climbCentimetres,
-        int diagonalClimbCentimetres
+        int diagonalClimbCentimetres,
+        int dropCentimetres = NoDropLimit,
+        int diagonalDropCentimetres = NoDropLimit
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(heightCentimetres);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(heightCentimetres, NavGrid.MostClear);
         ArgumentOutOfRangeException.ThrowIfNegative(radiusCentimetres);
+        ArgumentOutOfRangeException.ThrowIfNegative(dropCentimetres);
+        ArgumentOutOfRangeException.ThrowIfNegative(diagonalDropCentimetres);
         Name = name;
         HeightCentimetres = heightCentimetres;
         RadiusCentimetres = radiusCentimetres;
         ClimbCentimetres = climbCentimetres;
         DiagonalClimbCentimetres = diagonalClimbCentimetres;
+        DropCentimetres = dropCentimetres;
+        DiagonalDropCentimetres = diagonalDropCentimetres;
 
         // A neighbouring cell counts when its nearest point to this cell's centre lies inside the radius.
         var reach = (radiusCentimetres + NavGrid.CellCentimetres / 2) / NavGrid.CellCentimetres + 1;
@@ -71,6 +78,18 @@ public sealed class NavSize
 
     /// <summary>Highest rise onto a diagonal neighbour that is still walking.</summary>
     public int DiagonalClimbCentimetres { get; }
+
+    /// <summary>
+    /// Deepest drop onto a straight neighbour that is still walking (<see cref="NoDropLimit"/>: any); a deeper one costs
+    /// what a rise past the climb does, so routes go round a pit the walker would not climb back out of.
+    /// </summary>
+    public int DropCentimetres { get; }
+
+    /// <summary>Deepest drop onto a diagonal neighbour that is still walking (<see cref="NoDropLimit"/>: any).</summary>
+    public int DiagonalDropCentimetres { get; }
+
+    /// <summary>A drop limit that lets a walker drop any depth.</summary>
+    public const int NoDropLimit = int.MaxValue;
 
     /// <summary>How many cells the body's circle covers, its own included.</summary>
     public int FootprintCells => _offsetX.Length;

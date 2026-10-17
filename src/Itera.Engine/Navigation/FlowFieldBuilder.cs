@@ -3,12 +3,12 @@ namespace Itera.Engine.Navigation;
 /// <summary>
 /// Builds a <see cref="FlowField"/> by Dijkstra's search backwards from its goal cells over the eight neighbours of each
 /// cell, with a ring of buckets for the queue (every cost is a small whole number). Entering a cell costs its class's
-/// cost, or the break cost where the walker's size cannot stand, or the steep cost for a rise past its climb; a
-/// diagonal step needs both cells beside it walkable, so routes never cut a corner. Where a straight step and a diagonal
-/// one cost the same, a cell takes the straight one, so a route goes straight until it must turn (a road's cells lead
-/// down it side by side, not diagonally into the few lines that pass its obstacles). Blocked cells are expensive rather
-/// than closed, so every cell of the grid gets a route. Keeps its arrays between builds and allocates nothing once
-/// they have grown; one thread at a time.
+/// cost, or the break cost where the walker's size cannot stand, or the steep cost for a rise past its climb or a drop
+/// past its drop (<see cref="NavSize.DropCentimetres"/>); a diagonal step needs both cells beside it walkable, so
+/// routes never cut a corner. Where a straight step and a diagonal one cost the same, a cell takes the straight one, so
+/// a route goes straight until it must turn (a road's cells lead down it side by side, not diagonally into the few
+/// lines that pass its obstacles). Blocked cells are expensive rather than closed, so every cell of the grid gets a
+/// route. Keeps its arrays between builds and allocates nothing once they have grown; one thread at a time.
 /// </summary>
 public sealed class FlowFieldBuilder
 {
@@ -81,6 +81,8 @@ public sealed class FlowFieldBuilder
         var costs = spec.Costs;
         var climb = spec.Size.ClimbCentimetres;
         var diagonalClimb = spec.Size.DiagonalClimbCentimetres;
+        var drop = spec.Size.DropCentimetres;
+        var diagonalDrop = spec.Size.DiagonalDropCentimetres;
         var stepX = FlowField.StepX;
         var stepZ = FlowField.StepZ;
         for (var distance = 0; pending > 0; distance++)
@@ -125,7 +127,10 @@ public sealed class FlowFieldBuilder
                     {
                         step = diagonal ? costs.DiagonalBreak : costs.Break;
                     }
-                    else if (enterFloor - floor[from] > (diagonal ? diagonalClimb : climb))
+                    else if (
+                        enterFloor - floor[from] > (diagonal ? diagonalClimb : climb)
+                        || (long)floor[from] - enterFloor > (diagonal ? diagonalDrop : drop)
+                    )
                     {
                         step = diagonal ? costs.DiagonalSteep : costs.Steep;
                     }

@@ -5,7 +5,8 @@ namespace Itera.Engine.Tests.Navigation;
 
 /// <summary>
 /// <see cref="FlowFieldBuilder"/> on small hand-made grids of 64 by 64 cells: routes to the goal, straight until they
-/// must turn (cells side by side leading straight ahead to a wide goal), round walls through gaps, never across a corner, through a corridor only for the size that fits, up a ramp rather than a step, and the
+/// must turn (cells side by side leading straight ahead to a wide goal), round walls through gaps, never across a corner, through a corridor only for the size that fits, up a ramp rather than a step, down one rather than a drop
+/// past the size's drop, and the
 /// cost of breaking through against walking round (a profile with a low break-through cost breaks a thin or 4 m wall
 /// rather than take a long detour, but walks round a very thick one; a profile with a high one walks round every wall
 /// and crosses only a fully sealed goal).
@@ -175,6 +176,43 @@ public sealed class FlowFieldTests
         Assert.Contains(route.Cells, cell => grid.Column(cell) == 29 && grid.Row(cell) is >= 50 and <= 54);
     }
 
+    /// <summary>
+    /// Down off a platform 1 m up: a size with no drop limit drops straight off its edge, and one that drops no more than
+    /// it climbs takes the ramp, as it does going up.
+    /// </summary>
+    [Fact]
+    public void A_drop_past_the_sizes_drop_is_taken_by_the_ramp()
+    {
+        var grid = Grid(Road);
+        for (var z = 0; z < Size; z++)
+        {
+            for (var x = 0; x < 30; x++)
+            {
+                grid.Floor[grid.Index(x, z)] = 100;
+            }
+        }
+
+        for (var z = 50; z <= 54; z++)
+        {
+            grid.Floor[grid.Index(30, z)] = 75;
+            grid.Floor[grid.Index(31, z)] = 50;
+            grid.Floor[grid.Index(32, z)] = 25;
+        }
+
+        var careful = new NavSize("careful", 200, 30, 45, 64, 45, 64);
+        var straight = Build(grid, s_small, s_breaking, [grid.Index(40, 10)]).Follow(grid.Index(10, 10));
+        Assert.True(straight.Arrived);
+        Assert.All(straight.Cells, cell => Assert.Equal(10, grid.Row(cell)));
+
+        var round = Build(grid, careful, s_breaking, [grid.Index(40, 10)]).Follow(grid.Index(10, 10));
+        Assert.True(round.Arrived);
+        Assert.Contains(round.Cells, cell => grid.Column(cell) == 31 && grid.Row(cell) is >= 50 and <= 54);
+        Assert.All(
+            round.Cells.Zip(round.Cells.Skip(1)),
+            step => Assert.True(Drop(grid, step.First, step.Second) <= 64)
+        );
+    }
+
     [Fact]
     public void A_sealed_goal_is_broken_into_at_its_thinnest()
     {
@@ -322,6 +360,9 @@ public sealed class FlowFieldTests
         new FlowFieldBuilder().Build(grid, new NavFieldSpec("test", size, costs, Places(grid, goals)), walkable, field);
         return new Result(grid, size, field, walkable);
     }
+
+    /// <summary>How far the floor drops from <paramref name="from"/> to <paramref name="to"/>, in centimetres.</summary>
+    private static int Drop(NavGrid grid, int from, int to) => grid.Floor[from] - grid.Floor[to];
 
     /// <summary>The centres of <paramref name="cells"/>, as the absolute places a field's goals are.</summary>
     private static VoxelCoord[] Places(NavGrid grid, int[] cells) =>

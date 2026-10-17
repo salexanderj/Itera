@@ -6,7 +6,8 @@ namespace Itera.Engine.Tests.Navigation;
 /// <summary>
 /// <see cref="NavPathFinder"/> on small hand-made grids of 64 by 64 cells: straight over open ground at the same cost as a
 /// flow field's route, round a wall through its gap at the field's cost where the field walks round too, never across a
-/// corner, up a ramp rather than a step, never through what blocks the walker's size; a sealed goal or one past the
+/// corner, up a ramp rather than a step, down one rather than a drop past the size's drop, never through what blocks the
+/// walker's size; a sealed goal or one past the
 /// budget ending at the nearest cell reached; a start the size cannot stand in finding none, and the goal as start
 /// reached at once; a short span taking the path's first cells; a second search allocating nothing.
 /// </summary>
@@ -147,6 +148,49 @@ public sealed class NavPathFinderTests
         );
     }
 
+    /// <summary>
+    /// Down off the platform 1 m up: a size with no drop limit drops straight off its edge, and one that drops no more than
+    /// it climbs walks down its ramp.
+    /// </summary>
+    [Fact]
+    public void A_drop_past_the_sizes_drop_is_passed_by_its_ramp()
+    {
+        var grid = Grid();
+        for (var z = 0; z < Size; z++)
+        {
+            for (var x = 30; x < Size; x++)
+            {
+                grid.Floor[grid.Index(x, z)] = 100;
+            }
+        }
+
+        for (var x = 20; x < 30; x++)
+        {
+            for (var z = 50; z <= 52; z++)
+            {
+                grid.Floor[grid.Index(x, z)] = (x - 19) * 10;
+            }
+        }
+
+        var careful = new NavSize("careful", 200, 0, 45, 64, 45, 64);
+        var finder = new NavPathFinder();
+        var path = new int[256];
+        Assert.Equal(
+            NavPathResult.Reached,
+            finder.Find(grid, s_point, s_avoiding, grid.Index(40, 30), grid.Index(10, 30), path, out var length)
+        );
+        Assert.All(path[..length], cell => Assert.Equal(30, grid.Row(cell)));
+
+        Assert.Equal(
+            NavPathResult.Reached,
+            finder.Find(grid, careful, s_avoiding, grid.Index(40, 30), grid.Index(10, 30), path, out length)
+        );
+        Assert.Contains(
+            path[..length],
+            cell => grid.Column(cell) is >= 20 and < 30 && grid.Row(cell) is >= 50 and <= 52
+        );
+    }
+
     [Fact]
     public void A_sealed_goal_or_one_past_the_budget_ends_at_the_nearest_cell_reached()
     {
@@ -230,12 +274,36 @@ public sealed class NavPathFinderTests
         var path = new int[256];
         var other = new int[256];
 
-        var first = shared.Find(walls, s_wide, s_avoiding, walls.Index(10, 10), walls.Index(50, 10), path, out var length);
+        var first = shared.Find(
+            walls,
+            s_wide,
+            s_avoiding,
+            walls.Index(10, 10),
+            walls.Index(50, 10),
+            path,
+            out var length
+        );
         var cost = shared.Cost;
         shared.Find(open, s_point, s_avoiding, open.Index(40, 50), open.Index(2, 3), other, out _);
-        var again = shared.Find(walls, s_wide, s_avoiding, walls.Index(10, 10), walls.Index(50, 10), other, out var length2);
+        var again = shared.Find(
+            walls,
+            s_wide,
+            s_avoiding,
+            walls.Index(10, 10),
+            walls.Index(50, 10),
+            other,
+            out var length2
+        );
         var own = new NavPathFinder();
-        var alone = own.Find(walls, s_wide, s_avoiding, walls.Index(10, 10), walls.Index(50, 10), path, out var length3);
+        var alone = own.Find(
+            walls,
+            s_wide,
+            s_avoiding,
+            walls.Index(10, 10),
+            walls.Index(50, 10),
+            path,
+            out var length3
+        );
 
         Assert.Equal((NavPathResult.Reached, NavPathResult.Reached, NavPathResult.Reached), (first, again, alone));
         Assert.Equal((length, cost), (length2, shared.Cost));
