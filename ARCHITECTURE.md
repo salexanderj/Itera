@@ -910,10 +910,11 @@ format. A save loads only with the same generator version.
   again, and the log keeps the earlier edits so sequences go on and every reader follows it in place: a session's clients
   get it as an edit, saves and join payloads carry it, and the loop covers the picture with the loading screen again when
   `VoxelWorld.LastReset` moves. Code that reads the edit log must handle it.
-- Edit log formats: the save is the log stream with the match settings (the format is 8, whose generator id carries the
-  voxel object kinds' fingerprint where the world places objects, and which ends with a game's sections, none in a join
-  payload; formats 1 to 7 still read, those before 7 with their plain generator id taken for such a world too, and an
-  older build refuses a newer format). A save holds only the edits after the last reset, renumbered from 1; a join payload
+- Edit log formats: the save is the log stream with the match settings (the format is 10, whose generator id carries
+  the voxel object kinds' fingerprint where the world places objects, whose edits may place and remove objects whole
+  (since 9) and clear some materials in a sphere (since 10), and which ends with a game's sections (since 8), none in a
+  join payload; formats 1 to 9 still read, those before 7 with their plain generator id taken for such a world too, and
+  an older build refuses a newer format; `EditLogSerializer` lists what each added). A save holds only the edits after the last reset, renumbered from 1; a join payload
   keeps every edit. The log indexes at most 2^24 column entries since its last reset (`EditLog.MaxIndexEntries`, counted
   over all ten levels whatever a game streams, so a host, its clients, and a save's next load agree).
 - Compaction (`docs/edit-log-compaction.md`): a long log is small (50,000 edits make a 2.5 MB payload) but replaying edits
@@ -1357,7 +1358,7 @@ there is no host migration, and the session ends when the host quits.
   `Saves/NAME.save` in the data folder (`Engine:Save:Name`, 1 to 64 letters, digits, spaces, '-', or '_'): every
   `Engine:Save:AutosaveMinutes` (5) of the match's steps, at the console's `save`, and when the match ends cleanly,
   after putting thrown bodies still loose back into the grid (an autosave leaves loose bodies out). A game's state is
-  its `ISaveSection`s (scoped, each a name, a version, `Capture`, and `Restore`), written after the edit log in format 8.
+  its `ISaveSection`s (scoped, each a name, a version, `Capture`, and `Restore`), written after the edit log (format 10; sections since format 8).
   A save is captured on the main thread between steps, the edit log frozen (`EditLog.Freeze`: its written edits never
   change and its pieces' memory never moves, so only the segments' references and the pieces are copied) and each
   section's bytes taken; an autosave's is written on a background thread with a scratch of its own, one write at a
@@ -1688,8 +1689,8 @@ Engine work that is known and not done:
   fine level under it). Left: separate physics simulations for far peers, a tint map that moves with the view,
   atmospheres by region, and navigation windows per group of players, for a game that needs them.
 - **What replication does not do yet** (`docs/replication.md`): loose bodies as replicated kinds (a client moving its copy of each to the host's poses), a group far from
-  every player sent as one record, a short history of positions for judging hits, and edits stamped with the host's
-  tick.
+  every player sent as one record, and edits stamped with the host's tick. (A short history of positions for judging
+  hits is built: `Physics/HitHistory`, the hit shapes a game records each step.)
 - **An exact method for the joins between levels of detail**, closing the holes of a voxel or two where the levels disagree on
   which cells the surface crosses.
 - **Voxel objects finer than the terrain** (built 2026-10-12): kinds of finer voxels placed by the generator, drawn as
@@ -1708,8 +1709,8 @@ Engine work that is known and not done:
 - **Mod API hardening.** A stable, versioned service surface for mods instead of the raw service provider, dependency
   ordering between mods, and a mod project template.
 - **Continuous integration** that builds and tests on Linux, Windows, and macOS.
-- **Edit log**: snapshots of edited chunks so old edits and put-back pieces leave memory, and saving on a timer, off the main
-  thread.
+- **Edit log**: snapshots of edited chunks so old edits and put-back pieces leave memory. (Saving on a timer, off the
+  main thread, is built: the autosave every `Engine:Save:AutosaveMinutes`, written on a background thread.)
 - **Particles**: trails as ribbons, soft particles (fading where a sprite meets a surface), sprites at half resolution for
   heavy smoke, and blood-style decals.
 - **Sound**: filters by distance and occlusion (OpenAL's EFX), reverb by place, Doppler, and voices (recordings play

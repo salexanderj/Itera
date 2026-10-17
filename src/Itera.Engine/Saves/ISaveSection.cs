@@ -1,8 +1,8 @@
 namespace Itera.Engine.Saves;
 
 /// <summary>
-/// A part of a game's own state kept in its match's named save (save format 8): a scoped service the game registers in
-/// the match's scope, one for each name. On a host or offline game with a save (<c>Engine:Save:Name</c>), at the match's
+/// A part of a game's own state kept in its match's named save (save format 10; sections since format 8): a scoped
+/// service the game registers in the match's scope, one for each name. On a host or offline game with a save (<c>Engine:Save:Name</c>), at the match's
 /// "save sections" step (after the systems' <c>Initialize</c>, before the first step), each section the save holds is
 /// handed to the one of its name (<see cref="Restore"/>); and at each save (an autosave at a step's end, the console's
 /// <c>save</c> between steps, and the last at a clean end, before the ECS world goes) every section writes its state as

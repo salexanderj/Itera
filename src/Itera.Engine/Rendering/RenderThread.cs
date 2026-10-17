@@ -8,10 +8,9 @@ namespace Itera.Engine.Rendering;
 
 /// <summary>
 /// The thread that draws. After <see cref="Start"/>, it alone uses the Vulkan queues, the swapchain, and
-/// <see cref="FrameSync"/>; the main thread makes no Vulkan call until <see cref="Stop"/> has ended the thread but two
-/// on the memory of the frame slot it builds (the staging flush and the probe's invalidate, which have no externally
-/// synchronized parameter). Each
-/// frame it waits for its frame slot, acquires an image, asks the main thread for a frame through
+/// <see cref="FrameSync"/>; the main thread makes no Vulkan call until <see cref="Stop"/> has ended the thread but one
+/// on the memory of the frame slot it builds (the staging flush, <c>StagingBuffer.Flush</c>, which has no externally
+/// synchronized parameter; the particles' read back is invalidated here, on this thread). Each frame it waits for its frame slot, acquires an image, asks the main thread for a frame through
 /// <see cref="FrameExchange"/>, and records, submits, and presents it. When presentation blocks (for example while the
 /// window is hidden), only this thread waits; the main thread keeps simulating.
 /// </summary>

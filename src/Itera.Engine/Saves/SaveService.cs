@@ -12,8 +12,8 @@ namespace Itera.Engine.Saves;
 /// <summary>
 /// The named save (<c>Engine:Save:Name</c>): a host or offline game starts from <c>Saves/NAME.save</c> in the data
 /// folder when it exists, and writes its match back to it. A save is the world's edit log with the match settings
-/// (format 8): the generator, the seed, the step rate, the game's match data (its rules), every edit since the last
-/// reset with its pieces, and the game's own state in sections (<see cref="ISaveSection"/>).
+/// (format 10, <c>EditLogSerializer.FormatVersion</c>): the generator, the seed, the step rate, the game's match data
+/// (its rules), every edit since the last reset with its pieces, and the game's own state in sections (<see cref="ISaveSection"/>).
 /// <list type="bullet">
 /// <item>At start (<see cref="ReadStart"/>, from the session step) the whole file is read and checked, and its seed and
 /// rules replace the options'; when it is damaged, <c>NAME.save.bak</c> is used instead, with a warning, and the next
