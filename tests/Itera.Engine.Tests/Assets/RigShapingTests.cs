@@ -305,7 +305,13 @@ public sealed class RigShapingTests
             }
         }
 
-        public static void Turn(Rig rig, Span<JointTransform> locals, int joint, Quaternion turn, Span<Matrix4x4> globals)
+        public static void Turn(
+            Rig rig,
+            Span<JointTransform> locals,
+            int joint,
+            Quaternion turn,
+            Span<Matrix4x4> globals
+        )
         {
             if ((uint)joint >= (uint)rig.Names.Length)
             {
@@ -327,7 +333,13 @@ public sealed class RigShapingTests
             locals[joint] = local with { Rotation = Quaternion.Normalize(rotation) };
         }
 
-        public static void Move(Rig rig, Span<JointTransform> locals, int joint, Vector3 offset, Span<Matrix4x4> globals)
+        public static void Move(
+            Rig rig,
+            Span<JointTransform> locals,
+            int joint,
+            Vector3 offset,
+            Span<Matrix4x4> globals
+        )
         {
             if ((uint)joint >= (uint)rig.Names.Length)
             {
