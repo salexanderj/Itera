@@ -162,7 +162,8 @@ public static class MeshPoses
 
     /// <summary>
     /// Where joint <paramref name="joint"/> of a pose is in the world: its transform in the asset's space
-    /// (<see cref="Rig.Globals"/>, written into <paramref name="globals"/>) times the mesh's <paramref name="placed"/>.
+    /// (<see cref="Rig.Globals(ReadOnlySpan{JointTransform}, Span{Matrix4x4}, int)"/>, its chain written into
+    /// <paramref name="globals"/>) times the mesh's <paramref name="placed"/>.
     /// </summary>
     public static Matrix4x4 JointInWorld(
         Rig rig,
@@ -173,8 +174,14 @@ public static class MeshPoses
     )
     {
         ArgumentNullException.ThrowIfNull(rig);
-        rig.Globals(locals[..rig.JointCount], globals);
-        return (uint)joint < (uint)rig.JointCount ? globals[joint] * placed : placed;
+        if ((uint)joint >= (uint)rig.JointCount)
+        {
+            return placed;
+        }
+
+        // The joint and those above it alone: a held item reads its hand's place, not every joint's.
+        rig.Globals(locals[..rig.JointCount], globals, joint);
+        return globals[joint] * placed;
     }
 
     /// <summary>A clip's time between its last two steps, wrapped by a looping clip's length.</summary>

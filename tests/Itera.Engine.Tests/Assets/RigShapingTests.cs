@@ -11,11 +11,14 @@ namespace Itera.Engine.Tests.Assets;
 /// space under a turned and scaled parent, its children with it; reaching where the end already is, or a hair off it,
 /// leaving the pose finite; joints placed at given transforms in one pass, the
 /// others following their parents; two-bone IK reaching a point, and
-/// stretching towards one out of reach, bent towards its pole; and no allocation.
+/// stretching towards one out of reach, bent towards its pole; a joint's globals worked out along its chain alone, the
+/// same bits as a pass over every joint, on that rig and on one of two branches ordered by depth as a glTF rig's are; the
+/// tools shaping exactly as with every joint's globals on both; and no allocation.
 /// </summary>
 public sealed class RigShapingTests
 {
     private static readonly Rig s_rig = Chain();
+    private static readonly Rig s_branches = Branches();
 
     [Fact]
     public void A_joint_is_found_by_name_and_the_globals_are_the_palettes_places()
@@ -243,35 +246,89 @@ public sealed class RigShapingTests
     [Fact]
     public void Turning_moving_and_reaching_shape_exactly_as_with_every_joints_globals()
     {
+        ShapesExactly(s_rig, Rest(), [(1, 2, 3)]);
+        ShapesExactly(s_branches, BranchesRest(), [(1, 3, 5), (2, 4, 6)]);
+    }
+
+    /// <summary>
+    /// A joint's globals worked out along its chain alone are the same bits as those of a pass over every joint, and the
+    /// joints off its chain are left as they were.
+    /// </summary>
+    [Fact]
+    public void A_joints_chain_of_globals_is_a_pass_over_every_joint_bit_for_bit()
+    {
+        var random = new Random(11);
+        foreach (var (rig, rest) in new[] { (s_rig, Rest()), (s_branches, BranchesRest()) })
+        {
+            var every = new Matrix4x4[rig.JointCount];
+            var chain = new Matrix4x4[rig.JointCount];
+            for (var trial = 0; trial < 100; trial++)
+            {
+                var pose = rest.ToArray();
+                for (var j = 0; j < pose.Length; j++)
+                {
+                    pose[j] = pose[j] with { Rotation = Rotation(random), Translation = Point(random) };
+                }
+
+                rig.Globals(pose, every);
+                for (var joint = 0; joint < rig.JointCount; joint++)
+                {
+                    Array.Fill(chain, new Matrix4x4(float.NaN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+                    rig.Globals(pose, chain, joint);
+                    for (var j = 0; j < rig.JointCount; j++)
+                    {
+                        var above = false;
+                        for (var k = joint; k >= 0; k = rig.Parents[k])
+                        {
+                            above |= k == j;
+                        }
+
+                        Assert.True(
+                            above ? chain[j] == every[j] : float.IsNaN(chain[j].M11),
+                            $"Joint {j} for joint {joint}'s chain: {chain[j]} against {every[j]}."
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 300 random turns, moves, and two-bone reaches (along <paramref name="chains"/>) of random poses of
+    /// <paramref name="rig"/>, each the same bits as the same tool working out every joint's globals.
+    /// </summary>
+    private static void ShapesExactly(Rig rig, JointTransform[] rest, (int Upper, int Lower, int End)[] chains)
+    {
         var random = new Random(7);
-        var globals = new Matrix4x4[5];
+        var globals = new Matrix4x4[rig.JointCount];
         for (var trial = 0; trial < 300; trial++)
         {
-            var pose = Rest();
+            var pose = rest.ToArray();
             for (var j = 0; j < pose.Length; j++)
             {
                 pose[j] = pose[j] with { Rotation = Rotation(random) };
             }
 
-            var joint = random.Next(5);
+            var joint = random.Next(rig.JointCount);
             var (shaped, before) = (pose.ToArray(), pose.ToArray());
             switch (trial % 3)
             {
                 case 0:
                     var turn = Rotation(random);
-                    s_rig.Turn(shaped, joint, turn, globals);
-                    EveryJoint.Turn(s_rig, before, joint, turn, globals);
+                    rig.Turn(shaped, joint, turn, globals);
+                    EveryJoint.Turn(rig, before, joint, turn, globals);
                     break;
                 case 1:
                     var offset = Point(random);
-                    s_rig.Move(shaped, joint, offset, globals);
-                    EveryJoint.Move(s_rig, before, joint, offset, globals);
+                    rig.Move(shaped, joint, offset, globals);
+                    EveryJoint.Move(rig, before, joint, offset, globals);
                     break;
                 default:
                     var (target, pole) = (Point(random), Point(random));
+                    var (upper, lower, end) = chains[random.Next(chains.Length)];
                     Assert.Equal(
-                        EveryJoint.ReachTwoBone(s_rig, before, 1, 2, 3, target, pole, globals),
-                        s_rig.ReachTwoBone(shaped, 1, 2, 3, target, pole, globals)
+                        EveryJoint.ReachTwoBone(rig, before, upper, lower, end, target, pole, globals),
+                        rig.ReachTwoBone(shaped, upper, lower, end, target, pole, globals)
                     );
                     break;
             }
@@ -462,6 +519,58 @@ public sealed class RigShapingTests
             []
         );
     }
+
+    /// <summary>
+    /// Two arms of three joints up from a root, ordered by depth as a glTF rig's joints are (each arm's joints between the
+    /// other's), with offsets that turn and move: so a joint's chain skips joints listed before it.
+    /// </summary>
+    private static Rig Branches() =>
+        new(
+            ["root", "left1", "right1", "left2", "right2", "left3", "right3"],
+            [-1, 0, 0, 1, 2, 3, 4],
+            [
+                Matrix4x4.Identity,
+                Matrix4x4.CreateRotationZ(0.3f),
+                Matrix4x4.CreateRotationZ(-0.3f) * Matrix4x4.CreateTranslation(0, 0.1f, 0),
+                Matrix4x4.CreateRotationX(0.2f),
+                Matrix4x4.Identity,
+                Matrix4x4.CreateTranslation(0.05f, 0, 0),
+                Matrix4x4.CreateRotationY(0.4f),
+            ],
+            BranchesRest(),
+            [.. Enumerable.Repeat(Matrix4x4.Identity, 7)],
+            [0, 0, 0, 0, 0, 0, 0],
+            []
+        );
+
+    private static JointTransform[] BranchesRest() =>
+        [
+            JointTransform.Identity,
+            JointTransform.Identity with
+            {
+                Translation = new Vector3(-0.3f, 1, 0),
+            },
+            JointTransform.Identity with
+            {
+                Translation = new Vector3(0.3f, 1, 0),
+            },
+            JointTransform.Identity with
+            {
+                Translation = new Vector3(0, 1, 0),
+            },
+            JointTransform.Identity with
+            {
+                Translation = new Vector3(0, 1, 0),
+            },
+            JointTransform.Identity with
+            {
+                Translation = new Vector3(0, 0.8f, 0),
+            },
+            JointTransform.Identity with
+            {
+                Translation = new Vector3(0, 0.8f, 0),
+            },
+        ];
 
     private static JointTransform[] Rest() =>
         [

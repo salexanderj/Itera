@@ -45,7 +45,10 @@ marked set to given transforms in the asset's space in one pass, the others foll
 posing a figure); `ReachTwoBone(locals, upper, lower, end, target, pole, globals)` (an arm or a leg reaching a
 point in the asset's space, or stretched towards it, the middle joint bending towards the pole: a hand on a rifle).
 `Turn`, `Move`, and `ReachTwoBone` work out only the globals they need (the joint's parent, or the reach's end, and the
-joints before it), so their `globals` is scratch: read none of it after one without calling `Globals` again. In
+joints above it), so their `globals` is scratch: read none of it after one without calling `Globals` again.
+`Globals(locals, globals, joint)` works out one joint and those above it alone, the same bits as the pass over every
+joint (`Globals(locals, globals)`): a shaper that reads a hand or the head between its changes takes a few matrices
+where the pass takes the whole rig's, and `MeshPoses.JointInWorld` reads a held item's joint so. In
 floats, so never for what peers must agree on: for drawing, and for what one peer alone judges (a host's hits on posed
 bodies); the deterministic skeletons for bodies, aim, and foot IK are `Animation.Skeleton`'s
 (`.claude/rules/animation.md`). Clips shared between rigs by joint name are not built.
