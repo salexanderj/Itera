@@ -22,7 +22,7 @@ These are not entities, and their data does not go in components:
   feet, the tools, and the streaming centre follow it.
 - Spatial indexes (a grid or tree for "what is near this point"). Arch queries select by component
   type, not by position. A system keeps a separate spatial structure up to date and other systems ask
-  it.
+  it: the engine's `SpatialGrid` (`.claude/rules/spatial.md`), which a game fills.
 - The navigation grid and flow fields, the Bepu simulation, Vulkan objects, UI state, and configuration.
 
 An entity refers to data owned by a service with a small value: an index, a Bepu `BodyHandle`, or a

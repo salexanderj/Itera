@@ -85,6 +85,7 @@ projects used as references.
   - Sessions, Steam, saves, and what peers send: `.claude/rules/sessions.md`.
   - Replicating entities from the host to its clients: `.claude/rules/replication.md`.
   - Navigation and flow fields: `.claude/rules/navigation.md`.
+  - Finding entities by place (`SpatialGrid`): `.claude/rules/spatial.md`.
   - The engine's composition and its other folders: `.claude/rules/engine.md`.
   - Tests: `.claude/rules/tests.md`.
   - Running and driving the game (options, logs, the console's commands, the control port): the `run-game` skill.

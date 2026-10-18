@@ -120,6 +120,9 @@ Where tests live:
   asleep on the other part, damaged before, stays asleep), a second dig allocating nothing; `ObjectDamageMatchTests`: a body on a rock in a match of the engine's real
   composition, falling when the rock is dug away; a trunk's top cut off falling as a body onto its stump; a cut alone
   dropping the top).
+- `Itera.Engine.Tests/Spatial/`: `SpatialGridTests` (points, points on the ground, and lines against every entry worked out by hand over
+  random entries narrow and wide in cells of two widths, an edge reaching the next cell, tags, moves and removals, the
+  dead passed over, the nearest with ties by entity, a move of the origin, growth, no allocation).
 - `Itera.Engine.Tests/Replication/`: `ReplicatedStateCodecTests` (fields read back within their steps, changes from a
   baseline, damaged records refused or read within range, the blend, schemas and kinds) and `ReplicationServiceTests`
   over `ReplicationHarness` (a host and a client in one process without terrain, test movers and players, the clock

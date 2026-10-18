@@ -25,6 +25,8 @@ paths:
     `EngineLoadingTasks.cs`), `Control/` (`ControlService`, `ControlRequest`, `InputScript`).
   - `Replication/`: what a host sends each client of the entities a game marks, and how a client shows them
     (`.claude/rules/replication.md`).
+  - `Spatial/`: `SpatialGrid`, where a set of entities stand by cells over the ground, which a game fills and asks
+    for those near a point or a line (`.claude/rules/spatial.md`).
   - `Ecs/`: `EcsWorld` (times each system), `IFixedUpdateSystem` and `IFrameUpdateSystem` (`SystemInterfaces.cs`),
     `EcsChecks`, `CheckedWorldExtensions`, and `EcsInspector` (archetypes, entities, and components read by reflection
     for the console's `ecs` and the control port's `query`; it allocates, so commands only).
