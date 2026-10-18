@@ -1,5 +1,6 @@
 using System.Numerics;
 using Itera.Engine.Physics;
+using Itera.Engine.Voxels;
 using Xunit.Abstractions;
 
 namespace Itera.Engine.Tests.Physics;
@@ -7,8 +8,8 @@ namespace Itera.Engine.Tests.Physics;
 /// <summary>
 /// The mover in 10 cm cells over 1 m voxels against the mover in the voxels' own cells, on the same smooth hills
 /// (<see cref="SmoothHillsFixture"/>): walking, sprinting, and jumping each way from the same place, step for step, the
-/// two keep the same path across and their feet within a few centimetres of each other's height; and a move allocates
-/// nothing.
+/// two keep the same path across and their feet within a few centimetres of each other's height; remembering the ground's
+/// surface within a move changes nothing, in either cells; and a move allocates nothing.
 /// </summary>
 public sealed class FineMoverTests(SmoothHillsFixture hills, ITestOutputHelper output)
     : IClassFixture<SmoothHillsFixture>
@@ -87,6 +88,51 @@ public sealed class FineMoverTests(SmoothHillsFixture hills, ITestOutputHelper o
             }
 
             output.WriteLine($"{name} cells: {elapsed * 1000 / moves:F1} microseconds a move over {moves} moves.");
+        }
+    }
+
+    /// <summary>
+    /// A mover remembering the ground's surface within a move, and one working every answer out again, standing,
+    /// walking, and sprinting with jumps each way over the hills, in 10 cm cells and in the voxels' 1 m: every move's
+    /// result, feet, and velocity the same bits, the first answering from what it remembered.
+    /// </summary>
+    [Fact]
+    public void Remembering_the_surfaces_within_a_move_changes_nothing()
+    {
+        foreach (var (remembering, fine) in new[] { (hills.Fine, true), (hills.Coarse, false) })
+        {
+            var forgetting = fine
+                ? new VoxelCharacterMover(hills.World, 10, new NothingPassable())
+                : new VoxelCharacterMover(hills.World, new NothingPassable());
+            forgetting.RemembersSurfaces = false;
+            var answered = remembering.RememberedAnswers;
+            foreach (var (speed, jump) in new[] { (0f, 0f), (4.5f, 0f), (7f, 6f) })
+            {
+                for (var heading = 0; heading < 8; heading++)
+                {
+                    var angle = heading * MathF.PI / 4;
+                    var way = new Vector3(MathF.Sin(angle), 0, -MathF.Cos(angle)) * speed;
+                    var (feet, again) = (Start(remembering), Start(forgetting));
+                    Vector3 velocity = Vector3.Zero,
+                        againVelocity = Vector3.Zero;
+                    bool grounded = true,
+                        againGrounded = true;
+                    for (var tick = 0; tick < 120; tick++)
+                    {
+                        velocity = Next(velocity, way, grounded, jump, tick);
+                        againVelocity = Next(againVelocity, way, againGrounded, jump, tick);
+                        var result = remembering.Move(ref feet, ref velocity, in s_shape, Step);
+                        var againResult = forgetting.Move(ref again, ref againVelocity, in s_shape, Step);
+                        Assert.Equal(againResult, result);
+                        Assert.Equal(again, feet);
+                        Assert.Equal(againVelocity, velocity);
+                        (grounded, againGrounded) = (result.Grounded, againResult.Grounded);
+                    }
+                }
+            }
+
+            Assert.True(remembering.RememberedAnswers > answered, "The mover never answered from what it remembered.");
+            Assert.Equal(0, forgetting.RememberedAnswers);
         }
     }
 

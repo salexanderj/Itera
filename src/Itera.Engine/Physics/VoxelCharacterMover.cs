@@ -239,6 +239,14 @@ public sealed class VoxelCharacterMover
     private int _surfaceDepth;
     private double _ramp = 1;
 
+    // Surface's answers within one move or query, by their question (the footprint and the cells read): a move asks the
+    // same one several times (lifting it out, grounded and steep before and after, the vertical part), 35 to 43 percent
+    // of its asks for people walking and standing on 10 cm cells over 1 m voxels, each about 4 microseconds worked out
+    // again. Nothing a move reads changes within it, so an answer remembered is the same bits as one worked out again.
+    private const int RememberedSurfaces = 16;
+    private readonly RememberedSurface[] _remembered = new RememberedSurface[RememberedSurfaces];
+    private int _rememberedCount;
+
     // Within one move: a loose body the body already overlaps above its step height does not block the cells under
     // where the body started (the body's stand-in pushes them apart), so it is never stuck inside a body that hit it.
     private bool _ignoreStart;
@@ -1224,9 +1232,51 @@ public sealed class VoxelCharacterMover
     /// neighbours', lie no higher than the best so far is skipped, so flat ground reads one cell; any other is measured at
     /// the corners, edges' middles, and middle of its square, each moved into the footprint, where the blend is highest
     /// (it is bilinear between them). With a <paramref name="reference"/> cell, a column open there under something
-    /// higher reads its ground under it (<see cref="ReadSurfaces"/>).
+    /// higher reads its ground under it (<see cref="ReadSurfaces"/>). Asked again within a move or query, it answers
+    /// what it worked out (<see cref="_remembered"/>), without reading the window again.
     /// </summary>
     private double Surface(in CircleFootprint footprint, int y0, int y1, int reference = int.MaxValue)
+    {
+        long x = BitConverter.DoubleToInt64Bits(footprint.CentreX),
+            z = BitConverter.DoubleToInt64Bits(footprint.CentreZ),
+            radius = BitConverter.DoubleToInt64Bits(footprint.Radius);
+        for (var i = 0; i < _rememberedCount; i++)
+        {
+            ref readonly var known = ref _remembered[i];
+            if (
+                known.X == x
+                && known.Z == z
+                && known.Radius == radius
+                && known.Y0 == y0
+                && known.Y1 == y1
+                && known.Reference == reference
+            )
+            {
+                RememberedAnswers++;
+                return known.Answer;
+            }
+        }
+
+        var answer = WorkOutSurface(in footprint, y0, y1, reference);
+        if (RemembersSurfaces && _rememberedCount < RememberedSurfaces)
+        {
+            _remembered[_rememberedCount++] = new RememberedSurface(x, z, radius, y0, y1, reference, answer);
+        }
+
+        return answer;
+    }
+
+    /// <summary>
+    /// False keeps <see cref="Surface"/> from remembering its answers, so each is worked out again: for a test showing
+    /// the answers are the same.
+    /// </summary>
+    internal bool RemembersSurfaces { get; set; } = true;
+
+    /// <summary>How many times <see cref="Surface"/> answered from what it remembered (for tests).</summary>
+    internal long RememberedAnswers { get; private set; }
+
+    /// <summary><see cref="Surface"/>'s answer worked out: the window read and the blend's highest point under the footprint.</summary>
+    private double WorkOutSurface(in CircleFootprint footprint, int y0, int y1, int reference)
     {
         ReadSurfaces(
             footprint.MinX - 1,
@@ -1457,9 +1507,13 @@ public sealed class VoxelCharacterMover
     private double WorldSurfaceOver(int x, int top, int z) =>
         _fine?.SurfaceOver(x, top, z) ?? _world!.SurfaceOver(x, top, z, in _passable);
 
-    /// <summary>Forgets the surfaces read: the voxels may have changed since (at the start of each move and query).</summary>
+    /// <summary>
+    /// Forgets the surfaces read and <see cref="Surface"/>'s answers: the voxels may have changed since (at the start of
+    /// each move and query).
+    /// </summary>
     private void ForgetSurfaces()
     {
+        _rememberedCount = 0;
         _fine?.Begin(_ramp, in _passable);
         _cacheStamp++;
         if (_cacheStamp == int.MaxValue)
@@ -2554,4 +2608,18 @@ public sealed class VoxelCharacterMover
     /// <summary>Bits <paramref name="from"/> to <paramref name="to"/> inclusive, both within 0 to 127.</summary>
     private static UInt128 RangeBits(int from, int to) =>
         (to == 127 ? UInt128.MaxValue : (UInt128.One << (to + 1)) - 1) & ~((UInt128.One << from) - 1);
+
+    /// <summary>
+    /// A question <see cref="Surface"/> answered within a move or query (the footprint's centre and radius as their bits,
+    /// the cells read, and the reference cell) and its answer.
+    /// </summary>
+    private readonly record struct RememberedSurface(
+        long X,
+        long Z,
+        long Radius,
+        int Y0,
+        int Y1,
+        int Reference,
+        double Answer
+    );
 }

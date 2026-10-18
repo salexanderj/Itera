@@ -101,7 +101,13 @@ centre lies under it, so every fine column's surface lies within half a cell of 
 column and those round it must be resident for the fine cells over it. On smooth hills of 1 m voxels a 10 cm mover's
 feet keep within about 2 cm of the 1 m mover's (`FineMoverTests`), but a ledge under a voxel high is a step no higher
 than the body's, where 1 m cells walk a column up to a cell over the feet (their allowance is a cell); a walking move
-costs about 2.4 times as much (41 against 17 microseconds in Release). Navigation keeps its own reading of the objects
+costs about 2.4 times as much (41 against 17 microseconds in Release). On voxels coarser than 1 cm almost all of a
+move is reading the ground's surface under the footprint (`Surface`: a window of columns read and their blend), asked
+about seven times a move (lifting it out, grounded and steep before and after, the vertical part), a third or more of
+those the same question again: within one move or query each question is worked out once and remembered (16 at most,
+forgotten with the surfaces' cache at the next move), the same bits (`FineMoverTests` against a mover that works every
+answer out again, `RemembersSurfaces`); a body standing still on 10 cm cells over 1 m voxels then takes about 15
+microseconds a move against 25. Navigation keeps its own reading of the objects
 in the voxels' cells. The core makes it (`AddIteraEngine`: `VoxelCharacterMover(world, cell, passability, bodies,
 colliders)` with terrain, `VoxelCharacterMover(passability, colliders, cell, edge, bodies)` without), and the play area (`PlayArea`, round the
 grid, or `PlayArea.WithoutTerrain`, a 10 cm grid's bounds, with a bounds constructor for a game to register its own).
