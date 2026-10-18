@@ -7,10 +7,11 @@ using Itera.Engine.Voxels;
 namespace Itera.Engine.Tests.Spatial;
 
 /// <summary>
-/// <see cref="SpatialGrid"/>: points, points on the ground, and lines against every entry worked out by hand, over random entries narrow and
-/// wide and queries small and larger than the grid, in cells of two widths; tags; entries moved, removed, and set again;
-/// entities no longer alive passed over; the nearest kept in order with ties by entity; a move of the origin between the
-/// setting and the asking changing nothing; growth past its first room; and no allocation.
+/// <see cref="SpatialGrid"/>: points, points on the ground, and lines against every entry worked out by hand, over random
+/// entries narrow and wide and queries small and larger than the grid, in cells of two widths; tags; entries moved,
+/// removed, and set again; entities no longer alive passed over; the nearest kept in order with ties by entity; a move of
+/// the origin between the setting and the asking changing nothing, for a grid refilled each step and one kept across many
+/// moves; growth past its first room; and no allocation.
 /// </summary>
 public sealed class SpatialGridTests : IDisposable
 {
@@ -298,6 +299,94 @@ public sealed class SpatialGridTests : IDisposable
 
         Assert.True(kept.TryGet(entries[0].Entity, out var moved));
         Assert.Equal(entries[0].Feet - shift, moved.Feet);
+    }
+
+    [Fact]
+    public void Refilled_each_step_and_kept_across_many_moves_of_the_origin_it_answers_where_things_stand()
+    {
+        var refilled = new SpatialGrid(_origin, _world, 8);
+        var kept = new SpatialGrid(_origin, _world, 8);
+        var random = new Random(12);
+        // Where things stand, absolute, in whole centimetres; the kept grid set once, local to the first origin.
+        var standing = Enumerable
+            .Range(0, 200)
+            .Select(_ =>
+                (
+                    Entity: _world.Create(),
+                    At: new VoxelCoord(
+                        random.Next(-50_000, 50_000),
+                        random.Next(-500, 500),
+                        random.Next(-50_000, 50_000)
+                    )
+                )
+            )
+            .ToArray();
+        foreach (var (entity, at) in standing)
+        {
+            kept.Set(entity, _origin.ToLocal(at), 0.4f, 1.8f, 1);
+        }
+
+        for (var step = 0; step < 40; step++)
+        {
+            // The origin moves by whole metres on most steps, as far as 2 km, and stays on some.
+            if (step % 4 != 3)
+            {
+                var at = _origin.Centimetres;
+                _origin.MoveTo(
+                    new VoxelCoord(
+                        at.X + random.Next(-2000, 2001) * 100,
+                        at.Y + random.Next(-20, 21) * 100,
+                        at.Z + random.Next(-2000, 2001) * 100
+                    )
+                );
+            }
+
+            refilled.Clear();
+            foreach (var (entity, at) in standing)
+            {
+                refilled.Set(entity, _origin.ToLocal(at), 0.4f, 1.8f, 1);
+            }
+
+            var query = standing[random.Next(standing.Length)].At;
+            var centre = _origin.ToLocal(query);
+            var near = Found(refilled, centre, 60, default);
+            Assert.Equal(near, Found(kept, centre, 60, default));
+            foreach (var (entity, at) in standing)
+            {
+                // The distance to its cylinder, worked out in doubles from the absolute points; a millimetre either side
+                // of the radius left to the floats.
+                var distance = Distance(at, query);
+                if (Math.Abs(distance - 60) > 1e-3)
+                {
+                    Assert.Equal(distance < 60, near.Contains(entity));
+                }
+            }
+
+            foreach (var (entity, at) in standing)
+            {
+                Assert.True(refilled.TryGet(entity, out var fresh));
+                Assert.True(kept.TryGet(entity, out var old));
+                Assert.Equal(_origin.ToLocal(at), fresh.Feet);
+                Assert.True(
+                    Vector3.Distance(_origin.ToLocal(at), old.Feet) < 0.01f,
+                    $"{old.Feet} against {_origin.ToLocal(at)}"
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// The distance from the absolute point <paramref name="point"/> to the cylinder 0.4 m round and 1.8 m tall standing
+    /// at <paramref name="feet"/>, in metres.
+    /// </summary>
+    private static double Distance(VoxelCoord feet, VoxelCoord point)
+    {
+        var across = Math.Max(
+            Math.Sqrt(Math.Pow((point.X - feet.X) / 100.0, 2) + Math.Pow((point.Z - feet.Z) / 100.0, 2)) - 0.4,
+            0
+        );
+        var up = Math.Max(Math.Max((feet.Y - point.Y) / 100.0, (point.Y - feet.Y) / 100.0 - 1.8), 0);
+        return Math.Sqrt(across * across + up * up);
     }
 
     [Fact]
