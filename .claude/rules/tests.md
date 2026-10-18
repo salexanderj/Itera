@@ -116,7 +116,8 @@ Where tests live:
   copies going and coming back, a clear's count of what it takes for `IVoxelRemovals`, paint and fill, damaged parts'
   models against the kind's rule over their voxels across a part's border, the mover, rays, and statics meeting a dug
   object, a bush painted to rock stopping a character, a damaged part's unmarked blocks reading what its kind's do (so
-  sharing their meshes is right), a second dig allocating nothing; `ObjectDamageMatchTests`: a body on a rock in a match of the engine's real
+  sharing their meshes is right), a dig making the bodies' compounds again only for the wall's part it reaches (a ball
+  asleep on the other part, damaged before, stays asleep), a second dig allocating nothing; `ObjectDamageMatchTests`: a body on a rock in a match of the engine's real
   composition, falling when the rock is dug away; a trunk's top cut off falling as a body onto its stump; a cut alone
   dropping the top).
 - `Itera.Engine.Tests/Replication/`: `ReplicatedStateCodecTests` (fields read back within their steps, changes from a
@@ -165,7 +166,8 @@ Where tests live:
   made before the objects' world is initialised as a match makes them: a ball on a rock's top, a ball rolled at a trunk,
   a plank turned from its anchor, passable leaves, two physics materials, a body frozen until the objects are known,
   statics going with the cells and kept while the objects change, a cut body on a trunk, a kind's boxes against its
-  voxels, no allocation); the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves)
+  voxels, the kinds' compounds made at the start and none when a body first comes near, a change's box reaching the
+  parts whose voxels it covers at any heading against a voxel-by-voxel check, no allocation); the mover through test features (walls, 1 cm steps, a pit, a ceiling, leaves)
   and 10,000 random moves that never leave it inside a voxel, the same test bodies run on voxels and on triangles built
   from the same features (`MoverFeatureTests`: `VoxelCharacterMoverTests` and `MeshMoverFeatureTests` over a world of
   air; `DensityGroundTests` at 10 cm: `DensityMoverTests` and `MeshDensityGroundTests` with no world, both from

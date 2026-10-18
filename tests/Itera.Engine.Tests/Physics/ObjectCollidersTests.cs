@@ -17,7 +17,8 @@ namespace Itera.Engine.Tests.Physics;
 /// heading (a plank anchored at one end), passable leaves give no boxes, an object of two physics materials has a static
 /// of each, a body waits frozen until the objects round it are known, an object's statics go with the cells that reach it
 /// and stay while the objects change, a body cut off a character stops on a trunk, a kind's boxes cover its blocking
-/// voxels once, and steps among objects allocate nothing.
+/// voxels once, the kinds' compounds are made at the start and none when a body first comes near, a change's box reaches
+/// the parts whose voxels it covers at any heading, and steps among objects allocate nothing.
 /// </summary>
 public sealed class ObjectCollidersTests : IDisposable
 {
@@ -107,6 +108,7 @@ public sealed class ObjectCollidersTests : IDisposable
         );
         _colliders.Initialize();
         _objects.Initialize();
+        _colliders.MakeObjectShapes();
     }
 
     public void Dispose()
@@ -317,6 +319,87 @@ public sealed class ObjectCollidersTests : IDisposable
                         $"Voxel ({x}, {y}, {z}) of {material} is covered {covered[x + 130 * (y + 24 * z)]} times."
                     );
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The kinds' compounds are made at the objects step, one for each part and physics material with blocking voxels
+    /// (the trunk's bark, the rock's rock, the plank's, the stump's bark and its cap; the bush's leaves none): a body that
+    /// comes to rest on the rock makes none.
+    /// </summary>
+    [Fact]
+    public void The_kinds_compounds_are_made_at_the_start_and_a_body_near_an_object_makes_none()
+    {
+        var made = _colliders.CompoundsMade;
+        Fill();
+        var ball = Drop(new Vector3(-3, 1.5f, 3));
+
+        Run(120);
+
+        Assert.Equal(5, made);
+        Assert.Equal(0.5f + Radius, Position(ball).Y, 0.005f);
+        Assert.Equal(made, _colliders.CompoundsMade);
+    }
+
+    /// <summary>
+    /// A change's box reaches each part of a kind three parts wide and deep whose own voxels it covers, at any heading,
+    /// and no part all of whose voxels lie farther from it than its size and three voxels.
+    /// </summary>
+    [Fact]
+    public void A_changes_box_reaches_the_parts_whose_voxels_it_covers_at_any_heading()
+    {
+        var shape = new VoxelObjectShape(2, new VoxelCoord(300, 8, 300), new VoxelCoord(300, 0, 300));
+        shape.FillBox(0, 0, 0, 600, 16, 600, Rock);
+        var kind = _kinds[_kinds.Register("plaza", shape)];
+        Assert.Equal(9, kind.PartCount);
+        var random = new Random(5);
+        var reached = new bool[kind.PartCount];
+        var unit = kind.UnitCentimetres;
+        for (var round = 0; round < 40; round++)
+        {
+            var heading = round < 4 ? round * 1024 : random.Next(ObjectPlacement.HeadingSteps);
+            var placement = new ObjectPlacement(new ObjectId(9), kind.Id, new VoxelCoord(-700, 0, 400), heading);
+            int minX = -700 + random.Next(-400, 400),
+                minZ = 400 + random.Next(-400, 400);
+            int maxX = minX + random.Next(0, 60),
+                maxZ = minZ + random.Next(0, 60);
+
+            VoxelColliders.ReachedParts(kind, in placement, minX, maxX, minZ, maxZ, reached);
+
+            // The box's bounds along the object's own axes, which the parts are matched by, reach past a turned box by
+            // less than its size; and three voxels for rounding.
+            var spare = Math.Max(maxX - minX, maxZ - minZ) + 3 * unit;
+            for (var p = 0; p < kind.PartCount; p++)
+            {
+                var part = kind.Parts[p];
+                var inside = false;
+                var near = false;
+                for (var z = part.Offset.Z; z < part.Offset.Z + part.OwnSize.Z; z++)
+                {
+                    for (var x = part.Offset.X; x < part.Offset.X + part.OwnSize.X; x++)
+                    {
+                        // The voxel's middle, turned into the world from the anchor.
+                        var (wx, wz) = ObjectTurns.FromObject(
+                            heading,
+                            x * unit + unit / 2 - kind.AnchorCentimetres.X,
+                            z * unit + unit / 2 - kind.AnchorCentimetres.Z
+                        );
+                        wx += placement.Anchor.X;
+                        wz += placement.Anchor.Z;
+                        inside |= wx >= minX && wx <= maxX && wz >= minZ && wz <= maxZ;
+                        near |= wx >= minX - spare && wx <= maxX + spare && wz >= minZ - spare && wz <= maxZ + spare;
+                    }
+                }
+
+                Assert.True(
+                    !inside || reached[p],
+                    $"Round {round}: part {p} holds a voxel in the box but is not reached."
+                );
+                Assert.True(
+                    near || !reached[p],
+                    $"Round {round}: part {p} is reached, all its voxels far from the box."
+                );
             }
         }
     }

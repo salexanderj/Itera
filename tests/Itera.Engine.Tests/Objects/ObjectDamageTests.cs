@@ -13,7 +13,7 @@ namespace Itera.Engine.Tests.Objects;
 /// fills, bit for bit; a reset heals every object; past the cap the farthest copy goes and comes back by replay near;
 /// an area's copies go with it and come back; a clear with a maker counts what it takes from objects; a paint
 /// recolours and a fill changes nothing; damaged parts' models are their voxels at three levels, a part's border with
-/// them; and a second dig allocates nothing.
+/// them; a dig makes the bodies' compounds again only for the parts it reaches; and a second dig allocates nothing.
 /// </summary>
 public sealed class ObjectDamageTests : IDisposable
 {
@@ -960,6 +960,77 @@ public sealed class ObjectDamageTests : IDisposable
         Assert.Equal(0, feet.Y, 0.01f);
         Assert.Equal(0.1f, physics.Simulation.Bodies[ball].Pose.Position.Y, 0.01f);
         Assert.False(rays.Raycast(new Vector3(0, 1, 0), Vector3.UnitX, 3, out _));
+    }
+
+    /// <summary>
+    /// A dig into the wall's second part, after one into its first, makes the second part's compound again and not the
+    /// first's, damaged too: a ball asleep on the first part stays asleep (its static was not swapped), and one on the
+    /// second sinks into the hole.
+    /// </summary>
+    [Fact]
+    public void A_dig_makes_again_only_the_parts_of_an_object_it_reaches()
+    {
+        var scene = Make();
+        using var physics = new Itera.Engine.Physics.PhysicsWorld(
+            NullLogger<Itera.Engine.Physics.PhysicsWorld>.Instance
+        );
+        physics.Initialize();
+        using var colliders = new Itera.Engine.Physics.VoxelColliders(
+            physics,
+            scene.World,
+            new NothingPassable(),
+            NullLogger<Itera.Engine.Physics.VoxelColliders>.Instance,
+            scene.Objects,
+            scene.Kinds,
+            scene.Damage
+        );
+        colliders.Initialize();
+        colliders.MakeObjectShapes();
+        // The wall's top is 80 cm up, from x = -4.3 to -1.7 m, its first part's 224 cm from -4.3 m, at z = -3 m.
+        var first = Ball(physics, new Vector3(-3.5f, 0.86f, -3));
+        var second = Ball(physics, new Vector3(-1.78f, 0.86f, -3));
+        void Run(int steps)
+        {
+            for (var i = 0; i < steps; i++)
+            {
+                colliders.Update(1f / 60);
+                physics.Step(1f / 60);
+            }
+        }
+
+        Run(60);
+        var made = colliders.CompoundsMade;
+        scene.World.Apply(VoxelEdit.Sphere(new VoxelCoord(-420, 80, -300), 8, VoxelEditOperation.Clear));
+        Run(240);
+        Assert.Equal(made + 1, colliders.CompoundsMade);
+        Assert.Equal(0.85f, physics.Simulation.Bodies[first].Pose.Position.Y, 0.005f);
+        Assert.Equal(0.85f, physics.Simulation.Bodies[second].Pose.Position.Y, 0.005f);
+        Assert.False(physics.Simulation.Bodies[first].Awake, "The ball on the first part did not fall asleep.");
+        made = colliders.CompoundsMade;
+
+        scene.World.Apply(VoxelEdit.Sphere(new VoxelCoord(-178, 80, -300), 8, VoxelEditOperation.Clear));
+        Run(2);
+
+        Assert.Equal(made + 1, colliders.CompoundsMade);
+        Assert.False(physics.Simulation.Bodies[first].Awake, "The ball on the first part was woken.");
+        Run(60);
+        Assert.True(
+            physics.Simulation.Bodies[second].Pose.Position.Y < 0.83f,
+            $"The ball on the second part rests at {physics.Simulation.Bodies[second].Pose.Position.Y} m."
+        );
+
+        static BepuPhysics.BodyHandle Ball(Itera.Engine.Physics.PhysicsWorld physics, Vector3 at)
+        {
+            var sphere = new BepuPhysics.Collidables.Sphere(0.05f);
+            return physics.Simulation.Bodies.Add(
+                BepuPhysics.BodyDescription.CreateDynamic(
+                    new BepuPhysics.RigidPose(at),
+                    sphere.ComputeInertia(1),
+                    new BepuPhysics.Collidables.CollidableDescription(physics.Simulation.Shapes.Add(sphere), 0.1f),
+                    new BepuPhysics.BodyActivityDescription(0.01f)
+                )
+            );
+        }
     }
 
     /// <summary>

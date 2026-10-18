@@ -95,73 +95,94 @@ internal sealed class VoxelBoxes
     public void Build(Objects.VoxelObjectKind kind, Objects.DamagedObject? damaged, in MaterialSet excluded)
     {
         Count = 0;
+        for (var part = 0; part < kind.Parts.Length; part++)
+        {
+            AddPart(kind, part, damaged, in excluded);
+        }
+    }
+
+    /// <summary>
+    /// <see cref="Build(Objects.VoxelObjectKind, Objects.DamagedObject?, in MaterialSet)"/> for part
+    /// <paramref name="part"/> of the kind alone: its own voxels. Parts' own voxels begin at multiples of 112 voxels (14
+    /// bricks) along each axis, so each brick, a damaged object's changed bricks among them, lies in one part's own voxels.
+    /// </summary>
+    public void Build(Objects.VoxelObjectKind kind, int part, Objects.DamagedObject? damaged, in MaterialSet excluded)
+    {
+        Count = 0;
+        AddPart(kind, part, damaged, in excluded);
+    }
+
+    /// <summary>Adds the boxes of part <paramref name="index"/>'s own voxels, brick by brick.</summary>
+    private void AddPart(
+        Objects.VoxelObjectKind kind,
+        int index,
+        Objects.DamagedObject? damaged,
+        in MaterialSet excluded
+    )
+    {
         const int border = Objects.ObjectPart.BorderVoxels;
         const int brick = VoxelConstants.BrickSize;
         Span<ulong> mask = stackalloc ulong[VoxelConstants.BrickMaskWords];
-        foreach (var part in kind.Parts)
+        var part = kind.Parts[index];
+        var level = part.Levels[0];
+        var own = part.Offset;
+        var end = new VoxelCoord(own.X + part.OwnSize.X, own.Y + part.OwnSize.Y, own.Z + part.OwnSize.Z);
+        for (var b = 0; b < level.Bricks.Length; b++)
         {
-            var level = part.Levels[0];
-            var own = part.Offset;
-            var end = new VoxelCoord(own.X + part.OwnSize.X, own.Y + part.OwnSize.Y, own.Z + part.OwnSize.Z);
-            for (var b = 0; b < level.Bricks.Length; b++)
+            var packed = level.Bricks[b];
+            int bx = ((packed & 15) << 3) - border + own.X,
+                by = (((packed >> 4) & 15) << 3) - border + own.Y,
+                bz = (((packed >> 8) & 15) << 3) - border + own.Z;
+            var payload = level.PayloadStart[b];
+            var uniform = level.Uniform[b];
+            // A changed brick of a damaged object: its own voxels (materials, then densities).
+            var changed = damaged is null ? default : damaged.BrickVoxelsOf(Objects.DamagedObject.BrickKey(bx, by, bz));
+            if (
+                changed.IsEmpty
+                && uniform
+                && bx >= own.X
+                && by >= own.Y
+                && bz >= own.Z
+                && bx + brick <= end.X
+                && by + brick <= end.Y
+                && bz + brick <= end.Z
+            )
             {
-                var packed = level.Bricks[b];
-                int bx = ((packed & 15) << 3) - border + own.X,
-                    by = (((packed >> 4) & 15) << 3) - border + own.Y,
-                    bz = (((packed >> 8) & 15) << 3) - border + own.Z;
-                var payload = level.PayloadStart[b];
-                var uniform = level.Uniform[b];
-                // A changed brick of a damaged object: its own voxels (materials, then densities).
-                var changed = damaged is null
-                    ? default
-                    : damaged.BrickVoxelsOf(Objects.DamagedObject.BrickKey(bx, by, bz));
-                if (
-                    changed.IsEmpty
-                    && uniform
-                    && bx >= own.X
-                    && by >= own.Y
-                    && bz >= own.Z
-                    && bx + brick <= end.X
-                    && by + brick <= end.Y
-                    && bz + brick <= end.Z
-                )
+                var material = level.Payload[payload];
+                if (material != VoxelConstants.Air && !excluded.Contains(material))
                 {
-                    var material = level.Payload[payload];
-                    if (material != VoxelConstants.Air && !excluded.Contains(material))
-                    {
-                        Add(bx, by, bz, bx + brick - 1, by + brick - 1, bz + brick - 1);
-                    }
+                    Add(bx, by, bz, bx + brick - 1, by + brick - 1, bz + brick - 1);
+                }
 
+                continue;
+            }
+
+            mask.Clear();
+            var any = false;
+            for (var j = 0; j < brick * brick * brick; j++)
+            {
+                int x = bx + (j & 7),
+                    y = by + ((j >> 3) & 7),
+                    z = bz + (j >> 6);
+                if (x < own.X || y < own.Y || z < own.Z || x >= end.X || y >= end.Y || z >= end.Z)
+                {
                     continue;
                 }
 
-                mask.Clear();
-                var any = false;
-                for (var j = 0; j < brick * brick * brick; j++)
+                var material =
+                    !changed.IsEmpty ? changed[j]
+                    : uniform ? level.Payload[payload]
+                    : level.Payload[payload + j];
+                if (material != VoxelConstants.Air && !excluded.Contains(material))
                 {
-                    int x = bx + (j & 7),
-                        y = by + ((j >> 3) & 7),
-                        z = bz + (j >> 6);
-                    if (x < own.X || y < own.Y || z < own.Z || x >= end.X || y >= end.Y || z >= end.Z)
-                    {
-                        continue;
-                    }
-
-                    var material =
-                        !changed.IsEmpty ? changed[j]
-                        : uniform ? level.Payload[payload]
-                        : level.Payload[payload + j];
-                    if (material != VoxelConstants.Air && !excluded.Contains(material))
-                    {
-                        mask[j >> 6] |= 1UL << (j & 63);
-                        any = true;
-                    }
+                    mask[j >> 6] |= 1UL << (j & 63);
+                    any = true;
                 }
+            }
 
-                if (any)
-                {
-                    AddBrick(bx, by, bz, mask);
-                }
+            if (any)
+            {
+                AddBrick(bx, by, bz, mask);
             }
         }
     }

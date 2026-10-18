@@ -134,9 +134,11 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   (`ThirdPersonCamera`'s `objects`, `PlayerCameraSystem`'s, `ToolAim.Look`'s).
 - Bodies meet objects (`VoxelColliders.Objects.cs`): each cell of statics near a body finds, at its first build, the
   objects whose kind's reach meets it and whose height range does (`ObjectWorld.Near`), and each such object gets a
-  static for each physics material of its voxels: its kind's `BigCompound` of boxes over its parts' own voxels that are
-  not passable (`VoxelBoxes.Build(kind, damaged, excluded)`, in the kind's unit, `PhysicsWorld.UnitBox`; made at its
-  first need and shared by every object of the kind; a damaged object's of its own, below), posed at its anchor's local place and turned by `ObjectTurns.Rotation`, at
+  static for each of its kind's parts and each physics material of the part's voxels: its kind's `BigCompound` of boxes
+  over the part's own voxels that are not passable (`VoxelBoxes.Build(kind, part, damaged, excluded)`, in the kind's
+  unit, `PhysicsWorld.UnitBox`; shared by every object of the kind, and all made at the match's "objects" step,
+  `VoxelColliders.MakeObjectShapes`, since one made at a body's first approach took a step of 89 ms for a kind of 55,676
+  boxes; `CompoundsMade` counts them; a damaged object's of its own, below), posed at its anchor's local place and turned by `ObjectTurns.Rotation`, at
   `BodyKinds.AnyLevel` (bodies of every level touch it, cut bodies too) in the voxels' layer. An object's statics stay
   while a cell reaches it (counted) and go with the last; a change of the objects (`ObjectWorld.Version`) makes every
   cell find its objects again, the new taken before the old let go. A body round which the areas within the map are not
@@ -176,8 +178,10 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   farthest kept. Readers keep what they read until `ObjectDamage.ReadChanges` names the object with a box (a ring of 256
   changes; past it, read everything again): an edit's change the edit's bounds and two of the object's voxels and 2 cm round
   them, within its reach (so a crater in a long wall has its readers read the columns round it again, not the wall's),
-  and a copy placed, removed, dropped, healed, or cut its whole reach; the mover's chunks under the box are made again, its statics' shapes swapped for
-  compounds of its own voxels, and rays read it as they go. The far copies take the world's edits at its coarse levels
+  and a copy placed, removed, dropped, healed, or cut its whole reach; the mover's chunks under the box are made again, the
+  statics of the kind's parts the box reaches across x and z (at every height, the box having none; `VoxelColliders.ReachedParts`)
+  swapped for compounds of their own voxels where a part holds a changed brick and the kind's where none (a part's
+  untouched static is not swapped, so a body asleep on it stays asleep), and rays read it as they go. The far copies take the world's edits at its coarse levels
   as any voxel does; a removed part's are cleared by the host (below). The rule is `ObjectEditing.RuleVersion`, hashed into the kinds' fingerprint (so the match's
   identity) with the copies' rule: raise it with any change to what an edit does to objects. The cap counts objects,
   not bytes (a copy is its changed bricks, 1 KB each, and its rebuilt parts' models).
