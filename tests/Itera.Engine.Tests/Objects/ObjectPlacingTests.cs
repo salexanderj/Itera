@@ -287,6 +287,83 @@ public sealed class ObjectPlacingTests : IDisposable
         Console.WriteLine($"Filled 2,000 placed blocks and {live.Damage.Count} damaged ones in {elapsed:F1} ms.");
     }
 
+    /// <summary>
+    /// The query gives exactly the objects whose kind reaches into its box that a look at every object finds, in the
+    /// same order (areas by z then x, each in its own order), for boxes small and large round blocks placed across four
+    /// areas' corner and among the generator's objects, as blocks are placed and removed between the queries.
+    /// </summary>
+    [Fact]
+    public void The_query_finds_what_a_look_at_every_object_finds_as_blocks_come_and_go()
+    {
+        var scene = Make(generated: true);
+        var random = new Random(7);
+        var placed = new List<ObjectPlacement>();
+        var found = new List<ObjectPlacement>();
+        var expected = new List<ObjectPlacement>();
+        var queries = 0;
+        for (var round = 0; round < 40; round++)
+        {
+            for (var i = 0; i < 30; i++)
+            {
+                var anchor = new VoxelCoord(
+                    random.Next(-1500, 1500),
+                    100 * random.Next(0, 3),
+                    random.Next(-1500, 1500)
+                );
+                var heading = random.Next(4) * ObjectPlacement.HeadingSteps / 4;
+                if (scene.Objects.TryPlace(scene.Block, anchor, heading, VoxelEdit.NoMaker, out var block))
+                {
+                    placed.Add(block);
+                }
+            }
+
+            for (var i = 0; i < 8; i++)
+            {
+                var at = random.Next(placed.Count);
+                Assert.True(scene.Objects.TryRemove(placed[at], VoxelEdit.NoMaker));
+                placed.RemoveAt(at);
+            }
+
+            for (var query = 0; query < 25; query++, queries++)
+            {
+                var (x, z) = (random.Next(-2500, 2500), random.Next(-2500, 2500));
+                var most = query % 5 == 0 ? 3000 : 300;
+                var (width, depth) = (random.Next(0, most), random.Next(0, most));
+                found.Clear();
+                scene.Objects.Near(x, x + width, z, z + depth, found);
+                Scan(scene, x, x + width, z, z + depth, expected);
+                Assert.Equal(expected, found);
+            }
+        }
+
+        Assert.True(placed.Count > 800, $"{placed.Count} blocks kept");
+        Assert.Equal(1000, queries);
+    }
+
+    /// <summary>Every filled area's objects whose kind reaches into the box, areas by z then x, each in its own order.</summary>
+    private static void Scan(Scene scene, int minX, int maxX, int minZ, int maxZ, List<ObjectPlacement> found)
+    {
+        found.Clear();
+        foreach (
+            var area in scene.Objects.Areas.Where(area => area.Filled).OrderBy(area => area.Z).ThenBy(area => area.X)
+        )
+        {
+            foreach (var placement in area.Objects)
+            {
+                var reach = scene.Kinds[placement.Kind].ReachCentimetres;
+                if (
+                    placement.Anchor.X + reach >= minX
+                    && placement.Anchor.X - reach <= maxX
+                    && placement.Anchor.Z + reach >= minZ
+                    && placement.Anchor.Z - reach <= maxZ
+                )
+                {
+                    found.Add(placement);
+                }
+            }
+        }
+    }
+
     /// <summary>The world's log of edits since its last reset, in order.</summary>
     private static List<VoxelEdit> Edits(VoxelWorld world)
     {

@@ -45,7 +45,11 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   iteration (`MatchVoxels.Update`) and filling at most `FillsPerUpdate` (8) areas an update, those nearest a streaming
   centre first (a resync after the change list overflows keeps the areas still wanted); `Near(box, found)` gives the
   objects whose kind's reach (`VoxelObjectKind.ReachCentimetres`, at any heading; `MostReachCentimetres`) meets a box
-  within the map, false where an area under it is not filled. A placer's unknown kind or heading, or an anchor outside
+  within the map, false where an area under it is not filled, in the areas' order (by z, then x) and each area's own;
+  it reads only the area's cells of `IndexCellCentimetres` (4 m) the box meets, each object listed in every cell its
+  reach meets and the list made again at the first query after the area's objects change (an area is 512 m wide on 1 m
+  voxels, where reading every object made a game's sight lines slow among thousands of placed blocks: 16,000 blocks
+  took a step's slowest from 8 to 31 ms). A placer's unknown kind or heading, or an anchor outside
   the area asked for, stops the fill. With a hand-over level at or past the world's levels, every streamed level counts.
 - Far copies (`ObjectCopies`, internal; made at the world's `Initialize`, before its workers start, which seals the
   kinds): from the hand-over level up, a kind is copied into the world's voxels at each level whose voxels are no wider

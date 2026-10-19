@@ -29,6 +29,12 @@ public sealed partial class ObjectWorld(
     /// <summary>The most areas filled from the placer in one update.</summary>
     public const int FillsPerUpdate = 8;
 
+    /// <summary>
+    /// The width of the cells an area lists its objects by for <see cref="Near"/>, in centimetres: a query reads the
+    /// cells its box meets, not the whole area (512 m wide on 1 m voxels, where it read every block a game placed).
+    /// </summary>
+    public const int IndexCellCentimetres = 400;
+
     private readonly Dictionary<(int X, int Z), Area> _areas = [];
     private readonly Stack<Area> _spare = new();
     private readonly List<Area> _waiting = [];
@@ -36,6 +42,9 @@ public sealed partial class ObjectWorld(
     private readonly List<Area> _gone = [];
     private readonly VoxelChange[] _changes = new VoxelChange[256];
     private readonly List<VoxelEdit> _logged = [];
+    private readonly List<int> _candidates = [];
+    private int[] _cellCursor = [];
+    private int _query;
     private IObjectPlacer? _placer;
     private bool _enabled;
     private VoxelChangeCursor? _cursor;
@@ -221,24 +230,179 @@ public sealed partial class ObjectWorld(
                     continue;
                 }
 
-                foreach (ref readonly var placement in CollectionsMarshal.AsSpan(area.Objects))
-                {
-                    var kindReach = kinds[placement.Kind].ReachCentimetres;
-                    if (
-                        placement.Anchor.X + kindReach >= minX
-                        && placement.Anchor.X - kindReach <= maxX
-                        && placement.Anchor.Z + kindReach >= minZ
-                        && placement.Anchor.Z - kindReach <= maxZ
-                    )
-                    {
-                        found.Add(placement);
-                    }
-                }
+                Gather(area, minX, maxX, minZ, maxZ, found);
             }
         }
 
         return whole;
     }
+
+    /// <summary>
+    /// Adds the area's objects whose kind reaches into the box to <paramref name="found"/>, in the area's order: those its
+    /// index lists in the cells the box meets, each once, then each tested by its kind's reach.
+    /// </summary>
+    private void Gather(Area area, int minX, int maxX, int minZ, int maxZ, List<ObjectPlacement> found)
+    {
+        var objects = CollectionsMarshal.AsSpan(area.Objects);
+        if (objects.IsEmpty)
+        {
+            return;
+        }
+
+        if (!area.Indexed)
+        {
+            Index(area);
+        }
+
+        if (++_query == int.MaxValue)
+        {
+            foreach (var kept in _areas.Values)
+            {
+                Array.Clear(kept.Seen);
+            }
+
+            _query = 1;
+        }
+
+        var (x0, x1, z0, z1) = CellsOf(area, minX, maxX, minZ, maxZ);
+        _candidates.Clear();
+        for (var z = z0; z <= z1; z++)
+        {
+            for (var x = x0; x <= x1; x++)
+            {
+                var cell = z * area.CellsAcross + x;
+                for (var entry = area.CellStarts[cell]; entry < area.CellStarts[cell + 1]; entry++)
+                {
+                    var index = area.CellEntries[entry];
+                    if (area.Seen[index] != _query)
+                    {
+                        area.Seen[index] = _query;
+                        _candidates.Add(index);
+                    }
+                }
+            }
+        }
+
+        var candidates = CollectionsMarshal.AsSpan(_candidates);
+        candidates.Sort();
+        foreach (var index in candidates)
+        {
+            ref readonly var placement = ref objects[index];
+            var kindReach = kinds[placement.Kind].ReachCentimetres;
+            if (
+                placement.Anchor.X + kindReach >= minX
+                && placement.Anchor.X - kindReach <= maxX
+                && placement.Anchor.Z + kindReach >= minZ
+                && placement.Anchor.Z - kindReach <= maxZ
+            )
+            {
+                found.Add(placement);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lists each of the area's objects, by its index in the area's list, in every cell its kind's reach meets: counted
+    /// per cell, then written in place (a cell's entries from <c>CellStarts[cell]</c> to <c>CellStarts[cell + 1]</c>).
+    /// A reach past the area's side is listed in its edge cells, where a box past that side reads too.
+    /// </summary>
+    private void Index(Area area)
+    {
+        var across = (int)((_areaCentimetres + IndexCellCentimetres - 1) / IndexCellCentimetres);
+        var cells = across * across;
+        if (area.CellStarts.Length != cells + 1)
+        {
+            area.CellStarts = new int[cells + 1];
+        }
+        else
+        {
+            Array.Clear(area.CellStarts);
+        }
+
+        if (_cellCursor.Length < cells)
+        {
+            _cellCursor = new int[cells];
+        }
+
+        area.CellsAcross = across;
+        var objects = CollectionsMarshal.AsSpan(area.Objects);
+        if (area.Seen.Length < objects.Length)
+        {
+            area.Seen = new int[Math.Max(objects.Length, 2 * area.Seen.Length)];
+        }
+        else
+        {
+            // Marks of queries before the query count last wrapped (an area kept spare then) mean nothing now.
+            Array.Clear(area.Seen);
+        }
+
+        var entries = 0;
+        foreach (ref readonly var placement in objects)
+        {
+            var (x0, x1, z0, z1) = CellsOf(area, in placement);
+            for (var z = z0; z <= z1; z++)
+            {
+                for (var x = x0; x <= x1; x++)
+                {
+                    area.CellStarts[z * across + x + 1]++;
+                }
+            }
+
+            entries += (x1 - x0 + 1) * (z1 - z0 + 1);
+        }
+
+        for (var cell = 1; cell <= cells; cell++)
+        {
+            area.CellStarts[cell] += area.CellStarts[cell - 1];
+        }
+
+        if (area.CellEntries.Length < entries)
+        {
+            area.CellEntries = new int[Math.Max(entries, 2 * area.CellEntries.Length)];
+        }
+
+        Array.Copy(area.CellStarts, _cellCursor, cells);
+        for (var index = 0; index < objects.Length; index++)
+        {
+            var (x0, x1, z0, z1) = CellsOf(area, in objects[index]);
+            for (var z = z0; z <= z1; z++)
+            {
+                for (var x = x0; x <= x1; x++)
+                {
+                    area.CellEntries[_cellCursor[z * across + x]++] = index;
+                }
+            }
+        }
+
+        area.Indexed = true;
+    }
+
+    /// <summary>The cells of an area a box meets (absolute centimetres, inclusive), its edge cells for a box past a side.</summary>
+    private (int X0, int X1, int Z0, int Z1) CellsOf(Area area, long minX, long maxX, long minZ, long maxZ)
+    {
+        long x0 = area.X * _areaCentimetres,
+            z0 = area.Z * _areaCentimetres;
+        var last = area.CellsAcross - 1;
+        return (CellAt(minX - x0, last), CellAt(maxX - x0, last), CellAt(minZ - z0, last), CellAt(maxZ - z0, last));
+    }
+
+    /// <summary>The cells of an area an object's kind's reach meets round its anchor.</summary>
+    private (int X0, int X1, int Z0, int Z1) CellsOf(Area area, in ObjectPlacement placement)
+    {
+        var reach = kinds[placement.Kind].ReachCentimetres;
+        var anchor = placement.Anchor;
+        return CellsOf(
+            area,
+            (long)anchor.X - reach,
+            (long)anchor.X + reach,
+            (long)anchor.Z - reach,
+            (long)anchor.Z + reach
+        );
+    }
+
+    /// <summary>The cell along one side holding a place <paramref name="offset"/> centimetres in from the area's low side.</summary>
+    private static int CellAt(long offset, int last) =>
+        (int)Math.Clamp(Maths.DeterministicMath.FloorDivide(offset, IndexCellCentimetres), 0, last);
 
     /// <summary>
     /// True when every object that may reach into the box from (<paramref name="minX"/>, <paramref name="minZ"/>) to
@@ -352,6 +516,7 @@ public sealed partial class ObjectWorld(
         }
 
         area.Objects.Clear();
+        area.Indexed = false;
         area.Filled = false;
         _spare.Push(area);
         Version++;
@@ -384,6 +549,7 @@ public sealed partial class ObjectWorld(
             {
                 var bad = placement;
                 area.Objects.Clear();
+                area.Indexed = false;
                 throw new InvalidOperationException(
                     $"The world's placer gave object {bad.Id.Value} kind {bad.Kind.Value} (of {kinds.Count}), heading {bad.Heading}, and anchor {bad.Anchor} for the area from ({x0}, {z0}) {_areaCentimetres} cm wide."
                 );
@@ -391,6 +557,7 @@ public sealed partial class ObjectWorld(
         }
 
         AddLogged(area, x0, z0);
+        area.Indexed = false;
         area.Filled = true;
         Count += area.Objects.Count;
         Version++;
@@ -621,6 +788,7 @@ public sealed partial class ObjectWorld(
             Listener?.Dropping(area.Objects);
             Count -= area.Objects.Count;
             area.Objects.Clear();
+            area.Indexed = false;
             area.Filled = false;
             Fill(area);
         }
@@ -662,6 +830,7 @@ public sealed partial class ObjectWorld(
             Count--;
         }
 
+        area.Indexed = false;
         SetVersion++;
         return true;
     }
@@ -708,7 +877,11 @@ public sealed partial class ObjectWorld(
     /// <summary>The kept areas, filled or waiting, for the renderer to walk. Main thread.</summary>
     internal Dictionary<(int X, int Z), Area>.ValueCollection Areas => _areas.Values;
 
-    /// <summary>One kept area: a level-K column's square, the resident columns below K in it, and its objects once filled.</summary>
+    /// <summary>
+    /// One kept area: a level-K column's square, the resident columns below K in it, its objects once filled, and their
+    /// index by cells (<see cref="IndexCellCentimetres"/>) for <see cref="Near"/>, made again at the first query after
+    /// the objects change.
+    /// </summary>
     internal sealed class Area
     {
         public int X;
@@ -716,6 +889,21 @@ public sealed partial class ObjectWorld(
         public int Columns;
         public bool Filled;
         public readonly List<ObjectPlacement> Objects = [];
+
+        /// <summary>True while the index lists <see cref="Objects"/> as they are.</summary>
+        public bool Indexed;
+
+        /// <summary>The cells along each side.</summary>
+        public int CellsAcross;
+
+        /// <summary>Where each cell's entries start in <see cref="CellEntries"/>, one more for the end.</summary>
+        public int[] CellStarts = [];
+
+        /// <summary>The objects' indices in <see cref="Objects"/>, cell after cell.</summary>
+        public int[] CellEntries = [];
+
+        /// <summary>Each object's last query, so a query takes an object listed in several cells once.</summary>
+        public int[] Seen = [];
     }
 }
 
