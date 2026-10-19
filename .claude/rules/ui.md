@@ -83,9 +83,9 @@ Reading a UI:
 - The loop runs as usual meanwhile, but the game's input is blocked. Escape and the console still work.
 - The render thread draws `loading.frag` (`LoadingPass`) instead of the world. `LoadingLayer` lists the tasks.
 - After `reset` the screen covers the picture again (`LoadingScreen.BeginAgain`, called from the loop when `VoxelWorld.LastReset` moves) and frees the pointer.
-
-- `LoadingDraw` marks the loading screen's frame. `WindowService.Wake` ends the main loop's wait when a frame is asked
-  for or a control request arrives.
+- `LoadingDraw` carries the loading screen's opacity and seconds in a frame; while it covers the picture, the world's
+  passes are not recorded. `WindowService.Wake` ends the main loop's wait when a frame is asked for or a control
+  request arrives.
 
 ### Tests
 

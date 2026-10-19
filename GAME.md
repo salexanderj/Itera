@@ -17,7 +17,8 @@ file is the game's own, and a clone rewrites it to describe its game. Replace th
   Past 1 km from the middle, broad relief (`Relief`) rises over the hills.
 - Voxel objects of 5 cm voxels stand on it (`GameObjects`, registered at the run's start; `GameForests`, the generator's
   placer): boulders, forest in patches (broadleaves and young trees), bushes, and rocks. Each is placed in a cell of a
-  `JitteredGrid` by its cell's hash. None stands within 15 m of the middle, none on a boulder, and no bush or rock
+  `JitteredGrid` by its cell's hash. None stands within 15 m of the middle, which holds the start and the fox's circle
+  (the fox walks on the voxels and meets no object). No tree, bush, or rock stands on a boulder, and no bush or rock
   against a trunk.
 - The materials are `GameMaterials`, drawn by `GamePalette` from the texture sets in `Textures/`. Characters and
   navigation pass through leaves (`GamePassability`).
@@ -35,7 +36,8 @@ file is the game's own, and a clone rewrites it to describe its game. Replace th
 - `PlayerSpawnSystem` makes the player with the engine's components and a `Climber`, and the engine's systems move it.
 - Climbing is the engine's `ClimbingMode`, registered as the game's `IMovementMode` with the tag it climbs.
   `GameSurfaceTags` tags the boulders' stone, and the ground's stone where dug down to it, as climbable. Space with a
-  boulder just ahead grabs it instead of jumping; the climbing keys are in the `systems.md` rules.
+  boulder just ahead grabs it instead of jumping. On it W and S climb, A and D move along it, nothing held hangs, Space
+  jumps off, and Ctrl lets go; climbing past its top pulls the player up onto it.
 
 ## The fox
 
@@ -76,4 +78,4 @@ goes where its comment says, with a behaviour test and a zero-allocation test in
 
 The tests (each name says what it checks): `SystemOrderTests`, `ShippedSettingsTests`, `GameOptionsTests`,
 `WorldTests`, `ForestTests`, `PlayerSpawnSystemTests`, `FoxSystemTests`, `MinimapSystemTests`, `MinimapLayerTests`,
-`ChecklistTests`, `FoxModelTests`, `BenchmarkViewsTests`, `ScenarioTests`, `DocumentationTests`, and `ReferenceTests`.
+`ChecklistTests`, `FoxModelTests`, `BenchmarkViewsTests`, `MovementAgreementTests`, `ScenarioTests`, `DocumentationTests`, and `ReferenceTests`.

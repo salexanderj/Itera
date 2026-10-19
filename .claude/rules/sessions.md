@@ -113,9 +113,11 @@ The console commands that work only on the host are listed in the `run-game` ski
 ### Players and the Steam start
 
 - `Engine:Session:MaxPlayers` counts the host. `SessionService.Players` lists the session's players, and a game sends
-  with `SendToHost`, `SendTo` (one slot), and `SendToAll` (all but one slot).
+  with `SendToHost`, `SendTo` (one slot), and `SendToAll` (every joined client, except the slot given, if any). `SendToHost` works on a
+  joined client, and `SendTo` and `SendToAll` on a host.
 - A player's name is `Engine:Session:PlayerName`, else the Steam name cut to 32 characters, else "Player".
-- Steam's API starts from `steam_appid.txt` beside the game: the working directory moves there for that call alone.
+- When Steam did not start the game (no `SteamAppId` variable), the game writes `steam_appid.txt` beside itself and
+  moves the working directory there for the `SteamAPI.InitEx` call alone.
   The Steam library loads through `NativeLibrary.SetDllImportResolver`, since Steamworks.NET names only `steam_api`.
 - `SteamTransport` refuses an oversized reliable message, skips a sequenced one while its queue is full, and ends a peer
   that holds too much: its limits are its constants.

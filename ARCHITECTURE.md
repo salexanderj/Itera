@@ -405,8 +405,7 @@ main thread's poll. The other threads are:
   thread runs at the process's nice value) generate columns. They
   hand finished columns to the main thread, which alone changes the live voxel world. The same threads free the memory
   of unloaded columns, ahead of any generation, so unloading costs the main thread a few microseconds for each column.
-- **Others** are the navigation thread (it fills its grid with a `Parallel.For`, so thread-pool threads read navigation
-  data too), the edit warm-up's thread, builds a game starts on the thread pool, the
+- **Others** are the navigation thread (it fills its grid and builds the fields alone), the edit warm-up's thread, builds a game starts on the thread pool, the
   screenshot writer, and the control port's accept and connection threads.
 
 **Shutdown.** A match that is on ends first. Its session says goodbye, so the peers are told this game has left, and
@@ -731,7 +730,8 @@ voxels. At 1 cm it would hold 4 x 10^13 (5 TB at one bit each).
 - Level-0 voxels may be 1 cm to 1 m (`VoxelGrid.MostBaseCentimetres`). Coarse voxels suit terrain a game deforms in
   large strokes, for little memory, since the engine already handles voxels that large at its coarse levels. A shape
   under about a voxel shows only as a soft dip in the densities, walls and caves come in voxel steps, and a piece lifted
-  from the ground keeps the voxels' steps.
+  from the ground keeps the voxels' steps. An edit measures a voxel on a limited number of sub-rows, so a very small change does
+  nothing.
 - The limit on a map's size is one of storage and streaming, not of precision. Positions are floats from the match's
   origin, which follows the camera. Navigation's window follows the players over any map. Code where the world and a
   model meet uses the grid's and the model's units, never a level's 2^k.
@@ -753,9 +753,6 @@ voxels. At 1 cm it would hold 4 x 10^13 (5 TB at one bit each).
   radius and no coarse levels (`StreamingCentre`, `VoxelWorld.SetStreamingCentres`).
 - Chunks carry a level in their keys, the generator, and edits. An edit reaches the resident columns of every level, and
   a voxel is tested at its level's sample point (`VoxelGrid.SampleAt`).
-- A coarse world suits terrain deformed in large strokes. Shapes under a voxel show only as soft dips in the densities,
-  walls step by voxels, a lifted piece shows the ground's steps, and an edit measures a voxel on a limited number of
-  sub-rows, so a very small change does nothing.
 
 ### The world is its seed plus its edit log
 
