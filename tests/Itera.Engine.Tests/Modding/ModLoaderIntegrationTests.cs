@@ -48,7 +48,10 @@ public sealed class ModLoaderIntegrationTests
     public void With_mods_off_none_loads_where_one_lies()
     {
         var options = Options.Create(
-            new EngineOptions { Mods = new ModsSettings { Directory = s_modsDirectory, Enabled = false } }
+            new EngineOptions
+            {
+                Mods = new ModsSettings { Directory = s_modsDirectory, Enabled = false },
+            }
         );
         using var loader = new ModLoader(
             options,
