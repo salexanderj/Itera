@@ -523,7 +523,8 @@ A game is an executable that registers the engine, then itself, and runs `GameLo
   noise), with eight materials (`GameMaterials`), each with a look in `GamePalette` and a texture set under
   `src/Game/Textures/` (made by `tools/Textures`, copied next to the executable). `BenchmarkViews` gives the benchmark its views of that world; runs of
   different views do not compare.
-- Mods load from `Mods/` next to the executable; the sample mod's build copies itself there.
+- Mods load from `Mods/` next to the executable (`Engine:Mods:Directory`); the sample mod's build copies itself there.
+  `Engine:Mods:Enabled` false loads none, for a game that takes no code mods yet.
 
 A new game keeps `src/Game`, `Game.csproj`, and `tests/Game.Tests` as its home, so the tools need no setting, and grows
 the generator, palette, systems, and options in place.

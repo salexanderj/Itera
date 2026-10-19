@@ -123,7 +123,7 @@ lists the game's). Commonly used:
 A successful run logs the run's steps first: `Network: ready; no socket until a session starts`, `Steam: off ...` (the
 starter has no App ID; a game with one logs `Steam: signed in as ...` or a Warning), window, Vulkan instance, one line
 per physical device, the selected device, swapchain, input devices, shader compiler and its smoke test, audio device,
-`UI: Skia CPU surface ...`, `Loaded mod itera.samplemod`, `Mesh assets: N model(s), ... read in N ms` (the models the game declared, with how many
+`UI: Skia CPU surface ...`, `Loaded mod itera.samplemod` (or `Mods: off ...` with `Engine:Mods:Enabled` false), `Mesh assets: N model(s), ... read in N ms` (the models the game declared, with how many
 textures came from their compressed textures; a file that cannot be read stops the run with exit code 1; a Warning for
 compressed textures that do not match their image, an Information note for a model whose textures were all decoded), `Mesh assets on the GPU: N vertices, ... draws N MB a frame slot`
 (and with a skinned model `... N skinned vertices; posed instances skinned into V vertices ...`), for each image

@@ -45,6 +45,23 @@ public sealed class ModLoaderIntegrationTests
     }
 
     [Fact]
+    public void With_mods_off_none_loads_where_one_lies()
+    {
+        var options = Options.Create(
+            new EngineOptions { Mods = new ModsSettings { Directory = s_modsDirectory, Enabled = false } }
+        );
+        using var loader = new ModLoader(
+            options,
+            NullLoggerFactory.Instance,
+            EmptyServiceProvider.Instance,
+            NullLogger<ModLoader>.Instance
+        );
+
+        Assert.Equal(new ModLoadSummary(0, 0, 0), loader.LoadAll());
+        Assert.Empty(loader.LoadedModIds);
+    }
+
+    [Fact]
     public void Missing_mods_directory_is_not_an_error()
     {
         var options = Options.Create(

@@ -409,6 +409,12 @@ public sealed class LoadingSettings
 /// <summary>Mod loading settings.</summary>
 public sealed class ModsSettings
 {
+    /// <summary>
+    /// False to load no mods: a game that does not take code mods yet runs no code it did not ship, whatever lies in
+    /// <see cref="Directory"/>. True, the default, loads them.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
     /// <summary>Folder that holds one sub-folder per mod. Null means "Mods" next to the executable.</summary>
     public string? Directory { get; set; }
 }

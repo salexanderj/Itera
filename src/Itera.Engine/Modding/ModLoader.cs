@@ -13,6 +13,7 @@ public sealed partial class ModLoader : IDisposable
     private readonly ILogger<ModLoader> _logger;
     private readonly IServiceProvider _services;
     private readonly ModDispatcher _dispatcher;
+    private readonly bool _enabled;
     private HostSharedAssemblies? _shared;
     private bool _disposed;
 
@@ -31,6 +32,7 @@ public sealed partial class ModLoader : IDisposable
         ModsDirectory = Path.GetFullPath(
             options.Value.Mods.Directory ?? Path.Combine(AppContext.BaseDirectory, "Mods")
         );
+        _enabled = options.Value.Mods.Enabled;
     }
 
     /// <summary>Absolute path of the folder scanned for mods.</summary>
@@ -60,9 +62,18 @@ public sealed partial class ModLoader : IDisposable
             .ToArray();
     }
 
-    /// <summary>Loads every discovered mod. Never throws; failures are logged and counted.</summary>
+    /// <summary>
+    /// Loads every discovered mod, or none with <c>Engine:Mods:Enabled</c> false. Never throws; failures are logged and
+    /// counted.
+    /// </summary>
     public ModLoadSummary LoadAll()
     {
+        if (!_enabled)
+        {
+            LogModsOff(ModsDirectory);
+            return new ModLoadSummary(0, 0, 0);
+        }
+
         _shared ??= HostSharedAssemblies.FromHost();
 
         var directories = DiscoverModDirectories(ModsDirectory);
@@ -304,6 +315,12 @@ public sealed partial class ModLoader : IDisposable
             LogStillReferenced(id);
         }
     }
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Mods: off (Engine:Mods:Enabled is false); none loaded from {Directory}"
+    )]
+    private partial void LogModsOff(string directory);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Mods: no mods found under {Directory}")]
     private partial void LogNoMods(string directory);
