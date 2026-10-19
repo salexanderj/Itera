@@ -62,6 +62,22 @@ internal readonly struct MaterialSet
         return new MaterialSet(in words);
     }
 
+    /// <summary>A set of the materials whose bits two words hold: 0 to 63 in <paramref name="first"/>, 64 to 127 in <paramref name="second"/>.</summary>
+    public static MaterialSet OfWords(ulong first, ulong second)
+    {
+        var words = default(Words);
+        (words[0], words[1]) = (first, second);
+        return new MaterialSet(in words);
+    }
+
+    /// <summary>This set with <paramref name="material"/> in it too.</summary>
+    public MaterialSet With(byte material)
+    {
+        var words = _words;
+        words[material >> 6] |= 1UL << (material & 63);
+        return new MaterialSet(in words);
+    }
+
     /// <summary>The materials in this set or <paramref name="other"/>.</summary>
     public MaterialSet Union(in MaterialSet other)
     {

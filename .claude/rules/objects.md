@@ -152,10 +152,12 @@ Trees, bushes, rocks, and props of voxels finer than the world's (`src/Itera.Eng
   world's centimetres and read by the edit's own `Contains`): clears, clears of some materials (boxes, and spheres,
   `VoxelEdit.MaterialsSphere`: a crater of the ground's materials leaves objects of their own whole), sets of air, and lifts
   (whose object voxels go, not into the piece) take a voxel by the share they cover (`VoxelEditing.ChangeByShare` on
-  `VoxelEditing.Parts` of it; a voxel a clear of some materials cannot change, and one whose sample points' box misses a
-  sphere, is passed over before its share is counted, which changes no result: a crater of 1.5 m across a gate of 10 cm
-  voxels took 8 ms a pass in Release counting the voxels round the sphere one point at a time; whether an edit changes
-  an object at all is answered at its first changed voxel); a paint recolours a solid voxel whose middle it covers (a paint of air changes no object); fills, sets of a material, and
+  `VoxelEditing.Parts` of it; an object that holds none of a clear's materials, its kind's (`VoxelObjectKind.Materials`)
+  and any a paint gave its copy (`DamagedObject.Materials`), is passed over unread, live and on replay; else a voxel a
+  clear of some materials cannot change, and one whose sample points' box misses a sphere, is passed over before its
+  share is counted; neither changes a result (a crater of 1.5 m across a gate of 10 cm voxels took 8 ms a pass in Release
+  counting the voxels round the sphere one point at a time, before both); whether an edit changes an object at all is
+  answered at its first changed voxel); a paint recolours a solid voxel whose middle it covers (a paint of air changes no object); fills, sets of a material, and
   pieces put back change only the world, so objects never gain voxels. A clear with a maker counts what it takes from
   them, in cubic centimetres, into the game's `IVoxelRemovals` with the world's, before anything changes (not from an object whose copy the cap
   dropped, which may differ between peers). An object an

@@ -58,6 +58,17 @@ internal static class ObjectEditing
             return false;
         }
 
+        // A clear of some materials changes only voxels of them: an object that holds none (its kind's materials, and any
+        // a paint gave it since) is passed over unread, as each of its voxels would be (a blast's crater of the ground's
+        // materials by a wall of its own).
+        if (
+            edit.Operation == VoxelEditOperation.ClearMaterials
+            && !edit.ClearedMaterials.Overlaps(target?.Materials ?? kind.Materials)
+        )
+        {
+            return false;
+        }
+
         // A lift's object voxels go as a clear's do; a set of air is a clear (ChangeByShare).
         var removal =
             edit.Operation == VoxelEditOperation.Lift ? edit with { Operation = VoxelEditOperation.Clear } : edit;

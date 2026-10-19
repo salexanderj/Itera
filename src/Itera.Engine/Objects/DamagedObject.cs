@@ -29,11 +29,18 @@ internal sealed class DamagedObject : IObjectVoxelSource
         Models = new int[kind.Parts.Length];
         Array.Fill(Models, -1);
         ChangedBlocks = new bool[kind.Parts.Length][][];
+        Materials = kind.Materials;
     }
 
     public ObjectPlacement Placement { get; }
 
     public VoxelObjectKind Kind { get; }
+
+    /// <summary>
+    /// Every material its voxels may hold: its kind's, and any a paint gave it since, so a clear of other materials passes
+    /// it over unread (<see cref="ObjectEditing.Apply"/>).
+    /// </summary>
+    public MaterialSet Materials { get; private set; }
 
     /// <summary>How many times its voxels changed: readers that keep what they read of it compare it.</summary>
     public int Revision { get; private set; }
@@ -120,6 +127,10 @@ internal sealed class DamagedObject : IObjectVoxelSource
         var j = (x & 7) + Brick * ((y & 7) + Brick * (z & 7));
         _payload[at + j] = material;
         _payload[at + BrickVoxels + j] = density;
+        if (material != VoxelConstants.Air && !Materials.Contains(material))
+        {
+            Materials = Materials.With(material);
+        }
     }
 
     /// <summary>Notes that an edit changed its voxels: readers that keep what they read of it read it again.</summary>

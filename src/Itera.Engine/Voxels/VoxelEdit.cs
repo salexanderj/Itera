@@ -236,6 +236,10 @@ public readonly record struct VoxelEdit(
         return (low, high);
     }
 
+    /// <summary>A <see cref="VoxelEditOperation.ClearMaterials"/> edit's materials, as a set (<see cref="ClearsMaterial"/>).</summary>
+    internal global::Itera.Engine.Voxels.MaterialSet ClearedMaterials =>
+        global::Itera.Engine.Voxels.MaterialSet.OfWords((ulong)Piece, (ulong)Turn);
+
     /// <summary>True when a <see cref="VoxelEditOperation.ClearMaterials"/> edit clears voxels of <paramref name="material"/>.</summary>
     public bool ClearsMaterial(byte material) =>
         material < 64

@@ -834,6 +834,35 @@ public sealed class ObjectDamageTests : IDisposable
     }
 
     /// <summary>
+    /// A clear of rock, which the trunk's kind lacks, leaves it whole; once a paint turns some of its voxels to rock, the
+    /// same clear takes them, live and when the trunk's area fills with both edits in the log.
+    /// </summary>
+    [Fact]
+    public void A_clear_of_a_material_a_paint_gave_an_object_takes_the_painted_voxels_live_and_on_replay()
+    {
+        var centre = new VoxelCoord(150, 150, 0);
+        var paint = VoxelEdit.Sphere(centre, 20, VoxelEditOperation.Paint, Rock);
+        var clear = VoxelEdit.MaterialsSphere(centre, 20, [Rock]);
+        var live = Make();
+        var replayed = Make(fill: false);
+
+        live.World.Apply(clear);
+        var untouched = live.Damage.Count;
+        live.World.Apply(paint);
+        live.World.Apply(clear);
+        replayed.World.Apply(paint);
+        replayed.World.Apply(clear);
+        replayed.Fill();
+
+        Assert.Equal(0, untouched);
+        var trunk = live.Placements[0];
+        AssertSame(live.Damage.Find(trunk.Id)!, replayed.Damage.Find(trunk.Id));
+        // The voxel at the axis 1.5 m up: kind voxel (6, 30, 6) holds (150, 150, 0) at the trunk's anchor (150, 0, 0).
+        live.Damage.Find(trunk.Id)!.Voxel(6, 30, 6, out var material, out _);
+        Assert.Equal(VoxelConstants.Air, material);
+    }
+
+    /// <summary>
     /// A dig across the border of a kind two parts wide makes both parts' models again, one an update
     /// (<see cref="ObjectDamage.PartsPerUpdate"/>): each holds its box's voxels as the damage left them, and its coarser
     /// levels what the kind's rule makes of them.
