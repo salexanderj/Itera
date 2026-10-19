@@ -41,6 +41,8 @@ projects used as references.
 - Area details are in `.claude/rules/`, one file per area (listed below). Claude Code loads a rules file when a file it
   covers is opened with the Read, Write, or Edit tool. `cat`, `grep`, `sed`, and the Grep tool do not load it. Open the
   files you will change with the Read tool. Before you plan, discuss, or review work in an area, read its rules file.
+- Before you write or change a doc (this file, `GAME.md`, a rules file, a skill, `ARCHITECTURE.md`, or `docs/`), load
+  the `docs` skill: it says where each kind of fact goes, and what the documentation tests check.
 - When you change these, also do this (details in the area's file; the `scaffold` skill has the steps and templates,
   and the checklist tests, `ChecklistTests`, `ShippedSettingsTests`, `SystemOrderTests`, and `WorldTests`, fail when one
   is missed):
