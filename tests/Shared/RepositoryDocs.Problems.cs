@@ -40,8 +40,9 @@ internal static partial class RepositoryDocs
             .Select(problem => (problem.Doc, problem.Problem + ": move its lists and recipes to files beside it"));
 
     /// <summary>
-    /// Each file <paramref name="owns"/> takes whose rules files come to more than <see cref="OpenedFileLimit"/>: a
-    /// problem of each of them in <paramref name="notYetCleaned"/>, or of the largest when none is.
+    /// Each set of rules files that opening one of <paramref name="owns"/>' files loads, past
+    /// <see cref="OpenedFileLimit"/> together: a problem of each of them in <paramref name="notYetCleaned"/>, or of the
+    /// largest when none is, naming how many files load that set and one of them.
     /// </summary>
     public static IEnumerable<(string Doc, string Problem)> Loads(
         Func<string, bool> owns,
@@ -50,15 +51,16 @@ internal static partial class RepositoryDocs
     {
         ArgumentNullException.ThrowIfNull(owns);
         ArgumentNullException.ThrowIfNull(notYetCleaned);
-        foreach (var file in Files.Where(owns))
+        var sets = Files
+            .Where(owns)
+            .Select(file => (File: file, Load: Loaded(file)))
+            .Where(file => file.Load.Characters > OpenedFileLimit)
+            .GroupBy(file => string.Join(", ", file.Load.Rules), StringComparer.Ordinal);
+        foreach (var set in sets)
         {
-            var (characters, rules) = Loaded(file);
-            if (characters <= OpenedFileLimit)
-            {
-                continue;
-            }
-
-            var problem = $"opening {file} loads {characters} characters of rules ({string.Join(", ", rules)})";
+            var (file, (characters, rules)) = set.First();
+            var problem =
+                $"opening {file} (and {set.Count() - 1} more) loads {characters} characters of rules ({set.Key})";
             var uncleaned = rules.Where(notYetCleaned.Contains).ToList();
             foreach (var doc in uncleaned.Count > 0 ? uncleaned : [rules.MaxBy(rule => Read(rule).Length)!])
             {

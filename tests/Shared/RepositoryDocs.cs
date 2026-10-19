@@ -35,7 +35,7 @@ internal static partial class RepositoryDocs
     // Marks a library's root namespace among the code names (`@Arch`), so a doc may name its packages and parts.
     private const string LibraryMark = "@";
 
-    private static readonly Regex s_date = new(@"\b(?:19|20)\d\d-\d\d-\d\d\b", Options);
+    private static readonly Regex s_date = new(@"(?<!\d)(?:19|20)\d\d-\d\d-\d\d(?!\d)", Options);
     private static readonly Regex s_code = new("`([^`\n]+)`", Options);
     private static readonly Regex s_word = new("[A-Za-z_][A-Za-z0-9_]*", Options);
     private static readonly Regex s_sentenceEnd = new("(?<=[.!?])\\s+(?=[A-Z0-9(\"'*_\\[])", Options);
@@ -105,6 +105,12 @@ internal static partial class RepositoryDocs
     [.. Files.Where(file => file.StartsWith(".claude/rules/", StringComparison.Ordinal) && IsMarkdown(file))];
 
     private static readonly Lazy<HashSet<string>> s_folders = new(Folders);
+    private static readonly Lazy<HashSet<string>> s_fileNames = new(() =>
+        Files!.Select(Path.GetFileName).OfType<string>().ToHashSet(StringComparer.Ordinal)
+    );
+    private static readonly Lazy<HashSet<string>> s_stems = new(() =>
+        Files!.SelectMany(file => file.Split('/')).Select(part => part.Split('.')[0]).ToHashSet(StringComparer.Ordinal)
+    );
     private static readonly Lazy<HashSet<string>> s_files = new(() => Files!.ToHashSet(StringComparer.Ordinal));
 
     /// <summary>A file's text.</summary>
@@ -113,7 +119,10 @@ internal static partial class RepositoryDocs
     /// <summary>Whether a path names a markdown file.</summary>
     public static bool IsMarkdown(string file) => file.EndsWith(".md", StringComparison.Ordinal);
 
-    /// <summary>The globs of a rules file's front matter (<c>paths:</c>, one <c>- "glob"</c> a line); none loads it at every start.</summary>
+    /// <summary>
+    /// The globs of a rules file's front matter (<c>paths:</c>, a list of quoted or bare globs, or one value of globs
+    /// separated by commas); none loads it at every start.
+    /// </summary>
     public static IReadOnlyList<string> Globs(string rulesFile)
     {
         var lines = Read(rulesFile).Split('\n').Select(line => line.TrimEnd('\r')).ToList();
@@ -123,13 +132,30 @@ internal static partial class RepositoryDocs
         }
 
         var end = lines.IndexOf("---", 1);
-        return
-        [
-            .. lines[1..(end < 0 ? 1 : end)]
-                .Select(line => Regex.Match(line, "^\\s*-\\s*\"(.+)\"\\s*$", Options))
-                .Where(match => match.Success)
-                .Select(match => match.Groups[1].Value),
-        ];
+        var globs = new List<string>();
+        var inPaths = false;
+        foreach (var line in lines[1..(end < 0 ? 1 : end)])
+        {
+            var key = Regex.Match(line, "^([A-Za-z_-]+):\\s*(.*)$", Options);
+            if (key.Success)
+            {
+                inPaths = key.Groups[1].Value == "paths";
+                if (inPaths && key.Groups[2].Value.Trim().Length > 0)
+                {
+                    globs.AddRange(SplitOutsideBraces(Unquoted(key.Groups[2].Value)).Select(Unquoted));
+                }
+
+                continue;
+            }
+
+            var item = Regex.Match(line, "^\\s*-\\s*(.+?)\\s*$", Options);
+            if (inPaths && item.Success)
+            {
+                globs.Add(Unquoted(item.Groups[1].Value));
+            }
+        }
+
+        return [.. globs.Where(glob => glob.Length > 0)];
     }
 
     /// <summary>A glob's choices in braces written out (<c>{a,b}</c>), so each can be checked to name a file.</summary>
@@ -137,14 +163,13 @@ internal static partial class RepositoryDocs
     {
         ArgumentNullException.ThrowIfNull(pattern);
         var open = pattern.IndexOf('{', StringComparison.Ordinal);
-        if (open < 0)
+        var close = open < 0 ? -1 : Closing(pattern, open);
+        if (close < 0)
         {
             return [pattern];
         }
 
-        var close = pattern.IndexOf('}', open);
-        return pattern[(open + 1)..close]
-            .Split(',')
+        return SplitOutsideBraces(pattern[(open + 1)..close])
             .SelectMany(choice => Expanded(pattern[..open] + choice + pattern[(close + 1)..]));
     }
 
@@ -156,8 +181,13 @@ internal static partial class RepositoryDocs
     {
         ArgumentNullException.ThrowIfNull(pattern);
         var text = new StringBuilder("^");
+        var depth = 0;
         for (var i = 0; i < pattern.Length; i++)
         {
+            depth +=
+                pattern[i] == '{' ? 1
+                : pattern[i] == '}' ? -1
+                : 0;
             if (pattern[i] == '*' && i + 1 < pattern.Length && pattern[i + 1] == '*')
             {
                 var slash = i + 2 < pattern.Length && pattern[i + 2] == '/';
@@ -173,7 +203,7 @@ internal static partial class RepositoryDocs
                     '?' => "[^/]",
                     '{' => "(?:",
                     '}' => ")",
-                    ',' => "|",
+                    ',' when depth > 0 => "|",
                     _ => Regex.Escape(pattern[i..(i + 1)]),
                 }
             );
@@ -220,7 +250,7 @@ internal static partial class RepositoryDocs
         }
 
         Add("CLAUDE.md", 0);
-        files.AddRange(RulesFiles.Where(rules => Globs(rules).Count == 0));
+        files.AddRange(RulesFiles.Where(rules => Globs(rules).Count == 0 && !files.Contains(rules)));
         return files;
     }
 
@@ -263,7 +293,8 @@ internal static partial class RepositoryDocs
         ArgumentNullException.ThrowIfNull(doc);
         ArgumentNullException.ThrowIfNull(code);
         var folder = Normal(Path.GetDirectoryName(doc) ?? "");
-        foreach (var unit in Prose(Read(doc)))
+        var text = Read(doc);
+        foreach (var unit in Prose(text).Concat(Headings(text)))
         {
             foreach (Match match in s_code.Matches(unit))
             {
@@ -286,7 +317,10 @@ internal static partial class RepositoryDocs
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (
-            var file in Files.Where(file => s_codeKinds.Any(kind => file.EndsWith(kind, StringComparison.Ordinal)))
+            var file in Files.Where(file =>
+                !file.StartsWith(".claude/", StringComparison.Ordinal)
+                && s_codeKinds.Any(kind => file.EndsWith(kind, StringComparison.Ordinal))
+            )
         )
         {
             var text = Read(file);
@@ -325,7 +359,13 @@ internal static partial class RepositoryDocs
             {
                 types = assembly.GetExportedTypes();
             }
-            catch (Exception exception) when (exception is NotSupportedException or TypeLoadException)
+            catch (Exception exception)
+                when (exception
+                        is NotSupportedException
+                            or TypeLoadException
+                            or FileNotFoundException
+                            or FileLoadException
+                )
             {
                 continue;
             }
@@ -484,6 +524,7 @@ internal static partial class RepositoryDocs
             if (s_listItem.IsMatch(line))
             {
                 Flush();
+                line = s_listItem.Replace(line, "");
             }
 
             current.Add(line);
@@ -527,6 +568,68 @@ internal static partial class RepositoryDocs
 
     private static string StripCode(string text) => s_code.Replace(text, "C");
 
+    // A doc's headings, outside code blocks.
+    private static IEnumerable<string> Headings(string markdown)
+    {
+        var fenced = false;
+        foreach (var line in markdown.ReplaceLineEndings("\n").Split('\n'))
+        {
+            fenced ^= line.TrimStart().StartsWith("```", StringComparison.Ordinal);
+            if (!fenced && line.StartsWith('#'))
+            {
+                yield return line;
+            }
+        }
+    }
+
+    // The index of the brace that closes the one at `open`, or -1.
+    private static int Closing(string pattern, int open)
+    {
+        var depth = 0;
+        for (var i = open; i < pattern.Length; i++)
+        {
+            depth +=
+                pattern[i] == '{' ? 1
+                : pattern[i] == '}' ? -1
+                : 0;
+            if (depth == 0)
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    // A list's items split at its commas outside braces.
+    private static List<string> SplitOutsideBraces(string text)
+    {
+        var items = new List<string>();
+        var depth = 0;
+        var start = 0;
+        for (var i = 0; i < text.Length; i++)
+        {
+            depth +=
+                text[i] == '{' ? 1
+                : text[i] == '}' ? -1
+                : 0;
+            if (text[i] == ',' && depth == 0)
+            {
+                items.Add(text[start..i].Trim());
+                start = i + 1;
+            }
+        }
+
+        items.Add(text[start..].Trim());
+        return items;
+    }
+
+    private static string Unquoted(string text)
+    {
+        text = text.Trim();
+        return text.Length >= 2 && (text[0] == '"' || text[0] == '\'') && text[^1] == text[0] ? text[1..^1] : text;
+    }
+
     // True for a path that names something, false for one that names nothing, null for text that is no path here.
     private static bool? KnownPath(string name, string folder)
     {
@@ -566,7 +669,7 @@ internal static partial class RepositoryDocs
                 return Files.Any(path => glob.IsMatch(Path.GetFileName(path)));
             }
 
-            return Files.Any(path => Path.GetFileName(path) == file) || Placeholder(file);
+            return s_fileNames.Value.Contains(file) || Placeholder(file);
         }
 
         var parts = name.Split('/');
@@ -575,6 +678,8 @@ internal static partial class RepositoryDocs
             fromRoot
             && parts[0] is "src" or "tests" or "samples"
             && !s_folders.Value.Contains(parts[0] + "/" + parts[1])
+            && !parts[1].StartsWith("Itera", StringComparison.Ordinal)
+            && !parts[1].StartsWith("Game", StringComparison.Ordinal)
         )
         {
             // Another project's source (`src/Arch/Core/Entity.cs`): no project of this one.
@@ -603,11 +708,16 @@ internal static partial class RepositoryDocs
             ) || Placeholder(name);
     }
 
-    // A name written as a placeholder (`Data/NAME.json`, `Saves/castle.save`'s `NAME`): a part in capitals.
+    // A name written as a placeholder (`Data/NAME.json`): a part in capitals that no file or folder of the repository
+    // has (so `SKILL.md` and `UI/` are names, not placeholders).
     private static bool Placeholder(string name) =>
         name.Split('/')
             .Select(part => part.Split('.')[0])
-            .Any(part => part.Length > 1 && part.All(c => char.IsUpper(c) || char.IsDigit(c) || c == '-'));
+            .Any(part =>
+                part.Length > 1
+                && part.All(c => char.IsUpper(c) || char.IsDigit(c) || c == '-')
+                && !s_stems.Value.Contains(part)
+            );
 
     // True for a code name found, false for one found nowhere, null for text that is not a code name to check.
     private static bool? KnownCode(string name, ISet<string> code)

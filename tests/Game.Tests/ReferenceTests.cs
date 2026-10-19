@@ -114,13 +114,9 @@ public sealed class ReferenceTests
         foreach (var (key, value) in configuration.GetSection("Engine").AsEnumerable(makePathsRelative: true))
         {
             var (found, defaults) = Default(engine, key);
-            if (value is not null && found)
+            if (value is not null && found && !Same(defaults, value))
             {
-                var text = Convert.ToString(defaults, CultureInfo.InvariantCulture) ?? "";
-                if (!string.Equals(text, value, StringComparison.OrdinalIgnoreCase))
-                {
-                    changes.Add(("Engine:" + key, ReferenceDocs.Value(defaults), $"`{value}`"));
-                }
+                changes.Add(("Engine:" + key, ReferenceDocs.Value(defaults), $"`{value}`"));
             }
         }
 
@@ -133,6 +129,28 @@ public sealed class ReferenceTests
             "The game's own options under `Game`, each with its default, the least and most its validator takes, and what it does; then the engine's options its `appsettings.json` ships at other values (the engine's are in `engine-options.md`).",
             [.. tables]
         );
+    }
+
+    // Whether a settings file's text is an option's default, read as the option's type (`1.0` is `1`).
+    private static bool Same(object? defaults, string text)
+    {
+        if (defaults is null)
+        {
+            return text.Length == 0;
+        }
+
+        var type = defaults.GetType();
+        try
+        {
+            var value = type.IsEnum
+                ? Enum.Parse(type, text, ignoreCase: true)
+                : Convert.ChangeType(text, type, CultureInfo.InvariantCulture);
+            return Equals(value, defaults);
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidCastException or ArgumentException)
+        {
+            return false;
+        }
     }
 
     private static IEnumerable<string> Failures(object validator, object options)

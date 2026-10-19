@@ -168,7 +168,8 @@ internal static class ReferenceDocs
             float number => $"`{Number(number)}`",
             double number => $"`{Number(number)}`",
             bool flag => flag ? "`true`" : "`false`",
-            System.Collections.IEnumerable items and not string => $"`{string.Join(", ", items.Cast<object>())}`",
+            System.Collections.IEnumerable items and not string =>
+                $"`{string.Join(", ", items.Cast<object>().Select(item => Convert.ToString(item, CultureInfo.InvariantCulture)))}`",
             _ => $"`{Code(Convert.ToString(value, CultureInfo.InvariantCulture) ?? "")}`",
         };
 
@@ -271,7 +272,19 @@ internal static class ReferenceDocs
             : null;
         if (make is null || step is null)
         {
-            return "";
+            // A 64-bit whole number: only whether it takes any value.
+            object[] ends =
+                kind == typeof(long) ? [long.MinValue, long.MaxValue]
+                : kind == typeof(ulong) ? [ulong.MinValue, ulong.MaxValue]
+                : [];
+            return ends.Length > 0 && ends.All(TakesValue) ? "any" : "";
+        }
+
+        bool TakesValue(object value)
+        {
+            var options = Activator.CreateInstance(root)!;
+            Set(options, path, value);
+            return !failures(options).Any(failure => failure.StartsWith(key, StringComparison.Ordinal));
         }
 
         var (lowest, highest) =
@@ -286,7 +299,12 @@ internal static class ReferenceDocs
             return !failures(options).Any(failure => failure.StartsWith(key, StringComparison.Ordinal));
         }
 
-        var start = step(Get(Activator.CreateInstance(root)!, path)!);
+        if (Get(Activator.CreateInstance(root)!, path) is not { } defaults)
+        {
+            return "";
+        }
+
+        var start = step(defaults);
         if (!Takes(start))
         {
             return "";
@@ -313,7 +331,7 @@ internal static class ReferenceDocs
                         .Select(power => at + towards * Math.Pow(10, power))
                         .Select(value => kind == typeof(float) ? StepOf((float)value) : StepOf(value));
                 var further = steps
-                    .Where(step => towards > 0 ? step < limit : step > limit)
+                    .Where(step => towards > 0 ? step > edge && step < limit : step < edge && step > limit)
                     .FirstOrDefault(Takes, edge);
                 if (further == edge)
                 {
@@ -461,7 +479,7 @@ internal static class ReferenceDocs
     }
 
     private static string Cell(string text) =>
-        text.Replace("|", "\\|", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
+        text.Replace("|", "\\|", StringComparison.Ordinal).ReplaceLineEndings(" ");
 
     private static string Code(string text) =>
         text.Replace("|", "\\|", StringComparison.Ordinal).Replace("`", "'", StringComparison.Ordinal);
