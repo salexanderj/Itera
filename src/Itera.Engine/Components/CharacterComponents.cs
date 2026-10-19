@@ -15,6 +15,13 @@ public struct LocalPlayer;
 public struct RemotePlayer;
 
 /// <summary>
+/// Marks a character the world's owner (a host or an offline game) streams the world around (<c>StreamingCentreSystem</c>):
+/// a level-0 disc of the remote players' radius, so it moves where no player is near. A game marks the characters it keeps
+/// moving away from every player, such as a squad that walks in from far off.
+/// </summary>
+public struct StreamedCharacter;
+
+/// <summary>
 /// Marks a character that has no body for now (for example a dead player waiting to come back, or one watching): it
 /// does not move, push loose bodies, or take a stand-in, and its command holds only its look.
 /// </summary>

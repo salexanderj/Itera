@@ -15,7 +15,10 @@ namespace Itera.Engine.Systems;
 /// no frames are drawn. While the player flies the debug camera, or when there is no player, it follows the
 /// <see cref="ActiveCamera"/> instead, a debug case: a frame system moves that camera. A session host also streams a
 /// level-0 disc of <see cref="VoxelWorld.RemotePlayerRadiusMetres"/> (<c>Engine:Voxels:RemotePlayerRadiusMetres</c>)
-/// around each remote player, whom it moves from their commands, for their moves, stand-ins, and feet. The world's owner (offline or a host) also streams a level-0 disc around each loose body
+/// around each remote player, whom it moves from their commands, for their moves, stand-ins, and feet. The world's owner
+/// (offline or a host) streams a level-0 disc of the same radius around each <see cref="StreamedCharacter"/> that no
+/// player's level-0 disc holds (at most <see cref="MaxCharacterCentres"/>), so a character a game keeps moving far from
+/// every player is not left waiting for its voxels. It also streams a level-0 disc around each loose body
 /// that no player's level-0 disc holds (at most <see cref="MaxBodyCentres"/>): a body needs the level-0 voxels around it
 /// to move (<c>VoxelColliders</c> freezes it in the air where they are not loaded), so a throw that flies past the
 /// player's level 0, or a client's throw far from the host, would stop. The disc is <see cref="BodyRadiusMetres"/> about
@@ -28,8 +31,8 @@ namespace Itera.Engine.Systems;
 /// All centres go in one call per step, since each call that changes them rebuilds every level's wanted
 /// columns. The only caller of <see cref="VoxelWorld.SetStreamingCentres"/>.
 /// Reads <see cref="PlayerMode"/>, <see cref="CharacterPosition"/>, <see cref="CharacterSize"/>,
-/// <see cref="RemotePlayer"/>, <see cref="LooseBody"/>, <see cref="BodyPose"/>, and <see cref="CameraPose"/>; writes no
-/// components.
+/// <see cref="RemotePlayer"/>, <see cref="StreamedCharacter"/>, <see cref="LooseBody"/>, <see cref="BodyPose"/>, and
+/// <see cref="CameraPose"/>; writes no components.
 /// </summary>
 public sealed class StreamingCentreSystem : BaseSystem<World, FixedStepTime>, IFixedUpdateSystem
 {
@@ -58,6 +61,14 @@ public sealed class StreamingCentreSystem : BaseSystem<World, FixedStepTime>, IF
 
     /// <summary>The most loose bodies a host streams around at once; others freeze where no centre reaches them.</summary>
     public const int MaxBodyCentres = 32;
+
+    /// <summary>The most streamed characters the world's owner streams around at once; others wait where no centre reaches them.</summary>
+    public const int MaxCharacterCentres = 32;
+
+    private static readonly QueryDescription s_streamed = new QueryDescription().WithAll<
+        StreamedCharacter,
+        CharacterPosition
+    >();
 
     private static readonly QueryDescription s_bodies = new QueryDescription().WithAll<LooseBody, BodyPose>();
 
@@ -94,6 +105,7 @@ public sealed class StreamingCentreSystem : BaseSystem<World, FixedStepTime>, IF
         EcsChecks.RequireAll<CameraPose>(in s_camera);
         EcsChecks.RequireAll<RemotePlayer, CharacterPosition>(in s_remote);
         EcsChecks.RequireAll<LooseBody, BodyPose>(in s_bodies);
+        EcsChecks.RequireAll<StreamedCharacter, CharacterPosition>(in s_streamed);
     }
 
     public override void Update(in FixedStepTime step)
@@ -134,6 +146,17 @@ public sealed class StreamingCentreSystem : BaseSystem<World, FixedStepTime>, IF
 
         if (_bodies)
         {
+            var characters = new CollectCharacters
+            {
+                Centres = _centres,
+                Count = count,
+                Players = count,
+                RadiusMetres = _voxels.RemotePlayerRadiusMetres,
+                Voxels = _voxels,
+            };
+            World.InlineQuery<CollectCharacters, CharacterPosition>(in s_streamed, ref characters);
+            _centres = characters.Centres;
+            count = characters.Count;
             var bodies = new CollectBodies
             {
                 Centres = _centres,
@@ -209,6 +232,47 @@ public sealed class StreamingCentreSystem : BaseSystem<World, FixedStepTime>, IF
             }
 
             Centres[Count++] = new StreamingCentre(middle, radius, levels);
+        }
+    }
+
+    /// <summary>
+    /// Adds a level-0 centre at each streamed character's feet that none of the players' centres (the first
+    /// <see cref="Players"/>) holds with a margin of its own radius, up to <see cref="MaxCharacterCentres"/>, growing the
+    /// array when full.
+    /// </summary>
+    private struct CollectCharacters : IForEach<CharacterPosition>
+    {
+        public StreamingCentre[] Centres;
+        public int Count;
+        public int Players;
+        public double RadiusMetres;
+        public VoxelWorld Voxels;
+
+        public void Update(ref CharacterPosition position)
+        {
+            if (Count - Players >= MaxCharacterCentres)
+            {
+                return;
+            }
+
+            for (var i = 0; i < Players; i++)
+            {
+                ref readonly var centre = ref Centres[i];
+                var inside = Voxels.RadiusMetres(in centre, 0) - RadiusMetres;
+                var dx = position.Feet.X - centre.Position.X;
+                var dz = position.Feet.Z - centre.Position.Z;
+                if (inside > 0 && dx * dx + dz * dz <= inside * inside)
+                {
+                    return;
+                }
+            }
+
+            if (Count == Centres.Length)
+            {
+                Array.Resize(ref Centres, Centres.Length * 2);
+            }
+
+            Centres[Count++] = new StreamingCentre(position.Feet, RadiusMetres, 1);
         }
     }
 

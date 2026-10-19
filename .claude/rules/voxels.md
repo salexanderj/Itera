@@ -18,6 +18,8 @@ Streaming centres (`StreamingCentre`) are:
 
 - the player's eye;
 - on a host, a level-0 disc around each remote player (`Engine:Voxels:RemotePlayerRadiusMetres`). The host moves them, and the mover waits where its voxels are not loaded;
+- on a host or offline, a level-0 disc of the same radius around each `StreamedCharacter` away from every player, up to
+  `StreamingCentreSystem.MaxCharacterCentres`. A game marks the characters it keeps moving far from every player;
 - on a host or offline, a level-0 disc around each loose body away from every player. `StreamingCentreSystem` stretches the disc ahead by a little travel, up to a limit, and widens it by the widest voxel object kind's reach where the world places objects (`VoxelWorld.ObjectReachMetres`). It serves a limited number of bodies, each streaming the levels up to the one it collides with. A loose body where level 0 is not loaded freezes in the air.
 
 ### World generation

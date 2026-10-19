@@ -270,14 +270,61 @@ public sealed class StreamingCentreSystemTests : IDisposable
     }
 
     [Fact]
+    public void The_owner_streams_around_streamed_characters_away_from_every_player_and_a_client_none()
+    {
+        using var offlineWorld = World.Create();
+        using var offline = Create(offlineWorld, SessionRole.Offline);
+        CreatePlayer(offlineWorld, flying: false);
+        // One far from the player, one its view holds, and one far off but not marked.
+        CreateCharacter(offlineWorld, new Vector3(200, 1, 0));
+        CreateCharacter(offlineWorld, new Vector3(5, 1, -7));
+        offlineWorld.Create(new CharacterPosition { Feet = new Vector3(-200, 1, 0) });
+        offline.Update(in Step);
+        var offlineCentres = _voxels.Centers.ToArray();
+        var far = _voxels.StreamingCentres[1];
+
+        using var clientWorld = World.Create();
+        using var client = Create(clientWorld, SessionRole.Client);
+        CreatePlayer(clientWorld, flying: false);
+        CreateCharacter(clientWorld, new Vector3(200, 1, 0));
+        client.Update(in Step);
+
+        Assert.Equal([new Vector3(3, 2.5f, -7), new Vector3(200, 1, 0)], offlineCentres);
+        // As a remote player's: level 0 alone, as wide as Engine:Voxels:RemotePlayerRadiusMetres.
+        Assert.Equal((16d, 1), (far.Level0RadiusMetres, far.Levels));
+        Assert.Equal(new Vector3(3, 2.5f, -7), Assert.Single(_voxels.Centers.ToArray()));
+    }
+
+    [Fact]
+    public void A_host_streams_around_at_most_32_streamed_characters()
+    {
+        using var world = World.Create();
+        using var system = Create(world, SessionRole.Host);
+        CreatePlayer(world, flying: false);
+        for (var i = 0; i < 40; i++)
+        {
+            CreateCharacter(world, new Vector3(100 + 40 * i, 1, 0));
+        }
+
+        system.Update(in Step);
+
+        Assert.Equal(1 + StreamingCentreSystem.MaxCharacterCentres, _voxels.Centers.Length);
+    }
+
+    [Fact]
     public void Update_allocates_nothing()
     {
         using var world = World.Create();
         using var system = Create(world);
         CreatePlayer(world, flying: false);
+        CreateCharacter(world, new Vector3(200, 1, 0));
 
         Assert.Equal(0, SystemAllocation.BytesAllocated(system, Step));
     }
+
+    /// <summary>A character the world's owner streams around, its feet at <paramref name="feet"/>.</summary>
+    private static void CreateCharacter(World world, Vector3 feet) =>
+        world.Create(new StreamedCharacter(), new CharacterPosition { Feet = feet });
 
     private StreamingCentreSystem Create(World world, SessionRole role = SessionRole.Offline)
     {

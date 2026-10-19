@@ -120,7 +120,7 @@ are dropped and counted.
 ### The world and bodies
 
 - `StreamingCentreSystem` runs after the systems that move the player, remote players, and loose bodies. It centres streaming on the local player's eye (or the active camera while flying), round remote
-  players on a host, and round loose bodies.
+  players on a host, and round streamed characters and loose bodies.
 - `MapResetSystem` runs the console's `cleanup` (every loose body and particle) and `reset` (the world back to the
   seed's, counted in `WorldResets` for a game's systems to put their things back). Without voxel terrain it cleans up
   and counts only.
