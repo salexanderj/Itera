@@ -1,6 +1,6 @@
 # Checked facts for ECS data on the GPU
 
-Checked on 2026-09-22. "Probe" means `probe/Program.cs` checks it (run in Release on .NET 10.0.12, Arch
+"Probe" means `probe/Program.cs` checks it (run in Release on .NET 10.0.12, Arch
 2.1.0, Silk.NET 2.23.0). Arch paths are relative to `github.com/genaray/Arch` at tag `v2.1.0`.
 
 ## Arch chunk memory
@@ -24,8 +24,8 @@ Checked on 2026-09-22. "Probe" means `probe/Program.cs` checks it (run in Releas
   1000 calls (probe).
 - `World.CountEntities(in description)` (`World.cs:408`) adds `archetype.EntityCount` over the matching
   archetypes. It does not visit entities.
-- Arch 2.1.0 has no change tracking. The source has no per-chunk version, changed flag, or `DidChange`
-  equivalent (searched `src/Arch` for these on 2026-09-22).
+- Arch 2.1.0 has no change tracking. The source has no per-chunk version, changed flag, or DidChange
+  equivalent (searched `src/Arch` for these).
 
 ## Zero-copy import is not possible
 
@@ -59,7 +59,7 @@ Checked on 2026-09-22. "Probe" means `probe/Program.cs` checks it (run in Releas
   `M41..M43`. Compose as `model * view * projection`.
 - Silk.NET.Maths `Matrix4X4<float>` stores `Row1..Row4` at 0/16/32/48, and `CreateTranslation` puts the
   translation in `Row4` (probe). Same layout as `Matrix4x4`.
-- GLSL `mat4` in a block defaults to column-major with `MatrixStride` 16 (probe, SPIR-V `ColMajor`).
+- GLSL `mat4` in a block defaults to column-major with MatrixStride 16 (probe, SPIR-V ColMajor).
   Column `c` is floats `4c..4c+3`. Reading the raw `Matrix4x4` bytes that way gives the transpose of the
   C# matrix. The transpose of a row-vector matrix is the column-vector matrix, so GLSL `M * v` equals C#
   `v * M`. Probe: equal to 1e-4; the transposed upload gives a different result.
@@ -72,10 +72,10 @@ Checked on 2026-09-22. "Probe" means `probe/Program.cs` checks it (run in Releas
 
 ## glslang buffer layouts
 
-Compiled through Silk.NET.Shaderc 2.23.0 with `ShaderCompiler`'s options at the time: `OptimizationLevel.Performance`,
-default target environment (Vulkan 1.0). Since 2026-09-22 `ShaderCompiler` targets Vulkan 1.3; the layout
-tests (`GpuLayoutTests`) and `probe.sh` (23 checks, now compiling with the same target) pass unchanged. Offsets and strides were read from the SPIR-V `Offset`, `ArrayStride`, and
-`MatrixStride` decorations.
+Compiled through Silk.NET.Shaderc 2.23.0 with `OptimizationLevel.Performance`, for the default target environment
+(Vulkan 1.0) and for the Vulkan 1.3 target that `ShaderCompiler` uses. The layout tests (`GpuLayoutTests`) and
+`probe.sh` give the same results for both. Offsets and strides were read from the SPIR-V decorations Offset, ArrayStride,
+and MatrixStride.
 
 | Declaration | scalar | std430 | std140 |
 |---|---|---|---|
@@ -93,7 +93,7 @@ tests (`GpuLayoutTests`) and `probe.sh` (23 checks, now compiling with the same 
 - With `layout(offset = 4)` on a std430 vec3, glslang reports "must be a multiple of the member's
   alignment". With a vec3 at 0 and a float at `offset = 8` (overlapping), it compiled without an error
   (probe).
-- At `OptimizationLevel.Performance`, no `OpName` or `OpMemberName` remains in the SPIR-V (probe). Blocks
+- At `OptimizationLevel.Performance`, no OpName or OpMemberName remains in the SPIR-V (probe). Blocks
   are found by set and binding, and members by position.
 - `layout(scalar)` compiles with Shaderc's default target environment and with the Vulkan 1.3 target.
   Nothing in the compile step checks that the device supports it; the validation layer does, when the
@@ -101,7 +101,7 @@ tests (`GpuLayoutTests`) and `probe.sh` (23 checks, now compiling with the same 
 
 ## Device features and limits
 
-RADV: AMD Radeon RX 5700 XT, Mesa 26.0.8, `vulkaninfo` on 2026-09-22. MoltenVK: v1.4.0 source
+RADV: AMD Radeon RX 5700 XT, Mesa 26.0.8, `vulkaninfo`. MoltenVK: v1.4.0 source
 (`MoltenVK/MoltenVK/GPUObjects/MVKDevice.mm` line numbers at tag `v1.4.0`), the version inside
 Silk.NET.MoltenVK.Native 2.23.0 (the dylib reports 1.4.0).
 

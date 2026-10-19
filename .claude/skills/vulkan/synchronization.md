@@ -3,7 +3,7 @@
 Read this before changing `FrameSync`, `FrameRenderer`, a pass such as `MeshPass`, the swapchain, or before
 adding any barrier, semaphore, fence, or queue submit.
 
-The codebase uses synchronization2 only (decided 2026-09-22): `CmdPipelineBarrier2` with
+The codebase uses synchronization2 only: `CmdPipelineBarrier2` with
 `ImageMemoryBarrier2`/`BufferMemoryBarrier2`/`MemoryBarrier2`, and `QueueSubmit2` with
 `SemaphoreSubmitInfo`. Both are core in Vulkan 1.3, which `DeviceRequirements` requires. Do not add
 `CmdPipelineBarrier` or `QueueSubmit` calls.
@@ -32,37 +32,43 @@ it runs, except the flush of the staging region it wrote (`StagingBuffer.Flush`;
    write the slot's memory) and publishes it; the render thread waits for it. If stop arrives while it
    waits, it goes on with the last frame, so the acquired image is still presented.
 7. `FrameRenderer.Present` calls `Record`, which records, in this order:
-   - the reset of the slot's timestamp queries (outside rendering) and a first timestamp;
-   - the mesh copies from the slot's staging region into the mesh heap between their two barriers (only for a frame
-     received fresh, and only when it has copies), the mesh assets' uploads in the first frame
-     (`MeshAssetPass.RecordUploads`, under the loading screen too), the image views' shown images cleared in the first
-     frame (`RenderViewPass.RecordFirstFrame`), then the sky field's copy into its image (also only for a fresh frame,
-     under the loading screen too);
-   - the acquire barrier;
-   - unless the loading screen covers the picture, `RecordWorld`: the depth image's frame-start barrier, then
-     `MeshPass.Record`, which first flushes the slot's mapped draw regions (when memory is not coherent), copies the
-     material texture sets in the first frame and records an asked-for bake (`RecordTextures`, `RecordBake`), sorts the
-     lights into clusters, skins the posed mesh assets (`MeshAssetPass.RecordSkinning`), records a game's `Compute`
-     passes (`RenderPasses`, which adds no barrier after them), draws the shadow cascades into a depth array, then
-     in one rendering the world (blocks, models, mesh assets, a game's `Opaque` passes, the sky, the blended mesh
-     assets, a game's `Transparent` passes) into the target, resolving the multisampled images into it and the depth
-     image when `Engine:Renderer:MsaaSamples` is above 1; then, in a fresh frame with an image view due, each due view
-     (`RenderViewPass`: its clusters, its world, models, mesh assets, sky, and blended assets into its own colour and
-     depth, then a copy of the colour into its shown image between barriers that take that image from and back to the
-     shader-read layout); then, while particles can be alive and the frame is fresh, the particles' compute passes
-     (counters reset, spawn, simulate against the depth image handed to compute and back, the counters copied for the
-     host); then the particles' cubes and sprites, the debug lines, a game's `Scene` passes (after a barrier from the
-     earlier colour and depth writes), SMAA's edges, weights, and blend (only with one sample a pixel; the first such
-     frame also copies SMAA's lookup textures), below render scale 1 the upscale, and a game's `Screen` passes. Each
-     draws into the swapchain image, SMAA's scene image, or the upscale's source image, as `RecordWorld` chooses;
-   - the loading screen's draw while it shows or fades;
-   - a screenshot's copy when one is asked for without the UI, the UI (its changed rows copied, then the draw), the
-     present barrier (a screenshot with the UI copies here), and a last timestamp.
+   - The reset of the slot's timestamp queries (outside rendering) and a first timestamp.
+   - The uploads. A frame received fresh with copies gets the mesh copies from the slot's staging region into the mesh
+     heap, between their two barriers. The first frame gets the mesh assets' uploads (`MeshAssetPass.RecordUploads`,
+     under the loading screen too) and clears the image views' shown images (`RenderViewPass.RecordFirstFrame`). A fresh
+     frame then gets the sky field's copy into its image, under the loading screen too.
+   - The acquire barrier.
+   - Unless the loading screen covers the picture, `RecordWorld`. The next list gives its steps.
+   - The loading screen's draw while it shows or fades.
+   - A screenshot's copy when one is asked for without the UI. Then the UI (its changed rows copied, then the draw),
+     the present barrier (a screenshot with the UI copies here), and a last timestamp.
 
-   Each pass sits between its own two timestamps (`GpuPass`), written at `ALL_COMMANDS`, so each waits for the commands
-   before it.
-8. `QueueSubmit2`: wait `imageAvailable[slot]` at `ColorAttachmentOutput`, signal
-   `renderFinished[imageIndex]` at `ColorAttachmentOutput`, fence `inFlight[slot]`.
+   `RecordWorld` records, in this order:
+   - The depth image's frame-start barrier.
+   - `MeshPass.Record`. It flushes the slot's mapped draw regions when memory is not coherent. In the first frame it
+     copies the material texture sets, and it records an asked-for bake (`RecordTextures`, `RecordBake`). It sorts the
+     lights into clusters and skins the posed mesh assets (`MeshAssetPass.RecordSkinning`).
+   - A game's `Compute` passes (`RenderPasses`, which adds no barrier after them).
+   - The shadow cascades, drawn into a depth array.
+   - One rendering of the world into the target: blocks, models, mesh assets, a game's `Opaque` passes, the sky, the
+     blended mesh assets, and a game's `Transparent` passes. When `Engine:Renderer:MsaaSamples` is above 1, it resolves
+     the multisampled images into the target and the depth image.
+   - In a fresh frame with an image view due, each due view (`RenderViewPass`). It draws its clusters, world, models,
+     mesh assets, sky, and blended assets into its own colour and depth. Then it copies the colour into its shown image
+     between barriers that take that image from and back to the shader-read layout.
+   - While particles can be alive and the frame is fresh, the particles' compute passes: counters reset, spawn, simulate
+     against the depth image handed to compute and back, and the counters copied for the host.
+   - The particles' cubes and sprites, the debug lines, and a game's `Scene` passes (after a barrier from the earlier
+     colour and depth writes).
+   - SMAA's edges, weights, and blend, only with one sample a pixel. The first such frame also copies SMAA's lookup
+     textures.
+   - Below render scale 1, the upscale. Then a game's `Screen` passes.
+
+   Each of these draws into the swapchain image, SMAA's scene image, or the upscale's source image, as `RecordWorld`
+   chooses. Each pass sits between its own two timestamps (`GpuPass`), written at `PipelineStageFlags2.AllCommandsBit`, so
+   each waits for the commands before it.
+8. `QueueSubmit2`: wait `imageAvailable[slot]` at `PipelineStageFlags2.ColorAttachmentOutputBit`, signal
+   `renderFinished[imageIndex]` at the same stage, fence `inFlight[slot]`.
 9. Present waiting on `renderFinished[imageIndex]`, then advance the slot.
 
 Why the request comes after the fence wait and acquire: those are where the render thread blocks under
@@ -87,12 +93,12 @@ caused validation errors here; revisit when that extension is added.
   `SrcStageMask = ColorAttachmentOutputBit, SrcAccessMask = None` (matching the submit's wait stage),
   not `TopOfPipeBit`. With `TopOfPipeBit` the layout transition can run before the presentation engine
   releases the image. Synchronization validation reports this as a WRITE_AFTER_READ hazard against
-  `vkAcquireNextImageKHR`; the clear pass had this bug until 2026-09-22.
+  `vkAcquireNextImageKHR`.
 - Present needs the image in `PresentSrcKhr`. In synchronization2 the semaphore signal only covers the
   stages in its `StageMask`, so the present barrier uses `DstStageMask = ColorAttachmentOutputBit,
   DstAccessMask = None`, and the signal uses `StageMask = ColorAttachmentOutputBit`. The layout
   transition then chains into the signal that present waits on. Name the exact stages rather than
-  `AllCommands`, which makes every later command wait.
+  `PipelineStageFlags2.AllCommandsBit`, which makes every later command wait.
 - One fence per submit that the CPU waits on. Never reset a fence that has no pending submit.
 - Timeouts are `ulong.MaxValue` in the frame loop. A timeout result elsewhere is an error.
 - The command pools in `FrameSync` are for the render thread only. Command pools are not thread-safe;
@@ -102,7 +108,7 @@ caused validation errors here; revisit when that extension is added.
   queue: render thread only while it runs. At shutdown the main thread waits for the device only after
   the render thread has stopped (`GameLoop.StopRenderThread`), and before any shutdown step destroys an
   object, also when the render thread ended with an exception: frames it submitted before the fault may still
-  run (without the wait, validation reported 16 objects destroyed in use and the process crashed, 2026-09-27).
+  run (without the wait, validation reports objects destroyed in use and the process can crash).
 - Upload work (staging copies) submitted on the graphics queue needs either a fence the CPU waits on
   before freeing the staging buffer, or to ride in the frame's submit.
 
@@ -132,27 +138,35 @@ Names are Silk.NET's `PipelineStageFlags2` and `AccessFlags2` members without th
 | Particles, written by compute, read by the vertex shader (storage, no vertex attributes), the indirect draws, and the counters' copy | (memory barrier) | ComputeShader / ShaderStorageWrite | VertexShader \| DrawIndirect \| Copy / ShaderStorageRead \| IndirectCommandRead \| TransferRead |
 | Particle counters, copied, for the host | (memory barrier) | Copy / TransferWrite | Host / HostRead |
 
-The two upload-target rows are SMAA's lookup textures (`SmaaPass`), copied once in the first anti-aliased frame from a
-host-visible buffer the main thread filled before the render thread started. Every row is in use in some
+The two upload-target rows are SMAA's lookup textures (`SmaaPass`). They are copied once in the first anti-aliased frame,
+from a host-visible buffer the main thread filled before the render thread started. Every row is in use in some
 configuration. With the default four samples a pixel, the standard `validate.sh` profiles (`reference.md`) reach every
-row but those two upload rows and the depth row without a resolve; `--Engine:Renderer:MsaaSamples=1` reaches them. The
-colour-target row is the upscale's source, which EASU samples below
-render scale 1, and SMAA's scene, edges, and weights images. Barriers the table does not list are in their passes' files: the upscale's
-discards to the colour attachment layout (`UpscalePass` and `SmaaPass`: Undefined to ColorAttachmentOptimal after
-earlier frames' fragment reads), the screenshot's copy of the swapchain image (`ScreenshotPass`: ColorAttachmentOptimal to
-TransferSrcOptimal and on, then Copy / TransferWrite to Host / HostRead), the copy of the picture for a game's Screen
-passes that read it (`RenderPasses.Picture.cs`: the swapchain image ColorAttachmentOptimal to TransferSrcOptimal and
-back; the picture Undefined to TransferDstOptimal after earlier frames' FragmentShader reads, then to
-ShaderReadOnlyOptimal for the FragmentShader), the UI's (`UiPass`), and the loading
-screen's (`LoadingPass`). The particles' barriers before the compute passes (last frame's reads before this frame's
-writes, the clear and fill before compute, spawn before simulate) are in `ParticlePass.RecordSimulate`.
-The first mesh heap row is an execution dependency on earlier frames' reads of the heap (a write after read needs no
-access mask, as the Khronos examples show) plus earlier copies' writes; it is what lets the upload reuse a heap range
-freed in the same frame. Host writes to staging need no barrier: the queue submit makes them visible (host write
-ordering guarantee), after `StagingBuffer.Flush` for non-coherent memory. The same holds for the buffers the main
-thread writes each frame in one region per slot (the mesh draws, commands, lighting, and lights, the debug lines, the
-particles' recipes): the render thread flushes the ranges it uses when the memory is not coherent, and no barrier
-follows. Check each other row against the Khronos synchronization examples (sync2 section) and the spec before first use.
+row but those two upload rows and the depth row without a resolve. `--Engine:Renderer:MsaaSamples=1` reaches them. The
+colour-target row is the upscale's source, which EASU samples below render scale 1, and SMAA's scene, edges, and weights
+images.
+
+Barriers the table does not list are in their passes' files:
+
+- The upscale's discards to the colour attachment layout (`UpscalePass` and `SmaaPass`: Undefined to
+  ColorAttachmentOptimal after earlier frames' fragment reads).
+- The screenshot's copy of the swapchain image (`ScreenshotPass`: ColorAttachmentOptimal to TransferSrcOptimal and on,
+  then Copy / TransferWrite to Host / HostRead).
+- The copy of the picture for a game's Screen passes that read it (`RenderPasses.Picture.cs`). The swapchain image goes
+  from ColorAttachmentOptimal to TransferSrcOptimal and back. The picture goes from Undefined to TransferDstOptimal after
+  earlier frames' FragmentShader reads, then to ShaderReadOnlyOptimal for the FragmentShader.
+- The UI's (`UiPass`) and the loading screen's (`LoadingPass`).
+- The particles' barriers before the compute passes: last frame's reads before this frame's writes, the clear and fill
+  before compute, and spawn before simulate (`ParticlePass.RecordSimulate`).
+
+The first mesh heap row is an execution dependency on earlier frames' reads of the heap, plus earlier copies' writes. A
+write after read needs no access mask, as the Khronos examples show. The row lets the upload reuse a heap range freed in
+the same frame.
+
+Host writes to staging need no barrier: the queue submit makes them visible (host write ordering guarantee), after
+`StagingBuffer.Flush` for non-coherent memory. The same holds for the buffers the main thread writes each frame in one
+region per slot (the mesh draws, commands, lighting, and lights, the debug lines, the particles' recipes). The render
+thread flushes the ranges it uses when the memory is not coherent, and no barrier follows. Check each other row against
+the Khronos synchronization examples (sync2 section) and the spec before first use.
 
 A source of `None` is correct only when nothing earlier in the queue (and no semaphore wait) touches the
 resource. For the depth image, the source stage waits on the previous frame's depth writes, because the

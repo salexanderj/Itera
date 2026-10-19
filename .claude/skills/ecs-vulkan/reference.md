@@ -1,4 +1,4 @@
-# References and audit record
+# References and checked facts
 
 ## Sources
 
@@ -42,93 +42,47 @@ Other engines:
 
 Local tools: `vulkaninfo` (features, limits, memory types of each GPU), and `probe.sh`.
 
-## Audit record, 2026-09-22
+## Checked facts about the current code
 
-Audit of the code at commit `336006e` of the Zorf TD archive (`salexanderj/ZorfTD-archive`) for the ECS-to-GPU path.
+- `GpuLayout` (`tests/Shared/GpuLayout.cs`) compares a C# struct with the block layout in compiled SPIR-V (set and
+  binding, or push constants). It checks array stride, member types, matrix order, and the 128-byte push constant limit.
+  `GpuLayoutTests` covers a match, std430 offsets and stride, a row-major matrix, a type mismatch, a `bool` field, a
+  missing binding, and scalar push constants.
+- `probe/` re-checks the facts in `notes.md` marked "probe".
+- `ViewConstants` is the push constant block of `view.glsl` (`layout(push_constant, scalar)`). It is 128 bytes: the
+  fields' 116 plus three origin integers. Its on/off switches share one word (`ViewSwitches`). `ViewConstantsTests`
+  compiles every shader that reads it and checks each with `GpuLayout.PushConstantDifferences`.
+- `ViewConstants.Create` builds it on the main thread for each frame in `GameLoop`, from `RenderView` and the request's
+  image size. It travels in `RenderFrame.View`, and the render thread pushes it. No entity data reaches the GPU through
+  it.
+- Where a shader reads a buffer at hand-written offsets, a test compares the shader's constants with the C# ones.
+- The slot comes from `RenderFrameRequest.Slot`, valid on the main thread between `TryTakeRequest` and `Publish`.
+  Frame systems run only when the render thread asks for a frame.
+- Frame order: `FrameRenderer.BeginFrame` waits on the slot's fence before the ECS frame group (option A of
+  `design.md`, choice 1). `DeviceRequirements` requires and enables `scalarBlockLayout`. Frame systems receive
+  `FrameTime`, including `Alpha`.
 
-### Added
+### The mesh path
 
-- `tests/Shared/GpuLayout.cs` (first in `tests/Itera.Engine.Tests/Rendering/`): compares a C# struct with the block layout in compiled
-  SPIR-V (set and binding, or push constants), including array stride, member types, matrix order, and the
-  128-byte push constant limit. `GpuLayoutTests` covers a match, std430 offsets and stride, a row-major
-  matrix, a type mismatch, a `bool` field, a missing binding, and scalar push constants.
-- `probe/`: re-checks the facts in `notes.md` marked "probe" (23 checks).
+Characters and loose bodies are meshes, drawn by `WorldMeshes` (`Rendering/Meshes/WorldMeshes.Models.cs`) through
+`MeshPass`.
 
-### Open
-
-- No code moves entity data to the GPU yet. The renderer only clears the screen.
-- Frame order: the ECS frame group runs before `DrawFrame` waits on the slot's fence (`SKILL.md`, "Frame
-  order"; `design.md`, choice 1).
-- `VulkanContext` does not request `scalarBlockLayout`. The first shader with `layout(scalar)` must add it
-  to device selection and device creation.
-- Frame systems do not receive `FixedStepAccumulator.Alpha` (also open in the `ecs` skill).
-- `src/Itera.Engine/Rendering/GpuData/` does not exist yet. Create it with the first struct a shader reads.
-
-### Confirmed sound
-
-- No component holds a Vulkan handle, pointer, or mapped address. No ECS system calls Vulkan, and the
-  renderer does not read the world.
-- `ClearRenderer` records its command buffer every frame with `OneTimeSubmitBit` and resets it before
-  recording, which matches the command buffer rules.
-
-## Update, 2026-09-22 (pre-feature review)
-
-Closed open items:
-
-- Frame order: `FrameRenderer.BeginFrame` waits on the slot's fence before the ECS frame group (option A).
-- `DeviceRequirements` requires and enables `scalarBlockLayout`.
-- Frame systems receive `FrameTime`, including `Alpha`.
-- `ShaderCompiler` targets Vulkan 1.3; `GpuLayoutTests` pass with it.
-
-Still open: `src/Itera.Engine/Rendering/GpuData/` does not exist yet, no code moves entity data to the GPU,
-and where the extract step runs (`design.md`, choice 2) is undecided.
-
-## Update, 2026-09-23 (first GPU struct)
-
-- `src/Itera.Engine/Rendering/GpuData/` exists: `ViewConstants` is the push constant block of `view.glsl`
-  (`layout(push_constant, scalar)`). It began as six `Vector3` and a `uint` (76 bytes) and has changed with the
-  renderer since: it is 116 bytes now, and its on/off switches share one word (`ViewSwitches`). `ViewConstantsTests`
-  compiles every shader that reads it (`mesh.vert`, `mesh.frag`, `world-sky.frag`, `debug-lines.vert`, the particle
-  cubes and sprites) and checks each with `GpuLayout.PushConstantDifferences` (no differences).
-- It is built on the main thread for each frame (`ViewConstants.Create` in `GameLoop`, from `RenderView` and
-  the request's image size) and travels in `RenderFrame.View`; the render thread pushes it. No entity data
-  reaches the GPU through it.
-
-## Update, 2026-09-23 (the raymarcher's structs, gone 2026-10-06)
-
-- The voxel raymarcher added GPU structs for its centre-ray check (`VoxelProbe`), its materials (`VoxelMaterial`), its
-  heap and window format (`VoxelGpuFormat`, `VoxelGpuLayout`: `uint` arrays read at hand-written offsets, with a test
-  that compared the shader's `#define`s with the C# constants), its light history, and more `ViewConstants` fields (view
-  distance, debug picture, shadows, history). All of it left with the raymarcher on 2026-10-06. The rule it showed
-  still holds: where a shader reads a buffer at hand-written offsets, a test compares the shader's constants with the
-  C# ones.
-
-## Update, 2026-09-22 (render thread)
-
-- Design choice 6 is decided and built: `RenderThread` and `FrameExchange`. `FrameRenderer.CurrentSlot` is
-  gone; the slot comes from `RenderFrameRequest.Slot`, valid on the main thread between `TryTakeRequest`
-  and `Publish`.
-- Frame systems run only when the render thread asks for a frame.
-
-## Update, 2026-10-06 (the mesh path)
-
-Written from the code at the Zorf TD archive's commit `2ffe140`. Characters and loose bodies are meshes, drawn by
-`WorldMeshes` (`Rendering/Meshes/WorldMeshes.Models.cs`) through `MeshPass`; `ModelPass`, `ModelInstance`,
-`ModelShadowView`, and `ModelInstanceBuilder` are gone.
-- A frame system (`LooseBodyModelSystem`, and a game's own) adds each model to `ModelInstances`, a CPU array (`ModelDraw`: model handle,
-  level, corner, turn, tint, shadow mode; at most `ModelInstances.MaxModels`, 32,768; more are counted in `Dropped`).
-  `GameLoop` clears it before the frame group and, after it, calls `WorldMeshes.Upload(slot, now, view,
+- A frame system (`LooseBodyModelSystem`, and a game's own) adds each model to `ModelInstances`, a CPU array. Each entry
+  is a `ModelDraw`: model handle, level, corner, turn, tint, and shadow mode. The array holds at most
+  `ModelInstances.MaxModels`, and more are counted in `Dropped`.
+- `GameLoop` clears the array before the frame group. After the group, it calls `WorldMeshes.Upload(slot, now, view,
   ModelInstances.Draws)` on the main thread.
-- `Upload` meshes models in blocks of 32 voxels on `MeshWorkers` threads into ranges of the mesh heap, and writes the
-  slot's draws: the draws in view, or casting into a shadow cascade, are grouped by model level with a counting sort,
-  and each block of a level is one indexed indirect command whose instances are that level's `MeshModelDraw` records,
-  in three lists (the camera's, the near cascade's, the far cascade's). The records and commands go into host-visible
-  buffers with a region per frame slot (`MeshPass.ModelDrawsOf`, `ModelCommandsOf`); the render thread flushes them when
-  the memory is not coherent (`MeshPass.FlushSlot`).
-- Meshes reach the GPU through the slot's staging region (`StagingWriter`) and one `vkCmdCopyBuffer` the render thread
-  records (`MeshPass.RecordUploads`); the copy count travels in `RenderFrame.MeshCopies`, and `RenderFrame.Meshes` (a `MeshFrame`)
-  carries the counts of draws and commands.
-- `GpuLayout` checks `MeshModelDraw` against `mesh.vert` and `mesh-shadow.vert` compiled with `MESH_MODEL`
-  (`MeshPassTests`). `ModelInstances.Add` allocates nothing (`LooseBodyModelSystemTests`: 0 bytes), and
+- `Upload` meshes models in blocks of 32 voxels on `MeshWorkers` threads into ranges of the mesh heap. It writes the
+  slot's draws.
+- The draws in view, or casting into a shadow cascade, are grouped by model level with a counting sort. Each block of a
+  level is one indexed indirect command, whose instances are that level's `MeshModelDraw` records. There are three
+  lists: the camera's, the near cascade's, and the far cascade's.
+- The records and commands go into host-visible buffers with a region per frame slot (`MeshPass.ModelDrawsOf`,
+  `ModelCommandsOf`). The render thread flushes them when the memory is not coherent (`MeshPass.FlushSlot`).
+- Meshes reach the GPU through the slot's staging region (`StagingWriter`) and one `vkCmdCopyBuffer` that the render
+  thread records (`MeshPass.RecordUploads`). The copy count travels in `RenderFrame.MeshCopies`. `RenderFrame.Meshes`
+  (a `MeshFrame`) carries the counts of draws and commands.
+- `MeshPassTests` checks `MeshModelDraw` against `mesh.vert` and `mesh-shadow.vert` compiled with `MESH_MODEL` with
+  `GpuLayout`. `LooseBodyModelSystemTests` checks that `ModelInstances.Add` allocates nothing.
   `WorldMeshesTests.An_upload_allocates_nothing_once_up_to_date` covers `Upload`.
-- No stable GPU slots: the draws are written in full every frame, as the design says.
+- No stable GPU slots: the draws are written in full every frame, as `design.md` says.

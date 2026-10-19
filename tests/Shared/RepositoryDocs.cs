@@ -422,38 +422,14 @@ internal static partial class RepositoryDocs
         );
     }
 
-    /// <summary>
-    /// Fails for every problem in a doc not in <paramref name="notYetCleaned"/>, naming each; the problems of those docs
-    /// are left for their clean-up.
-    /// </summary>
-    public static void AssertNone(
-        IEnumerable<(string Doc, string Problem)> problems,
-        IReadOnlySet<string> notYetCleaned
-    )
+    /// <summary>Fails for every problem, naming each.</summary>
+    public static void AssertNone(IEnumerable<(string Doc, string Problem)> problems)
     {
-        ArgumentNullException.ThrowIfNull(notYetCleaned);
-        var left = problems.Where(problem => !notYetCleaned.Contains(problem.Doc)).ToList();
+        var left = problems.ToList();
         Assert.True(
             left.Count == 0,
             $"{left.Count} problems (the docs skill says where each kind of fact goes): "
                 + string.Join("; ", left.Take(100).Select(problem => $"{problem.Doc}: {problem.Problem}"))
-        );
-    }
-
-    /// <summary>
-    /// Fails for a doc in <paramref name="notYetCleaned"/> that breaks no check any more, so the list only shrinks.
-    /// </summary>
-    public static void AssertStillUncleaned(
-        IEnumerable<(string Doc, string Problem)> problems,
-        IReadOnlySet<string> notYetCleaned
-    )
-    {
-        ArgumentNullException.ThrowIfNull(notYetCleaned);
-        var breaking = problems.Select(problem => problem.Doc).ToHashSet(StringComparer.Ordinal);
-        var clean = notYetCleaned.Where(doc => !breaking.Contains(doc)).Order(StringComparer.Ordinal).ToList();
-        Assert.True(
-            clean.Count == 0,
-            "Clean now, so take them off the list of docs not yet cleaned: " + string.Join(", ", clean)
         );
     }
 

@@ -39,7 +39,7 @@ chunk coordinate. The service owns the data and its lifetime.
   positions.
 - Shared, rarely changing data (tower stats, enemy archetype stats) lives once in a service or a
   static table. The component holds an index into it.
-- Tags are empty structs. Use a tag for a fact that rarely changes (`Enemy`, `Tower`, `PlayerOwned`).
+- Tags are empty structs. Use a tag for a fact that rarely changes (`Enemy`, `Tower`).
   For state that changes every few ticks (stunned, targeting), use a field in an existing component:
   each `Add` or `Remove` copies the entity to another archetype.
 - Every distinct set of component types is an archetype with at least one chunk of at least 16 KB.

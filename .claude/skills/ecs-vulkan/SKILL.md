@@ -11,17 +11,6 @@ full; load both. This file does not repeat them. Rules marked "probe" are checke
 Device facts marked "RADV" come from `vulkaninfo` on this machine and "MoltenVK" from the MoltenVK 1.4.0
 source that Silk.NET 2.23 ships (`notes.md` has the details and line numbers).
 
-What the research found, in short:
-
-- The GPU cannot read Arch chunk memory in place. Every upload is a copy from component arrays into
-  memory the GPU can read.
-- A C# struct and a GLSL block agree when the shader uses `layout(scalar)` and the struct uses only the
-  field types listed below. Scalar layout was chosen on 2026-09-22. A layout test checks each struct
-  against the compiled SPIR-V.
-- Command buffers recorded once per entity, chunk, or archetype and reused do not fit Arch: entities move
-  between chunks and their number changes every tick. The frame's command buffer is recorded again every
-  frame. The GPU buffers are what persist, and draws read their counts and instance data from them.
-
 ## Workflow for every change
 
 1. Load the `ecs` and `vulkan` skills too. Read the files you will change in full, plus `GameLoop.Loop` (the
@@ -103,7 +92,7 @@ What the research found, in short:
   above. Probe: (float, vec3, float) is at 0/4/16 in both, and a vec3 array has stride 12. std430 gives
   0/16/28 and stride 16, and push constants default to std430 (vec3 after a float at 16).
 - `scalarBlockLayout` is a Vulkan 1.2 feature that devices may leave out. RADV and MoltenVK 1.4.0 report
-  it. `DeviceRequirements` requires and enables it (since 2026-09-22), so device selection rejects a
+  it. `DeviceRequirements` requires and enables it, so device selection rejects a
   device without it. The validation layer checks shaders against the enabled features.
 - Uniform blocks default to std140, where a `float[4]` has stride 16 (probe). Prefer storage buffers. A
   uniform block that mirrors a C# struct also uses `layout(scalar)`.
@@ -149,8 +138,7 @@ These add to the `vulkan` skill's "Memory allocation" rules.
 
 ### Frame order
 
-Option A of `design.md` choice 1 and a render thread (choice 6) were chosen on 2026-09-22.
-The render thread waits on the slot's fence and acquires an image, then sends a `RenderFrameRequest`
+The frame order is option A of `design.md` choice 1 with a render thread (choice 6). The render thread waits on the slot's fence and acquires an image, then sends a `RenderFrameRequest`
 through `FrameExchange`. The main thread takes it (`TryTakeRequest`), runs the ECS frame group, mods, and
 UI, and publishes the frame (`Publish`). Between those two calls, frame systems and the extract step may
 write the mapped region of `request.Slot` directly; after `Publish`, the render thread owns it until the
@@ -213,5 +201,5 @@ session. The same call often also needs the `ecs` or `vulkan` skill; the hook na
 - `notes.md`: checked facts about Arch chunk memory, .NET struct and matrix layout, glslang buffer layouts,
   device features and limits on RADV and MoltenVK 1.4.0, and the command buffer rules from the spec.
 - `design.md`: how entity data should reach the GPU in Itera, sizes to expect, and the open design choices.
-- `reference.md`: sources, and the audit record of the current code.
+- `reference.md`: sources, and checked facts about the current code.
 - `probe.sh` and `probe/`: re-check the facts marked "probe".

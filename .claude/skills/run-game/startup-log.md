@@ -59,3 +59,8 @@ other systems) with Debug detail. Read the newest file there first when a run mi
 
 The console shows Information and above. Lines from the render thread carry its thread's id (for example `[T21]`)
 instead of `[T1]`.
+
+`LogRetention` keeps the newest `Engine:Logging:RetainedFiles` files within `RetainedDays`, and a file rolls over
+past `FileSizeLimitMegabytes`. Warnings to know: the frame's
+models filling `ModelInstances` (`BuildFrame`), and the voxel world's memory past its budget (at most one a minute). A
+Debug line says when no frame was presented for 0.5 s.

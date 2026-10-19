@@ -5,7 +5,7 @@ description: "How to check a change in the game (src/Game) on the Itera engine, 
 
 # Running and driving the game
 
-The build, test, and run commands are in `CLAUDE.md`'s Commands block. The game is `src/Game`, and its executable is
+The build, test, and run commands are in `CLAUDE.md`. The game is `src/Game`, and its executable is
 `src/Game/bin/<Config>/net10.0/Game`. Its data folder holds its logs, saves, and settings:
 `~/.local/share/<DataFolder>/`, where `DataFolder` is `Engine:Application:DataFolder` in `src/Game/appsettings.json`
 (`python3 tools/benchmark/data_folder.py` prints it).

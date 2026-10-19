@@ -33,7 +33,7 @@ No session loads them whole.
 
 ## What each home holds
 
-- **`CLAUDE.md`**: the rules every task needs, the list of areas and their rules files, the commands, and the
+- **`CLAUDE.md`**: the rules every task needs, a pointer to the rules files' index, the commands, and the
   conventions. A rules file that Claude Code loads by its paths is dropped when the conversation is compacted, and loads
   again only when a matching file is read. A rule that must hold in every task therefore goes in `CLAUDE.md`.
 - **A rules file** (`.claude/rules/<area>.md`, a game's `game-<area>.md`): what to do and not do when changing the
@@ -66,9 +66,6 @@ No session loads them whole.
 A rules file with no paths loads at every session's start, so every rules file has paths, and each path matches a
 file. The limits apply in the repository's own sizes, so a growing area gets more small rules files, not larger ones.
 
-The tests keep a short list of docs not yet cleaned to these rules. A doc on it may break them, and must still break
-one: once it is clean, take it off. Never add a doc to it.
-
 ## Writing
 
 - Plain words in short, active sentences, one fact to a sentence. Aim for under 25 words; 60 is the limit.
@@ -82,8 +79,8 @@ one: once it is clean, take it off. Never add a doc to it.
 ## After a change
 
 1. Where the code's behaviour, structure, or names changed, edit the area's rules file in place.
-2. A new file goes in its area's paths (a game may require every file to be in one). A new area gets a rules file and a
-   line in `CLAUDE.md`'s list (the engine's) or `GAME.md`'s table (the game's).
+2. A new file goes in its area's paths (a game may require every file to be in one). A new area gets a rules file. The
+   engine's are listed in the generated `docs/reference/engine-rules.md`, and the game's in a row of `GAME.md`'s table.
 3. A decision goes on its design page and gets one line in the decision log.
 4. What was built, and what it measured, goes in the milestone record and the commit message.
 5. When a reference test fails, write the generated files again
@@ -94,7 +91,7 @@ one: once it is clean, take it off. Never add a doc to it.
 ## When a check fails
 
 - **A file loads too much, or a file is too large.** Split it by sub-area. Make a rules file for the sub-area, with
-  paths that match only its files. Move the sub-area's text there, and list the new file where the old one is listed.
+  paths that match only its files. Move the sub-area's text there. Write the generated index again, or add the game's row to `GAME.md`'s table.
   Narrow a path that matches more than its area (a whole project's folder, every test).
 - **A date.** The dated text is history: move it to the record, and write what is true now in its place.
 - **A long sentence.** Split it into sentences of one fact each.

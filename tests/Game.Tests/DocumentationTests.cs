@@ -15,17 +15,6 @@ public sealed class DocumentationTests
     /// <summary>The characters of <c>GAME.md</c>, the game's share of what a session loads at its start.</summary>
     private const int GameMdLimit = 10_000;
 
-    /// <summary>
-    /// The docs not yet cleaned to these rules: each may break them until it is, and must still break one, so the list
-    /// only shrinks.
-    /// </summary>
-    private static readonly HashSet<string> s_notYetCleaned = new(StringComparer.Ordinal)
-    {
-        "CLAUDE.md",
-        "GAME.md",
-        ".claude/rules/rendering.md",
-    };
-
     private static readonly Lazy<HashSet<string>> s_codeNames = new(() =>
         RepositoryDocs.CodeNames(
             typeof(GameServiceCollectionExtensions).Assembly,
@@ -47,31 +36,24 @@ public sealed class DocumentationTests
 
     [Fact]
     public void What_a_session_loads_at_its_start_stays_under_its_size() =>
-        RepositoryDocs.AssertNone(Sizes(), s_notYetCleaned);
+        RepositoryDocs.AssertNone(Sizes());
 
     [Fact]
     public void Opening_a_file_of_the_game_loads_at_most_32_KB_of_rules() =>
-        RepositoryDocs.AssertNone(Loads(), s_notYetCleaned);
+        RepositoryDocs.AssertNone(Loads());
 
     [Fact]
     public void Every_rules_file_loads_with_paths_that_name_files() =>
-        RepositoryDocs.AssertNone(RulesPaths(), s_notYetCleaned);
+        RepositoryDocs.AssertNone(RulesPaths());
 
     [Fact]
-    public void The_rules_files_give_no_dates() => RepositoryDocs.AssertNone(Dates(), s_notYetCleaned);
+    public void The_rules_files_give_no_dates() => RepositoryDocs.AssertNone(Dates());
 
     [Fact]
-    public void No_sentence_runs_over_60_words() => RepositoryDocs.AssertNone(LongSentences(), s_notYetCleaned);
+    public void No_sentence_runs_over_60_words() => RepositoryDocs.AssertNone(LongSentences());
 
     [Fact]
-    public void Every_path_and_code_name_a_doc_gives_is_there() => RepositoryDocs.AssertNone(Names(), s_notYetCleaned);
-
-    [Fact]
-    public void Every_doc_not_yet_cleaned_still_breaks_a_check() =>
-        RepositoryDocs.AssertStillUncleaned(
-            [.. Sizes(), .. Loads(), .. RulesPaths(), .. Dates(), .. LongSentences(), .. Names()],
-            s_notYetCleaned
-        );
+    public void Every_path_and_code_name_a_doc_gives_is_there() => RepositoryDocs.AssertNone(Names());
 
     private static IEnumerable<(string, string)> Sizes() =>
         RepositoryDocs.SessionStartSize().Concat(RepositoryDocs.Size("GAME.md", GameMdLimit, RepositoryDocs.LineLimit));
@@ -80,8 +62,7 @@ public sealed class DocumentationTests
         RepositoryDocs.Loads(
             file =>
                 file.StartsWith("src/Game/", StringComparison.Ordinal)
-                || file.StartsWith("tests/Game.Tests/", StringComparison.Ordinal),
-            s_notYetCleaned
+                || file.StartsWith("tests/Game.Tests/", StringComparison.Ordinal)
         );
 
     private static IEnumerable<(string, string)> RulesPaths() => RepositoryDocs.RulesPaths(RulesFiles);

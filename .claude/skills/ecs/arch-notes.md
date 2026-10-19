@@ -1,7 +1,6 @@
 # Arch 2.1.0 and Arch.System 1.1.0: checked behaviour
 
-Checked on 2026-09-22 against the source the NuGet packages were built from, and by running
-`probe/Program.cs` in Release. Paths are relative to each repository.
+Checked against the source the NuGet packages were built from, and by running `probe/Program.cs` in Release. Paths are relative to each repository.
 
 - Arch 2.1.0: `github.com/genaray/Arch`, tag `v2.1.0`, commit `04d52e7` (the commit in the package's
   nuspec). The assembly inside reports version 2.0.0; trust the package version.
@@ -15,7 +14,7 @@ marked below.
 ## Build flavour
 
 - The `Arch` package is the Release build without `EVENTS` or `PURE_ECS` (CI packs the `Default`
-  flavour as `Arch`, `Events` as `Arch-Events`, `PureECS` as `Arch-PureECS`; `.github/workflows`).
+  flavour as `Arch`, `Events` as `Arch-Events`, the PureECS flavour as `Arch-PureECS`; `.github/workflows`).
 - Release means every `Debug.Assert` in Arch is compiled out. Nothing in Arch checks its arguments.
 - Without `EVENTS`, `World.SubscribeEntityCreated`, `SubscribeEntityDestroyed`, `SubscribeComponentAdded`,
   `SubscribeComponentSet`, and `SubscribeComponentRemoved` exist but their bodies are inside `#if EVENTS`
@@ -66,8 +65,7 @@ marked below.
   static constructor registers `T` on first use. Registering two new types at once from two threads can
   corrupt the dictionary. Registered types are never released, which also keeps a mod's assembly load
   context alive (ARCHITECTURE.md section 6). The tests register every component type at start, on one thread
-  (`tests/Shared/ArchStartup.cs`), so their classes can run in parallel; in a full run of 2026-10-04 no type was
-  registered after that (183 in the engine's tests, 503 in the game's).
+  (`tests/Shared/ArchStartup.cs`), so their classes can run in parallel.
 - Component ids start at 1. `ComponentType.ByteSize` is `Unsafe.SizeOf<T>()` for structs and the
   pointer size for classes.
 - Class components and structs with reference fields are allowed by Arch. They are stored in normal
@@ -127,7 +125,7 @@ marked below.
 - Playback checks nothing (asserts compiled out). Probe: `Destroy` recorded twice for one entity threw
   `NullReferenceException` during playback.
 - Recording and playing back an `Add` and a `Remove` of a tag allocated about 1.8 KB each time, after warm-up
-  (measured 2026-09-27 in `WalkerSystemTests`, not a probe). `World.Add`/`World.Remove` on entities collected during
+  (measured, not a probe). `World.Add`/`World.Remove` on entities collected during
   the query and changed after it allocated nothing once the move between the two archetypes had happened once.
 
 ## Parallel queries (`src/Arch/Core/Jobs/World.Jobs.cs`)
@@ -140,7 +138,7 @@ marked below.
   thread-safe accumulator.
 - No structural changes and no first use of a component type inside a job.
 
-## Arch.System 1.1.0 (`Arch.System/Systems.cs`)
+## Arch.System 1.1.0 (Systems.cs of Arch.Extended)
 
 - `ISystem<T>`: `Initialize`, `BeforeUpdate(in T)`, `Update(in T)`, `AfterUpdate(in T)`, `Dispose`.
   `BaseSystem<W, T>` implements all of them as empty virtual methods and holds `World`.
@@ -153,7 +151,7 @@ marked below.
 
 ## Arch.System.SourceGenerator 2.1.0 (removed)
 
-Recorded so it is not re-added by mistake. Tested in a scratch copy of the repo on 2026-09-22.
+Recorded so it is not re-added by mistake. Tested in a scratch copy of the repo.
 
 - The generated query method starts with `#nullable enable` and runs `foreach` over a `Query?` field.
   Under this repo's settings that is error CS8602. `.editorconfig` sections for the generated path did
@@ -161,13 +159,15 @@ Recorded so it is not re-added by mistake. Tested in a scratch copy of the repo 
 - The generator emits public generic attributes (`All<T0...>`, `Any<...>`, `None<...>`,
   `Exclusive<...>`) into every assembly that references it. With both Itera.Engine and a game
   referencing it, a generic attribute is error CS0436.
-- Other limits in that version: only the first `[All]`, `[Any]`, `[None]`, `[Exclusive]` attribute on a
-  method is read; attributes are matched by a substring of their name; any parameter whose type is
-  named `Entity` is treated as the Arch entity; the generated `Update` passes only the first `[Data]`
-  parameter; nested and generic classes are not supported; parallel queries need `static` methods; a
-  static mutable field in the generator is not thread-safe (fixed in `e21a00b`).
+- Other limits in that version:
+  - Only the first `[All]`, `[Any]`, `[None]`, `[Exclusive]` attribute on a method is read.
+  - Attributes are matched by a substring of their name.
+  - Any parameter whose type is named `Entity` is treated as the Arch entity.
+  - The generated `Update` passes only the first `[Data]` parameter.
+  - Nested and generic classes are not supported, and parallel queries need `static` methods.
+  - A static mutable field in the generator is not thread-safe (fixed in `e21a00b`).
 - Arch.Extended `master` fixes the CS8602 (`_Query!`) and moves the attributes into Arch.System, but
-  no release contains the fixes. Latest on NuGet on 2026-09-22: Arch 2.1.0, Arch.System 1.1.0,
+  no release contains the fixes. The latest releases on NuGet are Arch 2.1.0, Arch.System 1.1.0, and
   Arch.System.SourceGenerator 2.1.0.
 
 ## .NET 10 and query allocations

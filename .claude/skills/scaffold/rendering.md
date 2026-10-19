@@ -33,7 +33,7 @@ changes it; `CameraExtractSystem` hands both to the renderer (`.claude/rules/ren
 
 GPU work the engine does not do (a highlight, an outline, a screen effect, a compute pass) is a render pass; the
 mesh sample's `AimHighlightPass` (`samples/Itera.MeshSample/Rendering/`) is a short one. Load the `vulkan` and
-`ecs-vulkan` skills first, and read `.claude/rules/rendering.md`, "Passes a game adds".
+`ecs-vulkan` skills first, and read `.claude/rules/rendering-passes.md`.
 
 1. A class implementing `IRenderPass`: its `Name` and `Stage`. `Initialize(setup)`: a host-visible buffer with a region a
    frame slot (`setup.Allocator.CreateBuffer(..., MemoryUsage.Upload, ...)`, `RenderPassSetup.FramesInFlight`
@@ -54,7 +54,7 @@ mesh sample's `AimHighlightPass` (`samples/Itera.MeshSample/Rendering/`) is a sh
 
 ## An image view (a minimap, a camera's picture)
 
-A view of the world the engine draws into an image (`RenderViews`; `.claude/rules/rendering.md`, "Image views"); the
+A view of the world the engine draws into an image (`RenderViews`; `.claude/rules/rendering-views.md`); the
 starter's minimap (`src/Game/Minimap.cs`, `MinimapLayer.cs`, `Systems/MinimapSystem.cs`) is the example.
 
 1. Declare it in the game's `IRunStartup.Start`: `views.Declare(name, width, height, everyFrames)` (keep the index),

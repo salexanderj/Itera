@@ -159,6 +159,33 @@ internal static class ReferenceDocs
                         )
                 );
 
+    /// <summary>
+    /// Each rules file: what it covers (its first heading) and the paths whose files load it, so an agent finds the one
+    /// to read before planning work in an area.
+    /// </summary>
+    public static string RulesTable(IEnumerable<string> rulesFiles)
+    {
+        var table = new StringBuilder("| Rules file | Covers | Loads with |\n| --- | --- | --- |\n");
+        foreach (var rules in rulesFiles.Order(StringComparer.Ordinal))
+        {
+            var heading =
+                RepositoryDocs
+                    .Read(rules)
+                    .Split('\n')
+                    .FirstOrDefault(line =>
+                        line.StartsWith("## ", StringComparison.Ordinal)
+                        || line.StartsWith("# ", StringComparison.Ordinal)
+                    )
+                    ?.TrimStart('#', ' ')
+                    .Trim()
+                ?? "";
+            var paths = string.Join(", ", RepositoryDocs.Globs(rules).Select(glob => $"`{Code(glob)}`"));
+            table.Append(CultureInfo.InvariantCulture, $"| `{rules}` | {Cell(heading)} | {paths} |\n");
+        }
+
+        return table.ToString();
+    }
+
     /// <summary>A value as the tables write it: in code, numbers in the invariant culture, none as a dash.</summary>
     public static string Value(object? value) =>
         value switch

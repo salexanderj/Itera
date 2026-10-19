@@ -41,16 +41,12 @@ internal static partial class RepositoryDocs
 
     /// <summary>
     /// Each set of rules files that opening one of <paramref name="owns"/>' files loads, past
-    /// <see cref="OpenedFileLimit"/> together: a problem of each of them in <paramref name="notYetCleaned"/>, or of the
-    /// largest when none is, naming how many files load that set and one of them.
+    /// <see cref="OpenedFileLimit"/> together, as a problem of the largest of them, naming how many files load that set
+    /// and one of them.
     /// </summary>
-    public static IEnumerable<(string Doc, string Problem)> Loads(
-        Func<string, bool> owns,
-        IReadOnlySet<string> notYetCleaned
-    )
+    public static IEnumerable<(string Doc, string Problem)> Loads(Func<string, bool> owns)
     {
         ArgumentNullException.ThrowIfNull(owns);
-        ArgumentNullException.ThrowIfNull(notYetCleaned);
         var sets = Files
             .Where(owns)
             .Select(file => (File: file, Load: Loaded(file)))
@@ -59,13 +55,10 @@ internal static partial class RepositoryDocs
         foreach (var set in sets)
         {
             var (file, (characters, rules)) = set.First();
-            var problem =
-                $"opening {file} (and {set.Count() - 1} more) loads {characters} characters of rules ({set.Key})";
-            var uncleaned = rules.Where(notYetCleaned.Contains).ToList();
-            foreach (var doc in uncleaned.Count > 0 ? uncleaned : [rules.MaxBy(rule => Read(rule).Length)!])
-            {
-                yield return (doc, problem);
-            }
+            yield return (
+                rules.MaxBy(rule => Read(rule).Length)!,
+                $"opening {file} (and {set.Count() - 1} more) loads {characters} characters of rules ({set.Key})"
+            );
         }
     }
 

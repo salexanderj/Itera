@@ -158,20 +158,23 @@ says "probe" was confirmed by `probe/Program.cs` against the pinned packages.
 
 ## Enforcement
 
-`.claude/hooks/skill_guard.py` runs before every Edit, Write, NotebookEdit, and Bash call. It denies
-file writes under `src/Itera.Engine/Ecs/`, the `Systems/` and `Components/` folders of `src/Itera.Engine` and `src/Game`
-(component files use no Arch namespace, so the folder is what marks them),
-writes to `.cs` files that use or add `Arch.Core`, `Arch.System`, `Arch.Buffer`, or `Arch.LowLevel`, and
-Bash commands that name one of those folders, until the session transcript shows this skill was loaded (a `Skill` call for `ecs`, or
-a typed `/ecs`, after the last `/clear`). A denied call names the fix: load this skill, then retry.
-The same hook guards Vulkan work for the `vulkan` skill, and ECS-to-GPU work for the `ecs-vulkan` skill.
+`.claude/hooks/skill_guard.py` runs before every Edit, Write, NotebookEdit, and Bash call. It denies:
+
+- file writes under `src/Itera.Engine/Ecs/`, and under the `Systems/` and `Components/` folders of `src/Itera.Engine`
+  and `src/Game` (component files use no Arch namespace, so the folder is what marks them);
+- writes to `.cs` files that use or add `Arch.Core`, `Arch.System`, `Arch.Buffer`, or `Arch.LowLevel`;
+- Bash commands that name one of those folders.
+
+The denial lasts until the session transcript shows this skill was loaded (a `Skill` call for `ecs`, or a typed
+`/ecs`, after the last `/clear`). A denied call names the fix: load this skill, then retry. The same hook guards Vulkan
+work for the `vulkan` skill, and ECS-to-GPU work for the `ecs-vulkan` skill.
 
 ## Files in this skill
 
 - `arch-notes.md`: Arch 2.1.0 and Arch.System 1.1.0 behaviour, checked against their source.
 - `design.md`: how the ECS fits Itera: what is an entity, component and system design, the fixed and
   frame groups, physics, networking, rendering, and mods.
-- `reference.md`: sources, and the audit record of the current ECS code.
+- `reference.md`: sources, and facts about the current ECS code.
 - `probe.sh` and `probe/`: re-checks the behaviours marked "probe" against the pinned packages.
 
 ## Package notes

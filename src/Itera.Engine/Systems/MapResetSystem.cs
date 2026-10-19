@@ -11,8 +11,8 @@ using Itera.Modding;
 namespace Itera.Engine.Systems;
 
 /// <summary>
-/// The console's <c>cleanup</c> and <c>reset</c> (fixed group, first; <see cref="CommandScope.Match"/>): the command
-/// asks, and the next step starts with the work.
+/// The console's <c>cleanup</c> and <c>reset</c> (fixed group, early: after the origin's system and the game's spawns;
+/// <see cref="CommandScope.Match"/>): the command asks, and the next step starts with the work.
 /// <para>
 /// <c>cleanup</c> removes every loose body (thrown balls, which never go back into the grid, and <see cref="CutPiece"/>
 /// bodies) and clears the particles. A host's removals reach its clients as bodies gone.

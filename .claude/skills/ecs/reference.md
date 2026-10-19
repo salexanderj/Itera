@@ -1,4 +1,4 @@
-# ECS references and audit record
+# ECS references and current code
 
 ## Sources
 
@@ -27,70 +27,23 @@ General ECS and .NET guidance:
 - Unity Entities on the cost of structural changes and deferring them with command buffers:
   https://docs.unity3d.com/Packages/com.unity.entities@1.4/manual/systems-manage-structural-changes-intro.html
 
-## Audit record, 2026-09-22
+## The current ECS code
 
-Audit of the ECS code at commit `6a57524` of the Zorf TD archive (`salexanderj/ZorfTD-archive`) against the rules in
-`SKILL.md`.
-
-### Fixed
-
-- `HeartbeatSystem.Update` passed `World.Query` a lambda that captured a local (`logger`). That
-  allocated 88 bytes every fixed tick (about 5 KB/s at 60 Hz). It now runs an `IForEach` struct with
-  `InlineQuery`, and `HeartbeatSystemTests.Update_allocates_nothing` measures 0 bytes. The test fails
-  with 88,000 bytes over 1000 updates against the old code.
-- `Arch.System.SourceGenerator` 2.1.0 was referenced by Itera.Engine with no `[Query]` methods. Its
-  output fails this repo's build (see `arch-notes.md`). Removed from `Itera.Engine.csproj` and
-  `Directory.Packages.props`.
-- Added `EcsChecks` and `CheckedWorldExtensions` (Debug-only precondition checks) with tests in
-  `tests/Itera.Engine.Tests/Ecs/`, and the `SystemAllocation` helper (`tests/Shared/`).
-
-### Open
-
-- Systems are disposed twice: by the DI container and by `Group<T>.Dispose` from `EcsWorld.Dispose`.
-  Harmless while `BaseSystem.Dispose` is empty; the rule that `Dispose` is idempotent covers it.
+- `EcsWorld` creates the `World` in its constructor. The system factories in a game's composition read `EcsWorld.World`
+  before `EcsWorld.Initialize` runs.
+- `EcsWorld.FixedUpdate` runs `BeforeUpdate`, `Update` (each system's timed), and `AfterUpdate` for the fixed group.
+  `EcsWorld.Update` does the same for the frame group. Both run on the main thread.
+- `IFixedUpdateSystem` is `ISystem<FixedStepTime>`, so fixed systems see the tick number. `IFrameUpdateSystem` is
+  `ISystem<FrameTime>`, so frame systems see `Alpha`.
+- `EcsWorld.Dispose` is idempotent. It disposes both groups, then destroys the world, after physics shutdown. The DI
+  container and `Group<T>.Dispose` both dispose a system, so every system's `Dispose` is idempotent.
+- ECS initialises after physics, network, and UI, and shuts down before them (one ordered step list in `GameLoop`).
 - System run order is the registration order in the game's composition (`AddGame`), with a comment on each
   registration saying why it sits there.
-- No deferred-destruction tag, cleanup system, or stable network id component exists yet
-  (`design.md` marks both as open design choices).
-- Frame systems receive the frame delta but not `FixedStepAccumulator.Alpha`, which interpolation
-  needs. (Closed 2026-09-22: systems receive `FixedStepTime` and `FrameTime`.)
-- `Directory.Packages.props` pins `Arch.LowLevel` 1.1.5, but no project references it and transitive
-  pinning is off, so the pin has no effect. Arch 2.1.0 depends on 1.1.5 anyway. (Closed 2026-09-22: pin removed.)
-
-### Confirmed sound
-
-- `EcsWorld` creates the `World` in its constructor. That is required: the system factories in
-  a game's composition read `EcsWorld.World` before `EcsWorld.Initialize` runs.
-- `EcsWorld.Dispose` is idempotent, disposes both groups, then destroys the world. It runs after
-  physics shutdown, and no system touches physics.
-- `EcsWorld.FixedUpdate` and `Update` run `BeforeUpdate`, `Update`, and `AfterUpdate` for their group,
-  on the main thread.
-- `HeartbeatSystem` builds its `QueryDescription` once in a `static readonly` field with one `WithAll`,
-  and its component types are first used on the main thread.
-- `probe.sh` reported every checked behaviour unchanged for Arch 2.1.0 and Arch.System 1.1.0.
-
-## Update, 2026-09-22 (pre-feature review)
-
-- `IFixedUpdateSystem` is `ISystem<FixedStepTime>` and `IFrameUpdateSystem` is `ISystem<FrameTime>`, so
-  fixed systems see the tick number and frame systems see `Alpha`. `HeartbeatSystem` and its tests
-  moved to `BaseSystem<World, FixedStepTime>`; `SystemAllocation` is generic over the time type.
-- `SystemAllocation` and `ArchCollectionDefinition` live once, in `tests/Shared/`, compiled into both
-  test projects. (2026-10-04: `ArchCollectionDefinition` was replaced by `ArchStartup`; test classes that use Arch
-  now run in parallel.)
-- ECS now initialises after physics, network, and UI, and shuts down before them (one ordered step
-  list in `GameLoop`).
-- Still open: the deferred-destruction tag and cleanup system, the stable network id component, and
-  systems being disposed twice (harmless).
-
-## Since 2026-09-25
-
-The game the engine was built with added its own components and systems (characters, loose bodies, walking, world
-generation, tools, cameras) in its own folders; that record is in the Zorf TD archive. In 2026-10 the general ones
-moved into the engine (`src/Itera.Engine/Components/`, `Systems/`; `.claude/rules/systems.md`), each with a behaviour
-test and a zero-allocation test in `tests/Itera.Engine.Tests/Systems/`.
-
-## Update, 2026-09-22 (render thread)
-
-Drawing moved to a render thread. ECS stays on the main thread. Frame systems run once per frame the
-render thread asks for, so they pause while presentation blocks; fixed systems never pause.
-
+- Frame systems run once per frame the render thread asks for, so they pause while presentation blocks. Fixed systems
+  never pause.
+- `SystemAllocation` and `ArchStartup` live once, in `tests/Shared/`, compiled into both test projects. Test classes
+  that use Arch run in parallel.
+- The engine's general components and systems are in `src/Itera.Engine/Components/` and `Systems/`
+  (`.claude/rules/systems.md`), each with a behaviour test and a zero-allocation test in
+  `tests/Itera.Engine.Tests/Systems/`.

@@ -1,7 +1,7 @@
 # Silk.NET 2.23 facts
 
 Checked against the Silk.NET v2.23.0 source (`src/Vulkan/Silk.NET.Vulkan/Vk.cs`,
-`src/Core/Silk.NET.Core/`) on 2026-09-22. Re-check if `Directory.Packages.props` moves Silk.NET
+`src/Core/Silk.NET.Core/`). Re-check if `Directory.Packages.props` moves Silk.NET
 to another version.
 
 ## How `Vk` finds function pointers

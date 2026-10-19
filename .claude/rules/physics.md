@@ -1,358 +1,63 @@
 ---
 paths:
-  - "src/Itera.Engine/Physics/**"
+  - "src/Itera.Engine/Physics/{LooseBodies,LooseBodies.Hulls,LooseBodies.Parts,LooseBodies.Pieces}.cs"
   - "src/Itera.Engine/Systems/{LooseBodySystem,LooseBodyRoom,StandInSystem,PhysicsReadSystem,DebugBallSystem,LooseBodyModelSystem}.cs"
   - "src/Itera.Engine/Components/PhysicsComponents.cs"
-  - "tests/Itera.Engine.Tests/Physics/**"
-  - "tests/Itera.Engine.Tests/Systems/{LooseBodySystem,StandInSystem,PhysicsReadSystem,DebugBallSystem,LooseBodyModelSystem}Tests.cs"
+  - "tests/Itera.Engine.Tests/Physics/{LooseBodiesTests,LooseBodyCellsTests,RagdollTests,ThrownBallTests,ShiftedBodiesTests}.cs"
+  - "tests/Itera.Engine.Tests/Systems/{LooseBodySystem,LooseBodyRest,StandInSystem,PhysicsReadSystem,DebugBallSystem,LooseBodyModelSystem}Tests.cs"
   - "tests/Itera.Engine.Tests/Systems/PhysicsTestHarness.cs"
 ---
 
 ## Loose bodies
 
-A ball, a lifted piece, or a part cut off a model is a loose body: Bepu moves it as the convex hull of its voxels
-(`LooseBodies`) against statics of voxel boxes built near it (`VoxelColliders`; on voxels coarser than 1 cm a column's
-top voxel ends where its density puts the ground's surface, a box to the millimetre, `PhysicsWorld.SurfaceBox`; bodies
-whose parts are of coarse voxels collide with the level nearest their voxels, `VoxelColliders.CoarseLevelOf`, in cells
-of 32 voxels), and of the voxel objects the world places that reach into a cell near a body (a static for each of
-an object's kind's parts and each physics material of the part's voxels, its kind's compound of boxes of the part's own
-voxels, all made at the match's "objects" step and shared (a damaged object's of its own for each part with a changed
-brick, made again for the parts a change's box reaches, `ObjectDamage`),
-posed at its anchor and turned by its heading, at `BodyKinds.AnyLevel` in the voxels' layer; kept while a cell reaches
-it; a body round which an area of objects is not filled freezes as where the columns are not resident; each object
-static is a static of its own to the bounces and impact events, not the voxel ground, so a ball rolling from the ground
-onto a rock begins a new pair; `.claude/rules/objects.md`). A piece of more than 4,096 box corners is hulled from its farthest points in 42 directions
-(`LooseBodies.MaxHullPoints`). A ball is made from nothing (`LooseBodies.TryCreateBall`: one piece of 1 cm voxels per
-radius and material, `VoxelModels.MakeBall`, shared; the console's `balls` drops a row, `DebugBallSystem`) and goes back
-into the grid as a sphere of its material filled into the air after 3 s at rest (`Engine:Physics:SettleSeconds`;
-`LooseBodySystem`, the console's `settle`); a lifted piece goes back as a piece edit. At most 384 loose bodies exist
-(`Engine:Physics:MaxLooseBodies`); more removes the oldest, a ragdoll whole (`LooseBodyRoom`). Bepu runs on
-`Engine:Physics:Threads` worker threads (0: a quarter of the processors, 1 to 6; 1 makes the steps repeat run to run,
-for tests and fast-forward runs). The mover reads balls as
-voxels (`LooseBodyVoxels`: characters are blocked by them and stand on them, but push rather than climb them; one under
-the feet within the step carries a character up onto it only where the character fits over its top, so a solid's face
-moved into a character, a gate's leaf, never carries it up a step a move: it stays, and what overlaps it does not hold
-it), and a character near one has a stand-in, a Bepu cylinder of its mass (`StandInSystem`, `CharacterStandIn`; not
-while `Bodiless`; removed at the next step when its character is destroyed or loses the component). Cut bodies (`BodyKind.Cut`, a `CutPiece` entity) touch only the voxels, not other bodies or characters;
-where their own level is not loaded they collide with the finest coarser level that is, up to the coarse collider level
-(`BodyKinds.BaseLevel`, `Level`). A body with no level loaded round it freezes (made kinematic) until one loads; a
-ragdoll's bodies freeze and thaw together, and its joints, which Bepu drops between kinematic bodies, are added again at
-the thaw (`VoxelColliders.GroupThawed`). Cut bodies go 30 s after they rest (also when frozen) and at the latest 60 s
-after they were made (`LooseBodySystem.CutRestSeconds`, `CutMostSeconds`). A ragdoll is made from a model's parts with
-joints from its skeleton (`LooseBodies.TryCreateRagdoll`), or from shapes (`RagdollShape`: a capsule between two points,
-or a sphere, of a radius and a mass, a body each) for a figure drawn from a mesh: those bodies have no models, so
-nothing draws them, and the game reads their poses (`PivotOf`, `OrientationOf`; `Holds` with `BornOf` tells a reused
-handle) to pose what it draws (the rig's `Place`); no engine code calls either today. A body made still counts as
-resting at once. `PhysicsReadSystem` reads each
-body's pose and each stand-in's push after a step; `LooseBodyModelSystem` hands the bodies' models to the renderer.
-When the match's origin moves, `PhysicsWorld.Shift` moves every body (awake, asleep, kinematic) and every static by the
-whole metres it moved, writing their poses and the broad phase's bounds alone: nothing wakes, and velocities, joints,
-and contacts, which are relative, keep (`OriginShifts`, `.claude/rules/engine.md`).
-Solid models that are not loose bodies (`SolidModelVoxels`, `SolidColumns`) are solid to the mover and met by rays
-(not by Bepu's bodies or the camera), placed each step at an absolute point (`SetPose` takes a `WorldPoint`: a local
-position with the match's origin), their voxels the model's unit at their level (`Add`'s unit, 1 cm by default). A ray
-(`SolidModelVoxels.Raycast`, from an absolute point; `CollisionSources` asks it) is walked column by column through each
-placed solid's box in its own voxels, each column's runs met by height (`SolidColumns.Runs`), giving the solid's id, the
-distance, and the face entered turned into the world (`SolidHit`); it allocates nothing. Cut parts are hulled and weighed in their model's voxels.
+Physics is split over these rules files:
 
-Without voxel terrain (the core registers `VoxelModels`, `LooseBodies`, and `LooseBodyVoxels` either way): the models
-keep their trees in their own memory (with terrain, the world's, where a lifted piece lies), freed when the match
-ends; there are no lifts, no `VoxelColliders` (so no body ever freezes), and no grid to settle into. Bodies meet the
-game's mesh colliders (Bepu mesh statics every level touches), fall out under the play area's fall limit, and are read
-by the mover in cells of `Engine:Physics:CollisionCentimetres`. A ball that rests for `Engine:Physics:SettleSeconds`
-goes to the game's `ILooseBodyRest` (registered in the match's scope; `LooseBodySystem` asks): `Keep` (and with no
-handler) leaves it where it is, asked again once it has moved (`LooseBody.Kept`); `Remove` removes it with its model;
-`TakeOver` removes the body and leaves the model to the game (`LooseBodies.Release`, with where it lay from
-`LooseBodies.Rested`), which draws and later removes it (`VoxelModels.Remove`; never `Free`: every ball of its radius
-and material shares its tree). A save without terrain holds no bodies (`SettleThrown` does
-nothing). `DebugBallSystem` does not check a ball's space and `MapResetSystem`'s `reset` only cleans up and counts the
-reset without a world.
+- This file: making, keeping, and removing loose bodies, ragdolls, and stand-ins.
+- `.claude/rules/physics-voxels.md`: what bodies collide with, solid models, play without voxel terrain, the folder's map,
+  and the Bepu package notes.
+- `.claude/rules/physics-world.md`: the records by handle, a game's own bodies, the solver, gravity, and the warm-up.
+- `.claude/rules/physics-contacts.md`: physics materials, bounces, impact events, layers, groups, and trigger zones.
+- `.claude/rules/physics-mover.md`: the character mover and its building blocks.
+- `.claude/rules/physics-rays.md`: mesh colliders, the shared ray, and the hit history.
 
-The character mover (`VoxelCharacterMover`): an upright cylinder that slides along walls, steps up onto ledges up to its
-step height (from the ground; in the air too where its shape asks, `CharacterShape.StepsInAir`, a movement mode's
-`MovementModeMove.StepsInAir`), walks up no slope past its max slope (steeper ground slides it down and it cannot jump there), lands, and
-walks through passable materials (`IVoxelPassability`). On voxels coarser than 1 cm it stands on the ground's surface
-inside a voxel, where its density crosses one half (`VoxelWorld.SurfaceOver`), blended between neighbouring columns that
-differ by less than the slope limit over a voxel; the ground's read reaches a cell or two over the feet, so a column
-whose voxels or objects are open at the feet's cell with something over it (the lintel over a door, which on cells as
-coarse as 1 m lies within that read over a body rising under it) has its ground under that, not on the ceiling (mesh
-colliders, which have no inside, are read as they are); its distances are in centimetres, but the steepness rule looks at
-least 0.8 of a cell around the body, so on voxels coarser than 10 cm a slope too steep to walk still reads as one (a
-coarse voxel blurs a slope's foot, which a body may step onto). On cells wider than the body's radius, a slope past the
-limit whose columns each rise less than the step height is the same voxels as steep stairs and is climbed a tread at a
-time (30 cm voxels at 50 degrees, for a person). On coarse cells it reads the rest in the same cells: a loose body or
-solid model blocks a cell only where it holds the cell's centre, so a ball smaller than a 1 m cell may not block it (its
-stand-in still pushes the ball), and a thin mesh wall blocks the whole cell it passes through. The map's edge is a wall
-at every height (`AddMapEdge`). It waits while the voxels round it are not loaded. Its widest body is 2 m in radius
-(`MaxRadiusMetres`). It takes and gives local positions and reads absolute cells: a local float plus the match's origin
-(`VoxelCharacterMover.Origin`, the world's or the colliders'), in doubles, times its cells a metre, so a move 150 km
-out reads the cells a move at the middle does. It also reads the match's mesh colliders in the same cells (`MeshColumns`), and the voxel objects the
-world places (`ObjectColumns`, `.claude/rules/objects.md`), combined with the voxels by the highest top, the lowest
-bottom, and any cell; without terrain it reads them and the loose bodies in cells
-of `Engine:Physics:CollisionCentimetres` (10 by default), with no column to wait for, and its map edge at the play
-area's world edge. Over terrain its cells may be finer than the voxels (`Engine:Physics:TerrainCellCentimetres`, a whole
-divisor of them; 0, the default, for the voxels'): it then meets objects, solid models, meshes, and loose bodies at
-their own size, and reads the voxels through `FineGround`: a run of blocking voxels is ground in the fine cells from its
-bottom (whole) up to its surface (the density's over its highest voxel), blended across the voxels' columns with no
-seam where neighbours' surfaces lie within the ramp of each other (bilinear over each quarter of a column between its
-centre, its sides' middles, the mean of the two columns where they join, and its corner, the mean of the joined group
-of the four columns there; where all join, the coarse mover's blend between centres), a fine cell solid where its
-centre lies under it, so every fine column's surface lies within half a cell of its top as on a fine grid. A voxel's
-column and those round it must be resident for the fine cells over it. On smooth hills of 1 m voxels a 10 cm mover's
-feet keep within about 2 cm of the 1 m mover's (`FineMoverTests`), but a ledge under a voxel high is a step no higher
-than the body's, where 1 m cells walk a column up to a cell over the feet (their allowance is a cell); a walking move
-costs about 2.4 times as much (41 against 17 microseconds in Release). On voxels coarser than 1 cm almost all of a
-move is reading the ground's surface under the footprint (`Surface`: a window of columns read and their blend), asked
-about seven times a move (lifting it out, grounded and steep before and after, the vertical part), a third or more of
-those the same question again: within one move or query each question is worked out once and remembered (16 at most,
-forgotten with the surfaces' cache at the next move), the same bits (`FineMoverTests` against a mover that works every
-answer out again, `RemembersSurfaces`); a body standing still on 10 cm cells over 1 m voxels then takes about 15
-microseconds a move against 25. Navigation keeps its own reading of the objects
-in the voxels' cells. The core makes it (`AddIteraEngine`: `VoxelCharacterMover(world, cell, passability, bodies,
-colliders)` with terrain, `VoxelCharacterMover(passability, colliders, cell, edge, bodies)` without), and the play area (`PlayArea`, round the
-grid, or `PlayArea.WithoutTerrain`, a 10 cm grid's bounds, with a bounds constructor for a game to register its own).
-Where a mesh's top is over the voxels' but its surface lies under theirs (a steep triangle half in the ground), the
-voxels' surface holds the body.
+A ball, a lifted piece, or a part cut off a model is a loose body. Bepu moves it as the convex hull of its voxels
+(`LooseBodies`). A piece of more than `LooseBodies.MaxHullPoints` box corners is hulled from its farthest points in
+`LooseBodies.HullDirections` directions.
 
-A grounded move reports what the body stands on (`CharacterMoveResult.GroundMaterial` and `GroundTags`, kept in
-`CharacterContact`): the highest blocking voxel or mesh triangle within the grounded reach under the feet's centre,
-else the highest under four points half the radius out; a voxel's physics material by its voxel material
-(`PhysicsMaterials.OfVoxel`) and its tags by `IVoxelSurfaceTags`, a triangle's tags and its collider's material as it
-is at the move (`MeshColumns.TopAt`, a span keeping its collider); on a loose body or in the air the default and no
-tags. The mover takes the run's materials and the voxels' tags as `Materials` and `SurfaceTags` (the core sets them;
-a mover made without them reads the default).
+### Making, keeping, and removing bodies
 
-Building blocks for a game's movement modes (`IMovementMode`, `.claude/rules/systems.md`): a move reports the last
-wall it met (`CharacterMoveResult.WallNormal`, across x and z, out of the wall; zero for none; also
-`CharacterContact.WallNormal`); a step height of 0 turns off stepping up and keeping to the ground; and
-`MovementProbes` (scoped, in the core) gives `TryWallAhead` (three rays from the body's axis, over its step, at half
-and nine tenths of its height, of the shared ray: a hit steeper than 60 degrees within the reach past its side, with
-the nearest point, distance, and tags, and the mean of the hits' normals: a voxel's is the face the ray entered),
-`TryLedgeTop` (a ray down from over the head, past the wall's face, onto walkable ground above the wall's point; none
-where it starts inside the wall), and `HasRoom` (the mover's `OverlapsAnything`). Loose bodies are not in the shared
-ray, so no probe meets them.
+- A ball is made from nothing (`LooseBodies.TryCreateBall`): one shared piece of 1 cm voxels for each radius and
+  material (`VoxelModels.MakeBall`). The console's `balls` drops a row (`DebugBallSystem`, which does not check a ball's
+  space).
+- A ball goes back into the grid as a sphere of its material, filled into the air after it rests for
+  `Engine:Physics:SettleSeconds` (`LooseBodySystem`, the console's `settle`). A lifted piece goes back as a piece edit.
+- `Engine:Physics:MaxLooseBodies` limits the bodies. More removes the oldest, a ragdoll whole (`LooseBodyRoom`).
+- Cut bodies go a set time after they rest, also when frozen, and at the latest a set time after they were made
+  (`LooseBodySystem.CutRestSeconds`, `CutMostSeconds`).
+- A body made still counts as resting at once.
+- Bepu runs on `Engine:Physics:Threads` worker threads. One thread makes the steps repeat run to run, for tests and
+  fast-forward runs.
+- Cut parts are hulled and weighed in their model's voxels.
 
-`MeshColumns` (internal): a column's spans, one for each triangle over the column's square: the lowest and highest cell
-it blocks, its plane's height at the square's centre (a wall's highest point over the square), and its tags. Only the
-cells a triangle passes through block: a closed mesh has no inside, so a body inside one is blocked only where a face
-lies in its height. A triangle on a cell's boundary blocks the cell behind its front (before it is cut it moves 0.01
-cell behind its front along each axis it reaches less than that along), so a floor at y = k blocks the cell under it, a
-ceiling there the cell over it, and a closed mesh of a voxel box the box's outer voxels; a triangle that only touches a
-column's corner leaves it alone. A column's surface is the plane at its centre, anywhere in its top cell or under it on
-a slope (the voxels' lies within half a cell of their top; the mover reads surfaces for both). Chunks of 32 by 32
-columns are made at their first read and kept until the colliders change (`MeshColliders.Version`), at most 256
-(`MostChunks`; past that, the chunk read longest ago is dropped and its memory used for the new one, so bodies far apart
-that need more at once make chunks again at every read); making one allocates until the cache is full. A move over
-triangles alone costs more than one over voxels, more so in small cells (columns are read one by one, voxels a brick's
-mask at a time; the figures are in ARCHITECTURE.md).
+### Ragdolls
 
-The physics warm-up (`PhysicsWorld.StartWarmUp`, `PhysicsWorld.WarmUp.cs`; from the match's physics step, once a run,
-`WarmUps.Physics`; the loading screen's Physics task waits for it): a world of its own with the match's settings and Bepu
-callbacks, on a thread of its own, into which two people's ragdolls, a pile of convex hulls, a kinematic mirror, a cut
-part, a stand-in, and a trigger zone fall onto a voxel cell's static of boxes and a mesh ramp, 4 s of steps, then all
-taken away and freed. Bepu makes its solver's and collision code for each joint, pair of shapes, and kind of contact at
-run time, which ReadyToRun cannot compile ahead, so without it the first ragdoll of a run took a step of 44 ms (composite
-ReadyToRun) or 66 ms (Debug) compiling them; with it, 4.9 ms at most. A new kind of body, shape, or joint the engine makes goes into it too
-(`Exercise`); check it with the run's JIT list (`DOTNET_JitStdOutFile` and `DOTNET_JitDisasmSummary=1` on a Release
-build: first-time compiles are those not marked Tier1). Disposing the world stops it at its next step.
+- `LooseBodies.TryCreateRagdoll` makes a ragdoll from a model's parts with joints from its skeleton.
+- For a figure drawn from a mesh, a ragdoll is made from shapes (`RagdollShape`: a capsule between two points, or a
+  sphere, each with a radius and a mass). Those bodies have no models, so nothing draws them.
+- The game reads their poses (`PivotOf`, `OrientationOf`) and poses what it draws with them (the rig's `Place`). `Holds`
+  with `BornOf` tells a reused handle. No engine code calls either one.
 
-## A game's own bodies and statics, and the records
+### Characters and bodies
 
-The engine keeps a record for each Bepu body and static by handle (`BodyKinds`: a body's `BodyKind`, the voxel level
-it collides with now and the one it was made for, its ragdoll, a game's `PhysicsMarks`, its physics material, its share
-of gravity, and `Born`, which of the bodies that took the handle it is; a static's voxel level and physics material); the narrow phase reads them on Bepu's worker threads, and they are
-written on the main thread between steps. A handle never recorded reads the default (a loose body at level 0, in no
-ragdoll; a static at level 0). Every removal resets its record (`PhysicsWorld.RemoveBody` and `RemoveStatic`, which
-`LooseBodies`, `RemoveStandIn`, `VoxelColliders`, and `MeshColliders` use), so a body or static that takes a removed
-one's handle starts afresh; in Debug builds `PhysicsWorld.Step` throws when a recorded body was removed past
-`RemoveBody`. A game adds its own with `PhysicsWorld.AddBody(description, settings)` (recorded as a loose body: it
-touches the voxels, the game's statics, bodies, and stand-ins; frozen where the voxels round it are not loaded, unless
-`PhysicsMarks.KeepsMovingUnloaded`; of `PhysicsBodySettings.Material`; moved with the origin; not one of `LooseBodies`, so not counted, settled, or read by
-`PhysicsReadSystem`) and `AddStatic` (touched by bodies of every voxel level, as a mesh collider), removes them with
-`RemoveBody` and `RemoveStatic` (the shapes stay the game's), and tells a reused handle apart with `BornOf` and
-`Holds(body, born)`. `RemoveBody` first calls `BodyRemoving`, which the voxel colliders set to `Forget`. A body added
-straight through `Simulation.Bodies` has no record (it reads the default) and must not be removed past `RemoveBody`
-once recorded.
-
-## The solver and damping
-
-`Engine:Physics:Substeps` (1, 1 to 8) and `VelocityIterations` (8, 1 to 32) set Bepu's solver (`SolveDescription`, never
-the `(int, int)` tuple, which this Bepu swaps), and `LinearDamping` and `AngularDamping` (0.03, 0 to 1; 1 stops every
-body each step) the shares of speed and spin a body loses each second; a game changes them during a match with
-`PhysicsWorld.SetSolver` (the impulses kept for the next solve scaled to the new substeps) and `SetDamping`, and the
-console with `physics solver I S` and `physics damping L A` (`PhysicsCommands`, which prints the match's bodies, statics,
-solver, damping, and gravity). The integrator (`PoseIntegratorCallbacks`, reading `IntegrationSettings`) works one
-substep exactly as before; with more, Bepu integrates a body with constraints once a substep and one without once over
-the step, so each lane's own duration is used (damping as e^(t ln(1 - share))). `PushOn` reads a stand-in's push with
-the gravity, damping, and substeps the last step ran with, per substep while bodies touched it.
-
-## Gravity
-
-`Engine:Physics:Gravity` (`X`, `Y`, `Z`: 0, -9.81, 0; each -100 to 100) is the match's gravity on every dynamic body
-(`PhysicsWorld.Gravity`, `DefaultGravity`); a game changes it during a match with `SetGravity`, which wakes every
-sleeping body, and the console with `physics gravity X Y Z`. Each body falls by a share of it (`SetGravityScale`, or
-`AddBody`'s `gravityScale`: 1 by default, 0 floats, negative rises; it wakes the body), kept in its record; while every
-body's share is 1 (`BodyKinds.ScaledBodies` is 0) the integrator reads none, and otherwise reads each active lane's from
-its record through `ActiveSet.IndexToHandle` (`IntegrationSettings.Kinds`, `Bodies`). `GravityShare` is the gravity's
-strength over the Earth's (`StandardGravity`, 9.81; exactly 1 at the default): `PlayerMovementSystem`, given the match's
-`PhysicsWorld`, makes characters fall by their own `MovementStats.Gravity` times it (sliding too), and keeps a jump's
-launch speed of their own gravity, so under less gravity they jump higher (half gravity: twice the height and the time);
-a movement mode is given the stats with the scaled gravity. Down stays -Y for characters, the mover, and the terrain.
-`PushOn` takes the stand-in's share. A floating ball (share 0) at rest settles into a floating sphere of voxels with
-terrain: a game makes floaters as its own bodies (`AddBody`).
-
-## Physics materials and bounces
-
-A physics material (`PhysicsMaterial`: friction 0 to 4, bounciness 0 to 1) is registered by name once a run, in the
-game's `IRunStartup` or a mod's, in `PhysicsMaterials` (run-wide; at most 64; `PhysicsMaterialId`, a byte), which the
-first match seals (a later `Register` throws). Material 0 is `default`, friction 1 and no bounce, which every body and
-static has unless given another: two of them give exactly the contact the engine had before materials. A body takes one
-at `AddBody` (`PhysicsBodySettings.Material`) or later (`SetMaterial`, `MaterialOf`), a static at `AddStatic`, and a
-mesh collider at `Add` (`PhysicsBodySettings`; `SetSettings`, `SettingsOf`); `physics materials` lists them. A voxel
-material takes one by `PhysicsMaterials.MapVoxel` (before the first match; `OfVoxel`), the voxels at most 8 among them
-with the default (`MostVoxelMaterials`): `VoxelColliders` builds a cell's voxels of each physics material into a static
-of their own (one walk of the cell each, the other materials left out with the passable ones, `PartCount`; a cell of
-one material is one static, and a world that maps no voxel material walks and builds as it did before materials), and
-counts a cell of several towards `MaxRebuiltCells` as that many; a ball made from nothing takes its voxel material's
-(`LooseBodies.TryCreateBall`), a lifted piece the default. Splitting costs: over a block of a random material in each
-voxel, cells of three physics materials built in about twice the time of one, with 1.85 times the boxes. The narrow
-phase (`NarrowPhaseCallbacks`) reads both sides' records (`BodyKinds.ContactOf`, a table of `ContactMaterial` the match
-copies at its start): friction is the product of their square roots (sqrt(a·b)), and every pair has the engine's
-springs (30 Hz, critically damped, recovery at most 2 m/s), so a bouncy body sinks no further than any other.
-
-Bepu has no coefficient of restitution: its contacts stop a pair. A pair with a bouncy side (bounciness the larger of
-the two; stand-ins left out) is recorded by the narrow phase when it touches or will by the step's end at its speeds
-with the match's gravity (within 1 mm), with its deepest contact and the speed the two meet at there (their speed
-before the step, and what gravity adds or takes, by each side's share, over the gap still between them), on each
-worker's buffer (`PhysicsContacts`: 4,096 pairs, shared by the workers, at least 1,024 each). A pair is two bodies, or
-a body and a static, and every voxel static counts as one, the voxel ground: a ball that rolls from one cell's static
-into the next has not begun touching anything. After the step, on the main thread, the buffers are sorted by pair (so
-the threads' order does not count below the capacities), one contact kept a pair (the deepest), and each pair that was
-not touching the step before and came together at 0.5 m/s or more (`MinimumBounceSpeed`) is pushed apart at the
-contact until it separates at its bounciness times that speed, by its masses and inertias (`PhysicsContacts.Bounce`;
-statics and kinematic bodies take none); slower pairs rest and roll as Bepu solves them. Removing a body or static
-forgets its pairs, so one that takes its handle next begins afresh. The bounce does not depend on the substeps; a ball
-then rises a step's rise short of the curve (at 60 Hz, about 3 cm from a 1 m drop at bounciness 0.8), less what
-damping takes. A ball rolling over voxels hops up to about 2 cm at a cell's border at 4 m/s (Bepu's contact with the
-next cell's edge, whatever its material); a bouncy one bounces where such a hop lands at 0.5 m/s or more. Not bounced: a
-pair that strikes while already touching (a ball rolling into a wall of the voxels it rolls on). `physics` prints the
-bounces set and the contacts dropped past the buffers.
-
-Impact events: a body or static marked `PhysicsMarks.ContactEvents` (at `AddBody` or `AddStatic`, a mesh collider's
-settings, or `SetMarks`) has its pairs followed by the same pass (stand-ins left out; only pairs with a bouncy or marked
-side do this work). Each such pair gives an `ImpactEvent` as it begins touching (`Began`: its sides, `ImpactSide`, a
-body or static by handle and `Born` or the voxels, in a fixed order, bodies by handle, then statics, then the voxels;
-the point where they met, local and moved with the origin; the normal from B towards A; the speed they came together at,
-gravity's part over the gap included; and both physics materials) and as it ends (`Ended`; `Removed` when a side was
-removed between steps, given first at the next step). `PhysicsWorld.ImpactEvents` holds the last step's, for the next
-step's systems. A pair Bepu no longer meets only because its bodies sleep still touches (no `Ended` as a ball falls
-asleep, no `Began` as it wakes), and a body rolling over voxel cells' borders begins nothing (the voxels count as one).
-A pair that strikes again while still touching (a ball rolling into a wall of the same voxels or the same static) gives
-no new `Began`. Events past the buffers (8,192 a step) are dropped and counted with the contacts.
-
-## Layers and groups
-
-A collision layer (`PhysicsLayerId`) is registered by name once a run, in the game's `IRunStartup` or a mod's, in
-`PhysicsLayers` (run-wide; at most 32, layer 0 `default`; the first match seals the names). Which layers touch is a
-table of pairs, the same both ways (`PhysicsLayers.SetTouches`; every pair touches until set apart), with the layer the
-characters' stand-ins are in (`CharacterLayer`) and the voxels' statics (`VoxelLayer`), the default unless set; each
-match copies them at its start and changes its own table with `PhysicsWorld.SetTouches` (which wakes every sleeping
-body; `Touches`). A body or static takes a layer and a group at `AddBody` and `AddStatic` (`PhysicsBodySettings.Layer`
-and `Group`), a mesh collider by its settings, or later by `SetLayer` (a body is woken; a static wakes every sleeping
-body), read by `LayerOf` and `GroupOf`; members of one group other than 0 never touch each other (a game's numbers).
-The narrow phase applies the engine's rules first (stand-ins, cut bodies, voxel levels), then the layers and groups
-(`BodyKinds.LayersAllow`): layers only take pairs away. A loose body whose layer does not touch the characters' is not
-read by the mover (`LooseBodies.CopyPoses`) and gets no stand-in (`AnyPieceNear`), so characters pass through it; the
-mover reads every mesh collider whatever its layer, so a gate of a layer balls do not touch still blocks players.
-`physics layers` prints each layer, the characters' and the voxels', and the layers it does not touch (the match's
-table in a match, else the run's).
-
-## Trigger zones
-
-A trigger zone (`PhysicsWorld.AddTrigger(shape, position, orientation, layer)`: a `TriggerShape` box, sphere, or capsule
-along its local y, local to the origin and moved with it; at most 256, `MostTriggers`; `MoveTrigger`, `RemoveTrigger`,
-`HoldsTrigger`, `TriggerOf`, and a `TriggerId` of its handle and `Born`) is a kinematic body that never sleeps and stops
-nothing (`BodyKind.Trigger`). The narrow phase pairs it with every body its layers allow (moving, asleep: an awake
-kinematic body meets the sleeping ones, frozen, or a client's mirror; not statics, stand-ins, or other zones), records
-a pair with a contact of depth 0 or more on its worker's buffer (`PhysicsTriggers`: 4,096 pairs shared by the workers,
-at least 1,024 each), and makes no constraint. After the step the overlaps are sorted by zone and body (the threads'
-order does not count below the capacities) and set against the last step's: `PhysicsWorld.TriggerEvents`
-(`TriggerEvent`: `Entered` or `Left`, the zone, the body and its `Born`, and `Removed`), read by the systems of the next
-step, those of bodies and zones removed since the step before first (`RemoveBody`, `RemoveTrigger`: a removed `Left`
-for each body that was in); `IsInside`. Overlaps and events past the buffers are dropped and counted
-(`TriggerEventsDropped`, a Warning once a match; a dropped overlap reads as a body leaving and entering again). A zone
-sees only what overlaps it at a step's end (no sweep): a body that moves more than the zone's depth and its own width
-in a step can cross a thin zone unseen (a 20 cm ball at 30 m/s through a zone 20 cm deep). A zone's layer is its
-record's (`SetLayer` on its body changes it for bodies and characters alike). Characters are not Bepu bodies: `TriggerCharacterSystem`
-(`.claude/rules/systems.md`) tests each entity with a `TriggerSensor` as an upright capsule (`TriggerOverlap`) and writes
-the match's `CharacterTriggers` (`CharacterTriggerEvent`, with the entity). `physics` prints the zones and the overlaps
-dropped.
-
-## Mesh colliders and the shared ray
-
-A game's static triangle colliders (`MeshColliders`, scoped to the match): `Add(asset, transform, tagsOf)` registers a
-mesh asset placed by a local transform, each triangle tagged by its material's name through `tagsOf`, or `Add(positions,
-indices, transform, tags)` triangles built in code; `Add(asset, at, transform, tagsOf)` and `Add(positions, indices, at,
-transform, tags)` place them from an absolute point (`WorldPoint`), which keeps a large or far mesh precise; `Remove`
-takes one away. Only registered colliders collide; drawing
-stays apart. Add them once the match's physics exists (from a system's `Initialize` on). Each collider keeps an anchor (the absolute
-whole metres nearest its point) and its triangles from it, with a grid of 4 m buckets over absolute x and z (made again
-at the first query after a change, which allocates; other queries allocate nothing), and each collider is also a Bepu
-`Mesh` static posed at its anchor's local place, of its settings' physics material, its triangles wound clockwise seen
-from the front as Bepu asks (glTF's are counter-clockwise), one-sided in Bepu, at `BodyKinds.AnyLevel`: every loose body
-touches it whatever its voxel level (`SetGameStatic`; `ClearStatic` on removal). Surface tags are up to 32 bits a game
-defines: voxel materials through its `IVoxelSurfaceTags` (none by default), mesh materials by name at registration.
-`CollisionSources` (scoped) is what rays meet: `Raycast` answers from the terrain (`VoxelWorld.Raycast`), the voxel
-objects the world places (`ObjectRays`, `.claude/rules/objects.md`), the colliders (two-sided, nearest first through
-the buckets), and the solid models (`SolidModelVoxels`, given the loose bodies' voxels and the match's origin), the
-nearest winning, as a `SurfaceHit` (point, normal turned towards the origin, distance, tags, source, and the voxel's
-material, the collider and triangle, the object's voxel's material and `ObjectId`, or a solid model's id in
-`Collider`, `SurfaceSource.SolidModel`, with no material or tags). The voxel tools'
-ray over the terrain alone (`ToolAim.Raycast(VoxelWorld, ...)`) stays; `ToolAim.Raycast(CollisionSources, ...)` meets
-all three, past the terrain's and the objects' passable voxels round the eye.
-
-`HitHistory` (scoped; `Physics/HitHistory.cs`, with `HitShapes.RaycastCapsule`, the exact ray against a capsule, public
-for a game's own shapes) is lag compensation's record: a game records each character's hit capsules (`HitCapsule`: two
-ends, a radius, and the game's part number) once a step with `Record(entity, tick, capsules)`, and a host judges a shot
-with `Raycast(from, direction, maxMetres, tick, ignore, out hit)`, the nearest capsule of any entity but the shooter at
-a tick that may fall between two steps (each capsule's ends moved straight between the two steps' by the fraction; a
-capsule at the same place in both lists with the same part is matched, else each is used where it was recorded), and
-`CapsulesAt(entity, tick, into)` gives one entity's capsules as that ray takes them at the tick (for a game testing its
-own shapes past the first the ray meets, such as organs inside a part it hit). `ThirdPersonCamera.Aim` takes one with
-a tick and the aimer to leave out, so an over-the-shoulder crosshair stops at a character's shape (without it, a shot
-from the eye at a character 20 m off passes about 0.4 m beside the one the crosshair covers); `AimPoint` gives the
-point itself, for a shot that leaves from a muzzle towards it, and `LookPoint` the point straight along the look from
-the eye, for an aimer with no camera over its shoulder. It
-keeps 32 steps of up to 32 capsules for up to 1,024 entities (`Steps` is more than `ReplicationService.MostShownTicksBehind`).
-A step is kept as one absolute anchor (a `WorldPoint`) and float offsets from it, so a move of the origin changes nothing
-and the history is not a component `OriginShifts` moves. An entity is met from a step before its oldest record to a step
-after its newest (a character the game stopped recording is met only at ticks it was there; `Forget` drops one). Storage
-is made at an entity's first record and reused after `Forget`; recording a known entity, asking, and forgetting
-allocate nothing. The game decides what the tick and the capsules are; the engine keeps no character's shape.
-`HitShapes.FromPose(globals, placed, bones, into)` gives a posed rig's capsules (its joints' places, `Rig.Globals`,
-through the mesh's placement, `MeshPoses.Placed`), each `HitBone` a part from one joint towards another (or a sphere),
-its far end `Reach` times the way between them, its radius scaled with the placement.
-
-### Files in `src/Itera.Engine`
-
-  - `Physics/`: the Bepu simulation and stand-ins (`PhysicsWorld`; a game's bodies and statics in `PhysicsWorld.Bodies.cs`;
-    the warm-up in `PhysicsWorld.WarmUp.cs`;
-    the records by handle, `BodyKinds`; physics materials, `PhysicsMaterials`, the bounces, `PhysicsContacts`, the layers, `PhysicsLayers`, and the trigger zones,
-    `PhysicsWorld.Triggers.cs`, `PhysicsTriggers`, `TriggerOverlap`), voxel box statics (`VoxelColliders`), loose bodies
-    (`LooseBodies`: table, rest, and removal; `.Pieces.cs` balls and lifted pieces; `.Parts.cs` cut parts and ragdolls;
-    `.Hulls.cs` large hulls), loose bodies and solid models as voxels (`LooseBodyVoxels`, `SolidModelVoxels`,
-    `SolidColumns`), the character mover (`VoxelCharacterMover`) and the mesh colliders as its cells (`MeshColumns`), a
-    game's mesh colliders (`MeshColliders`) and the ray
-    over them and the terrain (`CollisionSources`, `SurfaceHit`), the characters' hit shapes over the last steps
-    (`HitHistory`, `HitShapes`), and Bepu's callback structs. The voxels' surface tags
-    are `Voxels/IVoxelSurfaceTags`.
-  - `Systems/`: `PhysicsReadSystem`, `LooseBodySystem`, `LooseBodyRoom`, `StandInSystem`, `DebugBallSystem`,
-    `LooseBodyModelSystem` (`.claude/rules/systems.md`).
-
-### Package notes
-
-- `BepuPhysics 2.5.0-beta.29` is a prerelease and is pinned on purpose. The 2.4 stable line only
-  targets net6.0. Callback structs live in `Engine/Physics/`. Its `Statics.SetShape` (also `StaticReference.SetShape`,
-  which calls it) moves a static's bounds but keeps the old shape; change a static's shape with
-  `Statics.GetDescription` and `ApplyDescription` (freeing the old shape after `SetShape` crashed the game in a ball's
-  sweep).
+- The mover reads balls as voxels (`LooseBodyVoxels`). Characters are blocked by them and stand on them, but push
+  rather than climb them.
+- A body under the feet within the step height carries a character up onto it only where the character fits over its
+  top. A solid's face moved into a character, such as a gate's leaf, never carries it up a step: the character stays,
+  and what overlaps it does not hold it.
+- A character near a body has a stand-in, a Bepu cylinder of its mass (`StandInSystem`, `CharacterStandIn`). It is
+  absent while `Bodiless`, and removed at the next step when its character is destroyed or loses the component.
+- `PhysicsReadSystem` reads each body's pose and each stand-in's push after a step. `LooseBodyModelSystem` hands the
+  bodies' models to the renderer.
+- When the match's origin moves, `PhysicsWorld.Shift` moves every body and static by the whole metres it moved. It writes
+  their poses and the broad phase's bounds alone. Nothing wakes, and velocities, joints, and contacts keep
+  (`OriginShifts`, `.claude/rules/engine.md`).

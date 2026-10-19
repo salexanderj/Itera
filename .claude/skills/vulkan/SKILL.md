@@ -73,15 +73,14 @@ in step 5.
   messenger before the instance.
 - Never destroy or reset an object that a submitted command buffer still uses. Wait on that
   frame's fence (preferred) or `WaitIdle()` (for swapchain recreate and shutdown only).
-- Objects that live per frame in flight are indexed by `FrameSync.CurrentFrame`
-  (`FrameRenderer.CurrentSlot`). Objects tied to a swapchain image are indexed by the acquired image
-  index. Do not mix the two.
+- Objects that live per frame in flight are indexed by `FrameSync.CurrentFrame`.
+  Objects tied to a swapchain image are indexed by the acquired image index. Do not mix the two.
 - Do not dispose `Vk` (see `silk-net.md`). Disposing Silk extension objects (`KhrSwapchain` etc.)
   is safe.
 
 ### Device setup
 
-- Itera requires Vulkan 1.3 on the loader and the device (decided 2026-09-22). There is no
+- Itera requires Vulkan 1.3 on the loader and the device. There is no
   1.2 fallback and no KHR-extension path for anything that is core in 1.3.
 - Every device extension and feature the engine uses is listed in `DeviceRequirements.cs`: add it to
   `Extensions` or as one `Feature(...)` line in `VisitFeatures`. Device selection then checks it
@@ -94,8 +93,7 @@ in step 5.
 - Read the device's values (`VulkanContext.Limits`, `MemoryProperties`, `MaxBufferSize`, the queue families,
   `GraphicsTimestampValidBits`, `DeviceName`) in `Initialize` or later, never in a constructor: DI builds the renderer
   before the device is selected, and these throw until then (`SystemOrderTests` resolves the real `GameLoop`, so a
-  constructor read fails it). A constructor read of the storage buffer range (as zeros, before the guard) drew every
-  frame at render scale 0.05 for a day. The handles (`Device`, the queues) stay null until then and do not throw:
+  constructor read fails it). The handles (`Device`, the queues) stay null until then and do not throw:
   a Vulkan call refuses a null handle, and `Dispose` methods read `Device` in runs that never reached the Vulkan step.
 
 ### Swapchain
@@ -156,17 +154,16 @@ in step 5.
 
 ### Memory allocation
 
-- Itera has its own block sub-allocator in `Rendering/Memory/` (decided 2026-09-22; built
-  2026-09-23). No VMA binding. Create buffers with `GpuMemoryAllocator.CreateBuffer(size, usage,
+- Itera has its own block sub-allocator in `Rendering/Memory/`. No VMA binding. Create buffers with `GpuMemoryAllocator.CreateBuffer(size, usage,
   MemoryUsage, name)`; never call `vkAllocateMemory` elsewhere. `MaxMemoryAllocationCount` can be as low
   as 4096.
-- The allocator picks the memory type (`MemoryTypeSelector`: `DeviceLocal`, `Upload`, `Readback`, with a
-  fallback to the next acceptable type when a heap is full; a resource that finds no room for a new block in a type
-  first takes memory of its own there, with a Warning once), takes 64 MB blocks (an eighth of a smaller
-  heap), keeps buffers and optimal-tiling images in separate blocks so `BufferImageGranularity` never
-  applies, and gives resources of half a block or more, or that the driver asks for, a dedicated
-  allocation. It never picks a type that needs a device feature (AMD device-coherent, protected, lazily
-  allocated).
+- The allocator picks the memory type (`MemoryTypeSelector`: `DeviceLocal`, `Upload`, `Readback`). When a heap is
+  full, it falls back to the next acceptable type. A resource that finds no room for a new block in a type first takes
+  memory of its own there, with a Warning once.
+- It takes 64 MB blocks (an eighth of a smaller heap). It keeps buffers and optimal-tiling images in separate blocks, so
+  `BufferImageGranularity` never applies. Resources of half a block or more, or that the driver asks for, get a
+  dedicated allocation.
+- It never picks a type that needs a device feature (AMD device-coherent, protected, lazily allocated).
 - Host-visible memory is mapped once and stays mapped (`GpuBuffer.Mapped`). For non-coherent memory, call
   `GpuBuffer.Flush` after CPU writes and `Invalidate` before CPU reads; the allocator rounds to
   `NonCoherentAtomSize`. Respect `MinStorageBufferOffsetAlignment` and `MinUniformBufferOffsetAlignment`
@@ -209,5 +206,5 @@ work for the `ecs` skill and ECS-to-GPU work for the `ecs-vulkan` skill.
 
 - `silk-net.md`: Silk.NET 2.23 behaviour checked against its source.
 - `synchronization.md`: the frame loop, semaphore and fence rules, and barrier recipes.
-- `reference.md`: spec and guide links, plus the audit record of the current code.
+- `reference.md`: spec and guide links, plus checked facts about the current code.
 - `validate.sh`: the validation run for step 5.
