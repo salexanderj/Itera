@@ -74,6 +74,9 @@ public sealed class MenuLayer : UiLayer, IMenu
     private const float ButtonHeight = 64.8f;
     private const float Gap = 16.2f;
     private const float BandHeight = 75.6f;
+
+    // How far the game's corners keep from the screen's left edge and the band.
+    private const float CornerMargin = 21.6f;
     private const float FriendRowHeight = 81;
     private const float FriendsWidth = 691.2f;
 
@@ -389,6 +392,35 @@ public sealed class MenuLayer : UiLayer, IMenu
             GamePageButtons(ui, MenuPlace.Main);
             SettingsButton(ui);
             QuitButton(ui);
+        }
+
+        Corners(ui);
+    }
+
+    /// <summary>The game's corners (<see cref="MenuPages.Corners"/>): a column at the bottom left, over the band.</summary>
+    private void Corners(Ui ui)
+    {
+        var corners = _pages.Corners;
+        if (corners.Count == 0)
+        {
+            return;
+        }
+
+        using (
+            ui.Column(
+                0,
+                new UiBox
+                {
+                    Gap = Gap / 2,
+                    Anchor = UiAnchor.Screen(UiPoint.BottomLeft, CornerMargin, -BandHeight - CornerMargin),
+                }
+            )
+        )
+        {
+            for (var i = 0; i < corners.Count; i++)
+            {
+                corners[i].Build(ui);
+            }
         }
     }
 

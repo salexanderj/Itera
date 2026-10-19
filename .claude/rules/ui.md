@@ -132,7 +132,10 @@ the match goes on behind it. While a menu shows, the game gets no input and a cl
 (`IMenuInput`, `InputService.MenuPointer`); the address box takes the keys (`TextLine`). Escape goes back a page,
 resumes, or cancels a join, and does nothing on the main page. A game adds pages to it (`MenuPages.Add(label, hint,
 IMenuPage, MenuPlace)`: a button on the main page or the one over a match, before Settings, opening a panel with the
-page's title, its `Build`, and Back; the page's `Escape` takes Escape first) and Settings rows (`SettingsRows`, below). Its look is a game's `MenuStyle` (the engine's default
+page's title, its `Build`, and Back; the page's `Escape` takes Escape first), what the main page shows at its bottom
+left (`MenuPages.AddCorner(IMenuCorner)`: a notice and its buttons the game declares in a column over the band, such
+as a line saying its data are not the shipped data with a button to put them back), and Settings rows (`SettingsRows`,
+below). Its look is a game's `MenuStyle` (the engine's default
 is `MenuStyle.Plain`). It clicks with `menu-hover` as the pointer moves onto a control and `menu-press` as a button acts.
 It plays the music track `Engine:Audio:MenuMusic` names (`MusicPlayer.MenuTrack`) while there is no match or one is being
 joined, fading in over 2 s, and fades it out as a match starts unless the game has played another; a game's own menu
@@ -180,7 +183,7 @@ registered later that clash with another action keep the file's (`KeyBindings` u
     `UI/Fonts/`, copied to `Fonts/`; `LayerFont`), `TextBlobs`, `TextLine`, `TextEntry`, the toolkit in `UI/Toolkit/` (`Ui` with its layout,
     input, and dump, `UiBox`, `UiSize`, `UiText`, `UiState`, `UiElement`, `UiInput`, `UiStyle`, `UiPainter`,
     `UiTypefaces`, `UiToolkit`, `UiLayer`), and the menu in `UI/Menu/` (`IMenu`, `MenuLayer`, `MenuPages` with
-    `IMenuPage`, `SettingsPage`, `SettingsRows`, `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`), `CentredMessageLayer`, `Amounts`.
+    `IMenuPage` and `IMenuCorner`, `SettingsPage`, `SettingsRows`, `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`), `CentredMessageLayer`, `Amounts`.
   - `Input/`: snapshots per frame and per fixed step (`InputSnapshot`: `InputService.Frame` and `InputService.Tick`), `PointerCapture`, `IKeyboardFocus`, `IMenuInput` (`UiPointer`,
     `CapturingBinding`), `IFrameInput` and `InputService` (`SetDrawnPointer`, `SetPanel`, `SetTextFocus`,
     `AddEscapeHandler`), `IPanelInput`, `ITextInput`, `IEscapeHandler`, `KeyBindings`, `InputBinding`.

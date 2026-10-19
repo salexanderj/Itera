@@ -1489,7 +1489,7 @@ has no navigation.
   Quit, with a join page of the Steam friends who host and an address box, and, over a match at Escape, Resume, Settings,
   Leave Match, and Quit. The settings (the volume with music's and the effects' under it, mouse sensitivity, field of view, the UI scale, dynamic render scaling,
   shadows, anti-aliasing, VSync, full screen, and the keybindings) apply at once and live in `settings.json`, below the
-  command line. A game gives the menu its look (`MenuStyle`), adds its own pages (`MenuPages`) and its switches to the
+  command line. A game gives the menu its look (`MenuStyle`), adds its own pages and a notice at the main page's bottom left (`MenuPages`) and its switches to the
   Settings page (`SettingsRows`), or swaps the menu for its own (`IMenu`, which can show the engine's `SettingsPage`), which reaches the run through the same public services: matches
   (`MatchControl`, `MatchCommands`), quitting, the player's settings, the Steam friends hosting (`SteamFriendList`,
   which the loop updates) and their joins (`JoinRequests`), and the saves (`SaveFiles`). With

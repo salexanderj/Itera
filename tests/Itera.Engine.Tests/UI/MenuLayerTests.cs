@@ -504,6 +504,23 @@ public sealed class MenuLayerTests : IDisposable
     }
 
     [Fact]
+    public void A_games_corner_shows_at_the_main_pages_bottom_left_alone_and_its_button_acts()
+    {
+        var corner = new NoticeCorner();
+        _pages.AddCorner(corner);
+        Frame();
+
+        var notice = Find("(Changed)").Rect;
+        Assert.True(notice.Left < Width / 4f && notice.Bottom > Height * 3 / 4f, $"The notice is at {notice}.");
+        Click("Put back");
+        Assert.Equal(1, corner.Presses);
+        Assert.False(_menu.Ui.TryFind("(Changed)", out _));
+        corner.Changed = true;
+        Click("Settings");
+        Assert.False(_menu.Ui.TryFind("(Changed)", out _));
+    }
+
+    [Fact]
     public void The_keyboard_moves_the_focus_through_the_buttons_and_presses_one()
     {
         _pointer.Keys = UiKeys.Next;
@@ -783,6 +800,31 @@ public sealed class MenuLayerTests : IDisposable
 
             _escaped = true;
             return true;
+        }
+    }
+
+    /// <summary>A game's corner: a notice with a button that clears it, shown while changed.</summary>
+    private sealed class NoticeCorner : IMenuCorner
+    {
+        private static readonly int s_putBack = Ui.Id("put-back");
+
+        public bool Changed { get; set; } = true;
+
+        public int Presses { get; private set; }
+
+        public void Build(Ui ui)
+        {
+            if (!Changed)
+            {
+                return;
+            }
+
+            ui.Text("(Changed)", UiText.Small);
+            if (ui.Button(s_putBack, "Put back").Clicked)
+            {
+                Presses++;
+                Changed = false;
+            }
         }
     }
 
