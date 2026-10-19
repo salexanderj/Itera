@@ -153,6 +153,37 @@ public sealed class EditLogTests
     }
 
     [Fact]
+    public void Each_edit_takes_the_same_bytes_in_a_stream()
+    {
+        using var memory = new VoxelMemory(1 << 20);
+        var log = new EditLog(1, VoxelGrid.Unit);
+        var lengths = new long[2];
+        for (var pass = 0; pass < 2; pass++)
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                log.Append(Dig(log.Count + 1, new VoxelCoord(i, 0, 0)));
+            }
+
+            using var stream = new MemoryStream();
+            EditLogSerializer.Write(
+                stream,
+                "test.gen",
+                3,
+                7UL,
+                30,
+                [],
+                log,
+                memory,
+                new byte[VoxelConstants.ChunkVoxels]
+            );
+            lengths[pass] = stream.Length;
+        }
+
+        Assert.Equal(3 * EditLogSerializer.EditBytes, lengths[1] - lengths[0]);
+    }
+
+    [Fact]
     public void A_match_without_a_world_is_written_as_a_worlds_log_of_no_edits()
     {
         using var memory = new VoxelMemory(1 << 20);

@@ -709,6 +709,21 @@ public sealed partial class VoxelWorld : IDisposable
         }
 
         _disposed = true;
+        if (_memory is not null)
+        {
+            // What the match leaves in its log, for the size a long match's saves and joins grow to.
+            var sinceReset = _edits.Count - _edits.LastReset;
+            var kilobytes = sinceReset * EditLogSerializer.EditBytes / 1024.0;
+            LogMatchEdits(
+                _edits.Count,
+                sinceReset,
+                kilobytes,
+                _edits.Pieces.Length,
+                _edits.IndexEntries,
+                _edits.MostIndexEntries
+            );
+        }
+
         // The warm-up uses the voxel memory; it stops at its next round once _disposed is set, and never faults.
         if (_warmUp is not null && !_warmUp.Wait(WorkerStopTimeout))
         {
@@ -1428,6 +1443,19 @@ public sealed partial class VoxelWorld : IDisposable
         ulong seed,
         string generatorId,
         int generatorVersion
+    );
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Voxels: the match ends with {Edits} edit(s) in its log, {SinceReset} since its last reset ({Kilobytes:F0} KB of edits in a save or a join, beside {Pieces} lifted piece(s)), {Entries} of {MostEntries} index entries"
+    )]
+    private partial void LogMatchEdits(
+        long edits,
+        long sinceReset,
+        double kilobytes,
+        int pieces,
+        int entries,
+        int mostEntries
     );
 
     [LoggerMessage(

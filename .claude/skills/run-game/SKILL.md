@@ -153,7 +153,9 @@ bytes allocated per frame on the main and render threads, GCs, GPU time), Debug 
 over ...`, a game's passes and the image views among them), the fixed steps' CPU time by part, and the eight slowest
 fixed systems (`SystemTimes`), a voxel stats line (columns, chunks, bricks, memory against the budget, loads, unloads,
 job times), a meshes line (blocks meshed and pending, uploads, the mesh heap, triangles drawn, the main thread's time),
-a `Particles:` line while any live, and the shutdown steps. The console shows Information and above. Log lines from the
+a `Particles:` line while any live, at each match's end the size of its edit log (`Voxels: the match ends with N edit(s)
+in its log, ...`: since its last reset, the KB a save or a join sends of them, the lifted pieces, and the index's
+entries), and the shutdown steps. The console shows Information and above. Log lines from the
 render thread carry its thread id (for example `[T21]`) instead of `[T1]`.
 
 ## Unattended runs

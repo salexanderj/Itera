@@ -82,6 +82,12 @@ internal static class EditLogSerializer
     /// <summary>The most bytes of game match data a stream may hold (as the welcome, <c>SessionProtocol</c>).</summary>
     public const int MaxGameDataBytes = 4096;
 
+    /// <summary>
+    /// The bytes an edit takes in a stream: its sequence (8), shape, operation, and material (1 each), origin and extent
+    /// (12 each), and piece and turn (8 each). A lifted piece's voxels come after the edits, apart.
+    /// </summary>
+    public const int EditBytes = 51;
+
     private static ReadOnlySpan<byte> Magic => "ITVE"u8;
 
     /// <summary>
