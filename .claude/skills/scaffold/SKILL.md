@@ -134,14 +134,14 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 ## A change to what the generator makes
 
 A change of its voxels, or of its world's size or voxel size (its grid: `VoxelGrid.Sized(base, halfWidthMetres,
-floorMetres, topMetres)`, voxels of 1 cm to 1 m, up to ±160 km each way, up and down too;
-`GameGenerator.WorldGrid` for the starter). A tall world costs memory only round its ground when its generator says
+floorMetres, topMetres)`, voxels of 1 cm to 1 m, up to ±160 km each way, up and
+down too). A tall world costs memory only round its ground when its generator says
 which layers may hold more than one fill (`IChunkGenerator.DescribeRange` and `DescribeLayers`; `HeightfieldGenerator`
 answers them itself); one that does not stores every layer of a column, as before. Coarse voxels (50 cm, 1 m) make deformable terrain cheap; shapes under a
 voxel then show only as soft dips, walls come in voxel steps, and a generator's centimetre-sized features (a 5 cm
 surface layer, small stones) vanish.
 
-1. Raise the generator's `Version` (`GameGenerator.Version` for the starter).
+1. Raise the generator's `Version`.
 2. Pin the new hash and grid with it in `tests/Game.Tests/WorldTests`: the test compares `(Version, hash, grid
    bounds)`, so a new world, or a new size, with the old version fails.
 3. The game's description of its world (its world rules file, or `GAME.md`).

@@ -40,8 +40,8 @@ internal static partial class RepositoryDocs
             .Select(problem => (problem.Doc, problem.Problem + ": move its lists and recipes to files beside it"));
 
     /// <summary>
-    /// Each file <paramref name="owns"/> takes whose rules files come to more than <see cref="OpenedFileLimit"/>, as a
-    /// problem of the first of them in <paramref name="notYetCleaned"/>, or else of the largest.
+    /// Each file <paramref name="owns"/> takes whose rules files come to more than <see cref="OpenedFileLimit"/>: a
+    /// problem of each of them in <paramref name="notYetCleaned"/>, or of the largest when none is.
     /// </summary>
     public static IEnumerable<(string Doc, string Problem)> Loads(
         Func<string, bool> owns,
@@ -58,8 +58,12 @@ internal static partial class RepositoryDocs
                 continue;
             }
 
-            var doc = rules.FirstOrDefault(notYetCleaned.Contains) ?? rules.MaxBy(rule => Read(rule).Length)!;
-            yield return (doc, $"opening {file} loads {characters} characters of rules ({string.Join(", ", rules)})");
+            var problem = $"opening {file} loads {characters} characters of rules ({string.Join(", ", rules)})";
+            var uncleaned = rules.Where(notYetCleaned.Contains).ToList();
+            foreach (var doc in uncleaned.Count > 0 ? uncleaned : [rules.MaxBy(rule => Read(rule).Length)!])
+            {
+                yield return (doc, problem);
+            }
         }
     }
 
