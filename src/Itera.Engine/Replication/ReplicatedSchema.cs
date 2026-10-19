@@ -70,8 +70,11 @@ public sealed class ReplicatedSchema
         return new FlagsField(Add(name, detail, LaneBlend.Step, 0, (1L << bits) - 1, 1), bits);
     }
 
-    /// <summary>What the fields are, in order, for the kinds' fingerprint: peers with other fields do not play together.</summary>
-    internal string Description => _description.ToString();
+    /// <summary>
+    /// What the fields are, in order (<c>name:kind;</c> each), for the kinds' fingerprint, where peers with other fields do
+    /// not play together, and for the generated reference.
+    /// </summary>
+    public string Description => _description.ToString();
 
     internal LaneBlend BlendOf(int lane) => _lanes[lane].Blend;
 

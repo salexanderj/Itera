@@ -12,16 +12,19 @@ namespace Game.Tests;
 
 /// <summary>
 /// CLAUDE.md's checklists as tests, for the game: every console command the running game has (the engine's, its
-/// systems', and the game's) is in the run-game skill's list, every numeric game option is checked by its validator,
+/// systems', and the game's) says what it does, every numeric game option is checked by its validator,
 /// every game system has a test class with an allocation test, and every vector of the game's components moves with the
 /// origin or is no position.
 /// </summary>
 public sealed class ChecklistTests
 {
+    /// <summary>
+    /// Every console command the running game has (the engine's, its systems', and the game's) says what it does: its help
+    /// is what the console's <c>help</c> and the generated <c>docs/reference/game-commands.md</c> show.
+    /// </summary>
     [Fact]
-    public void Every_console_command_is_in_the_run_game_skill()
+    public void Every_console_command_has_its_help()
     {
-        var skill = File.ReadAllText(Path.Combine(RepositoryRoot(), ".claude", "skills", "run-game", "SKILL.md"));
         using var provider = GameComposition.Build(
             new Dictionary<string, string?> { ["Engine:Audio:Enabled"] = "false", ["Engine:Steam:Enabled"] = "false" }
         );
@@ -35,11 +38,14 @@ public sealed class ChecklistTests
         // The match's: its systems' and the ECS world's.
         using var match = new HeadlessRun(provider).Play(seed: 1);
 
-        var commands = provider.GetRequiredService<ConsoleCommands>().All.Select(command => command.Name).ToList();
-        var missing = commands.Where(name => !skill.Contains($"`{name}`", StringComparison.Ordinal)).ToList();
+        var commands = provider.GetRequiredService<ConsoleCommands>().All.ToList();
+        var silent = commands
+            .Where(command => command.Help.Trim().Length == 0)
+            .Select(command => command.Name)
+            .ToList();
 
         Assert.True(commands.Count > 30, $"only {commands.Count} commands");
-        Assert.True(missing.Count == 0, "Not in .claude/skills/run-game/SKILL.md: " + string.Join(", ", missing));
+        Assert.True(silent.Count == 0, "No help: " + string.Join(", ", silent));
     }
 
     [Fact]
@@ -180,17 +186,5 @@ public sealed class ChecklistTests
                 Assert.True(expected.Equals(field.GetValue(component)), $"{name} is {field.GetValue(component)}.");
             }
         }
-    }
-
-    /// <summary>The repository's root: the nearest folder up from the tests that holds <c>.claude</c>.</summary>
-    private static string RepositoryRoot()
-    {
-        var folder = new DirectoryInfo(AppContext.BaseDirectory);
-        while (folder is not null && !Directory.Exists(Path.Combine(folder.FullName, ".claude")))
-        {
-            folder = folder.Parent;
-        }
-
-        return folder?.FullName ?? throw new InvalidOperationException("No .claude folder above the tests.");
     }
 }

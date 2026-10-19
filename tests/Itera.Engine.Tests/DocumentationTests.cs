@@ -46,8 +46,6 @@ public sealed class DocumentationTests
         ".claude/skills/ecs-vulkan/design.md",
         ".claude/skills/ecs-vulkan/notes.md",
         ".claude/skills/ecs-vulkan/reference.md",
-        ".claude/skills/run-game/SKILL.md",
-        ".claude/skills/scaffold/SKILL.md",
         ".claude/skills/vulkan/SKILL.md",
         ".claude/skills/vulkan/reference.md",
         ".claude/skills/vulkan/silk-net.md",

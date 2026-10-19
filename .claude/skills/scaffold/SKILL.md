@@ -8,6 +8,18 @@ description: "Steps, file lists, and templates for adding to Itera or a game on 
 Each section lists every file the addition touches, in order, and the test that fails when one is missed. Load the
 area's skill first where the hook asks for it (`ecs` for systems and components, `vulkan` for rendering).
 
+## The recipes
+
+The common recipes are below. The others are in files beside this one; read the one you need:
+
+| Adding | File |
+| --- | --- |
+| A model from glTF, a sound from a file, music | `assets.md` |
+| The game's look and sun, the main camera's lens, a render pass of the game's own, an image view | `rendering.md` |
+| A game's own on/off setting, a text box or a screen Escape closes, a HUD screen or panel, a page in the engine's menu, a game's own menu, a UI style | `ui.md` |
+| A physics material, a collision layer or group, a trigger zone, impact events | `physics.md` |
+| A game without voxel terrain | `no-terrain.md` |
+
 ## A system
 
 Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a game's in `src/Game/Systems/`.
@@ -45,9 +57,9 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 2. Its registration, in the game's run order with a comment saying why it runs there: `AddFixedSystems` or
    `AddFrameSystems` in `src/Game/GameServiceCollectionExtensions.cs` (`services.AddScoped<IFixedUpdateSystem>(sp =>
    new NameSystem(...))`).
-3. The order lists: `s_fixedOrder` or `s_frameOrder` in `tests/Game.Tests/SystemOrderTests.cs`, and `GAME.md`'s
-   Systems list. `SystemOrderTests` fails when they differ from the registration.
-4. Its tests, `NameSystemTests` in `tests/Itera.Engine.Tests/Systems/` (engine) or `tests/Game.Tests/` (game), with a
+3. The order lists: `s_fixedOrder` or `s_frameOrder` in `tests/Game.Tests/SystemOrderTests.cs`. `SystemOrderTests`
+   fails when they differ from the registration. The generated `docs/reference/game-systems.md` lists the order too.
+4. Its tests, `<Name>SystemTests` in `tests/Itera.Engine.Tests/Systems/` (engine) or `tests/Game.Tests/` (game), with a
    behaviour test and an allocation test whose name says "allocat":
 
    ```csharp
@@ -63,16 +75,20 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
    ```
 
    `ChecklistTests.Every_system_has_a_test_class_with_an_allocation_test` (engine and game) fails without them.
-5. Docs: an engine system in `.claude/rules/systems.md` (or its area's rules file); a game's in `GAME.md`. Commands it
-   registers go in the `run-game` skill's console list.
-6. A position it keeps across steps (in a component of the game's, or a field) is local to the match's origin and
-   moves when the origin does: a game's component field goes in an `IOriginShiftHandler` the game registers in the
-   match's scope (`services.AddScoped<IOriginShiftHandler, NameShift>()`; the starter's `FoxRouteShift` moves
-   `FoxRoute.Centre`) and in the positions listed in the game's `ChecklistTests`, which fails for a vector field in
-   neither of its lists; an engine component's goes in `OriginShifts`' moves and `ShiftedComponents`
-   (`OriginShiftsTests`). A place the system knows in absolute terms is a `WorldPoint`, made local through the match's
-   `WorldOrigin` when it is used (a local kept from the start goes stale at the first move). The game's first origin is
-   its `IOriginStart` (the starter's `StartPose`), and `OriginShiftSystem` comes first in its fixed systems.
+5. Docs: an engine system in `.claude/rules/systems.md` (or its area's rules file); a game's in its area's rules file.
+   The generated `docs/reference/game-systems.md` and `game-commands.md` list it and its commands: write them again (the
+   `docs` skill).
+6. A position it keeps across steps, in a component or a field, is local to the match's origin and moves when the
+   origin does:
+   - A game's component field goes in an `IOriginShiftHandler` the game registers in the match's scope
+     (`services.AddScoped<IOriginShiftHandler, NameShift>()`; the starter's `FoxRouteShift` moves `FoxRoute.Centre`).
+     It also goes in the positions listed in the game's `ChecklistTests`, which fails for a vector field in neither of
+     its lists.
+   - An engine component's field goes in `OriginShifts`' moves and `ShiftedComponents` (`OriginShiftsTests`).
+   - A place the system knows in absolute terms is a `WorldPoint`, made local through the match's `WorldOrigin` when it
+     is used: a local position kept from the start goes stale at the first move.
+   - The game's first origin is its `IOriginStart` (the starter's `StartPose`), and `OriginShiftSystem` comes first in
+     its fixed systems.
 
 ## An option
 
@@ -86,7 +102,8 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
    ways: every listed value is the code's default, and every option is listed.
 4. A new game options section also goes in `AddOptions` and the `ValidateOptions` list of
    `GameServiceCollectionExtensions`, in `ShippedSettingsTests`' roots, and in `ChecklistTests`' game pairs.
-5. Docs: the `run-game` skill's Options list (and the area's rules file for what it changes).
+5. Docs: the generated options reference (write it again: the `docs` skill), and the area's rules file for what it
+   changes.
 
 ## A console command
 
@@ -97,8 +114,8 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 2. Usage errors print `context.PrintUsage()`; failures `context.PrintError(...)` (a startup script with
    `ExitOnFailure` stops on them). A command that must wait holds its script with `DevConsole.Hold` (see `wait` and
    `screenshot` in `EngineCommands`).
-3. Its name in backticks in the `run-game` skill's console list (host-only ones also in the line after it):
-   `ChecklistTests.Every_console_command_is_in_the_run_game_skill` fails without it.
+3. Its help is what `help` and the generated `docs/reference/game-commands.md` show: write the reference again (the
+   `docs` skill), so the reference tests pass.
 4. A test that runs it through `ConsoleCommands` and checks its answer and effect.
 
 ## A game message
@@ -127,282 +144,7 @@ surface layer, small stones) vanish.
 1. Raise the generator's `Version` (`GameGenerator.Version` for the starter).
 2. Pin the new hash and grid with it in `tests/Game.Tests/WorldTests`: the test compares `(Version, hash, grid
    bounds)`, so a new world, or a new size, with the old version fails.
-3. `GAME.md`'s world description.
-
-## A model from glTF
-
-1. The files in `src/Game/Models/NAME/` (`.gltf` with its `.bin` and images, or one `.glb`; no Draco, meshopt, or Basis
-   compression), copied by the csproj's `Models/*/**` rule, and a row in `src/Game/Models/SOURCES.md` with its source,
-   authors, licence, and changes. Its textures compressed for shipping: `dotnet run -c Release --project tools/Textures
-   -- model src/Game/Models/NAME/NAME.gltf` writes `NAME.textures/` beside it (BC7 and BC5, a quarter of the decoded
-   size); commit it, and run it again when an image changes (a test like `FoxModelTests`' compressed-textures test
-   catches one forgotten).
-2. A name in `GameModels` and a `Declare` line there: the path from the executable's folder and the file's unit
-   (`metresPerUnit`: 1 for metres, 0.01 for centimetres). `GameRunStartup` declares them at the run's start; a mod
-   declares its own at its startup.
-3. A system that places it: `World.Create(MeshPlacement.At(position, orientation, scale), DrawnMesh.Of(index))`, with
-   the index from `MeshAssets.Find(name)` looked up once (`FoxSystem`); the position is local, so a place the game
-   knows in absolute terms (a `WorldPoint`, as its start pose is) goes through the match's `WorldOrigin`
-   (`origin.ToLocal(point)`; CLAUDE.md's Units); a fixed system that moves it copies the pose
-   into the previous one first. `MeshDrawSystem` draws it. A glTF model's front is +z.
-4. A model that things stand on or bump into gets a collider where it is placed: `MeshColliders.Add(asset, transform,
-   tagsOf)` from a system's `Initialize` (or later), `tagsOf` giving each material's surface tags (game-defined bits;
-   voxel materials' through an `IVoxelSurfaceTags`). Loose bodies land on it; `CollisionSources.Raycast` meets it.
-5. A skinned model plays a clip with `MeshAnimator.Playing(rig.FindClip("Walk"))` added to it (the rig from
-   `MeshAssets.TryGet`), and changes clip with `animator.FadeTo(clip, 0.3f)` (a fade) or a new `Playing`; a system that
-   changes clips runs before the engine's `MeshAnimatorSystem`, which the game registers once, after every such
-   system.
-6. Check it: `meshes` lists it (triangles, materials, textures, size, joints, clips), `meshes place NAME [CLIP
-   [SECONDS]]` puts one in front of the camera, the log's `Mesh assets:` lines have no Warning or note about it, a
-   `ScenarioTests` row finds it in `MeshInstances`, and for a skinned model a test like `FoxModelTests` compares its
-   clips with SharpGLTF's own world matrices.
-
-## A sound from a file
-
-1. The files in `src/Game/Sounds/` (WAV, or Ogg Vorbis; mono or stereo), copied by a csproj item like the mesh
-   sample's (`<None Update="Sounds\*.wav;Sounds\*.ogg" CopyToOutputDirectory="PreserveNewest" />`), and a row each in
-   `Sounds/SOURCES.md` with its source and licence. A loop names its points in the file: a WAV's `smpl` chunk, or an Ogg
-   file's `LOOPSTART` with `LOOPLENGTH` or `LOOPEND`; the file makes the join seamless (`docs/sound-files.md`).
-2. Register it in the game's `IRunStartup` by name, as a recipe: `audio.Recipes.Register("clang", new
-   FileOneShotRecipe(Path.Combine("Sounds", "clang-1.wav"), ...) { Gain = 0.5f, ReferenceMetres = 2 })` (1 to 16
-   files, each a variation, at most 30 s each; `KeepStereo = true` for a stereo sound at the listener), or `new
-   FileLoopRecipe(path)` (one file of at most 120 s) for a sound held while sustained (`SampleSounds`).
-3. A system finds it once (`audio.Recipes.TryFind`, in `Initialize`) and plays it: `audio.Play(new SoundEvent { Recipe,
-   Position, Level })`, or for a loop `audio.Sustain(new SoundLoop { Recipe, Key, Position })` each frame it should
-   play (positions local; `SoundLoop.AtListener` or `SoundEvent.AtListener` for no place).
-4. Check it: `sound files` lists each file as read, `sound play NAME` plays it at the listener, the log names a file
-   that cannot be read at Error, and a test hears it with no device (`AudioService.QueueWithoutThread`, with sound on:
-   `QueuedEvents`, `QueuedLoops`; the mesh sample's `SampleSoundSystemTests`) and reads the file
-   (`SoundDecoders.Open`: channels, rate, frames, loop points; `SampleSoundsTests`).
-
-## Music
-
-1. The track's file (Ogg Vorbis, or WAV) with the game's sounds (above), its loop named in the file when it has an
-   intro; a track loops whole by default.
-2. Declare it in the game's `IRunStartup`: `audio.Music.Declare("forest", Path.Combine("Sounds", "forest.ogg"),
-   loop: true)` (at most 64, before the audio thread starts; the headers are read then, a bad file logged at Error).
-3. Play it from a system or the game's menu: `music.Play("forest")` (cross-fades over 2 s from what plays;
-   `fadeSeconds`, and `restart` to play it from its start when it plays already), `music.Stop()`; `music.Current` says
-   what was asked for. The engine's menu plays the track `Engine:Audio:MenuMusic` names; a game's own menu plays its own
-   (`SampleMenu.FollowMusic`).
-4. Check it: `music list`, `music play NAME`, and `music` (the decks' gains, underruns, what the music thread decoded).
-
-## The game's look
-
-1. The game's `IAtmosphereSource` (the starter's `GameAtmosphere`; `AtmosphereSystem` in the frame systems asks it at
-   the camera's absolute place, a `WorldPoint`, each frame) gives the sky (`At`) and the look (`LookAt`): start from `RenderLook.Default` and change values
-   with `with` (`RenderLook.Default with { Exposure = 0.9f, WorldSaturation = 1 }`). A place or a time of day may blend
-   two looks (`RenderLook.Lerp`); it runs every frame, so it allocates nothing.
-2. Try values live with the console's run-only `look NAME VALUE` (`look NAME R G B` for a colour; `look` lists them,
-   `look reset` drops them), then copy the ones chosen into code.
-3. A moving sun: the source's `At` gives the `Atmosphere` with its `SunDirection` (a day's course, `SunPath.AtHour` the
-   test day's), and the sky's and the look's colours for the hour. From 2 degrees under the horizon the sun gives no
-   light and no shadow maps are drawn; for a moon, point `SunDirection` at the moon, above the horizon, with a dim, cool
-   `SunColour` (the look's disc sharpness and strength draw its disc).
-4. Check it: `game.py shots ... --compare OLD` against a set taken before, and a look at the PNGs (`time HH:MM` and
-   `sun AZIMUTH ELEVATION` show other hours).
-
-## The main camera's lens
-
-The active camera (`CameraRules.CreateCamera`: `ActiveCamera`, `CameraPose`, `CameraLens`) keeps its lens until a system
-changes it; `CameraExtractSystem` hands both to the renderer (`.claude/rules/rendering.md`, the camera's lens).
-
-1. Try it first with the console's run-only `lens ortho HEIGHT [NEAR FAR]` (`lens off` gives the camera's own back).
-2. A frame system before `CameraExtractSystem` writes `CameraLens.Orthographic(heightMetres, near, far)` into the
-   camera entity (`float.NaN` for near and far: the view distance each way) and puts its `CameraPose` at the middle of
-   what it shows; the player's field of view does not apply to it. A game whose camera is not at the player's eye
-   (a top-down or strategy view) registers its own camera system in place of `PlayerCameraSystem` and `DebugFlyCameraSystem`, which makes the camera entity with `CameraRules.CreateCamera` as `PlayerCameraSystem` does. It goes in `SystemOrderTests` and `GAME.md`, with a behaviour test and a zero-allocation test.
-3. Check it: `game.py shots` of its views (`x,y,z,yaw,pitch`), and `validate.sh --offscreen`.
-
-## A render pass of the game's own
-
-GPU work the engine does not do (a highlight, an outline, a screen effect, a compute pass) is a render pass; the
-mesh sample's `AimHighlightPass` (`samples/Itera.MeshSample/Rendering/`) is a short one. Load the `vulkan` and
-`ecs-vulkan` skills first, and read `.claude/rules/rendering.md`, "Passes a game adds".
-
-1. A class implementing `IRenderPass`: its `Name` and `Stage`. `Initialize(setup)`: a host-visible buffer with a region a
-   frame slot (`setup.Allocator.CreateBuffer(..., MemoryUsage.Upload, ...)`, `RenderPassSetup.FramesInFlight`
-   regions), a set of it (`setup.CreateBufferSet`), a layout with the view's push constants (`setup.CreateLayout`,
-   `sizeof(ViewConstants)`), and a pipeline for the stage's targets (`setup.CreateTriangles`). `Write(slot, frame)`
-   writes the slot's region, write only, from what a frame system left in a run-wide service; `Record(context)`
-   flushes the slot's region, binds, pushes `context.View`, and draws; `OnTargetsChanged` makes the pipeline again when
-   the colour format or samples changed; `CompileShaders` and `ReplacePipelines` for shader reloads; `Dispose` safe
-   twice and when `Initialize` never ran (runs without graphics).
-2. Register it with the run-wide service it reads: `services.AddSingleton<IRenderPass, MyPass>()`. The match's frame
-   system that fills the service clears it in its `Dispose`, since the pass outlives the match.
-3. Its shaders go in the game's `Shaders/` folder, copied to `Shaders/Game/` (the sample's csproj item), and include the
-   engine's `../view.glsl` (`viewClip`, `view.slot`); the struct they read is `layout(scalar)`, with a `GpuLayout` test
-   in the game's tests (the sample's `AimHighlightPassTests`).
-4. Check it: the log's `Render pass of the game's: NAME at the STAGE stage`, `validate.sh` (with `--binary` for a game
-   outside `src/Game`) windowed and `--offscreen`, a screenshot of it, and its time in `game.py gpu` (`Game NAME`) and
-   the Debug line `GPU passes over ...`'s `game passes`.
-
-## An image view (a minimap, a camera's picture)
-
-A view of the world the engine draws into an image (`RenderViews`; `.claude/rules/rendering.md`, "Image views"); the
-starter's minimap (`src/Game/Minimap.cs`, `MinimapLayer.cs`, `Systems/MinimapSystem.cs`) is the example.
-
-1. Declare it in the game's `IRunStartup.Start`: `views.Declare(name, width, height, everyFrames)` (keep the index),
-   and its key (`KeyBindings.Register`) and a saved on/off (`PlayerSettings.RegisterSwitch`) if the player turns it on
-   and off ("A game's own on/off setting", below).
-2. A frame system (after `CameraExtractSystem`) asks for it each frame it should be drawn: `views.Draw(index, camera)`
-   with a `CameraView` (an orthographic one: `CameraProjection.Orthographic`, a height in metres, NaN near and far for
-   the view distance each way round its position). It goes in `SystemOrderTests` and `GAME.md`, with a behaviour test
-   (`RenderViews.Asked` gives what it asked) and a zero-allocation test.
-3. To show it on the HUD, an `IMatchUiLayer` calls `views.Show(index, x, y, width, height)` in its `Bounds` (asked
-   every frame it shows, at the screen's size) and draws its frame and marks round the rectangle, leaving the inside
-   clear; register it `services.AddScoped<IMatchUiLayer, MyLayer>()`. The engine's stats line sits in the top-right
-   corner too: keep clear of it (the starter's `MinimapLayer` takes it).
-4. To show it on a mesh material (a screen in the world), call `views.ShowOnMaterial(index, assetName, materialName)`
-   in the same startup: the material shows the picture for its colour, and for its emission when it glows, through its
-   colour's texture coordinates (0 to 1 across the picture, v 0 at its top); the mesh sample's `YardCamera` and the
-   yard's `yard-screen`.
-5. Check it: the log's `Image view NAME: ...` line, `validate.sh` windowed and `--offscreen`, a screenshot with the UI
-   (`screenshot 1 PATH`, not `noui`), and its cost in `game.py gpu` (`ImageViews`, a time per update).
-
-## A game's own on/off setting
-
-A choice the player makes and the game keeps in `settings.json` (the starter's minimap shown or hidden;
-`.claude/rules/ui.md`).
-
-1. In the game's `IRunStartup.Start`: `settings.RegisterSwitch(name, defaultValue)` (keep the `GameSwitch`), and a key
-   for it if the player toggles it (`KeyBindings.Register(id, label, hint, InputBinding.Of(key))`; the Keybindings tab
-   lists it after the movement keys). The starter's `Minimap.Declare` does both.
-2. A row on the Settings page, if the player sets it there: `SettingsRows.AddSwitch(which, label, hint, tab)` in the
-   same `Start` (the engine's `SettingsRows.GameTab` or `GraphicsTab`, or a tab of the game's own). A key toggles it in a
-   frame system (`settings.SetSwitch(which, !settings.IsOn(which))` when `settings.Keys.WasPressed(in input.Frame, key)`
-   and the match's `PlayerInputBlock` is not `Blocked`), and the code it controls reads `IsOn` (both allocate nothing).
-   The file is written when the player next leaves the Settings page or at the run's end.
-3. Test it as the starter's `MinimapSystemTests` does (the key hides and shows it in the player's settings, and does
-   nothing while the input is blocked); the engine's `PlayerSettingsTests` cover the file.
-
-## A text box, or a screen that Escape closes
-
-A chat line, a save's name, or a sign's text the player types; an inventory or map that Escape shuts before the menu
-opens (`.claude/rules/ui.md`).
-
-1. A text box: keep a `TextEntry(maxLength, enter, escape)` (its `Line` holds the text and cursor) and give it the
-   typing with `IFrameInput.SetTextFocus(entry)` when it opens (a key the game reads, a click on it). Every key but `
-   goes to it until `ClearTextFocus(entry)`, which its `enter` and `escape` callbacks usually call; the player stops
-   walking while it has the keys. Draw `entry.Line` in an `IMatchUiLayer` (redraw when `Line.Version` changes). A game
-   with its own editing keys implements `ITextInput` instead.
-2. A screen Escape closes: implement `IEscapeHandler` (`Escape()` returns true when it was open and closes, false to
-   let Escape pass on), and `IFrameInput.AddEscapeHandler(screen)` once, at the match's start (a system's
-   `Initialize`). The newest added is asked first. The engine drops both at the match's end.
-3. Test them over the real `InputService` (`tests/Itera.Engine.Tests/Input/TextFocusTests` shows how) or a
-   `HeadlessMatch` (`match.Input`).
-
-## A HUD screen or panel on the UI toolkit
-
-An inventory, a shop, a scoreboard, a dialogue box (`.claude/rules/ui.md`, the toolkit's paragraph):
-
-1. The layer: a class deriving from `UiLayer` and `IMatchUiLayer` (or `IUiLayer` for a run-wide one), taking the run's
-   `UiToolkit` and `IFrameInput` in its constructor (`: base(toolkit, input)`), with `Visible` while it shows and
-   `Build(Ui ui)` declaring it every frame it shows:
-
-   ```csharp
-   protected override void Build(Ui ui)
-   {
-       using (ui.Column(Ui.Id("shop"), new UiBox { Panel = true, Padding = new UiEdges(32), Gap = 12,
-                                                   Anchor = UiAnchor.Screen(UiPoint.Centre) }))
-       {
-           ui.Text("Shop", UiText.Heading);
-           using (ui.Grid(Ui.Id("shop.items"), columns: 4, new UiBox { Gap = 8 }))
-               for (var i = 0; i < _items.Count; i++)
-                   if (ui.Area(Ui.Id(s_item, i), UiBox.Fixed(96, 96), version: _items[i].Version).Clicked)
-                       Buy(i);
-           if (ui.Button(Ui.Id("shop.close"), "Close").Clicked) Close();
-       }
-   }
-   ```
-
-   Sizes are units of a 1080-pixel-high screen. Ids are `Ui.Id("name")` (static readonly fields) or `Ui.Id(list, i)`.
-   Strings declared each frame must be kept (a field, made again only when they change), or the layer allocates.
-   `DrawArea(painter, element)` draws what an `Area` shows (an icon, a picture); give the area a `version` that changes
-   when its picture does.
-2. Its input: register it in the match's scope (`services.AddScoped<IMatchUiLayer, Shop>()`, after the engine's). A
-   layer that takes clicks implements `IPanelInput` and sets itself as the panel while it shows
-   (`input.SetPanel(this)`, `SetPanel(null)` as it closes): the pointer is freed and its buttons and the wheel reach it.
-   A screen Escape closes is an `IEscapeHandler` (the section above); a text box in it gets the typing when clicked.
-   Keyboard focus keys are the layer's own (`Keys`, a `UiKeys` from the game's bindings); the menu's reach only the menu.
-3. Tests, as `tests/Itera.Engine.Tests/UI/Toolkit/UiLayerTests` does: the layer drawn on a `UISurface` with a stub
-   `IFrameInput`, clicked by what its elements read (`layer.Ui.TryFind(label, out var element)`, `element.Rect`); its
-   ink inside its bounds at a few screen sizes (`LayerInk`); an idle frame allocating nothing (`SystemAllocation`); its
-   picture (`LayerPicture`, `ITERA_UI_PICTURES`). The console's `ui` prints it in a running game and `ui press LABEL`
-   clicks it. Choose see-through colours from a shot of the running game: the UI pass blends in linear light.
-
-## A page in the engine's menu, and Settings rows
-
-1. A page: a class implementing `IMenuPage` (`Title`, `Build(Ui ui)` declaring its content inside the menu's panel,
-   `Escape()` true when it closed something of its own), added in the game's `IRunStartup.Start` with
-   `pages.Add(label, hint, page, MenuPlace.Main)` (or `MenuPlace.InGame` over a match, or `MenuPlace.Both`; `Main` by
-   default; `MenuPages`, run-wide). Its button shows above
-   Settings; the menu adds the title and Back.
-2. Settings rows: `SettingsRows.AddSwitch` (the on/off setting's section above).
-3. Test it through the engine's menu as `MenuLayerTests.A_games_page_opens_from_its_button_and_its_switch_rows_show_on_their_tabs` does.
-
-## A game's own menu
-
-Copy `samples/Itera.MeshSample/SampleMenu.cs`; its README's "A game's own menu" lists what every menu must do
-(`AboveMatch`, `Visible` through joins and starts, following `MatchControl`, typing through `TextFocus`, the Settings
-page's key capture, the shade first in the flow).
-
-1. Register it after `AddIteraEngine`: `services.AddSingleton<IMenu, MyMenu>()` (the last `IMenu` is the run's).
-2. Settings: the engine's `SettingsPage` inside it (`Build`, then `Footer`), or the game's own rows over
-   `PlayerSettings`. With Steam, list the friends hosting (`SteamFriendList`, `Watching`) and answer `JoinRequests`.
-3. Tests, as `tests/Itera.MeshSample.Tests/SampleMenuTests` does: the menu built with a `MatchControl` the test moves
-   (`MatchControlStates`: a join connecting, a match playing, its end), what it asked for read from
-   `MatchControl.PendingStart` and `PendingLeave`, `PlayerSettings.WithoutFile()`; and one real match followed
-   (`HeadlessRun`). Pictures of every page at 1280x720 and 2560x1440, and shots of the running game, for a look test.
-
-## A UI style
-
-A look of the game's own for the toolkit's elements: a class deriving from `UiStyle` (`samples/Itera.MeshSample/
-SampleMenuStyle.cs`), its colours a `MenuStyle`, its body text in units (`base(bodyUnits, colours)`); override what
-differs (`CornerUnits`, `OutlineUnits`, `TextUnits`, `Bold`, `DefaultBox`, or a kind's drawing, `DrawButton` and the
-rest). Set it on one layer (`Ui.Style = new MyStyle()` in its constructor) or on every layer made after it
-(`UiToolkit.Style`). A part made for another style (the engine's `SettingsPage`) sizes its controls itself, so it fits.
-
-## A physics material
-
-1. Register it in the game's `IRunStartup` (injected `PhysicsMaterials`; before the first match, which seals them):
-   `var ice = materials.Register("ice", new PhysicsMaterial(0.03f, 0))` (friction 0 to 4; bounciness 0 to 1; at most
-   64, `default` the engine's, friction 1, no bounce). A voxel material takes one with `materials.MapVoxel(voxel, ice)`
-   (the voxels at most 8 physics materials with the default; each voxel cell a static per material).
-2. Give it: a body at `PhysicsWorld.AddBody(description, new PhysicsBodySettings { Material = ice })` or
-   `SetMaterial`; a mesh collider at `MeshColliders.Add(..., settings)` or `SetSettings`; a ball from nothing takes its
-   voxel material's. A system finds it by name once (`materials.TryFind`).
-3. Check it: `physics materials`; a test dropping or sliding a body on it (the engine's `PhysicsMaterialsTests` and
-   `VoxelPhysicsMaterialsTests`); characters grip by the ground's friction (`CharacterContact.GroundMaterial`).
-
-## A collision layer or group
-
-1. Register it in the game's `IRunStartup` (injected `PhysicsLayers`): `var gate = layers.Register("gate")` (at most
-   32), set the run's table (`layers.SetTouches(balls, gate, false)`), and, where characters or voxels need their own,
-   `layers.CharacterLayer` and `VoxelLayer`.
-2. Give it as a material (above): `PhysicsBodySettings.Layer` and `Group` (bodies and statics of one group other than 0
-   never touch each other), or `PhysicsWorld.SetLayer`. In a match, `PhysicsWorld.SetTouches` changes that match's
-   table and wakes the sleepers.
-3. Remember the mover reads every mesh collider whatever its layer, and no loose body whose layer does not touch the
-   characters'. Check it: `physics layers`; a test that a body passes or stops (the engine's `PhysicsLayersTests`).
-
-## A trigger zone
-
-1. Add it from a system's `Initialize` (or later): `var zone = physics.AddTrigger(TriggerShape.Box(size),
-   origin.ToLocal(middle), Quaternion.Identity, layer)` (a box, `Sphere`, or `Capsule`; at most 256; `MoveTrigger`,
-   `RemoveTrigger`).
-2. Read what came and went in a fixed system: bodies in `physics.TriggerEvents` (the last physics step's), characters
-   in the match's `CharacterTriggers.Events` (give each character a `TriggerSensor` and register the engine's
-   `TriggerCharacterSystem` after the stand-ins; read it in systems after that). Compare `change.Trigger == zone`.
-3. Check it: a scenario test walking a character or rolling a body into it (the mesh sample's `PhysicsDemoTests`).
-
-## Impact events
-
-1. Mark the bodies or statics: `PhysicsBodySettings { Marks = PhysicsMarks.ContactEvents }`, or
-   `PhysicsWorld.SetMarks` (a ball from `LooseBodies.TryCreateBall` after it is made).
-2. Read `physics.ImpactEvents` in a fixed system (the last step's): `Began` with the point, normal, speed, and both
-   materials (a sound's gain by the speed, as the mesh sample's `PhysicsDemoSystem` does), `Ended` as a pair parts.
-3. Check it: a drop of known height reports its speed (the engine's `ImpactEventsTests`).
+3. The game's description of its world (its world rules file, or `GAME.md`).
 
 ## A test that plays the real game
 
@@ -418,26 +160,8 @@ match.Step(60);
 // Read match.World (an Arch query), match.Match.Voxels, or match.Services.
 ```
 
-## A game without voxel terrain
-
-`samples/Itera.MeshSample` is one, to copy from. Its composition is `AddIteraEngine` and its own (`AddMeshSample`):
-
-1. No `IChunkGenerator` and no `AddIteraVoxels()`: matches have no voxel world (`MatchServices.Terrain` null).
-2. Its world as mesh assets: models from glTF (above) or built in code (`MeshAssets.Add` with a `MeshAsset`; textures
-   by `MeshTextureData.FromRgba`), added at its `IRunStartup`; drawn by entities with `MeshPlacement` and `DrawnMesh`,
-   and registered as colliders (`MeshColliders.Add(asset, transform, tagsOf)`) from a system's `Initialize`, each
-   material's surface tags given by `tagsOf`.
-3. The engine's systems that need no world, with `null` where a `VoxelWorld` is optional (`MapResetSystem`,
-   `DebugBallSystem`, `PlayerCameraSystem`, `MeshDrawSystem`); no `StreamingCentreSystem` or benchmark. The character
-   mover reads the colliders in cells of `Engine:Physics:CollisionCentimetres`; the play area is
-   `PlayArea.WithoutTerrain` (±512 m) unless the game registers its own with its world's bounds
-   (`services.Replace(...)`, as the sample does), whose edge is the mover's wall.
-4. Optional: `ClimbingMode` as its `IMovementMode` with the tags it climbs (and a `Climber` on its players), an
-   `ILooseBodyRest` for what a rested ball becomes, an `IAtmosphereSource` for its sky and look.
-5. Check it: tests that play it through `HeadlessMatch` (`tests/Itera.MeshSample.Tests`), and
-   `validate.sh --binary PATH` (the vulkan skill) for its drawing.
-
 ## Then
 
 `dotnet build` (no warnings), `dotnet test` (redirected to a file), `dotnet csharpier check .`; a game run for what the
-tests cannot see (the `run-game` skill: `game.py shots` for pictures, a startup script for an unattended check).
+tests cannot see (the `run-game` skill: `game.py shots` for pictures, a startup script for an unattended check). Then
+the docs, as the `docs` skill's "After a change" says.

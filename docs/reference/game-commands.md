@@ -1,0 +1,49 @@
+# Console commands
+
+Every command the running game has: the engine's, the game's, and its match's, with its arguments, where it may run, and its help. The console's `help` prints the same. Generated from the code by the reference tests; do not edit it by hand (`docs/reference/README.md`).
+
+| Command | Runs | From | What it does |
+| --- | --- | --- | --- |
+| `aa [on\|off\|edges\|weights\|auto]` | anywhere | engine | Anti-aliasing (SMAA, when the world is drawn with one sample a pixel) for this run (not saved); edges and weights show what it finds; auto gives it back to the settings. |
+| `balls [count] [radius cm] [material]` | offline or host | engine | Drops balls made from nothing in a row 3 m in front of the camera (8 of 12 cm, of the game's default material, unless given): loose bodies that fall and go back into the grid at rest (without voxel terrain, become what the game decides). |
+| `camera [first\|third]` | anywhere | engine | The camera at the player's eye, or behind its right shoulder (its key: see Keybindings; the wheel moves it). |
+| `cleanup` | offline or host | engine | Removes every loose body (thrown balls and cut pieces) and every particle. |
+| `clear` | anywhere | engine | Empties the console. |
+| `ecs counts \| list COMPONENT [N] \| show ID[:VERSION]\|player` | anywhere | engine | Reads the match's entities: counts lists the archetypes (each set of components) with how many entities have it; list prints the first N (20) entities with COMPONENT and that component's fields; show prints every component of one entity, by its id (as list prints it) or the local player's. |
+| `fly [on\|off]` | anywhere | engine | Flies the debug camera, or walks again where it is. |
+| `flyspeed [metres per second]` | anywhere | engine | The fly camera's speed, 0.25 to 500 m/s (the wheel changes it too). |
+| `help [command]` | anywhere | engine | Lists the commands, or says what one does. |
+| `host [seed] [steam\|direct]` | anywhere | engine | Hosts a match: through Steam when it runs (friends see it), else on UDP (Engine:Session:Port). |
+| `join address` | anywhere | engine | Joins a host: host:port over UDP, or lobby:ID or steam:ID through Steam; ends the match now first. |
+| `leave` | anywhere | engine | Ends the match and goes back to the menu. |
+| `lens [ortho HEIGHT [NEAR FAR]\|off]` | anywhere | engine | The camera's lens for this run (not saved): orthographic, an image HEIGHT metres high round the camera (the middle of what it shows), from NEAR to FAR metres along the view (negative: behind it; by default the view distance each way), in place of the camera's own; off gives the camera's own back. |
+| `lights test N\|clear` | anywhere | engine | Point lights for this run: test scatters N warm lights round the camera for ten minutes (the light budget keeps the brightest); clear takes every light's flash away. |
+| `lines [on\|off]` | anywhere | engine | Debug lines: bodies' outlines, stand-ins, and collision cells. |
+| `look [NAME [VALUE\|R G B]] \| reset` | anywhere | engine | The look for this run (not saved; RenderLook): with no name lists every value (* marks one set here), NAME prints one, VALUE (or R G B for a colour) sets it over every frame's look, reset gives every value back to the game's. |
+| `materials [textures\|flat] [all] \| sets \| set ID SET\|none [MATCH] \| tune ID DETAIL RELIEF BLUR \| bake ID top\|side [NAME]` | anywhere | engine | How the world's materials are drawn for this run (not saved): from their texture sets where they name one, or in flat colours; all draws every world material without a set from the first small set, for timings. sets lists the texture sets loaded; set draws material ID from a set (its colour matched to the material's by MATCH, 0 to 1) or plain; tune draws material ID's set keeping DETAIL of its colour's variation and RELIEF of its relief (0 to 1), BLUR mip levels softer (0 to 4); bake writes material ID's recipe, on the ground's plane or a wall's, as images for tools/Textures into the data folder's Bakes/. |
+| `meshes [place NAME [SCALE] [CLIP [SECONDS]] \| test COUNT [NAME [CLIP]] \| clear]` | anywhere | engine | Lists the run's mesh assets (models from glTF files) and their clips; place puts one 4 m in front of the camera, facing it, on the ground, playing CLIP, or held at SECONDS of it; test puts COUNT in rows ahead (the first asset unless named), playing CLIP from different times; clear removes those it placed. |
+| `music [list\|play NAME [SECONDS]\|stop [SECONDS]]` | anywhere | engine | Music: what plays, the tracks, a track played (cross-fading over SECONDS, 0 to 60, 2 by default), or the music stopped (fading out). |
+| `origin [move DX DY DZ]` | anywhere | engine | The match's origin, which this game's positions are measured from (whole metres): with no argument prints it and the camera's place from it and in the world; move moves it by DX DY DZ whole metres for this run, and everything kept in positions with it, so nothing in the world moves. |
+| `particles [on\|off\|recipes\|test NAME [COUNT]\|pull NAME [COUNT]\|stress NAME BURSTS\|stress off]` | anywhere | engine | Particles: the counts, on or off, the recipes, a burst where the camera looks (pull: flying to the camera), or N bursts a frame there. |
+| `pause` | offline | engine | Stops the fixed steps (the simulation); frames go on being drawn. Not while a match loads (the world streams in steps). |
+| `play [seed]` | anywhere | engine | Starts a match offline, from the seed (the options' by default); ends the match now first. |
+| `pos` | anywhere | engine | Prints where the player's eye is and where it looks (the fly camera while it flies), as tp takes it (x,y,z,yaw,pitch). |
+| `quit [CODE]` | anywhere | engine | Ends the game, as the menu's Quit does; CODE (0 to 255) is the process's exit code. |
+| `reset` | offline or host | engine | Puts the world back as the seed made it (every edit undone) and removes every loose body and particle; a game's own things go back as its systems decide. |
+| `resume` | offline | engine | Runs the fixed steps again. |
+| `save` | offline or host | engine | Writes the match's save now, on a background thread (a match with a save name, Engine:Save:Name). |
+| `scale [0.5-1\|auto]` | anywhere | engine | The render scale for this run (not saved): the world is drawn at this share of the screen's size and upscaled with FSR 1; auto gives it back to the settings. |
+| `screenshot [scale] [noui] [PATH.png]` | anywhere | engine | Writes the picture to a PNG, at PATH.png (from the game's working folder) or in the data folder's Screenshots/, at a share of its size (0.1 to 1), with or without the UI. In a script, the commands after it wait until the PNG is written. |
+| `settings [volume V\|musicvolume V\|effectsvolume V\|sensitivity DEG\|fov DEG\|uiscale X\|scaling on\|off\|threshold FPS\|shadows on\|off\|aa off\|smaa\|2x\|4x\|8x\|vsync on\|off\|fullscreen on\|off]` | anywhere | engine | The player's settings (the menu's Settings), kept in settings.json; with nothing, each one. |
+| `settle [seconds]` | offline or host | engine | How long a thrown ball rests before it goes back into the grid, 0.5 to 60 s. |
+| `shaders [reload]` | anywhere | engine | The folder shaders are compiled from; reload compiles them again and remakes the pipelines (the old ones stay on an error). |
+| `shadows [on\|off]` | anywhere | engine | The sun's shadows. |
+| `sound [on\|off\|volume V\|recipes\|files\|test NAME [LEVEL]\|play NAME\|wav NAME [LEVEL]\|wav all]` | anywhere | engine | Sound: the counts, on or off, the master volume (0 to 1), the recipes, the sounds from files, one where the camera looks (a level 0 to 1) or at the listener, or WAV files of recipes (with a level, that level's variations a file each, or 8 s of a stream at it). |
+| `stats [on\|off]` | anywhere | engine | The stats line in the top-right corner (its key: see Keybindings). |
+| `step [N]` | offline | engine | Pauses, then runs N fixed steps (1), as many a loop iteration as the step cap allows. |
+| `sun [AZIMUTH ELEVATION\|off]` | anywhere | engine | The sun for this run (not saved): towards AZIMUTH degrees (from -z round towards +x) and ELEVATION degrees over the horizon, in place of the game's; its light fades out from 2 degrees over the horizon to 2 under, where night starts (no sunlight, no shadow maps); off gives the game's back. |
+| `time [HH:MM\|off]` | anywhere | engine | The sun for this run at a time of a test day (not saved): sunrise at 06:00, the engine's sun at 12:00, sunset at 18:00, night between; off gives the game's back. |
+| `timescale [X]` | offline | engine | Game time per second of real time for this match, 0.05 to 16 (1); faster than the machine keeps up drops steps. |
+| `tp x y z [yaw pitch] \| x,y,z,yaw,pitch \| PLACE` | offline or host | engine | Moves the player there (metres and degrees), or the fly camera while it flies. |
+| `view [off\|wire\|levels\|all\|plain]` | anywhere | engine | Debug views for this run (not saved): wire draws the meshes' edges over the world, levels tints each surface by its voxels' size (1 cm magenta, 2 violet, 4 blue, 8 cyan, 16 green, 32 yellow, 64 orange), all both, plain draws every block from its plain mesh with the seams between levels open. |
+| `wait loaded\|view\|ticks N\|frames N\|seconds N [TIMEOUT]` | anywhere | engine | Holds the commands after it in the line (or the startup script) until a match is played with its loading screen gone, the view's world is loaded and on the GPU (as the loading screen's World waits for: after a tp, before a screenshot), N fixed steps have run, N frames are built, or N seconds of real time pass (the loop's clock, not scaled by timescale); past TIMEOUT seconds (300) it fails and they are dropped. |

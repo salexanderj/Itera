@@ -55,7 +55,8 @@ projects used as references.
     a game's in its tests. A system the game registers takes its place in the game's `SystemOrderTests` and `GAME.md`.
   - A new option: its range in `EngineOptionsValidator` (the engine's) or the game's validator, and its default in the
     game's `appsettings.json` (`ShippedSettingsTests`).
-  - A console command added or removed: the list in the `run-game` skill.
+  - A console command, option, system, tunable, replicated kind, or save section added or changed: write the generated
+    reference again (`docs/reference/`; the `docs` skill), which `ReferenceTests` checks.
   - Code that reads the edit log: handle `VoxelEditOperation.Reset`, an empty box after which no earlier edit counts,
     and `RemovePart`, `PlaceObject`, and `RemoveObject`, which change objects alone (`VoxelEdit.ChangesWorld`).
   - A local position a component or service keeps across steps moves when the origin does (`OriginShifts` and its

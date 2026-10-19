@@ -352,10 +352,10 @@ internal static partial class RepositoryDocs
     }
 
     /// <summary>
-    /// Checks a generated file (<c>docs/reference/</c>) against what its generator makes now, or writes it when
-    /// <see cref="WriteGenerated"/> is 1.
+    /// A generated file (<c>docs/reference/</c>) against what its generator makes now: null when they are the same, else
+    /// the problem. With <see cref="WriteGenerated"/> at 1 it writes the file instead.
     /// </summary>
-    public static void CheckGenerated(string file, string content)
+    public static string? Generated(string file, string content)
     {
         ArgumentNullException.ThrowIfNull(content);
         var path = Path.Combine(Root, file);
@@ -364,13 +364,21 @@ internal static partial class RepositoryDocs
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, content);
-            return;
+            return null;
         }
 
         var written = File.Exists(path) ? File.ReadAllText(path).ReplaceLineEndings("\n") : null;
+        return written == content ? null : $"{file} is not what the code makes now";
+    }
+
+    /// <summary>Fails for each generated file not what the code makes now, saying how to write them again.</summary>
+    public static void AssertGenerated(params string?[] problems)
+    {
+        var stale = problems.OfType<string>().ToList();
         Assert.True(
-            written == content,
-            $"{file} is not what the code makes now: run `{WriteGenerated}=1 dotnet test --filter ReferenceTests` and commit it."
+            stale.Count == 0,
+            string.Join("; ", stale)
+                + $": run `{WriteGenerated}=1 dotnet test --filter ReferenceTests`, look over the diff, and commit it."
         );
     }
 
@@ -604,6 +612,12 @@ internal static partial class RepositoryDocs
     // True for a code name found, false for one found nowhere, null for text that is not a code name to check.
     private static bool? KnownCode(string name, ISet<string> code)
     {
+        if (name.StartsWith('<') || Regex.IsMatch(name, "<[^<>]*>[A-Za-z]", Options))
+        {
+            // A placeholder (`<Name>SystemTests`), not a generic name (`List<T>`).
+            return null;
+        }
+
         name = Regex.Replace(name, "<.*>|\\(.*\\)$", "", Options);
         if (!Regex.IsMatch(name, @"^[A-Z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)*$", Options))
         {
