@@ -60,6 +60,8 @@ against a capsule, is public for a game's own shapes.
   two ends, a radius, and the game's part number.
 - A host judges a shot with `Raycast(from, direction, maxMetres, tick, ignore, out hit)`. It returns the nearest capsule
   of any entity but the shooter, at a tick that may fall between two steps.
+- `SphereCast(from, direction, radius, maxMetres, tick, filter, out hit)` sweeps a sphere, for a round of a size. It
+  takes every capsule and bounding sphere `radius` fatter. Its hit's point is where the sphere touches the capsule.
 - Between two steps each capsule's ends move straight by the fraction. A capsule at the same place in both lists with the
   same part is matched. Otherwise each is used where it was recorded.
 - `CapsulesAt(entity, tick, into)` gives one entity's capsules as that ray takes them at the tick. A game uses it to test

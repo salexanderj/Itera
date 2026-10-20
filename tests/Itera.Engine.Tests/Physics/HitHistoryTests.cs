@@ -9,7 +9,8 @@ namespace Itera.Engine.Tests.Physics;
 /// <summary>
 /// <see cref="HitShapes.RaycastCapsule"/> against hand-worked cases and a reference march, and
 /// <see cref="HitHistory"/>: a character recorded over steps is met where it was at a fractional tick and not where it
-/// is now (and the reverse); the shooter is ignored, the nearer entity wins, the part number comes back; an entity not
+/// is now (and the reverse); a swept sphere meets what its ray grazes by less than its radius; the shooter is ignored,
+/// the nearer entity wins, the part number comes back; an entity not
 /// recorded for a while is met only at ticks near its records; a move of the origin between records changes nothing in
 /// absolute terms; <c>Forget</c>, <c>Clear</c>, the limits, and no allocation.
 /// </summary>
@@ -226,6 +227,52 @@ public sealed class HitHistoryTests : IDisposable
         Assert.Equal(near, inRange.Entity);
         Assert.False(_history.Raycast(new(0, 1, -5), Vector3.UnitZ, 4, 1, Entity.Null, out _));
         Assert.True(_history.Raycast(new(0, 1, -5), Vector3.UnitZ, 4.7f, 1, Entity.Null, out _));
+    }
+
+    [Fact]
+    public void A_sphere_swept_beside_a_capsule_meets_what_a_ray_there_misses()
+    {
+        var entity = _world.Create();
+        Record(entity, 1, 0);
+        var from = new Vector3(Radius + 0.05f, 1, -5);
+
+        Assert.False(_history.Raycast(from, Vector3.UnitZ, 20, 1, Entity.Null, out _));
+        Assert.False(_history.SphereCast(from, Vector3.UnitZ, 0.04f, 20, 1, new IgnoreEntity(Entity.Null), out _));
+        Assert.True(_history.SphereCast(from, Vector3.UnitZ, 0.06f, 20, 1, new IgnoreEntity(Entity.Null), out var hit));
+
+        // Its centre stops 0.36 m from the axis; it touches the capsule's surface on the line to the centre.
+        var z = -MathF.Sqrt(0.36f * 0.36f - 0.35f * 0.35f);
+        Assert.Equal(entity, hit.Entity);
+        Assert.Equal(5 + z, hit.Distance, 1e-4f);
+        AssertNear(Vector3.Normalize(new Vector3(0.35f, 0, z)), hit.Normal);
+        AssertNear(new Vector3(0.35f, 0, z) * (Radius / 0.36f) + new Vector3(0, 1, 0), hit.Point);
+    }
+
+    [Fact]
+    public void A_swept_sphere_meets_a_sphere_its_ray_passes_outside_the_bounds_of()
+    {
+        // A capsule of no length, whose bounds are its own sphere: the ray passes outside them, the swept sphere does not.
+        var entity = _world.Create();
+        _history.Record(entity, 1, [new HitCapsule(new(0, 1, 0), new(0, 1, 0), 0.2f, 3)]);
+        var from = new Vector3(0.25f, 1, -5);
+
+        Assert.False(_history.Raycast(from, Vector3.UnitZ, 20, 1, Entity.Null, out _));
+        Assert.True(_history.SphereCast(from, Vector3.UnitZ, 0.1f, 20, 1, new IgnoreEntity(Entity.Null), out var hit));
+        Assert.Equal(3, hit.Part);
+    }
+
+    [Fact]
+    public void A_sphere_of_no_radius_is_the_ray_and_a_bad_radius_meets_nothing()
+    {
+        var entity = _world.Create();
+        Record(entity, 1, 0);
+        var from = new Vector3(0.1f, 1, -5);
+
+        Assert.True(_history.Raycast(from, Vector3.UnitZ, 20, 1, Entity.Null, out var ray));
+        Assert.True(_history.SphereCast(from, Vector3.UnitZ, 0, 20, 1, new IgnoreEntity(Entity.Null), out var none));
+        Assert.Equal(ray, none);
+        Assert.False(_history.SphereCast(from, Vector3.UnitZ, -0.01f, 20, 1, new IgnoreEntity(Entity.Null), out _));
+        Assert.False(_history.SphereCast(from, Vector3.UnitZ, float.NaN, 20, 1, new IgnoreEntity(Entity.Null), out _));
     }
 
     [Fact]
@@ -593,6 +640,11 @@ public sealed class HitHistoryTests : IDisposable
             }
 
             if (_history.Raycast(new(-3, 1, -5), new(0.6f, 0, 1), 20, step - 10.25, Entity.Null, out _))
+            {
+                hits++;
+            }
+
+            if (_history.SphereCast(new(i * 2, 1, -5), Vector3.UnitZ, 0.01f, 20, step - 2, new IgnoreEntity(), out _))
             {
                 hits++;
             }

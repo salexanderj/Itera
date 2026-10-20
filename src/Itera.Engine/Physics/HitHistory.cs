@@ -200,6 +200,25 @@ public sealed class HitHistory(WorldOrigin origin)
         in TFilter filter,
         out HitResult hit
     )
+        where TFilter : struct, IHitFilter => SphereCast(from, direction, 0, maxMetres, tick, in filter, out hit);
+
+    /// <summary>
+    /// <see cref="Raycast{TFilter}"/> for a sphere of <paramref name="radius"/> metres swept from <paramref name="from"/>
+    /// (its centre) along <paramref name="direction"/>, not a ray: the nearest capsule it touches, each capsule taken
+    /// <paramref name="radius"/> fatter (exact for a sphere against a capsule), so a round of a size grazes what a ray
+    /// misses. The hit's distance is the centre's along the way, and its point is where the sphere touches the capsule.
+    /// A radius of 0 is the ray. Returns false as the ray does, and for a negative or non-finite radius. Allocates
+    /// nothing for a struct filter.
+    /// </summary>
+    public bool SphereCast<TFilter>(
+        Vector3 from,
+        Vector3 direction,
+        float radius,
+        float maxMetres,
+        double tick,
+        in TFilter filter,
+        out HitResult hit
+    )
         where TFilter : struct, IHitFilter
     {
         hit = default;
@@ -210,6 +229,8 @@ public sealed class HitHistory(WorldOrigin origin)
             || !float.IsFinite(from.X + from.Y + from.Z)
             || !float.IsFinite(maxMetres)
             || maxMetres < 0
+            || !float.IsFinite(radius)
+            || radius < 0
             || !double.IsFinite(tick)
             || Math.Abs(tick) > 1e15
         )
@@ -217,7 +238,7 @@ public sealed class HitHistory(WorldOrigin origin)
             return false;
         }
 
-        var ray = new Ray(from, direction / MathF.Sqrt(lengthSquared), origin.Metres);
+        var ray = new Ray(from, direction / MathF.Sqrt(lengthSquared), origin.Metres, radius);
         var floor = (long)Math.Floor(tick);
         var fraction = (float)(tick - floor);
         var best = new Best { Distance = maxMetres };
@@ -238,7 +259,8 @@ public sealed class HitHistory(WorldOrigin origin)
             return false;
         }
 
-        hit = new HitResult(best.Entity, best.Part, best.Distance, from + ray.Direction * best.Distance, best.Normal);
+        var point = from + ray.Direction * best.Distance - best.Normal * radius;
+        hit = new HitResult(best.Entity, best.Part, best.Distance, point, best.Normal);
         return true;
     }
 
@@ -476,7 +498,15 @@ public sealed class HitHistory(WorldOrigin origin)
     private static void Test(Track track, in Ray ray, Vector3 a, Vector3 b, float radius, int part, ref Best best)
     {
         if (
-            HitShapes.RaycastCapsule(ray.From, ray.Direction, a, b, radius, out var distance, out var normal)
+            HitShapes.RaycastCapsule(
+                ray.From,
+                ray.Direction,
+                a,
+                b,
+                radius + ray.Radius,
+                out var distance,
+                out var normal
+            )
             && distance <= best.Distance
             && (!best.Found || distance < best.Distance)
         )
@@ -492,12 +522,17 @@ public sealed class HitHistory(WorldOrigin origin)
         }
     }
 
-    /// <summary>A ray in the match's local metres, with the origin's place for turning anchors local.</summary>
-    private readonly struct Ray(Vector3 from, Vector3 direction, WorldPoint originMetres)
+    /// <summary>
+    /// A ray in the match's local metres, with the origin's place for turning anchors local, and the radius of the sphere
+    /// it sweeps (0 for a ray), which fattens every capsule and bounding sphere it meets.
+    /// </summary>
+    private readonly struct Ray(Vector3 from, Vector3 direction, WorldPoint originMetres, float radius = 0)
     {
         public Vector3 From => from;
 
         public Vector3 Direction => direction;
+
+        public float Radius => radius;
 
         /// <summary>The local place of an absolute anchor.</summary>
         public Vector3 Local(in WorldPoint anchor) =>
@@ -515,7 +550,7 @@ public sealed class HitHistory(WorldOrigin origin)
                 return true;
             }
 
-            var radius = sphere.W + SphereSlack;
+            var radius = sphere.W + SphereSlack + Radius;
             var offset = new Vector3(sphere.X, sphere.Y, sphere.Z) - from;
             var distanceSquared = offset.LengthSquared();
             if (distanceSquared <= radius * radius)
