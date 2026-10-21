@@ -141,8 +141,12 @@ public sealed partial class PhysicsWorld : IDisposable
     /// <summary>What a body stands for: a thrown ball or lifted piece, a stand-in, or a body cut off a character.</summary>
     public BodyKind KindOf(BodyHandle body) => _kinds[body.Value];
 
-    /// <summary>True between <see cref="Initialize"/> and <see cref="Dispose"/>.</summary>
-    internal bool IsInitialized => _pool is not null;
+    /// <summary>
+    /// True between <see cref="Initialize"/> and <see cref="Dispose"/>. The match's physics goes before its scope's
+    /// services are disposed, and its bodies and shapes go with it, so a game's service removes its own at its disposal
+    /// only while this holds.
+    /// </summary>
+    public bool IsInitialized => _pool is not null;
 
     /// <summary>The pool Bepu shapes and statics take their memory from. Throws before <see cref="Initialize"/>.</summary>
     internal BufferPool Pool =>

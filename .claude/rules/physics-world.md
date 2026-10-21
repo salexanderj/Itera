@@ -33,6 +33,8 @@ A game adds its own bodies and statics (`PhysicsWorld.Bodies.cs`):
 - `RemoveBody` and `RemoveStatic` remove them. The shapes stay the game's. `RemoveBody` first calls `BodyRemoving`,
   which the voxel colliders set to `Forget`.
 - `BornOf` and `Holds(body, born)` tell a reused handle apart.
+- At a match's end the physics goes before the scope's services are disposed, with every body, static, and shape in
+  it. A game's service removes its own as it is disposed only while `PhysicsWorld.IsInitialized`.
 - A body added straight through `Simulation.Bodies` has no record and reads the default. Never remove it past
   `RemoveBody` once recorded.
 
