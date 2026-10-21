@@ -384,8 +384,8 @@ public sealed partial class ReplicationService
                 client.Shown = client.Shown < 0 ? -1 : client.Shown + 1;
                 command = client.LastCommand;
                 command.Buttons &= ~PlayerButtons.Jump;
-                // A game's actions may be one-shot: they are not repeated.
-                command.Actions = 0;
+                // A game's actions may be one-shot: only those that hold a level are repeated.
+                command.Actions &= _kinds.HeldActions;
                 if (++client.Missed > MostMissedCommands)
                 {
                     command.Move = Vector2.Zero;

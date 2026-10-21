@@ -271,6 +271,9 @@ internal sealed class MoverPlan
 
     public bool BoostPredicted { get; set; } = true;
 
+    /// <summary>The game actions the kinds hold as levels (<see cref="ReplicatedKinds.HeldActions"/>).</summary>
+    public uint HeldActions { get; set; }
+
     /// <summary>On a client, its own player; on the host, each slot's.</summary>
     public Entity Own { get; set; } = Entity.Null;
 
@@ -334,6 +337,8 @@ internal sealed class TestKinds(ReplicatedKinds kinds, MoverPlan plan) : IRunSta
         {
             kinds.RegisterPredicted(new TestBoostState());
         }
+
+        kinds.HeldActions = plan.HeldActions;
     }
 
     private sealed class MoverKind(MoverPlan plan) : IReplicatedKind

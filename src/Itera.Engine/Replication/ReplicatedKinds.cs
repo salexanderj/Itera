@@ -78,8 +78,31 @@ public sealed class ReplicatedKinds
     private readonly List<IPredictedState> _predicted = [new ClimberPredictedState()];
     private int _predictedBytes = new ClimberPredictedState().Bytes;
     private bool _sealed;
+    private uint _heldActions;
 
     public int Count => _kinds.Count;
+
+    /// <summary>
+    /// The bits of a player's game actions (<c>PlayerCommand.Actions</c>) that hold a level from step to step, such as a
+    /// mode the player is in: a host that misses a client's command keeps them from its last one, as it keeps its move.
+    /// The other bits may be one-shot, and a missed command has none of them. None by default. Set before the first
+    /// match, which seals it.
+    /// </summary>
+    public uint HeldActions
+    {
+        get => _heldActions;
+        set
+        {
+            if (_sealed)
+            {
+                throw new InvalidOperationException(
+                    "The replicated kinds are sealed by the first match; set the held actions before it."
+                );
+            }
+
+            _heldActions = value;
+        }
+    }
 
     public ReplicatedKind this[ReplicatedKindId id] => _kinds[id.Value];
 

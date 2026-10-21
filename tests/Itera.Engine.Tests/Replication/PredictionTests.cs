@@ -187,6 +187,37 @@ public sealed class PredictionTests(ITestOutputHelper output)
         Assert.True(client.DistanceTo(host) < 0.001, $"The client's player at {client}, the host's copy at {host}.");
     }
 
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(4u)]
+    public void A_missing_command_keeps_only_the_actions_the_game_holds_as_levels(uint held)
+    {
+        // The client's every command has a level (4) and a one-shot (8) action.
+        using var harness = ReplicationHarness.Start(
+            new MoverPlan
+            {
+                Count = 0,
+                Characters = true,
+                HeldActions = held,
+            },
+            clientPlan: new MoverPlan
+            {
+                Characters = true,
+                HeldActions = held,
+                Script = tick => Walk(tick, ulong.MaxValue) with { Actions = 4 | 8 },
+            }
+        );
+        harness.Step(120);
+        var arrived = harness.Host.World.Get<PlayerCommand>(harness.HostPlan.Remote[1]).Actions;
+
+        // The client stalls: the host goes on from its last command.
+        harness.StepHost(20);
+        var missing = harness.Host.World.Get<PlayerCommand>(harness.HostPlan.Remote[1]).Actions;
+
+        Assert.Equal(4u | 8, arrived);
+        Assert.Equal(held, missing);
+    }
+
     [Fact]
     public void The_drawn_jump_of_a_correction_starts_where_the_player_was_drawn()
     {
