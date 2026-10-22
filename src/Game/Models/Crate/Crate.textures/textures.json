@@ -1,0 +1,22 @@
+{
+  "model": "Crate.glb",
+  "encoder": "BCnEncoder.Net 2.3.0, quality Balanced",
+  "textures": [
+    {
+      "image": 1,
+      "role": "Colour",
+      "file": "image1-colour.dds",
+      "width": 512,
+      "height": 512,
+      "sha256": "fbb6d5578c299aca62d38837a65be25a21a4ab6ffa800b3f47c515b3edbea635"
+    },
+    {
+      "image": 0,
+      "role": "Linear",
+      "file": "image0-linear.dds",
+      "width": 512,
+      "height": 512,
+      "sha256": "194990259f64f465ad9dec5edb9f849cdd35d53c301662423949116a98140672"
+    }
+  ]
+}

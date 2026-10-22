@@ -43,20 +43,30 @@ class Context:
         """Downloads a file into the cache's inputs folder (once) and returns its path. See fetch.py."""
         from .fetch import fetch
 
-        path, _ = fetch(url, self.cache_dir, sha256=sha256, name=name)
+        path, digest = fetch(url, self.cache_dir, sha256=sha256, name=name)
+        if sha256 is None:
+            self.note(f"unpinned download {path.name}: pin it with sha256=\"{digest}\"")
         return path
 
     def polyhaven(self, asset: str, resolution: str = "1k", maps=("diff", "nor_gl", "rough", "ao"), hashes=None):
         """A Poly Haven texture's maps in the cache, as `{map: path}`. See fetch.polyhaven_texture."""
-        from .fetch import polyhaven_texture
+        from .fetch import polyhaven_texture, sha256_of
 
-        return polyhaven_texture(asset, resolution, tuple(maps), cache_dir=self.cache_dir, hashes=hashes)
+        found = polyhaven_texture(asset, resolution, tuple(maps), cache_dir=self.cache_dir, hashes=hashes)
+        for code, path in found.items():
+            if not (hashes or {}).get(code):
+                self.note(f"unpinned download {path.name}: pin it in hashes as \"{code}\": \"{sha256_of(path)}\"")
+        return found
 
     def ambientcg(self, asset: str, resolution: str = "1K", sha256: str | None = None):
         """An ambientCG material's maps in the cache, as `{map: path}`. See fetch.ambientcg_material."""
-        from .fetch import ambientcg_material
+        from .fetch import ambientcg_material, sha256_of
 
-        return ambientcg_material(asset, resolution, cache_dir=self.cache_dir, sha256=sha256)
+        found = ambientcg_material(asset, resolution, cache_dir=self.cache_dir, sha256=sha256)
+        if sha256 is None:
+            archive = self.cache_dir / f"{asset}_{resolution}-PNG.zip"
+            self.note(f"unpinned download {archive.name}: pin it with sha256=\"{sha256_of(archive)}\"")
+        return found
 
     def export(self, objects=None, clips=None, vertex_colors: bool = False) -> dict:
         """Exports the model to out_path as a .glb. See export.glb for the arguments. Returns the settings used."""

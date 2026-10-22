@@ -1,0 +1,12 @@
+{
+  // The starter's model budgets by asset class (ModelBudget in src/Itera.Engine/Assets/ModelInspection.cs). A recipe
+  // names its class (CLASS), tools/models/build.py holds its model to it, and GameModelsTests checks it again.
+  "prop": {
+    "mostTriangles": 2000,
+    "mostMaterials": 1,
+    "mostTextureTexels": 512,
+    "leastHeight": 0.2,
+    "mostHeight": 3,
+    "skinned": false
+  }
+}
