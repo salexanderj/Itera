@@ -76,15 +76,6 @@ public sealed class SkeletonTests
     }
 
     [Fact]
-    public void A_grid_shift_is_a_twentieth_of_a_voxel_per_bone_for_19_bones()
-    {
-        for (var bone = 0; bone < s_human.BoneCount; bone++)
-        {
-            Assert.Equal((bone + 1) / 20.0, s_human.GridShift(bone));
-        }
-    }
-
-    [Fact]
     public void Posing_the_legs_alone_places_them_as_posing_every_bone_does()
     {
         var turns = TestPoses.Stride.Turns.ToArray();

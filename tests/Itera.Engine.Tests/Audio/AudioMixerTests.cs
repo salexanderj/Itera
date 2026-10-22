@@ -242,7 +242,10 @@ public sealed class AudioMixerTests
         Assert.Equal(-by, mixer.Device.ListenerPosition);
     }
 
-    /// <summary>A stream fading out after its last round, when the origin moves, is heard from where it was.</summary>
+    /// <summary>
+    /// The effects volume scales the gain of every voice, one-shots and streams, and sets the voices playing again when
+    /// it changes. The master volume stays the listener's gain.
+    /// </summary>
     [Fact]
     public void The_effects_volume_scales_every_voice_and_sets_them_again_when_it_changes()
     {
@@ -283,6 +286,7 @@ public sealed class AudioMixerTests
         Assert.Equal(0.5f, mixer.Device.PlayingAt(at - by)!.Gain, 5);
     }
 
+    /// <summary>A stream fading out after its last round, when the origin moves, is heard from where it was.</summary>
     [Fact]
     public void A_move_of_the_origin_moves_a_stream_fading_out()
     {

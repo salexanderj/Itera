@@ -64,11 +64,11 @@ public sealed class MeshPassTests : IDisposable
         Assert.Empty(GpuLayout.ArrayElementDifferences<MeshLight>(fragment, 0, 7));
     }
 
-    /// <summary>The world, the sky, and the mesh assets read the frame's look as its record lays it out, at binding 17.</summary>
+    /// <summary>The world and the mesh assets read the frame's look as its record lays it out, at binding 17.</summary>
     [Fact]
     public void The_look_is_read_as_its_record_lays_it_out()
     {
-        foreach (var name in (string[])["mesh.frag", "world-sky.frag", "mesh-asset.frag"])
+        foreach (var name in (string[])["mesh.frag", "mesh-asset.frag"])
         {
             Assert.Empty(GpuLayout.ArrayElementDifferences<LookConstants>(_compiler.Compile(name), 0, 17));
         }

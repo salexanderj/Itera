@@ -79,12 +79,11 @@ public sealed class ObjectColumnReaderTests
     public void An_odd_objects_spans_reaching_below_its_anchor_are_read_alike(int cell, int x, int y, int z) =>
         AssertSpans(_odd, cell, new VoxelCoord(x, y, z), damage: null);
 
-    [Theory]
-    [InlineData(4)]
-    [InlineData(10)]
-    [InlineData(3)]
-    public void A_damaged_objects_spans_are_read_through_its_damage(int cell)
+    [Fact]
+    public void A_damaged_objects_spans_are_read_through_its_damage()
     {
+        // The cell widths are covered by the undamaged rows; the damage takes the same path in each.
+        const int cell = 3;
         var kind = _kinds[_wide];
         // A crater of 1 m round its middle, and its leaves in a box painted to stone (blocking now).
         var dug = new DugVoxels(kind, centre: (60, 60, 8), radius: 25, paintFrom: (20, 10, 0), paintTo: (100, 110, 16));

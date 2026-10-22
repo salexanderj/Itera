@@ -296,18 +296,6 @@ public sealed class EngineCommandsTests : IDisposable
         Assert.Equal("shadows on", Last());
     }
 
-    [Fact]
-    public void Scale_sets_the_render_scale()
-    {
-        Run("scale 0.75");
-        Assert.Equal(0.75f, _view.RenderScale);
-        Assert.Equal("scale 0.75 (set for this run)", Last());
-
-        Run("scale 0.4");
-        Assert.StartsWith("usage: ", Last(), StringComparison.Ordinal);
-        Assert.Equal(0.75f, _view.RenderScale);
-    }
-
     /// <summary>
     /// <c>look</c> lists the look's values, sets a number or a colour over every frame's look for the run (starred), and
     /// gives the game's back with reset; a wrong name or count of numbers changes nothing.
@@ -431,6 +419,7 @@ public sealed class EngineCommandsTests : IDisposable
     [Theory]
     [InlineData("shadows maybe")]
     [InlineData("scale 1.5")]
+    [InlineData("scale 0.4")]
     [InlineData("scale nan")]
     [InlineData("lines maybe")]
     public void A_bad_value_prints_the_usage_and_changes_nothing(string line)

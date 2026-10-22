@@ -1,7 +1,6 @@
 using System.Numerics;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging.Abstractions;
-using Xunit.Abstractions;
 
 namespace Itera.Engine.Tests.Voxels;
 
@@ -23,11 +22,9 @@ public sealed class VoxelPieceTests : IDisposable
     );
 
     private readonly VoxelWorld _world;
-    private readonly ITestOutputHelper _output;
 
-    public VoxelPieceTests(ITestOutputHelper output)
+    public VoxelPieceTests()
     {
-        _output = output;
         _world = Load();
     }
 
@@ -208,32 +205,13 @@ public sealed class VoxelPieceTests : IDisposable
 
         var solidBefore = SolidAround(new VoxelCoord(180, 260, 90));
         var before = SystemAllocation.StartMeasurement();
-        var start = System.Diagnostics.Stopwatch.GetTimestamp();
         for (var i = 0; i < edits.Length; i++)
         {
             _world.Apply(in edits[i]);
         }
 
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        var placing = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds / 3;
         Assert.True(SolidAround(new VoxelCoord(180, 260, 90)) > solidBefore, "The measured put-back changed nothing.");
-        // For comparison: filling and digging a ball of the same size in the air there.
-        var fill = VoxelEdit.Sphere(new VoxelCoord(120, 260, 90), 25, VoxelEditOperation.Set, BoxesGenerator.Stone);
-        var dig = VoxelEdit.Sphere(new VoxelCoord(120, 260, 90), 25, VoxelEditOperation.Clear);
-        _world.Apply(in dig);
-        start = System.Diagnostics.Stopwatch.GetTimestamp();
-        for (var i = 0; i < 3; i++)
-        {
-            _world.Apply(in fill);
-            _world.Apply(in dig);
-        }
-
-        var sphere = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds / 6;
-        _output.WriteLine(
-            System.FormattableString.Invariant(
-                $"Putting back a ball 51 voxels across at levels 0 to 2: {placing:F2} ms; a sphere edit of that size: {sphere:F2} ms."
-            )
-        );
         Assert.Equal(0, allocated);
     }
 

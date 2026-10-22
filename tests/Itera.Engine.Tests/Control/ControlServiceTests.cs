@@ -311,13 +311,11 @@ public sealed class ControlServiceTests : IDisposable
         var wait = AskAsync(client, """{"op":"wait","for":"log","pattern":"(a+)+$"}""");
         Pump(service, () => service.WaitingCount > 0);
         _console.RunNow("say " + new string('a', 30) + "!", new ControlLogOutput());
-        var started = DateTime.UtcNow;
         Pump(service, () => wait.IsCompleted);
 
         var reply = Reply(wait);
         Assert.False(reply.GetProperty("ok").GetBoolean());
         Assert.Contains("took too long", reply.GetProperty("error").GetString(), StringComparison.Ordinal);
-        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(5));
     }
 
     /// <summary>

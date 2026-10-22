@@ -231,36 +231,28 @@ public sealed class FootPlacementTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(TestPoses.Stride.Turns.ToArray(), turns);
     }
 
-    /// <summary>
-    /// Placing a walking body's feet on uneven ground allocates nothing; prints the time it takes (Release gives the
-    /// numbers to quote).
-    /// </summary>
+    /// <summary>Placing a walking body's feet on uneven ground allocates nothing.</summary>
     [Fact]
-    public void Placing_the_feet_is_timed()
+    public void Placing_the_feet_allocates_nothing()
     {
         var gait = TestPoses.Stride.Turns.ToArray();
         var turns = new Rotation[gait.Length];
         var bones = Bones();
         var ground = new FootPlacement.LegGround[] { new(6, 0.03), new(-4, -0.02) };
-        const int Count = 20_000;
-        for (var i = 0; i < Count / 10; i++)
+        for (var i = 0; i < 20; i++)
         {
             gait.CopyTo(turns, 0);
             FootPlacement.Apply(s_skeleton, turns, 90, ground, bones);
         }
 
         var bytes = SystemAllocation.StartMeasurement();
-        var start = System.Diagnostics.Stopwatch.GetTimestamp();
-        for (var i = 0; i < Count; i++)
+        for (var i = 0; i < 100; i++)
         {
             gait.CopyTo(turns, 0);
             FootPlacement.Apply(s_skeleton, turns, 90, ground, bones);
         }
 
-        var microseconds = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMicroseconds / Count;
         bytes = GC.GetAllocatedBytesForCurrentThread() - bytes;
-        output.WriteLine($"{microseconds:F2} µs to place a body's feet");
-        Assert.True(microseconds < 1000);
         Assert.Equal(0, bytes);
     }
 

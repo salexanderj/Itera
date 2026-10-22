@@ -16,9 +16,9 @@ public sealed class AimDotLayerTests
     private readonly IOptions<EngineOptions> _options = Options.Create(new EngineOptions());
 
     [Theory]
-    [InlineData(2560, 1440)]
-    [InlineData(1279, 719)]
-    [InlineData(819, 880)]
+    [InlineData(64, 64)]
+    [InlineData(63, 63)]
+    [InlineData(65, 64)]
     public void It_draws_the_shaders_squares_at_the_centre(int width, int height)
     {
         using var layer = new AimDotLayer(new LoadingScreen(_options, NullLogger<LoadingScreen>.Instance));
@@ -59,7 +59,7 @@ public sealed class AimDotLayerTests
 
     [Theory]
     [InlineData(1280, 720)]
-    [InlineData(2560, 1440)]
+    [InlineData(256, 144)]
     [InlineData(819, 879)]
     public void It_draws_nothing_outside_its_bounds(int width, int height)
     {

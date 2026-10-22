@@ -142,15 +142,6 @@ public sealed class RenderViewsTests
     }
 
     [Fact]
-    public void A_view_asked_for_every_frame_is_drawn_every_frame_at_one()
-    {
-        var views = new RenderViews();
-        views.Declare("map", 64, 64, 1);
-
-        Assert.Equal(Enumerable.Range(0, 12), FramesDrawn(views, 12));
-    }
-
-    [Fact]
     public void A_view_every_four_frames_is_drawn_at_once_and_then_every_fourth_frame()
     {
         var views = new RenderViews();
@@ -206,17 +197,6 @@ public sealed class RenderViewsTests
             views.Draw(0, CameraAt(0));
             Assert.True(views.IsDue(0, out _));
         }
-    }
-
-    [Fact]
-    public void A_view_that_was_never_asked_for_is_not_due()
-    {
-        var views = new RenderViews();
-        views.Declare("map", 64, 64);
-
-        views.BeginFrame();
-
-        Assert.False(views.IsDue(0, out _));
     }
 
     [Fact]

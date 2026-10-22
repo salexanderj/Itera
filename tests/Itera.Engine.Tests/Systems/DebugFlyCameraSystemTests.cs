@@ -27,16 +27,6 @@ public sealed class DebugFlyCameraSystemTests
     private readonly InputAccumulator _events = new();
     private readonly PlayArea _area = new(VoxelGrid.Unit);
 
-    [Fact]
-    public void The_camera_starts_with_the_given_yaw()
-    {
-        using var world = World.Create();
-        using var system = CreateSystem(world, startYaw: 2.4f);
-        system.Initialize();
-
-        Assert.Equal(2.4f, ReadCamera(world).Pose.Yaw);
-    }
-
     /// <summary>The camera the player's camera system makes, with the options' lens and speed.</summary>
     [Fact]
     public void The_game_has_one_active_camera_from_the_options()

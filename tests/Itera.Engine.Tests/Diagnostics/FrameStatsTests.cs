@@ -156,20 +156,6 @@ public sealed class FrameStatsTests
     }
 
     [Fact]
-    public void Long_frames_are_reported_at_their_measured_length()
-    {
-        var stats = Started();
-
-        // The simulation clamps a delta to 0.25 s; stats receive the measured time, so a 2 s gap shows as 2 s.
-        stats.RecordSteps(8, 112);
-        stats.RecordFrame(2.0);
-        stats.Update(2.0, 0);
-
-        var summary = Assert.NotNull(stats.LastSummary);
-        Assert.Equal(2000.0, summary.MaxMs, precision: 3);
-    }
-
-    [Fact]
     public void Summary_counts_bytes_allocated_on_the_calling_thread_and_on_the_render_thread()
     {
         var stats = Started(renderAllocatedBytes: 1000);

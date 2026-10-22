@@ -61,36 +61,6 @@ public sealed class FineMoverTests(SmoothHillsFixture hills, ITestOutputHelper o
         Assert.True(worstHeight < 0.05f, $"The feet went {worstHeight} m apart in height.");
     }
 
-    /// <summary>What a walking move costs in each mover, logged (a Release build measures it).</summary>
-    [Fact]
-    public void A_walking_move_costs_are_logged()
-    {
-        foreach (var (name, mover) in new[] { ("1 m", hills.Coarse), ("10 cm", hills.Fine) })
-        {
-            var elapsed = 0.0;
-            var moves = 0;
-            for (var heading = 0; heading < 8; heading++)
-            {
-                var angle = heading * MathF.PI / 4;
-                var way = new Vector3(MathF.Sin(angle), 0, -MathF.Cos(angle)) * 4.5f;
-                var feet = Start(mover);
-                var velocity = Vector3.Zero;
-                var grounded = true;
-                var clock = System.Diagnostics.Stopwatch.StartNew();
-                for (var tick = 0; tick < 240; tick++)
-                {
-                    velocity = Next(velocity, way, grounded, 0, tick);
-                    grounded = mover.Move(ref feet, ref velocity, in s_shape, Step).Grounded;
-                }
-
-                elapsed += clock.Elapsed.TotalMilliseconds;
-                moves += 240;
-            }
-
-            output.WriteLine($"{name} cells: {elapsed * 1000 / moves:F1} microseconds a move over {moves} moves.");
-        }
-    }
-
     /// <summary>
     /// A mover remembering the ground's surface within a move, and one working every answer out again, standing,
     /// walking, and sprinting with jumps each way over the hills, in 10 cm cells and in the voxels' 1 m: every move's

@@ -42,10 +42,6 @@ public sealed class TextureDecodeTests
 
         Assert.Equal(3, width);
         Assert.Equal(2, height);
-        Assert.Equal(200, rgba[0]);
-        Assert.Equal(10, rgba[1]);
-        Assert.Equal(30, rgba[2]);
-        Assert.Equal(0, rgba[3]);
         Assert.Equal(texels, rgba);
     }
 

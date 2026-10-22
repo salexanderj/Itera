@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Numerics;
 using Itera.Engine.Maths;
 using Itera.Engine.Physics;
@@ -6,7 +5,6 @@ using Itera.Engine.Tests.Voxels;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Xunit.Abstractions;
 
 namespace Itera.Engine.Tests.Physics;
 
@@ -30,15 +28,9 @@ public sealed class SolidModelVoxelsTests : IDisposable
     /// <summary>A wide body's cylinder.</summary>
     private static readonly CharacterShape s_wide = new(6, 1.5f, 1);
 
-    private readonly ITestOutputHelper _output;
     private VoxelWorld? _world;
     private PhysicsWorld? _physics;
     private VoxelColliders? _colliders;
-
-    public SolidModelVoxelsTests(ITestOutputHelper output)
-    {
-        _output = output;
-    }
 
     public void Dispose()
     {
@@ -326,39 +318,29 @@ public sealed class SolidModelVoxelsTests : IDisposable
     }
 
     [Fact]
-    public void A_wide_body_beside_a_turning_solid_moves_quickly_and_allocates_nothing()
+    public void A_wide_body_beside_a_turning_solid_allocates_nothing()
     {
         var (mover, bodyVoxels) = MoverWorld(radiusMetres: 8);
         // A head-sized block, 3.2 m by 4 m by 3.6 m of 4 cm voxels, its bottom 3 m above the floor.
         var id = bodyVoxels.Solids.Add(Block(80, 100, 90), 2, new Vector3(40, 0, 45));
         var feet = new Vector3(-3.5f, 2, 0);
         var velocity = Vector3.Zero;
-        var ticks = new List<long>(600);
 
-        void Run(int steps, bool time)
+        void Run(int steps)
         {
             for (var i = 0; i < steps; i++)
             {
                 bodyVoxels.Solids.SetPose(id, new WorldPoint(0, FloorMetres + 3, 0), i * 0.01f);
                 velocity = new Vector3(i % 200 < 100 ? 1.5f : -1.5f, velocity.Y - 0.3f, 0.4f * MathF.Sin(i * 0.05f));
-                var start = Stopwatch.GetTimestamp();
                 mover.Move(ref feet, ref velocity, in s_wide, Step);
-                if (time)
-                {
-                    ticks.Add(Stopwatch.GetTimestamp() - start);
-                }
             }
         }
 
-        Run(50, time: false);
+        Run(50);
         var before = SystemAllocation.StartMeasurement();
-        Run(600, time: true);
+        Run(100);
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
-        ticks.Sort();
-        var median = ticks[ticks.Count / 2] * 1000.0 / Stopwatch.Frequency;
-        var slowest = ticks[^1] * 1000.0 / Stopwatch.Frequency;
-        _output.WriteLine($"A wide body's move beside the solid: median {median:F3} ms, slowest {slowest:F3} ms");
         Assert.Equal(0, allocated);
     }
 

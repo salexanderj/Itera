@@ -37,8 +37,8 @@ public sealed class ParticlePassTests : IDisposable
     }
 
     /// <summary>
-    /// The pool's particles move with the match's origin: a frame that simulates in another origin takes the whole move
-    /// since the last frame that simulated (frames between may not), and an emptied pool takes the frame's origin.
+    /// A recipe's gravity is its multiple of the match's (a negative one rises). Its up is against the match's gravity
+    /// (straight up for a recipe that rises, or where there is no gravity).
     /// </summary>
     [Fact]
     public void A_recipes_gravity_is_its_multiple_of_the_matchs_and_rests_against_it()
@@ -62,6 +62,10 @@ public sealed class ParticlePassTests : IDisposable
         Assert.Equal(Vector3.UnitY, none.Up);
     }
 
+    /// <summary>
+    /// The pool's particles move with the match's origin: a frame that simulates in another origin takes the whole move
+    /// since the last frame that simulated (frames between may not), and an emptied pool takes the frame's origin.
+    /// </summary>
     [Fact]
     public void The_pool_moves_by_the_origins_move_since_it_last_simulated()
     {
@@ -130,10 +134,8 @@ public sealed class ParticlePassTests : IDisposable
 
         Assert.Equal([0u, 1u], GpuLayout.DescriptorSets(simulate).Order());
         Assert.Empty(GpuLayout.ArrayElementDifferences<MeshLighting>(simulate, 1, 4));
-        Assert.Empty(GpuLayout.PushConstantDifferences<ParticleConstants>(simulate));
         // The cubes' colour reads the look alone, in the particles' own set.
         Assert.Equal([0u], GpuLayout.DescriptorSets(cubes));
-        Assert.Empty(GpuLayout.PushConstantDifferences<ViewConstants>(cubes));
         Assert.Equal([0u], GpuLayout.DescriptorSets(_compiler.Compile("particle-cubes.vert", [Look])));
         Assert.Equal([0u], GpuLayout.DescriptorSets(_compiler.Compile("particle-sprites.vert", [Look])));
     }

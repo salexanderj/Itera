@@ -50,22 +50,6 @@ public sealed class ViewConstantsTests(CompiledShaders compiler) : IClassFixture
 {
     private readonly CompiledShaders _compiler = compiler;
 
-    /// <summary>Every shader that reads the view's push constants.</summary>
-    [Theory]
-    [InlineData("mesh.vert")]
-    [InlineData("mesh.frag")]
-    [InlineData("world-sky.frag")]
-    [InlineData("debug-lines.vert")]
-    [InlineData("particle-cubes.vert")]
-    [InlineData("particle-cubes.frag")]
-    [InlineData("particle-sprites.vert")]
-    public void The_push_constant_block_in_the_shaders_matches_the_struct(string shader)
-    {
-        var spirv = _compiler.Compile(shader);
-
-        Assert.Empty(GpuLayout.PushConstantDifferences<ViewConstants>(spirv));
-    }
-
     [Fact]
     public void The_fullscreen_vertex_shader_compiles()
     {

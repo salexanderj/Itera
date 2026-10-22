@@ -219,7 +219,10 @@ public sealed class ModDispatcherTests
 
         // An index from before a clear, past the systems added since, is ignored.
         times.Clear();
+        times.Add("SystemC");
         times.Record(5, 100);
+
+        Assert.Equal("SystemC 0.000 max 0.00", times.TakeSlowest(1, 1));
     }
 
     private static LoadedMod Wrap(IGameMod mod, string id)

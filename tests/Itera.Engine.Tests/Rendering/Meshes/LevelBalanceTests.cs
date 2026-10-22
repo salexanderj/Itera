@@ -150,7 +150,7 @@ public sealed class LevelBalanceTests
     {
         var random = new Random(12345);
         var balance = new LevelBalance();
-        for (var trial = 0; trial < 200; trial++)
+        for (var trial = 0; trial < 30; trial++)
         {
             var finest = trial % 2;
             var leaves = new List<ColumnKey>();

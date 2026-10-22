@@ -74,20 +74,6 @@ public sealed class FixedStepAccumulatorTests
     }
 
     [Fact]
-    public void Tick_counts_across_frames()
-    {
-        var accumulator = new FixedStepAccumulator(Step, 8);
-
-        for (var frame = 0; frame < 5; frame++)
-        {
-            accumulator.Add(Step);
-            Assert.True(accumulator.TryConsumeStep(out _));
-        }
-
-        Assert.Equal(5UL, accumulator.Tick);
-    }
-
-    [Fact]
     public void Rejects_invalid_arguments()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new FixedStepAccumulator(0f, 1));

@@ -341,7 +341,8 @@ public sealed class LoopbackTests
         stranger.Connect($"127.0.0.1:{client.LocalPort}");
         var strangerHeard = new Heard();
         deadline.Restart();
-        while (deadline.Elapsed.TotalSeconds < 1.5)
+        // The client refuses the stranger at once and tells it nothing, so there is no event to wait for.
+        while (deadline.Elapsed.TotalSeconds < 0.3)
         {
             host.Poll(hostHeard);
             client.Poll(clientHeard);

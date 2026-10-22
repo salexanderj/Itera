@@ -122,6 +122,9 @@ public sealed partial class AudioService : IDisposable
     /// </summary>
     public bool QueueWithoutThread { get; set; }
 
+    /// <summary>How long <see cref="Stop"/> waits for the audio thread. Tests shorten it.</summary>
+    internal TimeSpan StopTimeout { get; set; } = TimeSpan.FromSeconds(2);
+
     /// <summary>The events queued this iteration. For tests.</summary>
     internal ReadOnlySpan<SoundEvent> Queued => _events.AsSpan(0, _eventCount);
 
@@ -567,7 +570,7 @@ public sealed partial class AudioService : IDisposable
         _musicThread?.Join(TimeSpan.FromSeconds(2));
         _musicThread = null;
         _stopping = true;
-        var stopped = _thread.Join(TimeSpan.FromSeconds(2));
+        var stopped = _thread.Join(StopTimeout);
         if (!stopped)
         {
             LogStuck();

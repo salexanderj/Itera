@@ -37,20 +37,13 @@ public sealed class ShaderCompilerTests : IDisposable
     }
 
     [Fact]
-    public void Compiles_valid_glsl_to_spirv()
-    {
-        var spirv = _compiler.CompileSource(VertexSource, ShaderKind.VertexShader, "test.vert");
-
-        Assert.True(ShaderCompiler.LooksLikeSpirv(spirv));
-    }
-
-    [Fact]
     public void Writes_and_reuses_the_disk_cache()
     {
         var first = _compiler.CompileSource(VertexSource, ShaderKind.VertexShader, "test.vert");
         var cached = Directory.GetFiles(_cache, "*.spv");
         var second = _compiler.CompileSource(VertexSource, ShaderKind.VertexShader, "test.vert");
 
+        Assert.True(ShaderCompiler.LooksLikeSpirv(first));
         Assert.Single(cached);
         Assert.Equal(first, second);
         Assert.Empty(Directory.GetFiles(_cache, "*.tmp"));

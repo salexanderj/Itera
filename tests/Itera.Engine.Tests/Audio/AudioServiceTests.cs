@@ -170,6 +170,7 @@ public sealed class AudioServiceTests
         using var hold = new ManualResetEventSlim(false);
         var device = new FakeAudioDevice { Hold = hold };
         using var audio = Create();
+        audio.StopTimeout = TimeSpan.FromMilliseconds(50);
         audio.Initialize(device);
         audio.Start();
         Assert.True(device.Holding.Wait(TimeSpan.FromSeconds(20)), "The audio thread never made a buffer.");

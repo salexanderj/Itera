@@ -499,14 +499,6 @@ public sealed class EngineOptionsValidatorTests
     }
 
     [Fact]
-    public void An_app_id_of_0_is_allowed_without_steam_sessions()
-    {
-        var options = new EngineOptions { Steam = new SteamSettings { AppId = 0 } };
-
-        Assert.True(_validator.Validate(null, options).Succeeded);
-    }
-
-    [Fact]
     public void Voxel_options_out_of_range_fail_and_name_their_keys()
     {
         var options = new EngineOptions

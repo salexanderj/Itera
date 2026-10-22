@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Numerics;
 using Itera.Engine.Diagnostics;
 using Itera.Engine.Ecs;
@@ -11,17 +10,15 @@ using Itera.Engine.Tests.Voxels;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using Xunit.Abstractions;
 
 namespace Itera.Engine.Tests.Physics;
 
 /// <summary>
 /// Loose bodies on voxel terrain across a move of the origin (<see cref="OriginShifts"/>): a ball at rest stays where
 /// it rests, asleep, and settles into the voxels a ball never shifted does; the world's streaming centres stay where
-/// they were; and the cost of a move with 384 bodies and
-/// the voxel colliders' statics round them (logged, not held to a time: timings wait for a quiet machine).
+/// they were.
 /// </summary>
-public sealed class ShiftedBodiesTests(ITestOutputHelper output)
+public sealed class ShiftedBodiesTests
 {
     private const float Step = 1f / 60;
 
@@ -59,39 +56,6 @@ public sealed class ShiftedBodiesTests(ITestOutputHelper output)
         Assert.Equal(bodies.World.Centers[0], bodies.World.StreamingCentres[0].Position);
         Assert.Equal(before, bodies.World.Origin.ToWorld(bodies.World.Centers[0]));
         Assert.Equal(centimetres, bodies.World.Origin.ToCentimetres(bodies.World.Centers[0]));
-    }
-
-    [Fact]
-    public void A_move_with_384_bodies_and_their_statics_is_timed()
-    {
-        using var bodies = new Bodies(radiusMetres: 12);
-        for (var i = 0; i < 384; i++)
-        {
-            var at = new Vector3(-4 + i % 20 * 0.6f, 2.2f + i / 200 * 0.5f, 1 + i / 20 % 10 * 0.6f);
-            Assert.True(bodies.Loose.TryCreateBall(8, DensityTerrainGenerator.Stone, at, Vector3.Zero, out _));
-        }
-
-        bodies.Run(60);
-        var statics = bodies.Physics.Simulation.Statics.Count;
-        var first = Time(() => bodies.Shifts.ShiftTo(new WorldPoint(512, 0, -512)));
-        bodies.Run(1);
-        var second = Time(() => bodies.Shifts.ShiftTo(WorldPoint.Zero));
-        var physics = Time(() => bodies.Physics.Shift(new Vector3(1, 0, 0)));
-
-        // The voxel colliders hold a compound static a cell, so the bodies sit on few statics of many boxes.
-        output.WriteLine(
-            FormattableString.Invariant(
-                $"A move of the origin with 384 bodies and {statics} statics: {first:F3} ms the first time, {second:F3} ms the next, Bepu's part {physics:F3} ms (Debug, not quiet)."
-            )
-        );
-        Assert.True(statics > 0);
-    }
-
-    private static double Time(Action action)
-    {
-        var timer = Stopwatch.StartNew();
-        action();
-        return timer.Elapsed.TotalMilliseconds;
     }
 
     /// <summary>A world of 10 cm voxels with Bepu, the voxel colliders, loose bodies, and the origin's moves.</summary>

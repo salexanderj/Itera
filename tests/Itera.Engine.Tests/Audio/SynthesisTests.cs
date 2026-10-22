@@ -166,10 +166,11 @@ public sealed class SynthesisTests
     {
         var recipes = new SoundRecipes();
         EngineSounds.Register(recipes);
+        var count = recipes.Count;
 
         Assert.Throws<InvalidOperationException>(() => recipes.Register("bar", new BadLength(1)));
         Assert.Throws<ArgumentException>(() => recipes.Register("long", new BadLength(20)));
-        Assert.Equal(4, recipes.Count);
+        Assert.Equal(count, recipes.Count);
     }
 
     private sealed class BadLength(float seconds) : OneShotRecipe

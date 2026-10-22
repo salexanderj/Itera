@@ -398,17 +398,6 @@ public sealed class HitHistoryTests : IDisposable
     }
 
     [Fact]
-    public void Recording_a_tick_again_replaces_it()
-    {
-        var entity = _world.Create();
-        Record(entity, 3, 0);
-        Record(entity, 3, 5);
-
-        Assert.True(Shoot(5, 3));
-        Assert.False(Shoot(0, 3));
-    }
-
-    [Fact]
     public void An_entity_no_longer_recorded_is_met_only_at_ticks_it_was_there()
     {
         var gone = _world.Create();

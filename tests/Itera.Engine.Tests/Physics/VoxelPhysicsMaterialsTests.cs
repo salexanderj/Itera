@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Numerics;
 using BepuPhysics;
 using BepuPhysics.Collidables;
@@ -7,7 +6,6 @@ using Itera.Engine.Tests.Systems;
 using Itera.Engine.Tests.Voxels;
 using Itera.Engine.Voxels;
 using Microsoft.Extensions.Logging.Abstractions;
-using Xunit.Abstractions;
 
 namespace Itera.Engine.Tests.Physics;
 
@@ -15,21 +13,19 @@ namespace Itera.Engine.Tests.Physics;
 /// Voxel materials' physics materials (<see cref="PhysicsMaterials.MapVoxel"/>): a cell of two physics materials has a
 /// static for each, of that material, each holding the boxes of its own voxels; with nothing mapped (or every voxel
 /// material mapped to one) a cell is one static, as before; a box slides down a slope of ice voxels; clearing a cell's
-/// voxels of one material removes that static; a ball takes its voxel material's; the mapping's rules; the time to build
-/// cells of one and three materials (logged); and rebuilding cells of two materials allocates nothing.
+/// voxels of one material removes that static; a ball takes its voxel material's; the mapping's rules; and
+/// rebuilding cells of two materials allocates nothing.
 /// </summary>
 public sealed class VoxelPhysicsMaterialsTests : IDisposable
 {
     private const int Floor = 200;
     private const float Step = 1f / 60;
 
-    private readonly ITestOutputHelper _output;
     private readonly VoxelWorld _world;
     private readonly List<(PhysicsWorld Physics, VoxelColliders Colliders)> _made = [];
 
-    public VoxelPhysicsMaterialsTests(ITestOutputHelper output)
+    public VoxelPhysicsMaterialsTests()
     {
-        _output = output;
         var boxes = new List<VoxelBox>
         {
             // A block of stone 20 cm on a side on the dirt, from x = 1 m.
@@ -109,6 +105,20 @@ public sealed class VoxelPhysicsMaterialsTests : IDisposable
         Assert.Equal(none.Colliders.BoxCount, one.Colliders.BoxCount);
         Assert.True(two.Colliders.StaticCount > none.Colliders.StaticCount);
         AssertStaticsHoldTheirVoxels(one.Physics, allOne);
+
+        // The block of many materials, with two physics materials over its voxels, has three parts with the dirt.
+        var three = new PhysicsMaterials();
+        var light = three.Register("a", new PhysicsMaterial(0.5f, 0));
+        var heavy = three.Register("b", new PhysicsMaterial(2, 0));
+        for (var voxel = 101; voxel <= 122; voxel++)
+        {
+            three.MapVoxel((byte)voxel, voxel < 112 ? light : heavy);
+        }
+
+        var (manyPhysics, many) = Make(three);
+        AddSphere(manyPhysics, new Vector3(-2.25f, 2.6f, 1.25f), 0.5f);
+        Run(manyPhysics, many, 1);
+        Assert.Equal(3, many.PartCount);
     }
 
     [Fact]
@@ -188,46 +198,6 @@ public sealed class VoxelPhysicsMaterialsTests : IDisposable
         using var physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance, null, materials);
         physics.Initialize();
         Assert.Throws<InvalidOperationException>(() => materials.MapVoxel(18, ids[0]));
-    }
-
-    [Fact]
-    public void Building_cells_of_one_and_of_three_physics_materials_is_timed()
-    {
-        var three = new PhysicsMaterials();
-        var a = three.Register("a", new PhysicsMaterial(0.5f, 0));
-        var b = three.Register("b", new PhysicsMaterial(2, 0));
-        for (var voxel = 101; voxel <= 122; voxel++)
-        {
-            three.MapVoxel((byte)voxel, voxel < 112 ? a : b);
-        }
-
-        // Over the block of many materials: 3 x 2 x 3 cells or so, each of dirt and of the block's voxels.
-        var times = new double[2];
-        var counts = new (int Statics, int Boxes)[2];
-        for (var round = 0; round < 6; round++)
-        {
-            for (var config = 0; config < 2; config++)
-            {
-                var (physics, colliders) = Make(config == 0 ? null : three);
-                AddSphere(physics, new Vector3(-2.25f, 2.6f, 1.25f), 0.5f);
-                var started = Stopwatch.GetTimestamp();
-                colliders.Update(Step);
-                var milliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
-                times[config] = round == 0 ? milliseconds : Math.Min(times[config], milliseconds);
-                counts[config] = (colliders.StaticCount, colliders.BoxCount);
-                if (config == 1)
-                {
-                    Assert.Equal(3, colliders.PartCount);
-                }
-            }
-        }
-
-        _output.WriteLine(
-            $"Cells round a 1 m ball over the block of many materials (Debug, the least of 6): one physics material "
-                + $"{times[0]:F2} ms, {counts[0].Statics} statics of {counts[0].Boxes} boxes; three "
-                + $"{times[1]:F2} ms, {counts[1].Statics} statics of {counts[1].Boxes} boxes"
-        );
-        Assert.True(counts[1].Statics > counts[0].Statics);
     }
 
     [Fact]

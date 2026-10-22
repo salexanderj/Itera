@@ -46,15 +46,18 @@ public sealed class FrameExchangeTests
     {
         var exchange = new FrameExchange(() => { });
         bool? result = null;
-        var waiter = StartThread(() => result = exchange.WaitForFrame(out _));
+        using var waiting = new ManualResetEventSlim(false);
+        var waiter = StartThread(() =>
+        {
+            waiting.Set();
+            result = exchange.WaitForFrame(out _);
+        });
 
-        Thread.Sleep(50);
-        var stopwatch = Stopwatch.StartNew();
+        Assert.True(waiting.Wait(s_timeout));
         exchange.Stop();
 
         Assert.True(waiter.Join(s_timeout));
         Assert.False(result);
-        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1));
         Assert.False(exchange.WaitForFrame(out _));
     }
 
