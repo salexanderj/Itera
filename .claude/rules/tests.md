@@ -18,6 +18,7 @@ needs.
   its menu by label (`SampleMenuHarness`, over the engine's hooks for a game's menu tests: `MatchControlStates`,
   `MatchControl.PendingStart` and `PendingLeave`, `PlayerSettings.WithoutFile`, a `MusicPlayer` with no audio thread).
   It hears its sounds with no device (`AudioService.QueueWithoutThread`). `PhysicsDemoTests` plays its physics corner.
+- `tests/Itera.ModelView.Tests`: the model stage (`tools/ModelView`), played through `HeadlessRun`.
 - `tests/Shared/` is compiled into the projects that use it (below).
 
 ### Shared helpers (`tests/Shared`)
