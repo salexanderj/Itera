@@ -126,6 +126,7 @@ Every option under `Engine`: its default, the least and most its validator takes
 | `Engine:Benchmark:SettleSeconds` | `2` | `0` to `600` | Seconds to wait at each view after it has loaded, before measuring. |
 | `Engine:Benchmark:MeasureSeconds` | `8` | `0.1` to `600` | Seconds to measure at each view. |
 | `Engine:Benchmark:FlightSeconds` | `60` | `0` to `3600` | Seconds to fly the automatic circle at 5 m/s after the views; 0 leaves the flight out. |
+| `Engine:Assets:Extra` | `` |  | glTF models read at the run's mesh assets step after the game's and the mods' own, so a tool shows a model without a rebuild. Each has a Name no other model has, a Path (from the folder the run starts in), and MetresPerUnit (1, or 0.01 for centimetres), as in `--Engine:Assets:Extra:0:Name=crate --Engine:Assets:Extra:0:Path=crate.glb`. The console's `meshes place` shows one. None by default. |
 | `Engine:FixedStepHz` | `60` | `1` to `1000` | Fixed simulation rate in steps per second. |
 | `Engine:MaxFixedStepsPerFrame` | `8` | `1` to `1000` | Upper bound on fixed steps run in one main-loop iteration. Excess time is discarded to avoid a spiral after a stall. The name dates from when one iteration was one frame; it is kept so existing settings still work. |
 | `Engine:FreeRun` | `false` |  | True: the fixed steps run back to back without waiting for real time, `EngineOptions.MaxFixedStepsPerFrame` a loop iteration, so minutes of play pass in seconds (as fast as the machine runs them). Only without graphics (`Engine:Window:Mode=None`). |

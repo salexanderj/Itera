@@ -54,6 +54,8 @@ reference: `docs/reference/engine-options.md`, and the game's `game-options.md`.
   beside the executable, or from the repository with `GameShaderSourceDirectory=$PWD/src/Game/Shaders`, which
   `game.py start` gives when the folder exists.
 - `--Engine:Ui:MenuPausesOffline=true` holds an offline match's steps while the menu is open.
+- `--Engine:Assets:Extra:0:Name=crate --Engine:Assets:Extra:0:Path=$PWD/crate.glb` reads a model the game does not
+  declare, with no rebuild; `MetresPerUnit=0.01` for centimetres. The console's `meshes place crate` shows it.
 
 ## Systems, the console, and logging
 

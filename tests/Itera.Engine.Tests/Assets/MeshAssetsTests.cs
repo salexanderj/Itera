@@ -2,7 +2,10 @@ using System.Numerics;
 using System.Text.Json.Nodes;
 using Itera.Engine.Assets;
 using Itera.Engine.Rendering.GpuData;
+using Itera.Engine.Tests.Matches;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Itera.Engine.Tests.Assets;
 
@@ -41,6 +44,43 @@ public sealed class MeshAssetsTests : IDisposable
 
         Assert.Same(mesh, _assets[_assets.Find("plane")]);
         Assert.Equal(0, index);
+    }
+
+    [Fact]
+    public void Extra_models_bind_from_command_line_keys_and_are_read_after_the_games()
+    {
+        var path = WriteTriangle("crate");
+        using var services = EngineComposition.Build(
+            new Dictionary<string, string?>
+            {
+                ["Engine:Assets:Extra:0:Name"] = "crate",
+                ["Engine:Assets:Extra:0:Path"] = path,
+                ["Engine:Assets:Extra:0:MetresPerUnit"] = "0.01",
+            },
+            terrain: false
+        );
+        _ = services.GetRequiredService<IOptions<EngineOptions>>().Value;
+        var assets = services.GetRequiredService<MeshAssets>();
+        var game = assets.Declare("game", WriteTriangle("game"));
+
+        assets.LoadAll(textures: false);
+
+        var crate = assets.Find("crate");
+        Assert.True(crate > game);
+        Assert.Equal(new Vector3(0.01f, 0.01f, 0), assets[crate].BoundsMax);
+    }
+
+    [Fact]
+    public void An_extra_model_with_a_games_name_stops_the_read_naming_the_option()
+    {
+        var options = new EngineOptions();
+        options.Assets.Extra = [new ExtraModel { Name = "fox", Path = WriteTriangle("other") }];
+        var assets = new MeshAssets(NullLogger<MeshAssets>.Instance, Options.Create(options));
+        assets.Declare("fox", WriteTriangle("fox"));
+
+        var failure = Assert.Throws<InvalidOperationException>(() => assets.LoadAll(textures: false));
+
+        Assert.StartsWith("Engine:Assets:Extra:0:Name is fox", failure.Message, StringComparison.Ordinal);
     }
 
     [Fact]

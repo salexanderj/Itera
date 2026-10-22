@@ -28,6 +28,7 @@ The game's own options under `Game`, each with its default, the least and most i
 | --- | --- | --- |
 | `Engine:Application:DataFolder` | `Itera` | `IteraGame` |
 | `Engine:Application:Name` | `Itera` | `Itera Game` |
+| `Engine:Assets:Extra` | `` | `` |
 | `Engine:Renderer:ViewDistanceMetres` | `256` | `8000` |
 | `Engine:Voxels:Levels` | `4` | `9` |
 | `Engine:Window:Title` | `Itera` | `Itera Game` |

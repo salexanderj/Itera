@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Itera.Engine.Assets;
 
@@ -9,12 +10,13 @@ namespace Itera.Engine.Assets;
 /// meshes it builds in code (<see cref="Add"/>), and variants of either with some materials' base colours replaced
 /// (<see cref="DeclareVariant"/>: a team's colours), each known by its name and its index (<see cref="Find"/>). A game
 /// declares them at its run startup (<c>IRunStartup</c>, the run's "game" step), mods at theirs; the run's "mesh assets"
-/// step, after the mods', reads every declared file on worker threads (<see cref="LoadAll"/>), and a file that cannot be
-/// read stops the run with a message naming it. Assets stay for the whole run, so an index never goes stale and needs no
-/// generation. A run with graphics reads a model's textures from its compressed textures where they match its images
-/// (<see cref="CompressedTextures"/>) and decodes the rest; a run without graphics reads none. Main thread.
+/// step, after the mods', declares the extra models of <c>Engine:Assets:Extra</c> and reads every declared file on
+/// worker threads (<see cref="LoadAll"/>), and a file that cannot be read stops the run with a message naming it. Assets
+/// stay for the whole run, so an index never goes stale and needs no generation. A run with graphics reads a model's
+/// textures from its compressed textures where they match its images (<see cref="CompressedTextures"/>) and decodes the
+/// rest; a run without graphics reads none. Main thread.
 /// </summary>
-public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
+public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<EngineOptions>? options = null)
 {
     private readonly List<Entry> _entries = [];
     private readonly Dictionary<string, int> _byName = new(StringComparer.Ordinal);
@@ -126,6 +128,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
             return;
         }
 
+        DeclareExtras();
         var start = Stopwatch.GetTimestamp();
         var warnings = new List<string>[_entries.Count];
         var notes = new List<string>[_entries.Count];
@@ -217,6 +220,30 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
             textures ? "" : " (not decoded: no graphics)",
             milliseconds
         );
+    }
+
+    /// <summary>
+    /// Declares the extra models of <c>Engine:Assets:Extra</c>, after the game's and the mods' own, each path from the
+    /// folder the run started in. A name a model has already stops the run, naming the option.
+    /// </summary>
+    private void DeclareExtras()
+    {
+        var extras = options?.Value.Assets.Extra ?? [];
+        for (var i = 0; i < extras.Length; i++)
+        {
+            var extra = extras[i];
+            if (_byName.ContainsKey(extra.Name))
+            {
+                throw new InvalidOperationException(
+                    $"{EngineOptions.SectionName}:Assets:Extra:{i}:Name is {extra.Name}, which a model of the game's or a "
+                        + "mod's has already: give the extra model another name."
+                );
+            }
+
+            var path = Path.GetFullPath(extra.Path);
+            Declare(extra.Name, path, extra.MetresPerUnit);
+            LogExtra(extra.Name, path);
+        }
     }
 
     /// <summary>Makes each variant from its source, in the order declared, so a variant of a variant follows it.</summary>
@@ -312,6 +339,9 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
         string decoded,
         double milliseconds
     );
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Mesh assets: extra model {Name} from {Path}")]
+    private partial void LogExtra(string name, string path);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Mesh assets: {Name}: {Warning}")]
     private partial void LogWarning(string name, string warning);

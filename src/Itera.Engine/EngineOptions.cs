@@ -75,6 +75,9 @@ public sealed class EngineOptions
     /// <summary>The GPU benchmark (<c>tools/benchmark/</c>), which a game runs over its own views.</summary>
     public BenchmarkSettings Benchmark { get; set; } = new();
 
+    /// <summary>Models a run reads beside the game's own (<c>Engine:Assets</c>).</summary>
+    public AssetSettings Assets { get; set; } = new();
+
     /// <summary>Fixed simulation rate in steps per second.</summary>
     public int FixedStepHz { get; set; } = 60;
 
@@ -404,6 +407,31 @@ public sealed class LoadingSettings
     /// finished (15 s, above the 11 to 14 s a Debug build takes).
     /// </summary>
     public double MaxSeconds { get; set; } = 15;
+}
+
+/// <summary>Models a run reads beside the game's own.</summary>
+public sealed class AssetSettings
+{
+    /// <summary>
+    /// glTF models read at the run's mesh assets step after the game's and the mods' own, so a tool shows a model
+    /// without a rebuild. Each has a Name no other model has, a Path (from the folder the run starts in), and
+    /// MetresPerUnit (1, or 0.01 for centimetres), as in <c>--Engine:Assets:Extra:0:Name=crate
+    /// --Engine:Assets:Extra:0:Path=crate.glb</c>. The console's <c>meshes place</c> shows one. None by default.
+    /// </summary>
+    public ExtraModel[] Extra { get; set; } = [];
+}
+
+/// <summary>A model a run reads beside the game's own (<see cref="AssetSettings.Extra"/>).</summary>
+public sealed class ExtraModel
+{
+    /// <summary>The name the run knows it by: no other mesh asset may have it.</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>The glTF file (.glb or .gltf); a relative path is from the folder the run starts in.</summary>
+    public string Path { get; set; } = "";
+
+    /// <summary>Metres a unit of the file: 1 for glTF's metres, 0.01 for a file in centimetres.</summary>
+    public float MetresPerUnit { get; set; } = 1f;
 }
 
 /// <summary>Mod loading settings.</summary>

@@ -499,6 +499,52 @@ public sealed class EngineOptionsValidatorTests
     }
 
     [Fact]
+    public void Extra_models_need_a_name_used_once_a_file_that_is_there_and_a_unit()
+    {
+        var file = Path.GetTempFileName();
+        try
+        {
+            var options = new EngineOptions();
+            options.Assets.Extra =
+            [
+                new ExtraModel { Name = " ", Path = file },
+                new ExtraModel { Name = "crate", Path = "/no/such/itera-crate.glb" },
+                new ExtraModel
+                {
+                    Name = "crate",
+                    Path = file,
+                    MetresPerUnit = 0,
+                },
+            ];
+
+            var failures = _validator.Validate(null, options).Failures!.ToArray();
+
+            Assert.Collection(
+                failures,
+                failure => Assert.StartsWith("Engine:Assets:Extra:0:Name is empty", failure, StringComparison.Ordinal),
+                failure =>
+                    Assert.StartsWith(
+                        "Engine:Assets:Extra:1:Path names /no/such/itera-crate.glb",
+                        failure,
+                        StringComparison.Ordinal
+                    ),
+                failure =>
+                    Assert.StartsWith(
+                        "Engine:Assets:Extra:2:Name crate is an earlier",
+                        failure,
+                        StringComparison.Ordinal
+                    ),
+                failure =>
+                    Assert.StartsWith("Engine:Assets:Extra:2:MetresPerUnit must be", failure, StringComparison.Ordinal)
+            );
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Fact]
     public void Voxel_options_out_of_range_fail_and_name_their_keys()
     {
         var options = new EngineOptions

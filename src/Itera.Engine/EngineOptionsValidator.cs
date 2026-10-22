@@ -202,6 +202,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
             failures.Add($"{Prefix}Console:RunFile names {runFile}, which does not exist.");
         }
 
+        ValidateExtraModels(options.Assets.Extra, failures);
         Range(failures, "Loading:MaxSeconds", options.Loading.MaxSeconds, 1, 300);
         Range(failures, "Control:Port", options.Control.Port, 1024, 65_535);
         Range(failures, "Camera:CircleHeightMetres", options.Camera.CircleHeightMetres, -1000, 1000);
@@ -389,6 +390,44 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
                 );
                 return;
             }
+        }
+    }
+
+    /// <summary>
+    /// Each extra model needs a name no earlier one has, a file that is there (a relative path from the folder the run
+    /// starts in, as <see cref="Assets.MeshAssets"/> reads it), and a unit in metres.
+    /// </summary>
+    private static void ValidateExtraModels(ExtraModel[] extras, List<string> failures)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < extras.Length; i++)
+        {
+            var key = $"Assets:Extra:{i}";
+            if (extras[i] is not { } extra)
+            {
+                failures.Add($"{Prefix}{key} names no model.");
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(extra.Name))
+            {
+                failures.Add($"{Prefix}{key}:Name is empty: each extra model needs a name.");
+            }
+            else if (!names.Add(extra.Name))
+            {
+                failures.Add($"{Prefix}{key}:Name {extra.Name} is an earlier extra model's name too.");
+            }
+
+            if (string.IsNullOrWhiteSpace(extra.Path))
+            {
+                failures.Add($"{Prefix}{key}:Path is empty: each extra model needs a glTF file.");
+            }
+            else if (!File.Exists(Path.GetFullPath(extra.Path)))
+            {
+                failures.Add($"{Prefix}{key}:Path names {extra.Path}, which does not exist.");
+            }
+
+            Range(failures, $"{key}:MetresPerUnit", extra.MetresPerUnit, 0.0001, 1000);
         }
     }
 

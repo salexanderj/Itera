@@ -98,6 +98,9 @@ judges (a host's hits on posed bodies). The deterministic skeletons for bodies, 
   material its source lacks stops the step, naming it.
 - The run's "mesh assets" step, after the mods', reads every declared file on worker threads (`LoadAll`). Without
   graphics (`Engine:Window:Mode=None`, and `HeadlessRun`) it decodes no images and materials name no textures.
+- `LoadAll` first declares the models of `Engine:Assets:Extra`, after the game's and the mods' own, each path from the
+  folder the run started in. A tool shows a model there without a rebuild. A name a model has already stops the run,
+  naming the option; the validator checks each name, file, and unit at start.
 - A file that cannot be read stops the run with an Error line naming it. A warning covers an image it cannot decode, an
   unlit material, lines or points left out, and `KHR_texture_transform` not applied.
 - A declaration after the step is refused.
