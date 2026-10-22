@@ -1,0 +1,4 @@
+{
+  // The classes of the toolkit's own test recipes.
+  "prop": { "mostTriangles": 200, "mostMaterials": 2, "mostJoints": 4 }
+}
