@@ -528,10 +528,7 @@ public sealed partial class VoxelWorld : IDisposable
             var wanted = _wanted[level];
             // A level already waiting for its rebuild is not checked again: its RebuiltAt has an entry only for the
             // centres it was last built around, which may be fewer than there are now.
-            if (
-                !wanted.Dirty
-                && (changed || HasMovedHalfAColumn(wanted, level) || HasMetNewColumns(wanted, level))
-            )
+            if (!wanted.Dirty && (changed || HasMovedHalfAColumn(wanted, level) || HasMetNewColumns(wanted, level)))
             {
                 wanted.Dirty = true;
             }
