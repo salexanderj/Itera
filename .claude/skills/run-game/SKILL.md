@@ -49,7 +49,7 @@ Pitfalls:
   it; the default spreads physics over threads.
 - `HeadlessMatch.WaitUntilLoaded` waits on the clock. The column workers and the navigation thread need real time, so
   stepping alone never loads the world. It returns once the columns are resident and the navigation grid is taken.
-- Debug never optimises the engine's code, and voxel work runs about 5 times slower: time game logic in Release.
+- Debug builds are optimised but run Debug-only checks: time game logic in Release.
 - The console's `settings`, `shadows`, and `sound volume` write the data folder's `settings.json`. Run in the agent
   data folder (`game.py` and the tools do).
 - Two screenshot sets of one build agree exactly only with dynamic render scaling off (`shots` turns it off) and on a
@@ -82,7 +82,7 @@ timeout --preserve-status -s INT 120 src/Game/bin/Debug/net10.0/Game --Engine:Se
 - `timeout` is the safety net. A background run started from a script ignores SIGINT, so send it SIGTERM. `timeout`
   signals the process and its process group, so the game receives SIGINT twice at once, which `ExitSignalPolicy` takes
   as one request.
-- A Debug run shows the loading screen for about 3.5 s (Release about 2 s). For a short check of play, add
+- A run shows the loading screen for about 4.5 s, in Debug or Release. For a short check of play, add
   `--Engine:Loading:Enabled=false`.
 
 ## The control port

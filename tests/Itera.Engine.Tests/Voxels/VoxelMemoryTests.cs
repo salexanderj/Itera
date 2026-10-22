@@ -119,6 +119,10 @@ public sealed unsafe class VoxelMemoryTests
             threads[r].Start();
         }
 
+        // Each reader reads its blocks once before the pool grows, so all of them read while it grows, however the
+        // threads are scheduled (optimised, the growth below ended before a reader on a busy machine had started).
+        Assert.True(SpinWait.SpinUntil(EveryReaderRead, TimeSpan.FromSeconds(10)));
+
         // 512-byte blocks, 2,048 a 1 MB slab: 70 slabs' worth.
         var last = 0;
         for (var i = 0; i < 2048 * 70; i++)
@@ -135,8 +139,20 @@ public sealed unsafe class VoxelMemoryTests
         memory.Pointer(VoxelPool.Index8, last)[511] = 7;
         Assert.Equal(7, memory.Pointer(VoxelPool.Index8, last)[511]);
         Assert.Equal(0, wrong);
-        Assert.All(reads, count => Assert.True(count > 0));
         Assert.True(memory.ReservedBytes >= 70L * Megabyte);
+
+        bool EveryReaderRead()
+        {
+            for (var r = 0; r < readers; r++)
+            {
+                if (Volatile.Read(ref reads[r]) == 0)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
     }
 
     /// <summary>A block freed twice throws, in Debug builds (a double free handed one block to two owners).</summary>

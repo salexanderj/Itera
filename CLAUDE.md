@@ -57,7 +57,7 @@ before changing anything structural. `docs/` holds the write-ups behind decision
   - Load the `run-game` skill before you start, drive, or check the game. Check a change the cheapest way that can see
     it. The skill holds the options, logs, console commands, and control port.
   - `dotnet build` must end with zero warnings, and `dotnet test` runs every test project (some checks run only in
-    Debug). Debug generates voxels about 5 times slower, so take voxel numbers from a Release build.
+    Debug). Debug builds are optimised but run Debug-only checks, so take timings from a Release build.
   - Before you run or add tests, read `.claude/rules/tests.md`.
   - `DOTNET_ENVIRONMENT=Development` shows Debug log lines on the console too.
   - `dotnet watch` builds into `bin/Debug` in place, so no other build or test run may share it.

@@ -22,6 +22,10 @@
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <TieredPGO>true</TieredPGO>
 
+    <!-- Debug builds are optimised too and keep their Debug-only checks (EcsChecks, Debug.Assert): unoptimised, the
+         test suite took 8 min 13 s against 2 min 45 s optimised (2026-10-21). A debugger sees optimised code. -->
+    <Optimize Condition="'$(Configuration)' == 'Debug'">true</Optimize>
+
     <!-- Mods are loaded dynamically through AssemblyLoadContext, which needs the JIT and reflection. -->
     <PublishAot>false</PublishAot>
     <PublishTrimmed>false</PublishTrimmed>
