@@ -74,7 +74,9 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
    }
    ```
 
-   `ChecklistTests.Every_system_has_a_test_class_with_an_allocation_test` (engine and game) fails without them.
+   `ChecklistTests.Every_system_has_a_test_class_with_an_allocation_test` (engine and game) fails without them. A
+   game system's tests that need the game's registries take them from a `GameRunFixture`, or build the one registry they
+   read, never a composition per test.
 5. Docs: an engine system in `.claude/rules/systems.md` (or its area's rules file); a game's in its area's rules file.
    The generated `docs/reference/game-systems.md` and `game-commands.md` list it and its commands: write them again (the
    `docs` skill).
@@ -148,17 +150,35 @@ surface layer, small stones) vanish.
 
 ## A test that plays the real game
 
-For a feature that needs the real world and systems, play the game without a window (`HeadlessMatch`; see
-`tests/Game.Tests/ScenarioTests` and `.claude/rules/tests.md`):
+For a feature that needs the real world and systems, play the game without a window (`HeadlessMatch`). The class takes
+`GameRunFixture` (`tests/Game.Tests`), which makes the game's composition and run once for all its tests; each test
+plays a fresh match from it. Follow `.claude/rules/tests.md`, "Keeping tests light": a large map only for what it alone
+has, steps until the checked state, and any run-wide state a test changes put back.
 
 ```csharp
-using var provider = GameComposition.Build(new Dictionary<string, string?> { ["Engine:Physics:Threads"] = "1" });
-using var match = new HeadlessRun(provider).Play(seed: 1);
-Assert.True(match.WaitUntilLoaded());
-match.Input.InjectKey(Key.W, true);
-match.Step(60);
-// Read match.World (an Arch query), match.Match.Voxels, or match.Services.
+public sealed class WalkScenarioTests : IClassFixture<GameRunFixture>
+{
+    private readonly GameRunFixture _run;
+
+    public WalkScenarioTests(GameRunFixture run)
+    {
+        run.Reset(); // every tunable back to its default
+        _run = run;
+    }
+
+    [Fact]
+    public void Holding_W_walks_the_player_forward()
+    {
+        using var match = _run.Run.Play(seed: 1);
+        Assert.True(match.WaitUntilLoaded());
+        match.Input.InjectKey(Key.W, true);
+        match.Step(60);
+        // Read match.World (an Arch query), match.Match.Voxels, or match.Services.
+    }
+}
 ```
+
+A class whose tests take more than about 5 s in all carries `[RunsLong]`; one over about 20 s is split.
 
 ## Then
 
