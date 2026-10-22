@@ -102,6 +102,13 @@ public static class ModelInspection
             Problem($"has {findings.CameraOrLightNodes} nodes with a camera or a light, which are left out");
         }
 
+        if (findings.UnnamedEmptyNodes > 0)
+        {
+            Problem($"has {findings.UnnamedEmptyNodes} empty nodes with no name, which are not points");
+        }
+
+        Shared(asset.Points.Select(point => point.Name), "points", Problem);
+
         if (findings.PrimitivesWithoutMaterial > 0)
         {
             Problem(
@@ -251,6 +258,14 @@ public static class ModelInspection
                 Problem($"has no clip named '{clip}', which the budget asks for");
             }
         }
+
+        foreach (var point in budget.Points)
+        {
+            if (asset.FindPoint(point) < 0)
+            {
+                Problem($"has no point named '{point}', which the budget asks for");
+            }
+        }
     }
 
     private static string Metres(float value) =>
@@ -293,6 +308,9 @@ public sealed record ModelReport
 
     public IReadOnlyList<ModelClip> Clips { get; init; } = [];
 
+    /// <summary>The model's named places (<see cref="MeshPoint"/>), in the file's order.</summary>
+    public IReadOnlyList<ModelPoint> Points { get; init; } = [];
+
     /// <summary>The model as the engine read it; null when it was refused.</summary>
     [JsonIgnore]
     public MeshAsset? Asset { get; init; }
@@ -326,6 +344,14 @@ public sealed record ModelReport
             ],
             Joints = asset.Rig?.Names ?? [],
             Clips = [.. (asset.Rig?.Clips ?? []).Select(clip => new ModelClip(clip.Name, clip.Duration))],
+            Points =
+            [
+                .. asset.Points.Select(point => new ModelPoint(
+                    point.Name,
+                    point.Joint >= 0 ? asset.Rig!.Names[point.Joint] : null,
+                    [point.Position.X, point.Position.Y, point.Position.Z]
+                )),
+            ],
             Asset = asset,
         };
 }
@@ -354,6 +380,9 @@ public sealed record ModelTexture(string Name, MeshTextureRole Role, int Width, 
 
 /// <summary>A clip of the rig and its length in seconds.</summary>
 public sealed record ModelClip(string Name, float Seconds);
+
+/// <summary>A point of the model: the joint it hangs from (null for none), and its position in metres in that joint's space or the model's.</summary>
+public sealed record ModelPoint(string Name, string? Joint, IReadOnlyList<float> Position);
 
 /// <summary>
 /// The limits a model is held to (<see cref="ModelInspection"/>); a limit left null is not checked. A game keeps its
@@ -388,6 +417,9 @@ public sealed record ModelBudget
 
     /// <summary>The clips the model must have, by name.</summary>
     public IReadOnlyList<string> Clips { get; init; } = [];
+
+    /// <summary>The points the model must have (<see cref="MeshPoint"/>), by name.</summary>
+    public IReadOnlyList<string> Points { get; init; } = [];
 
     /// <summary>
     /// The budgets of a JSON file: an object whose members are asset classes, each a budget (<c>{ "prop": {

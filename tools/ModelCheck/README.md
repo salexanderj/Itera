@@ -14,19 +14,19 @@ dotnet run --project tools/ModelCheck -- --json MODEL.glb        # every report 
   Heights and budgets are in metres.
 - `--budget FILE --class NAME`: hold each model to the budget of that asset class. The file is a JSON object of classes,
   each with any of `mostTriangles`, `mostJoints`, `mostMaterials`, `mostTextureTexels` (a texture's longest side),
-  `leastHeight` and `mostHeight` (metres), `skinned` (true or false), and `clips` (names the model must have). Comments
-  are allowed; a key it does not know stops the run.
+  `leastHeight` and `mostHeight` (metres), `skinned` (true or false), and `clips` and `points` (names the model must
+  have). Comments are allowed; a key it does not know stops the run.
 - `--json`: prints a list of reports: `file`, `ok`, `problems` (each a `kind` and a `message`), `notes`, `triangles`,
-  `vertices`, `boundsMin`, `boundsMax`, `materials`, `textures` (`name`, `role`, `width`, `height`), `joints`, and
-  `clips` (`name`, `seconds`).
+  `vertices`, `boundsMin`, `boundsMax`, `materials`, `textures` (`name`, `role`, `width`, `height`), `joints`, `clips`
+  (`name`, `seconds`), and `points` (`name`, `joint` or null, `position` in metres in the joint's space or the model's).
 
 Each problem has a kind:
 
 - `refused`: the engine cannot read the file (a compressed extension, a broken file, weights that sum to zero).
 - `import`: a warning of the import (morph targets, lines, an unlit material, an image it cannot decode).
 - `content`: what the import leaves out or makes up without a warning, or what a game cannot name: weights past four
-  joints, a primitive without a material, an unnamed material, joint, or clip, generated tangents, animations left
-  out, cameras and lights, and joints or clips that share a name.
+  joints, a primitive without a material, an unnamed material, joint, clip, or empty, generated tangents, animations
+  left out, cameras and lights, and joints, clips, or points that share a name.
 - `budget`: over or under a limit of the class.
 
 Notes do not fail a model: a mesh used at two nodes, an extension the engine does not read.

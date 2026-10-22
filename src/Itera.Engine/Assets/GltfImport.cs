@@ -65,7 +65,10 @@ internal static partial class GltfImport
             throw new InvalidDataException($"{path}: not a glTF 2.0 file the importer can read: {ex.Message}", ex);
         }
 
-        var context = new ImportContext(path, textures, warnings, findings ?? new ImportFindings());
+        var context = new ImportContext(path, textures, warnings, findings ?? new ImportFindings())
+        {
+            MetresPerUnit = metresPerUnit,
+        };
         var asset = Import(name, model, metresPerUnit, context);
         if (textures == TextureReading.PreferCompressed && context.DecodedTextures > 0 && !context.HasCompressed)
         {
@@ -200,7 +203,8 @@ internal static partial class GltfImport
             [.. context.Materials],
             [.. context.Textures],
             rig,
-            rig is null ? null : [.. context.Skins]
+            rig is null ? null : [.. context.Skins],
+            [.. context.Points]
         );
     }
 
@@ -209,6 +213,18 @@ internal static partial class GltfImport
         if (node.Camera is not null || node.PunctualLight is not null)
         {
             context.Findings.CameraOrLightNodes++;
+        }
+
+        if (HoldsNothing(node))
+        {
+            if (string.IsNullOrEmpty(node.Name))
+            {
+                context.Findings.UnnamedEmptyNodes++;
+            }
+            else
+            {
+                AddPoint(node, scale, plan, context);
+            }
         }
 
         if (node.Mesh is { } mesh)
@@ -227,6 +243,53 @@ internal static partial class GltfImport
         {
             AddNode(child, scale, plan, context);
         }
+    }
+
+    /// <summary>
+    /// True for a leaf node that holds nothing (an empty in Blender): no mesh, camera, or light, not a joint of any skin,
+    /// and no children. One with a name is a point (<see cref="MeshPoint"/>).
+    /// </summary>
+    private static bool HoldsNothing(Node node) =>
+        node.Mesh is null
+        && node.Camera is null
+        && node.PunctualLight is null
+        && !node.IsSkinJoint
+        && !node.VisualChildren.Any();
+
+    /// <summary>
+    /// The point a named empty marks: in the space of the rig's joint above it, with the nodes between applied, or else
+    /// in the asset's space as a static mesh's vertices are. In metres.
+    /// </summary>
+    private static void AddPoint(Node node, Matrix4x4 scale, RigPlan? plan, ImportContext context)
+    {
+        var joint = -1;
+        var transform = node.WorldMatrix * scale;
+        if (plan is not null)
+        {
+            var offset = node.LocalMatrix;
+            var parent = node.VisualParent;
+            while (parent is not null && !plan.RigOfNode.ContainsKey(parent.LogicalIndex))
+            {
+                offset *= parent.LocalMatrix;
+                parent = parent.VisualParent;
+            }
+
+            if (parent is not null)
+            {
+                joint = plan.RigOfNode[parent.LogicalIndex];
+                transform = InMetres(offset, context.MetresPerUnit);
+            }
+        }
+
+        if (!Matrix4x4.Decompose(transform, out _, out var rotation, out var position))
+        {
+            context.Warn(
+                $"point '{node.Name}' has a transform that is not a scale, turn, and move: it stands unturned"
+            );
+            (rotation, position) = (Quaternion.Identity, transform.Translation);
+        }
+
+        context.Points.Add(new MeshPoint(node.Name, joint, position, Quaternion.Normalize(rotation)));
     }
 
     /// <summary>
@@ -616,8 +679,13 @@ internal static partial class GltfImport
 
         public ImportFindings Findings { get; } = findings;
 
+        /// <summary>Metres a unit of the file.</summary>
+        public float MetresPerUnit { get; init; } = 1f;
+
         /// <summary>How many nodes of the scene use each mesh (by glTF's index).</summary>
         public Dictionary<int, int> MeshUses { get; } = [];
+
+        public List<MeshPoint> Points { get; } = [];
 
         /// <summary>True when the model has a list of compressed textures beside it, whether or not it reads.</summary>
         public bool HasCompressed { get; private set; }

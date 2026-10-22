@@ -29,6 +29,10 @@ builds its textures from RGBA8 texels with `MeshTextureData.FromRgba`, which mak
   `MipChain.LevelBytes`), with the model's image they were made from (`Image`) and its hash (`SourceHash`).
 - A skinned asset also has a `Rig` and each vertex's joints and weights (`Skin`, `MeshSkinVertex`: four 16-bit joints
   and four 16-bit weights). Its vertices are where the mesh was bound.
+- Points (`MeshPoint`, `Points`, `FindPoint(name)`): named places such as a muzzle or a grip, each with a joint (-1 for
+  none), a position in metres, and a rotation. A point under a joint is in that joint's space, so
+  `MeshAttachment.To(holder, point.Joint, point.Position, point.Rotation)` holds an item there. Any other point is in
+  the asset's space.
 
 The assets are drawn with the world: an entity with `MeshPlacement` and `DrawnMesh`, posed by a `MeshAnimator`
 (`systems.md`), or any frame system through `MeshInstances` (`AddPosed` with the rig's skinning matrices).
@@ -121,6 +125,8 @@ judges (a host's hits on posed bodies). The deterministic skeletons for bodies, 
     all-zero weights and stands as stored.
   - Each animation's channels on the rig's joints become a clip by its name. Channels on other nodes and morph weights
     are left out, with a warning.
+- Each named leaf node that holds nothing becomes a point: no mesh, camera, or light, not a joint of any skin, and no
+  children (Blender writes an empty so). One under a joint of the rig takes the transforms between it and the joint.
 - Triangles without normals get flat ones, each its own three vertices (glTF asks for flat normals). A primitive
   without indices gets them in order.
 - A normal-mapped material's vertices without tangents get generated ones (`MeshTangents`: Lengyel's method, not
@@ -168,7 +174,7 @@ has no problems.
 - `Content`: what the import leaves out or makes up without a warning, which it counts in `ImportFindings`. These are
   weights past four joints, primitives without a material, and unnamed materials, joints, and clips.
 - `Content` also covers generated tangents, animations left out, cameras and lights, extra scenes, vertices off the
-  skin of a skinned model, and joints or clips that share a name.
+  skin of a skinned model, empties with no name, and joints, clips, or points that share a name.
 - `Budget`: past a limit of a `ModelBudget`. A game keeps its budgets by asset class in a JSON file
   (`ModelBudget.ReadClasses`), which refuses a limit it does not know.
 
@@ -188,4 +194,5 @@ vertex whose weights sum to zero, so such a file is `Refused`. `tools/ModelCheck
 ### Tests
 
 `GltfImportTests`, `RigImportTests`, `RigClipTests`, `RigShapingTests`, `MeshAssetsTests`, `TextureDecodeTests`,
-`MipChainTests`, `MeshTangentsTests`, `CompressedTexturesTests`, `ModelInspectionTests`, and `OctahedralTests`.
+`MipChainTests`, `MeshTangentsTests`, `CompressedTexturesTests`, `MeshPointsTests`, `ModelInspectionTests`, and
+`OctahedralTests`.

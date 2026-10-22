@@ -21,7 +21,8 @@ public sealed class MeshAsset
         MeshMaterialData[] materials,
         MeshTextureData[] textures,
         Rig? rig = null,
-        MeshSkinVertex[]? skin = null
+        MeshSkinVertex[]? skin = null,
+        MeshPoint[]? points = null
     )
     {
         ArgumentNullException.ThrowIfNull(vertices);
@@ -45,6 +46,7 @@ public sealed class MeshAsset
         Primitives = primitives;
         Materials = materials;
         Textures = textures;
+        Points = points ?? [];
         BoundsMin = vertices.Length == 0 ? Vector3.Zero : new Vector3(float.MaxValue);
         BoundsMax = vertices.Length == 0 ? Vector3.Zero : new Vector3(float.MinValue);
         foreach (ref readonly var vertex in vertices.AsSpan())
@@ -73,6 +75,23 @@ public sealed class MeshAsset
 
     /// <summary>Each vertex's joints and weights in <see cref="Rig"/> (one a vertex), or null for a static asset.</summary>
     public MeshSkinVertex[]? Skin { get; }
+
+    /// <summary>The asset's named places (<see cref="MeshPoint"/>), in the file's order; none for a mesh built in code unless given.</summary>
+    public MeshPoint[] Points { get; }
+
+    /// <summary>The index in <see cref="Points"/> of the first point named <paramref name="name"/>, or -1. Allocates nothing.</summary>
+    public int FindPoint(string name)
+    {
+        for (var i = 0; i < Points.Length; i++)
+        {
+            if (string.Equals(Points[i].Name, name, StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
 
     /// <summary>The corner of the vertices' box with the least x, y, and z, in the asset's space.</summary>
     public Vector3 BoundsMin { get; }

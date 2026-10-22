@@ -219,6 +219,32 @@ public sealed class ModelInspectionTests : IDisposable
     }
 
     [Fact]
+    public void Points_that_share_a_name_are_a_problem()
+    {
+        var gltf = new GltfBuilder();
+        AddTriangle(gltf, gltf.Material(new JsonObject { ["name"] = "paint" }));
+        gltf.Node(new JsonObject { ["name"] = "grip" });
+        gltf.Node(new JsonObject { ["name"] = "grip", ["translation"] = new JsonArray(0f, 1f, 0f) });
+
+        var report = ModelInspection.Inspect(gltf.WriteGltf(_folder, "grips"));
+
+        AssertProblem(Assert.Single(report.Problems), ModelProblemKind.Content, "2 points named 'grip'");
+        Assert.Equal(["grip", "grip"], report.Points.Select(point => point.Name));
+    }
+
+    [Fact]
+    public void An_empty_node_with_no_name_is_a_problem()
+    {
+        var gltf = new GltfBuilder();
+        AddTriangle(gltf, gltf.Material(new JsonObject { ["name"] = "paint" }));
+        gltf.Node(new JsonObject { ["translation"] = new JsonArray(0f, 1f, 0f) });
+
+        var problem = Assert.Single(ModelInspection.Inspect(gltf.WriteGltf(_folder, "nameless")).Problems);
+
+        AssertProblem(problem, ModelProblemKind.Content, "1 empty nodes with no name");
+    }
+
+    [Fact]
     public void A_mesh_used_at_two_nodes_is_a_note_not_a_problem()
     {
         var gltf = new GltfBuilder();
@@ -241,6 +267,7 @@ public sealed class ModelInspectionTests : IDisposable
     [InlineData("""{ "mostHeight": 0.5 }""", 0.01f, "")]
     [InlineData("""{ "skinned": false }""", 1f, "has a rig, and the budget asks for none")]
     [InlineData("""{ "clips": ["wave", "jump"] }""", 1f, "no clip named 'jump'")]
+    [InlineData("""{ "points": ["muzzle"] }""", 1f, "no point named 'muzzle'")]
     public void A_budget_breaks_on_each_limit_it_sets(string budget, float unit, string expected)
     {
         var budgets = Path.Combine(_folder, "budgets.json");

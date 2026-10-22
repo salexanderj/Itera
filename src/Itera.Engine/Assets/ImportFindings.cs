@@ -27,6 +27,9 @@ internal sealed class ImportFindings
     /// <summary>Nodes of the scene that hold a camera or a light, which are left out.</summary>
     public int CameraOrLightNodes { get; set; }
 
+    /// <summary>Leaf nodes that hold nothing and have no name, so they are not points (<see cref="MeshPoint"/>).</summary>
+    public int UnnamedEmptyNodes { get; set; }
+
     /// <summary>Meshes the scene uses at more than one node, each use baked into vertices of its own.</summary>
     public int ReusedMeshes { get; set; }
 

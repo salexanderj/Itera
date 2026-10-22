@@ -257,7 +257,8 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger)
                 materials,
                 source.Textures,
                 source.Rig,
-                source.Skin
+                source.Skin,
+                source.Points
             );
         }
     }

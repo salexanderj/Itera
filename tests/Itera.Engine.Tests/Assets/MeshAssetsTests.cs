@@ -97,7 +97,8 @@ public sealed class MeshAssetsTests : IDisposable
             [0, 0, 0],
             [new(0, 3, 0), new(0, 3, 1)],
             [body, bands],
-            []
+            [],
+            points: [new MeshPoint("hand", -1, Vector3.One, Quaternion.Identity)]
         );
         _assets.Add("person", mesh);
         var file = _assets.Declare("file", WriteTriangle("file"));
@@ -114,6 +115,7 @@ public sealed class MeshAssetsTests : IDisposable
         Assert.Same(mesh.Vertices, made.Vertices);
         Assert.Same(mesh.Indices, made.Indices);
         Assert.Same(mesh.Primitives, made.Primitives);
+        Assert.Same(mesh.Points, made.Points);
         Assert.Equal(new Vector4(0.2f, 0.2f, 0.25f, 1), made.Materials[0].BaseColour);
         Assert.Equal("body", made.Materials[0].Name);
         Assert.Same(bands, made.Materials[1]);
