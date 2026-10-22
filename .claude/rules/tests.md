@@ -37,6 +37,7 @@ needs.
 - `WireFingerprint`: pins the wire's bytes with the protocol version. It reads the engine's internals, so the game's
   tests leave it out.
 - `RepositoryDocs` and `ReferenceDocs`: the documentation and reference tests' checks (`.claude/skills/docs/SKILL.md`).
+- `ModelChecks`: every model a run declares, checked as the engine reads it and held to a game's budgets.
 
 ### Rules
 

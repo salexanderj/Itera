@@ -181,6 +181,7 @@ has no problems.
 - `Budget`: past a limit of a `ModelBudget`. A game keeps its budgets by asset class in a JSON file
   (`ModelBudget.ReadClasses`), which refuses a limit it does not know.
 
+`MeshAssets.Files` lists the declared files (`DeclaredModel`), and the tests' `ModelChecks` checks each of a game's.
 The notes name meshes used at more than one node and extensions the engine does not read. SharpGLTF refuses a skinned
 vertex whose weights sum to zero, so such a file is `Refused`. `tools/ModelCheck` runs the check from the command line
 (its README), and `ModelInspection.ToJson` writes the reports it prints with `--json`.

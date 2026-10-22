@@ -32,6 +32,13 @@ public sealed class MeshAssetsTests : IDisposable
         Assert.Equal(-1, _assets.Find("third"));
         Assert.Equal("second", _assets[second].Name);
         Assert.Equal(new Vector3(0.01f, 0.01f, 0), _assets[second].BoundsMax);
+        Assert.Equal(
+            [
+                new DeclaredModel("first", Path.Combine(_folder, "first.gltf"), 1f),
+                new DeclaredModel("second", Path.Combine(_folder, "second.gltf"), 0.01f),
+            ],
+            _assets.Files
+        );
     }
 
     [Fact]

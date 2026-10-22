@@ -100,6 +100,17 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
     public int Find(string name) => _byName.TryGetValue(name, out var index) ? index : -1;
 
     /// <summary>
+    /// The glTF files declared so far, in order, each with its full path and unit: what a check of a game's models reads
+    /// (<see cref="ModelInspection"/>). The extra models of <c>Engine:Assets:Extra</c> join them at the mesh assets step.
+    /// </summary>
+    public IReadOnlyList<DeclaredModel> Files =>
+        [
+            .. _entries
+                .Where(entry => entry.Path is not null)
+                .Select(entry => new DeclaredModel(entry.Name, entry.Path!, entry.MetresPerUnit)),
+        ];
+
+    /// <summary>
     /// The asset at <paramref name="index"/> when there is one and it is read (a declared file's once the run's "mesh
     /// assets" step has read it; one added in code at once). Allocates nothing.
     /// </summary>
