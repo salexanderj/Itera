@@ -554,16 +554,6 @@ public sealed partial class WorldMeshesModelsTests(ITestOutputHelper output) : W
             new(small, 0, new Vector3(0.3f, 1.8f, 0), Quaternion.Identity, 0),
             new(small, 0, new Vector3(-0.5f, 1.8f, 0), Quaternion.Identity, 0),
         ];
-        // The cascades ask for blocks the view alone did not. They are meshed before the window, so it measures frames
-        // that are up to date however busy the machine is: on a loaded one they arrived in the window (632 bytes).
-        var deadline = DateTime.UtcNow.AddSeconds(30);
-        do
-        {
-            Assert.True(DateTime.UtcNow < deadline, "The meshes did not catch up.");
-            Frame(shadows: true, draws: draws);
-            Thread.Sleep(1);
-        } while (!Meshes.IsUpToDate);
-
         for (var i = 0; i < 100; i++)
         {
             Frame(shadows: true, draws: draws);

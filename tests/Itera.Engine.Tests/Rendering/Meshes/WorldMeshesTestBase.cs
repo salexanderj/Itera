@@ -222,6 +222,8 @@ internal sealed unsafe class FakeWorldTargets(int heapBytes = 64 << 20) : IMeshD
         MeshPass.MaxModelCommands
     );
 
+    private BufferCopy[] _sorted = new BufferCopy[1024];
+
     public byte[] Heap { get; } = new byte[heapBytes];
 
     public ulong HeapBytes => (ulong)Heap.Length;
@@ -261,14 +263,21 @@ internal sealed unsafe class FakeWorldTargets(int heapBytes = 64 << 20) : IMeshD
     /// </summary>
     public void Apply(ReadOnlySpan<BufferCopy> regions)
     {
-        var sorted = regions.ToArray();
-        Array.Sort(sorted, static (a, b) => a.DstOffset.CompareTo(b.DstOffset));
+        // Sorted in a buffer kept from frame to frame: an allocation test's frames that copy count none of the fake's.
+        if (_sorted.Length < regions.Length)
+        {
+            _sorted = new BufferCopy[regions.Length * 2];
+        }
+
+        var sorted = _sorted.AsSpan(0, regions.Length);
+        regions.CopyTo(sorted);
+        sorted.Sort(static (a, b) => a.DstOffset.CompareTo(b.DstOffset));
         for (var i = 1; i < sorted.Length; i++)
         {
-            Assert.True(
-                sorted[i - 1].DstOffset + sorted[i - 1].Size <= sorted[i].DstOffset,
-                $"Two copies of one frame write heap bytes {sorted[i].DstOffset} on."
-            );
+            if (sorted[i - 1].DstOffset + sorted[i - 1].Size > sorted[i].DstOffset)
+            {
+                Assert.Fail($"Two copies of one frame write heap bytes {sorted[i].DstOffset} on.");
+            }
         }
 
         foreach (var region in regions)

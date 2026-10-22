@@ -75,7 +75,8 @@ internal static class SystemAllocation
     /// the start, <see cref="StartMeasurement"/>), so a window with one is run again, at most
     /// <paramref name="attempts"/> times, and the least is returned. A real allocation shows in every window. Found on
     /// 2026-10-08: a 100-frame window of the world's meshes counted 16,800 bytes in one run of three beside the mesher's
-    /// tests, none alone.
+    /// tests, none alone. A background collection's pauses count no gen0 collection but add the bytes too (8,168 in one
+    /// frame of a full suite's run, 2026-10-22), so a window the runtime paused threads in is run again as well.
     /// </summary>
     public static long BytesAllocatedWithoutCollection(Action measured, int attempts = 5)
     {
@@ -84,10 +85,11 @@ internal static class SystemAllocation
         {
             var before = StartMeasurement();
             var collections = GC.CollectionCount(0);
+            var paused = GC.GetTotalPauseDuration();
             measured();
             var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
             least = Math.Min(least, allocated);
-            if (GC.CollectionCount(0) == collections)
+            if (GC.CollectionCount(0) == collections && GC.GetTotalPauseDuration() == paused)
             {
                 return allocated;
             }
