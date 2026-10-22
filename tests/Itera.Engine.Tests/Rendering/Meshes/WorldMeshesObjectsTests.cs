@@ -18,7 +18,7 @@ namespace Itera.Engine.Tests.Rendering.Meshes;
 /// the far cascade's own), at the level its distance gives, turned by its heading; and frames with objects allocate
 /// nothing.
 /// </summary>
-public sealed partial class WorldMeshesTests
+public sealed partial class WorldMeshesModelsTests
 {
     private const byte Bark = 30;
     private static readonly VoxelGrid s_objectGrid = new(10);
@@ -27,10 +27,10 @@ public sealed partial class WorldMeshesTests
     /// Trees 4 m apart along x from the middle out to 60 m, the camera 25 m over the middle looking down wide: each tree's
     /// models are in the camera's list when a level-2 column under its reach is split below level 2 or it is nearer than
     /// the hand-over's fade's end (every one here), and in the far cascade's just when the far pass split one, and every
-    /// drawn part lies where the tree's anchor and heading put it.
+    /// drawn part lies where the tree's anchor and heading put it. Frames of the settled scene allocate nothing.
     /// </summary>
     [Fact]
-    public void Objects_are_drawn_as_models_where_a_pass_split_their_column_below_the_hand_over()
+    public void Objects_are_drawn_as_models_where_a_pass_split_their_column_below_the_hand_over_and_allocate_nothing()
     {
         using var scene = new ObjectScene(this);
         var at = new Vector3(0, 25, 0);
@@ -86,6 +86,15 @@ public sealed partial class WorldMeshesTests
         // The far cascade casts the split trees' shadows from their models too.
         Assert.NotEmpty(scene.Meshes.FarSplit);
         Assert.NotEmpty(far);
+
+        // Frames of the same scene allocate nothing.
+        var before = Itera.TestSupport.SystemAllocation.StartMeasurement();
+        for (var i = 0; i < 5; i++)
+        {
+            scene.Frame(at, shadows: true);
+        }
+
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
 
     /// <summary>
@@ -206,41 +215,20 @@ public sealed partial class WorldMeshesTests
         );
     }
 
-    [Fact]
-    public void Frames_with_objects_allocate_nothing()
-    {
-        using var scene = new ObjectScene(this);
-        var at = new Vector3(0, 25, 0);
-        scene.Settle(at, shadows: true);
-        scene.Frame(at, shadows: true);
-
-        var before = Itera.TestSupport.SystemAllocation.StartMeasurement();
-        for (var i = 0; i < 5; i++)
-        {
-            scene.Frame(at, shadows: true);
-        }
-
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
-    }
-
-    private FakeTargets Targets => _objectTargets ??= new FakeTargets();
-
-    private FakeTargets? _objectTargets;
-
     /// <summary>
     /// A 10 cm world of flat stone with a row of trees (5 cm voxels, two parts tall) every 4 m along +x from 2 m to 58 m,
     /// each turned its own way; its objects and their models; and a world mesh of its own over the test's targets.
     /// </summary>
     private sealed class ObjectScene : IDisposable
     {
-        private readonly WorldMeshesTests _test;
+        private readonly WorldMeshesModelsTests _test;
         private readonly VoxelObjectKinds _kinds = new();
         private readonly VoxelModels _models;
         private readonly VoxelObjects _objectModels;
         private readonly ObjectWorld _objects;
         private int _frame;
 
-        public ObjectScene(WorldMeshesTests test, bool fill = true)
+        public ObjectScene(WorldMeshesModelsTests test, bool fill = true)
         {
             _test = test;
             var shape = new VoxelObjectShape(5, new VoxelCoord(40, 150, 40), new VoxelCoord(100, 0, 100));
@@ -328,8 +316,6 @@ public sealed partial class WorldMeshesTests
             Meshes.Dispose();
             _models.Dispose();
             World.Dispose();
-            _test._objectTargets?.Dispose();
-            _test._objectTargets = null;
         }
 
         /// <summary>
@@ -370,7 +356,7 @@ public sealed partial class WorldMeshesTests
                 view.Switches = ViewSwitches.Shadows;
             }
 
-            var count = WorldMeshesTests.Frame(Meshes, slot, _frame / 60.0, in view);
+            var count = WorldMeshesTestBase.Frame(Meshes, slot, _frame / 60.0, in view);
             _test.Targets.Apply(Meshes.Regions(slot, count));
             return slot;
         }

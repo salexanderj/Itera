@@ -84,5 +84,5 @@ Characters and loose bodies are meshes, drawn by `WorldMeshes` (`Rendering/Meshe
   (a `MeshFrame`) carries the counts of draws and commands.
 - `MeshPassTests` checks `MeshModelDraw` against `mesh.vert` and `mesh-shadow.vert` compiled with `MESH_MODEL` with
   `GpuLayout`. `LooseBodyModelSystemTests` checks that `ModelInstances.Add` allocates nothing.
-  `WorldMeshesTests.An_upload_allocates_nothing_once_up_to_date` covers `Upload`.
+  `WorldMeshesModelsTests.An_upload_allocates_nothing_once_up_to_date` covers `Upload`.
 - No stable GPU slots: the draws are written in full every frame, as `design.md` says.

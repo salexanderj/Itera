@@ -93,6 +93,29 @@ public sealed class MeshDensityGroundFarTests(MeshDensityGroundFarFixture fixtur
         IClassFixture<MeshDensityGroundFarFixture>;
 
 /// <summary>
+/// The density ground of the far tests at the map's middle and 150 km out (<see cref="FarPlace"/>), each read from an
+/// origin at its own place. The tests that share it only read it.
+/// </summary>
+public sealed class FarWorldsFixture : IDisposable
+{
+    public FarWorldsFixture()
+    {
+        Middle = FarPlace.DensityWorld(far: false, new Vector3(4.5f, 2, 13), radiusMetres: 16);
+        Far = FarPlace.DensityWorld(far: true, new Vector3(4.5f, 2, 13), radiusMetres: 16);
+    }
+
+    public VoxelWorld Middle { get; }
+
+    public VoxelWorld Far { get; }
+
+    public void Dispose()
+    {
+        Far.Dispose();
+        Middle.Dispose();
+    }
+}
+
+/// <summary>
 /// The same ground at the map's middle and 150 km out (<see cref="FarPlace"/>), each read from an origin at its own
 /// place: rays meet the same voxels moved by the far place, at the same distances; a walk over slopes, stairs, walls,
 /// and under a ceiling keeps to the middle's within 0.1 mm (the move's doubles round differently that far out, by about
@@ -100,7 +123,8 @@ public sealed class MeshDensityGroundFarTests(MeshDensityGroundFarFixture fixtur
 /// the voxels the middle's does, moved by the far place; and rays meet mesh colliders placed there where they meet them
 /// at the middle.
 /// </summary>
-public sealed class FarFromTheMiddleTests(ITestOutputHelper output)
+public sealed class FarFromTheMiddleTests(FarWorldsFixture worlds, ITestOutputHelper output)
+    : IClassFixture<FarWorldsFixture>
 {
     private const float Step = 1f / 60;
     private const float Gravity = 20;
@@ -109,8 +133,8 @@ public sealed class FarFromTheMiddleTests(ITestOutputHelper output)
     [Fact]
     public void Rays_meet_the_same_voxels_moved_by_the_far_place_at_the_same_distances()
     {
-        using var middle = FarPlace.DensityWorld(far: false, new Vector3(4.5f, 2, 13), radiusMetres: 16);
-        using var far = FarPlace.DensityWorld(far: true, new Vector3(4.5f, 2, 13), radiusMetres: 16);
+        var middle = worlds.Middle;
+        var far = worlds.Far;
         var random = new Random(3);
         var hits = 0;
         for (var i = 0; i < 2000; i++)
@@ -149,8 +173,8 @@ public sealed class FarFromTheMiddleTests(ITestOutputHelper output)
     [Fact]
     public void A_walk_over_slopes_stairs_and_walls_keeps_to_the_middles()
     {
-        using var middle = FarPlace.DensityWorld(far: false, new Vector3(4.5f, 2, 13), radiusMetres: 16);
-        using var far = FarPlace.DensityWorld(far: true, new Vector3(4.5f, 2, 13), radiusMetres: 16);
+        var middle = worlds.Middle;
+        var far = worlds.Far;
         var near = new VoxelCharacterMover(middle, new NothingPassable());
         var there = new VoxelCharacterMover(far, new NothingPassable());
         var random = new Random(5);

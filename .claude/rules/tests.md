@@ -121,8 +121,9 @@ They fail when a place that must change with a feature is missed (`.claude/skill
 - Replication tests use `ReplicationHarness`. Asset tests use `GltfBuilder`. Audio tests use `FakeAudioDevice`,
   `WavBuilder`, and `MusicHarness`. Animation tests use `HumanoidTestSkeleton`. Render-view tests use `FakeViewLists`.
   UI toolkit tests use `FixedTextMeasurer` and `UISurface`.
-- GPU code is tested without a device: `WorldMeshesTests` runs the world's meshes over a draw target and staging in
-  memory, and `GpuLayout` compares structs with the compiled SPIR-V.
+- GPU code is tested without a device: `WorldMeshesTests`, `WorldMeshesLevelsTests`, and `WorldMeshesModelsTests`
+  run the world's meshes over a draw target and staging in memory (`WorldMeshesTestBase`), and `GpuLayout` compares
+  structs with the compiled SPIR-V.
 
 ### Package notes
 

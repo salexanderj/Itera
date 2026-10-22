@@ -159,5 +159,6 @@ starts no sort or remeshing. The sky field and the shadow cascades are absolute 
 
 ### Tests
 
-`SurfaceNetsTests`, `SurfaceNetsTransitionTests`, `MeshVertexTests`, `WorldMeshesTests` (also in
-`WorldMeshesObjectsTests.cs`), `MeshColumnTests`, `LevelBalanceTests`, and `GpuRangeHeapTests`.
+`SurfaceNetsTests`, `SurfaceNetsTransitionTests`, `MeshVertexTests`, `MeshColumnTests`, `LevelBalanceTests`, and
+`GpuRangeHeapTests`. `WorldMeshesTests`, `WorldMeshesLevelsTests`, and `WorldMeshesModelsTests` (with
+`WorldMeshesObjectsTests.cs`) share `WorldMeshesTestBase`.
