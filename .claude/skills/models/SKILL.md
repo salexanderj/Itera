@@ -108,3 +108,10 @@ Open edges only warn, since a leaf card or a banner may need them. Edges shared 
 The toolkit refuses any Blender but the version in `tools/models/blender.json`. To move it, install the new version,
 run `tools/models/build.py selftest` and `verify`, update `blender-api.md` from the new release notes, and change the
 pin only when both pass.
+
+## Enforcement
+
+`.claude/hooks/skill_guard.py` denies file writes under `tools/models/` and `src/Game/ModelRecipes/`. It also denies
+Bash commands that name either folder, unless the command only reads. The denial lasts until the session transcript
+shows this skill was loaded: a `Skill` call for `models`, or a typed `/models`, after the last `/clear`. A denied call
+names the fix: load this skill, then retry. A subagent loads the skill itself.

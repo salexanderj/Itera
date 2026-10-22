@@ -113,7 +113,8 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
 - `src/Itera.Engine`: the engine. `.claude/rules/engine.md` lists its folders.
 - `src/Game`: the starter game (`GAME.md`). `tests/`: xUnit, one project per `src/` project.
 - `samples/Itera.SampleMod` is the reference mod, and `samples/Itera.MeshSample` a game without voxel terrain.
-- `tools/`: `control`, `benchmark`, `steam`, `tests`, `Textures`, `models`, `ModelCheck`, and `ModelView`, each with a README.
+- `tools/`: `control`, `benchmark`, `steam`, `tests`, `Textures`, `models`, `ModelCheck`, and `ModelView`, each with a
+  README.
 
 # Conventions
 
@@ -175,10 +176,10 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
 - Commit messages in imperative mood. Git identity is repo-local.
 - Work and commit on `main`; no feature branches (one developer). A temporary local branch a tool needs (a writer's
   worktree) is fine: delete it once its changes are on main.
-- Vulkan work uses the `vulkan` skill, ECS work the `ecs` skill, and code that moves ECS data to the GPU or defines a
-  struct a shader reads the `ecs-vulkan` skill. A PreToolUse hook (`.claude/hooks/skill_guard.py`) blocks file writes,
-  and Bash commands that name the guarded folders, until the matching skill is loaded in the session. A subagent loads
-  its own.
+- Vulkan work uses the `vulkan` skill, ECS work the `ecs` skill, code that moves ECS data to the GPU or defines a struct
+  a shader reads the `ecs-vulkan` skill, and model recipes the `models` skill. A PreToolUse hook
+  (`.claude/hooks/skill_guard.py`) blocks file writes, and Bash commands that name the guarded folders, until the
+  matching skill is loaded in the session. A subagent loads its own.
 
 # The game
 

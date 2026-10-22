@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: block Vulkan, ECS, or ECS-to-GPU work until the matching project skill is loaded in this session.
+"""PreToolUse hook: block Vulkan, ECS, ECS-to-GPU, or model work until the matching project skill is loaded in this
+session.
 
 Each guard names a skill, the folders it covers, and sets of patterns for code in its area. Guarded work is
 a file write under one of the folders, a write to a .cs file whose existing and new text together match
@@ -51,6 +52,7 @@ GUARDS = (
         ("src/Itera.Engine/Rendering/GpuData/",),
         ((GPU_DATA,), (ARCH, VULKAN)),
     ),
+    Guard("models", "Model", ("tools/models/", "src/Game/ModelRecipes/"), ()),
 )
 WRITE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 
