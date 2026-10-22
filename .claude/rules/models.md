@@ -23,8 +23,8 @@ their parts are. The engine's side (the import, `ModelInspection`, points, `Engi
 - `tools/ModelCheck/`: the checker's command line over `ModelInspection`, which holds all its rules.
 - `tools/ModelView/`: the neutral stage, a program on the engine with no voxel world (`ModelStage`): `StageGround`,
   `StageSystem` (the ground and the camera at a match's start), and the engine's systems that pose and draw meshes.
-- A game's recipes are in `src/Game/ModelRecipes/<Name>/`, its budgets by class in `src/Game/ModelRecipes/budgets.json`,
-  and its built models in `src/Game/Models/<Name>/`.
+- A game's recipes are in `src/Game/ModelRecipes/<Name>/`, its budgets by class in a `budgets.json` there, and its built
+  models in `src/Game/Models/<Name>/`.
 
 ### Rules
 

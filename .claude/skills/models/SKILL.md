@@ -24,13 +24,14 @@ Three tools do the work:
    plain. Ask the user for a picture of the subject from the front, and from the side or the top where its shape needs
    it: concept art, a photograph, or a sketch on a plain background. Put each beside the recipe and name it in
    `REFERENCES`. Without them, say so before you start, and ask the user to look at the result.
-2. **Read the game's rules for the subject:** its design page, its budget class in `src/Game/ModelRecipes/budgets.json`,
-   and its rig. A humanoid keeps the game's own skeleton, its joint names, order, and rest pose, so every clip plays.
+2. **Read the game's rules for the subject:** its design page, its budget class in the game's `budgets.json` (in
+   `src/Game/ModelRecipes/`), and its rig. A humanoid keeps the game's own skeleton, its joint names, order, and rest pose, so every clip plays.
 3. **Read `blender-api.md` beside this file.** Blender's Python API changed a great deal in 4.x and 5.x, and wrong API
    calls are the most common reason a script fails. Build the local API reference once with `tools/models/build.py
    docs`, and grep it before using an operator or a property the toolkit does not already use.
 4. **Read `recipes.md` beside this file** for the pattern that fits: a prop, a part with points, a humanoid variant, a
-   creature, clips, or materials. Start from the starter's crate, `src/Game/ModelRecipes/Crate/Crate.py`.
+   creature, clips, or materials. Start from the crate in Itera's starter game (its recipe is
+   ModelRecipes/Crate/Crate.py there).
 
 ## The loop
 

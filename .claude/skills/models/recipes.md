@@ -5,7 +5,7 @@ their docstrings give every argument. Blender's axes: +Z up, and a model faces -
 
 ## A prop
 
-The starter's crate (`src/Game/ModelRecipes/Crate/Crate.py`) is the pattern: closed boxes built with bmesh, a bevel
+The crate of Itera's starter game (its recipe is ModelRecipes/Crate/Crate.py there) is the pattern: closed boxes built with bmesh, a bevel
 modifier for soft edges, a CC0 texture projected by position, grime in the creases, and one bake.
 
 ```python
