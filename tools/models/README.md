@@ -47,6 +47,9 @@ BUDGETS = "budgets.json"  # optional: the budget file, from the recipe's folder
 UNIT = 1.0  # optional: metres a unit of the file, for the checker (default 1.0)
 REFERENCES = {"front": "front.png"}  # optional: reference images beside the recipe, by view
 MATCH = 0.85  # optional: the least silhouette match each reference must reach (0 to 1)
+LOOPS = ["Idle", "Walk"]  # optional: clips that loop, so their last frame must hold their first pose
+FEET = ["foot_l", "foot_r"]  # optional: the bones whose tails touch the ground
+PLANTED = {"Idle": 0, "Walk": 1.4}  # optional: clips checked for feet that slide, with the game's speed (m/s)
 
 
 def build(ctx):  # required: makes the model in bpy.context.scene
@@ -63,6 +66,13 @@ def build(ctx):  # required: makes the model in bpy.context.scene
 - `BUDGETS` defaults to `../budgets.json` (beside the recipe's folder) when that file exists, else there is none. The
   checker gets `--budget` and `--class` only when the recipe has a class and a budget file exists.
 - `UNIT` goes to the checker's `--unit`. Inside Blender the scene stays in metres.
+- `LOOPS`, `FEET`, and `PLANTED` check the clips after the export (`itera_models/motion.py`). A clip in `LOOPS` fails
+  when its last frame is off its first pose by more than 0.5 % of the rig's height, or when a bone's motion changes at
+  the seam by more than twice the most it changes between two frames inside the clip. In each clip of `PLANTED`, a
+  bone of `FEET` is on the ground while its tail is within 2 % of the rig's height of its lowest point in the clip. It
+  fails when it moves more than 1 % of the height along the ground in one stretch there. The ground moves under the
+  model at the clip's speed in `PLANTED`, so a walk in place must move its planted foot back at that speed. The rig's
+  height is from its lowest bone end to its highest at rest.
 - The scene is empty when `build(ctx)` starts: no cube, camera, or light. Units are metric, one unit a metre.
 - The recipe's folder is on `sys.path`, so a recipe can import a module beside it, and so can `itera_models`.
 - The recipe may call `ctx.export(...)` itself, to choose what to export. If it does not, the toolkit exports the
@@ -83,7 +93,7 @@ def build(ctx):  # required: makes the model in bpy.context.scene
 
 ## The helpers
 
-All of them run inside Blender (`from itera_models import export, checks, views, points, rig, clips, materials`).
+All of them run inside Blender (`from itera_models import export, checks, views, points, rig, clips, motion, materials`).
 Each module's docstrings say more.
 
 - `export.glb(path, objects=None, clips=None, vertex_colors=False)` exports a binary glTF file with every option the
@@ -126,6 +136,9 @@ Each module's docstrings say more.
   engine does not apply: bake such a material before the export.
 - `silhouette`: `mask(objects, view)`, `image_mask(path)`, `iou(a, b)`, and `compare(objects, references)`, which
   `REFERENCES` uses.
+- `motion.check(armature, loops, feet, planted, loop_gap=..., seam_jolt=..., contact=..., slide=...)` checks clips as
+  `LOOPS`, `FEET`, and `PLANTED` do, with other limits when given (shares of the rig's height). Its numbers per clip
+  go into `report.json`, and the build's summary prints each clip's loop gap and largest slide.
 
 ## The work folder
 
@@ -136,7 +149,7 @@ Each module's docstrings say more.
 - `<NAME>-sheet.png`: the view sheet.
 - `<NAME>.blend`: the scene after the build, to open in Blender and look at.
 - `report.json`: the recipe, the Blender version, the time of each stage, the export settings used, the scene checks,
-  problems, warnings, and notes, the sheet's path, and the silhouette matches.
+  the clip checks, problems, warnings, and notes, the sheet's path, and the silhouette matches.
 - `views/` and `world-views/`: what `views` draws (below).
 
 ## views

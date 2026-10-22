@@ -11,6 +11,10 @@ A recipe is a Python file with:
     REFERENCES = {"front": "front.png"}   # optional: reference images beside the recipe, by view (front, back,
                                           # side, top; see itera_models/silhouette.py for each view's direction)
     MATCH = 0.85                   # optional: the least silhouette match each reference must reach (0 to 1)
+    LOOPS = ["Idle", "Walk"]       # optional: clips that loop, so their last frame must hold their first pose
+    FEET = ["foot_l", "foot_r"]    # optional: the bones whose tails touch the ground
+    PLANTED = {"Idle": 0, "Walk": 1.4}    # optional: clips checked for feet that slide, each with the speed (m/s)
+                                          # the game moves the model forward while it plays
 
     def build(ctx):                # required: makes the model in bpy.context.scene
         ...
@@ -22,7 +26,8 @@ plain literal. `ctx` is an itera_models.context.Context: `ctx.name`, `ctx.recipe
 beside it. UNIT only goes to the checker: Blender's own scene stays in metres.
 
 What this script does, in order: empties the scene and sets metric units; calls build(ctx); exports the scene if the
-recipe did not call ctx.export(); checks the scene; renders the view sheet; compares the model's silhouettes with the
+recipe did not call ctx.export(); checks the scene; checks the clips that LOOPS and PLANTED name
+(itera_models/motion.py); renders the view sheet; compares the model's silhouettes with the
 REFERENCES images (a problem under MATCH); saves WORK_DIR/NAME.blend; and writes WORK_DIR/report.json. The export comes before the checks and the sheet, so the cameras and the copies the sheet makes
 never reach the .glb. Any exception ends Blender with a non-zero exit code and the traceback in the log.
 """
@@ -43,7 +48,7 @@ if str(TOOLS_DIR) not in sys.path:
 # Importing a recipe or a helper module must not leave __pycache__ folders in the recipe's folder.
 sys.dont_write_bytecode = True
 
-from itera_models import checks, selection, silhouette, views
+from itera_models import checks, motion, selection, silhouette, views
 from itera_models.context import Context
 
 SHEET_SIZE = 384
@@ -97,6 +102,20 @@ def compare_references(recipe, recipe_dir: Path, context: Context) -> dict:
     return {view: round(score, 3) for view, score in scores.items()}
 
 
+def check_motion(recipe, context: Context) -> dict | None:
+    """The clip checks of the recipe's LOOPS, FEET, and PLANTED on the model's armature, or None when it names none."""
+    loops = list(getattr(recipe, "LOOPS", []))
+    feet = list(getattr(recipe, "FEET", []))
+    planted = dict(getattr(recipe, "PLANTED", {}))
+    if not (loops or feet or planted):
+        return None
+    armatures = [obj for obj in selection.resolve(context.export_objects) if obj.type == "ARMATURE"]
+    if len(armatures) != 1:
+        context.problem(f"LOOPS, FEET, and PLANTED need a model with one armature; it has {len(armatures)}")
+        return None
+    return motion.check(armatures[0], loops, feet, planted)
+
+
 def main(arguments: list) -> None:
     if len(arguments) != 3:
         raise SystemExit("usage: run_recipe.py -- RECIPE OUT_GLB WORK_DIR")
@@ -129,6 +148,9 @@ def main(arguments: list) -> None:
     scene_checks = checks.scene(context.export_objects)
     now = stage("checks", now)
 
+    motion_checks = check_motion(recipe, context)
+    now = stage("motion", now)
+
     sheet_path = work_dir / f"{recipe.NAME}-sheet.png"
     views.sheet(sheet_path, objects=context.export_objects, size=SHEET_SIZE)
     now = stage("sheet", now)
@@ -148,7 +170,8 @@ def main(arguments: list) -> None:
         "timings": timings,
         "export_settings": context.export_settings,
         "scene": scene_checks,
-        "problems": context.problems + scene_checks["problems"],
+        "motion": motion_checks,
+        "problems": context.problems + scene_checks["problems"] + (motion_checks or {}).get("problems", []),
         "warnings": scene_checks["warnings"],
         "notes": context.notes,
         "sheet": str(sheet_path),

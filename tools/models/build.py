@@ -320,6 +320,19 @@ def build_recipe(
     return result
 
 
+def describe_motion(motion: dict) -> str:
+    """One line of the clip checks: each clip's loop gap and its feet's largest slide, in centimetres."""
+    parts = []
+    for name, entry in motion.get("clips", {}).items():
+        found = []
+        if "loop" in entry:
+            found.append(f"loop gap {entry['loop']['gap'] * 100:.1f} cm")
+        if entry.get("feet"):
+            found.append(f"slide {max(foot['slide'] for foot in entry['feet'].values()) * 100:.1f} cm")
+        parts.append(f"{name} ({', '.join(found)})" if found else name)
+    return "; ".join(parts) or "no clips"
+
+
 def print_build(result: BuildResult) -> None:
     """Prints the short summary of a build."""
     status = "ready" if result.ready else "has problems"
@@ -344,6 +357,8 @@ def print_build(result: BuildResult) -> None:
             print(f"  {label}: {item}")
     if not result.problems:
         print("  problems:  none")
+    if result.report and result.report.get("motion"):
+        print(f"  motion:    {describe_motion(result.report['motion'])}")
     if result.report and result.report.get("references"):
         scores = ", ".join(f"{view} {score:.2f}" for view, score in result.report["references"].items())
         print(f"  silhouette match: {scores}")

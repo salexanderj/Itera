@@ -78,7 +78,8 @@ ctx.export(objects=[armature, plate])          # no clips: the game's clips come
    mode, then apply the modifiers.
 3. Weight it: automatic weights on one closed, joined proxy, then copy them to the real mesh with the rig helper's
    weight transfer. Rigid parts, each on one bone, suit plated or insect-like bodies.
-4. Key its gait in code (below), and test that each foot stays still while it touches the ground.
+4. Key its gait in code (below), with its feet in `FEET` and its gaits in `PLANTED`, so the build checks that each
+   foot stays still while it touches the ground.
 
 ## Clips keyed in code
 
@@ -92,7 +93,11 @@ clips.bake(armature, 1, 25)                                   # constraints and 
 ctx.export(clips=["Walk", "Idle"])                            # only these, each from time 0
 ```
 
-- Make a loop's last key equal its first.
+- Make a loop's last key equal its first, and name the clip in `LOOPS`. The build fails a loop whose last frame is off
+  its first pose, or whose motion jolts at the seam.
+- Name the bones whose tails touch the ground in `FEET`, and each clip they stand or walk in in `PLANTED`, with the
+  speed the game moves the model forward while it plays: `{"Idle": 0, "Walk": 1.4}`. A walk in place moves its planted
+  foot back at the walk's speed. The toolkit's README gives the limits.
 - Key whole poses at a few frames, and let the curves fill between them.
 - Use IK constraints for feet and hands, then bake them to keys before the export.
 
@@ -107,7 +112,8 @@ bpy.data.objects.remove(source)
 ```
 
 - `JOINT_MAP` maps each source joint to a game joint. Unmapped joints keep their rest pose.
-- Check the clip in the engine with `views --clip Climb@1.5`. Look for feet that slide and limbs that cross.
+- Name the feet and the clip in `FEET` and `PLANTED` to measure its slide. Check the clip in the engine with
+  `views --clip Climb@1.5`, and look for limbs that cross.
 
 ## Materials
 

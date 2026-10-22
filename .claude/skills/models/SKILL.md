@@ -68,6 +68,7 @@ any problem exits 1.
 | No texture tiling at export (bake instead) | Tiling exports as a texture transform, which the engine does not apply. |
 | Within the class's budget: triangles, joints, materials, texture size, height, rig, clips, points | The game's numbers. |
 | Each reference outline matched to at least `MATCH` | The shape stays true to what the user asked for. |
+| Each clip in `LOOPS` ends in its first pose, with no jolt at the seam; no foot of `FEET` slides in a clip of `PLANTED` | A clip that jumps or skates shows at every repeat. |
 
 Open edges only warn, since a leaf card or a banner may need them. Edges shared by three or more faces are a problem.
 
@@ -80,9 +81,10 @@ Open edges only warn, since a leaf card or a banner may need them. Edges shared 
 - **Weights:** copy them from a body that is already weighted where you can (armour, clothing, a new body on the
   game's rig). Use rigid parts, each on one bone, for mechanical things. Use automatic weights on one closed proxy
   mesh, then copy them to the real mesh, for a creature.
-- **Motion:** mechanical, cyclic, and stylised motion keyed in code works (a lid, a gun's recoil, a creature's gait,
-  with tests of foot slide and loop closure). Natural human motion does not: take it from motion capture and retarget
-  it to the game's rig.
+- **Motion:** mechanical, cyclic, and stylised motion keyed in code works (a lid, a gun's recoil, a creature's gait).
+  Name the clips that loop in `LOOPS`, and the feet and the clips they stand or walk in in `FEET` and `PLANTED`: the
+  build then fails a loop that does not close and a foot that slides. Natural human motion does not come out well from
+  code: take it from motion capture and retarget it to the game's rig.
 - **Licences:** use CC0 sources (Poly Haven, ambientCG, CMU motion capture) or CC BY ones with credit (100STYLE).
   Models and clips from SMPL, AMASS, or HumanML3D are non-commercial, and so are the motion models trained on them; do
   not use them. Mixamo's terms bar shipping its raw files. Files bought for a game stay in the game's private

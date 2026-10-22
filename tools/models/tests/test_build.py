@@ -191,6 +191,19 @@ class CommandTests(unittest.TestCase):
         self.assertEqual([{"ok": True}], build.extract_json_list(text))
         self.assertIsNone(build.extract_json_list("no json here\n"))
 
+    def test_the_clip_checks_print_on_one_line_in_centimetres(self):
+        motion = {
+            "clips": {
+                "Walk": {"loop": {"gap": 0.0021}, "feet": {"foot_l": {"slide": 0.004}, "foot_r": {"slide": 0.012}}},
+                "Idle": {"feet": {"foot_l": {"slide": 0.0}}},
+                "Wave": {},
+            }
+        }
+        self.assertEqual(
+            "Walk (loop gap 0.2 cm, slide 1.2 cm); Idle (slide 0.0 cm); Wave", build.describe_motion(motion)
+        )
+        self.assertEqual("no clips", build.describe_motion({"clips": {}}))
+
 
 if __name__ == "__main__":
     unittest.main()
