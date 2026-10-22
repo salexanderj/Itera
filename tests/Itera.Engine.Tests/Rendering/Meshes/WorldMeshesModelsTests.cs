@@ -14,6 +14,7 @@ namespace Itera.Engine.Tests.Rendering.Meshes;
 /// replaced, shared, and removed, and an upload with them allocates nothing. The voxel objects' tests are in
 /// <c>WorldMeshesObjectsTests.cs</c>.
 /// </summary>
+[RunsLong]
 public sealed partial class WorldMeshesModelsTests(ITestOutputHelper output) : WorldMeshesTestBase(output)
 {
     [Fact]

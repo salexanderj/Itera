@@ -17,6 +17,7 @@ namespace Itera.Engine.Tests.Navigation;
 /// the window changes no cell; a reset during a move fills the window again; a walker keeps its route across moves, and
 /// one walks 2 km on a 4 km map to its goal; moves allocate nothing on the main thread.
 /// </summary>
+[RunsLong]
 public sealed class NavigationWindowTests(ITestOutputHelper output)
 {
     private const int Floor = 200;

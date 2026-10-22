@@ -48,8 +48,8 @@ needs.
   `World.Worlds` room so it never grows. A component type from another library is added there.
 - A class that reads the whole process (a garbage collection that must find a match gone, timings) goes in
   `SerialCollectionDefinition`, which runs alone after the rest.
-- A class whose tests take more than about 20 s in all is split into classes of independent tests (below). One that
-  stays over it carries `[RunsLong]`, so it starts first.
+- A class whose tests take more than about 20 s in all is split into classes of independent tests (below). A class
+  over about 5 s in a run of the suite carries `[RunsLong]`, so it starts first: started late, it ends the run.
 - Some checks run only in Debug. `tools/steam/upload.sh` runs the suite in Debug and in Release.
 - The test projects run with tiered compilation off (`TieredCompilation` in their csproj files), so every method is
   optimised at its first call and an allocation test never measures unoptimised library code.

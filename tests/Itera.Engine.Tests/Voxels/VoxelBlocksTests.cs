@@ -49,6 +49,7 @@ public sealed class VoxelBlocksWorlds : IDisposable
 /// Reading 32^3 blocks out of the chunk trees: with a 2-voxel apron for the mesher, and their own voxels alone for the
 /// sky field. Every test but one only reads the shared worlds; that one edits a pair of its own.
 /// </summary>
+[RunsLong]
 public sealed class VoxelBlocksTests : IClassFixture<VoxelBlocksWorlds>
 {
     private const int Edge = VoxelWorld.BlockSampleEdge;

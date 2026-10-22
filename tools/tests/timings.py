@@ -116,7 +116,13 @@ def main():
             if "Passed!" in line or "Failed!" in line or "[FAIL]" in line:
                 print(line.rstrip())
     print(f"Results and log: {folder}\n")
-    report(read_results(folder), arguments.top, wall)
+    rows = read_results(folder)
+    if not rows:
+        with open(log, encoding="utf-8") as output:
+            print("".join(output.readlines()[-10:]))
+        print("No results: an 'Internal CLR error' right after a build passes after `dotnet build-server shutdown`.")
+        return code or 1
+    report(rows, arguments.top, wall)
     return code
 
 

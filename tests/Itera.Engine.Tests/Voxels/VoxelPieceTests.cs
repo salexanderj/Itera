@@ -9,6 +9,7 @@ namespace Itera.Engine.Tests.Voxels;
 /// <see cref="VoxelEditShape.Piece"/>): the voxels at every level, turns, filling only air, replay when columns load
 /// again, and the save format.
 /// </summary>
+[RunsLong]
 public sealed class VoxelPieceTests : IDisposable
 {
     private const int Floor = 200;

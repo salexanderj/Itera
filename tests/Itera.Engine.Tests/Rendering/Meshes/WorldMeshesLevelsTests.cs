@@ -15,6 +15,7 @@ namespace Itera.Engine.Tests.Rendering.Meshes;
 /// The levels of the world's meshes, each test in a world of its own: which level a column is meshed at, how the view
 /// and the heap choose columns, the stitched seams' columns, and the sky field.
 /// </summary>
+[RunsLong]
 public sealed class WorldMeshesLevelsTests(ITestOutputHelper output) : WorldMeshesTestBase(output)
 {
     /// <summary>

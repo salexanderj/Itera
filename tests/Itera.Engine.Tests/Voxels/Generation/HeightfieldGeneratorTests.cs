@@ -10,6 +10,7 @@ namespace Itera.Engine.Tests.Voxels.Generation;
 /// voxels on every run and thread, no allocation after a thread's first column, and a world that streams it. Most
 /// checks run on a grid of 1 cm and of 10 cm; threading and allocation, which do not depend on the base, on 10 cm only.
 /// </summary>
+[RunsLong]
 public sealed class HeightfieldGeneratorTests
 {
     private const int Size = VoxelConstants.ChunkSize;
