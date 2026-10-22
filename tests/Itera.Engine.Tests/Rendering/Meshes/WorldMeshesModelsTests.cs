@@ -561,13 +561,16 @@ public sealed partial class WorldMeshesModelsTests(ITestOutputHelper output) : W
 
         Assert.True(Meshes.Frame.NearShadows > 0 && Meshes.Frame.FarShadows > 0);
         Assert.True(Meshes.Frame.ModelCamera.Commands > 0 && Meshes.Frame.ModelNear.Commands > 0);
-        var before = SystemAllocation.StartMeasurement();
-        for (var i = 0; i < 1000; i++)
+        // A long window: a collection another test's thread sets off in it counted bytes never allocated.
+        var bytes = SystemAllocation.BytesAllocatedWithoutCollection(() =>
         {
-            Frame(shadows: true, draws: draws);
-        }
+            for (var i = 0; i < 1000; i++)
+            {
+                Frame(shadows: true, draws: draws);
+            }
+        });
 
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal(0, bytes);
     }
 
     /// <summary>
