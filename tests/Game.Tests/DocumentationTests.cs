@@ -35,16 +35,13 @@ public sealed class DocumentationTests
     private static List<string> Docs => ["GAME.md", .. RulesFiles];
 
     [Fact]
-    public void What_a_session_loads_at_its_start_stays_under_its_size() =>
-        RepositoryDocs.AssertNone(Sizes());
+    public void What_a_session_loads_at_its_start_stays_under_its_size() => RepositoryDocs.AssertNone(Sizes());
 
     [Fact]
-    public void Opening_a_file_of_the_game_loads_at_most_32_KB_of_rules() =>
-        RepositoryDocs.AssertNone(Loads());
+    public void Opening_a_file_of_the_game_loads_at_most_32_KB_of_rules() => RepositoryDocs.AssertNone(Loads());
 
     [Fact]
-    public void Every_rules_file_loads_with_paths_that_name_files() =>
-        RepositoryDocs.AssertNone(RulesPaths());
+    public void Every_rules_file_loads_with_paths_that_name_files() => RepositoryDocs.AssertNone(RulesPaths());
 
     [Fact]
     public void The_rules_files_give_no_dates() => RepositoryDocs.AssertNone(Dates());
@@ -59,10 +56,9 @@ public sealed class DocumentationTests
         RepositoryDocs.SessionStartSize().Concat(RepositoryDocs.Size("GAME.md", GameMdLimit, RepositoryDocs.LineLimit));
 
     private static IEnumerable<(string, string)> Loads() =>
-        RepositoryDocs.Loads(
-            file =>
-                file.StartsWith("src/Game/", StringComparison.Ordinal)
-                || file.StartsWith("tests/Game.Tests/", StringComparison.Ordinal)
+        RepositoryDocs.Loads(file =>
+            file.StartsWith("src/Game/", StringComparison.Ordinal)
+            || file.StartsWith("tests/Game.Tests/", StringComparison.Ordinal)
         );
 
     private static IEnumerable<(string, string)> RulesPaths() => RepositoryDocs.RulesPaths(RulesFiles);
