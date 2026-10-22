@@ -18,8 +18,8 @@ public static class LogPaths
     }
 
     /// <summary>
-    /// File name for one run: <c>&lt;data folder in lower case&gt;-yyyyMMdd-HHmmss-&lt;pid&gt;.log</c>, using local
-    /// time.
+    /// File name for one run: <c>&lt;data folder's name in lower case&gt;-yyyyMMdd-HHmmss-&lt;pid&gt;.log</c>, using
+    /// local time (<see cref="ApplicationSettings.DataFolderName"/>).
     /// </summary>
     public static string SessionFileName(ApplicationSettings application, DateTime startedAt, int processId)
     {
@@ -29,6 +29,6 @@ public static class LogPaths
 
     private static string Prefix(ApplicationSettings application)
     {
-        return application.DataFolder.ToLowerInvariant();
+        return application.DataFolderName().ToLowerInvariant();
     }
 }

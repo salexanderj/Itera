@@ -45,4 +45,17 @@ public sealed class LogPathsTests
 
         Assert.Equal(Path.Combine(root, "SampleGame", "Logs"), LogPaths.DefaultDirectory(Application));
     }
+
+    [Fact]
+    public void A_full_path_holds_the_logs_and_its_last_folder_names_the_files()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "Sample Games", "SampleGame");
+        var application = new ApplicationSettings { DataFolder = folder + Path.DirectorySeparatorChar };
+
+        var name = LogPaths.SessionFileName(application, new DateTime(2026, 9, 22, 14, 5, 9), 4242);
+
+        Assert.Equal(Path.Combine(folder, "Logs"), LogPaths.DefaultDirectory(application));
+        Assert.Equal("samplegame-20260922-140509-4242.log", name);
+        Assert.Equal("samplegame-*.log", LogPaths.FilePattern(application));
+    }
 }

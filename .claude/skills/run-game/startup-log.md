@@ -43,7 +43,8 @@ A successful run logs the run's steps first, in this order:
 ## The log file
 
 Every run writes `~/.local/share/<DataFolder>/Logs/<datafolder>-<date>-<time>-<pid>.log` (`LocalApplicationData` on
-other systems) with Debug detail. Read the newest file there first when a run misbehaves. A log holds:
+other systems) with Debug detail. A `DataFolder` that is a full path holds its own `Logs` folder, and the files take its
+last folder's name. Read the newest file there first when a run misbehaves. A log holds:
 
 - a session header and the start's timings;
 - every 10 s, a frame stats line: frames, frame times (median, 95th and 99th percentiles), fixed steps, bytes allocated

@@ -34,15 +34,16 @@ public sealed class LogSession
     public string? SetupError { get; }
 
     /// <summary>
-    /// Creates the log folder, prunes old files, and picks this run's file name. Never throws. A data folder that is not
-    /// a plain name makes no folder and no file, and <see cref="SetupError"/> says why.
+    /// Creates the log folder, prunes old files, and picks this run's file name. Never throws. A data folder the options'
+    /// validator refuses makes no folder and no file, and <see cref="SetupError"/> says why.
     /// </summary>
     public static LogSession Create(LoggingSettings settings, ApplicationSettings application, DateTime? nowUtc = null)
     {
         var startedAtUtc = nowUtc ?? DateTime.UtcNow;
 
-        // This runs before the options' validator, which then stops the run with the same message. A path here would
-        // put the logs outside the data folders' root, and its separators make the file pattern invalid.
+        // This runs before the options' validator, which then stops the run with the same message. A relative path such
+        // as "../x" would make a folder outside the local application data folder, and separators or wildcards in the
+        // name an invalid file pattern or one that matches other files.
         if (EngineOptionsValidator.DataFolderProblem(application.DataFolder) is { } problem)
         {
             return new LogSession(application.DataFolder, null, startedAtUtc, default, problem);

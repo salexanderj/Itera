@@ -318,12 +318,24 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
 
     /// <summary>
     /// Why <paramref name="dataFolder"/> cannot be <see cref="ApplicationSettings.DataFolder"/>, naming the key, or null
-    /// when it can. Log setup reads the name before this validator runs (<see cref="Diagnostics.LogSession"/>).
+    /// when it can: a plain name, or a full path whose last folder is one. The name also names the log files, so it never
+    /// holds a wildcard. Log setup reads the value before this validator runs (<see cref="Diagnostics.LogSession"/>).
     /// </summary>
-    internal static string? DataFolderProblem(string dataFolder) =>
-        IsFolderName(dataFolder)
+    internal static string? DataFolderProblem(string? dataFolder)
+    {
+        var name = dataFolder;
+        if (!string.IsNullOrEmpty(dataFolder) && Path.IsPathFullyQualified(dataFolder))
+        {
+            name =
+                dataFolder.IndexOfAny(Path.GetInvalidPathChars()) < 0
+                    ? Path.GetFileName(Path.TrimEndingDirectorySeparator(dataFolder))
+                    : null;
+        }
+
+        return IsFolderName(name)
             ? null
-            : $"{Prefix}Application:DataFolder must hold 1 to 64 letters, digits, '-', or '_'; it is '{dataFolder}'.";
+            : $"{Prefix}Application:DataFolder must be 1 to 64 letters, digits, '-', or '_', or a full path whose last folder is such a name; it is '{dataFolder}'.";
+    }
 
     // One rule on every platform: the characters a file name may hold differ between Windows, Linux, and macOS.
     internal static bool IsSaveName(string value) =>

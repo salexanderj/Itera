@@ -5,7 +5,7 @@ Every option under `Engine`: its default, the least and most its validator takes
 | Option | Default | Least to most | What it does |
 | --- | --- | --- | --- |
 | `Engine:Application:Name` | `Itera` |  | The name players see: the text drawn on screen, the log header, and the application name drivers see. |
-| `Engine:Application:DataFolder` | `Itera` |  | Folder under the per-user local application data folder that holds the logs and the shader cache: letters, digits, '-', and '_' only. Log files are named after it in lower case. |
+| `Engine:Application:DataFolder` | `Itera` |  | The folder that holds the logs, saves, settings, and caches: a name of letters, digits, '-', and '_' only, under the per-user local application data folder, or a full path whose last folder is such a name. Log files are named after that name in lower case. |
 | `Engine:Window:Title` | `Itera` |  | Window title. |
 | `Engine:Window:Width` | `1280` | `1` to `32768` | Initial width in logical pixels. |
 | `Engine:Window:Height` | `720` | `1` to `32768` | Initial height in logical pixels. |

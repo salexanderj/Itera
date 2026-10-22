@@ -62,25 +62,38 @@ public sealed class LogSessionTests : IDisposable
     }
 
     [Fact]
-    public void A_data_folder_that_is_a_path_makes_no_folder_and_no_file()
+    public void A_data_folder_that_is_a_full_path_holds_the_log_file_named_after_its_last_folder()
     {
         var application = new ApplicationSettings { DataFolder = _directory };
 
         var session = LogSession.Create(new LoggingSettings(), application);
 
+        Assert.Null(session.SetupError);
+        Assert.Equal(Path.Combine(_directory, "Logs"), Path.GetDirectoryName(session.FilePath));
+        var prefix = Path.GetFileName(_directory).ToLowerInvariant() + "-";
+        Assert.StartsWith(prefix, Path.GetFileName(session.FilePath), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_data_folder_the_validator_refuses_makes_no_folder_and_no_file()
+    {
+        var application = new ApplicationSettings { DataFolder = Path.Combine(_directory, "Sample Game") };
+
+        var session = LogSession.Create(new LoggingSettings(), application);
+
         Assert.Null(session.FilePath);
-        Assert.StartsWith("Engine:Application:DataFolder must hold", session.SetupError, StringComparison.Ordinal);
+        Assert.StartsWith("Engine:Application:DataFolder must be", session.SetupError, StringComparison.Ordinal);
         Assert.False(Directory.Exists(_directory));
     }
 
     [Fact]
-    public void The_engine_given_a_data_folder_that_is_a_path_stops_at_its_options_with_the_key_named()
+    public void The_engine_given_a_data_folder_the_validator_refuses_stops_at_its_options_with_the_key_named()
     {
         using var services = EngineComposition.Build(
             new Dictionary<string, string?>
             {
                 ["Engine:Logging:FileEnabled"] = "true",
-                ["Engine:Application:DataFolder"] = _directory,
+                ["Engine:Application:DataFolder"] = Path.Combine(_directory, "Sample Game"),
             }
         );
 
@@ -88,7 +101,7 @@ public sealed class LogSessionTests : IDisposable
             services.GetRequiredService<IOptions<EngineOptions>>().Value
         );
 
-        Assert.Contains("Engine:Application:DataFolder must hold", failure.Message, StringComparison.Ordinal);
+        Assert.Contains("Engine:Application:DataFolder must be", failure.Message, StringComparison.Ordinal);
         Assert.False(Directory.Exists(_directory));
     }
 

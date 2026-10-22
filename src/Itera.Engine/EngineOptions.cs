@@ -105,20 +105,32 @@ public sealed class ApplicationSettings
     public string Name { get; set; } = "Itera";
 
     /// <summary>
-    /// Folder under the per-user local application data folder that holds the logs and the shader cache: letters,
-    /// digits, '-', and '_' only. Log files are named after it in lower case.
+    /// The folder that holds the logs, saves, settings, and caches: a name of letters, digits, '-', and '_' only, under
+    /// the per-user local application data folder, or a full path whose last folder is such a name. Log files are named
+    /// after that name in lower case.
     /// </summary>
     public string DataFolder { get; set; } = "Itera";
 
-    /// <summary>The full path of <see cref="DataFolder"/> under the per-user local application data folder.</summary>
+    /// <summary>
+    /// The full path of the data folder: <see cref="DataFolder"/> itself when it is a full path, or else that name under
+    /// the per-user local application data folder.
+    /// </summary>
     public string DataDirectory()
     {
+        if (Path.IsPathFullyQualified(DataFolder))
+        {
+            return DataFolder;
+        }
+
         var root = Environment.GetFolderPath(
             Environment.SpecialFolder.LocalApplicationData,
             Environment.SpecialFolderOption.DoNotVerify
         );
         return Path.Combine(root, DataFolder);
     }
+
+    /// <summary>The data folder's own name: <see cref="DataFolder"/>, or the last folder of the full path it gives.</summary>
+    public string DataFolderName() => Path.GetFileName(Path.TrimEndingDirectorySeparator(DataFolder));
 }
 
 /// <summary>Window settings.</summary>

@@ -428,10 +428,10 @@ handlers ran after the library was unmapped.
 absolute integers in centimetres from the map's middle. Positions kept in metres are local, from the match's origin
 (`WorldOrigin`). Points that cross it are absolute `WorldPoint`s (see "Units and numbers" in section 8).
 
-**Diagnostics.** Every run writes one log file under `LocalApplicationData/<DataFolder>/Logs`, where the folder comes
-from `Engine:Application:DataFolder`. The file receives every level the global minimum allows, and the console shows
-Information and above. Serilog sits behind `Microsoft.Extensions.Logging`, so engine and mod code only use `ILogger`.
-The `run-game` skill describes the file's header, its lines, retention, and the exit codes.
+**Diagnostics.** Every run writes one log file in the data folder's `Logs` folder. `Engine:Application:DataFolder` gives
+the data folder: a name under `LocalApplicationData`, or a full path. The file receives every level the global minimum
+allows, and the console shows Information and above. Serilog sits behind `Microsoft.Extensions.Logging`, so engine and
+mod code only use `ILogger`. The `run-game` skill describes the file's header, its lines, retention, and the exit codes.
 
 - `GameLoop` logs the duration of every initialisation step, the reason the loop ended, each shutdown step, and a final
   line with uptime and exit code.

@@ -360,6 +360,27 @@ public sealed class EngineOptionsValidatorTests
     [InlineData("Sample Game", "Sample:Game", false)]
     public void The_application_needs_a_name_and_a_plain_data_folder(string name, string dataFolder, bool valid)
     {
+        Assert.Equal(valid, Valid(name, dataFolder));
+    }
+
+    [Fact]
+    public void The_data_folder_may_be_a_full_path_whose_last_folder_is_a_plain_name()
+    {
+        var root = Path.GetTempPath();
+
+        Assert.True(Valid("Sample Game", Path.Combine(root, "SampleGame")));
+        Assert.True(
+            Valid("Sample Game", Path.Combine(root, "Sample Game", "sample-game_2") + Path.DirectorySeparatorChar)
+        );
+        Assert.False(Valid("Sample Game", Path.Combine(root, "Sample Game")));
+        Assert.False(Valid("Sample Game", Path.Combine(root, "Sample*")));
+        Assert.False(Valid("Sample Game", Path.Combine("Games", "SampleGame")));
+        Assert.False(Valid("Sample Game", Path.GetPathRoot(root)!));
+        Assert.False(Valid("Sample Game", Path.Combine(root, "Sample\0Games", "SampleGame")));
+    }
+
+    private bool Valid(string name, string dataFolder)
+    {
         var options = new EngineOptions
         {
             Application = new ApplicationSettings { Name = name, DataFolder = dataFolder },
@@ -367,11 +388,12 @@ public sealed class EngineOptionsValidatorTests
 
         var result = _validator.Validate(null, options);
 
-        Assert.Equal(valid, result.Succeeded);
-        if (!valid)
+        if (!result.Succeeded)
         {
             Assert.StartsWith("Engine:Application:", Assert.Single(result.Failures!), StringComparison.Ordinal);
         }
+
+        return result.Succeeded;
     }
 
     [Theory]
