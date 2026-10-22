@@ -9,8 +9,10 @@ Two places to draw it:
 
 Both read the model through the engine's Engine:Assets:Extra option, so nothing is rebuilt, and both draw the same set:
 front, back, left, and right (orthographic), top (orthographic), and a three-quarter view (perspective), plus a
-three-quarter view of each clip pose asked for. The model is placed at its own origin, unturned (its front, glTF's +z,
-towards +z). Standard library only. A development tool, not game code.
+three-quarter view of each clip pose asked for. On the stage the model stands at the world's middle, unturned (its
+front, glTF's +z, towards +z). In a game's world it stands where meshes place puts it, in front of the player and facing
+the player, and the views turn with it, so the front and three-quarter views stand on the player's open ground.
+Standard library only. A development tool, not game code.
 """
 
 from __future__ import annotations
@@ -69,16 +71,21 @@ class Bounds:
         return max(0.05, math.sqrt(sum(s * s for s in self.size)) / 2)
 
 
-def views(bounds: Bounds, at: tuple[float, float, float] = (0.0, 0.0, 0.0)) -> list[View]:
-    """The set of views of a model placed at `at` (world metres): four sides and the top orthographic, framed on the
-    box with a little room, and a three-quarter view in perspective, far enough that the whole box fits."""
-    cx, cy, cz = (c + a for c, a in zip(bounds.centre, at))
+def views(bounds: Bounds, at: tuple[float, float, float] = (0.0, 0.0, 0.0), turn: float = 0.0) -> list[View]:
+    """The set of views of a model placed at `at` (world metres) and turned `turn` degrees about up: four sides and the
+    top orthographic, framed on the box with a little room, and a three-quarter view in perspective, far enough that
+    the whole box fits. The views turn with the model, so the front view always faces its front."""
+    cx, cy, cz = bounds.centre
     sx, sy, sz = bounds.size
     away = bounds.radius + 2.0
     room = 1.15
+    cos_turn, sin_turn = math.cos(math.radians(turn)), math.sin(math.radians(turn))
 
     def point(x: float, y: float, z: float, yaw: float, pitch: float) -> str:
-        return f"{x:.3f},{y:.3f},{z:.3f},{yaw:.1f},{pitch:.1f}"
+        # From the model's own space to the world's: turned about up as a camera's yaw turns, then moved to `at`.
+        wx = at[0] + x * cos_turn + z * sin_turn
+        wz = at[2] - x * sin_turn + z * cos_turn
+        return f"{wx:.3f},{at[1] + y:.3f},{wz:.3f},{yaw + turn:.1f},{pitch:.1f}"
 
     half_fov = math.radians(VERTICAL_FOV_DEGREES) / 2
     distance = bounds.radius / math.sin(half_fov) * 1.5
@@ -229,16 +236,17 @@ def in_world(
     if started.returncode != 0:
         raise RuntimeError(f"the game did not start:\n{started.stdout}{started.stderr}")
     try:
-        placed = _game(f"fly on; wait ticks 2; tp {place}; wait view; {SUN}; meshes place {name}")
+        # meshes place puts it on the ground in front of the player, facing the player: that side is open ground, so
+        # the views turn with it and the front and three-quarter views stand where the player does, not in a hill.
+        placed = _game(f"fly on; wait ticks 2; tp {place}; wait view; {SUN}; pos; meshes place {name}")
         match = re.search(rf"{re.escape(name)} placed at (\S+) (\S+) (\S+) in the world", placed)
-        if not match:
-            raise RuntimeError(f"meshes place gave no place in the world:\n{placed}")
+        pose = re.search(r"(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)", placed)
+        if not match or not pose:
+            raise RuntimeError(f"pos and meshes place gave no place in the world:\n{placed}")
         at = tuple(float(v) for v in match.groups())
-        place_text = f"{at[0]:.3f} {at[1]:.3f} {at[2]:.3f} 0"
-        # Placed facing the camera at first; again unturned, so the views are the model's own front and sides.
-        commands = ["meshes clear", f"meshes place {name} at {place_text}"]
-        commands += shots(name, views(bounds, at), out_dir, clips, place_text)
-        _game("; ".join(commands))
+        turn = float(pose.group(4))
+        place_text = f"{at[0]:.3f} {at[1]:.3f} {at[2]:.3f} {turn:g}"
+        _game("; ".join(shots(name, views(bounds, at, turn), out_dir, clips, place_text)))
     finally:
         subprocess.run([sys.executable, str(GAME_PY), "stop"], capture_output=True, text=True, check=False)
     return _pictures(out_dir)

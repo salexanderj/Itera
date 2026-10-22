@@ -42,6 +42,14 @@ class EngineViewsTests(unittest.TestCase):
         self.assertEqual((100.0, 6.0), (x, y))
         self.assertGreater(z, -40.0)
 
+    def test_the_views_turn_with_a_turned_model(self):
+        front = engine_views.views(self.bounds, turn=90.0)[0]
+        x, y, z, yaw, _ = (float(value) for value in front.viewpoint.split(","))
+        # Turned a quarter, the model's front faces +x, so the front view stands at +x and looks along -x (yaw 90).
+        self.assertGreater(x, 2.0)
+        self.assertAlmostEqual(0.0, z, places=3)
+        self.assertEqual((1.0, 90.0), (y, yaw))
+
     def test_the_script_takes_each_view_then_each_pose_and_gives_the_camera_back(self):
         out = Path("/tmp/pictures")
         views = engine_views.views(self.bounds)
