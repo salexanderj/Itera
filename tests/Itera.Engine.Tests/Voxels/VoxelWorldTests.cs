@@ -728,6 +728,28 @@ public sealed class VoxelWorldTests : IDisposable
     }
 
     [Fact]
+    public void A_small_disc_moved_into_another_column_wants_it_before_it_has_moved_half_a_column()
+    {
+        var world = CreateWorld();
+        var column = world.Grid.ColumnCentimetres(0) / (float)VoxelConstants.CentimetresPerMetre;
+        // A level-0 disc a quarter of a column across, in the middle of the origin's column.
+        var radius = column / 8;
+        var middle = new Vector3(column / 2, 0, column / 2);
+        world.SetStreamingCentres([new StreamingCentre(middle, radius, 1)]);
+        SettleAll(world);
+        world.Update(0);
+        Assert.True(world.WantedColumnsResident);
+
+        // Moved under half a column along x, the disc now meets the next column.
+        world.SetStreamingCentres([new StreamingCentre(middle + new Vector3(0.4f * column, 0, 0), radius, 1)]);
+        world.Update(0);
+        Assert.False(world.WantedColumnsResident);
+        SettleAll(world);
+        world.Update(0);
+        Assert.True(world.WantedColumnsResident);
+    }
+
+    [Fact]
     public void Any_solid_in_an_edit_agrees_with_reading_every_voxel()
     {
         var world = CreateWorld(radius: 3);

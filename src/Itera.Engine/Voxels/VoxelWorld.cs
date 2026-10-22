@@ -528,7 +528,10 @@ public sealed partial class VoxelWorld : IDisposable
             var wanted = _wanted[level];
             // A level already waiting for its rebuild is not checked again: its RebuiltAt has an entry only for the
             // centres it was last built around, which may be fewer than there are now.
-            if (!wanted.Dirty && (changed || HasMovedHalfAColumn(wanted, level)))
+            if (
+                !wanted.Dirty
+                && (changed || HasMovedHalfAColumn(wanted, level) || HasMetNewColumns(wanted, level))
+            )
             {
                 wanted.Dirty = true;
             }
@@ -1065,6 +1068,46 @@ public sealed partial class VoxelWorld : IDisposable
             if (dx * dx + dz * dz >= half * half)
             {
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// True when a disc narrower than a column at <paramref name="level"/> now meets a column it did not meet at the
+    /// level's last rebuild. Such a disc walks off its columns well before it has moved half a column
+    /// (<see cref="HasMovedHalfAColumn"/>), and a character waiting at their edge would wait there for good. A wider disc
+    /// still holds the columns round its centre after half a column. Allocates nothing.
+    /// </summary>
+    private bool HasMetNewColumns(WantedLevel wanted, int level)
+    {
+        var column = Grid.ColumnCentimetres(level);
+        for (var i = 0; i < _centreCount; i++)
+        {
+            var radius = CentreRadiusCentimetres(i, level);
+            var now = _centreCentimetres[i];
+            var then = wanted.RebuiltAt[i];
+            if (radius <= 0 || radius >= column || (now.X == then.X && now.Z == then.Z))
+            {
+                continue;
+            }
+
+            var radiusSquared = radius * radius;
+            var minX = Math.Max(Grid.MinChunkXZAt(level), Grid.ColumnAt(now.X - radius, level));
+            var maxX = Math.Min(Grid.MaxChunkXZAt(level), Grid.ColumnAt(now.X + radius, level));
+            var minZ = Math.Max(Grid.MinChunkXZAt(level), Grid.ColumnAt(now.Z - radius, level));
+            var maxZ = Math.Min(Grid.MaxChunkXZAt(level), Grid.ColumnAt(now.Z + radius, level));
+            for (var z = minZ; z <= maxZ; z++)
+            {
+                for (var x = minX; x <= maxX; x++)
+                {
+                    var key = new ColumnKey(level, x, z);
+                    if (NearestSquared(key, now) <= radiusSquared && NearestSquared(key, then) > radiusSquared)
+                    {
+                        return true;
+                    }
+                }
             }
         }
 

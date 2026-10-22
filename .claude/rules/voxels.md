@@ -22,6 +22,10 @@ Streaming centres (`StreamingCentre`) are:
   `StreamingCentreSystem.MaxCharacterCentres`. A game marks the characters it keeps moving far from every player;
 - on a host or offline, a level-0 disc around each loose body away from every player. `StreamingCentreSystem` stretches the disc ahead by a little travel, up to a limit, and widens it by the widest voxel object kind's reach where the world places objects (`VoxelWorld.ObjectReachMetres`). It serves a limited number of bodies, each streaming the levels up to the one it collides with. A loose body where level 0 is not loaded freezes in the air.
 
+A level's wanted columns are found again when a centre comes or goes, changes its radius, or moves half a column. A disc
+narrower than a column is also found again when it meets a column it did not meet before, so a small disc never walks
+off its columns (`VoxelWorld.SetStreamingCentres`).
+
 ### World generation
 
 A world is made by its generator (`IChunkGenerator`, the game's):
