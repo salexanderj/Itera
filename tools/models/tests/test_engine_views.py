@@ -50,6 +50,12 @@ class EngineViewsTests(unittest.TestCase):
         self.assertAlmostEqual(0.0, z, places=3)
         self.assertEqual((1.0, 90.0), (y, yaw))
 
+    def test_with_an_eye_the_perspective_view_is_from_the_eye_aimed_at_the_model(self):
+        view = engine_views.views(self.bounds, eye=(0.0, 1.0, 4.0))[-1]
+        x, y, z, yaw, pitch = (float(value) for value in view.viewpoint.split(","))
+        self.assertEqual(("from-player", (0.0, 1.0, 4.0)), (view.name, (x, y, z)))
+        self.assertEqual((0.0, 0.0), (yaw, pitch))  # the model's middle is 1 m up, straight ahead along -z
+
     def test_the_script_takes_each_view_then_each_pose_and_gives_the_camera_back(self):
         out = Path("/tmp/pictures")
         views = engine_views.views(self.bounds)

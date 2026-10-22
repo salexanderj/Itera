@@ -587,7 +587,7 @@ def command_views(arguments) -> int:
         print(f"{name}: the engine did not draw it: {error}", file=sys.stderr)
         return 1
 
-    order = [view.name for view in engine_views.views(engine_views.Bounds((0, 0, 0), (1, 1, 1)))]
+    order = [view.name for view in engine_views.views(engine_views.Bounds((0, 0, 0), (1, 1, 1)))] + ["from-player"]
     pictures.sort(key=lambda path: (order.index(path.stem) if path.stem in order else len(order), path.name))
     sheet = out_dir / "sheet.png"
     executable = check_blender()

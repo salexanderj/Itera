@@ -11,8 +11,9 @@ Both read the model through the engine's Engine:Assets:Extra option, so nothing 
 front, back, left, and right (orthographic), top (orthographic), and a three-quarter view (perspective), plus a
 three-quarter view of each clip pose asked for. On the stage the model stands at the world's middle, unturned (its
 front, glTF's +z, towards +z). In a game's world it stands where meshes place puts it, in front of the player and facing
-the player, and the views turn with it, so the front and three-quarter views stand on the player's open ground.
-Standard library only. A development tool, not game code.
+the player, and the views turn with it, so the front view stands on the player's side. Its perspective view and poses
+are drawn from the player's own eye, since a set place round the model can be inside a rock or a wall. Standard
+library only. A development tool, not game code.
 """
 
 from __future__ import annotations
@@ -71,10 +72,17 @@ class Bounds:
         return max(0.05, math.sqrt(sum(s * s for s in self.size)) / 2)
 
 
-def views(bounds: Bounds, at: tuple[float, float, float] = (0.0, 0.0, 0.0), turn: float = 0.0) -> list[View]:
+def views(
+    bounds: Bounds,
+    at: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    turn: float = 0.0,
+    eye: tuple[float, float, float] | None = None,
+) -> list[View]:
     """The set of views of a model placed at `at` (world metres) and turned `turn` degrees about up: four sides and the
     top orthographic, framed on the box with a little room, and a three-quarter view in perspective, far enough that
-    the whole box fits. The views turn with the model, so the front view always faces its front."""
+    the whole box fits. The views turn with the model, so the front view always faces its front. With `eye` (a place
+    known to be clear, such as the player's eye in a game's world), the perspective view is "from-player": from the
+    eye, aimed at the model's middle, since a set place round the model can be inside a rock or a wall."""
     cx, cy, cz = bounds.centre
     sx, sy, sz = bounds.size
     away = bounds.radius + 2.0
@@ -94,13 +102,22 @@ def views(bounds: Bounds, at: tuple[float, float, float] = (0.0, 0.0, 0.0), turn
     dx, dy, dz = (d / length * distance for d in direction)
     pitch = -math.degrees(math.atan2(dy, math.hypot(dx, dz)))
     depth = 2 * away
+    if eye is not None:
+        mx = at[0] + cx * cos_turn + cz * sin_turn
+        mz = at[2] - cx * sin_turn + cz * cos_turn
+        dx, dy, dz = mx - eye[0], at[1] + cy - eye[1], mz - eye[2]
+        aim_yaw = math.degrees(math.atan2(-dx, -dz))
+        aim_pitch = math.degrees(math.atan2(dy, math.hypot(dx, dz)))
+        perspective = View("from-player", f"{eye[0]:.3f},{eye[1]:.3f},{eye[2]:.3f},{aim_yaw:.1f},{aim_pitch:.1f}", None)
+    else:
+        perspective = View("three-quarter", point(cx + dx, cy + dy, cz + dz, 45, pitch), None)
     return [
         View("front", point(cx, cy, cz + away, 0, 0), max(sx, sy) * room, depth),
         View("back", point(cx, cy, cz - away, 180, 0), max(sx, sy) * room, depth),
         View("left", point(cx + away, cy, cz, 90, 0), max(sz, sy) * room, depth),
         View("right", point(cx - away, cy, cz, -90, 0), max(sz, sy) * room, depth),
         View("top", point(cx, cy + away, cz, 0, -90), max(sx, sz) * room, depth),
-        View("three-quarter", point(cx + dx, cy + dy, cz + dz, 45, pitch), None),
+        perspective,
     ]
 
 
@@ -236,17 +253,18 @@ def in_world(
     if started.returncode != 0:
         raise RuntimeError(f"the game did not start:\n{started.stdout}{started.stderr}")
     try:
-        # meshes place puts it on the ground in front of the player, facing the player: that side is open ground, so
-        # the views turn with it and the front and three-quarter views stand where the player does, not in a hill.
+        # meshes place puts it on the ground in front of the player, facing the player. The views turn with it, and the
+        # perspective view is drawn from the player's eye, the one place known to be clear.
         placed = _game(f"fly on; wait ticks 2; tp {place}; wait view; {SUN}; pos; meshes place {name}")
         match = re.search(rf"{re.escape(name)} placed at (\S+) (\S+) (\S+) in the world", placed)
         pose = re.search(r"(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)", placed)
         if not match or not pose:
             raise RuntimeError(f"pos and meshes place gave no place in the world:\n{placed}")
         at = tuple(float(v) for v in match.groups())
+        eye = (float(pose.group(1)), float(pose.group(2)), float(pose.group(3)))
         turn = float(pose.group(4))
         place_text = f"{at[0]:.3f} {at[1]:.3f} {at[2]:.3f} {turn:g}"
-        _game("; ".join(shots(name, views(bounds, at, turn), out_dir, clips, place_text)))
+        _game("; ".join(shots(name, views(bounds, at, turn, eye), out_dir, clips, place_text)))
     finally:
         subprocess.run([sys.executable, str(GAME_PY), "stop"], capture_output=True, text=True, check=False)
     return _pictures(out_dir)
