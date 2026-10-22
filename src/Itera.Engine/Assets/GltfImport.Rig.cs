@@ -75,6 +75,10 @@ internal static partial class GltfImport
         var count = 0;
         AddInfluences(accessors.Joints0, accessors.Weights0, source, plan, joints, weights, ref count, context);
         AddInfluences(accessors.Joints1, accessors.Weights1, source, plan, joints, weights, ref count, context);
+        if (count > 4)
+        {
+            context.Findings.ExtraInfluenceVertices++;
+        }
 
         // The four largest, by a few passes of selection.
         Span<int> kept = stackalloc int[4];
@@ -172,6 +176,11 @@ internal static partial class GltfImport
         {
             var (node, inverseBind) = plan.Skin.GetJoint(plan.Order[r]);
             names[r] = node.Name ?? $"joint {node.LogicalIndex}";
+            if (string.IsNullOrEmpty(node.Name))
+            {
+                context.Findings.UnnamedJoints++;
+            }
+
             inverseBinds[r] = InMetres(inverseBind, metresPerUnit);
 
             // The nodes between the joint and its parent joint (or the scene's root), nearest first.
@@ -288,10 +297,18 @@ internal static partial class GltfImport
                 }
             }
 
-            if (tracks.Count > 0)
+            if (tracks.Count == 0)
             {
-                clips.Add(new RigClip(animation.Name ?? $"clip {animation.LogicalIndex}", [.. tracks]));
+                context.Findings.LeftOutAnimations++;
+                continue;
             }
+
+            if (string.IsNullOrEmpty(animation.Name))
+            {
+                context.Findings.UnnamedClips++;
+            }
+
+            clips.Add(new RigClip(animation.Name ?? $"clip {animation.LogicalIndex}", [.. tracks]));
         }
 
         return [.. clips];

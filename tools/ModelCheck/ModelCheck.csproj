@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Checks glTF models as the engine reads them, against a game's budgets (README.md). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Itera.Tools.ModelCheck</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Itera.Engine\Itera.Engine.csproj" />
+  </ItemGroup>
+</Project>

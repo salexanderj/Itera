@@ -157,6 +157,25 @@ A model's textures can be compressed offline for shipping (`CompressedTextures`)
 - The hash covers the image alone. After a change to `TextureDecode` or `MipChain`, make the folders again.
 - The folder ships with the model (`Models/*/**`). A game tests its models' folders against their images.
 
+### Checking a model
+
+`ModelInspection.Inspect(path, metresPerUnit, budget)` reads a file as the import does, with every texture decoded. It
+returns a `ModelReport`: the model's counts, notes, and problems, each of a `ModelProblemKind`. A model is ready when it
+has no problems.
+
+- `Refused`: the import cannot read the file. Every required extension it lacks is listed; the import stops at the first.
+- `Import`: each warning of the import.
+- `Content`: what the import leaves out or makes up without a warning, which it counts in `ImportFindings`. These are
+  weights past four joints, primitives without a material, and unnamed materials, joints, and clips.
+- `Content` also covers generated tangents, animations left out, cameras and lights, extra scenes, vertices off the
+  skin of a skinned model, and joints or clips that share a name.
+- `Budget`: past a limit of a `ModelBudget`. A game keeps its budgets by asset class in a JSON file
+  (`ModelBudget.ReadClasses`), which refuses a limit it does not know.
+
+The notes name meshes used at more than one node and extensions the engine does not read. SharpGLTF refuses a skinned
+vertex whose weights sum to zero, so such a file is `Refused`. `tools/ModelCheck` runs the check from the command line
+(its README), and `ModelInspection.ToJson` writes the reports it prints with `--json`.
+
 ### Package notes
 
 - `SharpGLTF.Core` (MIT, no dependencies): `ModelRoot.Load` with `ValidationMode.TryFix`.
@@ -169,4 +188,4 @@ A model's textures can be compressed offline for shipping (`CompressedTextures`)
 ### Tests
 
 `GltfImportTests`, `RigImportTests`, `RigClipTests`, `RigShapingTests`, `MeshAssetsTests`, `TextureDecodeTests`,
-`MipChainTests`, `MeshTangentsTests`, `CompressedTexturesTests`, and `OctahedralTests`.
+`MipChainTests`, `MeshTangentsTests`, `CompressedTexturesTests`, `ModelInspectionTests`, and `OctahedralTests`.

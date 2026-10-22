@@ -41,7 +41,8 @@ internal static partial class GltfImport
     /// Reads the file at <paramref name="path"/>, its textures as <paramref name="textures"/> says (with
     /// <see cref="TextureReading.None"/>, a run without graphics, its materials name none). Throws
     /// <see cref="InvalidDataException"/> for a file it cannot read, naming it. A model whose textures were all decoded,
-    /// with no compressed textures beside it, gets a note in <paramref name="notes"/>.
+    /// with no compressed textures beside it, gets a note in <paramref name="notes"/>. What it leaves out or makes up
+    /// without a warning is counted in <paramref name="findings"/>.
     /// </summary>
     public static MeshAsset Load(
         string name,
@@ -49,7 +50,8 @@ internal static partial class GltfImport
         float metresPerUnit,
         TextureReading textures,
         List<string> warnings,
-        List<string>? notes = null
+        List<string>? notes = null,
+        ImportFindings? findings = null
     )
     {
         RefuseUnhandled(path, ReadRequiredExtensions(path));
@@ -63,7 +65,7 @@ internal static partial class GltfImport
             throw new InvalidDataException($"{path}: not a glTF 2.0 file the importer can read: {ex.Message}", ex);
         }
 
-        var context = new ImportContext(path, textures, warnings);
+        var context = new ImportContext(path, textures, warnings, findings ?? new ImportFindings());
         var asset = Import(name, model, metresPerUnit, context);
         if (textures == TextureReading.PreferCompressed && context.DecodedTextures > 0 && !context.HasCompressed)
         {
@@ -120,25 +122,30 @@ internal static partial class GltfImport
         }
     }
 
+    /// <summary>True when the importer reads a file that requires <paramref name="extension"/>.</summary>
+    internal static bool Reads(string extension) => s_handled.Contains(extension, StringComparer.Ordinal);
+
+    /// <summary>Why a file that requires <paramref name="extension"/>, which the importer does not read, is refused.</summary>
+    internal static string RefusalOf(string path, string extension)
+    {
+        var what = extension switch
+        {
+            "KHR_draco_mesh_compression" or "EXT_meshopt_compression" or "KHR_meshopt_compression" =>
+                " (compressed geometry)",
+            "KHR_texture_basisu" => " (Basis Universal textures)",
+            _ => "",
+        };
+        return $"{path} requires the glTF extension {extension}{what}, which Itera does not read: export the model without it";
+    }
+
     private static void RefuseUnhandled(string path, string[] required)
     {
         foreach (var extension in required)
         {
-            if (s_handled.Contains(extension, StringComparer.Ordinal))
+            if (!Reads(extension))
             {
-                continue;
+                throw new InvalidDataException(RefusalOf(path, extension));
             }
-
-            var what = extension switch
-            {
-                "KHR_draco_mesh_compression" or "EXT_meshopt_compression" or "KHR_meshopt_compression" =>
-                    " (compressed geometry)",
-                "KHR_texture_basisu" => " (Basis Universal textures)",
-                _ => "",
-            };
-            throw new InvalidDataException(
-                $"{path} requires the glTF extension {extension}{what}, which Itera does not read: export the model without it"
-            );
         }
     }
 
@@ -149,6 +156,8 @@ internal static partial class GltfImport
             context.Warn("uses KHR_texture_transform, which is not applied: textures may sit wrongly");
         }
 
+        context.Findings.ExtensionsUsed.AddRange(model.ExtensionsUsed);
+        context.Findings.Scenes = model.LogicalScenes.Count;
         foreach (var material in model.LogicalMaterials)
         {
             context.Materials.Add(ReadMaterial(material, context));
@@ -177,6 +186,12 @@ internal static partial class GltfImport
         }
 
         var rig = plan is null ? null : BuildRig(model, plan, metresPerUnit, context);
+        if (plan is null)
+        {
+            context.Findings.LeftOutAnimations += model.LogicalAnimations.Count;
+        }
+
+        context.Findings.ReusedMeshes = context.MeshUses.Count(uses => uses.Value > 1);
         return new MeshAsset(
             name,
             [.. context.Vertices],
@@ -191,8 +206,14 @@ internal static partial class GltfImport
 
     private static void AddNode(Node node, Matrix4x4 scale, RigPlan? plan, ImportContext context)
     {
+        if (node.Camera is not null || node.PunctualLight is not null)
+        {
+            context.Findings.CameraOrLightNodes++;
+        }
+
         if (node.Mesh is { } mesh)
         {
+            context.MeshUses[mesh.LogicalIndex] = context.MeshUses.GetValueOrDefault(mesh.LogicalIndex) + 1;
             // glTF: a skinned mesh's node transform does not apply; its joints place it.
             var transform = (node.Skin is null ? node.WorldMatrix : Matrix4x4.Identity) * scale;
             var posedBy = plan is not null && node.Skin?.LogicalIndex == plan.Skin.LogicalIndex ? plan : null;
@@ -237,6 +258,11 @@ internal static partial class GltfImport
         if (primitive.MorphTargetsCount > 0)
         {
             context.Warn("has morph targets, which are not drawn: the base shape is");
+        }
+
+        if (primitive.Material is null)
+        {
+            context.Findings.PrimitivesWithoutMaterial++;
         }
 
         var materialIndex = primitive.Material?.LogicalIndex ?? context.DefaultMaterial();
@@ -337,6 +363,7 @@ internal static partial class GltfImport
 
         if (sourceTangents is null && !material.NormalTexture.IsNone)
         {
+            context.Findings.GeneratedTangentPrimitives++;
             var tangentArray = new Vector4[positions.Count];
             var uvs = material.NormalTexture.UvSet == 1 ? uv1 : uv0;
             MeshTangents.Generate([.. positions], [.. normals], [.. uvs], [.. triangles], tangentArray);
@@ -571,8 +598,13 @@ internal static partial class GltfImport
         return length > 1e-12f && float.IsFinite(length) ? value / length : fallback;
     }
 
-    /// <summary>What an import gathers: the asset's arrays as they grow, its decoded images, and its warnings.</summary>
-    private sealed class ImportContext(string path, TextureReading reading, List<string> warnings)
+    /// <summary>What an import gathers: the asset's arrays as they grow, its decoded images, its warnings, and its findings.</summary>
+    private sealed class ImportContext(
+        string path,
+        TextureReading reading,
+        List<string> warnings,
+        ImportFindings findings
+    )
     {
         private int _defaultMaterial = -1;
         private bool _listRead;
@@ -581,6 +613,11 @@ internal static partial class GltfImport
         public string Path { get; } = path;
 
         public TextureReading Reading { get; } = reading;
+
+        public ImportFindings Findings { get; } = findings;
+
+        /// <summary>How many nodes of the scene use each mesh (by glTF's index).</summary>
+        public Dictionary<int, int> MeshUses { get; } = [];
 
         /// <summary>True when the model has a list of compressed textures beside it, whether or not it reads.</summary>
         public bool HasCompressed { get; private set; }
