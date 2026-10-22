@@ -521,6 +521,21 @@ start (`Assets/`, SharpGLTF at load only) or built by a game, and drawn in the w
 
 `.claude/rules/mesh-assets.md` and `.claude/rules/rendering.md` describe the formats, limits, and costs.
 
+### A game's models are built by recipes
+
+A game builds the models it makes itself from recipes: Python files in its repository that Blender runs with no window
+(`tools/models`, the `models` skill). The engine's own importer checks each file (`ModelInspection`, run by
+`tools/ModelCheck` and a game's tests), and the engine itself draws it for judging (`tools/ModelView`, or the game's
+world through `Engine:Assets:Extra` and `viewpoint`).
+
+- A recipe rebuilds the same bytes every time, so a model can be built again, read in a diff, and checked on every
+  build. A model made by hand in a live editor session cannot.
+- Most failures of code written for Blender are API calls that changed between versions. The toolkit pins one Blender
+  and keeps a list of the changes, and a model server in the editor would fix neither.
+- The checks live in the engine, in one place, so what passes is what the engine loads.
+- Blender, not a modelling tool of the engine's own: a tool of its own would have to match Blender's mesh editing,
+  baking, weighting, and animation before it helped. `docs/model-recipes.md` has the record.
+
 ### A game adds passes of its own
 
 A game's GPU work is an `IRenderPass` it registers (`Rendering/RenderPasses.cs`). The run's "render passes" step gives

@@ -53,6 +53,7 @@ before changing anything structural. `docs/` holds the write-ups behind decision
     `OriginShiftsTests` or the game's `ChecklistTests`.
   - A game's render pass, image view, camera lens, or on/off setting: the `scaffold` skill's steps (no test catches a
     missed one).
+  - A model: built by a recipe with the `models` skill, and checked by the game's `GameModelsTests`.
 - Builds, tests, and game runs:
   - Load the `run-game` skill before you start, drive, or check the game. Check a change the cheapest way that can see
     it. The skill holds the options, logs, console commands, and control port.

@@ -4,6 +4,9 @@ The `scaffold` skill's recipes for models, sounds, and music. Each lists every f
 
 ## A model from glTF
 
+A model the game makes itself is built by a recipe in `src/Game/ModelRecipes/NAME/`, with the `models` skill, which
+writes step 1's files and compresses its textures. A model from elsewhere starts at step 1.
+
 1. The files in `src/Game/Models/NAME/` (`.gltf` with its `.bin` and images, or one `.glb`; no Draco, meshopt, or Basis
    compression), copied by the csproj's `Models/*/**` rule, and a row in `src/Game/Models/SOURCES.md` with its source,
    authors, licence, and changes. Its textures compressed for shipping: `dotnet run -c Release --project tools/Textures
@@ -25,8 +28,10 @@ The `scaffold` skill's recipes for models, sounds, and music. Each lists every f
    `MeshAssets.TryGet`), and changes clip with `animator.FadeTo(clip, 0.3f)` (a fade) or a new `Playing`; a system that
    changes clips runs before the engine's `MeshAnimatorSystem`, which the game registers once, after every such
    system.
-6. Check it: `meshes` lists it (triangles, materials, textures, size, joints, clips), `meshes place NAME [CLIP
-   [SECONDS]]` puts one in front of the camera, the log's `Mesh assets:` lines have no Warning or note about it, a
+6. Check it: `dotnet run --project tools/ModelCheck -- PATH` reads it as the engine does; the game's
+   `GameModelsTests` checks every declared model (`ModelChecks`), each recipe's model against its budget class. In a
+   run, `meshes` lists it (triangles, materials, textures, size, joints, clips), `meshes place NAME [CLIP [SECONDS]]`
+   puts one in front of the camera, and the log's `Mesh assets:` lines have no Warning or note about it. A
    `ScenarioTests` row finds it in `MeshInstances`, and for a skinned model a test like `FoxModelTests` compares its
    clips with SharpGLTF's own world matrices.
 
