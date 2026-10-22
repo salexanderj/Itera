@@ -120,7 +120,7 @@ def main():
     if not rows:
         with open(log, encoding="utf-8") as output:
             print("".join(output.readlines()[-10:]))
-        print("No results: an 'Internal CLR error' right after a build passes after `dotnet build-server shutdown`.")
+        print("No results. On an 'Internal CLR error', run `dotnet build-server shutdown` and run again.")
         return code or 1
     report(rows, arguments.top, wall)
     return code
