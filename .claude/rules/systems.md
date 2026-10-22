@@ -59,7 +59,8 @@ registers what they share: `PlayArea` (round the match's grid, or `PlayArea.With
 - `PlayerMovementSystem` moves every entity with a command and `MovementStats` through `VoxelCharacterMover`: the local
   player, a remote player the host moves from its commands, and a game's characters alike. Ground friction
   (`CharacterContact.GroundMaterial`, `PhysicsWorld.FrictionOf`) and the match's gravity share (`PhysicsWorld`) change
-  its steering and its fall. A size a movement mode sets is eased from the eye's height, as a crouch is.
+  its steering and its fall. A size a movement mode sets is eased from the eye's height, as a crouch is. A move turned
+  further from ahead than `MovementStats.SprintDegrees` (90 by default), or going back, does not sprint.
 - `CharacterStepper.Step` (scoped, with the game's movement mode) runs one character's step with the same code, for a
   client that replays its commands after the host's correction.
 - A game's `IMovementMode` (registered in the match's scope, given to the system) is offered each walking player's step

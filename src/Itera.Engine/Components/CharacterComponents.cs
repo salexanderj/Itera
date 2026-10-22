@@ -257,8 +257,14 @@ public struct MovementStats
     public float MaxSlopeDegrees;
 
     /// <summary>
-    /// A person's: walks at 4.5 m/s, sprints at 7, jumps 1.1 m, falls under 20 m/s² up to 50 m/s, turns its speed by 50
-    /// m/s² on the ground and 10 in the air, and walks up slopes of up to 45 degrees.
+    /// The widest a move may turn from ahead and still sprint, in degrees: 90 sprints ahead and to the side, less only
+    /// ahead. A move that goes back never sprints.
+    /// </summary>
+    public float SprintDegrees;
+
+    /// <summary>
+    /// A person's: walks at 4.5 m/s, sprints at 7 ahead and to the side, jumps 1.1 m, falls under 20 m/s² up to 50 m/s,
+    /// turns its speed by 50 m/s² on the ground and 10 in the air, and walks up slopes of up to 45 degrees.
     /// </summary>
     public static MovementStats Default =>
         new()
@@ -271,6 +277,7 @@ public struct MovementStats
             AirAcceleration = 10,
             MaxFall = 50,
             MaxSlopeDegrees = 45,
+            SprintDegrees = 90,
         };
 }
 

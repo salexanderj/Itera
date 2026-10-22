@@ -26,7 +26,8 @@ namespace Itera.Engine.Systems;
 /// cannot jump or sprint; let go, it stands up once the standing body fits where it is
 /// (<see cref="VoxelCharacterMover.OverlapsAnything"/>), so it stays down under a low roof. Flying ends the crouch at
 /// once. Moving backwards, a character moves at most <see cref="BackwardSpeedShare"/> of its speed (of its crouched
-/// speed while crouched) and cannot sprint. These are the same for the local player, a remote one a host moves, and a
+/// speed while crouched) and cannot sprint, nor can it sprint on a move turned further from ahead than its
+/// <see cref="MovementStats.SprintDegrees"/>. These are the same for the local player, a remote one a host moves, and a
 /// game's characters, so a host moves a client's player as the client does. One character's step is also
 /// <see cref="CharacterStepper.Step"/>, for running a step again. A game's <see cref="IMovementMode"/> may take a walking player's step before
 /// the engine steers it (a climb): it gives the velocity and step height, and the move, contact, and eye go on as for any
@@ -66,6 +67,9 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
 
     /// <summary>A command's move back further than this (its y, ahead positive) is moving backwards.</summary>
     public const float BackwardFrom = 0.01f;
+
+    /// <summary>How far past <see cref="MovementStats.SprintDegrees"/> a move may turn and still sprint, as a cosine.</summary>
+    public const float SprintSlack = 0.001f;
 
     /// <summary>The least speed over the ground, in metres per second, at which a sprint counts (<see cref="Sprinted"/>).</summary>
     public const float MinSprintSpeed = 1;
@@ -364,10 +368,13 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         }
     }
 
-    /// <summary>A character's command, limited by its crouch and by moving backwards.</summary>
+    /// <summary>
+    /// A character's command, limited by its crouch, by moving backwards, and by how far its move turns from ahead
+    /// (<see cref="MovementStats.SprintDegrees"/>).
+    /// </summary>
     private static class Limit
     {
-        public static void Apply(ref PlayerCommand command, in PlayerMode mode)
+        public static void Apply(ref PlayerCommand command, in PlayerMode mode, in MovementStats stats)
         {
             if (mode.Crouching)
             {
@@ -378,6 +385,18 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             if (!mode.Flying && command.Move.Y < -BackwardFrom)
             {
                 Hold(ref command, (mode.Crouching ? CrouchSpeedShare : 1) * BackwardShare(command.Move));
+                command.Buttons &= ~PlayerButtons.Sprint;
+            }
+
+            // A move turned further from ahead than the sprint's widest does not sprint (a little past it still does, so
+            // keys held exactly at the widest keep it).
+            var length = command.Move.Length();
+            if (
+                (command.Buttons & PlayerButtons.Sprint) != 0
+                && length > 0
+                && command.Move.Y / length < MathF.Cos(stats.SprintDegrees * (MathF.PI / 180)) - SprintSlack
+            )
+            {
                 command.Buttons &= ~PlayerButtons.Sprint;
             }
         }
@@ -664,7 +683,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             Sanitize(ref command);
             var asked = command;
             Crouch.Step(Mover, in command, ref mode, ref size, in position);
-            Limit.Apply(ref command, in mode);
+            Limit.Apply(ref command, in mode, in stats);
             if (!IsFinite(velocity.MetresPerSecond) || !IsFinite(velocity.Push) || !IsFinite(position.Feet))
             {
                 // A bad number from a physics push or an earlier step would freeze the character for good (NaN never

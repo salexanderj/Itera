@@ -489,6 +489,32 @@ public sealed class PlayerMovementSystemTests : IDisposable
         Assert.Equal(sprint && y >= 0, sprinting);
     }
 
+    /// <summary>
+    /// A sprint kept within 45 degrees of ahead: straight ahead and ahead to the left sprint; to the side, and ahead
+    /// but more to the side, walk.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 1, 7f, true)]
+    [InlineData(-1, 1, 7f, true)]
+    [InlineData(1, 0.5f, 4.5f, false)]
+    [InlineData(-1, 0, 4.5f, false)]
+    public void A_sprint_kept_ahead_walks_on_a_move_turned_further(float x, float y, float speed, bool sprinted)
+    {
+        using var world = World.Create();
+        using var system = Create(world, new Vector3(0, 1.6f, 0));
+        var stats = MovementStats.Default;
+        stats.SprintDegrees = 45;
+        SetStats(world, stats);
+        Run(world, system, 30, default);
+        var player = Player(world);
+        var command = new PlayerCommand { Move = Vector2.Normalize(new Vector2(x, y)), Buttons = PlayerButtons.Sprint };
+
+        Run(world, system, 30, command);
+
+        Assert.Equal(speed, Read(world).Velocity.MetresPerSecond.Length(), 2);
+        Assert.Equal(sprinted, (world.Get<PlayerCommand>(player).Buttons & PlayerButtons.Sprint) != 0);
+    }
+
     [Fact]
     public void Crouched_backwards_it_moves_at_both_shares_and_one_command_used_again_stays_held()
     {
