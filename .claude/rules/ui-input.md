@@ -73,7 +73,7 @@ The commands are in `Commands/`, not `Console/`, which would hide `System.Consol
 - `TimeCommands`: pause, step, and timescale;
 - `EcsCommands`: `ecs`, registered at a match's ECS step.
 
-The run-only `look`, `sun`, `time`, and `lens` (`EngineCommands`) set values over the frame's view: the look tuning of `RenderView`, `SunOverride`, and `LensOverride`. See `.claude/rules/rendering-look.md` (the look and the sun) and `rendering.md` (the lens).
+The run-only `look`, `sun`, `time`, and `lens` (`EngineCommands`) set values over the frame's view: the look tuning of `RenderView`, `SunOverride`, and `LensOverride`. The match-only `viewpoint` sets `CameraOverride`. See `.claude/rules/rendering-look.md` (the look and the sun) and `rendering.md` (the lens and the viewpoint).
 
 ### Tunables
 

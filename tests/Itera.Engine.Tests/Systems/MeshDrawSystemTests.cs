@@ -372,6 +372,7 @@ public sealed class MeshDrawSystemTests
     [InlineData("meshes place bending bend -1")]
     [InlineData("meshes place bending bend 1 more")]
     [InlineData("meshes test 2 bending wave")]
+    [InlineData("meshes place box at 1 2 3 90")]
     public void Meshes_refuses_what_it_cannot_do(string line)
     {
         using var world = World.Create();

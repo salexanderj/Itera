@@ -2,11 +2,13 @@ using System.Globalization;
 using System.Numerics;
 using Itera.Engine.Components;
 using Itera.Engine.Matches;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Rendering.Meshes;
 using Itera.Engine.Rendering.Shaders;
 using Itera.Engine.Settings;
+using Itera.Engine.Systems;
 using Itera.Engine.UI;
 using Itera.Engine.Windowing;
 using Microsoft.Extensions.DependencyInjection;
@@ -168,6 +170,13 @@ public sealed class EngineCommands
             "The camera's lens for this run (not saved): orthographic, an image HEIGHT metres high round the camera (the middle of what it shows), from NEAR to FAR metres along the view (negative: behind it; by default the view distance each way), in place of the camera's own; off gives the camera's own back.",
             CommandScope.Local,
             Lens
+        );
+        _commands.Register(
+            "viewpoint",
+            "[x,y,z,yaw,pitch|X Y Z YAW PITCH|off]",
+            "Draws the frames from this place for this match (not saved), in the world's metres and degrees as tp takes them, in place of the camera's own; the lens stays; the player, the sound, and the streaming stay with the camera's own; off gives it back. With no argument, prints where the frames are drawn from.",
+            CommandScope.Local,
+            Viewpoint
         );
         _commands.Register(
             "stats",
@@ -376,11 +385,79 @@ public sealed class EngineCommands
         context.Print("lines " + CommandContext.OnOff(_lines.Enabled));
     }
 
-    private void Origin(CommandContext context)
-    {
-        var shifts = _matches is { Phase: MatchPhase.Loading or MatchPhase.Playing, Current: { } match }
+    /// <summary>The origin of the match loading or playing, or null outside one.</summary>
+    private OriginShifts? Shifts() =>
+        _matches is { Phase: MatchPhase.Loading or MatchPhase.Playing, Current: { } match }
             ? match.Services.GetService<OriginShifts>()
             : null;
+
+    /// <summary>The place the frames are drawn from for the match (<see cref="RenderView.CameraOverride"/>), or the camera's own again.</summary>
+    private void Viewpoint(CommandContext context)
+    {
+        if (Shifts() is not { } shifts)
+        {
+            context.PrintError("viewpoint: no match.");
+            return;
+        }
+
+        if (context.Count == 1 && context.Is(0, "off"))
+        {
+            _view.CameraOverride = null;
+        }
+        else if (context.Count is 1 or 5)
+        {
+            WorldPoint eye;
+            float yaw;
+            float pitch;
+            if (context.Count == 1)
+            {
+                if (!CameraPoseText.TryParse(context[0], out eye, out yaw, out pitch))
+                {
+                    context.PrintUsage();
+                    return;
+                }
+            }
+            else
+            {
+                if (
+                    !context.TryGetDouble(0, out var x)
+                    || !context.TryGetDouble(1, out var y)
+                    || !context.TryGetDouble(2, out var z)
+                    || !context.TryGetFloat(3, out var yawDegrees)
+                    || !context.TryGetFloat(4, out var pitchDegrees)
+                    || !double.IsFinite(x + y + z)
+                    || !float.IsFinite(yawDegrees + pitchDegrees)
+                )
+                {
+                    context.PrintUsage();
+                    return;
+                }
+
+                (eye, yaw, pitch) = (
+                    new WorldPoint(x, y, z),
+                    yawDegrees * MathF.PI / 180,
+                    pitchDegrees * MathF.PI / 180
+                );
+            }
+
+            _view.CameraOverride = new CameraPlace(shifts.Origin.ToLocal(in eye), yaw, pitch);
+        }
+        else if (context.Count != 0)
+        {
+            context.PrintUsage();
+            return;
+        }
+
+        context.Print(
+            _view.CameraOverride is { } place
+                ? "viewpoint " + CameraPoseText.Format(shifts.Origin.ToWorld(place.Position), place.Yaw, place.Pitch)
+                : "viewpoint: the camera's own"
+        );
+    }
+
+    private void Origin(CommandContext context)
+    {
+        var shifts = Shifts();
         if (shifts is null)
         {
             context.PrintError("origin: no match.");

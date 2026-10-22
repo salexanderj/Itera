@@ -6,6 +6,8 @@ using Itera.Engine.Assets;
 using Itera.Engine.Commands;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
+using Itera.Engine.Matches;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering;
 using Itera.Engine.Voxels;
 using Itera.Modding;
@@ -54,6 +56,7 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     private readonly VoxelWorld? _voxels;
     private readonly ConsoleCommands? _commands;
     private readonly IMeshPoseShaper? _shaper;
+    private readonly OriginShifts? _shifts;
     private readonly PoseSmoothing _smoothing = new();
     private JointTransform[] _locals = [];
     private JointTransform[] _fromLocals = [];
@@ -65,16 +68,19 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     /// <param name="voxels">The match's voxel world, whose ground <c>meshes</c> places on; none for a world without voxels.</param>
     /// <param name="commands">The console's commands, for <c>meshes</c>; none in tests.</param>
     /// <param name="shaper">The game's shaping of the poses with a <see cref="ShapedPose"/>; none leaves them as sampled.</param>
+    /// <param name="shifts">The match's origin, which <c>meshes place NAME at</c> reads world positions from; none refuses it.</param>
     public MeshDrawSystem(
         World world,
         MeshInstances instances,
         MeshAssets assets,
         VoxelWorld? voxels = null,
         ConsoleCommands? commands = null,
-        IMeshPoseShaper? shaper = null
+        IMeshPoseShaper? shaper = null,
+        OriginShifts? shifts = null
     )
         : base(world)
     {
+        _shifts = shifts;
         _shaper = shaper;
         _instances = instances;
         _assets = assets;
@@ -102,8 +108,8 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
         _globals = new Matrix4x4[most];
         _commands?.Register(
             "meshes",
-            "[place NAME [SCALE] [CLIP [SECONDS]] | test COUNT [NAME [CLIP]] | clear]",
-            "Lists the run's mesh assets (models from glTF files) and their clips; place puts one 4 m in front of the camera, facing it, on the ground, playing CLIP, or held at SECONDS of it; test puts COUNT in rows ahead (the first asset unless named), playing CLIP from different times; clear removes those it placed.",
+            "[place NAME [at X Y Z YAW] [SCALE] [CLIP [SECONDS]] | test COUNT [NAME [CLIP]] | clear]",
+            "Lists the run's mesh assets (models from glTF files) and their clips; place puts one 4 m in front of the camera, facing it, on the ground, or at X Y Z in the world's metres turned YAW degrees (at 0 its front faces +z), playing CLIP, or held at SECONDS of it, and prints where in the world; test puts COUNT in rows ahead (the first asset unless named), playing CLIP from different times; clear removes those it placed.",
             CommandScope.Local,
             Meshes
         );
@@ -329,10 +335,41 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
         }
     }
 
-    /// <summary><c>meshes place NAME [SCALE] [CLIP [SECONDS]]</c>.</summary>
+    /// <summary><c>meshes place NAME [at X Y Z YAW] [SCALE] [CLIP [SECONDS]]</c>.</summary>
     private void Place(CommandContext context, int index, CameraPose camera)
     {
         var argument = 2;
+        var forward = ThirdPersonCamera.Forward(camera.Yaw, 0);
+        var at = OnGround(camera.Position + forward * PlaceMetres);
+        var facing = Facing(camera);
+        if (context.Count > argument && context.Is(argument, "at"))
+        {
+            if (_shifts is null)
+            {
+                context.PrintError(
+                    "meshes: place at needs the match's origin, which this game's composition does not give"
+                );
+                return;
+            }
+
+            if (
+                !context.TryGetDouble(argument + 1, out var x)
+                || !context.TryGetDouble(argument + 2, out var y)
+                || !context.TryGetDouble(argument + 3, out var z)
+                || !context.TryGetFloat(argument + 4, out var yawDegrees)
+                || !double.IsFinite(x + y + z)
+                || !float.IsFinite(yawDegrees)
+            )
+            {
+                context.PrintUsage();
+                return;
+            }
+
+            at = _shifts.Origin.ToLocal(new WorldPoint(x, y, z));
+            facing = Quaternion.CreateFromYawPitchRoll(yawDegrees * MathF.PI / 180, 0, 0);
+            argument += 5;
+        }
+
         var scale = 1f;
         if (context.TryGetFloat(argument, out var given))
         {
@@ -378,13 +415,23 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
             return;
         }
 
-        var forward = ThirdPersonCamera.Forward(camera.Yaw, 0);
-        var at = OnGround(camera.Position + forward * PlaceMetres);
-        Create(MeshPlacement.At(at, Facing(camera), scale), index, animator);
+        Create(MeshPlacement.At(at, facing, scale), index, animator);
+        if (_shifts is null)
+        {
+            context.Print(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{_assets[index].Name} placed at ({at.X:F2}, {at.Y:F2}, {at.Z:F2}) m"
+                )
+            );
+            return;
+        }
+
+        var world = _shifts.Origin.ToWorld(at);
         context.Print(
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"{_assets[index].Name} placed at ({at.X:F2}, {at.Y:F2}, {at.Z:F2}) m"
+                $"{_assets[index].Name} placed at {world.X:F2} {world.Y:F2} {world.Z:F2} in the world"
             )
         );
     }

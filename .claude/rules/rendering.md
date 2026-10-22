@@ -53,6 +53,10 @@ This file is the core. The sub-areas have their own files, each loaded with its 
 - The console's run-only `lens ortho HEIGHT [NEAR FAR]` draws the camera through an orthographic lens
   (`RenderView.LensOverride` and `DrawnCamera`; by default the view distance each way). `lens off` draws through its
   own.
+- The console's `viewpoint x,y,z,yaw,pitch` draws the frames from that place in the world for the match
+  (`RenderView.CameraOverride`, a `CameraPlace`), through the camera's lens. `RenderView.Camera` stays the camera's
+  own, so the listener and the streaming follow it. `ShiftCamera` moves the override with the origin, and
+  `ResetAfterMatch` clears it.
 
 ### Under a moved origin
 

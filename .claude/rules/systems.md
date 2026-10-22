@@ -155,6 +155,9 @@ are dropped and counted.
   the fade a step after it is whole.
 - `meshes` is `MeshDrawSystem`'s command, with the subcommands `place`, `test`, and `clear`. `clear` removes the
   entities it placed (`ConsoleMesh`). A game places its own.
+- `meshes place NAME at X Y Z YAW` puts a model at a place in the world, turned, and prints where in the world any
+  `place` put it. It reads the world through the `OriginShifts` a game's composition passes the system; without
+  them it refuses `at`.
 
 ### The benchmark
 

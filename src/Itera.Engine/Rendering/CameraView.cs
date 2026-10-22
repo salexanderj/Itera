@@ -78,6 +78,16 @@ public readonly record struct CameraView(
 }
 
 /// <summary>
+/// Where a camera stands and turns, without its lens: a place in local metres, and the yaw and pitch in radians that
+/// <see cref="Systems.CameraExtractSystem.ToView"/> turns a camera's pose by (the console's <c>viewpoint</c>).
+/// </summary>
+public readonly record struct CameraPlace(Vector3 Position, float Yaw, float Pitch)
+{
+    /// <summary>The turn from camera space to world space.</summary>
+    public Quaternion Orientation => Quaternion.CreateFromYawPitchRoll(Yaw, Pitch, 0);
+}
+
+/// <summary>
 /// The camera and atmosphere of the frame being built, and how it is drawn. Frame systems set the camera and the
 /// atmosphere; <see cref="GameLoop"/> hands them to the render thread in <see cref="RenderFrame"/>. Main thread only.
 /// </summary>
@@ -109,6 +119,7 @@ public sealed class RenderView
     public void ResetAfterMatch()
     {
         Camera = CameraView.Default;
+        CameraOverride = null;
         Atmosphere = _clearSky;
         Look = RenderLook.Default;
         ScreenDim = 0;
@@ -120,8 +131,31 @@ public sealed class RenderView
     /// <summary>The console's <c>lens</c>: a lens for the run in place of the camera's own, or null.</summary>
     public CameraLens? LensOverride { get; set; }
 
-    /// <summary>The camera the next frame is drawn from: <see cref="Camera"/>, through <see cref="LensOverride"/> when set.</summary>
-    public CameraView DrawnCamera => LensOverride is { } lens ? Camera.Through(in lens) : Camera;
+    /// <summary>
+    /// The console's <c>viewpoint</c>: where the frames are drawn from for the match in place of the camera's own place and
+    /// turn, or null. The camera's lens stays, under <see cref="LensOverride"/>. What reads <see cref="Camera"/> (the
+    /// listener, the streaming) still follows the camera's own. It moves with the origin, and a match's end clears it.
+    /// </summary>
+    public CameraPlace? CameraOverride { get; set; }
+
+    /// <summary>
+    /// The camera the next frame is drawn from: <see cref="Camera"/>, at <see cref="CameraOverride"/>'s place and turn,
+    /// through <see cref="LensOverride"/>, each when set.
+    /// </summary>
+    public CameraView DrawnCamera
+    {
+        get
+        {
+            var camera = CameraOverride is { } place
+                ? Camera with
+                {
+                    Position = place.Position,
+                    Orientation = place.Orientation,
+                }
+                : Camera;
+            return LensOverride is { } lens ? camera.Through(in lens) : camera;
+        }
+    }
 
     /// <summary>
     /// The debug views drawn for the rest of the run (the console's <c>view</c> and <c>materials</c>; not saved):
@@ -231,8 +265,16 @@ public sealed class RenderView
     /// <summary>
     /// The match's origin moved by <paramref name="metres"/>: the camera last set moves the other way, so what reads it
     /// before the next frame sets it (the listener, the console's commands) has it in the new origin (<c>OriginShifts</c>).
+    /// <see cref="CameraOverride"/> moves with it, as it stays where it is in the world.
     /// </summary>
-    public void ShiftCamera(Vector3 metres) => Camera = Camera with { Position = Camera.Position - metres };
+    public void ShiftCamera(Vector3 metres)
+    {
+        Camera = Camera with { Position = Camera.Position - metres };
+        if (CameraOverride is { } place)
+        {
+            CameraOverride = place with { Position = place.Position - metres };
+        }
+    }
 
     /// <summary>Sets the sky, sunlight, and air for the frame being built; they stay until set again.</summary>
     public void SetAtmosphere(in Atmosphere atmosphere) => Atmosphere = atmosphere;

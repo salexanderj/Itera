@@ -247,7 +247,8 @@ public static class MeshSampleServiceCollectionExtensions
             sp.GetRequiredService<MeshInstances>(),
             sp.GetRequiredService<MeshAssets>(),
             null,
-            sp.GetRequiredService<ConsoleCommands>()
+            sp.GetRequiredService<ConsoleCommands>(),
+            shifts: sp.GetRequiredService<OriginShifts>()
         ));
     }
 }

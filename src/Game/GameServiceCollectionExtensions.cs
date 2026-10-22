@@ -329,7 +329,8 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<MeshInstances>(),
             sp.GetRequiredService<MeshAssets>(),
             sp.GetRequiredService<VoxelWorld>(),
-            sp.GetRequiredService<ConsoleCommands>()
+            sp.GetRequiredService<ConsoleCommands>(),
+            shifts: sp.GetRequiredService<OriginShifts>()
         ));
         services.AddScoped<IFrameUpdateSystem>(sp => new AtmosphereSystem(
             sp.GetRequiredService<EcsWorld>().World,

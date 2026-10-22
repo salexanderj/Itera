@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Components;
 using Itera.Engine.Rendering;
 using Microsoft.Extensions.Options;
 
@@ -34,5 +35,37 @@ public sealed class RenderViewTests
         Assert.Equal(CameraView.Default, view.Camera);
         Assert.Equal(start, view.Atmosphere);
         Assert.Equal(0, view.ScreenDim);
+    }
+
+    [Fact]
+    public void The_camera_override_draws_from_its_place_through_the_cameras_lens_or_the_override_lens()
+    {
+        var view = new RenderView(Options.Create(new EngineOptions()));
+        var own = new CameraView(new Vector3(1, 2, 3), Quaternion.Identity, 1.2f, 0.05f);
+        view.SetCamera(in own);
+        var place = new CameraPlace(new Vector3(10, 5, -4), MathF.PI / 2, -0.3f);
+
+        view.CameraOverride = place;
+        var drawn = view.DrawnCamera;
+        view.LensOverride = CameraLens.Orthographic(8, -20, 20);
+        var orthographic = view.DrawnCamera;
+
+        Assert.Equal(own, view.Camera);
+        Assert.Equal(own with { Position = place.Position, Orientation = place.Orientation }, drawn);
+        Assert.Equal((place.Position, CameraProjection.Orthographic), (orthographic.Position, orthographic.Projection));
+    }
+
+    [Fact]
+    public void The_camera_override_moves_with_the_origin_and_a_match_end_clears_it()
+    {
+        var view = new RenderView(Options.Create(new EngineOptions()));
+        view.CameraOverride = new CameraPlace(new Vector3(10, 5, -4), 0, 0);
+
+        view.ShiftCamera(new Vector3(8, 0, -8));
+        var shifted = view.CameraOverride;
+        view.ResetAfterMatch();
+
+        Assert.Equal(new Vector3(2, 5, 4), shifted?.Position);
+        Assert.Null(view.CameraOverride);
     }
 }
