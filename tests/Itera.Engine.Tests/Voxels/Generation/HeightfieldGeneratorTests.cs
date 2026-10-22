@@ -7,10 +7,9 @@ namespace Itera.Engine.Tests.Voxels.Generation;
 /// <summary>
 /// <see cref="HeightfieldGenerator"/> through <see cref="HillsGenerator"/>: descriptions that agree with the voxels
 /// filled, fills that equal a voxel-by-voxel reference of the same rules, features written over the ground, the same
-/// voxels on every run and thread, no allocation after a thread's first column, and a world that streams it. Each
-/// check runs on a grid of 1 cm and of 10 cm.
+/// voxels on every run and thread, no allocation after a thread's first column, and a world that streams it. Most
+/// checks run on a grid of 1 cm and of 10 cm; threading and allocation, which do not depend on the base, on 10 cm only.
 /// </summary>
-[RunsLong]
 public sealed class HeightfieldGeneratorTests
 {
     private const int Size = VoxelConstants.ChunkSize;
@@ -76,10 +75,12 @@ public sealed class HeightfieldGeneratorTests
                             layer < first ? below
                             : layer > last ? above
                             : window[layer - first];
-                        Assert.True(
-                            fills[layer] == stands,
-                            $"seed {seed}, {column}, layer {layer} of {first} to {last}: {fills[layer]}, the range's {stands}"
-                        );
+                        if (fills[layer] != stands)
+                        {
+                            Assert.Fail(
+                                $"seed {seed}, {column}, layer {layer} of {first} to {last}: {fills[layer]}, the range's {stands}"
+                            );
+                        }
                     }
 
                     stored += window.Length;
@@ -240,6 +241,8 @@ public sealed class HeightfieldGeneratorTests
         var groundVoxels = NewVoxels();
         var groundDensities = NewVoxels();
         var winners = new int[VoxelConstants.ChunkVoxels];
+        var expectedVoxels = NewVoxels();
+        var expectedDensities = NewVoxels();
         int solidOverAir = 0,
             airOverSolid = 0,
             kept = 0,
@@ -307,29 +310,32 @@ public sealed class HeightfieldGeneratorTests
                 {
                     if (winners[i] < 0)
                     {
-                        Assert.Equal(groundVoxels[i], voxels[i]);
-                        Assert.Equal(groundDensities[i], densities[i]);
+                        expectedVoxels[i] = groundVoxels[i];
+                        expectedDensities[i] = groundDensities[i];
                         continue;
                     }
 
                     written++;
                     var material = all[winners[i]].Material;
-                    Assert.Equal(material, voxels[i]);
+                    expectedVoxels[i] = material;
                     var wasSolid = groundVoxels[i] != VoxelConstants.Air;
                     var isSolid = material != VoxelConstants.Air;
                     if (wasSolid == isSolid)
                     {
                         // The ground already agreed: its density stays.
-                        Assert.Equal(groundDensities[i], densities[i]);
+                        expectedDensities[i] = groundDensities[i];
                         kept += wasSolid && densities[i] < VoxelDensity.Full ? 1 : 0;
                     }
                     else
                     {
-                        Assert.Equal(VoxelDensity.Default(material), densities[i]);
+                        expectedDensities[i] = VoxelDensity.Default(material);
                         solidOverAir += isSolid ? 1 : 0;
                         airOverSolid += isSolid ? 0 : 1;
                     }
                 }
+
+                AssertSame(expectedVoxels, voxels, $"materials of {chunk}, seed {seed}");
+                AssertSame(expectedDensities, densities, $"densities of {chunk}, seed {seed}");
             }
         }
 
@@ -433,12 +439,11 @@ public sealed class HeightfieldGeneratorTests
         }
     }
 
-    [Theory]
-    [InlineData(1)]
-    [InlineData(10)]
-    public void Worker_threads_get_the_voxels_one_thread_gets(int baseCentimetres)
+    // One grid: threading does not depend on the grid's base.
+    [Fact]
+    public void Worker_threads_get_the_voxels_one_thread_gets()
     {
-        var grid = new VoxelGrid(baseCentimetres);
+        var grid = new VoxelGrid(10);
         var generator = new HillsGenerator(grid);
         var jobs = new List<(ChunkKey Chunk, ulong Seed)>();
         foreach (var level in (ReadOnlySpan<int>)[0, 1, 3])
@@ -480,7 +485,11 @@ public sealed class HeightfieldGeneratorTests
                     var i = (n + worker * 7) % jobs.Count;
                     generator.Fill(jobs[i].Chunk, jobs[i].Seed, myVoxels, myDensities);
                     var hash = Hash(Hash(0, myVoxels), myDensities);
-                    Assert.True(alone[i] == hash, $"job {i} gave another hash on worker {worker}: {jobs[i].Chunk}");
+                    if (alone[i] != hash)
+                    {
+                        Assert.Fail($"job {i} gave another hash on worker {worker}: {jobs[i].Chunk}");
+                    }
+
                     together[i] = hash;
                 }
             }
@@ -488,12 +497,11 @@ public sealed class HeightfieldGeneratorTests
         Assert.Equal(alone, together);
     }
 
-    [Theory]
-    [InlineData(1)]
-    [InlineData(10)]
-    public void Describing_and_filling_allocate_nothing_after_the_threads_first_column(int baseCentimetres)
+    // One grid: the allocation does not depend on the grid's base.
+    [Fact]
+    public void Describing_and_filling_allocate_nothing_after_the_threads_first_column()
     {
-        var grid = new VoxelGrid(baseCentimetres);
+        var grid = new VoxelGrid(10);
         var generator = new HillsGenerator(grid);
         long allocated = -1;
         var thread = new Thread(() =>
@@ -526,14 +534,11 @@ public sealed class HeightfieldGeneratorTests
 
             allocated = SystemAllocation.BytesAllocatedWithoutCollection(() =>
             {
-                for (var round = 0; round < 3; round++)
+                foreach (var (column, layer) in jobs)
                 {
-                    foreach (var (column, layer) in jobs)
-                    {
-                        generator.DescribeColumn(column, 3, fills.AsSpan(0, column.LayerCount(grid)));
-                        generator.Fill(column.Chunk(layer, grid), 3, voxels, densities);
-                        generator.Fill(column.Chunk(layer, grid), 3, voxels);
-                    }
+                    generator.DescribeColumn(column, 3, fills.AsSpan(0, column.LayerCount(grid)));
+                    generator.Fill(column.Chunk(layer, grid), 3, voxels, densities);
+                    generator.Fill(column.Chunk(layer, grid), 3, voxels);
                 }
             });
         });

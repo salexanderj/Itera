@@ -61,14 +61,20 @@ public sealed class ShapeSpanTests
                             }
 
                             var expected = distance < capsule.Radius;
-                            Assert.True(
-                                expected == (row && x >= min && x <= max),
-                                $"{capsule} level {level} at ({x}, {y}, {z}): distance {distance}, row {row} [{min}, {max}]"
-                            );
+                            if (expected != (row && x >= min && x <= max))
+                            {
+                                Assert.Fail(
+                                    $"{capsule} level {level} at ({x}, {y}, {z}): distance {distance}, row {row} [{min}, {max}]"
+                                );
+                            }
+
                             if (expected)
                             {
                                 inside++;
-                                Assert.True(planeHeld && y >= lowest && y <= highest, $"{capsule} heights at z {z}");
+                                if (!(planeHeld && y >= lowest && y <= highest))
+                                {
+                                    Assert.Fail($"{capsule} heights at z {z}");
+                                }
                             }
                         }
                     }
@@ -143,10 +149,12 @@ public sealed class ShapeSpanTests
 
                             var expected = margin > 0;
                             inside += expected ? 1 : 0;
-                            Assert.True(
-                                expected == (row && x >= min && x <= max),
-                                $"{part} level {level} at ({x}, {y}, {z}): margin {margin}, row {row} [{min}, {max}]"
-                            );
+                            if (expected != (row && x >= min && x <= max))
+                            {
+                                Assert.Fail(
+                                    $"{part} level {level} at ({x}, {y}, {z}): margin {margin}, row {row} [{min}, {max}]"
+                                );
+                            }
                         }
                     }
                 }
@@ -194,10 +202,12 @@ public sealed class ShapeSpanTests
                             var inside = dx * dx * yy * zz + dy * dy * xx * zz + dz * dz * xx * yy <= xx * yy * zz;
                             var material = voxels[(vz * VoxelConstants.ChunkSize + vy) * VoxelConstants.ChunkSize + vx];
                             filled += inside ? 1 : 0;
-                            Assert.True(
-                                (inside ? 9 : 0) == material,
-                                $"base {baseCentimetres} level {level} voxel ({vx}, {vy}, {vz}): {material}, inside {inside}"
-                            );
+                            if ((inside ? 9 : 0) != material)
+                            {
+                                Assert.Fail(
+                                    $"base {baseCentimetres} level {level} voxel ({vx}, {vy}, {vz}): {material}, inside {inside}"
+                                );
+                            }
                         }
                     }
                 }
@@ -263,15 +273,27 @@ public sealed class ShapeSpanTests
                             }
 
                             var expected = margin > 0;
-                            Assert.True(
-                                expected == (row && x >= min && x <= max),
-                                $"{prism} level {level} at ({x}, {y}, {z}): margin {margin}, row {row} [{min}, {max}]"
-                            );
-                            Assert.Equal(expected, prism.Contains(x, y, z, planes, 0));
+                            if (expected != (row && x >= min && x <= max))
+                            {
+                                Assert.Fail(
+                                    $"{prism} level {level} at ({x}, {y}, {z}): margin {margin}, row {row} [{min}, {max}]"
+                                );
+                            }
+
+                            if (expected != prism.Contains(x, y, z, planes, 0))
+                            {
+                                Assert.Fail($"{prism} level {level} at ({x}, {y}, {z}): Contains is not {expected}");
+                            }
+
                             if (expected)
                             {
                                 inside++;
-                                Assert.True(x >= prism.MinX && x <= prism.MaxX && z >= prism.MinZ && z <= prism.MaxZ);
+                                if (!(x >= prism.MinX && x <= prism.MaxX && z >= prism.MinZ && z <= prism.MaxZ))
+                                {
+                                    Assert.Fail(
+                                        $"{prism} level {level}: ({x}, {y}, {z}) lies outside its x and z bounds"
+                                    );
+                                }
                             }
                         }
                     }

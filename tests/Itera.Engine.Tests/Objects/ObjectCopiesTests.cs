@@ -88,15 +88,13 @@ public sealed class ObjectCopiesTests : IDisposable
                         var share = shares[x + sx * (y + sy * z)];
                         sum += share / 255.0 * edge * edge * edge;
                         var (inside, outside) = Fill(kind, in placement, x0 + x, y0 + y, z0 + z, edge);
-                        if (inside)
+                        if (inside && share < VoxelDensity.Solid)
                         {
-                            Assert.True(
-                                share >= VoxelDensity.Solid,
-                                $"Heading {heading}: ({x}, {y}, {z}) holds {share}."
-                            );
+                            Assert.Fail($"Heading {heading}: ({x}, {y}, {z}) holds {share}.");
                         }
 
-                        if (outside && Far(kind, in placement, x0 + x, y0 + y, z0 + z, edge))
+                        // Far is costly: asked only where a share is there to be wrong.
+                        if (outside && share != 0 && Far(kind, in placement, x0 + x, y0 + y, z0 + z, edge))
                         {
                             Assert.Equal(0, share);
                         }
@@ -241,29 +239,14 @@ public sealed class ObjectCopiesTests : IDisposable
             var chunk = key.Chunk(first + layer, s_grid);
             ChunkTree.Decode(_memory, layers[layer], materials);
             ChunkTree.DecodeDensities(_memory, layers[layer], densities);
-            var origin = chunk.LevelOrigin;
-            for (var z = 0; z < 128; z++)
-            {
-                for (var y = 0; y < 128; y++)
-                {
-                    for (var x = 0; x < 128; x++)
-                    {
-                        var i = x + 128 * (y + 128 * z);
-                        if (level.SampleAt(origin.Y + y) < 0)
-                        {
-                            Assert.Equal(FlatTestGenerator.Stone, materials[i]);
-                            continue;
-                        }
-
-                        var (material, density) = expected.GetValueOrDefault(
-                            (origin.X + x, origin.Y + y, origin.Z + z),
-                            (VoxelConstants.Air, VoxelDensity.Empty)
-                        );
-                        Assert.Equal((material, density), (materials[i], densities[i]));
-                        copied += material is Bark or Leaves ? 1 : 0;
-                    }
-                }
-            }
+            copied += AssertLayerIsStoneAndTheCopies(
+                expected,
+                level,
+                chunk.LevelOrigin,
+                materials,
+                densities,
+                $"Layer {layer}"
+            );
         }
 
         Assert.True(copied > 100, $"Only {copied} voxels were copied.");
@@ -322,6 +305,10 @@ public sealed class ObjectCopiesTests : IDisposable
         {
             ChunkTree.Decode(_memory, job.Layers[layer], materials);
             var origin = key.Chunk(job.First + layer, s_grid).LevelOrigin;
+
+            // Every voxel but the crown's is stone under the ground and air over it, but where a copy is. The voxels over
+            // the ground that are not air are checked against the copies, and counted against the copies that are solid.
+            var matched = 0;
             for (var z = 0; z < 128; z++)
             {
                 for (var y = 0; y < 128; y++)
@@ -332,36 +319,64 @@ public sealed class ObjectCopiesTests : IDisposable
                             sy = level.SampleAt(origin.Y + y),
                             sz = level.SampleAt(origin.Z + z);
                         var actual = materials[x + 128 * (y + 128 * z)];
-                        double dx = sx - crown.X,
-                            dy = sy - crown.Y,
-                            dz = sz - crown.Z;
-                        var fromCrown = Math.Sqrt(dx * dx + dy * dy + dz * dz);
-                        if (fromCrown + 35 <= 120)
+                        var zone = ZoneOfCrown(crown, sx, sy, sz);
+                        if (zone == CrownZone.Cleared)
                         {
-                            // Wholly inside the cleared ball.
-                            Assert.Equal(VoxelConstants.Air, actual);
+                            if (actual != VoxelConstants.Air)
+                            {
+                                Assert.Fail($"Layer {layer} ({x}, {y}, {z}) is {actual} in the cleared ball.");
+                            }
+
                             cleared++;
-                            continue;
                         }
-
-                        if (fromCrown - 35 <= 120)
+                        else if (zone == CrownZone.Beyond)
                         {
-                            continue;
-                        }
+                            if (sy < HighGround.Ground)
+                            {
+                                if (actual != FlatTestGenerator.Stone)
+                                {
+                                    Assert.Fail($"Layer {layer} ({x}, {y}, {z}) is {actual}, not stone.");
+                                }
+                            }
+                            else if (actual != VoxelConstants.Air)
+                            {
+                                var copyKey = (origin.X + x, origin.Y + y, origin.Z + z);
+                                if (!expected.TryGetValue(copyKey, out var copy) || copy.Material != actual)
+                                {
+                                    Assert.Fail($"Layer {layer} ({x}, {y}, {z}) is {actual}, not a copy's.");
+                                }
 
-                        var material =
-                            sy < HighGround.Ground
-                                ? FlatTestGenerator.Stone
-                                : expected
-                                    .GetValueOrDefault(
-                                        (origin.X + x, origin.Y + y, origin.Z + z),
-                                        (VoxelConstants.Air, VoxelDensity.Empty)
-                                    )
-                                    .Item1;
-                        Assert.Equal(material, actual);
-                        copied += material is Bark or Leaves && layer == 1 ? 1 : 0;
+                                matched++;
+                                copied += actual is Bark or Leaves && layer == 1 ? 1 : 0;
+                            }
+                        }
                     }
                 }
+            }
+
+            var solid = 0;
+            foreach (var ((kx, ky, kz), (material, _)) in expected)
+            {
+                if (
+                    material != VoxelConstants.Air
+                    && kx >= origin.X
+                    && kx < origin.X + 128
+                    && ky >= origin.Y
+                    && ky < origin.Y + 128
+                    && kz >= origin.Z
+                    && kz < origin.Z + 128
+                    && level.SampleAt(ky) >= HighGround.Ground
+                    && ZoneOfCrown(crown, level.SampleAt(kx), level.SampleAt(ky), level.SampleAt(kz))
+                        == CrownZone.Beyond
+                )
+                {
+                    solid++;
+                }
+            }
+
+            if (solid != matched)
+            {
+                Assert.Fail($"Layer {layer} holds {matched} voxels of copies, the copies make {solid} there.");
             }
         }
 
@@ -492,6 +507,109 @@ public sealed class ObjectCopiesTests : IDisposable
         }
 
         Assert.Equal(12369600423040893681UL, hash);
+    }
+
+    /// <summary>Where a voxel lies about a ball cleared at a crown: in it, past it, or in between, where it is not checked.</summary>
+    private enum CrownZone
+    {
+        Cleared,
+        Edge,
+        Beyond,
+    }
+
+    private static CrownZone ZoneOfCrown(VoxelCoord crown, int sx, int sy, int sz)
+    {
+        double dx = sx - crown.X,
+            dy = sy - crown.Y,
+            dz = sz - crown.Z;
+        var fromCrown = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+
+        // The ball's radius is 120 and a voxel reaches 35 from its sample point.
+        return fromCrown + 35 <= 120 ? CrownZone.Cleared
+            : fromCrown - 35 <= 120 ? CrownZone.Edge
+            : CrownZone.Beyond;
+    }
+
+    /// <summary>
+    /// Checks a decoded layer of a column against the copies <paramref name="expected"/>: stone under the ground (y below
+    /// 0), and above it every voxel's material and density the copy's, or air with no density. Returns how many of its
+    /// voxels are bark or leaves.
+    /// </summary>
+    private static int AssertLayerIsStoneAndTheCopies(
+        Dictionary<(int X, int Y, int Z), (byte Material, byte Density)> expected,
+        GridLevel level,
+        VoxelCoord origin,
+        byte[] materials,
+        byte[] densities,
+        string what
+    )
+    {
+        var found = 0;
+        var copied = 0;
+        for (var z = 0; z < 128; z++)
+        {
+            for (var y = 0; y < 128; y++)
+            {
+                var row = 128 * (y + 128 * z);
+                if (level.SampleAt(origin.Y + y) < 0)
+                {
+                    var wrong = materials.AsSpan(row, 128).IndexOfAnyExcept(FlatTestGenerator.Stone);
+                    if (wrong >= 0)
+                    {
+                        Assert.Fail($"{what} ({wrong}, {y}, {z}) is {materials[row + wrong]}, not stone.");
+                    }
+
+                    continue;
+                }
+
+                for (var x = 0; x < 128; x++)
+                {
+                    var material = materials[row + x];
+                    var density = densities[row + x];
+                    if (material == VoxelConstants.Air && density == VoxelDensity.Empty)
+                    {
+                        continue;
+                    }
+
+                    if (
+                        !expected.TryGetValue((origin.X + x, origin.Y + y, origin.Z + z), out var copy)
+                        || copy != (material, density)
+                    )
+                    {
+                        Assert.Fail($"{what} ({x}, {y}, {z}) is {material} at density {density}, not a copy's.");
+                    }
+
+                    found++;
+                    copied += material is Bark or Leaves ? 1 : 0;
+                }
+            }
+        }
+
+        // No copy is missing: those the layer holds are as many as the ones found.
+        var made = 0;
+        foreach (var ((kx, ky, kz), (material, density)) in expected)
+        {
+            if (
+                (material != VoxelConstants.Air || density != VoxelDensity.Empty)
+                && kx >= origin.X
+                && kx < origin.X + 128
+                && ky >= origin.Y
+                && ky < origin.Y + 128
+                && kz >= origin.Z
+                && kz < origin.Z + 128
+                && level.SampleAt(ky) >= 0
+            )
+            {
+                made++;
+            }
+        }
+
+        if (found != made)
+        {
+            Assert.Fail($"{what} holds {found} voxels of copies, the copies make {made} there.");
+        }
+
+        return copied;
     }
 
     private (ChildState[] Layers, int First) Run(IChunkGenerator generator, ObjectCopies? copies, ColumnKey key)

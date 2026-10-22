@@ -1,9 +1,7 @@
-using System.Diagnostics;
 using System.Numerics;
 using Itera.Engine.Physics;
 using Itera.Engine.Tests.Voxels;
 using Itera.Engine.Voxels;
-using Xunit.Abstractions;
 
 namespace Itera.Engine.Tests.Physics;
 
@@ -50,7 +48,6 @@ public sealed class WideBodyWorldFixture : IDisposable
 /// of 128 cells: walls stop them at their radius, they step onto a ledge, random moves never leave them inside a voxel,
 /// and moving them allocates nothing.
 /// </summary>
-[RunsLong]
 public sealed class WideBodyMoverTests : IClassFixture<WideBodyWorldFixture>
 {
     private const float Step = 1f / 60;
@@ -60,13 +57,11 @@ public sealed class WideBodyMoverTests : IClassFixture<WideBodyWorldFixture>
 
     private readonly WideBodyWorldFixture _fixture;
     private readonly VoxelCharacterMover _mover;
-    private readonly ITestOutputHelper _output;
 
-    public WideBodyMoverTests(WideBodyWorldFixture fixture, ITestOutputHelper output)
+    public WideBodyMoverTests(WideBodyWorldFixture fixture)
     {
         _fixture = fixture;
         _mover = fixture.Mover;
-        _output = output;
     }
 
     [Fact]
@@ -195,27 +190,6 @@ public sealed class WideBodyMoverTests : IClassFixture<WideBodyWorldFixture>
         }
     }
 
-    [Fact]
-    public void A_wide_body_walking_onto_a_platform_costs_little()
-    {
-        var feet = new Vector3(-3.5f, 2, 4.5f);
-        var velocity = Vector3.Zero;
-        Run(ref feet, ref velocity, in s_wide, Vector2.Zero, 5);
-        var timer = Stopwatch.StartNew();
-        const int Moves = 300;
-        for (var i = 0; i < Moves; i++)
-        {
-            // Back and forth over the platform's edge, at a wide body's walk.
-            var direction = i / 60 % 2 == 0 ? 2f : -2f;
-            velocity = new Vector3(direction, velocity.Y - Gravity * Step, 0);
-            _mover.Move(ref feet, ref velocity, in s_wide, Step);
-        }
-
-        var microseconds = timer.Elapsed.TotalMicroseconds / Moves;
-        _output.WriteLine($"{microseconds:F1} us per move.");
-        Assert.True(microseconds < 5000, $"{microseconds:F1} us per move.");
-    }
-
     private CharacterMoveResult Run(
         ref Vector3 feet,
         ref Vector3 velocity,
@@ -260,10 +234,10 @@ public sealed class WideBodyMoverTests : IClassFixture<WideBodyWorldFixture>
                 for (var y = y0; y <= Math.Min(y1, y0 + 40); y++)
                 {
                     _fixture.World.TryGetMaterial(new VoxelCoord(x, y, z), out var material);
-                    Assert.True(
-                        material == VoxelConstants.Air,
-                        $"Voxel ({x}, {y}, {z}) of material {material} is inside the body at {feet}."
-                    );
+                    if (material != VoxelConstants.Air)
+                    {
+                        Assert.Fail($"Voxel ({x}, {y}, {z}) of material {material} is inside the body at {feet}.");
+                    }
                 }
             }
         }

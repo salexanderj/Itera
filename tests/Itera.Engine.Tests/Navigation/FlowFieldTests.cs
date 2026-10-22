@@ -328,12 +328,10 @@ public sealed class FlowFieldTests
         s_small.Derive(grid, walkable, 0, grid.Depth - 1);
         var builder = new FlowFieldBuilder();
         var field = new FlowField(grid);
-        // Enough builds for .NET to finish compiling the loops' faster versions.
-        for (var i = 0; i < 100; i++)
-        {
-            builder.Build(grid, spec, walkable, field);
-            s_small.Derive(grid, walkable, 0, grid.Depth - 1);
-        }
+        // One build and one derive first: the builder makes its buffers then. The test projects run with tiered
+        // compilation off, so every method is already optimised at its first call.
+        builder.Build(grid, spec, walkable, field);
+        s_small.Derive(grid, walkable, 0, grid.Depth - 1);
 
         var before = SystemAllocation.StartMeasurement();
         builder.Build(grid, spec, walkable, field);

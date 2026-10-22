@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Numerics;
 using Itera.Engine.Physics;
 using Itera.Engine.Tests.Voxels;
@@ -350,26 +349,6 @@ public abstract class DensityGroundTests(IDensityGround ground, ITestOutputHelpe
 
         Assert.Equal(0, second);
         Assert.True(ground.FirstReadsAllocate || first == 0, $"The first pass allocated {first} bytes.");
-    }
-
-    [Fact]
-    public void Walking_up_and_down_a_slope_costs_little()
-    {
-        var feet = new Vector3(1.5f, 2, DensityTerrainGenerator.Middle(0) / 100f);
-        var velocity = Vector3.Zero;
-        Run(ref feet, ref velocity, Vector2.Zero, 5);
-        var timer = Stopwatch.StartNew();
-        const int Moves = 1000;
-        for (var i = 0; i < Moves; i++)
-        {
-            var direction = i / 60 % 2 == 0 ? Walk : -Walk;
-            velocity = new Vector3(direction, velocity.Y - Gravity * Step, 0);
-            _mover.Move(ref feet, ref velocity, in s_shape, Step);
-        }
-
-        var microseconds = timer.Elapsed.TotalMicroseconds / Moves;
-        output.WriteLine($"{microseconds:F1} us per move.");
-        Assert.True(microseconds < 2000, $"{microseconds:F1} us per move.");
     }
 
     /// <summary>

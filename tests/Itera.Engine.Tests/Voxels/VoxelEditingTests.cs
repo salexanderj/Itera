@@ -2,7 +2,6 @@ using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Tests.Voxels;
 
-[RunsLong]
 public sealed class VoxelEditingTests : IDisposable
 {
     private const byte Stone = 3;
@@ -96,11 +95,12 @@ public sealed class VoxelEditingTests : IDisposable
             VoxelEditOperation.Fill,
             VoxelEditOperation.Paint,
         ];
-        foreach (var size in (int[])[VoxelConstants.BrickSize, 32])
+        // The small regions get most of the trials; the large ones are slower, and their rows are the same code.
+        foreach (var (size, trials) in ((int Size, int Trials)[])[(VoxelConstants.BrickSize, 3000), (32, 300)])
         {
             var expected = new byte[size * size * size];
             var actual = new byte[expected.Length];
-            for (var trial = 0; trial < 3000; trial++)
+            for (var trial = 0; trial < trials; trial++)
             {
                 var level = random.Next(0, 5);
                 var origin = new VoxelCoord(random.Next(-40, 40), random.Next(-40, 40), random.Next(-40, 40));
@@ -137,7 +137,11 @@ public sealed class VoxelEditingTests : IDisposable
                     actual
                 );
 
-                Assert.Equal(expected, actual);
+                if (!expected.AsSpan().SequenceEqual(actual))
+                {
+                    Assert.Equal(expected, actual);
+                }
+
                 Assert.Equal(expectedChanged, actualChanged);
             }
         }
@@ -156,11 +160,12 @@ public sealed class VoxelEditingTests : IDisposable
             VoxelEditOperation.Fill,
             VoxelEditOperation.Paint,
         ];
-        foreach (var size in (int[])[VoxelConstants.BrickSize, 32])
+        // The small regions get most of the trials; the large ones are slower, and their rows are the same code.
+        foreach (var (size, trials) in ((int Size, int Trials)[])[(VoxelConstants.BrickSize, 3000), (32, 300)])
         {
             var expected = new byte[size * size * size];
             var actual = new byte[expected.Length];
-            for (var trial = 0; trial < 3000; trial++)
+            for (var trial = 0; trial < trials; trial++)
             {
                 var level = random.Next(0, 5);
                 var origin = new VoxelCoord(random.Next(-40, 40), random.Next(-40, 40), random.Next(-40, 40));
@@ -207,7 +212,11 @@ public sealed class VoxelEditingTests : IDisposable
                     actual
                 );
 
-                Assert.Equal(expected, actual);
+                if (!expected.AsSpan().SequenceEqual(actual))
+                {
+                    Assert.Equal(expected, actual);
+                }
+
                 Assert.Equal(expectedChanged, actualChanged);
             }
         }
@@ -289,7 +298,6 @@ public sealed class VoxelEditingTests : IDisposable
     [Fact]
     public void Coarse_voxels_are_tested_at_their_sample_point()
     {
-        var key = new ChunkKey(2, 0, 0, 0);
         var dense = new byte[VoxelConstants.ChunkVoxels];
         dense.AsSpan().Fill(Stone);
         var edit = VoxelEdit.Sphere(new VoxelCoord(203, 97, 150), 41, VoxelEditOperation.Clear);
@@ -314,14 +322,19 @@ public sealed class VoxelEditingTests : IDisposable
                         VoxelConstants.SampleAt(y, 2),
                         VoxelConstants.SampleAt(z, 2)
                     );
-                    Assert.Equal(inside ? VoxelConstants.Air : Stone, dense[x + 128 * y + 16384 * z]);
+                    var expected = inside ? VoxelConstants.Air : Stone;
+                    var actual = dense[x + 128 * y + 16384 * z];
+                    if (actual != expected)
+                    {
+                        Assert.Fail($"Voxel ({x}, {y}, {z}) is {actual}, expected {expected}.");
+                    }
+
                     cleared += inside ? 1 : 0;
                 }
             }
         }
 
         Assert.InRange(cleared, 4000, 5000);
-        Assert.Equal(2, key.Level);
     }
 
     [Fact]

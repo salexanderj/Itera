@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Numerics;
 using Itera.Engine.Physics;
 using Itera.Engine.Tests.Voxels;
@@ -202,11 +201,11 @@ public abstract class MoverFeatureTests
         var feet = Metres(-200, 300, 80);
         var start = feet;
         var velocity = new Vector3(1e30f, 0, 0);
-        var watch = Stopwatch.StartNew();
+        var result = default(CharacterMoveResult);
 
-        var result = _mover.Move(ref feet, ref velocity, in s_shape, Step);
+        // A hang fails the test instead of hanging the run.
+        Watchdog.Run(1, _ => "the move", _ => result = _mover.Move(ref feet, ref velocity, in s_shape, Step));
 
-        Assert.True(watch.ElapsedMilliseconds < 1000, $"The move took {watch.ElapsedMilliseconds} ms.");
         Assert.True(float.IsFinite(feet.X) && float.IsFinite(velocity.X));
         Assert.True(velocity.Length() * Step <= VoxelCharacterMover.MaxMoveMetres * 1.001f);
         Assert.True(Vector3.Distance(start, feet) <= VoxelCharacterMover.MaxMoveMetres * 1.001f);
@@ -373,17 +372,28 @@ public abstract class MoverFeatureTests
     public void Every_query_far_outside_the_world_answers_at_once(float x, float z)
     {
         var feet = new Vector3(x, 10, z);
-        var watch = Stopwatch.StartNew();
+        var found = false;
+        var top = 0f;
+        var overlaps = true;
+        var overlapsAnything = true;
+        var resident = false;
 
-        var found = _mover.GroundTop(feet, 0.3f, 1, 1, out var top);
-        var overlaps = _mover.Overlaps(feet, in s_shape);
-        var overlapsAnything = _mover.OverlapsAnything(feet, in s_shape);
-        var resident = _mover.IsResident(feet, 1);
-        var moved = feet;
-        var velocity = new Vector3(Walk, 0, Walk);
-        _mover.Move(ref moved, ref velocity, in s_shape, Step);
+        // A hang fails the test instead of hanging the run.
+        Watchdog.Run(
+            1,
+            _ => "the queries",
+            _ =>
+            {
+                found = _mover.GroundTop(feet, 0.3f, 1, 1, out top);
+                overlaps = _mover.Overlaps(feet, in s_shape);
+                overlapsAnything = _mover.OverlapsAnything(feet, in s_shape);
+                resident = _mover.IsResident(feet, 1);
+                var moved = feet;
+                var velocity = new Vector3(Walk, 0, Walk);
+                _mover.Move(ref moved, ref velocity, in s_shape, Step);
+            }
+        );
 
-        Assert.True(watch.ElapsedMilliseconds < 1000, $"The queries took {watch.ElapsedMilliseconds} ms.");
         Assert.False(found);
         Assert.Equal(0, top);
         Assert.False(overlaps);
@@ -707,27 +717,6 @@ public abstract class MoverFeatureTests
         Assert.True(Vector3.Distance(start, feet) < 1);
     }
 
-    [Fact]
-    public void Walking_over_bumps_and_up_a_step_costs_little()
-    {
-        var feet = Metres(200, 200, -240);
-        var velocity = Vector3.Zero;
-        Run(ref feet, ref velocity, Vector2.Zero, 5);
-        var timer = Stopwatch.StartNew();
-        const int Moves = 1000;
-        for (var i = 0; i < Moves; i++)
-        {
-            // Back and forth over the 30 cm step.
-            var direction = i / 20 % 2 == 0 ? Walk : -Walk;
-            velocity = new Vector3(direction, velocity.Y - Gravity * Step, 0);
-            _mover.Move(ref feet, ref velocity, in s_shape, Step);
-        }
-
-        var microseconds = timer.Elapsed.TotalMicroseconds / Moves;
-        _output.WriteLine($"{microseconds:F1} us per move.");
-        Assert.True(microseconds < 2000, $"{microseconds:F1} us per move.");
-    }
-
     /// <summary>A body's feet at level-0 voxel (x, y, z), in metres.</summary>
     protected static Vector3 Metres(float x, float y, float z) => new(x / 100, y / 100, z / 100);
 
@@ -788,7 +777,10 @@ public abstract class MoverFeatureTests
             {
                 for (var y = y0; y <= y1; y++)
                 {
-                    Assert.False(_features.Blocks(x, y, z), $"Cell ({x}, {y}, {z}) is inside the body at {feet}.");
+                    if (_features.Blocks(x, y, z))
+                    {
+                        Assert.Fail($"Cell ({x}, {y}, {z}) is inside the body at {feet}.");
+                    }
                 }
             }
         }

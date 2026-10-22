@@ -1,38 +1,30 @@
-using System.Diagnostics;
 using System.Numerics;
 using Itera.Engine.Voxels;
 using Xunit.Abstractions;
 
 namespace Itera.Engine.Tests.Voxels;
 
-/// <summary>
-/// Reading 32^3 blocks out of the chunk trees: with a 2-voxel apron for the mesher, and their own voxels alone for the
-/// sky field.
-/// </summary>
-[RunsLong]
-public sealed class VoxelBlocksTests : IDisposable
+/// <summary>The two worlds the block tests read: a slope, and boxes of mixed materials. Loaded once for the class.</summary>
+public sealed class VoxelBlocksWorlds : IDisposable
 {
-    private const int Edge = VoxelWorld.BlockSampleEdge;
-    private const int Levels = 3;
+    public const int Levels = 3;
 
-    /// <summary>Block coordinates on either side of the chunk boundaries (multiples of 4) and of the origin.</summary>
-    private static readonly int[] Columns = [-8, -5, -4, -1, 0, 3, 4, 7];
-
-    private readonly ITestOutputHelper _output;
-    private readonly VoxelWorld _slope;
-    private readonly VoxelWorld _boxes;
-    private readonly byte[] _samples = new byte[VoxelWorld.BlockSamples];
-    private readonly byte[] _expected = new byte[VoxelWorld.BlockSamples];
-    private readonly byte[] _densities = new byte[VoxelWorld.BlockSamples];
-    private readonly byte[] _own = new byte[VoxelWorld.OwnBlockVoxels];
-
-    public VoxelBlocksTests(ITestOutputHelper output)
+    public VoxelBlocksWorlds()
     {
-        _output = output;
-        _slope = TestWorlds.Load(new SlopeGenerator(), new Vector3(0, 2, 0), radiusMetres: 4, levels: Levels);
+        Slope = LoadSlope();
+        Boxes = LoadBoxes();
+    }
 
-        // Mixed bricks (one byte per voxel), leaves, a pit, and whole cells of a second solid material.
-        _boxes = TestWorlds.Load(
+    public VoxelWorld Slope { get; }
+
+    public VoxelWorld Boxes { get; }
+
+    public static VoxelWorld LoadSlope() =>
+        TestWorlds.Load(new SlopeGenerator(), new Vector3(0, 2, 0), radiusMetres: 4, levels: Levels);
+
+    /// <summary>Mixed bricks (one byte per voxel), leaves, a pit, and whole cells of a second solid material.</summary>
+    public static VoxelWorld LoadBoxes() =>
+        TestWorlds.Load(
             new BoxesGenerator(
                 200,
                 new VoxelBox(-90, 150, -70, 150, 230, 90, BoxesGenerator.Pattern),
@@ -45,12 +37,39 @@ public sealed class VoxelBlocksTests : IDisposable
             radiusMetres: 4,
             levels: Levels
         );
-    }
 
     public void Dispose()
     {
-        _slope.Dispose();
-        _boxes.Dispose();
+        Slope.Dispose();
+        Boxes.Dispose();
+    }
+}
+
+/// <summary>
+/// Reading 32^3 blocks out of the chunk trees: with a 2-voxel apron for the mesher, and their own voxels alone for the
+/// sky field. Every test but one only reads the shared worlds; that one edits a pair of its own.
+/// </summary>
+public sealed class VoxelBlocksTests : IClassFixture<VoxelBlocksWorlds>
+{
+    private const int Edge = VoxelWorld.BlockSampleEdge;
+    private const int Levels = VoxelBlocksWorlds.Levels;
+
+    /// <summary>Block coordinates on either side of the chunk boundaries (multiples of 4) and of the origin.</summary>
+    private static readonly int[] Columns = [-8, -5, -4, -1, 0, 3, 4, 7];
+
+    private readonly ITestOutputHelper _output;
+    private readonly VoxelWorld _slope;
+    private readonly VoxelWorld _boxes;
+    private readonly byte[] _samples = new byte[VoxelWorld.BlockSamples];
+    private readonly byte[] _expected = new byte[VoxelWorld.BlockSamples];
+    private readonly byte[] _densities = new byte[VoxelWorld.BlockSamples];
+    private readonly byte[] _own = new byte[VoxelWorld.OwnBlockVoxels];
+
+    public VoxelBlocksTests(VoxelBlocksWorlds worlds, ITestOutputHelper output)
+    {
+        _output = output;
+        _slope = worlds.Slope;
+        _boxes = worlds.Boxes;
     }
 
     [Fact]
@@ -76,10 +95,11 @@ public sealed class VoxelBlocksTests : IDisposable
                             }
 
                             var unavailable = Reference(world, level, bx, by, bz, _expected);
-                            Assert.True(
-                                _expected.AsSpan().SequenceEqual(_samples),
-                                $"level {level} block ({bx}, {by}, {bz}) differs at sample {Differs()}"
-                            );
+                            if (!_expected.AsSpan().SequenceEqual(_samples))
+                            {
+                                Assert.Fail($"level {level} block ({bx}, {by}, {bz}) differs at sample {Differs()}");
+                            }
+
                             checkedBlocks++;
                             whole += unavailable == 0 ? 1 : 0;
                         }
@@ -96,7 +116,11 @@ public sealed class VoxelBlocksTests : IDisposable
     public void Densities_read_with_the_samples_equal_the_voxels_densities()
     {
         var densities = new byte[VoxelWorld.BlockSamples];
-        foreach (var world in new[] { _slope, _boxes })
+
+        // The edits below change the worlds, so this test reads its own pair.
+        using var slope = VoxelBlocksWorlds.LoadSlope();
+        using var boxes = VoxelBlocksWorlds.LoadBoxes();
+        foreach (var world in new[] { slope, boxes })
         {
             // Spheres filled and cleared across block and chunk edges leave voxels partly solid, on 1 cm voxels from
             // level 1 up.
@@ -120,10 +144,11 @@ public sealed class VoxelBlocksTests : IDisposable
                             Reference(world, level, bx, by, bz, _expected);
                             Assert.True(_expected.AsSpan().SequenceEqual(_samples));
                             Reference(world, level, bx, by, bz, _expected, densities: true);
-                            Assert.True(
-                                _expected.AsSpan().SequenceEqual(densities),
-                                $"level {level} block ({bx}, {by}, {bz}) differs"
-                            );
+                            if (!_expected.AsSpan().SequenceEqual(densities))
+                            {
+                                Assert.Fail($"level {level} block ({bx}, {by}, {bz}) differs");
+                            }
+
                             checkedBlocks++;
                             partial += densities.AsSpan().IndexOfAnyExcept((byte)0, (byte)255) >= 0 ? 1 : 0;
                         }
@@ -149,7 +174,11 @@ public sealed class VoxelBlocksTests : IDisposable
                 {
                     Assert.True(_boxes.TryReadBlock(0, bx, by, bz, _samples));
                     Reference(_boxes, 0, bx, by, bz, _expected);
-                    Assert.True(_expected.AsSpan().SequenceEqual(_samples), $"block ({bx}, {by}, {bz}) differs");
+                    if (!_expected.AsSpan().SequenceEqual(_samples))
+                    {
+                        Assert.Fail($"block ({bx}, {by}, {bz}) differs");
+                    }
+
                     mixed += _samples.AsSpan().IndexOfAnyExcept(_samples[0]) >= 0 ? 1 : 0;
                 }
             }
@@ -166,7 +195,8 @@ public sealed class VoxelBlocksTests : IDisposable
     public void Own_blocks_equal_the_middle_of_their_samples_and_uniform_ones_are_named_by_their_cell()
     {
         const int edge = VoxelWorld.BlockEdge;
-        const int apron = VoxelWorld.BlockApron;
+        var middle = new byte[VoxelWorld.OwnBlockVoxels];
+        var own = new byte[VoxelWorld.OwnBlockVoxels];
         foreach (var world in new[] { _slope, _boxes })
         {
             int uniform = 0,
@@ -189,30 +219,30 @@ public sealed class VoxelBlocksTests : IDisposable
 
                             if (cell.IsUniformOrEmpty)
                             {
-                                Assert.All(_own, voxel => Assert.Equal(0xEE, voxel));
+                                if (_own.AsSpan().IndexOfAnyExcept((byte)0xEE) >= 0)
+                                {
+                                    Assert.Fail($"level {level} block ({bx}, {by}, {bz}) is uniform but wrote voxels.");
+                                }
+
+                                own.AsSpan().Fill(cell.Material);
                                 uniform++;
                             }
                             else
                             {
+                                _own.AsSpan().CopyTo(own);
                                 stored++;
                             }
 
-                            for (var z = 0; z < edge; z++)
+                            CopyMiddle(_samples, middle);
+                            var first = middle.AsSpan().CommonPrefixLength(own);
+                            if (first < middle.Length)
                             {
-                                for (var y = 0; y < edge; y++)
-                                {
-                                    for (var x = 0; x < edge; x++)
-                                    {
-                                        var sample = _samples[x + apron + Edge * (y + apron + Edge * (z + apron))];
-                                        var own = cell.IsUniformOrEmpty
-                                            ? cell.Material
-                                            : _own[x + edge * (y + edge * z)];
-                                        Assert.True(
-                                            sample == own,
-                                            $"level {level} block ({bx}, {by}, {bz}) voxel ({x}, {y}, {z}): {own}, expected {sample}"
-                                        );
-                                    }
-                                }
+                                int x = first % edge,
+                                    y = first / edge % edge,
+                                    z = first / (edge * edge);
+                                Assert.Fail(
+                                    $"level {level} block ({bx}, {by}, {bz}) voxel ({x}, {y}, {z}): {own[first]}, expected {middle[first]}"
+                                );
                             }
                         }
                     }
@@ -251,7 +281,11 @@ public sealed class VoxelBlocksTests : IDisposable
 
                         Assert.True(world.TryReadBlock(level, bx, by, bz, _samples, densities));
                         var unavailable = Reference(world, level, bx, by, bz, _expected);
-                        Assert.True(_expected.AsSpan().SequenceEqual(_samples), $"edge block differs at {Differs()}");
+                        if (!_expected.AsSpan().SequenceEqual(_samples))
+                        {
+                            Assert.Fail($"edge block differs at {Differs()}");
+                        }
+
                         Assert.True(unavailable > 0, "The block's neighbours are all resident.");
                         Reference(world, level, bx, by, bz, _expected, densities: true);
                         Assert.True(_expected.AsSpan().SequenceEqual(densities), "edge block's densities differ");
@@ -279,7 +313,11 @@ public sealed class VoxelBlocksTests : IDisposable
                 {
                     Assert.True(world.TryReadBlock(0, bx, by, bz, _samples));
                     var unavailable = Reference(world, 0, bx, by, bz, _expected);
-                    Assert.True(_expected.AsSpan().SequenceEqual(_samples), $"block ({bx}, {by}, {bz}) differs");
+                    if (!_expected.AsSpan().SequenceEqual(_samples))
+                    {
+                        Assert.Fail($"block ({bx}, {by}, {bz}) differs");
+                    }
+
                     Assert.Equal(bx == firstBlockX ? 2 * Edge * Edge : 0, unavailable);
                     checkedBlocks++;
                 }
@@ -306,7 +344,11 @@ public sealed class VoxelBlocksTests : IDisposable
                     {
                         Assert.True(world.TryReadBlock(level, bx, by, bz, _samples));
                         var unavailable = Reference(world, level, bx, by, bz, _expected);
-                        Assert.True(_expected.AsSpan().SequenceEqual(_samples), $"differs at {Differs()}");
+                        if (!_expected.AsSpan().SequenceEqual(_samples))
+                        {
+                            Assert.Fail($"differs at {Differs()}");
+                        }
+
                         Assert.Equal(by == lowest || by == highest ? 2 * Edge * Edge : 0, unavailable);
                     }
                 }
@@ -482,60 +524,6 @@ public sealed class VoxelBlocksTests : IDisposable
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
 
-    [Fact]
-    public void Reading_a_block_is_fast()
-    {
-        // Blocks that hold the slope's surface, level 0: the slowest kind. Printed, not asserted.
-        var blocks = new List<(int X, int Y, int Z)>();
-        for (var bz = -8; bz < 8; bz++)
-        {
-            for (var bx = -8; bx < 8; bx++)
-            {
-                foreach (var by in SurfaceBlocks(0))
-                {
-                    if (_slope.TryReadBlock(0, bx, by, bz, _samples) && _slope.BlockMayHaveSurface(0, bx, by, bz))
-                    {
-                        blocks.Add((bx, by, bz));
-                    }
-                }
-            }
-        }
-
-        Assert.True(blocks.Count > 50);
-        for (var warm = 0; warm < 5; warm++)
-        {
-            foreach (var (x, y, z) in blocks)
-            {
-                _slope.TryReadBlock(0, x, y, z, _samples);
-            }
-        }
-
-        const int Rounds = 20;
-        var start = Stopwatch.GetTimestamp();
-        for (var round = 0; round < Rounds; round++)
-        {
-            foreach (var (x, y, z) in blocks)
-            {
-                _slope.TryReadBlock(0, x, y, z, _samples);
-            }
-        }
-
-        var read = Stopwatch.GetElapsedTime(start).TotalMilliseconds / (Rounds * blocks.Count);
-        start = Stopwatch.GetTimestamp();
-        for (var round = 0; round < Rounds; round++)
-        {
-            foreach (var (x, y, z) in blocks)
-            {
-                _slope.BlockMayHaveSurface(0, x, y, z);
-            }
-        }
-
-        var test = Stopwatch.GetElapsedTime(start).TotalMilliseconds / (Rounds * blocks.Count);
-        _output.WriteLine(
-            $"{blocks.Count} surface blocks: TryReadBlock {read * 1000:F1} us each, BlockMayHaveSurface {test * 1000:F2} us each"
-        );
-    }
-
     /// <summary>The block heights that hold the surfaces of the test worlds at a level.</summary>
     private static IEnumerable<int> SurfaceBlocks(int level)
     {
@@ -610,6 +598,22 @@ public sealed class VoxelBlocksTests : IDisposable
         }
 
         return unavailable;
+    }
+
+    /// <summary>Copies the block's own voxels, the middle of its samples without the apron, into <paramref name="middle"/>.</summary>
+    private static void CopyMiddle(ReadOnlySpan<byte> samples, Span<byte> middle)
+    {
+        const int edge = VoxelWorld.BlockEdge;
+        const int apron = VoxelWorld.BlockApron;
+        for (var z = 0; z < edge; z++)
+        {
+            for (var y = 0; y < edge; y++)
+            {
+                samples
+                    .Slice(apron + Edge * (y + apron + Edge * (z + apron)), edge)
+                    .CopyTo(middle.Slice(edge * (y + edge * z)));
+            }
+        }
     }
 
     private string Differs()

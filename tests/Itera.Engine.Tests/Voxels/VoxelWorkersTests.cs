@@ -81,7 +81,8 @@ public sealed class VoxelWorkersTests : IDisposable
     [Fact]
     public void One_and_four_workers_build_the_same_columns()
     {
-        var columns = Enumerable.Range(0, 12).Select(i => new ColumnKey(0, i % 4 - 2, i / 4 - 1)).ToArray();
+        // One column for each of the four workers. Each column's content is pinned by the tests below.
+        var columns = Enumerable.Range(0, 4).Select(i => new ColumnKey(0, i % 2 - 1, i / 2 - 1)).ToArray();
 
         var one = HashesWith(1, columns);
         var four = HashesWith(4, columns);

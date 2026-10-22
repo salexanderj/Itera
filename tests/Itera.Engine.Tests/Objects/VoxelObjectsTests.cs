@@ -89,11 +89,25 @@ public sealed class VoxelObjectsTests : IDisposable
                 {
                     for (var y = 0; y < size.Y; y++)
                     {
-                        for (var x = 0; x < size.X; x++)
+                        var row = VoxelConstants.ChunkSize * (y + VoxelConstants.ChunkSize * z);
+                        var materialsAt = expectedMaterials
+                            .AsSpan(row, size.X)
+                            .CommonPrefixLength(materials.AsSpan(row, size.X));
+                        if (materialsAt < size.X)
                         {
-                            var i = x + VoxelConstants.ChunkSize * (y + VoxelConstants.ChunkSize * z);
-                            Assert.Equal(expectedMaterials[i], materials[i]);
-                            Assert.Equal(expectedDensities[i], densities[i]);
+                            Assert.Fail(
+                                $"Part {p} level {level} voxel ({materialsAt}, {y}, {z}): material {materials[row + materialsAt]}, expected {expectedMaterials[row + materialsAt]}."
+                            );
+                        }
+
+                        var densitiesAt = expectedDensities
+                            .AsSpan(row, size.X)
+                            .CommonPrefixLength(densities.AsSpan(row, size.X));
+                        if (densitiesAt < size.X)
+                        {
+                            Assert.Fail(
+                                $"Part {p} level {level} voxel ({densitiesAt}, {y}, {z}): density {densities[row + densitiesAt]}, expected {expectedDensities[row + densitiesAt]}."
+                            );
                         }
                     }
                 }

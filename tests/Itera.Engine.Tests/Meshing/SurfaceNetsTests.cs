@@ -1,15 +1,12 @@
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Itera.Engine.Meshing;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Voxels;
-using Xunit.Abstractions;
 
 namespace Itera.Engine.Tests.Meshing;
 
-[RunsLong]
-public sealed class SurfaceNetsTests(ITestOutputHelper output)
+public sealed class SurfaceNetsTests
 {
     private const int Side = SurfaceNets.SampleSide;
 
@@ -555,22 +552,61 @@ public sealed class SurfaceNetsTests(ITestOutputHelper output)
         }
 
         // Positions in doubles and in floats may round to neighbouring steps of the packed position: matched by the
-        // nearest vertex instead of by sorting.
-        var actual = buffers.Vertices.AsSpan(0, buffers.VertexCount).ToArray();
+        // nearest vertex instead of by sorting. The vertices are kept in buckets of one voxel, and a vertex is looked for
+        // in the 27 buckets round its bucket, which hold every vertex within 1 of it, far more than the 1e-3 allowed.
+        var buckets = new Dictionary<(int X, int Y, int Z), List<MeshVertex>>();
+        foreach (var vertex in buffers.Vertices.AsSpan(0, buffers.VertexCount))
+        {
+            var key = BucketOf(MeshVertex.DecodePosition(vertex));
+            if (!buckets.TryGetValue(key, out var bucket))
+            {
+                buckets[key] = bucket = [];
+            }
+
+            bucket.Add(vertex);
+        }
+
         foreach (var vertex in expected)
         {
             var position = MeshVertex.DecodePosition(vertex);
-            var nearest = actual.MinBy(other => Vector3.DistanceSquared(MeshVertex.DecodePosition(other), position));
-            Assert.True(
-                Vector3.Distance(MeshVertex.DecodePosition(nearest), position) < 1e-3f,
-                $"vertex at {position}"
-            );
+            var home = BucketOf(position);
+            MeshVertex nearest = default;
+            var nearestDistance = float.PositiveInfinity;
+            for (var dz = -1; dz <= 1; dz++)
+            {
+                for (var dy = -1; dy <= 1; dy++)
+                {
+                    for (var dx = -1; dx <= 1; dx++)
+                    {
+                        if (!buckets.TryGetValue((home.X + dx, home.Y + dy, home.Z + dz), out var bucket))
+                        {
+                            continue;
+                        }
+
+                        foreach (var other in bucket)
+                        {
+                            var distance = Vector3.DistanceSquared(MeshVertex.DecodePosition(other), position);
+                            if (distance < nearestDistance)
+                            {
+                                nearestDistance = distance;
+                                nearest = other;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!(MathF.Sqrt(nearestDistance) < 1e-3f))
+            {
+                Assert.Fail($"vertex at {position}");
+            }
+
             Assert.Equal(MeshVertex.DecodeMaterial(vertex), MeshVertex.DecodeMaterial(nearest));
             Assert.InRange(MeshVertex.DecodeOpenness(nearest) - MeshVertex.DecodeOpenness(vertex), -1, 1);
-            Assert.True(
-                Vector3.Dot(MeshVertex.DecodeNormal(vertex), MeshVertex.DecodeNormal(nearest)) > 0.9999f,
-                $"normal of the vertex at {position}"
-            );
+            if (!(Vector3.Dot(MeshVertex.DecodeNormal(vertex), MeshVertex.DecodeNormal(nearest)) > 0.9999f))
+            {
+                Assert.Fail($"normal of the vertex at {position}");
+            }
         }
 
         for (var i = 0; i < buffers.IndexCount; i++)
@@ -578,6 +614,9 @@ public sealed class SurfaceNetsTests(ITestOutputHelper output)
             Assert.True(buffers.Indices[i] < buffers.VertexCount);
         }
     }
+
+    private static (int X, int Y, int Z) BucketOf(Vector3 position) =>
+        ((int)MathF.Floor(position.X), (int)MathF.Floor(position.Y), (int)MathF.Floor(position.Z));
 
     [Fact]
     public void TheSameInputMakesTheSameBytes()
@@ -632,44 +671,6 @@ public sealed class SurfaceNetsTests(ITestOutputHelper output)
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.True(triangles > 20000);
         Assert.Equal(0, allocated);
-    }
-
-    [Fact]
-    public void ABlockCrossedByGentleGroundTakesThisLongPerCall()
-    {
-        var samples = Build((x, y, z) => y < 14 + 0.1f * x + 0.05f * z ? (byte)(1 + (y < 10 ? 1 : 0)) : (byte)0);
-        var mesher = new SurfaceNets();
-        var buffers = new MeshBuffers();
-        var triangles = mesher.Mesh(samples, buffers);
-        // Run for half a second first, so the JIT has promoted the mesher to its optimised code.
-        var watch = Stopwatch.StartNew();
-        while (watch.ElapsedMilliseconds < 500)
-        {
-            mesher.Mesh(samples, buffers);
-        }
-
-        const int calls = 300;
-        watch.Restart();
-        for (var i = 0; i < calls; i++)
-        {
-            mesher.Mesh(samples, buffers);
-        }
-
-        watch.Stop();
-        output.WriteLine(
-            $"Gentle slope: {triangles} triangles, {buffers.VertexCount} vertices, {watch.Elapsed.TotalMilliseconds / calls:F3} ms per call"
-        );
-
-        var air = new byte[SurfaceNets.SampleCount];
-        watch.Restart();
-        for (var i = 0; i < calls; i++)
-        {
-            mesher.Mesh(air, buffers);
-        }
-
-        watch.Stop();
-        output.WriteLine($"All air: {watch.Elapsed.TotalMilliseconds / calls:F4} ms per call");
-        Assert.True(triangles > 0);
     }
 
     /// <summary>
@@ -831,18 +832,6 @@ public sealed class SurfaceNetsTests(ITestOutputHelper output)
 
         Assert.NotEqual(-1, found);
         return found;
-    }
-
-    private static int CompareVertices(MeshVertex a, MeshVertex b)
-    {
-        var byXY = a.PositionXY.CompareTo(b.PositionXY);
-        if (byXY != 0)
-        {
-            return byXY;
-        }
-
-        var byZ = a.PositionZMaterial.CompareTo(b.PositionZMaterial);
-        return byZ != 0 ? byZ : a.Normal.CompareTo(b.Normal);
     }
 
     private static int[] Indices(MeshBuffers buffers)
@@ -1022,8 +1011,6 @@ public sealed class SurfaceNetsTests(ITestOutputHelper output)
 
             return (int)Math.Round(255 - solid);
         }
-
-        public static MeshVertex Vertex(byte[] samples, (int X, int Y, int Z) cell) => Vertex(samples, null, cell);
 
         public static MeshVertex Vertex(byte[] samples, byte[]? densities, (int X, int Y, int Z) cell)
         {

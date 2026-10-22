@@ -18,7 +18,23 @@ public sealed class MeshMoverWorldFixture : IMoverFeatures, IDisposable
     /// <summary>How far the floor's triangles reach from the middle, in metres.</summary>
     private const float Edge = 4;
 
-    private readonly BoxesGenerator _features = new(MoverWorldFixture.Floor, MoverWorldFixture.Boxes());
+    /// <summary>The side of a tile of <see cref="_tiles"/>, in cells.</summary>
+    private const int TileShift = 4;
+
+    private const int TileCells = 1 << TileShift;
+
+    private readonly VoxelBox[] _boxes = MoverWorldFixture.Boxes();
+
+    /// <summary>
+    /// For each tile of columns, the generator of the boxes that meet it, in their original order (later boxes override
+    /// earlier ones). A cell is looked up in its tile's few boxes, not in all of them. Made on first use.
+    /// </summary>
+    private readonly Dictionary<(int X, int Z), BoxesGenerator> _tiles = [];
+
+    // The tile of the last cell asked for: a body's cells lie together.
+    private (int X, int Z) _lastTile = (int.MinValue, 0);
+    private BoxesGenerator? _last;
+
     private readonly PhysicsWorld _physics = new(NullLogger<PhysicsWorld>.Instance);
 
     public MeshMoverWorldFixture()
@@ -73,8 +89,30 @@ public sealed class MeshMoverWorldFixture : IMoverFeatures, IDisposable
 
     public bool Blocks(int x, int y, int z)
     {
-        var material = _features.Material(x, y, z);
+        var tile = (x >> TileShift, z >> TileShift);
+        if (tile != _lastTile || _last is null)
+        {
+            _last = Tile(tile.Item1, tile.Item2);
+            _lastTile = tile;
+        }
+
+        var material = _last.Material(x, y, z);
         return material != VoxelConstants.Air && material != BoxesGenerator.Leaves;
+    }
+
+    private BoxesGenerator Tile(int tileX, int tileZ)
+    {
+        if (_tiles.TryGetValue((tileX, tileZ), out var tile))
+        {
+            return tile;
+        }
+
+        int x0 = tileX * TileCells,
+            z0 = tileZ * TileCells;
+        var meeting = _boxes
+            .Where(box => box.X0 < x0 + TileCells && box.X1 >= x0 && box.Z0 < z0 + TileCells && box.Z1 >= z0)
+            .ToArray();
+        return _tiles[(tileX, tileZ)] = new BoxesGenerator(MoverWorldFixture.Floor, meeting);
     }
 
     public void Dispose()
