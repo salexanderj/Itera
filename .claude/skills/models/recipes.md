@@ -112,6 +112,8 @@ recipe: it writes the clips on the model's own nodes, and the model's `merge_cli
   to each game joint; a source with more spine joints than the game's skips the extra ones.
 - `scale` turns the BVH's units into metres. A source whose skeleton does not rest in the game rig's T-pose names a
   frame that holds one (`restFrame`).
+- Captured feet are the least reliable part. Aim them (`aim`), mend their glitches (`repair`), and leave the toes out
+  of the map, so the model keeps its own foot shape. Name the source's ground joints in `feet`.
 - Find one cycle (`from` to `to`) in a straight, steady stretch: the frame a stride's pose comes round again.
 - Read the report's slide and the seam, then look at the poses with `views MODEL.glb --clip NAME@SECONDS`.
 - Inside a recipe, `clips.retarget` does the same for an armature the recipe exports itself.

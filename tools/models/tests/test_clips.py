@@ -365,3 +365,66 @@ class RetargetRestAndGroundTests(unittest.TestCase):
         bpy.context.scene.frame_set(2)
         direction = (_tail_world(target, "arm") - _head_world(target, "arm")).normalized()
         self.assertLess((direction - Vector((math.sqrt(0.5), 0, math.sqrt(0.5)))).length, 1e-4, direction)
+
+
+class RetargetAimTests(unittest.TestCase):
+    """retarget's aim: a foot whose captured roll flips keeps its parent's roll, and only its direction is copied."""
+
+    def setUp(self):
+        utils.reset_scene()
+        bones = [("leg", (0, 0, 1), (0, 0, 0.1), 0.0, None), ("foot", (0, 0, 0.1), (0, -0.3, 0.1), 0.0, "leg")]
+        self.source = utils.make_armature("Captured", bones, location=(-3, 0, 0))
+        self.target = utils.make_armature("Model", bones, location=(4, 0, 0))
+        clips.new_clip(self.source, "Step", frame_end=3)
+        foot = self.source.data.bones["foot"].matrix_local
+        head = Vector((0, 0, 0.1))
+        rolled = Matrix.Translation(head) @ Matrix.Rotation(math.pi, 4, "Y") @ Matrix.Translation(-head) @ foot
+        up = Matrix.Rotation(math.radians(-30), 4, "X")
+        pitched = Matrix.Translation(head) @ up @ Matrix.Translation(-head) @ foot
+        self.rest_side = foot.to_3x3() @ Vector((1, 0, 0))
+        for frame, matrix in ((1, foot), (2, rolled), (3, pitched)):
+            RetargetRestAndGroundTests._key(self.source, "foot", frame, matrix)
+
+    def _foot(self, frame):
+        bpy.context.scene.frame_set(frame)
+        return (self.target.matrix_world @ self.target.pose.bones["foot"].matrix).to_3x3()
+
+    def test_an_aimed_foot_ignores_its_roll_and_follows_its_direction(self):
+        clips.retarget(self.source, self.target, {"leg": "leg", "foot": "foot"}, 1, 3, name="Aimed", aim=("foot",))
+
+        rest = self._foot(1)
+        self.assertLess(max(abs(a - b) for ra, rb in zip(self._foot(2), rest) for a, b in zip(ra, rb)), 1e-4)
+        direction = self._foot(3) @ Vector((0, 1, 0))  # pitched up 30 degrees
+        self.assertLess((direction - Vector((0, -math.cos(math.radians(30)), 0.5))).length, 1e-4, direction)
+
+    def test_an_aimed_foot_keeps_the_difference_of_the_rests_slopes(self):
+        # The target's foot slopes 30 degrees down at rest where the source's lies level: the source's foot raised 30
+        # degrees from its rest raises the target's from its own, to level.
+        utils.reset_scene()
+        level = [("leg", (0, 0, 1), (0, 0, 0.1), 0.0, None), ("foot", (0, 0, 0.1), (0, -0.3, 0.1), 0.0, "leg")]
+        slope = Vector((0, -0.3 * math.cos(math.radians(30)), 0.1 - 0.3 * math.sin(math.radians(30))))
+        sloped = [level[0], ("foot", (0, 0, 0.1), tuple(slope), 0.0, "leg")]
+        source = utils.make_armature("Level", level, location=(-3, 0, 0))
+        target = utils.make_armature("Sloped", sloped, location=(4, 0, 0))
+        clips.new_clip(source, "Raise", frame_end=2)
+        foot = source.data.bones["foot"].matrix_local
+        head = Vector((0, 0, 0.1))
+        up = Matrix.Rotation(math.radians(-30), 4, "X")
+        raised = Matrix.Translation(head) @ up @ Matrix.Translation(-head) @ foot
+        for frame, matrix in ((1, foot), (2, raised)):
+            RetargetRestAndGroundTests._key(source, "foot", frame, matrix)
+
+        clips.retarget(source, target, {"leg": "leg", "foot": "foot"}, 1, 2, name="Raised", aim=("foot",))
+
+        bpy.context.scene.frame_set(1)
+        rest = (target.matrix_world @ target.pose.bones["foot"].matrix).to_3x3() @ Vector((0, 1, 0))
+        self.assertLess((rest - (slope - head).normalized()).length, 1e-4, rest)  # at the source's rest, the target's
+        bpy.context.scene.frame_set(2)
+        raised_direction = (target.matrix_world @ target.pose.bones["foot"].matrix).to_3x3() @ Vector((0, 1, 0))
+        self.assertLess((raised_direction - Vector((0, -1, 0))).length, 1e-4, raised_direction)
+
+    def test_without_aim_the_roll_is_copied(self):
+        clips.retarget(self.source, self.target, {"leg": "leg", "foot": "foot"}, 1, 3, name="Copied")
+
+        rolled_side = self._foot(2) @ Vector((1, 0, 0))
+        self.assertLess((rolled_side + self.rest_side).length, 1e-4)  # turned half round about its length

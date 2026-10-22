@@ -648,10 +648,13 @@ def command_retarget(arguments) -> int:
     for clip in report["clips"]:
         print(
             f"  {clip['name']}: {clip['seconds']:.2f} s, travel {clip['speed']:.2f} m/s at {clip['way']:.0f} deg "
-            f"(turned {clip['turned']:.0f} deg); feet show {clip['shown_speed']:.2f} m/s, "
+            f"(turned {clip['turned']:.0f} deg, hips down {clip.get('lowered', 0) * 100:.1f} cm); "
+            f"feet show {clip['shown_speed']:.2f} m/s, "
             f"slide {clip['slide'] * 100:.1f} cm (limit {clip['slide_limit'] * 100:.1f}); "
             f"seam {clip['seam'] * 100:.2f} cm against {clip['inside'] * 100:.2f} inside"
         )
+        if clip.get("mended"):
+            print(f"    mended: {', '.join(f'{joint} {count} frames' for joint, count in clip['mended'].items())}")
     print(f"  report:    {report_path}")
     print(f"  log:       {log_path}")
     return 0

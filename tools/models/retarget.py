@@ -15,6 +15,10 @@ The spec is a JSON file. Its paths are from its own folder:
         "NAME": {
           "scale": 0.01,           # metres a unit of the source's BVH files
           "restFrame": 1,          # optional: a frame holding the T-pose, when the skeleton's own rest is not one
+          "aim": ["LeftFoot"],     # optional: joints whose direction alone is copied (clips.retarget's aim)
+          "feet": ["LeftToeBase"], # optional: the source's joints on the ground (default: those mapped to "feet")
+          "repair": [{"joints": ["foot_l"], "mostSpeed": 1500, "mostAngle": 90}],   # optional: model joints whose
+                                   # capture errors are mended (gltf_clips.repair), in degrees a second and degrees
           "hips": "Hips",          # the source's hips
           "map": {"Hips": "pelvis", "LeftUpLeg": "thigh_l", ...}   # source joint: model joint
         }
@@ -27,10 +31,11 @@ The spec is a JSON file. Its paths are from its own folder:
 
 Each clip's BVH is one member of a zip, fetched by range requests into the cache and pinned by its SHA-256 (fetch.py).
 Frames `from` to `to`, as Blender numbers a BVH's frames (its first is 1), are one cycle: `to`'s pose is `from`'s come
-round again. The clip is retargeted onto the model
-(clips.retarget), read back onto the model's nodes, turned to face the model's front, its travel taken out, and closed
-at the seam (gltf_clips.py). The report gives, for each clip, the travel taken out (the speed and the way it went),
-and the checks of motion.py on the result: the speed its feet show, their largest slide, and the seam's jolt.
+round again. The clip is retargeted onto the model (clips.retarget), read back onto the model's nodes at every source
+frame, mended where the capture breaks, turned to face the model's front, its travel taken out, closed at the seam, and
+spread over the keys written (gltf_clips.py). The report gives, for each clip, the travel taken out (the speed and the
+way it went), and the checks of motion.py on the result: the speed its feet show, their largest slide, and the seam's
+jolt.
 """
 
 import json
@@ -90,17 +95,28 @@ def retarget_clip(spec: dict, entry: dict, target, nodes, turns) -> tuple[dict, 
         hips=(source_spec["hips"], spec["hips"]),
         name=entry["name"],
         rest_frame=rest_frame,
-        feet=tuple(reverse[foot] for foot in spec["feet"]),
+        feet=tuple(source_spec.get("feet") or (reverse[foot] for foot in spec["feet"])),
+        aim=tuple(source_spec.get("aim", ())),
     )
     bpy.data.objects.remove(source)
     bpy.data.actions.remove(source_action)
 
     seconds = (last - first) / source_fps
-    count = max(1, round(seconds * spec.get("fps", 30)))
-    frames = [first + (last - first) * k / count for k in range(count + 1)]
     joints = sorted({nodes.index(joint) for joint in joint_map.values()} | {nodes.index(spec["hips"])})
     target.animation_data.action = action
-    sampled = gltf_clips.sample(target, nodes, turns, frames, joints)
+    # Every source frame of the cycle: mended, settled, then spread over the keys written.
+    sampled = gltf_clips.sample(target, nodes, turns, list(range(first, last + 1)), joints)
+    mended = {}
+    for rule in source_spec.get("repair", []):
+        found = gltf_clips.repair(
+            sampled,
+            nodes,
+            [nodes.index(joint) for joint in rule["joints"]],
+            1.0 / source_fps,
+            rule["mostSpeed"],
+            rule.get("mostAngle"),
+        )
+        mended.update({joint: len(frames) for joint, frames in zip(rule["joints"], found) if frames})
     settled = gltf_clips.settle(
         sampled,
         nodes,
@@ -108,9 +124,12 @@ def retarget_clip(spec: dict, entry: dict, target, nodes, turns) -> tuple[dict, 
         nodes.index(spec["left"]),
         nodes.index(spec["right"]),
         seconds,
+        [nodes.index(foot) for foot in spec.get("feet", [])],
     )
     target.animation_data.action = None
     bpy.data.actions.remove(action)
+    count = max(1, round(seconds * spec.get("fps", 30)))
+    sampled = gltf_clips.resample(sampled, count)
 
     hips = nodes.index(spec["hips"])
     keys = {
@@ -120,7 +139,8 @@ def retarget_clip(spec: dict, entry: dict, target, nodes, turns) -> tuple[dict, 
         "translations": {hips: [locals_[hips].translation.copy() for locals_ in sampled]},
     }
     report = {"name": entry["name"], "member": entry["member"], "sha256": digest, "frames": count + 1,
-              "seconds": round(seconds, 4), **settled, **_checks(spec, nodes, sampled, seconds / count)}
+              "seconds": round(seconds, 4), "mended": mended, **settled,
+              **_checks(spec, nodes, sampled, seconds / count)}
     return keys, report
 
 

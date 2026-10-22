@@ -11,7 +11,7 @@ import math
 
 import bpy
 from bpy_extras import anim_utils
-from mathutils import Matrix
+from mathutils import Matrix, Quaternion, Vector
 
 
 def new_clip(
@@ -118,6 +118,7 @@ def retarget(
     name: str | None = None,
     rest_frame: int | None = None,
     feet: tuple[str, ...] | None = None,
+    aim: tuple[str, ...] | None = None,
 ) -> bpy.types.Action:
     """Copies the source armature's animation onto the target armature, and returns the new action on the target.
 
@@ -145,6 +146,12 @@ def retarget(
     armature objects' origins, for a source whose capture puts its floor anywhere: each rig's hips height is taken over
     its rest's lowest joint, the source's ground is its feet's lowest point over the frames retargeted, and the target's
     hips stand as high over its rest's lowest joint as the source's over that ground, by the ratio.
+
+    `aim` names source bones whose direction alone is copied: the target bone turns from its rest on its posed parent
+    by the least turn that points it along the source bone (head to tail), so it keeps its parent's roll. The source's
+    direction is first turned by the difference between the two rests' directions, carried round with its heading, so
+    a foot whose ankle-to-toe line slopes more in one rig than in the other still stands flat. It is for a joint whose
+    captured roll cannot be trusted, such as a foot whose turn about its own length flips.
     """
     if source.animation_data is None or source.animation_data.action is None:
         raise ValueError(f"{source.name} has no animation to retarget")
@@ -212,15 +219,28 @@ def retarget(
                     ground = min(ground, (source_world @ bone.head).z, (source_world @ bone.tail).z)
 
     reverse = {target_bone: source_bone for source_bone, target_bone in joint_map.items()}
+    aimed = set(aim or ())
+    # Each aimed bone's rest direction in the source and the target, in the scene.
+    rest_aims = {
+        source_bone: (
+            source_rest[source_bone].to_3x3() @ Vector((0.0, 1.0, 0.0)),
+            target_world.to_3x3() @ target_rest[joint_map[source_bone]].to_3x3() @ Vector((0.0, 1.0, 0.0)),
+        )
+        for source_bone in aimed
+    }
     try:
         for frame in range(frame_start, frame_end + 1):
             scene.frame_set(frame)
             deltas = {}
+            directions = {}
             for source_bone in joint_map:
                 world = source_world @ source.pose.bones[source_bone].matrix
                 deltas[source_bone] = (
                     world.to_3x3().normalized() @ source_rest[source_bone].to_3x3().normalized().inverted()
                 )
+                if source_bone in aimed:
+                    along = world.to_3x3() @ Vector((0.0, 1.0, 0.0))
+                    directions[source_bone] = _rest_turned(along, *rest_aims[source_bone])
             hips_offset = None
             if hips is not None:
                 pose_position = (source_world @ source.pose.bones[hips_source].matrix).translation
@@ -246,10 +266,16 @@ def retarget(
                     pose_matrices[bone_name] = unposed
                     continue
 
-                rotation_world = (
-                    deltas[source_bone] @ target_world_rotation @ target_rest[bone_name].to_3x3().normalized()
-                )
-                rotation = target_world_rotation.inverted() @ rotation_world
+                if source_bone in aimed:
+                    # Turn the bone from its rest on its posed parent to point along the source's, keeping its roll.
+                    along = target_world_rotation.inverted() @ directions[source_bone]
+                    rest_turn = unposed.to_3x3().normalized()
+                    rotation = (rest_turn @ Vector((0.0, 1.0, 0.0))).rotation_difference(along).to_matrix() @ rest_turn
+                else:
+                    rotation_world = (
+                        deltas[source_bone] @ target_world_rotation @ target_rest[bone_name].to_3x3().normalized()
+                    )
+                    rotation = target_world_rotation.inverted() @ rotation_world
                 pose = rotation.to_4x4()
                 pose.translation = unposed.translation
                 if bone_name == hips_target:
@@ -266,6 +292,18 @@ def retarget(
     finally:
         scene.frame_set(original_frame)
     return action
+
+
+def _rest_turned(direction: Vector, source_rest: Vector, target_rest: Vector) -> Vector:
+    """`direction`, a source bone's, turned as its rest's direction turns into the target's rest's, the turn carried
+    round the up axis (z) by how far the direction's heading is from its rest's."""
+
+    def heading(vector: Vector) -> float:
+        return math.atan2(vector.x, -vector.y) if vector.x * vector.x + vector.y * vector.y > 1e-12 else 0.0
+
+    offset = source_rest.rotation_difference(target_rest)
+    yaw = Quaternion((0.0, 0.0, 1.0), heading(direction) - heading(source_rest))
+    return (yaw @ offset @ yaw.inverted()) @ direction
 
 
 def remove_clip(name: str) -> None:

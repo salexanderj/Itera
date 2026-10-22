@@ -108,6 +108,45 @@ class SettleTests(unittest.TestCase):
         self.assertGreater(left.normalized().x, 0.99)  # the hips' left is the model's left again
 
 
+class RepairAndResampleTests(unittest.TestCase):
+    """repair and resample on a joint's turns made by hand, a sample a tenth of a second."""
+
+    def setUp(self):
+        self.nodes = gltf_clips.Nodes({"nodes": [{"name": "root", "children": [1]}, {"name": "foot"}]})
+
+    @staticmethod
+    def _cycle(angles):
+        return [{1: Matrix.Rotation(math.radians(angle), 4, "X")} for angle in angles]
+
+    @staticmethod
+    def _angles(sampled):
+        return [round(math.degrees(locals_[1].to_euler().x), 3) for locals_ in sampled]
+
+    def test_a_spike_and_a_stretch_held_too_far_are_mended_from_the_good_turns_either_side(self):
+        sampled = self._cycle([0, 10, 20, 170, 30, 40, 50, 120, 120, 80])
+
+        (mended,) = gltf_clips.repair(sampled, self.nodes, [1], 0.1, 600, 100)
+
+        # 20 to 170 and back, and 50 to 120, turn faster than 600 degrees a second; 170 and 120 lie past 100.
+        self.assertEqual(mended, [2, 3, 4, 6, 7, 8])
+        self.assertEqual(self._angles(sampled), [0, 10, 17.5, 25, 32.5, 40, 50, 60, 70, 80])
+
+    def test_nothing_broken_stays_as_it_is(self):
+        sampled = self._cycle([0, 10, 20, 30])
+
+        self.assertEqual(gltf_clips.repair(sampled, self.nodes, [1], 0.1, 600, 100), [[]])
+        self.assertEqual(self._angles(sampled), [0, 10, 20, 30])
+
+    def test_resampling_spreads_keys_evenly_between_the_samples(self):
+        sampled = self._cycle([0, 40, 80])
+        sampled[2][1].translation = Vector((0, 2, 0))
+
+        out = gltf_clips.resample(sampled, 4)
+
+        self.assertEqual(self._angles(out), [0, 20, 40, 60, 80])
+        self.assertAlmostEqual(out[3][1].translation.y, 1.0, places=6)
+
+
 class WriteTests(unittest.TestCase):
     def test_the_clips_go_on_the_models_own_nodes_the_same_bytes_each_time(self):
         document = {

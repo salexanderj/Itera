@@ -115,14 +115,81 @@ def sample(armature: bpy.types.Object, nodes: Nodes, turns: dict, frames: list, 
     return sampled
 
 
-def settle(sampled: list, nodes: Nodes, hips: int, left: int, right: int, seconds: float) -> dict:
+def repair(sampled: list, nodes: Nodes, joints: list, step: float, most_speed: float, most_angle: float | None) -> list:
+    """Mends a joint's capture errors in sampled locals (`step` seconds apart), in place: a sample next to a turn faster
+    than `most_speed` degrees a second, or turned further than `most_angle` degrees from its rest, is broken, and each
+    run of broken samples takes the turns between the good samples either side of it (the nearest one's at the ends).
+    Places and sizes stay. Returns the samples mended, by joint, in order."""
+    mended = []
+    for joint in joints:
+        turns = [locals_[joint].to_quaternion() for locals_ in sampled]
+        rest = nodes.rest[joint].to_quaternion()
+        broken = [False] * len(turns)
+        for k, turn in enumerate(turns):
+            if most_angle is not None and _between(rest, turn) > most_angle:
+                broken[k] = True
+            if k and _between(turns[k - 1], turn) / step > most_speed:
+                broken[k - 1] = broken[k] = True
+        if all(broken) or not any(broken):
+            mended.append([])
+            continue
+        fixed = [k for k, bad in enumerate(broken) if bad]
+        k = 0
+        while k < len(turns):
+            if not broken[k]:
+                k += 1
+                continue
+            end = k
+            while end < len(turns) and broken[end]:
+                end += 1
+            before, after = k - 1, end
+            for j in range(k, end):
+                if before < 0:
+                    turn = turns[after]
+                elif after >= len(turns):
+                    turn = turns[before]
+                else:
+                    turn = turns[before].slerp(turns[after], (j - before) / (after - before))
+                location, _, scale = sampled[j][joint].decompose()
+                sampled[j][joint] = Matrix.LocRotScale(location, turn, scale)
+            k = end
+        mended.append(fixed)
+    return mended
+
+
+def resample(sampled: list, count: int) -> list:
+    """`count + 1` samples spread evenly over `sampled`'s span, from the first to the last: each node's turn between the
+    two nearest samples by the shorter arc, and its place straight between them."""
+    last = len(sampled) - 1
+    out = []
+    for k in range(count + 1):
+        at = last * k / count
+        low = min(int(at), last)
+        high = min(low + 1, last)
+        share = at - low
+        locals_ = {}
+        for node, first in sampled[low].items():
+            second = sampled[high][node]
+            location = first.translation.lerp(second.translation, share)
+            _, _, scale = first.decompose()
+            turn = first.to_quaternion().slerp(second.to_quaternion(), share)
+            locals_[node] = Matrix.LocRotScale(location, turn, scale)
+        out.append(locals_)
+    return out
+
+
+def settle(
+    sampled: list, nodes: Nodes, hips: int, left: int, right: int, seconds: float, feet: list | None = None
+) -> dict:
     """Makes a sampled cycle (its last sample the pose its first came back to) a loop played in place.
 
     The cycle is turned about the model's up to face its front: the hips' line from the right joint to the left one,
     on average, lies along the rest's. Its travel along the ground is taken out of the hips, which keep their place
-    over the rest's on average, so the game moves the body. What is left at the seam, in every node's turn and the
-    hips' place, is spread back over the cycle, so the last sample is the first. Returns the travel taken out, in the
-    model's metres and axes, its speed, and its way: degrees round from the front to the left.
+    over the rest's on average, so the game moves the body. With `feet`, the hips go down or up until the feet's lowest
+    point over the cycle is as low as at rest: a capture's floor read from its own feet errs where they do. What is
+    left at the seam, in every node's turn and the hips' place, is spread back over the cycle, so the last sample is the
+    first. Returns the travel taken out, in the model's metres and axes, its speed, its way (degrees round from the
+    front to the left), and how far the hips went down.
     """
     count = len(sampled) - 1
     if count < 1:
@@ -146,7 +213,11 @@ def settle(sampled: list, nodes: Nodes, hips: int, left: int, right: int, second
         middle += matrix.translation - travel * (k / count)
     middle /= count
     rest_hips = nodes.rest_world[hips].translation
-    shift = Vector((rest_hips.x - middle.x, 0.0, rest_hips.z - middle.z))
+    lowered = 0.0
+    if feet:
+        lowest = min(world[foot].translation.y for world in worlds for foot in feet)
+        lowered = lowest - min(nodes.rest_world[foot].translation.y for foot in feet)
+    shift = Vector((rest_hips.x - middle.x, -lowered, rest_hips.z - middle.z))
     parent = nodes.parent.get(hips)
     for k, (locals_, world, matrix) in enumerate(zip(sampled, worlds, placed)):
         matrix.translation = matrix.translation - travel * (k / count) + shift
@@ -172,6 +243,7 @@ def settle(sampled: list, nodes: Nodes, hips: int, left: int, right: int, second
         "speed": round(travel.length / seconds, 4) if seconds > 0 else 0.0,
         "way": round(way, 1),
         "turned": round(math.degrees(turn), 1),
+        "lowered": round(lowered, 4),
     }
 
 
@@ -246,6 +318,11 @@ def _local(node: dict) -> Matrix:
         Quaternion((w, x, y, z)),
         Vector(node.get("scale", (1.0, 1.0, 1.0))),
     )
+
+
+def _between(first: Quaternion, second: Quaternion) -> float:
+    """The least turn from one rotation to another, in degrees: a rotation and its negative are the same turn."""
+    return math.degrees(2 * math.acos(min(1.0, abs(first.dot(second)))))
 
 
 def _continuous(rotations: list) -> list:
