@@ -85,7 +85,8 @@ Open edges only warn, since a leaf card or a banner may need them. Edges shared 
   Name the clips that loop in `LOOPS`, and the feet and the clips they stand or walk in in `FEET` and `PLANTED`: the
   build then fails a loop that does not close and a foot that slides. A clip's speed in `PLANTED` is its own speed
   over the ground, not a body's tuned speed. Give `None`, so the build takes the speed its feet show and prints it.
-  The game keeps that number in one place, and its test compares it with the clip (`ClipGround` in `tests/Shared`).
+  The game measures that number from the model (the engine's `ClipGround`), or keeps it in one place that a test
+  compares with the clip.
   Natural human motion does not come out well from code: take it from motion capture and retarget it to the game's
   rig.
 - **Licences:** use CC0 sources (Poly Haven, ambientCG, CMU motion capture) or CC BY ones with credit (100STYLE).

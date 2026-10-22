@@ -180,8 +180,14 @@ class FootSlideTests(unittest.TestCase):
         standing = [(0.0, 0.0, 0.0)] * 5
 
         self.assertAlmostEqual(motion.ground_speed([lifting], 0.1, 0.02), 1.0)
-        self.assertAlmostEqual(motion.ground_speed([lifting, standing], 0.1, 0.02), 3 * 0.1 / (7 * 0.1))
+        # A still foot moves no step back, so it adds nothing.
+        self.assertAlmostEqual(motion.ground_speed([lifting, standing], 0.1, 0.02), 1.0)
         self.assertEqual(motion.ground_speed([[(0.0, 0.0, 0.0), (0.0, 0.1, 0.5)]], 0.1, 0.02), 0.0)
+
+    def test_a_foot_swinging_forward_along_the_ground_counts_only_its_steps_back(self):
+        shuffle = [(0.0, 0.1 * k, 0.0) for k in range(4)] + [(0.0, 0.3 - 0.1 * k, 0.0) for k in range(1, 4)]
+
+        self.assertAlmostEqual(motion.ground_speed([shuffle], 0.1, 0.02), 1.0)
 
     def test_a_foot_moving_back_with_the_ground_does_not_slide(self):
         path = [(0.0, 0.1 * k, 0.0) for k in range(6)]

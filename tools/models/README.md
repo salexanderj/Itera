@@ -76,9 +76,9 @@ def build(ctx):  # required: makes the model in bpy.context.scene
   plays at its own pace, so a walk in place must move its planted foot back at that speed. `PLANTED` gives it in m/s,
   or `None` for the speed the clip's feet show on the ground. The summary prints the speed each clip shows either way.
 - A game plays a stepping clip at its body's speed over the clip's own, so tuning how fast a body moves does not make
-  its feet slide. The clip's own speed is a fact of the clip, not a tuned speed. The game keeps it in one place, its
-  data or its code, and its tests compare that number with the clip as the engine poses it (`ClipGround` in
-  `tests/Shared`). So a recipe gives `None` rather than a copy of the game's number.
+  its feet slide. The clip's own speed is a fact of the clip, not a tuned speed. The game measures it from the model
+  as it loads (the engine's `ClipGround`, by the same rule as `None`), or keeps it in one place that its tests compare
+  with the clip. So a recipe gives `None` rather than a copy of the game's number.
 - The scene is empty when `build(ctx)` starts: no cube, camera, or light. Units are metric, one unit a metre.
 - The recipe's folder is on `sys.path`, so a recipe can import a module beside it, and so can `itera_models`.
 - The recipe may call `ctx.export(...)` itself, to choose what to export. If it does not, the toolkit exports the

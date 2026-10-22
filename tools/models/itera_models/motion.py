@@ -218,18 +218,20 @@ def _check_loop(name, armature, points, frames, height, loop_gap, seam_jolt, pro
 
 
 def ground_speed(paths: list[list[tuple]], seconds_per_frame: float, contact: float) -> float:
-    """The speed a clip's feet show on the ground: how fast, on average, they move back while on it, in m/s.
+    """The speed a clip's feet show on the ground: how fast, on average, they move back while planted, in m/s.
 
-    `paths` holds each foot's places frame by frame. A foot is on the ground as foot_slide says, and only moves between
-    two frames on the ground count. 0 when no foot is on the ground at two frames in a row.
+    `paths` holds each foot's places frame by frame. A foot is planted between two frames when it is on the ground at
+    both, as foot_slide says, and moves back from one to the other; a foot low but moving forward is starting its swing.
+    The engine's ClipGround goes by the same rule. 0 when no foot is planted between two frames.
     """
     back = 0.0
     steps = 0
     for path in paths:
         lowest = min(place[2] for place in path)
         for k in range(1, len(path)):
-            if path[k - 1][2] <= lowest + contact and path[k][2] <= lowest + contact:
-                back -= (path[k][0] - path[k - 1][0]) * FORWARD[0] + (path[k][1] - path[k - 1][1]) * FORWARD[1]
+            move = -((path[k][0] - path[k - 1][0]) * FORWARD[0] + (path[k][1] - path[k - 1][1]) * FORWARD[1])
+            if path[k - 1][2] <= lowest + contact and path[k][2] <= lowest + contact and move > 0:
+                back += move
                 steps += 1
     return back / (steps * seconds_per_frame) if steps else 0.0
 

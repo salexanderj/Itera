@@ -57,6 +57,11 @@ Posing allocates nothing:
 - `WritePalette(locals, palette)` writes each joint's inverse bind, then its place in the asset's space:
   `v * InverseBind * Global`, with `Global = local * offset * parent's Global`. `Globals` alone works out the globals.
 
+`ClipGround` measures the speed over the ground a stepping clip shows at its own pace: how fast its planted feet move
+back, along the way opposite its travel. A foot is planted while within `ClipGround.Contact` of the rig's height of its
+lowest point and moving back. A game plays such a clip at its body's speed over this one, so its feet do not slide. The
+model toolkit's clip checks go by the same rule.
+
 A pose can be shaped before its palette, also with no allocation:
 
 - `FindJoint(name)` finds a joint.
@@ -198,5 +203,5 @@ vertex whose weights sum to zero, so such a file is `Refused`. `tools/ModelCheck
 ### Tests
 
 `GltfImportTests`, `RigImportTests`, `RigClipTests`, `RigShapingTests`, `MeshAssetsTests`, `TextureDecodeTests`,
-`MipChainTests`, `MeshTangentsTests`, `CompressedTexturesTests`, `MeshPointsTests`, `ModelInspectionTests`, and
-`OctahedralTests`.
+`MipChainTests`, `MeshTangentsTests`, `CompressedTexturesTests`, `MeshPointsTests`, `ModelInspectionTests`,
+`ClipGroundTests`, and `OctahedralTests`.
