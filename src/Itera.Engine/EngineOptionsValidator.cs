@@ -36,11 +36,9 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
             failures.Add($"{Prefix}Application:Name must not be empty.");
         }
 
-        if (!IsFolderName(application.DataFolder))
+        if (DataFolderProblem(application.DataFolder) is { } dataFolder)
         {
-            failures.Add(
-                $"{Prefix}Application:DataFolder must hold 1 to 64 letters, digits, '-', or '_'; it is '{application.DataFolder}'."
-            );
+            failures.Add(dataFolder);
         }
 
         if (options.Save.Name is { } save && !IsSaveName(save))
@@ -317,6 +315,15 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
             && (upper.StartsWith("COM", StringComparison.Ordinal) || upper.StartsWith("LPT", StringComparison.Ordinal))
             && char.IsAsciiDigit(upper[3]);
     }
+
+    /// <summary>
+    /// Why <paramref name="dataFolder"/> cannot be <see cref="ApplicationSettings.DataFolder"/>, naming the key, or null
+    /// when it can. Log setup reads the name before this validator runs (<see cref="Diagnostics.LogSession"/>).
+    /// </summary>
+    internal static string? DataFolderProblem(string dataFolder) =>
+        IsFolderName(dataFolder)
+            ? null
+            : $"{Prefix}Application:DataFolder must hold 1 to 64 letters, digits, '-', or '_'; it is '{dataFolder}'.";
 
     // One rule on every platform: the characters a file name may hold differ between Windows, Linux, and macOS.
     internal static bool IsSaveName(string value) =>

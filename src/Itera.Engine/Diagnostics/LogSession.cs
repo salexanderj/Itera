@@ -33,10 +33,21 @@ public sealed class LogSession
     /// <summary>Why <see cref="FilePath"/> is null although file logging was requested, or null.</summary>
     public string? SetupError { get; }
 
-    /// <summary>Creates the log folder, prunes old files, and picks this run's file name. Never throws.</summary>
+    /// <summary>
+    /// Creates the log folder, prunes old files, and picks this run's file name. Never throws. A data folder that is not
+    /// a plain name makes no folder and no file, and <see cref="SetupError"/> says why.
+    /// </summary>
     public static LogSession Create(LoggingSettings settings, ApplicationSettings application, DateTime? nowUtc = null)
     {
         var startedAtUtc = nowUtc ?? DateTime.UtcNow;
+
+        // This runs before the options' validator, which then stops the run with the same message. A path here would
+        // put the logs outside the data folders' root, and its separators make the file pattern invalid.
+        if (EngineOptionsValidator.DataFolderProblem(application.DataFolder) is { } problem)
+        {
+            return new LogSession(application.DataFolder, null, startedAtUtc, default, problem);
+        }
+
         var directory = Path.GetFullPath(settings.Directory ?? LogPaths.DefaultDirectory(application));
 
         if (!settings.FileEnabled)

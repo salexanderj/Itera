@@ -1,4 +1,7 @@
 using Itera.Engine.Diagnostics;
+using Itera.Engine.Tests.Matches;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Itera.Engine.Tests.Diagnostics;
 
@@ -56,6 +59,37 @@ public sealed class LogSessionTests : IDisposable
         Assert.Equal(3, session.Pruned.Deleted);
         Assert.Single(Directory.EnumerateFiles(_directory));
         Assert.NotNull(session.FilePath);
+    }
+
+    [Fact]
+    public void A_data_folder_that_is_a_path_makes_no_folder_and_no_file()
+    {
+        var application = new ApplicationSettings { DataFolder = _directory };
+
+        var session = LogSession.Create(new LoggingSettings(), application);
+
+        Assert.Null(session.FilePath);
+        Assert.StartsWith("Engine:Application:DataFolder must hold", session.SetupError, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(_directory));
+    }
+
+    [Fact]
+    public void The_engine_given_a_data_folder_that_is_a_path_stops_at_its_options_with_the_key_named()
+    {
+        using var services = EngineComposition.Build(
+            new Dictionary<string, string?>
+            {
+                ["Engine:Logging:FileEnabled"] = "true",
+                ["Engine:Application:DataFolder"] = _directory,
+            }
+        );
+
+        var failure = Assert.Throws<OptionsValidationException>(() =>
+            services.GetRequiredService<IOptions<EngineOptions>>().Value
+        );
+
+        Assert.Contains("Engine:Application:DataFolder must hold", failure.Message, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(_directory));
     }
 
     public void Dispose()
