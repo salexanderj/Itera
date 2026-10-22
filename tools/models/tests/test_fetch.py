@@ -17,6 +17,54 @@ def _file_url(path) -> str:
     return Path(path).resolve().as_uri()
 
 
+class ZipMemberTests(unittest.TestCase):
+    """zip_member on a zip served from a `file://` URL: one stored and one deflated member, each read alone."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.cache = self.root / "cache"
+        self.zip = self.root / "set.zip"
+        self.walk = b"MOTION walk " * 500
+        self.run = b"MOTION run " * 500
+        with zipfile.ZipFile(self.zip, "w") as archive:
+            archive.writestr("set/Walk/walk.bvh", self.walk, compress_type=zipfile.ZIP_DEFLATED)
+            archive.writestr("set/Run/run.bvh", self.run, compress_type=zipfile.ZIP_STORED)
+            archive.writestr("set/notes.txt", b"notes")
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_reads_a_deflated_and_a_stored_member_by_name_into_the_cache(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            walk, walk_digest = fetch.zip_member(_file_url(self.zip), "set/Walk/walk.bvh", self.cache)
+            run, _ = fetch.zip_member(_file_url(self.zip), "set/Run/run.bvh", self.cache, name="fast.bvh")
+
+        self.assertEqual(walk.read_bytes(), self.walk)
+        self.assertEqual(walk, self.cache / "walk.bvh")
+        self.assertEqual(walk_digest, hashlib.sha256(self.walk).hexdigest())
+        self.assertEqual(run.read_bytes(), self.run)
+        self.assertEqual(run.name, "fast.bvh")
+
+    def test_a_pinned_member_comes_from_the_cache_and_a_wrong_pin_drops_it(self):
+        pin = hashlib.sha256(self.walk).hexdigest()
+        fetch.zip_member(_file_url(self.zip), "set/Walk/walk.bvh", self.cache, sha256=pin)
+        self.zip.unlink()
+        path, _ = fetch.zip_member(_file_url(self.zip), "set/Walk/walk.bvh", self.cache, sha256=pin)
+        self.assertEqual(path.read_bytes(), self.walk)
+
+        with self.assertRaises(ValueError) as raised:
+            fetch.zip_member(_file_url(self.zip), "set/Walk/walk.bvh", self.cache, sha256="0" * 64)
+        self.assertIn(pin, str(raised.exception))
+        self.assertFalse(path.exists())
+
+    def test_a_member_the_zip_lacks_is_named(self):
+        with self.assertRaises(ValueError) as raised:
+            fetch.zip_member(_file_url(self.zip), "set/Swim/swim.bvh", self.cache)
+        self.assertIn("set/Swim/swim.bvh", str(raised.exception))
+        self.assertEqual(list(self.cache.iterdir()), [])
+
+
 class FetchTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

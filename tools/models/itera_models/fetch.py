@@ -15,9 +15,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import struct
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+import zlib
 from pathlib import Path
 
 #: Poly Haven's file list for one asset. Tests point this at a `file://` folder.
@@ -94,6 +97,45 @@ def fetch(
         )
     if sha256 is None:
         print(f'fetch: {file_name} has SHA-256 {digest}; pin it with fetch(..., sha256="{digest}")')
+    return target, digest
+
+
+def zip_member(
+    url: str,
+    member: str,
+    cache_dir: str | os.PathLike,
+    sha256: str | None = None,
+    name: str | None = None,
+) -> tuple[Path, str]:
+    """Fetches one member of a remote zip into `cache_dir` once and returns `(path, sha256)`, as `fetch` does.
+
+    Only the zip's directory and the member's own bytes are read, by HTTP range requests, so one file of an archive of
+    gigabytes (a motion capture set) costs its own size. The member is found by its full name in the zip, unpacked
+    (stored or deflated), and checked against the zip's CRC; then the pin works as in `fetch`. `name` is the file name
+    in the cache, the member's last part by default. `file://` URLs work, which tests use.
+    """
+    cache = Path(cache_dir)
+    cache.mkdir(parents=True, exist_ok=True)
+    target = cache / (name or member.rsplit("/", 1)[-1])
+    if not target.exists():
+        content = _remote_zip_member(url, member)
+        partial = target.with_name(target.name + ".part")
+        try:
+            partial.write_bytes(content)
+            os.replace(partial, target)
+        finally:
+            if partial.exists():
+                partial.unlink()
+
+    digest = sha256_of(target)
+    if sha256 is not None and digest != sha256.lower():
+        target.unlink()
+        raise ValueError(
+            f"{target.name} from {member} in {url} has SHA-256 {digest}, but the recipe pins {sha256.lower()}. "
+            "The file was removed from the cache."
+        )
+    if sha256 is None:
+        print(f'fetch: {target.name} has SHA-256 {digest}; pin it with sha256="{digest}"')
     return target, digest
 
 
@@ -183,6 +225,68 @@ def _download(url: str, target: Path) -> None:
     finally:
         if partial.exists():
             partial.unlink()
+
+
+def _read_range(url: str, start: int | None, length: int) -> bytes:
+    """`length` bytes of `url` from `start`, or its last `length` bytes when `start` is None: an HTTP range request,
+    or a seek in a `file://` URL's file."""
+    if url.startswith("file://"):
+        with open(urllib.request.url2pathname(urllib.parse.urlparse(url).path), "rb") as handle:
+            if start is None:
+                handle.seek(0, os.SEEK_END)
+                start = max(0, handle.tell() - length)
+            handle.seek(start)
+            return handle.read(length)
+    span = f"bytes=-{length}" if start is None else f"bytes={start}-{start + length - 1}"
+    request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT, "Range": span})
+    try:
+        with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
+            body = response.read()
+            if response.status == 206:
+                return body
+    except urllib.error.HTTPError as error:
+        # A server may refuse a tail longer than the whole file; then the whole file is the answer.
+        if error.code != 416 or start is not None:
+            raise
+        with urllib.request.urlopen(
+            urllib.request.Request(url, headers={"User-Agent": _USER_AGENT}), timeout=_TIMEOUT_SECONDS
+        ) as response:
+            body = response.read()
+    # The whole file came back (a small file, or a server that ignores ranges).
+    return body[-length:] if start is None else body[start : start + length]
+
+
+def _remote_zip_member(url: str, member: str) -> bytes:
+    """One member's unpacked bytes, read from a remote zip's end record, directory, and local header."""
+    tail = _read_range(url, None, 1 << 16)
+    end = tail.rfind(b"PK\x05\x06")
+    if end < 0:
+        raise ValueError(f"{url}: no zip end record in its last 64 KB")
+    directory_size, directory_offset = struct.unpack_from("<II", tail, end + 12)
+    directory = _read_range(url, directory_offset, directory_size)
+    at = 0
+    while at + 46 <= len(directory) and directory[at : at + 4] == b"PK\x01\x02":
+        method, _, _, crc, packed, size, name_length, extra_length, comment_length = struct.unpack_from(
+            "<HHHIIIHHH", directory, at + 10
+        )
+        local_offset = struct.unpack_from("<I", directory, at + 42)[0]
+        entry = directory[at + 46 : at + 46 + name_length].decode("utf-8")
+        at += 46 + name_length + extra_length + comment_length
+        if entry != member:
+            continue
+        header = _read_range(url, local_offset, 30)
+        local_name, local_extra = struct.unpack_from("<HH", header, 26)
+        data = _read_range(url, local_offset + 30 + local_name + local_extra, packed)
+        if method == 8:
+            content = zlib.decompress(data, -15)
+        elif method == 0:
+            content = data
+        else:
+            raise ValueError(f"{member} in {url} is packed by method {method}, neither stored nor deflated")
+        if len(content) != size or zlib.crc32(content) != crc:
+            raise ValueError(f"{member} in {url} does not match its size and CRC in the zip's directory")
+        return content
+    raise ValueError(f"{url} has no member {member}")
 
 
 def _extract(archive: zipfile.ZipFile, member: str, target: Path) -> Path:

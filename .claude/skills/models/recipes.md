@@ -105,17 +105,16 @@ ctx.export(clips=["Walk", "Idle"])                            # only these, each
 
 ## Motion capture onto the game's rig
 
-```python
-bpy.ops.import_anim.bvh(filepath=str(path), global_scale=0.01, axis_forward="-Z", axis_up="Y")
-source = bpy.context.object
-moved = clips.retarget(source, armature, JOINT_MAP, 1, 120, hips=("Hips", "pelvis"), name="Climb")
-clips.remove_clip(source.animation_data.action.name)          # else the exporter writes the source's clip too
-bpy.data.objects.remove(source)
-```
+A looping clip from motion capture goes through `tools/models/build.py retarget SPEC.json` (its README), not a
+recipe: it writes the clips on the model's own nodes, and the model's `merge_clips.py` list adds them.
 
-- `JOINT_MAP` maps each source joint to a game joint. Unmapped joints keep their rest pose.
-- Name the feet and the clip in `FEET` and `PLANTED` to measure its slide. Check the clip in the engine with
-  `views --clip Climb@1.5`, and look for limbs that cross.
+- The spec's `map` takes each source joint to a game joint; unmapped joints keep their rest pose. Map one source joint
+  to each game joint; a source with more spine joints than the game's skips the extra ones.
+- `scale` turns the BVH's units into metres. A source whose skeleton does not rest in the game rig's T-pose names a
+  frame that holds one (`restFrame`).
+- Find one cycle (`from` to `to`) in a straight, steady stretch: the frame a stride's pose comes round again.
+- Read the report's slide and the seam, then look at the poses with `views MODEL.glb --clip NAME@SECONDS`.
+- Inside a recipe, `clips.retarget` does the same for an armature the recipe exports itself.
 
 ## Materials
 

@@ -7,6 +7,8 @@ should know it.
 
 from __future__ import annotations
 
+import math
+
 import bpy
 from bpy_extras import anim_utils
 from mathutils import Matrix
@@ -114,6 +116,8 @@ def retarget(
     frame_end: int,
     hips: tuple[str, str] | None = None,
     name: str | None = None,
+    rest_frame: int | None = None,
+    feet: tuple[str, ...] | None = None,
 ) -> bpy.types.Action:
     """Copies the source armature's animation onto the target armature, and returns the new action on the target.
 
@@ -132,6 +136,15 @@ def retarget(
     remove it with `remove_clip` (or delete the source rig and its actions) before exporting the target.
 
     Heights for the hips ratio are measured from each armature object's origin, which should be at the feet.
+
+    The source's rest pose must match the target's (a T-pose to a T-pose). `rest_frame` takes the source's pose at that
+    frame as its rest instead of its skeleton's own: for a source whose skeleton rests in another pose but whose
+    animation holds a T-pose, as the CMU set's BVH conversion does in its first frame.
+
+    `feet` names the source's bones that stand on the ground. With them, heights are measured from the ground, not the
+    armature objects' origins, for a source whose capture puts its floor anywhere: each rig's hips height is taken over
+    its rest's lowest joint, the source's ground is its feet's lowest point over the frames retargeted, and the target's
+    hips stand as high over its rest's lowest joint as the source's over that ground, by the ratio.
     """
     if source.animation_data is None or source.animation_data.action is None:
         raise ValueError(f"{source.name} has no animation to retarget")
@@ -154,22 +167,50 @@ def retarget(
     target_world_rotation = target_world.to_3x3().normalized()
 
     # Rest data, read once. Armature-space rest matrices of every bone.
-    source_rest = {n: source_world @ source.data.bones[n].matrix_local for n in joint_map}
+    scene = bpy.context.scene
+    original_frame = scene.frame_current
+    if rest_frame is None:
+        source_rest = {n: source_world @ source.data.bones[n].matrix_local for n in joint_map}
+    else:
+        scene.frame_set(rest_frame)
+        source_rest = {n: source_world @ source.pose.bones[n].matrix for n in joint_map}
+        if hips is not None and hips_source not in source_rest:
+            source_rest[hips_source] = source_world @ source.pose.bones[hips_source].matrix
     target_rest = {bone.name: bone.matrix_local.copy() for bone in target.data.bones}
     order = _parent_first(target)
     hip_ratio = 1.0
     hips_source_rest_position = hips_target_rest_position = None
     if hips is not None:
-        hips_source_rest_position = (source_world @ source.data.bones[hips_source].matrix_local).translation
+        hips_source_rest_position = (
+            source_rest[hips_source] if hips_source in source_rest
+            else source_world @ source.data.bones[hips_source].matrix_local
+        ).translation.copy()
         hips_target_rest_position = target_world @ target_rest[hips_target].translation
-        source_height = hips_source_rest_position.z - source_world.translation.z
-        target_height = hips_target_rest_position.z - target_world.translation.z
+        source_floor, target_floor = source_world.translation.z, target_world.translation.z
+        if feet:
+            source_ends = (
+                [end for bone in source.pose.bones for end in (bone.head, bone.tail)]
+                if rest_frame is not None
+                else [end for bone in source.data.bones for end in (bone.head_local, bone.tail_local)]
+            )
+            source_floor = min((source_world @ end).z for end in source_ends)
+            target_floor = min(
+                (target_world @ end).z for bone in target.data.bones for end in (bone.head_local, bone.tail_local)
+            )
+        source_height = hips_source_rest_position.z - source_floor
+        target_height = hips_target_rest_position.z - target_floor
         if abs(source_height) < 1e-6:
             raise ValueError(f"Source bone '{hips_source}' rests at floor height, so its movement cannot be scaled")
         hip_ratio = target_height / source_height
+        if feet:
+            # The source's ground: its feet's lowest point over the frames retargeted.
+            ground = math.inf
+            for frame in range(frame_start, frame_end + 1):
+                scene.frame_set(frame)
+                for foot in feet:
+                    bone = source.pose.bones[foot]
+                    ground = min(ground, (source_world @ bone.head).z, (source_world @ bone.tail).z)
 
-    scene = bpy.context.scene
-    original_frame = scene.frame_current
     reverse = {target_bone: source_bone for source_bone, target_bone in joint_map.items()}
     try:
         for frame in range(frame_start, frame_end + 1):
@@ -184,6 +225,10 @@ def retarget(
             if hips is not None:
                 pose_position = (source_world @ source.pose.bones[hips_source].matrix).translation
                 hips_offset = (pose_position - hips_source_rest_position) * hip_ratio  # world space
+                if feet:
+                    hips_offset.z = (
+                        target_floor + (pose_position.z - ground) * hip_ratio - hips_target_rest_position.z
+                    )
 
             pose_matrices: dict[str, Matrix] = {}
             for bone_name in order:

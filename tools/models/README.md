@@ -13,6 +13,7 @@ tools/models/build.py docs [--force]                                 # the local
 tools/models/build.py views RECIPE.py|MODEL.glb [--clip Walk@0.4]   # drawn by the engine on a neutral stage
 tools/models/build.py views RECIPE.py --world PLACE                  # drawn by the engine in the game's world
 tools/models/build.py verify [RECIPE.py ...]                         # rebuild and compare with the committed files
+tools/models/build.py retarget SPEC.json                             # motion capture onto a model's rig, as loops
 tools/models/build.py selftest                                       # the toolkit's own tests
 ```
 
@@ -133,8 +134,16 @@ Each module's docstrings say more.
   bone), `limit_and_normalise(obj)`, and `weight_stats(obj)`.
 - `clips`: `new_clip(armature, name, frame_start, frame_end=...)` (an action with its slot, as Blender 5 needs),
   `key_pose(armature, frame, pose)`, `bake(armature, start, end)` (constraints and IK to plain keys),
-  `retarget(source, target, joint_map, start, end, hips=None)`, `remove_clip(name)`, and `clip_keys(armature)`. After a
-  retarget, remove the source's clip: the exporter writes every action with bone keys it finds.
+  `retarget(source, target, joint_map, start, end, hips=None, rest_frame=None, feet=None)`, `remove_clip(name)`, and
+  `clip_keys(armature)`. After a retarget, remove the source's clip: the exporter writes every action with bone keys it
+  finds. `rest_frame` takes a frame holding the source's T-pose as its rest; `feet` measures the hips' heights from the
+  ground (the source's feet over the clip), for a capture whose floor is not at its origin.
+- `gltf_clips`: a model's clips as glTF data on the model's own nodes. `corrections(armature, nodes)` finds each
+  imported bone's fixed turn from its node, `sample(...)` reads a posed clip back onto the nodes, `settle(...)` makes a
+  sampled cycle a loop played in place facing the model's front, and `write(path, document, clips)` writes clips that
+  `merge_clips.py` takes over.
+- `fetch.zip_member(url, member, cache_dir, sha256)` fetches one file of a remote zip by range requests, as `fetch`
+  does a whole file: one motion capture clip of an archive of gigabytes.
 - `materials`: `pbr(name, color, normal, roughness, ao, metal, normal_directx, tiling)` and `pbr_from_maps(name, maps)`
   (from `ctx.polyhaven` or `ctx.ambientcg`), `grime(material)` (darker crevices and corners, seen in a bake), and
   `bake(obj, size, maps, out_dir=...)` (Cycles on the CPU; unwraps when there is no UV map; replaces the object's
@@ -198,3 +207,21 @@ the texture tool, and builds it again to check that the output is identical. A t
 
 `merge_clips.py LIST.json` builds a skinned `.glb` from a base file and clips chosen from it and from other files on
 the same rig. Its docstring has the list's format.
+
+## retarget
+
+`retarget SPEC.json` puts motion capture clips (BVH files, each in a zip) on a model's rig and writes them into one
+`.glb` on the model's own nodes, which a `merge_clips.py` list then adds to the model (`retarget.py`'s docstring has
+the spec's form). For each clip it:
+
+- fetches the BVH by range requests and checks its pinned SHA-256;
+- turns the source to face as the model's rest does, and retargets it (`clips.retarget`, with the source's rest frame
+  and its feet for the hips' heights);
+- reads one cycle, the spec's frames `from` to `to`, back onto the model's nodes at the spec's keys a second;
+- turns the cycle to face the model's front by its hips, takes its travel out of the hips so the game moves the body,
+  and spreads what is left at the seam over the cycle, so it loops;
+- reports the travel taken out (its speed and way), and `motion.py`'s checks: the speed the feet show, their largest
+  slide, and the seam.
+
+Capture is raw. Expect feet that slide a little more than in clips made by hand, and look at the result with `views
+--clip` before using it. The work folder is `<agent data folder>/ModelBuilds/retarget-<SPEC>/`, or `--work DIR`.

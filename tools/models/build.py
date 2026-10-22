@@ -30,6 +30,7 @@ MODELS_DIR = Path(__file__).resolve().parent
 REPO = MODELS_DIR.parents[1]
 PIN_FILE = MODELS_DIR / "blender.json"
 RUN_RECIPE = MODELS_DIR / "run_recipe.py"
+RETARGET = MODELS_DIR / "retarget.py"
 TESTS_RUN = MODELS_DIR / "tests" / "run.py"
 TEST_RECIPE = MODELS_DIR / "tests" / "recipes" / "TestCrate" / "TestCrate.py"
 BLENDER_FLAGS = ("-b", "--factory-startup", "--python-exit-code", "1")
@@ -628,6 +629,34 @@ def command_views(arguments) -> int:
     return 0
 
 
+def command_retarget(arguments) -> int:
+    """Retargets the spec's motion capture clips onto its model's rig (retarget.py) and prints what each became."""
+    executable = check_blender()
+    spec = Path(arguments.spec).resolve()
+    if not spec.is_file():
+        raise ToolError(f"{spec}: no such spec", 2)
+    work = Path(arguments.work).resolve() if arguments.work else default_work_dir("retarget-" + spec.stem)
+    work.mkdir(parents=True, exist_ok=True)
+    report_path, log_path = work / "report.json", work / "blender.log"
+    report_path.unlink(missing_ok=True)
+    code = run_blender(executable, RETARGET, [str(spec), str(report_path)], log_path)
+    if code != 0 or not report_path.is_file():
+        print(f"retarget: Blender failed (exit {code}); the end of {log_path}:\n{log_tail(log_path)}")
+        return 1
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    print(f"retarget: {report['out']}")
+    for clip in report["clips"]:
+        print(
+            f"  {clip['name']}: {clip['seconds']:.2f} s, travel {clip['speed']:.2f} m/s at {clip['way']:.0f} deg "
+            f"(turned {clip['turned']:.0f} deg); feet show {clip['shown_speed']:.2f} m/s, "
+            f"slide {clip['slide'] * 100:.1f} cm (limit {clip['slide_limit'] * 100:.1f}); "
+            f"seam {clip['seam'] * 100:.2f} cm against {clip['inside'] * 100:.2f} inside"
+        )
+    print(f"  report:    {report_path}")
+    print(f"  log:       {log_path}")
+    return 0
+
+
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Builds game models from Python recipes run by Blender.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -666,6 +695,11 @@ def make_parser() -> argparse.ArgumentParser:
     views.add_argument("--size", type=int, default=768, help="each picture's side in pixels (default 768)")
     views.add_argument("--release", action="store_true", help="use the Release build")
     views.set_defaults(handler=command_views)
+
+    retarget = commands.add_parser("retarget", help="retarget motion capture clips onto a model's rig, as loops")
+    retarget.add_argument("spec", help="the spec (SPEC.json; retarget.py's docstring has its form)")
+    retarget.add_argument("--work", help="the work folder (default: <agent data folder>/ModelBuilds/retarget-SPEC)")
+    retarget.set_defaults(handler=command_retarget)
 
     selftest = commands.add_parser("selftest", help="run the toolkit's own tests")
     selftest.set_defaults(handler=command_selftest)

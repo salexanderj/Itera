@@ -299,3 +299,69 @@ class RetargetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RetargetRestAndGroundTests(unittest.TestCase):
+    """retarget's rest_frame (a source whose T-pose is a frame of its clip) and feet (a source whose floor is not at its
+    origin), on one-chain rigs made by hand."""
+
+    def setUp(self):
+        utils.reset_scene()
+
+    @staticmethod
+    def _key(armature, bone_name, frame, matrix):
+        pose_bone = armature.pose.bones[bone_name]
+        pose_bone.rotation_mode = "QUATERNION"
+        pose_bone.matrix = matrix
+        bpy.context.view_layer.update()
+        pose_bone.keyframe_insert("location", frame=frame)
+        pose_bone.keyframe_insert("rotation_quaternion", frame=frame)
+
+    def test_feet_measure_the_hips_from_the_ground(self):
+        # The source rests with its hips at its origin and its foot 1 m below; the target stands 0.5 m high.
+        legs = [("hips", (0, 0, 0), (0, 0, 0.2), 0.0, None), ("leg", (0, 0, 0), (0, 0, -1), 0.0, "hips")]
+        source = utils.make_armature("Captured", legs, location=(-3, 0, 0))
+        target = utils.make_armature(
+            "Short",
+            [("hips", (0, 0, 0.5), (0, 0, 0.7), 0.0, None), ("leg", (0, 0, 0.5), (0, 0, 0), 0.0, "hips")],
+            location=(4, 0, 0),
+        )
+        clips.new_clip(source, "Rise", frame_end=2)
+        rest = source.data.bones["hips"].matrix_local
+        self._key(source, "hips", 1, rest)
+        self._key(source, "hips", 2, Matrix.Translation((0.4, 0, 0.2)) @ rest)
+
+        with self.assertRaises(ValueError):  # from the origins, the source's hips stand at its floor
+            clips.retarget(source, target, {"hips": "hips", "leg": "leg"}, 1, 2, hips=("hips", "hips"), name="A")
+        clips.remove_clip("A")
+        clips.retarget(
+            source, target, {"hips": "hips", "leg": "leg"}, 1, 2, hips=("hips", "hips"), name="B", feet=("leg",)
+        )
+
+        scene = bpy.context.scene
+        scene.frame_set(1)
+        self.assertLess((_head_world(target, "hips") - Vector((4, 0, 0.5))).length, 1e-4)
+        # Half as tall: half the stride, and the hips half as far over the ground as the source's 1.2 m.
+        scene.frame_set(2)
+        self.assertLess((_head_world(target, "hips") - Vector((4.2, 0, 0.6))).length, 1e-4)
+
+    def test_a_rest_frame_stands_for_the_rest(self):
+        # The source's arm rests hanging down. Its clip holds it out along +x at frame 1 (the T-pose), then 45 degrees
+        # up.
+        source = utils.make_armature("Hanging", [("arm", (0, 0, 1), (0, 0, 0), 0.0, None)], location=(-3, 0, 0))
+        target = utils.make_armature("Out", [("arm", (0, 0, 1), (1, 0, 1), 0.0, None)], location=(4, 0, 0))
+        clips.new_clip(source, "Raise", frame_end=2)
+        rest = source.data.bones["arm"].matrix_local
+        head = Vector((0, 0, 1))
+
+        def turned(angle):
+            return Matrix.Translation(head) @ Matrix.Rotation(angle, 4, "Y") @ Matrix.Translation(-head) @ rest
+
+        self._key(source, "arm", 1, turned(-math.pi / 2))
+        self._key(source, "arm", 2, turned(-3 * math.pi / 4))
+
+        clips.retarget(source, target, {"arm": "arm"}, 1, 2, name="Raised", rest_frame=1)
+
+        bpy.context.scene.frame_set(2)
+        direction = (_tail_world(target, "arm") - _head_world(target, "arm")).normalized()
+        self.assertLess((direction - Vector((math.sqrt(0.5), 0, math.sqrt(0.5)))).length, 1e-4, direction)
