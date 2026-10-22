@@ -12,13 +12,12 @@ needs.
 
 - `tests/Itera.Modding.Tests`: the mod contract.
 - `tests/Itera.Engine.Tests`: the engine. Its folders mirror `src/Itera.Engine/`: `tests/Itera.Engine.Tests/<Area>/`
-  tests `src/Itera.Engine/<Area>/`.
+  tests `src/Itera.Engine/<Area>/`, and `docs/reference/engine-rules.md` names the rules file each folder loads.
 - `tests/Game.Tests`: the game's own. Its files belong to the game's `game-*.md` rules files by their paths.
-- `tests/Itera.MeshSample.Tests`: the sample without voxels. It plays through `HeadlessMatch`, clicks its own menu by
-  label (`SampleMenuTests` over `SampleMenuHarness`, with the engine's hooks for a game's menu tests:
-  `MatchControlStates`, `MatchControl.PendingStart` and `PendingLeave`, `PlayerSettings.WithoutFile`, and a
-  `MusicPlayer` with no audio thread), and hears its sounds with no device (`AudioService.QueueWithoutThread`).
-  `PhysicsDemoTests` plays its physics corner.
+- `tests/Itera.MeshSample.Tests`: the sample without voxels, played through `HeadlessMatch`. `SampleMenuTests` clicks
+  its menu by label (`SampleMenuHarness`, over the engine's hooks for a game's menu tests: `MatchControlStates`,
+  `MatchControl.PendingStart` and `PendingLeave`, `PlayerSettings.WithoutFile`, a `MusicPlayer` with no audio thread).
+  It hears its sounds with no device (`AudioService.QueueWithoutThread`). `PhysicsDemoTests` plays its physics corner.
 - `tests/Shared/` is compiled into the projects that use it (below).
 
 ### Shared helpers (`tests/Shared`)
@@ -44,13 +43,13 @@ needs.
 - Every measured window starts with `SystemAllocation.StartMeasurement()`, which collects gen0 first so another
   thread's collection cannot add phantom bytes. A long window measures with `SystemAllocation.BytesAllocatedWithoutCollection`,
   which runs it again when a collection fell in it.
-- Test classes run in parallel (`xunit.runner.json`). `ArchStartup`, a module initializer, makes Arch safe for that
-  before any test: it registers every value type of the engine, the game (the assembly named `Game`), and the test
-  assembly as a component, and gives `World.Worlds` room so it never grows. A component type from another library must
-  be added there.
+- Test classes run in parallel (`xunit.runner.json`). Before any test, `ArchStartup`, a module initializer, registers
+  every value type of the engine, the game (the assembly `Game`), and the test assembly as an Arch component, and gives
+  `World.Worlds` room so it never grows. A component type from another library is added there.
 - A class that reads the whole process (a garbage collection that must find a match gone, timings) goes in
   `SerialCollectionDefinition`, which runs alone after the rest.
-- A class whose tests take more than about 20 s carries `[RunsLong]`, so it starts first.
+- A class whose tests take more than about 20 s in all is split into classes of independent tests (below). One that
+  stays over it carries `[RunsLong]`, so it starts first.
 - Some checks run only in Debug. `tools/steam/upload.sh` runs the suite in Debug and in Release.
 - The test projects run with tiered compilation off (`TieredCompilation` in their csproj files), so every method is
   optimised at its first call and an allocation test never measures unoptimised library code.
@@ -61,6 +60,29 @@ needs.
   message handlers take damaged bodies and hostile values in every field, each row under the `Watchdog`
   (`HostileValues`).
 - Write a test of a game feature through `HeadlessMatch` when it needs the real world and systems (below).
+
+### Keeping tests light
+
+The suite runs often, so each test pays only for what it checks. `tools/tests/timings.py` lists the slowest classes
+and tests.
+
+- xunit runs the test classes in parallel but a class's tests one after another, so a run lasts at least as long as its
+  longest class. It makes a new instance of the class for each test: a constructor or field initialiser runs per test.
+- Make a costly setup that the tests only read once a class, in an `IClassFixture`: a game's composition and its
+  `HeadlessRun`, a voxel world, a shader compiler. Keep per-test state (an ECS world, a match) in the test.
+- A class fixture shares its state across its tests. Each test resets what the fixture can reset, and puts back any
+  other shared state it changes: a tunable, a key's binding, a setting, a queued sound.
+- A test that fails only in a full run and passes alone points first at state shared across tests: a class fixture,
+  a run-wide service, or a static.
+- Play a large map only for what it alone has. Step a match only until the checked state, in a loop with a cap, and set
+  a long timer's tunable low instead of stepping through it.
+- Measure a system's allocation at the end of a behaviour test that reaches the state, not in a scenario of its own.
+- Inside a loop over many items, build no assert message and call no assert per item: compare spans, or test the
+  condition and call `Assert.Fail` with its message only on a mismatch.
+- A random or exhaustive check runs the trials its branches need, and each theory row takes a branch of its own.
+- No wall-clock assert, no `Thread.Sleep` to order threads, and no test that only prints timings: measurements go in
+  `tools/benchmark`. Wait on an event or on the state itself, with a cap as a safety net.
+- Every test asserts what its name says, and no more than one behaviour fails it.
 
 ### The checklist tests
 
@@ -101,15 +123,6 @@ They fail when a place that must change with a feature is missed (`.claude/skill
   UI toolkit tests use `FixedTextMeasurer` and `UISurface`.
 - GPU code is tested without a device: `WorldMeshesTests` runs the world's meshes over a draw target and staging in
   memory, and `GpuLayout` compares structs with the compiled SPIR-V.
-
-### Folders of `tests/Itera.Engine.Tests`
-
-- `Voxels/`, `Objects/`, `Navigation/`, `Replication/`, `Rendering/`, `Meshing/`, `Audio/`, `Particles/`, `Physics/`,
-  `Spatial/`, `Assets/`, `Animation/`, `Maths/`, `Networking/`, `Saves/`: see the area's rules file.
-- `UI/`, `Input/`, `Settings/`, `Loading/`, `Commands/`: `.claude/rules/ui.md`, `ui-input.md`, and `ui-menu.md`.
-- `Systems/`: each engine system's behaviour and allocation, `.claude/rules/systems.md`.
-- `Matches/`, `Ecs/`, `Time/`, `Diagnostics/`, `Modding/`, `Control/`, `Configuration/`, and the project's root files:
-  `.claude/rules/engine.md`.
 
 ### Package notes
 

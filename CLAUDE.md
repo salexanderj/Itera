@@ -78,6 +78,7 @@ tools/control/game.py run "balls 8; pos"   # console commands in the running gam
 DOTNET_WATCH_SUPPRESS_EMOJIS=1 dotnet watch --non-interactive --project src/Game run -- --Engine:Control:Enabled=true
 BENCH_AGENT=1 tools/benchmark/run.sh LABEL --offscreen [ARGS]   # GPU benchmark (ask the user first)
 ITERA_WRITE_REFERENCE=1 dotnet test --filter ReferenceTests   # write docs/reference/ again
+python3 tools/tests/timings.py   # dotnet test, then its slowest classes and tests
 ```
 
 ## Subagents
@@ -111,7 +112,7 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
 - `src/Itera.Engine`: the engine. `.claude/rules/engine.md` lists its folders.
 - `src/Game`: the starter game (`GAME.md`). `tests/`: xUnit, one project per `src/` project.
 - `samples/Itera.SampleMod` is the reference mod, and `samples/Itera.MeshSample` a game without voxel terrain.
-- `tools/`: `control`, `benchmark`, `steam`, and `Textures`, each with a README.
+- `tools/`: `control`, `benchmark`, `steam`, `tests`, and `Textures`, each with a README.
 
 # Conventions
 
