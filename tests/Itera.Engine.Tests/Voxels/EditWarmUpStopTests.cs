@@ -12,20 +12,20 @@ public sealed class EditWarmUpStopTests
     private const string Steady = "rounds steady under three quarters of the first second's best";
 
     [Fact]
-    public void Code_never_optimised_stops_after_one_round()
+    public void Code_never_compiled_again_stops_after_one_round()
     {
-        var stop = new EditWarmUpStop(optimisable: false);
+        var stop = new EditWarmUpStop(recompiled: false);
 
         Assert.True(stop.Stop(400, 1000, 0.4));
         Assert.Equal(1, stop.Rounds);
         Assert.Equal(400, stop.FirstPassMilliseconds);
-        Assert.Equal("code never optimised (Debug), one round", stop.Reason);
+        Assert.Equal("code never compiled again, one round", stop.Reason);
     }
 
     [Fact]
     public void Two_rounds_in_a_row_under_half_the_first_pass_time_stop_it()
     {
-        var stop = new EditWarmUpStop(optimisable: true);
+        var stop = new EditWarmUpStop(recompiled: true);
         // The first round compiles; the next four are the first pass (150 ms at least); a fast round alone (the 7th)
         // does not stop it. Something compiles every round, so only the rounds' times can.
         double[] rounds = [300, 150, 155, 160, 150, 140, 70, 120, 70, 60, 60];
@@ -50,7 +50,7 @@ public sealed class EditWarmUpStopTests
     [Fact]
     public void Code_fast_from_the_second_round_stops_once_nothing_has_compiled_for_the_quiet_time()
     {
-        var stop = new EditWarmUpStop(optimisable: true);
+        var stop = new EditWarmUpStop(recompiled: true);
         var seconds = 0.0;
         var compiled = 0L;
         var lastCompile = 0.0;
@@ -76,7 +76,7 @@ public sealed class EditWarmUpStopTests
     public void Quiet_stretches_shorter_than_the_quiet_time_do_not_stop_it_and_the_time_limit_does()
     {
         // First-pass rounds that never speed up, with a compile every 0.75 s: 0.6 s at most without one.
-        var stop = new EditWarmUpStop(optimisable: true);
+        var stop = new EditWarmUpStop(recompiled: true);
         var seconds = 0.0;
         var compiled = 0L;
         var lastCompile = 0.0;
@@ -156,7 +156,7 @@ public sealed class EditWarmUpStopTests
     [Fact]
     public void Rounds_steady_under_three_quarters_of_the_first_seconds_best_stop_it()
     {
-        var stop = new EditWarmUpStop(optimisable: true);
+        var stop = new EditWarmUpStop(recompiled: true);
         var seconds = 0.0;
         var compiled = 0L;
         var lastCompile = 0.0;
@@ -191,7 +191,7 @@ public sealed class EditWarmUpStopTests
     public void Rounds_steady_at_more_than_three_quarters_of_the_first_seconds_best_do_not_stop_it()
     {
         // 42 ms, then 33 (0.79 of it) for good, a method compiled every 0.3 s: only the time limit stops it.
-        var stop = new EditWarmUpStop(optimisable: true);
+        var stop = new EditWarmUpStop(recompiled: true);
         var seconds = 0.0;
         var compiled = 0L;
         var lastCompile = 0.0;
@@ -247,7 +247,7 @@ public sealed class EditWarmUpStopTests
             );
         }
 
-        var stop = new EditWarmUpStop(optimisable: true);
+        var stop = new EditWarmUpStop(recompiled: true);
         for (var i = 0; i < rounds.Count; i++)
         {
             if (stop.Stop(rounds[i].Milliseconds, rounds[i].Compiled, rounds[i].Seconds))

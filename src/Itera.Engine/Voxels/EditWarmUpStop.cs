@@ -4,8 +4,9 @@ namespace Itera.Engine.Voxels;
 /// When the edit warm-up (<see cref="VoxelWorld.StartEditWarmUp"/>) stops, from each round's time and the number of
 /// methods .NET has compiled in the process (<see cref="System.Runtime.JitInfo.GetCompiledMethodCount"/>). It stops:
 /// <list type="bullet">
-/// <item>After the first round in a build whose code .NET never optimises (Debug): that round compiles the code, and
-/// more would only run out the time limit.</item>
+/// <item>After the first round where .NET never compiles the code again (its optimiser off, or tiered compilation off,
+/// which optimises each method at its first call): that round compiles the code, and more would only run out the time
+/// limit.</item>
 /// <item>When two rounds in a row take under half the first-pass time (the least of the rounds after the first):
 /// .NET has compiled the edit code again, optimised.</item>
 /// <item>When <see cref="SteadyRounds"/> rounds in a row have taken within a tenth of the best round, and that is under
@@ -22,8 +23,8 @@ namespace Itera.Engine.Voxels;
 /// <item>At <see cref="LimitSeconds"/>.</item>
 /// </list>
 /// </summary>
-/// <param name="optimisable">False in a build whose code .NET never optimises (Debug).</param>
-internal sealed class EditWarmUpStop(bool optimisable)
+/// <param name="recompiled">False where .NET never compiles the code again (its optimiser off, or tiered compilation off).</param>
+internal sealed class EditWarmUpStop(bool recompiled)
 {
     /// <summary>The rounds after the first, which compiles, whose least time is the first-pass code's.</summary>
     public const int FirstPassRounds = 4;
@@ -90,10 +91,10 @@ internal sealed class EditWarmUpStop(bool optimisable)
             _quietSince = seconds;
         }
 
-        if (!optimisable)
+        if (!recompiled)
         {
             FirstPassMilliseconds = roundMilliseconds;
-            Reason = "code never optimised (Debug), one round";
+            Reason = "code never compiled again, one round";
         }
         else if (Rounds > 1 && Rounds <= 1 + FirstPassRounds)
         {
@@ -108,14 +109,14 @@ internal sealed class EditWarmUpStop(bool optimisable)
             }
         }
 
-        if (optimisable && Rounds > 1)
+        if (recompiled && Rounds > 1)
         {
             CountSteady(roundMilliseconds, seconds);
         }
 
         if (
             Reason is null
-            && optimisable
+            && recompiled
             && Rounds > 1 + FirstPassRounds
             && seconds > EarlySeconds
             && _steadyRounds >= SteadyRounds

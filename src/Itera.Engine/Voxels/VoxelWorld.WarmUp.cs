@@ -14,8 +14,8 @@ public sealed partial class VoxelWorld
     /// voxel memory, then freed, round after round until .NET runs optimised edit code (and the memory pools have grown)
     /// or 10 s have passed (<see cref="EditWarmUpStop"/>), so the first large edit in play does not run slowly (170 ms
     /// for a 4 m sphere against 35, Release, 2026-09-28). Once, after <see cref="Initialize(ulong)"/>; not at all once an
-    /// earlier world of this run warmed the code up (<see cref="WarmUps.Edits"/>). In a build whose code .NET never
-    /// optimises (Debug), one round: it compiles the code, and more would only run out the time limit.
+    /// earlier world of this run warmed the code up (<see cref="WarmUps.Edits"/>). Where .NET never compiles the code
+    /// again (<see cref="s_codeRecompiled"/>), one round: it compiles the code, and more would only run out the time limit.
     /// </summary>
     public void StartEditWarmUp()
     {
@@ -40,7 +40,7 @@ public sealed partial class VoxelWorld
         {
             var start = Stopwatch.GetTimestamp();
             var changed = new int[VoxelConstants.BricksPerChunk];
-            var stop = new EditWarmUpStop(s_codeOptimisable);
+            var stop = new EditWarmUpStop(s_codeRecompiled);
             // .NET compiles a method again, optimised, only after 30 calls counted once no new code has been compiled for
             // a moment, which the game's start-up puts off for seconds: 40 rounds at start left the first 4 m sphere in
             // play at 170 ms against 35 (Release, 2026-09-28). So the rounds go on, spaced out, until the code is fast.
@@ -163,12 +163,13 @@ public sealed partial class VoxelWorld
     }
 
     /// <summary>
-    /// False in a build whose engine code .NET never optimises (Debug: the assembly's <see cref="DebuggableAttribute"/>
-    /// turns the JIT's optimiser off), where the warm-up's later rounds gain nothing.
+    /// False where .NET never compiles the engine's code again, so the warm-up's later rounds gain nothing: a build whose
+    /// assembly turns the JIT's optimiser off (<see cref="DebuggableAttribute"/>), and a run with tiered compilation off
+    /// (the test projects), which optimises each method at its first call.
     /// </summary>
-    private static readonly bool s_codeOptimisable = !(
-        typeof(VoxelWorld).Assembly.GetCustomAttribute<DebuggableAttribute>()?.IsJITOptimizerDisabled ?? false
-    );
+    private static readonly bool s_codeRecompiled =
+        !(typeof(VoxelWorld).Assembly.GetCustomAttribute<DebuggableAttribute>()?.IsJITOptimizerDisabled ?? false)
+        && !(AppContext.TryGetSwitch("System.Runtime.TieredCompilation", out var tiered) && !tiered);
 
     /// <summary>The materials the warm-up's clear of some materials takes.</summary>
     private static readonly byte[] s_warmSet = [1, 3];
