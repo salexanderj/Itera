@@ -13,8 +13,8 @@ A recipe is a Python file with:
     MATCH = 0.85                   # optional: the least silhouette match each reference must reach (0 to 1)
     LOOPS = ["Idle", "Walk"]       # optional: clips that loop, so their last frame must hold their first pose
     FEET = ["foot_l", "foot_r"]    # optional: the bones whose tails touch the ground
-    PLANTED = {"Idle": 0, "Walk": 1.4}    # optional: clips checked for feet that slide, each with the speed (m/s)
-                                          # the game moves the model forward while it plays
+    PLANTED = {"Idle": 0, "Walk": None}   # optional: clips checked for feet that slide, each with its own speed over
+                                          # the ground (m/s), or None for the speed its feet show
 
     def build(ctx):                # required: makes the model in bpy.context.scene
         ...

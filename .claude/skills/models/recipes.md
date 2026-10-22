@@ -95,9 +95,11 @@ ctx.export(clips=["Walk", "Idle"])                            # only these, each
 
 - Make a loop's last key equal its first, and name the clip in `LOOPS`. The build fails a loop whose last frame is off
   its first pose, or whose motion jolts at the seam.
-- Name the bones whose tails touch the ground in `FEET`, and each clip they stand or walk in in `PLANTED`, with the
-  speed the game moves the model forward while it plays: `{"Idle": 0, "Walk": 1.4}`. A walk in place moves its planted
-  foot back at the walk's speed. The toolkit's README gives the limits.
+- Name the bones whose tails touch the ground in `FEET`, and each clip they stand or walk in in `PLANTED`:
+  `{"Idle": 0, "Walk": None}`. `None` takes the clip's own speed from its feet, and the build prints it. A walk in place
+  moves its planted foot back at that speed. The toolkit's README gives the limits.
+- The game plays a stepping clip at its body's speed over the clip's own. It keeps the clip's speed in one place (its
+  data or its code), and a test of the game compares that number with the model (`ClipGround` in `tests/Shared`).
 - Key whole poses at a few frames, and let the curves fill between them.
 - Use IK constraints for feet and hands, then bake them to keys before the export.
 

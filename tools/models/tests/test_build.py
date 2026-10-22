@@ -194,13 +194,18 @@ class CommandTests(unittest.TestCase):
     def test_the_clip_checks_print_on_one_line_in_centimetres(self):
         motion = {
             "clips": {
-                "Walk": {"loop": {"gap": 0.0021}, "feet": {"foot_l": {"slide": 0.004}, "foot_r": {"slide": 0.012}}},
-                "Idle": {"feet": {"foot_l": {"slide": 0.0}}},
+                "Walk": {
+                    "loop": {"gap": 0.0021},
+                    "speed": 1.4,
+                    "feet": {"foot_l": {"slide": 0.004}, "foot_r": {"slide": 0.012}},
+                },
+                "Idle": {"speed": 0.0, "feet": {"foot_l": {"slide": 0.0}}},
                 "Wave": {},
             }
         }
         self.assertEqual(
-            "Walk (loop gap 0.2 cm, slide 1.2 cm); Idle (slide 0.0 cm); Wave", build.describe_motion(motion)
+            "Walk (loop gap 0.2 cm, slide 1.2 cm at 1.40 m/s shown); Idle (slide 0.0 cm at 0.00 m/s shown); Wave",
+            build.describe_motion(motion),
         )
         self.assertEqual("no clips", build.describe_motion({"clips": {}}))
 

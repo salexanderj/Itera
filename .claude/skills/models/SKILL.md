@@ -83,8 +83,11 @@ Open edges only warn, since a leaf card or a banner may need them. Edges shared 
   mesh, then copy them to the real mesh, for a creature.
 - **Motion:** mechanical, cyclic, and stylised motion keyed in code works (a lid, a gun's recoil, a creature's gait).
   Name the clips that loop in `LOOPS`, and the feet and the clips they stand or walk in in `FEET` and `PLANTED`: the
-  build then fails a loop that does not close and a foot that slides. Natural human motion does not come out well from
-  code: take it from motion capture and retarget it to the game's rig.
+  build then fails a loop that does not close and a foot that slides. A clip's speed in `PLANTED` is its own speed
+  over the ground, not a body's tuned speed. Give `None`, so the build takes the speed its feet show and prints it.
+  The game keeps that number in one place, and its test compares it with the clip (`ClipGround` in `tests/Shared`).
+  Natural human motion does not come out well from code: take it from motion capture and retarget it to the game's
+  rig.
 - **Licences:** use CC0 sources (Poly Haven, ambientCG, CMU motion capture) or CC BY ones with credit (100STYLE).
   Models and clips from SMPL, AMASS, or HumanML3D are non-commercial, and so are the motion models trained on them; do
   not use them. Mixamo's terms bar shipping its raw files. Files bought for a game stay in the game's private

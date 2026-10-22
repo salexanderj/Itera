@@ -10,8 +10,11 @@ rest (rest_height), so one rule suits a 0.3 m creature and a 6 m boss.
   by more than SEAM_JOLT times the most it changes between two frames inside the clip.
 - A foot is on the ground at a frame when the tail of its bone (the ball, for a foot bone; the tip, for a toe) is within
   CONTACT of its lowest height in the clip. Between two frames on the ground, its move along the ground is slide. The
-  ground moves under it at the speed the game moves the model forward (the engine's +z, Blender's -Y) while the clip
-  plays, so a foot of a walk in place must move back at that speed.
+  ground moves under it at the clip's own speed: the speed over the ground a body moves at while the clip plays at its
+  own pace (forward is the engine's +z, Blender's -Y). A foot of a walk in place must move back at that speed. A game
+  plays a stepping clip at its body's speed over this one, so the body's speed can be tuned without feet that slide.
+- The clip's own speed is the recipe's number, or, given None, the speed its feet show on the ground (ground_speed),
+  which the result gives either way.
 """
 
 from __future__ import annotations
@@ -42,10 +45,10 @@ def check(
 ) -> dict:
     """Checks the clips in `loops` for closure, and the bones in `feet` for slide in each clip of `planted`.
 
-    `planted` maps a clip's name to the speed, in metres a second, at which the game moves the model forward while the
-    clip plays (0 for a clip in place, such as an idle). The limits are shares of the rig's height at rest. The result
-    has the height, one entry for each clip (its frames and seconds, its loop's gap and seam, and each foot's slide),
-    and the list `problems`. The armature's action and the scene's frame are put back afterwards.
+    `planted` maps a clip's name to its own speed over the ground, in metres a second (0 for a clip in place, such as an
+    idle), or to None for the speed its feet show. The limits are shares of the rig's height at rest. The result has
+    the height, one entry for each clip (its frames and seconds, its loop's gap and seam, the speed its feet show, and
+    each foot's slide), and the list `problems`. The armature's action and the scene's frame are put back afterwards.
     """
     planted = dict(planted or {})
     problems: list[str] = []
@@ -59,6 +62,9 @@ def check(
         problems.append("PLANTED names clips, but FEET names no foot to check in them")
     if feet and not planted:
         problems.append("FEET names feet, but PLANTED names no clip to check them in")
+    for name, speed in planted.items():
+        if speed is not None and not isinstance(speed, (int, float)):
+            problems.append(f"{name}: PLANTED gives it {speed!r}, not a speed in m/s or None")
 
     for name in dict.fromkeys([*loops, *planted]):
         action = bpy.data.actions.get(name)
@@ -72,10 +78,13 @@ def check(
         entry: dict = {"frames": len(frames), "seconds": round((len(frames) - 1) / fps, 4)}
         if name in loops:
             entry["loop"] = _check_loop(name, armature, points, frames, height, loop_gap, seam_jolt, problems)
-        if name in planted and feet and not missing:
-            entry["feet"] = _check_feet(
-                name, points, frames, fps, planted[name], feet, height, contact, slide, problems
-            )
+        speed = planted.get(name)
+        if name in planted and feet and not missing and (speed is None or isinstance(speed, (int, float))):
+            paths = {foot: [places[points.index(f"{foot} tail")] for places in frames] for foot in feet}
+            shown = ground_speed(list(paths.values()), 1.0 / fps, contact * height)
+            entry["speed"] = round(shown, 3)
+            against = shown if speed is None else speed
+            entry["feet"] = _check_feet(name, paths, fps, against, height, contact, slide, problems)
         result["clips"][name] = entry
     return result
 
@@ -208,15 +217,31 @@ def _check_loop(name, armature, points, frames, height, loop_gap, seam_jolt, pro
     }
 
 
-def _check_feet(name, points, frames, fps, speed, feet, height, contact, slide, problems) -> dict:
+def ground_speed(paths: list[list[tuple]], seconds_per_frame: float, contact: float) -> float:
+    """The speed a clip's feet show on the ground: how fast, on average, they move back while on it, in m/s.
+
+    `paths` holds each foot's places frame by frame. A foot is on the ground as foot_slide says, and only moves between
+    two frames on the ground count. 0 when no foot is on the ground at two frames in a row.
+    """
+    back = 0.0
+    steps = 0
+    for path in paths:
+        lowest = min(place[2] for place in path)
+        for k in range(1, len(path)):
+            if path[k - 1][2] <= lowest + contact and path[k][2] <= lowest + contact:
+                back -= (path[k][0] - path[k - 1][0]) * FORWARD[0] + (path[k][1] - path[k - 1][1]) * FORWARD[1]
+                steps += 1
+    return back / (steps * seconds_per_frame) if steps else 0.0
+
+
+def _check_feet(name, paths, fps, speed, height, contact, slide, problems) -> dict:
     found = {}
-    for foot in feet:
-        index = points.index(f"{foot} tail")
-        measured = foot_slide([places[index] for places in frames], 1.0 / fps, speed, contact * height)
+    for foot, path in paths.items():
+        measured = foot_slide(path, 1.0 / fps, speed, contact * height)
         found[foot] = {"slide": round(measured["slide"], 4), "frames_on_ground": measured["frames"]}
         if measured["slide"] > slide * height:
             problems.append(
-                f"{name}: {foot} slides {_cm(measured['slide'])} in one stretch on the ground at {speed:g} m/s, "
+                f"{name}: {foot} slides {_cm(measured['slide'])} in one stretch on the ground at {speed:.2f} m/s, "
                 f"over the {_cm(slide * height)} a foot may slide"
             )
     return found

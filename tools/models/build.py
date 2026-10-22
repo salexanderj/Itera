@@ -321,14 +321,15 @@ def build_recipe(
 
 
 def describe_motion(motion: dict) -> str:
-    """One line of the clip checks: each clip's loop gap and its feet's largest slide, in centimetres."""
+    """One line of the clip checks: each clip's loop gap, its feet's largest slide, and the speed its feet show."""
     parts = []
     for name, entry in motion.get("clips", {}).items():
         found = []
         if "loop" in entry:
             found.append(f"loop gap {entry['loop']['gap'] * 100:.1f} cm")
         if entry.get("feet"):
-            found.append(f"slide {max(foot['slide'] for foot in entry['feet'].values()) * 100:.1f} cm")
+            most = max(foot["slide"] for foot in entry["feet"].values())
+            found.append(f"slide {most * 100:.1f} cm at {entry['speed']:.2f} m/s shown")
         parts.append(f"{name} ({', '.join(found)})" if found else name)
     return "; ".join(parts) or "no clips"
 

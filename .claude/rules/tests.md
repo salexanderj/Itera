@@ -38,6 +38,8 @@ needs.
   tests leave it out.
 - `RepositoryDocs` and `ReferenceDocs`: the documentation and reference tests' checks (`.claude/skills/docs/SKILL.md`).
 - `ModelChecks`: every model a run declares, checked as the engine reads it and held to a game's budgets.
+- `ClipGround`: the speed over the ground a stepping clip shows as the engine poses it, by the model toolkit's rule. A
+  game's test compares the speed it plays a clip by with it.
 
 ### Rules
 

@@ -69,12 +69,29 @@ class MotionCheckTests(unittest.TestCase):
         self.assertEqual(walk["feet"]["leg"]["frames_on_ground"], 14)  # frames 1 to 13, and 25
         self.assertLess(walk["loop"]["gap"], 1e-4)
 
+    def test_given_none_the_feet_are_checked_at_the_speed_they_show(self):
+        key_tail(self.armature, "Walk", STEP)
+
+        result = motion.check(self.armature, feet=["leg"], planted={"Walk": None})
+
+        self.assertEqual(result["problems"], [])
+        self.assertAlmostEqual(result["clips"]["Walk"]["speed"], WALK_SPEED, places=3)
+        self.assertLess(result["clips"]["Walk"]["feet"]["leg"]["slide"], 1e-3)
+
+    def test_a_speed_that_is_not_a_number_is_a_problem(self):
+        key_tail(self.armature, "Walk", STEP)
+
+        problems = motion.check(self.armature, feet=["leg"], planted={"Walk": "fast"})["problems"]
+
+        self.assertEqual(["Walk: PLANTED gives it 'fast', not a speed in m/s or None"], problems)
+
     def test_the_same_foot_in_a_clip_said_to_stand_still_slides_its_whole_step(self):
         key_tail(self.armature, "Walk", STEP)
 
         result = motion.check(self.armature, feet=["leg"], planted={"Walk": 0.0})
 
         self.assertAlmostEqual(result["clips"]["Walk"]["feet"]["leg"]["slide"], 0.7, places=3)
+        self.assertAlmostEqual(result["clips"]["Walk"]["speed"], WALK_SPEED, places=3)  # what its feet show, still
         self.assertEqual(len(result["problems"]), 1)
         self.assertIn("Walk: leg slides 70.0 cm", result["problems"][0])
 
@@ -157,6 +174,14 @@ class FootSlideTests(unittest.TestCase):
 
         self.assertAlmostEqual(found["slide"], 0.05)  # the longer of the two stretches; the swing does not count
         self.assertEqual(found["frames"], 4)
+
+    def test_the_speed_the_feet_show_counts_only_moves_on_the_ground(self):
+        lifting = [(0.0, 0.1 * k, 0.0) for k in range(4)] + [(0.0, 0.0, 0.5)]
+        standing = [(0.0, 0.0, 0.0)] * 5
+
+        self.assertAlmostEqual(motion.ground_speed([lifting], 0.1, 0.02), 1.0)
+        self.assertAlmostEqual(motion.ground_speed([lifting, standing], 0.1, 0.02), 3 * 0.1 / (7 * 0.1))
+        self.assertEqual(motion.ground_speed([[(0.0, 0.0, 0.0), (0.0, 0.1, 0.5)]], 0.1, 0.02), 0.0)
 
     def test_a_foot_moving_back_with_the_ground_does_not_slide(self):
         path = [(0.0, 0.1 * k, 0.0) for k in range(6)]
