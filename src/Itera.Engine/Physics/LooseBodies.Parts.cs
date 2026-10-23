@@ -157,10 +157,31 @@ public sealed partial class LooseBodies
         ReadOnlySpan<RagdollJoint> joints,
         Vector3 velocity,
         List<BodyHandle> made
+    ) => TryCreateRagdoll(shapes, joints, velocity, Vector3.Zero, Vector3.Zero, made);
+
+    /// <summary>
+    /// Makes a ragdoll of <paramref name="shapes"/> as
+    /// <see cref="TryCreateRagdoll(ReadOnlySpan{RagdollShape}, ReadOnlySpan{RagdollJoint}, Vector3, List{BodyHandle})"/>
+    /// does, its whole turning at <paramref name="spin"/> (radians a second, about its direction) round
+    /// <paramref name="about"/> as it starts: each body turns at the spin, moving at <paramref name="velocity"/> and as its
+    /// middle turns round that point (a body starting to topple about its feet). Also false when the spin or the point is
+    /// not finite.
+    /// </summary>
+    public bool TryCreateRagdoll(
+        ReadOnlySpan<RagdollShape> shapes,
+        ReadOnlySpan<RagdollJoint> joints,
+        Vector3 velocity,
+        Vector3 spin,
+        Vector3 about,
+        List<BodyHandle> made
     )
     {
         ArgumentNullException.ThrowIfNull(made);
-        if (shapes.IsEmpty || _bodies.Count + shapes.Length > _maxBodies)
+        if (
+            shapes.IsEmpty
+            || _bodies.Count + shapes.Length > _maxBodies
+            || !float.IsFinite(spin.X + spin.Y + spin.Z + about.X + about.Y + about.Z)
+        )
         {
             return false;
         }
@@ -197,7 +218,7 @@ public sealed partial class LooseBodies
         var members = new List<BodyHandle>(shapes.Length);
         for (var b = 0; b < shapes.Length; b++)
         {
-            var body = BuildShape(in shapes[b], velocity, ragdoll);
+            var body = BuildShape(in shapes[b], velocity, spin, about, ragdoll);
             handles[b] = body;
             members.Add(body);
             made.Add(body);
@@ -211,9 +232,10 @@ public sealed partial class LooseBodies
 
     /// <summary>
     /// A cut body of <paramref name="form"/>'s capsule (or sphere), centred on its middle, unturned, the capsule turned
-    /// in it along its ends, belonging to <paramref name="ragdoll"/>.
+    /// in it along its ends, belonging to <paramref name="ragdoll"/>, turning at <paramref name="spin"/> and moving as its
+    /// middle turns at it round <paramref name="about"/>.
     /// </summary>
-    private BodyHandle BuildShape(in RagdollShape form, Vector3 velocity, int ragdoll)
+    private BodyHandle BuildShape(in RagdollShape form, Vector3 velocity, Vector3 spin, Vector3 about, int ragdoll)
     {
         var simulation = _physics.Simulation;
         var along = form.To - form.From;
@@ -239,7 +261,7 @@ public sealed partial class LooseBodies
         var body = simulation.Bodies.Add(
             BodyDescription.CreateDynamic(
                 new RigidPose(centre),
-                new BodyVelocity(velocity),
+                new BodyVelocity(velocity + Vector3.Cross(spin, centre - about), spin),
                 inertia,
                 new CollidableDescription(shape, ContinuousDetection.Passive),
                 new BodyActivityDescription(0.01f)

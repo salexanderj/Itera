@@ -44,6 +44,8 @@ A ball, a lifted piece, or a part cut off a model is a loose body. Bepu moves it
 - `LooseBodies.TryCreateRagdoll` makes a ragdoll from a model's parts with joints from its skeleton.
 - For a figure drawn from a mesh, a ragdoll is made from shapes (`RagdollShape`: a capsule between two points, or a
   sphere, each with a radius and a mass). Those bodies have no models, so nothing draws them.
+- A ragdoll of shapes may start turning round a point, as a body toppling about its feet: each body turns at the spin
+  and moves as its middle turns round the point.
 - The game reads their poses (`PivotOf`, `OrientationOf`) and poses what it draws with them (the rig's `Place`). `Holds`
   with `BornOf` tells a reused handle. No engine code calls either one.
 

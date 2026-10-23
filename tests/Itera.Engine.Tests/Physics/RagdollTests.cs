@@ -15,7 +15,8 @@ namespace Itera.Engine.Tests.Physics;
 /// spun about its joint's axis stops within the twist limit; its bodies, as every body cut off a character, touch only
 /// the voxels, falling through each other, other bodies, and stand-ins; its joints go with its bodies; and a ragdoll that
 /// would pass the body limit is not made. A ragdoll of shapes (capsules, a figure drawn from a mesh) dropped on the floor
-/// stays joined and rests as one, with no models; bad shapes and joints make nothing; removed, its bodies and joints go.
+/// stays joined and rests as one, with no models; one started turning round its foot moves as a whole turning would and
+/// falls that way; bad shapes and joints make nothing; removed, its bodies and joints go.
 /// </summary>
 public sealed class RagdollTests : IDisposable
 {
@@ -487,6 +488,39 @@ public sealed class RagdollTests : IDisposable
 
         Assert.Equal(0, _bodies.Count);
         Assert.Equal(0, _physics.Simulation.Solver.CountConstraints());
+    }
+
+    [Fact]
+    public void A_ragdoll_of_shapes_started_turning_round_its_foot_moves_as_a_whole_turning_would_and_falls_that_way()
+    {
+        var made = new List<BodyHandle>();
+        // A leg and a body 1.6 m tall standing on the floor, turning towards +x round its foot.
+        RagdollShape[] shapes =
+        [
+            new(new Vector3(0, 2.1f, 0), new Vector3(0, 2.8f, 0), 0.08f, 20),
+            new(new Vector3(0, 2.85f, 0), new Vector3(0, 3.6f, 0), 0.12f, 40),
+        ];
+        RagdollJoint[] joints = [new(0, 1, new Vector3(0, 2.82f, 0), Vector3.UnitY, 0.3f)];
+        var spin = new Vector3(0, 0, -1);
+        var foot = new Vector3(0, 2, 0);
+
+        Assert.True(_bodies.TryCreateRagdoll(shapes, joints, Vector3.Zero, spin, foot, made));
+        // Each body moves as the whole turning round the foot: its middle's height times the spin, towards +x.
+        foreach (var body in made)
+        {
+            var velocity = _physics.Simulation.Bodies[body].Velocity;
+            var height = _bodies.PivotOf(body).Y - foot.Y;
+            Assert.True(
+                MathF.Abs(velocity.Linear.X - height) < 1e-3f && MathF.Abs(velocity.Linear.Y) < 1e-3f,
+                $"A body {height} m up moved at {velocity.Linear}."
+            );
+            Assert.Equal(spin, velocity.Angular);
+        }
+
+        Run(3 * 60);
+        var upper = _bodies.PivotOf(made[1]);
+        Assert.True(upper.X > 0.6f && upper.Y < 2.5f, $"Its upper body lay at {upper}.");
+        Assert.False(_bodies.TryCreateRagdoll(shapes, joints, Vector3.Zero, new Vector3(float.NaN, 0, 0), foot, made));
     }
 
     [Fact]
