@@ -23,7 +23,9 @@ Three tools do the work:
 1. **Get reference images.** They help shape quality more than anything else. A model built from words alone comes out
    plain. Ask the user for a picture of the subject from the front, and from the side or the top where its shape needs
    it: concept art, a photograph, or a sketch on a plain background. Put each beside the recipe and name it in
-   `REFERENCES`. Without them, say so before you start, and ask the user to look at the result.
+   `REFERENCES`, one image a view (cut a sheet of views apart). A humanoid may be drawn in a T-pose, an idle stance, or
+   the anatomical position: name it in `REFERENCE_POSE`, and the check holds the model in that pose. Without
+   references, say so before you start, and ask the user to look at the result.
 2. **Read the game's rules for the subject:** its design page, its budget class in the game's `budgets.json` (in
    `src/Game/ModelRecipes/`), and its rig. A humanoid keeps the game's own skeleton, its joint names, order, and rest pose, so every clip plays.
 3. **Read `blender-api.md` beside this file.** Blender's Python API changed a great deal in 4.x and 5.x, and wrong API
@@ -101,9 +103,9 @@ Open edges only warn, since a leaf card or a banner may need them. Edges shared 
 - **A Python error in Blender:** read the traceback. An AttributeError or TypeError on an API name usually means the
   name changed: look it up in `blender-api.md` and the local reference.
 - **A checker problem:** its message names what the engine would do. Fix the recipe, not the file.
-- **A silhouette under `MATCH`:** compare the view sheet with the reference. Look for proportions first, then the
-  outline. Check that the reference is the view the recipe names (`tools/models/itera_models/silhouette.py` gives each
-  view's direction).
+- **A silhouette under `MATCH`:** compare the view sheet with the reference, or the sheet in its pose
+  (`NAME-sheet-POSE.png`). Look for proportions first, then the outline. Check that the reference is the view the recipe
+  names (`tools/models/itera_models/silhouette.py` gives each view's direction), and its pose `REFERENCE_POSE`.
 - **The engine draws it wrong** (dark, inside out, lit oddly): look at the normals and the winding in the wireframe
   row. Look at the materials' names and the base colour texture. Run `views --world PLACE` to see it in the game's
   light.

@@ -47,6 +47,7 @@ CLASS = "prop"  # optional: the budget class the checker holds the model to
 BUDGETS = "budgets.json"  # optional: the budget file, from the recipe's folder
 UNIT = 1.0  # optional: metres a unit of the file, for the checker (default 1.0)
 REFERENCES = {"front": "front.png"}  # optional: reference images beside the recipe, by view
+REFERENCE_POSE = "idle"  # optional: the pose the references are drawn in (default rest)
 MATCH = 0.85  # optional: the least silhouette match each reference must reach (0 to 1)
 LOOPS = ["Idle", "Walk"]  # optional: clips that loop, so their last frame must hold their first pose
 FEET = ["foot_l", "foot_r"]  # optional: the bones whose tails touch the ground
@@ -57,13 +58,19 @@ def build(ctx):  # required: makes the model in bpy.context.scene
     ...
 ```
 
-- `build.py` reads `NAME`, `CLASS`, `BUDGETS`, `UNIT`, and `REFERENCES` from the file's text without running it, so each
-  must be a plain literal.
+- `build.py` reads `NAME`, `CLASS`, `BUDGETS`, `UNIT`, `REFERENCES`, and `REFERENCE_POSE` from the file's text without
+  running it, so each must be a plain literal.
 - `REFERENCES` maps a view (`front`, `back`, `side`, `top`; `itera_models/silhouette.py` gives each view's direction)
   to an image of the subject's outline: a picture with a transparent background, or a shape on a plain background.
   After the sheet, the model's outline from that view is compared with it, both cropped to their boxes and scaled to
   the same height, so proportions count. The scores (0 to 1) print and go into `report.json`; one under `MATCH` is a
   problem.
+- A reference may be drawn in another pose than the rig's rest pose (`itera_models/poses.py`): `rest`, `t-pose` (arms
+  out level), `idle` (arms hanging a little out, palms in), or `anatomical` (arms hanging close, palms forward).
+  `REFERENCE_POSE` names the references' pose, and a view given as `("side.png", "t-pose")` names its own. The model's
+  armature is held in a reference's pose while its outline is drawn, and the build renders a sheet in each pose but
+  rest beside the main one (`NAME-sheet-POSE.png`). Only the arms move, found by their bones' names
+  (`upperarm_l`, `upper_arm.L`, `LeftArm`). The anatomical turn takes the palms to face down at rest.
 - `BUDGETS` defaults to `../budgets.json` (beside the recipe's folder) when that file exists, else there is none. The
   checker gets `--budget` and `--class` only when the recipe has a class and a budget file exists.
 - `UNIT` goes to the checker's `--unit`. Inside Blender the scene stays in metres.

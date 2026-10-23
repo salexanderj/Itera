@@ -144,7 +144,7 @@ def read_recipe(path) -> Recipe:
             has_build = True
         if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
             key = node.targets[0].id
-            if key in ("NAME", "CLASS", "BUDGETS", "UNIT", "REFERENCES"):
+            if key in ("NAME", "CLASS", "BUDGETS", "UNIT", "REFERENCES", "REFERENCE_POSE"):
                 try:
                     constants[key] = ast.literal_eval(node.value)
                 except ValueError as error:
@@ -290,6 +290,8 @@ def build_recipe(
     work_dir.mkdir(parents=True, exist_ok=True)
     for stale in (work_dir / "report.json", work_dir / f"{recipe.name}-sheet.png"):
         stale.unlink(missing_ok=True)
+    for stale in work_dir.glob(f"{recipe.name}-sheet-*.png"):
+        stale.unlink(missing_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     log_path = work_dir / "blender.log"
@@ -366,6 +368,8 @@ def print_build(result: BuildResult) -> None:
         print(f"  silhouette match: {scores}")
     if result.report:
         print(f"  sheet:     {result.report.get('sheet')}")
+        for pose, path in (result.report.get("pose_sheets") or {}).items():
+            print(f"  {pose + ':':<10} {path}")
         print(f"  report:    {result.work_dir / 'report.json'}")
     print(f"  log:       {result.work_dir / 'blender.log'}")
 

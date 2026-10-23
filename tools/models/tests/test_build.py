@@ -93,7 +93,8 @@ class RecipeTests(unittest.TestCase):
             CLASS = "prop"
             BUDGETS = "my-budgets.json"
             UNIT = 0.01
-            REFERENCES = {"front": "front.png"}
+            REFERENCES = {"front": "front.png", "side": ("side.png", "t-pose")}
+            REFERENCE_POSE = "idle"
 
             def build(ctx):
                 raise RuntimeError("never run")
@@ -103,7 +104,7 @@ class RecipeTests(unittest.TestCase):
         self.assertEqual("Thing", recipe.name)
         self.assertEqual("prop", recipe.budget_class)
         self.assertEqual(0.01, recipe.unit)
-        self.assertEqual({"front": "front.png"}, recipe.references)
+        self.assertEqual({"front": "front.png", "side": ("side.png", "t-pose")}, recipe.references)
         self.assertEqual((path.parent / "my-budgets.json").resolve(), recipe.budgets)
 
     def test_budgets_default_to_the_file_above_the_recipes_folder_when_it_exists(self):

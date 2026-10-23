@@ -9,7 +9,10 @@ A recipe is a Python file with:
     BUDGETS = "budgets.json"       # optional: the budget file, from the recipe's folder (default ../budgets.json)
     UNIT = 1.0                     # optional: metres a unit of the file, for the checker (default 1.0)
     REFERENCES = {"front": "front.png"}   # optional: reference images beside the recipe, by view (front, back,
-                                          # side, top; see itera_models/silhouette.py for each view's direction)
+                                          # side, top; see itera_models/silhouette.py for each view's direction);
+                                          # a view may give (file, pose) for a reference drawn in its own pose
+    REFERENCE_POSE = "idle"        # optional: the pose the references are drawn in (rest, t-pose, idle, anatomical;
+                                   # itera_models/poses.py), default rest
     MATCH = 0.85                   # optional: the least silhouette match each reference must reach (0 to 1)
     LOOPS = ["Idle", "Walk"]       # optional: clips that loop, so their last frame must hold their first pose
     FEET = ["foot_l", "foot_r"]    # optional: the bones whose tails touch the ground
@@ -19,16 +22,17 @@ A recipe is a Python file with:
     def build(ctx):                # required: makes the model in bpy.context.scene
         ...
 
-build.py reads NAME, CLASS, BUDGETS, UNIT, and REFERENCES from the file's text without running it, so each must be a
-plain literal. `ctx` is an itera_models.context.Context: `ctx.name`, `ctx.recipe_dir`, `ctx.out_path`, `ctx.work_dir`,
+build.py reads NAME, CLASS, BUDGETS, UNIT, REFERENCES, and REFERENCE_POSE from the file's text without running it, so
+each must be a plain literal. `ctx` is an itera_models.context.Context: `ctx.name`, `ctx.recipe_dir`, `ctx.out_path`, `ctx.work_dir`,
 `ctx.cache_dir`, `ctx.problem(text)`, `ctx.note(text)`, `ctx.fetch(url, sha256, name)`, and
 `ctx.export(objects, clips, vertex_colors)`. The recipe's folder is on sys.path, so a recipe may import a module
 beside it. UNIT only goes to the checker: Blender's own scene stays in metres.
 
 What this script does, in order: empties the scene and sets metric units; calls build(ctx); exports the scene if the
 recipe did not call ctx.export(); checks the scene; checks the clips that LOOPS and PLANTED name
-(itera_models/motion.py); renders the view sheet; compares the model's silhouettes with the
-REFERENCES images (a problem under MATCH); saves WORK_DIR/NAME.blend; and writes WORK_DIR/report.json. The export comes before the checks and the sheet, so the cameras and the copies the sheet makes
+(itera_models/motion.py); renders the view sheet, and a sheet in each pose the references are drawn in but rest
+(WORK_DIR/NAME-sheet-POSE.png); compares the model's silhouettes with the REFERENCES images, the model held in each
+one's pose (a problem under MATCH); saves WORK_DIR/NAME.blend; and writes WORK_DIR/report.json. The export comes before the checks and the sheet, so the cameras and the copies the sheet makes
 never reach the .glb. Any exception ends Blender with a non-zero exit code and the traceback in the log.
 """
 
@@ -48,7 +52,7 @@ if str(TOOLS_DIR) not in sys.path:
 # Importing a recipe or a helper module must not leave __pycache__ folders in the recipe's folder.
 sys.dont_write_bytecode = True
 
-from itera_models import checks, motion, selection, silhouette, views
+from itera_models import checks, motion, poses, selection, silhouette, views
 from itera_models.context import Context
 
 SHEET_SIZE = 384
@@ -83,10 +87,35 @@ def reset_scene() -> None:
     units.length_unit = "METERS"
 
 
+def reference_poses(recipe) -> dict:
+    """Each REFERENCES view's file and the pose it is drawn in: its own (file, pose), else REFERENCE_POSE, else rest.
+    Raises ValueError for a pose that `poses.POSES` lacks."""
+    default = getattr(recipe, "REFERENCE_POSE", "rest")
+    found = {}
+    for view, given in getattr(recipe, "REFERENCES", {}).items():
+        file, pose = (given, default) if isinstance(given, str) else tuple(given)
+        if pose not in poses.POSES:
+            raise ValueError(f"REFERENCES {view}: unknown pose '{pose}'. Choose from {', '.join(poses.POSES)}")
+        found[view] = (file, pose)
+    return found
+
+
+def pose_sheets(recipe, context: Context, work_dir: Path) -> dict:
+    """A sheet of the model in each pose its references are drawn in but rest, by pose."""
+    sheets = {}
+    for pose in sorted({pose for _, pose in reference_poses(recipe).values()} - {"rest"}):
+        path = work_dir / f"{recipe.NAME}-sheet-{pose}.png"
+        with poses.held_all(selection.resolve(context.export_objects), pose):
+            views.sheet(path, objects=context.export_objects, size=SHEET_SIZE)
+        sheets[pose] = str(path)
+    return sheets
+
+
 def compare_references(recipe, recipe_dir: Path, context: Context) -> dict:
-    """Each REFERENCES image's silhouette match with the model's, 0 to 1 by view; a problem for a missing image, or for
-    a match under the recipe's MATCH."""
-    references = {view: recipe_dir / file for view, file in getattr(recipe, "REFERENCES", {}).items()}
+    """Each REFERENCES image's silhouette match with the model's held in the reference's pose, 0 to 1 by view; a
+    problem for a missing image, or for a match under the recipe's MATCH."""
+    given = reference_poses(recipe)
+    references = {view: recipe_dir / file for view, (file, _) in given.items()}
     missing = [str(path) for path in references.values() if not path.is_file()]
     if missing:
         context.problem(f"reference images not found: {', '.join(missing)}")
@@ -94,7 +123,11 @@ def compare_references(recipe, recipe_dir: Path, context: Context) -> dict:
     if not references:
         return {}
     objects = selection.resolve(context.export_objects)
-    scores = silhouette.compare(objects, {view: str(path) for view, path in references.items()})
+    scores = silhouette.compare(
+        objects,
+        {view: str(path) for view, path in references.items()},
+        poses={view: pose for view, (_, pose) in given.items()},
+    )
     least = getattr(recipe, "MATCH", None)
     for view, score in scores.items():
         if least is not None and score < least:
@@ -153,6 +186,7 @@ def main(arguments: list) -> None:
 
     sheet_path = work_dir / f"{recipe.NAME}-sheet.png"
     views.sheet(sheet_path, objects=context.export_objects, size=SHEET_SIZE)
+    sheets = pose_sheets(recipe, context, work_dir)
     now = stage("sheet", now)
 
     similarity = compare_references(recipe, recipe_path.parent, context)
@@ -175,6 +209,7 @@ def main(arguments: list) -> None:
         "warnings": scene_checks["warnings"],
         "notes": context.notes,
         "sheet": str(sheet_path),
+        "pose_sheets": sheets,
         "references": similarity,
     }
     (work_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

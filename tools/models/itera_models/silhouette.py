@@ -9,6 +9,9 @@ Views use Blender's own names and directions. In the model's space (Blender: +Z 
 - `back` looks from +Y towards -Y. Image right is -X.
 - `side` looks from +X towards -X (Blender's Right view). Image right is +Y, so the model's front is on the left.
 - `top` looks down from +Z. Image up is +Y and image right is +X.
+
+A reference drawn in a pose other than the rig's rest pose is compared with the model held in that pose
+(`itera_models/poses.py`: T-pose, idle, or the anatomical position).
 """
 
 from __future__ import annotations
@@ -19,6 +22,8 @@ import tempfile
 import bpy
 import numpy as np
 from mathutils import Matrix, Vector
+
+from . import poses as reference_poses
 
 #: For each view: the direction from the model to the camera, and the direction that is up in the image.
 _VIEWS = {
@@ -160,16 +165,20 @@ def compare(
     size: int = 256,
     keep_aspect: bool = True,
     flip: tuple[str, ...] = (),
+    poses: dict[str, str] | None = None,
 ) -> dict[str, float]:
     """Compares the objects' outline with reference images and returns `{view: iou}`.
 
     `references` maps a view (`front`, `side`, `back`, `top`) to an image path. Views named in `flip` mirror the
-    reference left to right first, for a reference that faces the other way than the `side` view above.
+    reference left to right first, for a reference that faces the other way than the `side` view above. `poses` maps a
+    view to the pose its reference is drawn in (`poses.POSES`; `rest` where it names none): the model's armatures are
+    held in it while its outline is drawn.
     """
     objects = list(objects)
     result = {}
     for view, path in references.items():
-        model = mask(objects, view, size)
+        with reference_poses.held_all(objects, (poses or {}).get(view, "rest")):
+            model = mask(objects, view, size)
         reference = image_mask(path, size, flip=view in flip)
         result[view] = iou(model, reference, size, keep_aspect)
     return result
