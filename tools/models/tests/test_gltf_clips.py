@@ -132,6 +132,53 @@ class SettleTests(unittest.TestCase):
                 self.assertEqual(max(abs(value) for row in difference for value in row), 0.0, node)
 
 
+
+class MirrorTests(unittest.TestCase):
+    """mirror on a body made by hand: hips 1 m up, a leg each side 0.1 m out, each with a foot 0.5 m below it."""
+
+    def setUp(self):
+        self.nodes = gltf_clips.Nodes(
+            {
+                "nodes": [
+                    {"name": "root", "children": [1]},
+                    {"name": "hips", "translation": [0, 1, 0], "children": [2, 3]},
+                    {"name": "thigh_l", "translation": [0.1, 0, 0], "children": [4]},
+                    {"name": "thigh_r", "translation": [-0.1, 0, 0], "children": [5]},
+                    {"name": "foot_l", "translation": [0, -0.5, 0]},
+                    {"name": "foot_r", "translation": [0, -0.5, 0]},
+                ]
+            }
+        )
+
+    def _posed(self, hips=None, left=None):
+        rest = self.nodes.rest
+        return [{1: hips or rest[1].copy(), 2: left or rest[2].copy(), 3: rest[3].copy()}]
+
+    def test_partners_are_the_other_sides_joint_or_the_joint_itself(self):
+        self.assertEqual(gltf_clips.partner("thigh_l"), "thigh_r")
+        self.assertEqual(gltf_clips.partner("B-hand.R"), "B-hand.L")
+        self.assertEqual(gltf_clips.partner("pelvis"), "pelvis")
+
+    def test_a_leg_swung_forward_is_the_other_leg_swung_forward(self):
+        swung = self.nodes.rest[2] @ Matrix.Rotation(-0.4, 4, "X")
+        (mirrored,) = gltf_clips.mirror(self._posed(left=swung), self.nodes)
+
+        worlds = self.nodes.worlds(mirrored)
+        right_foot, left_foot = worlds[5].translation, worlds[4].translation
+        posed_foot = self.nodes.worlds(self._posed(left=swung)[0])[4].translation
+        self.assertLess((right_foot - Vector((-posed_foot.x, posed_foot.y, posed_foot.z))).length, 1e-6)
+        self.assertGreater(right_foot.z, 0.1)  # forward
+        self.assertLess((left_foot - self.nodes.rest_world[4].translation).length, 1e-6)  # the other at rest
+
+    def test_a_turn_about_up_turns_the_other_way_and_a_step_left_goes_right(self):
+        hips = Matrix.Translation((0.2, 1.0, 0.0)) @ Matrix.Rotation(0.3, 4, "Y")
+        (mirrored,) = gltf_clips.mirror(self._posed(hips=hips), self.nodes)
+
+        location, rotation, _ = mirrored[1].decompose()
+        self.assertLess((location - Vector((-0.2, 1.0, 0.0))).length, 1e-6)
+        self.assertGreater(abs(rotation.dot(Quaternion((0, 1, 0), -0.3))), 1 - 1e-9)
+
+
 class RepairAndResampleTests(unittest.TestCase):
     """repair and resample on a joint's turns made by hand, a sample a tenth of a second."""
 

@@ -29,12 +29,16 @@ The spec is a JSON file. Its paths are from its own folder:
         {"name": "Run_Loop", "source": "PACK", "blend": "PATH.blend", "action": "ACTION", "sha256": "HEX",
          "from": 0, "to": 18},
         {"name": "Death", "source": "PACK", "blend": "PATH.blend", "action": "ACTION", "from": 1, "to": 82,
-         "loop": false}
+         "loop": false},
+        {"name": "Strafe_Right", "source": "PACK", "blend": "PATH.blend", "action": "STRAFE LEFT", "from": 1,
+         "to": 24, "mirror": true}
       ]
     }
 
 A clip with `"loop": false` is played once: its frames are kept as the source has them, not turned, moved, or closed.
 A loop with `"face": false` (or its source's `"face": false`) keeps the way it faces, not turned to face the front.
+A clip with `"mirror": true` is its action played on the other side (gltf_clips.mirror): a strafe to the left becomes
+one to the right, for a source whose own other side is worse or missing.
 
 Each clip's BVH is one member of a zip, fetched by range requests into the cache and pinned by its SHA-256 (fetch.py).
 Or a clip is an action of an armature in a local `.blend` file (`blend`, pinned by its SHA-256 when given), as an
@@ -137,6 +141,10 @@ def retarget_clip(spec: dict, entry: dict, target, nodes, turns) -> tuple[dict, 
     bpy.data.actions.remove(action)
     count = max(1, round(seconds * spec.get("fps", 30)))
     sampled = gltf_clips.resample(sampled, count)
+    if entry.get("mirror", False):
+        sampled = gltf_clips.mirror(sampled, nodes)
+        settled["travel"][0] = -settled["travel"][0]
+        settled["way"] = -settled["way"]
 
     hips = nodes.index(spec["hips"])
     keys = {

@@ -178,6 +178,43 @@ def resample(sampled: list, count: int) -> list:
     return out
 
 
+
+#: The ends of a joint's name that mark its side, each with the other side's.
+SIDES = (("_l", "_r"), ("_r", "_l"), (".L", ".R"), (".R", ".L"), ("Left", "Right"), ("Right", "Left"))
+
+
+def partner(name: str) -> str:
+    """The name of the joint on the other side: `name` with its side's end swapped (`thigh_l` and `thigh_r`), or `name`
+    itself for a joint on the middle."""
+    for end, other in SIDES:
+        if name.endswith(end):
+            return name[: -len(end)] + other
+    return name
+
+
+def mirror(sampled: list, nodes: Nodes) -> list:
+    """`sampled` played on the other side, the model's left (+x) for its right: each node takes its partner's change from
+    its rest, in the scene, mirrored across the model's middle, onto its own rest. A turn about the up axis turns the
+    other way, a step to the left goes to the right, and a turn forward stays forward. For a rig whose rest is the same
+    on both sides. Returns new samples of the same nodes."""
+    flip = Matrix.Diagonal((-1.0, 1.0, 1.0, 1.0))
+    partners = [nodes.index(partner(name)) if partner(name) in nodes.names else index
+                for index, name in enumerate(nodes.names)]
+    out = []
+    for locals_ in sampled:
+        worlds = nodes.worlds(locals_)
+        mirrored = [
+            flip @ worlds[partners[index]] @ nodes.rest_world[partners[index]].inverted() @ flip @ rest
+            for index, rest in enumerate(nodes.rest_world)
+        ]
+        turned = {}
+        for node in locals_:
+            parent = nodes.parent.get(node)
+            turned[node] = mirrored[node] if parent is None else mirrored[parent].inverted() @ mirrored[node]
+        out.append(turned)
+    return out
+
+
 def settle(
     sampled: list,
     nodes: Nodes,

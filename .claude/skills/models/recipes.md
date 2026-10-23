@@ -178,7 +178,7 @@ recipe: it writes the clips on the model's own nodes, and the model's `merge_cli
   of the map, so the model keeps its own foot shape. Name the source's ground joints in `feet`.
 - Find one cycle (`from` to `to`) in a straight, steady stretch: the frame a stride's pose comes round again. A clip
   played once (`"loop": false`) keeps its frames as they are; a pack's loop turned to face its way keeps its turn with
-  `"face": false`.
+  `"face": false`. Where one side of a pack's pair is worse, make it from the other with `"mirror": true`.
 - Read the report's slide and the seam, then look at the poses with `views MODEL.glb --clip NAME@SECONDS`.
 - Inside a recipe, `clips.retarget` does the same for an armature the recipe exports itself.
 

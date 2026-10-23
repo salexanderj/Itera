@@ -238,6 +238,8 @@ then adds to the model (`retarget.py`'s docstring has the spec's form). For each
   pack's clip turned to face the way it goes), takes its travel out of the hips so the game moves the body, sets its
   feet's lowest point at their rest's height, and spreads what is left at the seam over the cycle, so it loops; a clip
   with `"loop": false` (a death, a turn on the spot) is played once and kept as the source has it;
+- with `"mirror": true`, plays the clip on the other side (`gltf_clips.mirror`): each joint takes its partner's change
+  from rest, mirrored across the model's middle, so a strafe to the left becomes one to the right;
 - spreads the cycle over the spec's keys a second, and reports the travel taken out (its speed and way), the samples
   mended, and `motion.py`'s checks: the speed the feet show, their largest slide, and the seam.
 
