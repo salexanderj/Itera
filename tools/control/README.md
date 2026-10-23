@@ -107,6 +107,7 @@ back, or above it, and takes a picture.
   frame, at the game's speed, or `--slow` times slower).
 - `--pass "LABEL=COMMANDS"` runs a pass after those console commands, such as a tunable to compare. Repeat it: the
   sheet stacks the passes in rows, and the GIF plays them side by side.
+- `--press KEY@SECONDS` presses another key that far into the run-up and holds it, as Ctrl into a slide at speed.
 - It needs Pillow. The game must be offline, since it pauses and steps it.
 
 ## Shaders

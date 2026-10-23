@@ -6,10 +6,12 @@ Drives a running offline game (tools/control/game.py start) through its control 
 pauses, holds the keys given, steps a run-up, then steps a few ticks at a time; at each stop it puts the camera
 (`viewpoint`, `lens ortho`) on the figure's right, left, front, or back, or above it, and takes a picture (`shot`).
 Each pass may first run console commands (`--pass "LABEL=COMMANDS"`, such as tunables to compare), and the sheet stacks
-the passes in rows, labelled. Needs Pillow for the sheet and the GIF. See README.md next to this file.
+the passes in rows, labelled. A key may be pressed later and held (`--press KEY@SECONDS`, from the start of the run-up),
+as Ctrl into a slide at speed. Needs Pillow for the sheet and the GIF. See README.md next to this file.
 
     moving.py W --view right --out DIR
     moving.py ShiftLeft+W+A --view front --pass "before=tune x 1" --pass "after=tune x 0.4" --out DIR
+    moving.py ShiftLeft+W --press ControlLeft@1.2 --run-up 1.3 --view right --out DIR
 """
 
 import argparse
@@ -90,12 +92,30 @@ def one_pass(driver, args, label, commands, out):
         driver.run(commands, script=True)
     driver.run(f"tp {args.start}; wait ticks 60; pause", script=True)
     driver.ask({"op": "input", "actions": [f"down {key}" for key in args.keys], "timeout": 30})
-    run_up = round(args.run_up * TICKS_A_SECOND)
-    driver.run(f"step {run_up}; wait ticks {run_up}", script=True)
+    pending = sorted((round(seconds * TICKS_A_SECOND), key) for key, seconds in args.presses)
+    pressed = []
+    stepped = 0
+
+    def step(ticks):
+        # Steps the game, pressing each later key at its tick on the way.
+        nonlocal stepped
+        end = stepped + ticks
+        while pending and pending[0][0] <= end:
+            at, key = pending.pop(0)
+            if at > stepped:
+                driver.run(f"step {at - stepped}; wait ticks {at - stepped}", script=True)
+                stepped = at
+            driver.ask({"op": "input", "actions": [f"down {key}"], "timeout": 30})
+            pressed.append(key)
+        if end > stepped:
+            driver.run(f"step {end - stepped}; wait ticks {end - stepped}", script=True)
+            stepped = end
+
     frames = []
     try:
+        step(round(args.run_up * TICKS_A_SECOND))
         for index in range(args.frames):
-            driver.run(f"step {args.every}; wait ticks {args.every}", script=True)
+            step(args.every)
             place, front, height = driver.figure()
             if index == 0:
                 driver.run(f"lens ortho {height * args.zoom:.3f}")
@@ -108,7 +128,7 @@ def one_pass(driver, args, label, commands, out):
             keep = round(tall * args.width)
             frames.append(picture.crop(((width - keep) // 2, 0, (width + keep) // 2, tall)))
     finally:
-        driver.ask({"op": "input", "actions": [f"up {key}" for key in args.keys], "timeout": 30})
+        driver.ask({"op": "input", "actions": [f"up {key}" for key in args.keys + pressed], "timeout": 30})
         driver.run("viewpoint off; lens off; resume", script=True)
     return frames
 
@@ -131,12 +151,19 @@ def main():
     parser.add_argument("--pass", dest="passes", action="append", default=[],
                         help="LABEL=COMMANDS: a pass run after those console commands (repeatable; one plain pass "
                              "without it)")
+    parser.add_argument("--press", dest="presses", action="append", default=[],
+                        help="KEY@SECONDS: a key pressed and held from that many seconds into the run-up (repeatable)")
     parser.add_argument("--port", type=int, default=None)
     args = parser.parse_args()
     if Image is None:
         print("moving.py needs Pillow (python3 -m pip install pillow)", file=sys.stderr)
         return 2
     args.keys = [key for key in args.keys.split("+") if key]
+    try:
+        args.presses = [(key, float(seconds)) for key, seconds in (text.split("@", 1) for text in args.presses)]
+    except ValueError:
+        print("--press takes KEY@SECONDS", file=sys.stderr)
+        return 2
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     passes = [tuple(text.split("=", 1)) if "=" in text else (text, "") for text in args.passes] or [("moving", "")]
