@@ -25,9 +25,10 @@ namespace Itera.Engine.Systems;
 /// to <see cref="CrouchHeightShare"/> of standing, it moves at <see cref="CrouchSpeedShare"/> of its speed, and it
 /// cannot jump or sprint; let go, it stands up once the standing body fits where it is
 /// (<see cref="VoxelCharacterMover.OverlapsAnything"/>), so it stays down under a low roof. Flying ends the crouch at
-/// once. Moving backwards, a character moves at most <see cref="BackwardSpeedShare"/> of its speed (of its crouched
-/// speed while crouched) and cannot sprint, nor can it sprint on a move turned further from ahead than its
-/// <see cref="MovementStats.SprintDegrees"/>. These are the same for the local player, a remote one a host moves, and a
+/// once. Moving to the side or back, a character moves at most its <see cref="MovementStats.SideShare"/> or
+/// <see cref="MovementStats.BackShare"/> of its speed, and between them by its move's way
+/// (<see cref="DirectionShare"/>; of its crouched speed while crouched). Moving backwards it cannot sprint, nor on a move
+/// turned further from ahead than its <see cref="MovementStats.SprintDegrees"/>. These are the same for the local player, a remote one a host moves, and a
 /// game's characters, so a host moves a client's player as the client does. One character's step is also
 /// <see cref="CharacterStepper.Step"/>, for running a step again. A game's <see cref="IMovementMode"/> may take a walking player's step before
 /// the engine steers it (a climb): it gives the velocity and step height, and the move, contact, and eye go on as for any
@@ -61,9 +62,6 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
 
     /// <summary>A crouched player's speed as a share of its speed standing.</summary>
     public const float CrouchSpeedShare = 0.4f;
-
-    /// <summary>The most speed straight back as a share of full speed; to the side it is full, between by how far back.</summary>
-    public const float BackwardSpeedShare = 0.7f;
 
     /// <summary>A command's move back further than this (its y, ahead positive) is moving backwards.</summary>
     public const float BackwardFrom = 0.01f;
@@ -301,13 +299,21 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     }
 
     /// <summary>
-    /// The share of full speed a move may keep: 1 ahead and to the side, <see cref="BackwardSpeedShare"/> straight back,
-    /// and between them by the share of the move that goes back.
+    /// The share of full speed a move may keep by its way: 1 straight ahead, <paramref name="stats"/>'
+    /// <see cref="MovementStats.SideShare"/> straight to the side and <see cref="MovementStats.BackShare"/> straight back,
+    /// and between them by the share of the move that goes ahead or back. 1 for no move.
     /// </summary>
-    public static float BackwardShare(Vector2 move)
+    public static float DirectionShare(Vector2 move, in MovementStats stats)
     {
         var length = move.Length();
-        return length <= 0 || move.Y >= 0 ? 1 : 1 - (1 - BackwardSpeedShare) * (-move.Y / length);
+        if (!(length > 0))
+        {
+            return 1;
+        }
+
+        var ahead = move.Y / length;
+        var side = stats.SideShare;
+        return ahead >= 0 ? side + (1 - side) * ahead : side + (stats.BackShare - side) * -ahead;
     }
 
     /// <summary>Holds <paramref name="command"/>'s move to at most <paramref name="most"/> of full speed.</summary>
@@ -369,8 +375,8 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     }
 
     /// <summary>
-    /// A character's command, limited by its crouch, by moving backwards, and by how far its move turns from ahead
-    /// (<see cref="MovementStats.SprintDegrees"/>).
+    /// A character's command, limited by its crouch, by its move's way (<see cref="DirectionShare"/>), by moving
+    /// backwards, and by how far its move turns from ahead (<see cref="MovementStats.SprintDegrees"/>).
     /// </summary>
     private static class Limit
     {
@@ -382,9 +388,14 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
                 command.Buttons &= ~(PlayerButtons.Jump | PlayerButtons.Sprint);
             }
 
+            var share = mode.Flying ? 1 : DirectionShare(command.Move, in stats);
+            if (share < 1)
+            {
+                Hold(ref command, (mode.Crouching ? CrouchSpeedShare : 1) * share);
+            }
+
             if (!mode.Flying && command.Move.Y < -BackwardFrom)
             {
-                Hold(ref command, (mode.Crouching ? CrouchSpeedShare : 1) * BackwardShare(command.Move));
                 command.Buttons &= ~PlayerButtons.Sprint;
             }
 

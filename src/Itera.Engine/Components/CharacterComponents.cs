@@ -263,8 +263,21 @@ public struct MovementStats
     public float SprintDegrees;
 
     /// <summary>
-    /// A person's: walks at 4.5 m/s, sprints at 7 ahead and to the side, jumps 1.1 m, falls under 20 m/s² up to 50 m/s,
-    /// turns its speed by 50 m/s² on the ground and 10 in the air, and walks up slopes of up to 45 degrees.
+    /// The most of its speed a move keeps straight to the side, as a share: ahead it keeps it all, and between the two by
+    /// how far ahead the move points (<c>PlayerMovementSystem.DirectionShare</c>).
+    /// </summary>
+    public float SideShare;
+
+    /// <summary>
+    /// The most of its speed a move keeps straight back, as a share: to the side it keeps <see cref="SideShare"/>, and
+    /// between the two by how far back the move points.
+    /// </summary>
+    public float BackShare;
+
+    /// <summary>
+    /// A person's: walks at 4.5 m/s (all of it to the side, 0.7 of it back), sprints at 7 ahead and to the side, jumps
+    /// 1.1 m, falls under 20 m/s² up to 50 m/s, turns its speed by 50 m/s² on the ground and 10 in the air, and walks up
+    /// slopes of up to 45 degrees.
     /// </summary>
     public static MovementStats Default =>
         new()
@@ -278,6 +291,8 @@ public struct MovementStats
             MaxFall = 50,
             MaxSlopeDegrees = 45,
             SprintDegrees = 90,
+            SideShare = 1,
+            BackShare = 0.7f,
         };
 }
 

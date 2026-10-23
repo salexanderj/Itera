@@ -22,6 +22,9 @@ namespace Itera.Engine.Tests.Systems;
 public sealed class PlayerMovementSystemTests : IDisposable
 {
     private static readonly FixedStepTime Step = new(1f / 60, 1);
+
+    // The default stats' share of speed kept straight back (MovementStats.Default.BackShare), for the rows.
+    private const float Back = 0.7f;
     private static readonly QueryDescription s_players = new QueryDescription().WithAll<
         CharacterPosition,
         CharacterVelocity,
@@ -462,10 +465,10 @@ public sealed class PlayerMovementSystemTests : IDisposable
     /// side, and no sprint; to the side, full speed and sprint.
     /// </summary>
     [Theory]
-    [InlineData(0, -1, false, 4.5f * PlayerMovementSystem.BackwardSpeedShare)]
-    [InlineData(0, -1, true, 4.5f * PlayerMovementSystem.BackwardSpeedShare)]
-    [InlineData(-1, -1, true, 4.5f * (1 - (1 - PlayerMovementSystem.BackwardSpeedShare) * 0.70710678f))]
-    [InlineData(1, -1, false, 4.5f * (1 - (1 - PlayerMovementSystem.BackwardSpeedShare) * 0.70710678f))]
+    [InlineData(0, -1, false, 4.5f * Back)]
+    [InlineData(0, -1, true, 4.5f * Back)]
+    [InlineData(-1, -1, true, 4.5f * (1 - (1 - Back) * 0.70710678f))]
+    [InlineData(1, -1, false, 4.5f * (1 - (1 - Back) * 0.70710678f))]
     [InlineData(-1, 0, false, 4.5f)]
     [InlineData(1, 0, true, 7f)]
     [InlineData(-1, 1, true, 7f)]
@@ -515,6 +518,36 @@ public sealed class PlayerMovementSystemTests : IDisposable
         Assert.Equal(sprinted, (world.Get<PlayerCommand>(player).Buttons & PlayerButtons.Sprint) != 0);
     }
 
+    /// <summary>
+    /// With half its speed kept to the side and a quarter back: straight to the side half, straight back a quarter,
+    /// ahead and to the side between half and all by how far ahead, and back and to the side between half and a quarter.
+    /// </summary>
+    [Theory]
+    [InlineData(-1, 0, 4.5f * 0.5f)]
+    [InlineData(1, 0, 4.5f * 0.5f)]
+    [InlineData(0, -1, 4.5f * 0.25f)]
+    [InlineData(1, 1, 4.5f * (0.5f + 0.5f * 0.70710678f))]
+    [InlineData(-1, -1, 4.5f * (0.5f - 0.25f * 0.70710678f))]
+    [InlineData(0, 1, 4.5f)]
+    public void A_move_keeps_its_stats_share_of_speed_by_its_way(float x, float y, float speed)
+    {
+        using var world = World.Create();
+        using var system = Create(world, new Vector3(0, 1.6f, 0));
+        var stats = MovementStats.Default;
+        (stats.SideShare, stats.BackShare) = (0.5f, 0.25f);
+        SetStats(world, stats);
+        Run(world, system, 30, default);
+
+        Run(world, system, 30, new PlayerCommand { Move = Vector2.Normalize(new Vector2(x, y)) });
+
+        Assert.Equal(speed, Read(world).Velocity.MetresPerSecond.Length(), 2);
+        Assert.Equal(
+            speed / 4.5f,
+            PlayerMovementSystem.DirectionShare(Vector2.Normalize(new Vector2(x, y)), in stats),
+            4
+        );
+    }
+
     [Fact]
     public void Crouched_backwards_it_moves_at_both_shares_and_one_command_used_again_stays_held()
     {
@@ -524,7 +557,7 @@ public sealed class PlayerMovementSystemTests : IDisposable
         var player = Player(world);
         Run(world, system, 30, new PlayerCommand { Move = new Vector2(0, -1), Buttons = PlayerButtons.Crouch });
         Assert.Equal(
-            4.5f * PlayerMovementSystem.CrouchSpeedShare * PlayerMovementSystem.BackwardSpeedShare,
+            4.5f * PlayerMovementSystem.CrouchSpeedShare * Back,
             Read(world).Velocity.MetresPerSecond.Length(),
             2
         );
@@ -536,8 +569,8 @@ public sealed class PlayerMovementSystemTests : IDisposable
             system.Update(in Step);
         }
 
-        Assert.Equal(4.5f * PlayerMovementSystem.BackwardSpeedShare, Read(world).Velocity.MetresPerSecond.Length(), 2);
-        Assert.Equal(PlayerMovementSystem.BackwardSpeedShare, world.Get<PlayerCommand>(player).Move.Length(), 5);
+        Assert.Equal(4.5f * Back, Read(world).Velocity.MetresPerSecond.Length(), 2);
+        Assert.Equal(Back, world.Get<PlayerCommand>(player).Move.Length(), 5);
     }
 
     [Fact]

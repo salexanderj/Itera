@@ -199,9 +199,7 @@ public sealed class CharacterStepperTests : IDisposable
         );
         var speed = world.Get<CharacterVelocity>(remote).MetresPerSecond.Length();
         Assert.Equal(
-            MovementStats.Default.Walk
-                * PlayerMovementSystem.CrouchSpeedShare
-                * PlayerMovementSystem.BackwardSpeedShare,
+            MovementStats.Default.Walk * PlayerMovementSystem.CrouchSpeedShare * MovementStats.Default.BackShare,
             speed,
             2
         );
