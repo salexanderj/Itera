@@ -128,6 +128,40 @@ ctx.export(clips=["Walk", "Idle"])                            # only these, each
 - Key whole poses at a few frames, and let the curves fill between them.
 - Use IK constraints for feet and hands, then bake them to keys before the export.
 
+## Attacks and other moves keyed by poses, on a model that has its rig
+
+A humanoid's moves that no pack or capture has (a giant's blows) go in a clip recipe, made by
+`tools/models/build.py clips` (the toolkit's README), not in a model's recipe. It writes the clips on the model's own
+nodes, and the model's `merge_clips.py` list adds them.
+
+```python
+from itera_models.keyed import Body, Foot, Hand, Key, Turn
+
+MODEL = "../../Models/Human/Human.glb"
+OUT = "Moves.glb"
+STAND = "Idle_Loop"
+
+def build(ctx):
+    ctx.clip("Smash_R", [
+        Key(0.0, Body(), foot_l=Foot(), foot_r=Foot()),
+        Key(2.4, Body(spine=Turn(bend=-12, twist=-25)), hand_r=Hand((-0.22, 1.82, -0.06)), ease="in"),
+        Key(2.7, Body(hips=(0, -0.08, 0.06), hips_turn=Turn(bend=14)), hand_r=Hand(reach=(0, -0.4, 1))),
+        Key(4.4, Body(), hand_r=Hand()),
+    ], planted=(("foot_l", 0, 4.4), ("foot_r", 0, 4.4)), impacts=(("fist", ("hand_r",), 2.7),), mirror="Smash_L")
+```
+
+- Key whole poses at a few times, each on a frame, at the speed the game plays them: a slow raise, a blow eased `in`
+  to its impact, a short hold, and a heavy return to the stand.
+- Hinge at the hips (`hips_turn`) to bring the shoulders low: the spine's joints are close together, so its bend curls
+  the back but barely lowers them. Reach low with `reach` from the shoulder, and read a miss's report of where the
+  shoulder was before moving a place.
+- A stand is seldom square. Place a foot that moves far from its own stand from the body's middle (`at`), so its mirror
+  lands as far; square the shoulders with a twist and a lean worked out from the stand's for a blow made with both hands.
+- A foot that kneels on its toes takes its ankle from `ctx.ankle_for(side, toes, turn)`, and a key half way down, so
+  the toes stay where they stood.
+- Name in `ground` the joints that touch the ground (a hand's fingers come with it), in `planted` those that must not
+  slide, and in `impacts` the joints and times the game's hit windows come from.
+
 ## Motion capture onto the game's rig
 
 A looping clip from motion capture goes through `tools/models/build.py retarget SPEC.json` (its README), not a

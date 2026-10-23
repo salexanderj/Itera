@@ -31,6 +31,7 @@ REPO = MODELS_DIR.parents[1]
 PIN_FILE = MODELS_DIR / "blender.json"
 RUN_RECIPE = MODELS_DIR / "run_recipe.py"
 RETARGET = MODELS_DIR / "retarget.py"
+CLIP_RECIPE = MODELS_DIR / "clip_recipe.py"
 TESTS_RUN = MODELS_DIR / "tests" / "run.py"
 TEST_RECIPE = MODELS_DIR / "tests" / "recipes" / "TestCrate" / "TestCrate.py"
 BLENDER_FLAGS = ("-b", "--factory-startup", "--python-exit-code", "1")
@@ -167,6 +168,47 @@ def read_recipe(path) -> Recipe:
         unit=float(constants.get("UNIT", 1.0)),
         references=dict(constants.get("REFERENCES", {})),
     )
+
+
+@dataclass
+class ClipRecipe:
+    """What build.py reads from a clip recipe (clip_recipe.py) without running it: its path and its clips' file."""
+
+    path: Path
+    out: Path
+
+
+def read_clip_recipe(path) -> ClipRecipe | None:
+    """The clip recipe at `path`, or None for a file that is not one (it names MODEL and OUT and has def build)."""
+    path = Path(path).resolve()
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, SyntaxError):
+        return None
+    constants: dict = {}
+    has_build = False
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "build":
+            has_build = True
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id in ("MODEL", "OUT", "NAME")
+        ):
+            try:
+                constants[node.targets[0].id] = ast.literal_eval(node.value)
+            except ValueError:
+                return None
+    if "NAME" in constants or not has_build or not isinstance(constants.get("OUT"), str) or "MODEL" not in constants:
+        return None
+    return ClipRecipe(path=path, out=(path.parent / constants["OUT"]).resolve())
+
+
+def default_clip_recipes() -> list:
+    """Every src/Game/ModelRecipes/*/*.py that is a clip recipe, in path order."""
+    found = [read_clip_recipe(path) for path in sorted((REPO / "src" / "Game" / "ModelRecipes").glob("*/*.py"))]
+    return [recipe for recipe in found if recipe is not None]
 
 
 def default_recipes() -> list:
@@ -443,8 +485,13 @@ def command_docs(arguments) -> int:
 
 
 def command_verify(arguments) -> int:
-    recipes = [read_recipe(path) for path in arguments.recipes] if arguments.recipes else default_recipes()
-    if not recipes:
+    if arguments.recipes:
+        clip_recipes = [clip for clip in (read_clip_recipe(path) for path in arguments.recipes) if clip is not None]
+        given = {clip.path for clip in clip_recipes}
+        recipes = [read_recipe(path) for path in arguments.recipes if Path(path).resolve() not in given]
+    else:
+        recipes, clip_recipes = default_recipes(), default_clip_recipes()
+    if not recipes and not clip_recipes:
         print("No recipes to verify (none given, and none in src/Game/ModelRecipes).")
         return 0
     executable = check_blender()
@@ -466,7 +513,31 @@ def command_verify(arguments) -> int:
             else:
                 print(f"{recipe.name}: DIFFERS ({describe_difference(committed, result.out_path)})")
                 different += 1
+        for clip in clip_recipes:
+            different += 0 if verify_clips(clip, executable, Path(folder) / ("clips-" + clip.path.stem)) else 1
     return 1 if different else 0
+
+
+def verify_clips(clip: ClipRecipe, executable: str, work: Path) -> bool:
+    """Makes a clip recipe's clips again in `work` and compares them with its committed clips file; prints which."""
+    work.mkdir(parents=True, exist_ok=True)
+    out = work / clip.out.name
+    code = run_blender(
+        executable, CLIP_RECIPE, [str(clip.path), str(work / "report.json"), str(work), "--out", str(out)],
+        work / "blender.log",
+    )
+    label = clip.out.name
+    if code != 0 or not out.is_file():
+        print(f"{label}: DIFFERS (the rebuild failed)\n{log_tail(work / 'blender.log')}")
+        return False
+    if not clip.out.is_file():
+        print(f"{label}: DIFFERS (no committed file at {clip.out})")
+        return False
+    if clip.out.read_bytes() == out.read_bytes():
+        print(f"{label}: matches")
+        return True
+    print(f"{label}: DIFFERS ({describe_difference(clip.out, out)})")
+    return False
 
 
 def describe_difference(first: Path, second: Path) -> str:
@@ -664,6 +735,42 @@ def command_retarget(arguments) -> int:
     return 0
 
 
+def command_clips(arguments) -> int:
+    """Makes a clip recipe's clips (clip_recipe.py) and prints what each became and every problem the checks found."""
+    executable = check_blender()
+    recipe = Path(arguments.recipe).resolve()
+    if not recipe.is_file():
+        raise ToolError(f"{recipe}: no such clip recipe", 2)
+    work = Path(arguments.work).resolve() if arguments.work else default_work_dir("clips-" + recipe.stem)
+    work.mkdir(parents=True, exist_ok=True)
+    report_path, log_path = work / "report.json", work / "blender.log"
+    report_path.unlink(missing_ok=True)
+    extra = ["--video"] if arguments.video else []
+    code = run_blender(executable, CLIP_RECIPE, [str(recipe), str(report_path), str(work), *extra], log_path)
+    if code != 0 or not report_path.is_file():
+        print(f"clips: Blender failed (exit {code}); the end of {log_path}:\n{log_tail(log_path)}")
+        return 1
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    print(f"clips: {report['out']}")
+    for clip in report["clips"]:
+        bends = ", ".join(f"{name} {most[0]:.0f} deg" for name, most in sorted(clip["bends"].items()))
+        print(f"  {clip['name']}: {clip['seconds']:.2f} s; ends {clip['start_off'] * 100:.1f} and "
+              f"{clip['end_off'] * 100:.1f} cm from the stand; most bend: {bends}")
+        for impact in clip["impacts"]:
+            places = "; ".join(
+                f"{joint} at ({', '.join(f'{v:.3f}' for v in place)})" for joint, place in impact["places"].items()
+            )
+            print(f"    {impact['label']} at {impact['seconds']:.2f} s: {places}")
+        print(f"    sheet: {clip['sheet']}")
+        if "video" in clip:
+            print(f"    video: {clip['video']}")
+    for problem in report["problems"]:
+        print(f"  PROBLEM: {problem}")
+    print(f"  report:    {report_path}")
+    print(f"  log:       {log_path}")
+    return 1 if report["problems"] else 0
+
+
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Builds game models from Python recipes run by Blender.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -681,7 +788,9 @@ def make_parser() -> argparse.ArgumentParser:
     docs.set_defaults(handler=command_docs)
 
     verify = commands.add_parser("verify", help="rebuild recipes and compare with the committed .glb files")
-    verify.add_argument("recipes", nargs="*", help="recipe files (default: every src/Game/ModelRecipes/*/*.py)")
+    verify.add_argument(
+        "recipes", nargs="*", help="recipe and clip recipe files (default: every src/Game/ModelRecipes/*/*.py)"
+    )
     verify.add_argument("--against", help="compare with DIR/NAME/NAME.glb instead of src/Game/Models/NAME/NAME.glb")
     verify.set_defaults(handler=command_verify)
 
@@ -707,6 +816,12 @@ def make_parser() -> argparse.ArgumentParser:
     retarget.add_argument("spec", help="the spec (SPEC.json; retarget.py's docstring has its form)")
     retarget.add_argument("--work", help="the work folder (default: <agent data folder>/ModelBuilds/retarget-SPEC)")
     retarget.set_defaults(handler=command_retarget)
+
+    clip = commands.add_parser("clips", help="make a clip recipe's clips, keyed by poses, on its model's rig")
+    clip.add_argument("recipe", help="the clip recipe (clip_recipe.py's docstring has its form)")
+    clip.add_argument("--work", help="the work folder (default: <agent data folder>/ModelBuilds/clips-RECIPE)")
+    clip.add_argument("--video", action="store_true", help="also render each clip as an MP4")
+    clip.set_defaults(handler=command_clips)
 
     selftest = commands.add_parser("selftest", help="run the toolkit's own tests")
     selftest.set_defaults(handler=command_selftest)

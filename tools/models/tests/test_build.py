@@ -107,6 +107,28 @@ class RecipeTests(unittest.TestCase):
         self.assertEqual({"front": "front.png", "side": ("side.png", "t-pose")}, recipe.references)
         self.assertEqual((path.parent / "my-budgets.json").resolve(), recipe.budgets)
 
+    def test_a_clip_recipe_is_told_from_a_model_recipe_by_its_names(self):
+        clip = write_recipe(
+            self.root,
+            """
+            MODEL = "../Base/Base.glb"
+            OUT = "Moves.glb"
+            STAND = "Idle"
+
+            def build(ctx):
+                raise RuntimeError("never run")
+            """,
+            name="Moves",
+        )
+        model = write_recipe(self.root, 'NAME = "Thing"\nMODEL = "x.glb"\nOUT = "y.glb"\n\ndef build(ctx):\n    pass\n')
+        no_out = write_recipe(self.root, 'MODEL = "x.glb"\n\ndef build(ctx):\n    pass\n', name="NoOut")
+
+        read = build.read_clip_recipe(clip)
+
+        self.assertEqual((clip, clip.parent / "Moves.glb"), (read.path, read.out))
+        self.assertIsNone(build.read_clip_recipe(model))
+        self.assertIsNone(build.read_clip_recipe(no_out))
+
     def test_budgets_default_to_the_file_above_the_recipes_folder_when_it_exists(self):
         path = write_recipe(self.root, 'NAME = "Thing"\ndef build(ctx):\n    pass\n')
         self.assertIsNone(build.read_recipe(path).budgets)

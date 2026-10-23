@@ -20,8 +20,10 @@ their parts are. The engine's side (the import, `ModelInspection`, points, `Engi
   which run inside Blender. `engine_views.py` and `tile_pictures.py` make the engine's pictures for `build.py views`.
   `merge_clips.py` merges clips from files on one rig. `retarget.py` is what Blender runs for `build.py retarget`:
   motion capture onto a model's rig, written on the model's own nodes (`tools/models/itera_models/gltf_clips.py`) for
-  `merge_clips.py` to add. `blender.json` pins Blender's version. Its README has every command, the recipe contract, and
-  the exit codes.
+  `merge_clips.py` to add. `clip_recipe.py` is what Blender runs for `build.py clips`: a clip recipe's key poses
+  (`tools/models/itera_models/keyed.py`) on a model's rig, written on its nodes the same way, its frames drawn by
+  `tools/models/itera_models/strips.py`. `blender.json` pins Blender's version. Its README has every command, the
+  recipe contract, and the exit codes.
 - `tools/ModelCheck/`: the checker's command line over `ModelInspection`, which holds all its rules.
 - `tools/ModelView/`: the neutral stage, a program on the engine with no voxel world (`ModelStage`): `StageGround`,
   `StageSystem` (the ground and the camera at a match's start), and the engine's systems that pose and draw meshes.

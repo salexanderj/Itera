@@ -14,6 +14,7 @@ tools/models/build.py views RECIPE.py|MODEL.glb [--clip Walk@0.4]   # drawn by t
 tools/models/build.py views RECIPE.py --world PLACE                  # drawn by the engine in the game's world
 tools/models/build.py verify [RECIPE.py ...]                         # rebuild and compare with the committed files
 tools/models/build.py retarget SPEC.json                             # motion capture onto a model's rig, as loops
+tools/models/build.py clips CLIPS.py [--video]                       # clips keyed by poses on a model's rig
 tools/models/build.py selftest                                       # the toolkit's own tests
 ```
 
@@ -202,9 +203,10 @@ three-quarter view (perspective), plus a three-quarter view of each `--clip CLIP
 ## verify
 
 `verify` rebuilds each recipe (default: every `src/Game/ModelRecipes/*/*.py` that defines `NAME`) into a temporary
-folder and compares the `.glb` with the committed `src/Game/Models/<NAME>/<NAME>.glb` byte for byte. `--against DIR`
-compares with `DIR/<NAME>/<NAME>.glb` instead. Blender's output has been byte-identical from run to run for the test
-recipe (a skinned mesh with a clip, a point, and an image). A change to the pinned Blender, to a recipe, or to the
+folder and compares the `.glb` with the committed `src/Game/Models/<NAME>/<NAME>.glb` byte for byte. It makes each clip
+recipe's clips again too (a file there that names `MODEL` and `OUT` and no `NAME`) and compares them with its `OUT`.
+`--against DIR` compares with `DIR/<NAME>/<NAME>.glb` instead. Blender's output has been byte-identical from run to run
+for the test recipe (a skinned mesh with a clip, a point, and an image). A change to the pinned Blender, to a recipe, or to the
 helpers can change the bytes: look at the model, then build it again and commit the new file.
 
 ## selftest
@@ -239,3 +241,25 @@ the spec's form). For each clip it:
 Capture is raw. Its feet are its worst part: their roll flips and they glitch for a few frames at a time, so aim them,
 mend them, and leave the toes out of the map, which keeps the model's own foot shape. Look at the result with `views
 --clip` before using it. The work folder is `<agent data folder>/ModelBuilds/retarget-<SPEC>/`, or `--work DIR`.
+
+## clips
+
+`clips CLIPS.py` makes a clip recipe's clips on an existing model's rig (`clip_recipe.py`'s docstring has the recipe's
+form): each from a few key poses (`itera_models/keyed.py`), written into one `.glb` on the model's own nodes, which a
+`merge_clips.py` list then adds to the model. For each clip it:
+
+- stands the model in the first pose of its own clip `STAND`, which each clip starts and ends in;
+- keys at each key pose the hips (moved and turned), the spine and the neck (turned), each collarbone, and a target
+  and a pole for each hand and foot. A hand goes to a place (`at`), moves from where it stands (`by`), or reaches a way
+  from its shoulder (`reach`, a share of the arm's length). An elbow and a knee point the way the key gives. The
+  fingers keep the stand's pose. A part a key leaves out moves between the keys that name it;
+- eases each key to the next as it asks (`both`, `in` for a blow, `out`, `linear`, `hold`), bakes the IK to plain keys
+  every frame, and makes its mirror for the other side where the recipe asks;
+- checks it (`keyed.check`): a joint under the ground (a little allowed for the joints named as touching it, and those
+  below them), a hand or foot that falls short of its place (with where its limb's root was), a knee or elbow bent past
+  a person's or a knee bent backwards, a joint named as planted that slides, and first and last poses off the stand;
+- reports where its impacts put the joints named, for the game's hit windows, and draws a sheet of its frames from the
+  side and from three quarters in front (`itera_models/strips.py`), with `--video` an MP4 too.
+
+Each key must fall on a frame. A clip with a problem fails the command (exit 1). The work folder is
+`<agent data folder>/ModelBuilds/clips-<RECIPE>/`, or `--work DIR`.

@@ -90,7 +90,8 @@ Open edges only warn, since a leaf card or a banner may need them. Edges shared 
   The game measures that number from the model (the engine's `ClipGround`), or keeps it in one place that a test
   compares with the clip.
   Natural human motion does not come out well from code: take it from motion capture and retarget it to the game's
-  rig (`build.py retarget`; `recipes.md` has the steps).
+  rig (`build.py retarget`; `recipes.md` has the steps). Big, deliberate moves no pack has, a giant's blows, are keyed
+  by a few poses with IK in a clip recipe (`build.py clips`; `recipes.md`).
 - **Licences:** use CC0 sources (Poly Haven, ambientCG), CMU motion capture (it may ship inside a game but not be
   resold), or CC BY ones with credit the player can see (100STYLE).
   Models and clips from SMPL, AMASS, or HumanML3D are non-commercial, and so are the motion models trained on them; do
