@@ -5,8 +5,10 @@ namespace Itera.Engine.Rendering.Meshes;
 
 /// <summary>
 /// Where every mesh asset of the run lies in the mesh pass's asset buffers (<see cref="MeshAssetPass"/>): one vertex
-/// buffer, one index buffer, one material table, and one texture array for all, each asset's after the one before;
-/// texture 0 is a white stand-in, so an asset's texture i is <see cref="AssetPlace.FirstTexture"/> + i. Its primitives are
+/// buffer, one index buffer, one material table, and one texture array for all, each asset's after the one before. The
+/// texture array holds each texture once (<see cref="Textures"/>), however many assets share it (a file's parts, a
+/// model's variants), after a white stand-in at 0: an asset's texture i is in the array's slot
+/// <see cref="TextureSlots"/>[<see cref="AssetPlace.FirstTexture"/> + i] (<see cref="Slotted"/>). Its primitives are
 /// listed sorted by the pipeline that draws them (<see cref="MeshAssetRange"/>), so a list's commands, grouped by
 /// primitive in that order, come out grouped by pipeline. A skinned asset's joints and weights lie in one skin buffer
 /// (<see cref="AssetPlace.FirstSkin"/>), and its joints' places in the bound pose and their reaches in
@@ -32,12 +34,15 @@ public sealed class MeshAssetLayout
         int vertexCount,
         int indexCount,
         int materialCount,
-        int textureCount,
+        MeshTextureData[] textures,
+        int[] textureSlots,
         int skinVertexCount,
         Vector3[] jointPositions,
         float[] jointReaches
     )
     {
+        Textures = textures;
+        TextureSlots = textureSlots;
         SkinVertexCount = skinVertexCount;
         JointPositions = jointPositions;
         JointReaches = jointReaches;
@@ -48,7 +53,6 @@ public sealed class MeshAssetLayout
         VertexCount = vertexCount;
         IndexCount = indexCount;
         MaterialCount = materialCount;
-        TextureCount = textureCount;
     }
 
     /// <summary>Each asset's place, by its index in <see cref="MeshAssets"/>.</summary>
@@ -69,8 +73,14 @@ public sealed class MeshAssetLayout
 
     public int MaterialCount { get; }
 
-    /// <summary>Textures of every asset, and the stand-in at 0.</summary>
-    public int TextureCount { get; }
+    /// <summary>The texture array's slots: each texture of the assets once, and the stand-in at 0.</summary>
+    public int TextureCount => Textures.Length + 1;
+
+    /// <summary>Each texture of the assets once, in the order first met: the one in the array's slot s is s - 1.</summary>
+    public MeshTextureData[] Textures { get; }
+
+    /// <summary>Each asset's textures' slots in the texture array, in order, from its <see cref="AssetPlace.FirstTexture"/>.</summary>
+    public int[] TextureSlots { get; }
 
     /// <summary>The skinned assets' vertices, each with a skin entry (<c>MeshSkinVertex</c>).</summary>
     public int SkinVertexCount { get; }
@@ -102,10 +112,11 @@ public sealed class MeshAssetLayout
         var unsorted = new List<(PrimitivePlace Place, int Asset, int Local)>();
         var jointPositions = new List<Vector3>();
         var jointReaches = new List<float>();
+        var unique = new Dictionary<MeshTextureData, int>(ReferenceEqualityComparer.Instance);
+        var slots = new List<int>();
         int vertices = 0,
             indices = 0,
             materials = 0,
-            textures = 1,
             skins = 0;
         for (var a = 0; a < assets.Count; a++)
         {
@@ -119,7 +130,7 @@ public sealed class MeshAssetLayout
                 0,
                 asset.Primitives.Length,
                 materials,
-                textures,
+                slots.Count,
                 centre,
                 radius,
                 asset.Rig is null ? -1 : skins,
@@ -160,7 +171,17 @@ public sealed class MeshAssetLayout
             vertices += asset.Vertices.Length;
             indices += asset.Indices.Length;
             materials += asset.Materials.Length;
-            textures += asset.Textures.Length;
+            foreach (var texture in asset.Textures)
+            {
+                // A texture another asset holds already (the same object) takes its slot.
+                if (!unique.TryGetValue(texture, out var slot))
+                {
+                    slot = unique.Count + 1;
+                    unique[texture] = slot;
+                }
+
+                slots.Add(slot);
+            }
         }
 
         // A stable sort by range keeps each asset's primitives in their order within a range.
@@ -204,11 +225,38 @@ public sealed class MeshAssetLayout
             vertices,
             indices,
             materials,
-            textures,
+            [.. unique.OrderBy(entry => entry.Value).Select(entry => entry.Key)],
+            [.. slots],
             skins,
             [.. jointPositions],
             [.. jointReaches]
         );
+    }
+
+    /// <summary>
+    /// <paramref name="material"/> of asset <paramref name="asset"/> with each texture it names in the texture array's
+    /// slot (<see cref="TextureSlots"/>), as the mesh pass packs it from slot 0.
+    /// </summary>
+    public MeshMaterialData Slotted(int asset, MeshMaterialData material)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+        var first = Assets[asset].FirstTexture;
+        var count = (asset + 1 < Assets.Length ? Assets[asset + 1].FirstTexture : TextureSlots.Length) - first;
+        MeshTextureRef Slot(MeshTextureRef texture) =>
+            texture.IsNone || texture.Texture >= count
+                ? texture
+                : texture with
+                {
+                    Texture = TextureSlots[first + texture.Texture],
+                };
+        return material with
+        {
+            BaseColourTexture = Slot(material.BaseColourTexture),
+            NormalTexture = Slot(material.NormalTexture),
+            OcclusionTexture = Slot(material.OcclusionTexture),
+            EmissionTexture = Slot(material.EmissionTexture),
+            MetalRoughTexture = Slot(material.MetalRoughTexture),
+        };
     }
 
     /// <summary>
@@ -252,7 +300,8 @@ public sealed class MeshAssetLayout
     }
 
     /// <summary>
-    /// An asset's place: its first vertex, index, material, and texture in the pass's buffers, its primitives' first entry
+    /// An asset's place: its first vertex, index, and material in the pass's buffers, its first texture's entry in
+    /// <see cref="TextureSlots"/>, its primitives' first entry
     /// in <see cref="AssetPrimitives"/> and their count, and its bounding sphere in its own space; for a skinned asset, its
     /// first skin entry (-1 for a static asset), its first joint in <see cref="JointPositions"/> and its joint count, and
     /// the sphere of its vertices no joint moves (a radius of -1 for none).

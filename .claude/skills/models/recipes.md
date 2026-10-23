@@ -92,8 +92,8 @@ ctx.export(objects=[armature, body, helm])
 - Name each part as the game names it: the object's name is the node's.
 - A part is drawn whole and rigid, so give a part that spans a bending joint (a back plate over the spine) to the bone
   it moves with most.
-- Every part's material is read again for each part, textures too: keep parts' materials plain (colours, vertex
-  colours, emission), or share one small texture.
+- The parts of one file share its textures: an image their materials use is held once. To texture many parts, bake
+  them together into one image set (join them for the bake in one UV layout, then split them again).
 
 ## A creature
 

@@ -12,7 +12,8 @@ namespace Itera.Engine.Tests.Assets;
 /// its joint's space, the nodes between applied, so posed at rest it lands where the file puts it, with only its own
 /// material and no rig; a node named nowhere or twice cannot be read; a body bound on another model's rig takes that
 /// rig's joint order and clips, its vertices following their joints, and the file is listed once; a body whose joints
-/// rest elsewhere, or that has clips of its own, stops the step naming the difference.
+/// rest elsewhere, or that has clips of its own, stops the step naming the difference; a file's whole and its parts read
+/// it once and hold the same texture where their materials use one image.
 /// </summary>
 public sealed class MeshPartsTests : IDisposable
 {
@@ -55,6 +56,20 @@ public sealed class MeshPartsTests : IDisposable
                 Vector3.Transform(part.Vertices[i].Position, globals[rig.FindJoint("a")])
             );
         }
+    }
+
+    [Fact]
+    public void A_files_whole_and_its_parts_read_it_once_and_hold_the_same_texture()
+    {
+        var assets = new MeshAssets(NullLogger<MeshAssets>.Instance);
+        var path = WriteBody("textured", aFirst: true, clip: false, textured: true);
+        var body = assets.Declare("body", path);
+        var guard = assets.Declare("guard", path, node: "guard");
+
+        assets.LoadAll(textures: true);
+
+        var texture = Assert.Single(assets[body].Textures);
+        Assert.Same(texture, Assert.Single(assets[guard].Textures));
     }
 
     [Fact]
@@ -126,11 +141,34 @@ public sealed class MeshPartsTests : IDisposable
     /// through a holder 0.1 up and turned a quarter about z, the guard, a triangle in the material iron not skinned (and a
     /// second guard under b when <paramref name="twice"/>). With <paramref name="clip"/>, a clip Wave turning a.
     /// </summary>
-    private string WriteBody(string name, bool aFirst, bool clip, bool twice = false, float aAt = 0.2f)
+    private string WriteBody(
+        string name,
+        bool aFirst,
+        bool clip,
+        bool twice = false,
+        float aAt = 0.2f,
+        bool textured = false
+    )
     {
         var gltf = new GltfBuilder();
-        var flesh = gltf.Material(new JsonObject { ["name"] = "flesh" });
-        var iron = gltf.Material(new JsonObject { ["name"] = "iron" });
+        // With a texture, one image both materials use.
+        var texture = textured ? gltf.Texture(gltf.Image(GltfBuilder.Png(4, 4, SkiaSharp.SKColors.Gray))) : -1;
+        JsonObject Material(string named)
+        {
+            var material = new JsonObject { ["name"] = named };
+            if (texture >= 0)
+            {
+                material["pbrMetallicRoughness"] = new JsonObject
+                {
+                    ["baseColorTexture"] = new JsonObject { ["index"] = texture },
+                };
+            }
+
+            return material;
+        }
+
+        var flesh = gltf.Material(Material("flesh"));
+        var iron = gltf.Material(Material("iron"));
         var hipWorld = Matrix4x4.CreateTranslation(0, 1, 0);
         var aWorld = Matrix4x4.CreateTranslation(aAt, 0, 0) * hipWorld;
         var bWorld = Matrix4x4.CreateTranslation(-0.2f, 0, 0) * hipWorld;

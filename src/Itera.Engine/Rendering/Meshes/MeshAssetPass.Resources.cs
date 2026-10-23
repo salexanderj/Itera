@@ -81,16 +81,9 @@ public sealed unsafe partial class MeshAssetPass
         var indexBytes = (ulong)layout.IndexCount * sizeof(uint);
         var materialBytes = (ulong)layout.MaterialCount * (ulong)sizeof(MeshAssetMaterial);
         ulong textureBytes = 0;
+        // Each texture once, however many assets share it, after the stand-in.
         var textures = new List<MeshTextureData?> { null };
-        for (var a = 0; a < _assets.Count; a++)
-        {
-            foreach (var texture in _assets[a].Textures)
-            {
-                textures.Add(textures.Count < keptTextures ? texture : null);
-            }
-        }
-
-        textures.RemoveRange(keptTextures, textures.Count - keptTextures);
+        textures.AddRange(layout.Textures.Take(keptTextures - 1));
         foreach (var texture in textures)
         {
             textureBytes += texture is null ? 16 : LevelBytes(texture);
@@ -174,7 +167,7 @@ public sealed unsafe partial class MeshAssetPass
             for (var m = 0; m < asset.Materials.Length; m++)
             {
                 var material = asset.Materials[m];
-                var packed = MeshAssetMaterial.From(material, place.FirstTexture, keptTextures);
+                var packed = MeshAssetMaterial.From(layout.Slotted(a, material), 0, keptTextures);
                 var view = _views.ViewOnMaterial(asset.Name, material.Name);
                 materials[place.FirstMaterial + m] =
                     view >= 0 ? MeshAssetMaterial.ShowingView(in packed, material, keptTextures + view) : packed;

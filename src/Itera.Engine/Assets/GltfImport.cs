@@ -55,30 +55,58 @@ internal static partial class GltfImport
         List<string>? notes = null,
         ImportFindings? findings = null,
         string? node = null
-    )
+    ) => Import(Open(path, textures), name, metresPerUnit, warnings, notes, findings, node);
+
+    /// <summary>
+    /// Opens the file at <paramref name="path"/> to read assets from (<see cref="Import(GltfFile, string, float,
+    /// List{string}, List{string}?, ImportFindings?, string?)"/>), its textures as <paramref name="textures"/> says. Throws
+    /// <see cref="InvalidDataException"/> for a file it cannot read, naming it.
+    /// </summary>
+    internal static GltfFile Open(string path, TextureReading textures)
     {
         RefuseUnhandled(path, ReadRequiredExtensions(path));
-        ModelRoot model;
         try
         {
-            model = ModelRoot.Load(path, new ReadSettings { Validation = ValidationMode.TryFix });
+            return new GltfFile(
+                path,
+                ModelRoot.Load(path, new ReadSettings { Validation = ValidationMode.TryFix }),
+                textures
+            );
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             throw new InvalidDataException($"{path}: not a glTF 2.0 file the importer can read: {ex.Message}", ex);
         }
+    }
 
-        var context = new ImportContext(path, textures, warnings, findings ?? new ImportFindings())
+    /// <summary>
+    /// An asset of <paramref name="file"/>, as <see cref="Load"/> reads one. Assets read from one file share its
+    /// textures: an image read in a role once is the same <see cref="MeshTextureData"/> in each, which the mesh pass holds
+    /// once. One thread at a time per file.
+    /// </summary>
+    internal static MeshAsset Import(
+        GltfFile file,
+        string name,
+        float metresPerUnit,
+        List<string> warnings,
+        List<string>? notes = null,
+        ImportFindings? findings = null,
+        string? node = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        var context = new ImportContext(file, warnings, findings ?? new ImportFindings())
         {
             MetresPerUnit = metresPerUnit,
             Lazy = node is not null,
         };
+        var model = file.Model;
         var asset = node is null ? Import(name, model, metresPerUnit, context) : ImportPart(name, model, node, context);
-        if (textures == TextureReading.PreferCompressed && context.DecodedTextures > 0 && !context.HasCompressed)
+        if (file.Reading == TextureReading.PreferCompressed && context.DecodedTextures > 0 && !file.HasCompressed)
         {
             notes?.Add(
-                $"{Path.GetFileName(path)}: {context.DecodedTextures} texture(s) decoded at load, with no "
-                    + $"{Path.GetFileName(CompressedTextures.FolderOf(path))}/{CompressedTextures.ListFile} beside it: "
+                $"{Path.GetFileName(file.Path)}: {context.DecodedTextures} texture(s) decoded at load, with no "
+                    + $"{Path.GetFileName(CompressedTextures.FolderOf(file.Path))}/{CompressedTextures.ListFile} beside it: "
                     + $"tools/Textures compresses them (`{CompressedTextures.Command}` on the source file)"
             );
         }
@@ -667,7 +695,22 @@ internal static partial class GltfImport
             return existing < 0 ? MeshTextureRef.None : new MeshTextureRef(existing, sampler, uvSet);
         }
 
-        var index = ReadImage(image, role, context);
+        // Read once for the file: another asset of it that read this image in this role shares its texture.
+        int index;
+        if (context.File.Textures.TryGetValue(key, out var shared))
+        {
+            index = shared is null ? -1 : context.Textures.Count;
+            if (shared is not null)
+            {
+                context.Textures.Add(shared);
+            }
+        }
+        else
+        {
+            index = ReadImage(image, role, context);
+            context.File.Textures[key] = index < 0 ? null : context.Textures[index];
+        }
+
         context.TextureIndices[key] = index;
         return index < 0 ? MeshTextureRef.None : new MeshTextureRef(index, sampler, uvSet);
     }
@@ -680,10 +723,10 @@ internal static partial class GltfImport
     private static int ReadImage(Image image, MeshTextureRole role, ImportContext context)
     {
         var content = image.Content;
-        var hash = context.HashOf(image);
+        var hash = context.File.HashOf(image);
         var name = $"{Path.GetFileName(context.Path)} image {image.LogicalIndex} ({role})";
         // An image the model does not hold is never read from a list: it is decoded, which warns that it is missing.
-        if (!content.IsEmpty && context.CompressedList() is { } list)
+        if (!content.IsEmpty && context.File.CompressedList(context.Warn) is { } list)
         {
             var folder = CompressedTextures.FolderOf(context.Path);
             var compressed = CompressedTextures.TryRead(
@@ -707,14 +750,14 @@ internal static partial class GltfImport
             );
         }
 
-        if (!context.Decoded.TryGetValue(image.LogicalIndex, out var decoded))
+        if (!context.File.Decoded.TryGetValue(image.LogicalIndex, out var decoded))
         {
             decoded =
                 !content.IsEmpty
                 && TextureDecode.TryDecode(content.Content.Span, out var width, out var height, out var rgba)
                     ? (width, height, rgba)
                     : null;
-            context.Decoded[image.LogicalIndex] = decoded;
+            context.File.Decoded[image.LogicalIndex] = decoded;
             if (decoded is null)
             {
                 var kind = content.IsEmpty ? "missing" : content.MimeType;
@@ -785,21 +828,17 @@ internal static partial class GltfImport
         return index;
     }
 
-    /// <summary>What an import gathers: the asset's arrays as they grow, its decoded images, its warnings, and its findings.</summary>
-    private sealed class ImportContext(
-        string path,
-        TextureReading reading,
-        List<string> warnings,
-        ImportFindings findings
-    )
+    /// <summary>What an import gathers: the asset's arrays as they grow, its warnings, and its findings.</summary>
+    private sealed class ImportContext(GltfFile file, List<string> warnings, ImportFindings findings)
     {
         private int _defaultMaterial = -1;
-        private bool _listRead;
-        private CompressedTextureList? _list;
 
-        public string Path { get; } = path;
+        /// <summary>The file it reads, with what its assets share.</summary>
+        public GltfFile File { get; } = file;
 
-        public TextureReading Reading { get; } = reading;
+        public string Path => File.Path;
+
+        public TextureReading Reading => File.Reading;
 
         public ImportFindings Findings { get; } = findings;
 
@@ -817,10 +856,7 @@ internal static partial class GltfImport
 
         public List<MeshPoint> Points { get; } = [];
 
-        /// <summary>True when the model has a list of compressed textures beside it, whether or not it reads.</summary>
-        public bool HasCompressed { get; private set; }
-
-        /// <summary>The textures decoded at load.</summary>
+        /// <summary>The textures this import decoded.</summary>
         public int DecodedTextures { get; set; }
 
         public List<MeshAssetVertex> Vertices { get; } = [];
@@ -836,12 +872,8 @@ internal static partial class GltfImport
 
         public List<MeshTextureData> Textures { get; } = [];
 
+        /// <summary>The asset's own index of each image read in a role, -1 for one that cannot be read.</summary>
         public Dictionary<(int Image, MeshTextureRole Role), int> TextureIndices { get; } = [];
-
-        public Dictionary<int, (int Width, int Height, byte[] Rgba)?> Decoded { get; } = [];
-
-        /// <summary>Each image's hash (<see cref="CompressedTextures.Hash"/>), taken once for all its roles.</summary>
-        public Dictionary<int, string> Hashes { get; } = [];
 
         public bool WrapWarned { get; set; }
 
@@ -850,49 +882,6 @@ internal static partial class GltfImport
         public bool JointsWarned { get; set; }
 
         public void Warn(string message) => warnings.Add($"{System.IO.Path.GetFileName(Path)} {message}");
-
-        /// <summary>The hash of the image's bytes as the model stores them; empty for an image it does not hold.</summary>
-        public string HashOf(Image image)
-        {
-            if (!Hashes.TryGetValue(image.LogicalIndex, out var hash))
-            {
-                var content = image.Content;
-                hash = content.IsEmpty ? "" : CompressedTextures.Hash(content.Content.Span);
-                Hashes[image.LogicalIndex] = hash;
-            }
-
-            return hash;
-        }
-
-        /// <summary>
-        /// The model's list of compressed textures when the run prefers them and it has one, read the first time a
-        /// texture asks (a list that cannot be read is a warning, and every texture is decoded).
-        /// </summary>
-        public CompressedTextureList? CompressedList()
-        {
-            if (_listRead || Reading != TextureReading.PreferCompressed)
-            {
-                return _list;
-            }
-
-            _listRead = true;
-            var folder = CompressedTextures.FolderOf(Path);
-            try
-            {
-                _list = CompressedTextures.ReadList(folder);
-                HasCompressed = _list is not null;
-            }
-            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
-            {
-                HasCompressed = true;
-                Warn(
-                    $"{System.IO.Path.GetFileName(folder)}: {ex.Message}: its textures are decoded at load; make them "
-                        + $"again with tools/Textures (`{CompressedTextures.Command}` on the source file)"
-                );
-            }
-
-            return _list;
-        }
 
         /// <summary>The index of glTF's default material, added the first time a primitive names none.</summary>
         public int DefaultMaterial()

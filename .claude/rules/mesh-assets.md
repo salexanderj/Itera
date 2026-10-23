@@ -112,6 +112,9 @@ judges (a host's hits on posed bodies). The deterministic skeletons for bodies, 
   material its source lacks stops the step, naming it.
 - The run's "mesh assets" step, after the mods', reads every declared file on worker threads (`LoadAll`). Without
   graphics (`Engine:Window:Mode=None`, and `HeadlessRun`) it decodes no images and materials name no textures.
+- It opens each file once (`GltfFile`) and reads every asset declared from it in turn: its whole and its parts. They
+  share the file's textures: an image read in a role once is the same `MeshTextureData` in each, which the mesh pass
+  holds once.
 - `LoadAll` first declares the models of `Engine:Assets:Extra`, after the game's and the mods' own, each path from the
   folder the run started in. A tool shows a model there without a rebuild. A name a model has already stops the run,
   naming the option; the validator checks each name, file, and unit at start.

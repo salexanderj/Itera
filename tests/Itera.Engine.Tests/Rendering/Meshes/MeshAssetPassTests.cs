@@ -10,7 +10,7 @@ namespace Itera.Engine.Tests.Rendering.Meshes;
 /// <summary>
 /// The mesh asset pass's shaders read the vertices, materials, draws, view, and cascades as the C# structs lay them out,
 /// in sets 0 (the mesh pass's) and 1 (its own); its materials pack their texture references as the shaders read them; its
-/// layout lists every asset's primitives grouped by pipeline range.
+/// layout lists every asset's primitives grouped by pipeline range, and holds a texture assets share once.
 /// </summary>
 public sealed class MeshAssetPassTests : IDisposable
 {
@@ -122,6 +122,38 @@ public sealed class MeshAssetPassTests : IDisposable
         Assert.Equal(packed.NormalTexture, shown.NormalTexture);
         Assert.Equal(view, unlit.BaseColourTexture);
         Assert.Equal(MeshAssetMaterial.NoTexture, unlit.EmissionTexture & 0xFFFFu);
+    }
+
+    [Fact]
+    public void The_layout_holds_a_texture_assets_share_once_and_slots_each_materials_textures_into_it()
+    {
+        var shared = MeshTextureData.FromRgba("iron", 1, 1, MeshTextureRole.Colour, [128, 128, 128, 255]);
+        var own = MeshTextureData.FromRgba("flesh", 1, 1, MeshTextureRole.Colour, [200, 40, 40, 255]);
+        var textured = MeshMaterialData.Default with
+        {
+            BaseColourTexture = new MeshTextureRef(0, MeshSampler.LinearRepeat, 0),
+        };
+        var body = Asset(
+            "body",
+            textured with
+            {
+                NormalTexture = new MeshTextureRef(1, MeshSampler.LinearRepeat, 0),
+            },
+            3
+        );
+        var helm = Asset("helm", textured, vertices: 3);
+        body = new MeshAsset("body", body.Vertices, body.Indices, body.Primitives, body.Materials, [own, shared]);
+        helm = new MeshAsset("helm", helm.Vertices, helm.Indices, helm.Primitives, helm.Materials, [shared]);
+
+        var layout = MeshAssetLayout.From([body, helm]);
+
+        // The stand-in at 0, then the flesh and the iron once.
+        Assert.Equal(3, layout.TextureCount);
+        Assert.Equal([own, shared], layout.Textures);
+        Assert.Equal(1, layout.Slotted(0, body.Materials[0]).BaseColourTexture.Texture);
+        Assert.Equal(2, layout.Slotted(0, body.Materials[0]).NormalTexture.Texture);
+        Assert.Equal(2, layout.Slotted(1, helm.Materials[0]).BaseColourTexture.Texture);
+        Assert.True(layout.Slotted(1, helm.Materials[0]).NormalTexture.IsNone);
     }
 
     [Fact]

@@ -170,34 +170,56 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
         var notes = new List<string>[_entries.Count];
         var reading = textures ? TextureReading.PreferCompressed : TextureReading.None;
         var failures = new Exception?[_entries.Count];
-        Parallel.For(
-            0,
-            _entries.Count,
-            i =>
-            {
-                var entry = _entries[i];
-                warnings[i] = [];
-                notes[i] = [];
-                if (entry.Asset is not null || entry.Path is null)
-                {
-                    return;
-                }
+        for (var i = 0; i < _entries.Count; i++)
+        {
+            (warnings[i], notes[i]) = ([], []);
+        }
 
+        // Each file once, on a worker thread, its assets read from it in turn: a file's parts and its whole share its
+        // textures (GltfImport.Import).
+        var files = Enumerable
+            .Range(0, _entries.Count)
+            .Where(i => _entries[i].Asset is null && _entries[i].Path is not null)
+            .GroupBy(i => _entries[i].Path!, StringComparer.Ordinal)
+            .Select(group => group.ToArray())
+            .ToArray();
+        Parallel.ForEach(
+            files,
+            group =>
+            {
+                GltfFile file;
                 try
                 {
-                    entry.Asset = GltfImport.Load(
-                        entry.Name,
-                        entry.Path,
-                        entry.MetresPerUnit,
-                        reading,
-                        warnings[i],
-                        notes[i],
-                        node: entry.Node
-                    );
+                    file = GltfImport.Open(_entries[group[0]].Path!, reading);
                 }
                 catch (Exception ex)
                 {
-                    failures[i] = ex;
+                    foreach (var i in group)
+                    {
+                        failures[i] = ex;
+                    }
+
+                    return;
+                }
+
+                foreach (var i in group)
+                {
+                    var entry = _entries[i];
+                    try
+                    {
+                        entry.Asset = GltfImport.Import(
+                            file,
+                            entry.Name,
+                            entry.MetresPerUnit,
+                            warnings[i],
+                            notes[i],
+                            node: entry.Node
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        failures[i] = ex;
+                    }
                 }
             }
         );
@@ -234,18 +256,23 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
         Loaded = true;
         long triangles = 0;
         long textureBytes = 0;
-        var textureCount = 0;
         var compressed = 0;
+        // A texture assets share counts once.
+        var counted = new HashSet<MeshTextureData>(ReferenceEqualityComparer.Instance);
         foreach (var entry in _entries)
         {
             triangles += entry.Asset!.TriangleCount;
-            textureBytes += entry.Asset.TextureBytes;
-            textureCount += entry.Asset.Textures.Length;
             foreach (var texture in entry.Asset.Textures)
             {
-                compressed += texture.Compressed ? 1 : 0;
+                if (counted.Add(texture))
+                {
+                    textureBytes += texture.Texels.Length;
+                    compressed += texture.Compressed ? 1 : 0;
+                }
             }
         }
+
+        var textureCount = counted.Count;
 
         var milliseconds = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
         var megabytes = textureBytes / (1024.0 * 1024.0);

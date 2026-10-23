@@ -69,6 +69,9 @@ the render thread.
 - It holds device-local buffers of every asset's vertices (`MeshAssetVertex`, pulled by `gl_VertexIndex`), 32-bit
   indices, and materials (`MeshAssetMaterial`: factors, alpha cutoff, five packed texture references, flags), and one
   image per texture with every mip.
+- It holds a texture assets share (the same `MeshTextureData`: a file's parts, a model's variants) once
+  (`MeshAssetLayout.Textures`). Each asset's textures map to their slots (`MeshAssetLayout.TextureSlots`), and its
+  materials are packed through that map (`MeshAssetLayout.Slotted`).
 - The formats are `Rgba8Srgb` for colour and emission, `Rgba8Unorm` for occlusion and metal-roughness, and `Rg8Unorm`
   for normals. A model's compressed textures are `BC7_SRGB`, `BC7_UNORM`, and `BC5_UNORM`, each level copied in whole
   4x4 blocks with its own size as the extent.
@@ -78,7 +81,7 @@ the render thread.
 - It owns descriptor set 1 (`mesh-asset-data.glsl`). Set 0 is `MeshPass`'s. Set 1 holds:
   - six immutable samplers: linear, with anisotropy where the device can, or nearest; each repeating, clamped, or
     mirrored;
-  - the textures, `MESH_TEXTURE_COUNT` of them: a white stand-in first, the assets', then a slot for each image view,
+  - the textures, `MESH_TEXTURE_COUNT` of them: a white stand-in first, each of the assets' once, then a slot for each image view,
     indexed with `nonuniformEXT`;
   - the vertices, the materials, and the draws;
   - for the skinning, the skins, every slot's skin groups, and every slot's skinning matrices.
