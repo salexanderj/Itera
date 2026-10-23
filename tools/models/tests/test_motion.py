@@ -6,12 +6,11 @@ import unittest
 
 import blender_test_utils as utils
 import bpy
-from bpy_extras import anim_utils
-from mathutils import Vector
-
 import run_recipe
+from bpy_extras import anim_utils
 from itera_models import motion
 from itera_models.context import Context
+from mathutils import Vector
 
 # A rig 1.8 m tall: a root at the ground, a leg whose tail is the foot's sole, and a still upper body.
 BONES = [

@@ -8,10 +8,9 @@ from pathlib import Path
 
 import blender_test_utils as utils
 import bpy
-from mathutils import Matrix, Quaternion, Vector
-
 import merge_clips
 from itera_models import clips, export, gltf_clips, rig
+from mathutils import Matrix, Quaternion, Vector
 
 BONES = [
     ("root", (0, 0, 0), (0, 0, 0.3), 0.0, None),
@@ -106,6 +105,31 @@ class SettleTests(unittest.TestCase):
         self.assertLess(Vector((middle.x, middle.z)).length, 1e-6)  # over the rest's place
         left = nodes.worlds(sampled[0])[2].translation - nodes.worlds(sampled[0])[3].translation
         self.assertGreater(left.normalized().x, 0.99)  # the hips' left is the model's left again
+
+    def test_a_cycle_kept_facing_goes_nowhere_and_closes_still_turned(self):
+        nodes, sampled = self._cycle()
+
+        settled = gltf_clips.settle(sampled, nodes, 1, 2, 3, 1.0, face=False)
+
+        self.assertEqual(settled["turned"], 0.0)
+        self.assertAlmostEqual(settled["way"], 90.0, places=3)  # it went the way it faces, to its left
+        difference = sampled[-1][1] - sampled[0][1]
+        self.assertLess(max(abs(value) for row in difference for value in row), 1e-6)
+        left = nodes.worlds(sampled[0])[2].translation - nodes.worlds(sampled[0])[3].translation
+        self.assertLess(left.normalized().z, -0.99)  # its hips' left still turned a quarter round
+
+    def test_a_clip_played_once_is_left_as_it_is(self):
+        nodes, sampled = self._cycle()
+        before = [{node: matrix.copy() for node, matrix in locals_.items()} for locals_ in sampled]
+
+        settled = gltf_clips.settle(sampled, nodes, 1, 2, 3, 1.0, loop=False)
+
+        self.assertAlmostEqual(settled["speed"], 0.5, places=4)
+        self.assertEqual((settled["turned"], settled["lowered"]), (0.0, 0.0))
+        for was, now in zip(before, sampled):
+            for node in was:
+                difference = now[node] - was[node]
+                self.assertEqual(max(abs(value) for row in difference for value in row), 0.0, node)
 
 
 class RepairAndResampleTests(unittest.TestCase):

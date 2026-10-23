@@ -27,9 +27,14 @@ The spec is a JSON file. Its paths are from its own folder:
         {"name": "Crouch_Walk_Loop", "source": "NAME", "zip": "URL", "member": "PATH/IN/ZIP.bvh",
          "sha256": "HEX", "from": 500, "to": 655},
         {"name": "Run_Loop", "source": "PACK", "blend": "PATH.blend", "action": "ACTION", "sha256": "HEX",
-         "from": 0, "to": 18}
+         "from": 0, "to": 18},
+        {"name": "Death", "source": "PACK", "blend": "PATH.blend", "action": "ACTION", "from": 1, "to": 82,
+         "loop": false}
       ]
     }
+
+A clip with `"loop": false` is played once: its frames are kept as the source has them, not turned, moved, or closed.
+A loop with `"face": false` (or its source's `"face": false`) keeps the way it faces, not turned to face the front.
 
 Each clip's BVH is one member of a zip, fetched by range requests into the cache and pinned by its SHA-256 (fetch.py).
 Or a clip is an action of an armature in a local `.blend` file (`blend`, pinned by its SHA-256 when given), as an
@@ -125,6 +130,8 @@ def retarget_clip(spec: dict, entry: dict, target, nodes, turns) -> tuple[dict, 
         nodes.index(spec["right"]),
         seconds,
         [nodes.index(foot) for foot in spec.get("feet", [])],
+        face=entry.get("face", source_spec.get("face", True)),
+        loop=entry.get("loop", True),
     )
     target.animation_data.action = None
     bpy.data.actions.remove(action)

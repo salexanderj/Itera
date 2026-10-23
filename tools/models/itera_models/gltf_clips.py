@@ -179,12 +179,22 @@ def resample(sampled: list, count: int) -> list:
 
 
 def settle(
-    sampled: list, nodes: Nodes, hips: int, left: int, right: int, seconds: float, feet: list | None = None
+    sampled: list,
+    nodes: Nodes,
+    hips: int,
+    left: int,
+    right: int,
+    seconds: float,
+    feet: list | None = None,
+    face: bool = True,
+    loop: bool = True,
 ) -> dict:
     """Makes a sampled cycle (its last sample the pose its first came back to) a loop played in place.
 
     The cycle is turned about the model's up to face its front: the hips' line from the right joint to the left one,
-    on average, lies along the rest's. Its travel along the ground is taken out of the hips, which keep their place
+    on average, lies along the rest's; with `face` false it keeps the way it faces (a pack's run turned to face the
+    way it goes). With `loop` false the samples are a clip played once and are left as they are: only the travel is
+    measured. Its travel along the ground is taken out of the hips, which keep their place
     over the rest's on average, so the game moves the body. With `feet`, the hips go down or up until the feet's lowest
     point over the cycle is as low as at rest: a capture's floor read from its own feet errs where they do. What is
     left at the seam, in every node's turn and the hips' place, is spread back over the cycle, so the last sample is the
@@ -195,6 +205,17 @@ def settle(
     if count < 1:
         raise ValueError("a loop needs two samples or more")
     worlds = [nodes.worlds(locals_) for locals_ in sampled]
+    if not loop:
+        start, end = worlds[0][hips].translation, worlds[count][hips].translation
+        travel = Vector((end.x - start.x, 0.0, end.z - start.z))
+        way = math.degrees(math.atan2(travel.x, travel.z)) if travel.length > 1e-6 else 0.0
+        return {
+            "travel": [round(value, 4) for value in travel],
+            "speed": round(travel.length / seconds, 4) if seconds > 0 else 0.0,
+            "way": round(way, 1),
+            "turned": 0.0,
+            "lowered": 0.0,
+        }
 
     across = Vector((0.0, 0.0))
     for world in worlds[:-1]:
@@ -202,7 +223,7 @@ def settle(
         across += Vector((side.x, side.z))
     rest_side = nodes.rest_world[left].translation - nodes.rest_world[right].translation
     # A turn about +y by a takes the direction atan2(x, z) to atan2(x, z) + a.
-    turn = math.atan2(rest_side.x, rest_side.z) - math.atan2(across.x, across.y)
+    turn = math.atan2(rest_side.x, rest_side.z) - math.atan2(across.x, across.y) if face else 0.0
     facing = Matrix.Rotation(turn, 4, "Y")
 
     placed = [facing @ world[hips] for world in worlds]

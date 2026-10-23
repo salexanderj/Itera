@@ -234,8 +234,10 @@ then adds to the model (`retarget.py`'s docstring has the spec's form). For each
 - reads one cycle, the spec's frames `from` to `to`, back onto the model's nodes at every source frame;
 - mends the joints its `repair` rules name: a sample next to a turn faster than `mostSpeed` (degrees a second), or
   further than `mostAngle` from the joint's rest, takes the turns between the good samples either side;
-- turns the cycle to face the model's front by its hips, takes its travel out of the hips so the game moves the body,
-  sets its feet's lowest point at their rest's height, and spreads what is left at the seam over the cycle, so it loops;
+- turns the cycle to face the model's front by its hips (unless the clip or its source says `"face": false`, for a
+  pack's clip turned to face the way it goes), takes its travel out of the hips so the game moves the body, sets its
+  feet's lowest point at their rest's height, and spreads what is left at the seam over the cycle, so it loops; a clip
+  with `"loop": false` (a death, a turn on the spot) is played once and kept as the source has it;
 - spreads the cycle over the spec's keys a second, and reports the travel taken out (its speed and way), the samples
   mended, and `motion.py`'s checks: the speed the feet show, their largest slide, and the seam.
 
