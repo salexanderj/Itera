@@ -171,6 +171,9 @@ recipe: it writes the clips on the model's own nodes, and the model's `merge_cli
   to each game joint; a source with more spine joints than the game's skips the extra ones.
 - `scale` turns the BVH's units into metres. A source whose skeleton does not rest in the game rig's T-pose names a
   frame that holds one (`restFrame`).
+- An animation pack bought or downloaded for a game is read from its own `.blend` file (a clip's `blend` and `action`,
+  the source's `armature` and `fps`), not its FBX files, whose unit and axis conversions land on the root bone. Its
+  files stay in the game's ignored `Sources/`.
 - Captured feet are the least reliable part. Aim them (`aim`), mend their glitches (`repair`), and leave the toes out
   of the map, so the model keeps its own foot shape. Name the source's ground joints in `feet`.
 - Find one cycle (`from` to `to`) in a straight, steady stretch: the frame a stride's pose comes round again.

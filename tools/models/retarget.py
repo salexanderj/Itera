@@ -25,13 +25,18 @@ The spec is a JSON file. Its paths are from its own folder:
       },
       "clips": [
         {"name": "Crouch_Walk_Loop", "source": "NAME", "zip": "URL", "member": "PATH/IN/ZIP.bvh",
-         "sha256": "HEX", "from": 500, "to": 655}
+         "sha256": "HEX", "from": 500, "to": 655},
+        {"name": "Run_Loop", "source": "PACK", "blend": "PATH.blend", "action": "ACTION", "sha256": "HEX",
+         "from": 0, "to": 18}
       ]
     }
 
 Each clip's BVH is one member of a zip, fetched by range requests into the cache and pinned by its SHA-256 (fetch.py).
-Frames `from` to `to`, as Blender numbers a BVH's frames (its first is 1), are one cycle: `to`'s pose is `from`'s come
-round again. The clip is retargeted onto the model (clips.retarget), read back onto the model's nodes at every source
+Or a clip is an action of an armature in a local `.blend` file (`blend`, pinned by its SHA-256 when given), as an
+animation pack ships one: its source names the armature (`"armature": "Rig"`) and its frames a second (`"fps": 30`),
+and its scale is the file's own. The armature's constraints (a control rig) are worked out at each frame, so the bones
+read are those the pack's clips pose. Frames `from` to `to`, as Blender numbers a BVH's frames (its first is 1) or as
+the action keys them, are one cycle: `to`'s pose is `from`'s come round again. The clip is retargeted onto the model (clips.retarget), read back onto the model's nodes at every source
 frame, mended where the capture breaks, turned to face the model's front, its travel taken out, closed at the seam, and
 spread over the keys written (gltf_clips.py). The report gives, for each clip, the travel taken out (the speed and the
 way it went), and the checks of motion.py on the result: the speed its feet show, their largest slide, and the seam's
@@ -63,13 +68,7 @@ def cache_root() -> Path:
 def retarget_clip(spec: dict, entry: dict, target, nodes, turns) -> tuple[dict, dict]:
     """One clip: its keys on the model's nodes, and its report."""
     source_spec = spec["sources"][entry["source"]]
-    path, digest = fetch.zip_member(entry["zip"], entry["member"], cache_root() / "inputs", sha256=entry.get("sha256"))
-    before = set(bpy.data.objects)
-    bpy.ops.import_anim.bvh(
-        filepath=str(path), global_scale=source_spec["scale"], update_scene_fps=True, update_scene_duration=True
-    )
-    source = next(obj for obj in bpy.data.objects if obj not in before and obj.type == "ARMATURE")
-    source_action = source.animation_data.action
+    source, source_action, digest = _load(spec, source_spec, entry)
     scene = bpy.context.scene
     source_fps = scene.render.fps / scene.render.fps_base
     joint_map = source_spec["map"]
@@ -98,7 +97,8 @@ def retarget_clip(spec: dict, entry: dict, target, nodes, turns) -> tuple[dict, 
         feet=tuple(source_spec.get("feet") or (reverse[foot] for foot in spec["feet"])),
         aim=tuple(source_spec.get("aim", ())),
     )
-    bpy.data.objects.remove(source)
+    for obj in [source, *source.children_recursive]:
+        bpy.data.objects.remove(obj)
     bpy.data.actions.remove(source_action)
 
     seconds = (last - first) / source_fps
@@ -138,10 +138,46 @@ def retarget_clip(spec: dict, entry: dict, target, nodes, turns) -> tuple[dict, 
         "rotations": {joint: [locals_[joint].to_quaternion() for locals_ in sampled] for joint in joints},
         "translations": {hips: [locals_[hips].translation.copy() for locals_ in sampled]},
     }
-    report = {"name": entry["name"], "member": entry["member"], "sha256": digest, "frames": count + 1,
+    report = {"name": entry["name"], "member": entry.get("member") or entry["action"], "sha256": digest,
+              "frames": count + 1,
               "seconds": round(seconds, 4), "mended": mended, **settled,
               **_checks(spec, nodes, sampled, seconds / count)}
     return keys, report
+
+
+def _load(spec: dict, source_spec: dict, entry: dict):
+    """A clip's source armature in the scene, playing the clip's action, with the action and the source's SHA-256: a
+    BVH fetched from its zip, or an armature appended from a local `.blend` file with its action. The scene's frames a
+    second become the source's."""
+    scene = bpy.context.scene
+    if "blend" in entry:
+        path = (Path(spec["_folder"]) / entry["blend"]).resolve()
+        digest = fetch.sha256_of(path)
+        if entry.get("sha256") and entry["sha256"] != digest:
+            raise ValueError(f"{path.name} has SHA-256 {digest}, not the {entry['sha256']} the spec pins")
+        with bpy.data.libraries.load(str(path), link=False) as (_, data_to):
+            data_to.objects = [source_spec["armature"]]
+            data_to.actions = [entry["action"]]
+        source = data_to.objects[0]
+        if source is None or data_to.actions[0] is None:
+            raise ValueError(f"{path.name} has no armature {source_spec['armature']} or no action {entry['action']}")
+        scene.collection.objects.link(source)
+        action = data_to.actions[0]
+        if source.animation_data is None:
+            source.animation_data_create()
+        source.animation_data.action = action
+        if action.slots:
+            source.animation_data.action_slot = action.slots[0]
+        scene.render.fps, scene.render.fps_base = int(source_spec["fps"]), 1.0
+        bpy.context.view_layer.update()
+        return source, action, digest
+    path, digest = fetch.zip_member(entry["zip"], entry["member"], cache_root() / "inputs", sha256=entry.get("sha256"))
+    before = set(bpy.data.objects)
+    bpy.ops.import_anim.bvh(
+        filepath=str(path), global_scale=source_spec["scale"], update_scene_fps=True, update_scene_duration=True
+    )
+    source = next(obj for obj in bpy.data.objects if obj not in before and obj.type == "ARMATURE")
+    return source, source.animation_data.action, digest
 
 
 def _point(armature, bone: str, rest_frame):
@@ -177,6 +213,7 @@ def main(arguments: list) -> None:
     spec_path, report_path = (Path(argument).resolve() for argument in arguments)
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
     folder = spec_path.parent
+    spec["_folder"] = str(folder)
     model = (folder / spec["model"]).resolve()
 
     bpy.ops.wm.read_factory_settings(use_empty=True)

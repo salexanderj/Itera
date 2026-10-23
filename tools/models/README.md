@@ -223,11 +223,12 @@ the same rig. Its docstring has the list's format.
 
 ## retarget
 
-`retarget SPEC.json` puts motion capture clips (BVH files, each in a zip) on a model's rig and writes them into one
-`.glb` on the model's own nodes, which a `merge_clips.py` list then adds to the model (`retarget.py`'s docstring has
-the spec's form). For each clip it:
+`retarget SPEC.json` puts motion capture clips (BVH files, each in a zip) or an animation pack's actions (in a local
+`.blend` file) on a model's rig and writes them into one `.glb` on the model's own nodes, which a `merge_clips.py` list
+then adds to the model (`retarget.py`'s docstring has the spec's form). For each clip it:
 
-- fetches the BVH by range requests and checks its pinned SHA-256;
+- fetches the BVH by range requests and checks its pinned SHA-256, or appends the `.blend` file's armature with the
+  action, its control rig worked out at each frame;
 - turns the source to face as the model's rest does, and retargets it (`clips.retarget`, with the source's rest frame,
   its feet for the hips' heights, and the joints it aims);
 - reads one cycle, the spec's frames `from` to `to`, back onto the model's nodes at every source frame;
