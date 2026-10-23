@@ -36,6 +36,7 @@ The spec is a JSON file. Its paths are from its own folder:
     }
 
 A clip with `"loop": false` is played once: its frames are kept as the source has them, not turned, moved, or closed.
+With `"place": true` as well, its travel along the ground is taken out of its hips, so the game moves the body.
 A loop with `"face": false` (or its source's `"face": false`) keeps the way it faces, not turned to face the front.
 A clip with `"mirror": true` is its action played on the other side (gltf_clips.mirror): a strafe to the left becomes
 one to the right, for a source whose own other side is worse or missing.
@@ -136,6 +137,7 @@ def retarget_clip(spec: dict, entry: dict, target, nodes, turns) -> tuple[dict, 
         [nodes.index(foot) for foot in spec.get("feet", [])],
         face=entry.get("face", source_spec.get("face", True)),
         loop=entry.get("loop", True),
+        place=entry.get("place", False),
     )
     target.animation_data.action = None
     bpy.data.actions.remove(action)

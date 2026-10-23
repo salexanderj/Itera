@@ -225,13 +225,15 @@ def settle(
     feet: list | None = None,
     face: bool = True,
     loop: bool = True,
+    place: bool = False,
 ) -> dict:
     """Makes a sampled cycle (its last sample the pose its first came back to) a loop played in place.
 
     The cycle is turned about the model's up to face its front: the hips' line from the right joint to the left one,
     on average, lies along the rest's; with `face` false it keeps the way it faces (a pack's run turned to face the
     way it goes). With `loop` false the samples are a clip played once and are left as they are: only the travel is
-    measured. Its travel along the ground is taken out of the hips, which keep their place
+    measured, and with `place` true taken out of the hips at an even pace, so the game moves the body (a slide's
+    start). A loop's travel along the ground is taken out of the hips, which keep their place
     over the rest's on average, so the game moves the body. With `feet`, the hips go down or up until the feet's lowest
     point over the cycle is as low as at rest: a capture's floor read from its own feet errs where they do. What is
     left at the seam, in every node's turn and the hips' place, is spread back over the cycle, so the last sample is the
@@ -245,6 +247,13 @@ def settle(
     if not loop:
         start, end = worlds[0][hips].translation, worlds[count][hips].translation
         travel = Vector((end.x - start.x, 0.0, end.z - start.z))
+        if place:
+            parent = nodes.parent.get(hips)
+            for k, (locals_, world) in enumerate(zip(sampled, worlds)):
+                matrix = world[hips].copy()
+                matrix.translation = matrix.translation - travel * (k / count)
+                parent_world = world[parent] if parent is not None else Matrix()
+                locals_[hips] = parent_world.inverted() @ matrix
         way = math.degrees(math.atan2(travel.x, travel.z)) if travel.length > 1e-6 else 0.0
         return {
             "travel": [round(value, 4) for value in travel],

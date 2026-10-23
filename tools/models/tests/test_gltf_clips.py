@@ -118,6 +118,17 @@ class SettleTests(unittest.TestCase):
         left = nodes.worlds(sampled[0])[2].translation - nodes.worlds(sampled[0])[3].translation
         self.assertLess(left.normalized().z, -0.99)  # its hips' left still turned a quarter round
 
+    def test_a_clip_played_once_in_place_has_its_travel_taken_out_of_its_hips(self):
+        nodes, sampled = self._cycle()
+        turns = [locals_[1].to_quaternion() for locals_ in sampled]
+
+        settled = gltf_clips.settle(sampled, nodes, 1, 2, 3, 1.0, loop=False, place=True)
+
+        self.assertAlmostEqual(settled["speed"], 0.5, places=4)
+        for locals_, turn in zip(sampled, turns):
+            self.assertLess((locals_[1].translation - Vector((0.3, 1.0, 0.2))).length, 1e-6)
+            self.assertGreater(abs(locals_[1].to_quaternion().dot(turn)), 1 - 1e-6)
+
     def test_a_clip_played_once_is_left_as_it_is(self):
         nodes, sampled = self._cycle()
         before = [{node: matrix.copy() for node, matrix in locals_.items()} for locals_ in sampled]
