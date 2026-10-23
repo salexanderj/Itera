@@ -144,6 +144,17 @@ class CheckTests(unittest.TestCase):
         self.assertFalse(by_name["Empty"]["has_slot"])
         self.assertTrue(found(result["warnings"], "action Empty"))
 
+    def test_a_mesh_parented_to_a_bone_is_a_rigid_part_that_needs_no_weights(self):
+        rig = scene_kit.add_armature()
+        cube = scene_kit.add_cube(location=(0.0, 0.0, 1.2))
+        cube.parent = rig
+        cube.parent_type = "BONE"
+        cube.parent_bone = "top"
+        result = checks.scene()
+        entry = next(entry for entry in result["meshes"] if entry["name"] == cube.name)
+        self.assertFalse(entry["skinned"])
+        self.assertFalse(found(result["problems"], "weigh no bone"))
+
     def test_two_armatures_are_a_problem(self):
         scene_kit.add_armature(name="A")
         scene_kit.add_armature(name="B")

@@ -67,7 +67,7 @@ public static class ModelInspection
         CheckContent(file, asset, findings, problems, notes);
         if (budget is not null)
         {
-            CheckBudget(file, asset, budget, problems);
+            CheckBudget(file, asset, findings, budget, problems);
         }
 
         return ModelReport.Of(path, asset, problems, notes);
@@ -182,6 +182,14 @@ public static class ModelInspection
             );
         }
 
+        if (findings.PartMeshes > 0)
+        {
+            notes.Add(
+                $"{file} has {findings.PartMeshes} meshes not skinned under its joints, {findings.PartTriangles} triangles: "
+                    + "parts, left out of the whole model, each read by declaring its node (counted in its budget)"
+            );
+        }
+
         foreach (var extension in findings.ExtensionsUsed.Distinct(StringComparer.Ordinal))
         {
             if (!GltfImport.Reads(extension) && extension != "KHR_texture_transform")
@@ -204,13 +212,21 @@ public static class ModelInspection
         }
     }
 
-    private static void CheckBudget(string file, MeshAsset asset, ModelBudget budget, List<ModelProblem> problems)
+    /// <summary>The model held to its budget, its parts' triangles (<see cref="ImportFindings.PartTriangles"/>) with its own.</summary>
+    private static void CheckBudget(
+        string file,
+        MeshAsset asset,
+        ImportFindings findings,
+        ModelBudget budget,
+        List<ModelProblem> problems
+    )
     {
         void Problem(string message) => problems.Add(new ModelProblem(ModelProblemKind.Budget, $"{file} {message}"));
 
-        if (asset.TriangleCount > budget.MostTriangles)
+        var triangles = asset.TriangleCount + findings.PartTriangles;
+        if (triangles > budget.MostTriangles)
         {
-            Problem($"has {asset.TriangleCount} triangles, over the budget's {budget.MostTriangles}");
+            Problem($"has {triangles} triangles, over the budget's {budget.MostTriangles}");
         }
 
         var joints = asset.Rig?.JointCount ?? 0;

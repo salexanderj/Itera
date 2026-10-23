@@ -125,7 +125,8 @@ Each module's docstrings say more.
   or a card such as a leaf or a banner), a material with no UV map where none is needed, unused vertex groups that name no bone, bone weights that do not sum to 1 (past
   1e-3), and an action with no slot. It also reports triangles after modifiers, bone and deform-bone counts, and each
   action's slot and frame range. Blender reports a failed automatic weighting only as a warning, so the check for
-  vertices that weigh no bone is the one that catches it.
+  vertices that weigh no bone is the one that catches it. A mesh parented to one bone is a rigid part, not skinned, and
+  needs no weights.
 - `views.sheet(path, objects=None, size=384, engine="BLENDER_WORKBENCH")` writes one labelled PNG: a shaded row and a
   wireframe row, each with the front, back, left, right, a three-quarter view, and the top. Front is the side the model
   faces in the engine. Left and right are the model's own left and right. The top view has the front at the bottom. The

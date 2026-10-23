@@ -1,13 +1,15 @@
 using System.Diagnostics;
 using System.Numerics;
+using Itera.Engine.Rendering.GpuData;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Itera.Engine.Assets;
 
 /// <summary>
-/// The run's mesh assets (<see cref="MeshAsset"/>): models a game declares from glTF files (<see cref="Declare"/>),
-/// meshes it builds in code (<see cref="Add"/>), and variants of either with some materials' base colours replaced
+/// The run's mesh assets (<see cref="MeshAsset"/>): models a game declares from glTF files (<see cref="Declare"/>: a whole
+/// file, a part of one by its node, or a model bound to another's rig), meshes it builds in code (<see cref="Add"/>), and
+/// variants of either with some materials' base colours replaced
 /// (<see cref="DeclareVariant"/>: a team's colours), each known by its name and its index (<see cref="Find"/>). A game
 /// declares them at its run startup (<c>IRunStartup</c>, the run's "game" step), mods at theirs; the run's "mesh assets"
 /// step, after the mods', declares the extra models of <c>Engine:Assets:Extra</c> and reads every declared file on
@@ -31,10 +33,31 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
     /// Declares the glTF file at <paramref name="path"/> (relative paths from the executable's folder) as the asset
     /// <paramref name="name"/>, its units <paramref name="metresPerUnit"/> metres (glTF's are metres; 0.01 for a file in
     /// centimetres), read at the run's "mesh assets" step. Returns its index. Before that step only.
+    /// <list type="bullet">
+    /// <item>With <paramref name="node"/>, the asset is that node of the file and what lies under it, a part: in the
+    /// space of the rig's joint above it, so a model attached to that joint stands as the file holds it; rigid, with no
+    /// rig, and only the materials it uses. A whole file leaves out every mesh not skinned that hangs under a joint.</item>
+    /// <item>With <paramref name="rigOf"/>, an asset declared before it whose rig it was bound on: its joints matched
+    /// by name, it takes that rig's joint order, so the same index is the same joint in both, and its clips. Its joints,
+    /// their parents, and their rest pose must be that rig's, and it has no clips of its own, or the step stops naming
+    /// the first difference.</item>
+    /// </list>
     /// </summary>
-    public int Declare(string name, string path, float metresPerUnit = 1f)
+    public int Declare(string name, string path, float metresPerUnit = 1f, string? node = null, string? rigOf = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (node is not null && rigOf is not null)
+        {
+            throw new ArgumentException($"The mesh asset '{name}' is a part, which has no rig to bind.", nameof(rigOf));
+        }
+
+        if (rigOf is not null && !_byName.ContainsKey(rigOf))
+        {
+            throw new InvalidOperationException(
+                $"The mesh asset '{name}' is bound on the rig of '{rigOf}', which is not declared or added before it."
+            );
+        }
+
         if (!(metresPerUnit > 0) || !float.IsFinite(metresPerUnit))
         {
             throw new ArgumentOutOfRangeException(
@@ -45,7 +68,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
         }
 
         var full = Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path);
-        return AddEntry(name, new Entry(name, full, metresPerUnit, null));
+        return AddEntry(name, new Entry(name, full, metresPerUnit, null) { Node = node, RigOf = rigOf });
     }
 
     /// <summary>Adds a mesh built in code as the asset <paramref name="name"/> and returns its index. Before the "mesh assets" step only.</summary>
@@ -100,13 +123,15 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
     public int Find(string name) => _byName.TryGetValue(name, out var index) ? index : -1;
 
     /// <summary>
-    /// The glTF files declared so far, in order, each with its full path and unit: what a check of a game's models reads
-    /// (<see cref="ModelInspection"/>). The extra models of <c>Engine:Assets:Extra</c> join them at the mesh assets step.
+    /// The glTF files declared so far, in order, each once with its full path and unit, under the name of its first
+    /// declaration: what a check of a game's models reads (<see cref="ModelInspection"/>). The extra models of
+    /// <c>Engine:Assets:Extra</c> join them at the mesh assets step.
     /// </summary>
     public IReadOnlyList<DeclaredModel> Files =>
         [
             .. _entries
                 .Where(entry => entry.Path is not null)
+                .DistinctBy(entry => entry.Path, StringComparer.Ordinal)
                 .Select(entry => new DeclaredModel(entry.Name, entry.Path!, entry.MetresPerUnit)),
         ];
 
@@ -166,7 +191,8 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
                         entry.MetresPerUnit,
                         reading,
                         warnings[i],
-                        notes[i]
+                        notes[i],
+                        node: entry.Node
                     );
                 }
                 catch (Exception ex)
@@ -203,6 +229,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             throw new InvalidOperationException($"{failed} mesh asset(s) could not be read; the first: {firstFailure}");
         }
 
+        BindRigs();
         MakeVariants();
         Loaded = true;
         long triangles = 0;
@@ -256,6 +283,138 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             LogExtra(extra.Name, path);
         }
     }
+
+    /// <summary>Binds each asset declared on another's rig to that rig, in the order declared (<see cref="Bound"/>).</summary>
+    private void BindRigs()
+    {
+        foreach (var entry in _entries)
+        {
+            if (entry.RigOf is not null)
+            {
+                entry.Asset = Bound(entry.Asset!, _entries[_byName[entry.RigOf]].Asset!, entry.RigOf);
+            }
+        }
+    }
+
+    /// <summary>
+    /// <paramref name="asset"/> bound on <paramref name="source"/>'s rig (named <paramref name="of"/>): its joints taken
+    /// in the source's order, its vertices' joints and its points' joints moved with them, keeping its own rest, offsets,
+    /// inverse binds, and reaches, and the source's clips. Throws, naming the first difference, when the joints, their
+    /// parents, or their rest pose are not the source's (within <see cref="BoundRestMetres"/> and
+    /// <see cref="BoundRestTurn"/>), or when it has clips of its own.
+    /// </summary>
+    internal static MeshAsset Bound(MeshAsset asset, MeshAsset source, string of)
+    {
+        var name = asset.Name;
+        if (asset.Rig is not { } own || asset.Skin is not { } skin)
+        {
+            throw new InvalidOperationException($"The mesh asset '{name}' has no rig to bind on '{of}''s.");
+        }
+
+        if (source.Rig is not { } rig)
+        {
+            throw new InvalidOperationException($"The mesh asset '{name}' is bound on '{of}''s rig, which has none.");
+        }
+
+        if (own.Clips.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"The mesh asset '{name}' has {own.Clips.Length} clip(s) of its own: one bound on '{of}''s rig plays its."
+            );
+        }
+
+        if (own.JointCount != rig.JointCount)
+        {
+            throw new InvalidOperationException(
+                $"The mesh asset '{name}' has {own.JointCount} joints, and '{of}''s rig {rig.JointCount}."
+            );
+        }
+
+        // Each of the source's joints' place in the asset's own rig.
+        var count = rig.JointCount;
+        var ownOf = new int[count];
+        var sourceOf = new int[count];
+        for (var j = 0; j < count; j++)
+        {
+            var at = own.FindJoint(rig.Names[j]);
+            if (at < 0)
+            {
+                throw new InvalidOperationException(
+                    $"The mesh asset '{name}' has no joint '{rig.Names[j]}' of '{of}''s rig."
+                );
+            }
+
+            (ownOf[j], sourceOf[at]) = (at, j);
+        }
+
+        for (var j = 0; j < count; j++)
+        {
+            var parent = rig.Parents[j];
+            var ownParent = own.Parents[ownOf[j]];
+            if ((parent < 0 ? -1 : ownOf[parent]) != ownParent)
+            {
+                throw new InvalidOperationException(
+                    $"The mesh asset '{name}''s joint '{rig.Names[j]}' has another parent than in '{of}''s rig."
+                );
+            }
+
+            var (rest, ownRest) = (rig.Rest[j], own.Rest[ownOf[j]]);
+            if (
+                Vector3.Distance(rest.Translation, ownRest.Translation) > BoundRestMetres
+                || MathF.Abs(Quaternion.Dot(rest.Rotation, ownRest.Rotation)) < MathF.Cos(BoundRestTurn / 2)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"The mesh asset '{name}''s joint '{rig.Names[j]}' rests otherwise than in '{of}''s rig: its clips "
+                        + "would not fit it."
+                );
+            }
+        }
+
+        var bound = new Rig(
+            rig.Names,
+            rig.Parents,
+            [.. ownOf.Select(at => own.Offsets[at])],
+            [.. ownOf.Select(at => own.Rest[at])],
+            [.. ownOf.Select(at => own.InverseBinds[at])],
+            [.. ownOf.Select(at => own.Reaches[at])],
+            rig.Clips
+        );
+        var skins = new MeshSkinVertex[skin.Length];
+        for (var v = 0; v < skin.Length; v++)
+        {
+            var vertex = skin[v];
+            skins[v] = MeshSkinVertex.Pack(
+                sourceOf[vertex.Joint(0)],
+                sourceOf[vertex.Joint(1)],
+                sourceOf[vertex.Joint(2)],
+                sourceOf[vertex.Joint(3)],
+                new Vector4(vertex.Weight(0), vertex.Weight(1), vertex.Weight(2), vertex.Weight(3))
+            );
+        }
+
+        var points = Array.ConvertAll(
+            asset.Points,
+            point => point.Joint < 0 ? point : point with { Joint = sourceOf[point.Joint] }
+        );
+        return new MeshAsset(
+            name,
+            asset.Vertices,
+            asset.Indices,
+            asset.Primitives,
+            asset.Materials,
+            asset.Textures,
+            bound,
+            skins,
+            points
+        );
+    }
+
+    /// <summary>How far a bound asset's joint may rest from the source rig's, in metres.</summary>
+    public const float BoundRestMetres = 0.002f;
+
+    /// <summary>How far a bound asset's joint may rest turned from the source rig's, in radians.</summary>
+    public const float BoundRestTurn = 0.005f;
 
     /// <summary>Makes each variant from its source, in the order declared, so a variant of a variant follows it.</summary>
     private void MakeVariants()
@@ -332,6 +491,12 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
 
         /// <summary>The asset a variant is made from, or null for a file or a mesh built in code.</summary>
         public string? Of { get; init; }
+
+        /// <summary>The node a part is read from, or null for the whole file.</summary>
+        public string? Node { get; init; }
+
+        /// <summary>The asset whose rig a file's is bound on, or null.</summary>
+        public string? RigOf { get; init; }
 
         /// <summary>A variant's base colours by material name.</summary>
         public Dictionary<string, Vector4>? Colours { get; init; }

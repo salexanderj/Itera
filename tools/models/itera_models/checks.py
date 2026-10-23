@@ -132,11 +132,15 @@ def _reads_uvs(material) -> bool:
 
 
 def _armature_of(obj):
-    """The armature object that deforms this mesh (an Armature modifier or a parent), or None."""
+    """The armature object that deforms this mesh (an Armature modifier or a parent), or None.
+
+    A mesh parented to one bone is a rigid part that the bone carries, not skinned: it needs no weights, and the
+    engine reads it as a part of its own (a model declared by its node).
+    """
     for modifier in obj.modifiers:
         if modifier.type == "ARMATURE" and modifier.object is not None:
             return modifier.object
-    if obj.parent is not None and obj.parent.type == "ARMATURE":
+    if obj.parent is not None and obj.parent.type == "ARMATURE" and obj.parent_type != "BONE":
         return obj.parent
     return None
 

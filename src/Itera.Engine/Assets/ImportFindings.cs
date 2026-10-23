@@ -36,6 +36,15 @@ internal sealed class ImportFindings
     /// <summary>The file's scenes, of which the import reads the default (else the first).</summary>
     public int Scenes { get; set; }
 
+    /// <summary>
+    /// Meshes not skinned that hang under a joint of the rig: parts, left out of the whole file's asset, each read by
+    /// declaring its node (<see cref="MeshAssets.Declare"/>).
+    /// </summary>
+    public int PartMeshes { get; set; }
+
+    /// <summary>The triangles of the parts (<see cref="PartMeshes"/>).</summary>
+    public int PartTriangles { get; set; }
+
     /// <summary>The extensions the file says it uses.</summary>
     public List<string> ExtensionsUsed { get; } = [];
 }

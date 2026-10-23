@@ -86,7 +86,7 @@ matrices where the pass takes the whole rig's. `MeshPoses.JointInWorld` reads a 
 
 The rig works in floats. Never use it for what peers must agree on. Use it for drawing, and for what one peer alone
 judges (a host's hits on posed bodies). The deterministic skeletons for bodies, aim, and foot IK are
-`Animation.Skeleton`'s (`animation.md`). Clips shared between rigs by joint name are not built.
+`Animation.Skeleton`'s (`animation.md`). A model bound on another's rig plays its clips (below).
 
 ### Declaring and reading
 
@@ -95,6 +95,15 @@ judges (a host's hits on posed bodies). The deterministic skeletons for bodies, 
 - A game declares its models at its run startup (`IRunStartup`, the run's "game" step). Mods may declare at theirs.
 - `Declare(name, path, metresPerUnit)` declares a file. The path is relative to the executable's folder. The scale is
   0.01 for a file in centimetres.
+- `Declare(..., node: NAME)` declares a part: that node of the file and what lies under it, in the space of the rig's
+  joint above it with the nodes between applied, else the asset's. Attached to that joint (`MeshAttachment`), it stands
+  where the file holds it. It is rigid, with no rig, and holds only the materials it uses.
+- A whole file leaves out every mesh not skinned that hangs under a joint of its rig: those are its parts.
+- `Declare(..., rigOf: NAME)` binds a file's skin on the rig of a model declared before it (`MeshAssets.Bound`), so a
+  body made on a game's rig plays that rig's clips. Its joints are matched by name and taken in the source's order, so
+  one index is one joint in both. Its parents and rest pose must be the source's (`MeshAssets.BoundRestMetres`,
+  `BoundRestTurn`), and it has no clips of its own, or the step stops naming the first difference.
+- `Files` lists each file once, under its first declaration's name.
 - `Add(name, MeshAsset)` adds a mesh built in code.
 - `DeclareVariant(name, of, baseColours)` declares a variant of an asset declared or added before it. It shares the
   vertices, indices, primitives, textures, rig, and clips (the arrays are shared, so its clips' indices are its
@@ -184,7 +193,8 @@ has no problems.
 - `Content` also covers generated tangents, animations left out, cameras and lights, extra scenes, vertices off the
   skin of a skinned model, empties with no name, and joints, clips, or points that share a name.
 - `Budget`: past a limit of a `ModelBudget`. A game keeps its budgets by asset class in a JSON file
-  (`ModelBudget.ReadClasses`), which refuses a limit it does not know.
+  (`ModelBudget.ReadClasses`), which refuses a limit it does not know. A file's parts count in its triangles, and a
+  note names them.
 
 `MeshAssets.Files` lists the declared files (`DeclaredModel`), and the tests' `ModelChecks` checks each of a game's.
 The notes name meshes used at more than one node and extensions the engine does not read. SharpGLTF refuses a skinned
@@ -203,5 +213,5 @@ vertex whose weights sum to zero, so such a file is `Refused`. `tools/ModelCheck
 ### Tests
 
 `GltfImportTests`, `RigImportTests`, `RigClipTests`, `RigShapingTests`, `MeshAssetsTests`, `TextureDecodeTests`,
-`MipChainTests`, `MeshTangentsTests`, `CompressedTexturesTests`, `MeshPointsTests`, `ModelInspectionTests`,
+`MipChainTests`, `MeshTangentsTests`, `CompressedTexturesTests`, `MeshPointsTests`, `MeshPartsTests`, `ModelInspectionTests`,
 `ClipGroundTests`, and `OctahedralTests`.

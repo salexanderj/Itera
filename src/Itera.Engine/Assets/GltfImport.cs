@@ -42,7 +42,9 @@ internal static partial class GltfImport
     /// <see cref="TextureReading.None"/>, a run without graphics, its materials name none). Throws
     /// <see cref="InvalidDataException"/> for a file it cannot read, naming it. A model whose textures were all decoded,
     /// with no compressed textures beside it, gets a note in <paramref name="notes"/>. What it leaves out or makes up
-    /// without a warning is counted in <paramref name="findings"/>.
+    /// without a warning is counted in <paramref name="findings"/>. With <paramref name="node"/>, the asset is that node
+    /// of the file and what lies under it, a part (<see cref="ImportPart"/>); a file with no node of that name, or more
+    /// than one, cannot be read.
     /// </summary>
     public static MeshAsset Load(
         string name,
@@ -51,7 +53,8 @@ internal static partial class GltfImport
         TextureReading textures,
         List<string> warnings,
         List<string>? notes = null,
-        ImportFindings? findings = null
+        ImportFindings? findings = null,
+        string? node = null
     )
     {
         RefuseUnhandled(path, ReadRequiredExtensions(path));
@@ -68,8 +71,9 @@ internal static partial class GltfImport
         var context = new ImportContext(path, textures, warnings, findings ?? new ImportFindings())
         {
             MetresPerUnit = metresPerUnit,
+            Lazy = node is not null,
         };
-        var asset = Import(name, model, metresPerUnit, context);
+        var asset = node is null ? Import(name, model, metresPerUnit, context) : ImportPart(name, model, node, context);
         if (textures == TextureReading.PreferCompressed && context.DecodedTextures > 0 && !context.HasCompressed)
         {
             notes?.Add(
@@ -166,7 +170,7 @@ internal static partial class GltfImport
             context.Materials.Add(ReadMaterial(material, context));
         }
 
-        var scene = model.DefaultScene ?? (model.LogicalScenes.Count > 0 ? model.LogicalScenes[0] : null);
+        var scene = SceneOf(model);
         RigPlan? plan = null;
         if (scene is null)
         {
@@ -174,17 +178,11 @@ internal static partial class GltfImport
         }
         else
         {
-            Skin? skin = null;
-            foreach (var node in scene.VisualChildren)
-            {
-                skin = FindSkin(node, skin, context);
-            }
-
-            plan = skin is null ? null : PlanRig(skin);
+            plan = PlanOf(scene, context);
             var scale = Matrix4x4.CreateScale(metresPerUnit);
             foreach (var node in scene.VisualChildren)
             {
-                AddNode(node, scale, plan, context);
+                AddNode(node, Matrix4x4.Identity, scale, plan, false, context);
             }
         }
 
@@ -208,7 +206,87 @@ internal static partial class GltfImport
         );
     }
 
-    private static void AddNode(Node node, Matrix4x4 scale, RigPlan? plan, ImportContext context)
+    /// <summary>
+    /// A part of the file (<see cref="Load"/>'s node): the node named <paramref name="part"/> and what lies under it, in
+    /// the space of the rig's joint above it, with the nodes between applied (where the joint is drawn, a model attached
+    /// to it stands as the file holds it), or else in the asset's space. Its meshes are rigid, its skinned ones left out
+    /// with a warning; it has no rig, and only the materials its primitives use.
+    /// </summary>
+    private static MeshAsset ImportPart(string name, ModelRoot model, string part, ImportContext context)
+    {
+        var found = model
+            .LogicalNodes.Where(node => string.Equals(node.Name, part, StringComparison.Ordinal))
+            .ToArray();
+        if (found.Length != 1)
+        {
+            throw new InvalidDataException(
+                found.Length == 0
+                    ? $"{context.Path}: has no node named '{part}' to read as a part"
+                    : $"{context.Path}: has {found.Length} nodes named '{part}': a part's node must be named once"
+            );
+        }
+
+        var root = found[0];
+        var plan = SceneOf(model) is { } scene ? PlanOf(scene, context) : null;
+        // The part's space: the joint above it, or the asset's.
+        var above = root.VisualParent;
+        while (above is not null && (plan is null || !plan.RigOfNode.ContainsKey(above.LogicalIndex)))
+        {
+            above = above.VisualParent;
+        }
+
+        var into = Matrix4x4.Identity;
+        if (above is not null && !Matrix4x4.Invert(above.WorldMatrix, out into))
+        {
+            throw new InvalidDataException(
+                $"{context.Path}: the joint '{above.Name}' above the part '{part}' has a transform that cannot be undone"
+            );
+        }
+
+        AddNode(root, into, Matrix4x4.CreateScale(context.MetresPerUnit), null, false, context);
+        return new MeshAsset(
+            name,
+            [.. context.Vertices],
+            [.. context.Indices],
+            [.. context.Primitives],
+            [.. context.Materials],
+            [.. context.Textures],
+            null,
+            null,
+            [.. context.Points]
+        );
+    }
+
+    /// <summary>The scene the import reads: the default, else the first; null for none.</summary>
+    private static Scene? SceneOf(ModelRoot model) =>
+        model.DefaultScene ?? (model.LogicalScenes.Count > 0 ? model.LogicalScenes[0] : null);
+
+    /// <summary>The rig of the first skin a mesh of <paramref name="scene"/> uses, or null for none.</summary>
+    private static RigPlan? PlanOf(Scene scene, ImportContext context)
+    {
+        Skin? skin = null;
+        foreach (var node in scene.VisualChildren)
+        {
+            skin = FindSkin(node, skin, context);
+        }
+
+        return skin is null ? null : PlanRig(skin);
+    }
+
+    /// <summary>
+    /// <paramref name="node"/> and what lies under it, each node's world transform times <paramref name="into"/> (the
+    /// space it is read in) and the unit's <paramref name="scale"/>. With a <paramref name="plan"/> (the whole file), a
+    /// mesh not skinned under one of the rig's joints is a part: left out, and counted (<see cref="ImportFindings"/>).
+    /// Without one (a part), every mesh is rigid, and a skinned one is left out with a warning.
+    /// </summary>
+    private static void AddNode(
+        Node node,
+        Matrix4x4 into,
+        Matrix4x4 scale,
+        RigPlan? plan,
+        bool underJoint,
+        ImportContext context
+    )
     {
         if (node.Camera is not null || node.PunctualLight is not null)
         {
@@ -223,26 +301,51 @@ internal static partial class GltfImport
             }
             else
             {
-                AddPoint(node, scale, plan, context);
+                AddPoint(node, into, scale, plan, context);
             }
         }
 
         if (node.Mesh is { } mesh)
         {
-            context.MeshUses[mesh.LogicalIndex] = context.MeshUses.GetValueOrDefault(mesh.LogicalIndex) + 1;
-            // glTF: a skinned mesh's node transform does not apply; its joints place it.
-            var transform = (node.Skin is null ? node.WorldMatrix : Matrix4x4.Identity) * scale;
-            var posedBy = plan is not null && node.Skin?.LogicalIndex == plan.Skin.LogicalIndex ? plan : null;
-            foreach (var primitive in mesh.Primitives)
+            if (plan is not null && node.Skin is null && underJoint)
             {
-                AddPrimitive(primitive, transform, posedBy, context);
+                context.Findings.PartMeshes++;
+                context.Findings.PartTriangles += mesh.Primitives.Sum(TrianglesOf);
+            }
+            else if (plan is null && context.Lazy && node.Skin is not null)
+            {
+                context.Warn($"part node '{node.Name}' is skinned, which a part is not: it is left out");
+            }
+            else
+            {
+                context.MeshUses[mesh.LogicalIndex] = context.MeshUses.GetValueOrDefault(mesh.LogicalIndex) + 1;
+                // glTF: a skinned mesh's node transform does not apply; its joints place it.
+                var transform = (node.Skin is null ? node.WorldMatrix * into : Matrix4x4.Identity) * scale;
+                var posedBy = plan is not null && node.Skin?.LogicalIndex == plan.Skin.LogicalIndex ? plan : null;
+                foreach (var primitive in mesh.Primitives)
+                {
+                    AddPrimitive(primitive, transform, posedBy, context);
+                }
             }
         }
 
+        var joint = plan is not null && plan.RigOfNode.ContainsKey(node.LogicalIndex);
         foreach (var child in node.VisualChildren)
         {
-            AddNode(child, scale, plan, context);
+            AddNode(child, into, scale, plan, underJoint || joint, context);
         }
+    }
+
+    /// <summary>A primitive's triangles as the file stores them, for a count.</summary>
+    private static int TrianglesOf(SharpGLTF.Schema2.MeshPrimitive primitive)
+    {
+        var count = primitive.IndexAccessor?.Count ?? primitive.GetVertexAccessor("POSITION")?.Count ?? 0;
+        return primitive.DrawPrimitiveType switch
+        {
+            PrimitiveType.TRIANGLES => count / 3,
+            PrimitiveType.TRIANGLE_STRIP or PrimitiveType.TRIANGLE_FAN => Math.Max(count - 2, 0),
+            _ => 0,
+        };
     }
 
     /// <summary>
@@ -258,12 +361,12 @@ internal static partial class GltfImport
 
     /// <summary>
     /// The point a named empty marks: in the space of the rig's joint above it, with the nodes between applied, or else
-    /// in the asset's space as a static mesh's vertices are. In metres.
+    /// in the asset's space as a static mesh's vertices are (a part's, through <paramref name="into"/>). In metres.
     /// </summary>
-    private static void AddPoint(Node node, Matrix4x4 scale, RigPlan? plan, ImportContext context)
+    private static void AddPoint(Node node, Matrix4x4 into, Matrix4x4 scale, RigPlan? plan, ImportContext context)
     {
         var joint = -1;
-        var transform = node.WorldMatrix * scale;
+        var transform = node.WorldMatrix * into * scale;
         if (plan is not null)
         {
             var offset = node.LocalMatrix;
@@ -328,7 +431,7 @@ internal static partial class GltfImport
             context.Findings.PrimitivesWithoutMaterial++;
         }
 
-        var materialIndex = primitive.Material?.LogicalIndex ?? context.DefaultMaterial();
+        var materialIndex = primitive.Material is { } used ? MaterialOf(used, context) : context.DefaultMaterial();
         var material = context.Materials[materialIndex];
         var sourcePositions = positionAccessor.AsVector3Array();
         var sourceNormals = primitive.GetVertexAccessor("NORMAL")?.AsVector3Array();
@@ -661,6 +764,27 @@ internal static partial class GltfImport
         return length > 1e-12f && float.IsFinite(length) ? value / length : fallback;
     }
 
+    /// <summary>
+    /// The asset's index of <paramref name="material"/>: the file's own index, or for a part (<see cref="ImportContext.Lazy"/>),
+    /// read the first time a primitive uses it, so a part holds only its own materials and their textures.
+    /// </summary>
+    private static int MaterialOf(Material material, ImportContext context)
+    {
+        if (!context.Lazy)
+        {
+            return material.LogicalIndex;
+        }
+
+        if (!context.MaterialIndices.TryGetValue(material.LogicalIndex, out var index))
+        {
+            context.Materials.Add(ReadMaterial(material, context));
+            index = context.Materials.Count - 1;
+            context.MaterialIndices[material.LogicalIndex] = index;
+        }
+
+        return index;
+    }
+
     /// <summary>What an import gathers: the asset's arrays as they grow, its decoded images, its warnings, and its findings.</summary>
     private sealed class ImportContext(
         string path,
@@ -681,6 +805,12 @@ internal static partial class GltfImport
 
         /// <summary>Metres a unit of the file.</summary>
         public float MetresPerUnit { get; init; } = 1f;
+
+        /// <summary>True for a part: its materials are read as its primitives use them (<see cref="MaterialIndices"/>).</summary>
+        public bool Lazy { get; init; }
+
+        /// <summary>A part's materials, by the file's index.</summary>
+        public Dictionary<int, int> MaterialIndices { get; } = [];
 
         /// <summary>How many nodes of the scene use each mesh (by glTF's index).</summary>
         public Dictionary<int, int> MeshUses { get; } = [];

@@ -69,6 +69,31 @@ ctx.export(objects=[armature, plate])          # no clips: the game's clips come
 - Fit the new mesh to the rest pose, a little outside the body, so the copied weights follow it.
 - Keep the game's material names when a game recolours them by name.
 - To add clips from another file on the same rig, the toolkit's `tools/models/merge_clips.py` merges them.
+- A new body on the game's rig needs none of its clips: the game declares it bound on the rig's model
+  (`Declare(..., rigOf: NAME)`, `mesh-assets.md`), which takes that model's joint order and clips. Export no clips.
+
+## Parts on a body's bones (plates that break off, a helm, a lamp)
+
+A part a game attaches to a joint, or drops, is a mesh of its own parented to one bone. It needs no weights. The
+exporter writes it under the joint's node, and the game declares it as a part by its object's name
+(`Declare(..., node: NAME)`), which the engine reads in that joint's space. The whole file leaves it out.
+
+```python
+helm = make_helm()                             # modelled round the body at rest, where it sits
+world = helm.matrix_world.copy()
+helm.parent = armature
+helm.parent_type = "BONE"
+helm.parent_bone = "Head"
+bpy.context.view_layer.update()
+helm.matrix_world = world                      # kept where it was modelled: a bone's parenting moves it
+ctx.export(objects=[armature, body, helm])
+```
+
+- Name each part as the game names it: the object's name is the node's.
+- A part is drawn whole and rigid, so give a part that spans a bending joint (a back plate over the spine) to the bone
+  it moves with most.
+- Every part's material is read again for each part, textures too: keep parts' materials plain (colours, vertex
+  colours, emission), or share one small texture.
 
 ## A creature
 
