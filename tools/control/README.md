@@ -95,6 +95,20 @@ works wherever the window is.
 
 The console's `screenshot [scale] [noui] [PATH]` writes to PATH, or to `Screenshots/` in the data folder.
 
+## The figure moving
+
+`moving.py KEYS --view right|left|front|back|top --out DIR` takes pictures of the player's figure moving, to judge its
+motion. It drives a running offline game: it puts the player at `--start` (tp's place), pauses, holds the keys (joined
+by `+`, as `ShiftLeft+W+A`), and steps a run-up. Then it steps `--every` ticks at a time for `--frames` frames. At each
+stop it puts an orthographic camera (`viewpoint`, `lens ortho`) `--distance` metres off the figure's side, front, or
+back, or above it, and takes a picture.
+
+- It writes the frames, `sheet.png` (`--sheet` frames spread through the stride, in a row), and `moving.gif` (every
+  frame, at the game's speed, or `--slow` times slower).
+- `--pass "LABEL=COMMANDS"` runs a pass after those console commands, such as a tunable to compare. Repeat it: the
+  sheet stacks the passes in rows, and the GIF plays them side by side.
+- It needs Pillow. The game must be offline, since it pauses and steps it.
+
 ## Shaders
 
 `reload` compiles every pass's shaders from the repository. Only when all of them compile does it make the pipelines

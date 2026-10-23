@@ -32,7 +32,7 @@ load faster. `game.py start` runs offscreen unless given `--window` or `--fullsc
 | Logic, maths, a service, a system's rules | A test in memory (`.claude/rules/tests.md`): `dotnet test --filter`. |
 | Behaviour in the real world and systems (moving, physics, streaming, a game feature) | A scenario test over `HeadlessMatch` with `Engine:Physics:Threads=1` (the `scaffold` skill). Or a run with no graphics (`--Engine:Window:Mode=None`) whose startup script reads the state (`pos`, `ecs list COMPONENT`, `ecs show player`, log lines) and quits: about 5 s in Debug. |
 | Minutes of play (resting, streaming over time, drift) | No graphics with `--Engine:FreeRun=true` and `wait ticks N` (60 a second): 10 minutes in about 4 s in Debug. |
-| The picture | `game.py shots VIEW... --out DIR --compare OLD` (offscreen; four views in about 15 s in Debug), then read the PNGs. `tools/benchmark/imgdiff.py` exits 1 when two sets differ. |
+| The picture | `game.py shots VIEW... --out DIR --compare OLD` (offscreen; four views in about 15 s in Debug), then read the PNGs. `tools/benchmark/imgdiff.py` exits 1 when two sets differ. A figure's motion: `tools/control/moving.py` (a sheet and a GIF from its side). |
 | Something to try by hand | `game.py start`, then `run -s`, `query`, `status`, `shot`, and `input`. Offline, `pause`, `step N`, and `timescale`. For edits without a restart, `shaders reload` or `dotnet watch`. |
 | Vulkan code | `validate.sh --offscreen` while iterating, and both standard profiles with a window before it is done (the `vulkan` skill). |
 | Sessions | The in-process session tests. Or a host and a client with no graphics on 127.0.0.1, with `--Engine:Session:Port` apart from a running game's. |
