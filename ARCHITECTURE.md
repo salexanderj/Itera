@@ -1443,6 +1443,10 @@ Engine work that is known and not done. Each item lists what is not built.
 - **Sound**: filters by distance and occlusion (OpenAL's EFX), reverb by place, Doppler, and voices.
 - **Skia's Vulkan backend** for the UI, and dirty rectangles narrower than whole rows.
 - **Steam on macOS arm64** (the package has no osx-arm64 build of the managed wrapper) and the two-account join test.
+- **A Debug run's validation with Steam signed in.** It logs one best-practices warning at the start: a 256-byte image
+  bound to memory of its own (`vkBindImageMemory`). The image is the Steam overlay layer's, made before the engine makes
+  any: the engine's images go through its allocator, and a run with Steam off logs none. Not built: keeping that one
+  message out of a game's log.
 
 ## 10. Platform support
 
