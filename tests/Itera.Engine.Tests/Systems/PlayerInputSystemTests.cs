@@ -324,12 +324,20 @@ public sealed class PlayerInputSystemTests
     }
 
     [Fact]
-    public void Fly_switches_to_flying_which_takes_the_look_from_the_camera_and_back_and_F1_does_not()
+    public void Fly_switches_to_flying_which_takes_the_look_and_place_from_the_camera_and_back_and_F1_does_not()
     {
         using var world = World.Create();
         var commands = NewCommands();
         using var system = Create(world, commands: commands);
-        world.Create(new CameraPose { Yaw = 1.25f, Pitch = -0.5f }, new ActiveCamera());
+        world.Create(
+            new CameraPose
+            {
+                Position = new Vector3(3, 12, -7),
+                Yaw = 1.25f,
+                Pitch = -0.5f,
+            },
+            new ActiveCamera()
+        );
 
         _events.KeyDown(Key.F1);
         Tick(system);
@@ -351,7 +359,11 @@ public sealed class PlayerInputSystemTests
         Assert.Equal(Vector2.Zero, flying.Command.Move);
         Assert.Equal(1.25f, flying.Command.Yaw);
         Assert.Equal(-0.5f, flying.Command.Pitch);
+        // The command carries where the camera is, which a client sends its host.
+        Assert.Equal(PlayerButtons.Fly, flying.Command.Buttons & PlayerButtons.Fly);
+        Assert.Equal(new Vector3(3, 12, -7), flying.Command.FlyEye);
         Assert.False(walking.Mode.Flying);
+        Assert.Equal(PlayerButtons.None, walking.Command.Buttons & PlayerButtons.Fly);
         Assert.Equal(new Vector2(0, 1), walking.Command.Move);
         Assert.Equal(1.25f, walking.Command.Yaw);
     }

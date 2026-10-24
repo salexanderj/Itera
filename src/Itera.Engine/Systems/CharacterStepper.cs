@@ -9,7 +9,7 @@ namespace Itera.Engine.Systems;
 /// command made safe, the crouch, the limits of crouching and moving backwards, the game's <see cref="IMovementMode"/>
 /// or the engine's walking, and the mover, reading and writing the entity's components. For running a character's step
 /// again (a client replaying its commands after the host's correction) and for one character a system moves itself. A
-/// flying character's feet follow the camera in the system alone: here a flying one ends its crouch and stops. The
+/// flying character's feet follow the camera its command carries, as in the system, but not kept to the play area. The
 /// match's scope has one (with its movement mode); a test makes its own. Main thread; no structural change.
 /// </summary>
 public sealed class CharacterStepper

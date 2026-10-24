@@ -35,9 +35,10 @@ namespace Itera.Engine.Systems;
 /// step. A <see cref="Bodiless"/> entity is not moved. The velocity before the move
 /// is kept as <see cref="CharacterVelocity.Wanted"/> for a stand-in, and the push loose bodies gave the stand-in
 /// (<see cref="CharacterVelocity.Push"/>) is added after steering. While a player flies the debug camera, its feet
-/// follow the camera, so walking resumes under it; reading a pose a frame system wrote is a debug case. It creates no
-/// entity: a game makes its player with these components. Reads <see cref="PlayerCommand"/>, <see cref="PlayerMode"/>,
-/// <see cref="CharacterSize"/>, <see cref="MovementStats"/>, and <see cref="CameraPose"/>; writes
+/// follow the camera its command carries (<see cref="PlayerButtons.Fly"/>, <see cref="PlayerCommand.FlyEye"/>, kept to
+/// the play area), so walking resumes under it, and a host moves a flying client's player where that client's camera
+/// is. It creates no entity: a game makes its player with these components. Reads <see cref="PlayerCommand"/>,
+/// <see cref="PlayerMode"/>, <see cref="CharacterSize"/>, <see cref="MovementStats"/>, and the camera for <c>pos</c>; writes
 /// <see cref="CharacterPosition"/>, <see cref="CharacterVelocity"/>, <see cref="CharacterContact"/>,
 /// <see cref="EyeSmoothing"/>, and for the crouch and limits each character's <see cref="CharacterSize"/>, command, and
 /// <see cref="PlayerMode.Crouching"/>. The console's <c>pos</c> prints where the camera is, and <c>tp</c> moves the
@@ -204,8 +205,6 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             ref crouch
         );
 
-        var camera = new FindCamera();
-        World.InlineQuery<FindCamera, CameraPose>(in s_camera, ref camera);
         var job = new Move
         {
             Mover = _mover,
@@ -214,8 +213,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             Seconds = step.StepSeconds,
             GravityShare = _physics?.GravityShare ?? 1,
             Physics = _physics,
-            CameraFound = camera.Found,
-            CameraPosition = camera.Position,
+            Area = _area,
         };
         // A chunk loop, so a movement mode knows each player's entity.
         foreach (ref var chunk in World.Query(in s_players))
@@ -277,7 +275,8 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     /// <summary>
     /// Makes a command safe to act on, whatever wrote it (local input, or a peer): non-finite numbers become 0, the
     /// move is at most length 1, the pitch stays within <see cref="CameraRules.MaxPitch"/>, the yaw within one turn,
-    /// and unknown button bits are dropped. Runs where commands enter movement, once per step. The game's
+    /// unknown button bits are dropped, and so is <see cref="PlayerButtons.Fly"/> with a fly camera's place that is not
+    /// finite. Runs where commands enter movement, once per step. The game's
     /// <see cref="PlayerCommand.Actions"/> are left as they are.
     /// </summary>
     public static void Sanitize(ref PlayerCommand command)
@@ -296,6 +295,10 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             ? Math.Clamp(command.Pitch, -CameraRules.MaxPitch, CameraRules.MaxPitch)
             : 0;
         command.Buttons &= PlayerButtons.AllKnown;
+        if (!IsFinite(command.FlyEye))
+        {
+            command.Buttons &= ~PlayerButtons.Fly;
+        }
     }
 
     /// <summary>
@@ -647,18 +650,6 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         }
     }
 
-    private struct FindCamera : IForEach<CameraPose>
-    {
-        public Vector3 Position;
-        public bool Found;
-
-        public void Update(ref CameraPose pose)
-        {
-            Position = pose.Position;
-            Found = true;
-        }
-    }
-
     /// <summary>
     /// One character's step: the command made safe, its crouch and limits, then flying, the game's movement mode, or the
     /// engine's walking, and the mover. <see cref="CharacterStepper"/> runs it for one entity.
@@ -676,8 +667,11 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         /// <summary>The match's physics, for the friction of the ground a character stands on; none grips fully.</summary>
         public PhysicsWorld? Physics;
 
-        public bool CameraFound;
-        public Vector3 CameraPosition;
+        /// <summary>
+        /// The box a flying player's eye keeps to, as the debug camera does: a host takes a client's camera from its
+        /// commands. None (a replay of the client's own) takes the camera as it is.
+        /// </summary>
+        public PlayArea? Area;
 
         public readonly void Update(
             Entity entity,
@@ -709,9 +703,12 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             eye.PreviousHeight = eye.Height;
             if (mode.Flying)
             {
-                if (CameraFound)
+                if ((command.Buttons & PlayerButtons.Fly) != 0)
                 {
-                    position.Feet = CameraPosition - new Vector3(0, size.EyeMetres, 0);
+                    var flyEye = Area is null
+                        ? command.FlyEye
+                        : Mover.Origin.ToLocal(Area.ClampEye(Mover.Origin.ToWorld(command.FlyEye)));
+                    position.Feet = flyEye - new Vector3(0, size.EyeMetres, 0);
                     position.PreviousFeet = position.Feet;
                 }
 

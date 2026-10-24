@@ -33,6 +33,7 @@ public sealed partial class OriginShifts
         "CharacterPosition.Feet",
         "CharacterPosition.PreviousFeet",
         "Climber.Target",
+        "PlayerCommand.FlyEye",
         "MeshPlacement.Position",
         "MeshPlacement.PreviousPosition",
         "BodyPose.Position",
@@ -45,6 +46,7 @@ public sealed partial class OriginShifts
     private static readonly QueryDescription s_cameras = new QueryDescription().WithAll<CameraPose>();
     private static readonly QueryDescription s_characters = new QueryDescription().WithAll<CharacterPosition>();
     private static readonly QueryDescription s_climbers = new QueryDescription().WithAll<Climber>();
+    private static readonly QueryDescription s_commands = new QueryDescription().WithAll<PlayerCommand>();
     private static readonly QueryDescription s_meshes = new QueryDescription().WithAll<MeshPlacement>();
     private static readonly QueryDescription s_bodies = new QueryDescription().WithAll<BodyPose>();
 
@@ -220,6 +222,7 @@ public sealed partial class OriginShifts
         world.InlineQuery<Move, CameraPose>(in s_cameras, ref job);
         world.InlineQuery<Move, CharacterPosition>(in s_characters, ref job);
         world.InlineQuery<Move, Climber>(in s_climbers, ref job);
+        world.InlineQuery<Move, PlayerCommand>(in s_commands, ref job);
         world.InlineQuery<Move, MeshPlacement>(in s_meshes, ref job);
         world.InlineQuery<Move, BodyPose>(in s_bodies, ref job);
     }
@@ -245,6 +248,7 @@ public sealed partial class OriginShifts
         : IForEach<CameraPose>,
             IForEach<CharacterPosition>,
             IForEach<Climber>,
+            IForEach<PlayerCommand>,
             IForEach<MeshPlacement>,
             IForEach<BodyPose>
     {
@@ -259,6 +263,8 @@ public sealed partial class OriginShifts
         }
 
         public readonly void Update(ref Climber climber) => climber.Target -= Metres;
+
+        public readonly void Update(ref PlayerCommand command) => command.FlyEye -= Metres;
 
         public readonly void Update(ref MeshPlacement placement)
         {

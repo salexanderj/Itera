@@ -51,8 +51,14 @@ public enum PlayerButtons
     /// <summary>Crouch while held: lower and slower, with no jump or sprint, until let go with room to stand.</summary>
     Crouch = 4,
 
+    /// <summary>
+    /// The player flies the debug camera, which is at <see cref="PlayerCommand.FlyEye"/>: its feet follow it. A client's
+    /// command carries it to the host, so the host's copy of that player flies there too.
+    /// </summary>
+    Fly = 8,
+
     /// <summary>Every button there is; other bits in a command (from a peer) are dropped.</summary>
-    AllKnown = Jump | Sprint | Crouch,
+    AllKnown = Jump | Sprint | Crouch | Fly,
 }
 
 /// <summary>
@@ -77,6 +83,12 @@ public struct PlayerCommand
     /// (<c>PlayerInputSystem</c>) and its own systems read. The engine never reads them.
     /// </summary>
     public uint Actions;
+
+    /// <summary>
+    /// While <see cref="PlayerButtons.Fly"/> is set, where the debug camera is (local to the match's origin, which moves
+    /// it as it moves): the feet follow it, the eye's height below (<c>PlayerMovementSystem</c>).
+    /// </summary>
+    public Vector3 FlyEye;
 }
 
 /// <summary>How the player moves now: walking, or flying the debug camera (the console's <c>fly</c>), and crouched.</summary>

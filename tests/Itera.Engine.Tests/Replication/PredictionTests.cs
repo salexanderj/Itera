@@ -15,9 +15,10 @@ namespace Itera.Engine.Tests.Replication;
 /// <summary>
 /// A client's own player, predicted, and the host's correction (<c>ReplicationService.Prediction.cs</c>), over the test
 /// floor in one process: the client moves its player at once and the host moves its copy from the same commands to the
-/// same place, without a correction; through 100 ms each way with jitter and loss too; a host that moves the player
-/// elsewhere corrects the client, whose drawn jump eases out; commands go as the host reads them; a damaged reply with
-/// commands is refused or read; and a predicted step allocates nothing.
+/// same place, without a correction; through 100 ms each way with jitter and loss too; a client flying the debug camera
+/// flies the host's copy under it, and both walk on alike; a host that moves the player elsewhere corrects the client,
+/// whose drawn jump eases out; commands go as the host reads them; a damaged reply with commands is refused or read;
+/// and a predicted step allocates nothing.
 /// </summary>
 [RunsLong]
 public sealed class PredictionTests(ITestOutputHelper output)
@@ -106,6 +107,76 @@ public sealed class PredictionTests(ITestOutputHelper output)
         Assert.True(client.DistanceTo(host) < 0.01, $"The client's player at {client}, the host's copy at {host}.");
         // A command is missed only when the eight replies that carry it are all lost, or come later than the host's buffer.
         Assert.True(corrections <= 3, $"{corrections} corrections.");
+    }
+
+    /// <summary>
+    /// A client flying the debug camera flies its player on the host too: the host's copy flies (its mode says so), its
+    /// feet under the client's camera by the eye's height. Walking again from there, the two walk and fall alike, with
+    /// no correction.
+    /// </summary>
+    [Fact]
+    public void A_client_flying_the_debug_camera_flies_the_hosts_copy_under_its_camera_and_both_walk_on_alike()
+    {
+        const ulong flyFrom = 60;
+        const ulong holdFrom = 120;
+        const ulong walkFrom = 150;
+        const ulong stopAt = 210;
+        using var harness = ReplicationHarness.Start(
+            new MoverPlan { Count = 0, Characters = true },
+            clientPlan: new MoverPlan
+            {
+                Characters = true,
+                Script = tick =>
+                    tick switch
+                    {
+                        < flyFrom => new PlayerCommand(),
+                        < walkFrom => new PlayerCommand
+                        {
+                            Buttons = PlayerButtons.Fly,
+                            FlyEye = new Vector3(0, 4, -0.05f * (Math.Min(tick, holdFrom) - flyFrom)),
+                        },
+                        < stopAt => new PlayerCommand { Move = new Vector2(0, 1) },
+                        _ => new PlayerCommand(),
+                    },
+            }
+        );
+        StepClientTo(harness, flyFrom);
+        var startup = harness.ClientReplication.Corrections;
+        StepClientTo(harness, walkFrom - 1);
+
+        var own = harness.ClientPlan.Own;
+        var copy = harness.HostPlan.Remote[1];
+        var eyeMetres = harness.Client.World.Get<CharacterSize>(own).EyeMetres;
+        var flown = Feet(harness.Client, own);
+        var copyFlown = Feet(harness.Host, copy);
+        var copyFlew = harness.Host.World.Get<PlayerMode>(copy).Flying;
+        StepClientTo(harness, stopAt + 60);
+
+        var client = Feet(harness.Client, own);
+        var host = Feet(harness.Host, copy);
+        output.WriteLine(Text($"Flown to {flown} (host {copyFlown}), then walked to {client} (host {host})."));
+        Assert.True(copyFlew, "The host's copy did not fly.");
+        Assert.True(
+            flown.DistanceTo(new WorldPoint(0, 4 - eyeMetres, -3)) < 0.001,
+            Text($"The client's player flew to {flown}.")
+        );
+        Assert.True(copyFlown.DistanceTo(flown) < 0.001, Text($"The host's copy flew to {copyFlown}."));
+        Assert.False(harness.Host.World.Get<PlayerMode>(copy).Flying);
+        Assert.True(client.Z < -4 && client.Y < 1, Text($"The player walked only to {client}."));
+        Assert.True(
+            client.DistanceTo(host) < 0.001,
+            Text($"The client's player at {client}, the host's copy at {host}.")
+        );
+        Assert.Equal(startup, harness.ClientReplication.Corrections);
+    }
+
+    /// <summary>Steps the host and the client until the client's tick is <paramref name="tick"/>.</summary>
+    private static void StepClientTo(ReplicationHarness harness, ulong tick)
+    {
+        while (harness.Client.Tick < tick)
+        {
+            harness.Step(1);
+        }
     }
 
     [Fact]
@@ -261,15 +332,26 @@ public sealed class PredictionTests(ITestOutputHelper output)
                 Buttons = (PlayerButtons)random.Next(256),
                 Actions = (uint)random.NextInt64(uint.MaxValue + 1L),
             };
+            var flyEye = new WorldPoint(
+                (random.NextDouble() - 0.5) * 2e5,
+                (random.NextDouble() - 0.5) * 2e3,
+                (random.NextDouble() - 0.5) * 2e5
+            );
             writer.Reset();
-            ReplicationService.WriteCommand(writer, in command);
+            ReplicationService.WriteCommand(writer, in command, in flyEye);
             var reader = new MessageReader(writer.Written);
-            var read = ReplicationService.ReadCommand(ref reader);
+            var read = ReplicationService.ReadCommand(ref reader, out var readEye);
             reader.EnsureEnd();
             var quantised = command;
             ReplicationService.Quantise(ref quantised);
 
             Assert.Equal(read, quantised);
+            // The fly camera's place goes only with a command that flies, in a message's steps.
+            Assert.Equal(
+                (command.Buttons & PlayerButtons.Fly) != 0 ? ReplicationService.Quantised(in flyEye) : default,
+                readEye
+            );
+            Assert.Equal(ReplicationService.Quantised(in readEye), readEye);
             var again = quantised;
             ReplicationService.Quantise(ref again);
             Assert.Equal(quantised, again);
@@ -288,9 +370,9 @@ public sealed class PredictionTests(ITestOutputHelper output)
                 Pitch = value,
             };
             writer.Reset();
-            ReplicationService.WriteCommand(writer, in command);
+            ReplicationService.WriteCommand(writer, in command, default);
             var reader = new MessageReader(writer.Written);
-            var read = ReplicationService.ReadCommand(ref reader);
+            var read = ReplicationService.ReadCommand(ref reader, out _);
             var quantised = command;
             ReplicationService.Quantise(ref quantised);
 
@@ -299,16 +381,28 @@ public sealed class PredictionTests(ITestOutputHelper output)
         }
     }
 
-    [Fact]
-    public void A_damaged_reply_with_commands_is_refused_or_read()
+    /// <summary>A damaged reply, of a walking client's commands or a flying one's (with its camera's places), is refused or read.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_damaged_reply_with_commands_is_refused_or_read(bool flying)
     {
         using var harness = ReplicationHarness.Start(
             new MoverPlan { Count = 0, Characters = true },
-            clientPlan: new MoverPlan { Characters = true, Script = tick => Walk(tick, ulong.MaxValue) }
+            clientPlan: new MoverPlan
+            {
+                Characters = true,
+                Script = tick =>
+                    flying
+                        ? new PlayerCommand { Buttons = PlayerButtons.Fly, FlyEye = new Vector3(0, 3, tick * -0.01f) }
+                        : Walk(tick, ulong.MaxValue),
+            }
         );
         harness.ClientTransport.Recorded = [];
         harness.Step(30);
-        var sample = harness.ClientTransport.Recorded.Last(message => message[0] == 9 && message.Length > 40);
+        var sample = harness.ClientTransport.Recorded.Last(message =>
+            message[0] == 9 && message.Length > (flying ? 120 : 40)
+        );
         IReplicationEndpoint endpoint = harness.HostReplication;
         var rows = HostileValues.Damaged("reply", sample[1..]).ToList();
 
@@ -357,7 +451,7 @@ public sealed class PredictionTests(ITestOutputHelper output)
         writer.WriteULong(0);
         writer.WriteVarInt(1);
         writer.WriteVarInt(newest);
-        ReplicationService.WriteCommand(writer, new PlayerCommand());
+        ReplicationService.WriteCommand(writer, new PlayerCommand(), default);
         writer.WriteVarLong(shown);
         return writer.Written.ToArray();
     }

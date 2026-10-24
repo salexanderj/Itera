@@ -55,7 +55,8 @@ registers what they share: `PlayArea` (round the match's grid, or `PlayArea.With
   `new MovementKeys(bindings, thirdPersonKey: false)` after the engine's. A game's own buttons go in
   `PlayerCommand.Actions`, set by the game's input system after it. While `PlayerInputBlock.Blocked`, the input reads as
   nothing pressed, and a `Bodiless` player only looks about. `fly` and `camera` are its commands. The Fly down key (C)
-  and the Third person key (Tab) are `MovementKeys` too, and the wheel moves the shoulder camera.
+  and the Third person key (Tab) are `MovementKeys` too, and the wheel moves the shoulder camera. While flying, the
+  command takes the active camera's look and place (`PlayerButtons.Fly`, `PlayerCommand.FlyEye`).
 - `PlayerMovementSystem` moves every entity with a command and `MovementStats` through `VoxelCharacterMover`: the local
   player, a remote player the host moves from its commands, and a game's characters alike. Ground friction
   (`CharacterContact.GroundMaterial`, `PhysicsWorld.FrictionOf`) and the match's gravity share (`PhysicsWorld`) change
@@ -63,6 +64,8 @@ registers what they share: `PlayArea` (round the match's grid, or `PlayArea.With
   `MovementStats.SideShare` of its speed straight to the side and `BackShare` straight back, and between them by its
   way (`PlayerMovementSystem.DirectionShare`). A move turned further from ahead than `MovementStats.SprintDegrees` (90
   by default), or going back, does not sprint.
+- A flying player's feet follow the camera its command carries, kept to the play area, so a host flies a client's
+  player where that client's camera is (`.claude/rules/replication.md`).
 - `CharacterStepper.Step` (scoped, with the game's movement mode) runs one character's step with the same code, for a
   client that replays its commands after the host's correction.
 - A game's `IMovementMode` (registered in the match's scope, given to the system) is offered each walking player's step

@@ -590,7 +590,10 @@ internal sealed class TestCharacterSystem(
     }
 }
 
-/// <summary>On a client, its player's command each step from the plan's script.</summary>
+/// <summary>
+/// On a client, its player's command each step from the plan's script, flying the debug camera while the command has
+/// <see cref="Components.PlayerButtons.Fly"/> (as the engine's input system makes it).
+/// </summary>
 internal sealed class TestInputSystem(World world, MoverPlan plan)
     : BaseSystem<World, FixedStepTime>(world),
         IFixedUpdateSystem
@@ -599,7 +602,9 @@ internal sealed class TestInputSystem(World world, MoverPlan plan)
     {
         if (plan.Script is { } script && World.IsAlive(plan.Own))
         {
-            World.Get<Components.PlayerCommand>(plan.Own) = script(step.Tick);
+            var command = script(step.Tick);
+            World.Get<Components.PlayerCommand>(plan.Own) = command;
+            World.Get<Components.PlayerMode>(plan.Own).Flying = (command.Buttons & Components.PlayerButtons.Fly) != 0;
         }
     }
 }

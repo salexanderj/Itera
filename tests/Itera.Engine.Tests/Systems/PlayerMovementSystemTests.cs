@@ -65,6 +65,12 @@ public sealed class PlayerMovementSystemTests : IDisposable
             Pitch = float.NegativeInfinity,
         };
         PlayerMovementSystem.Sanitize(ref bad);
+        var nowhere = new PlayerCommand
+        {
+            Buttons = PlayerButtons.Fly | PlayerButtons.Crouch,
+            FlyEye = new Vector3(0, float.NaN, 0),
+        };
+        PlayerMovementSystem.Sanitize(ref nowhere);
 
         Assert.Equal(1, command.Move.Length(), 5);
         Assert.Equal(0, command.Yaw);
@@ -73,6 +79,8 @@ public sealed class PlayerMovementSystemTests : IDisposable
         Assert.Equal(0xF0F0u, command.Actions);
         Assert.Equal(Vector2.Zero, bad.Move);
         Assert.InRange(bad.Yaw, -MathF.PI, MathF.PI);
+        // A fly camera at no place flies nowhere.
+        Assert.Equal(PlayerButtons.Crouch, nowhere.Buttons);
         Assert.Equal(0, bad.Pitch);
     }
 
@@ -350,20 +358,43 @@ public sealed class PlayerMovementSystemTests : IDisposable
         Assert.True(highest <= landed + 0.02f, $"Landed at {landed:F2} m and later stood at {highest:F2} m.");
     }
 
+    /// <summary>
+    /// While flying, each player's feet follow the camera its command carries, not this game's camera: the local
+    /// player's, and a client's on a host, kept to the play area as the debug camera keeps to it.
+    /// </summary>
     [Fact]
-    public void While_flying_the_feet_follow_the_camera()
+    public void While_flying_the_feet_follow_the_camera_the_command_carries_kept_to_the_play_area()
     {
         using var world = World.Create();
         using var system = Create(world, new Vector3(0, 1.6f, 0), flying: true);
-        world.Create(new CameraPose { Position = new Vector3(5, 20, -3) }, new ActiveCamera());
+        world.Create(new CameraPose { Position = new Vector3(40, 30, 40) }, new ActiveCamera());
+        var size = CharacterSize.ForHeight(1.7f);
+        var far = new Vector3(1e5f, 20, 0);
+        var remote = world.Create(
+            new RemotePlayer(),
+            new PlayerCommand { Buttons = PlayerButtons.Fly, FlyEye = far },
+            new PlayerMode { Flying = true },
+            size,
+            new CharacterPosition(),
+            new CharacterVelocity(),
+            new CharacterContact(),
+            new EyeSmoothing(),
+            MovementStats.Default
+        );
 
-        Run(world, system, 1, default);
+        Run(world, system, 1, new PlayerCommand { Buttons = PlayerButtons.Fly, FlyEye = new Vector3(5, 20, -3) });
 
         var (position, velocity, _) = Read(world);
-        var eye = CharacterSize.ForHeight(1.7f).EyeMetres;
-        Assert.Equal(new Vector3(5, 20 - eye, -3), position.Feet);
+        var eye = new Vector3(0, size.EyeMetres, 0);
+        var kept = _area.ClampEye(new WorldPoint(far.X, far.Y, far.Z));
+        Assert.Equal(new Vector3(5, 20, -3) - eye, position.Feet);
         Assert.Equal(position.Feet, position.PreviousFeet);
         Assert.Equal(Vector3.Zero, velocity.MetresPerSecond);
+        Assert.True(kept.X < far.X, $"The far place {far} is within the play area.");
+        Assert.Equal(
+            new Vector3((float)kept.X, (float)kept.Y, (float)kept.Z) - eye,
+            world.Get<CharacterPosition>(remote).Feet
+        );
     }
 
     [Fact]

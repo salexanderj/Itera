@@ -109,15 +109,16 @@ public sealed class WireFingerprintTests : IDisposable
 
         Assert.Equal(4, clientWorld.EditCount);
         WireFingerprint.AssertPinned(
-            47,
-            "450B467BA83C1AFF",
+            48,
+            "DEC19E357EF01A5D",
             WireFingerprint.Of([.. hostTransport.Recorded, .. clientTransport.Recorded])
         );
     }
 
     /// <summary>
     /// The replication's messages: a host's snapshots of three movers (whole, then as changes) with the owner's block of
-    /// the client's predicted player, and the client's replies with its player's commands, over ten steps after a join.
+    /// the client's predicted player, and the client's replies with its player's commands, walking and then flying the
+    /// debug camera, over ten steps after a join.
     /// </summary>
     [Fact]
     public void The_replications_messages_have_the_shape_this_protocol_pins()
@@ -136,7 +137,11 @@ public sealed class WireFingerprintTests : IDisposable
                 {
                     Move = new System.Numerics.Vector2(0, 1),
                     Yaw = tick * 0.01f,
-                    Buttons = tick % 30 == 0 ? Components.PlayerButtons.Jump : Components.PlayerButtons.None,
+                    Buttons =
+                        tick % 30 == 0 ? Components.PlayerButtons.Jump
+                        : tick % 30 >= 25 ? Components.PlayerButtons.Fly
+                        : Components.PlayerButtons.None,
+                    FlyEye = new System.Numerics.Vector3(0, 3, tick * -0.01f),
                 },
             }
         );
@@ -152,8 +157,8 @@ public sealed class WireFingerprintTests : IDisposable
             message => message[0] == (byte)MessageKind.Reply && message.Length > 40
         );
         WireFingerprint.AssertPinned(
-            47,
-            "D761F8814488E272",
+            48,
+            "FDF6C9B6C3299822",
             WireFingerprint.Of([.. harness.HostTransport.Recorded, .. harness.ClientTransport.Recorded])
         );
     }

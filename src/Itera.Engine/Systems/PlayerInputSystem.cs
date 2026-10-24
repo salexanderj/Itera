@@ -21,8 +21,9 @@ namespace Itera.Engine.Systems;
 /// player only looks about: its move and buttons are cleared. <see cref="PlayerCommand.Actions"/> is a game's: this
 /// never writes it. The console's <c>fly</c> switches between walking and the debug fly camera, unless flying is forced
 /// (the benchmark and the automatic path). While flying, the command holds no movement, jump, or sprint and takes its
-/// look from the <see cref="ActiveCamera"/>, so walking resumes looking where the camera looked; reading a pose a
-/// frame system wrote is a debug case. Third person (Tab) switches the local player's camera between its eye and
+/// look and place from the <see cref="ActiveCamera"/> (<see cref="PlayerButtons.Fly"/> and
+/// <see cref="PlayerCommand.FlyEye"/>, which a client sends its host), so walking resumes looking where the camera
+/// looked; reading a pose a frame system wrote is a debug case. Third person (Tab) switches the local player's camera between its eye and
 /// behind its right shoulder (<see cref="ThirdPersonView"/>; not while flying; a game may leave the key out,
 /// <see cref="MovementKeys.ThirdPerson"/>), and the wheel moves the shoulder camera in and out
 /// (<see cref="ThirdPersonCamera.Wheel"/>); the console's <c>camera</c> does what Third person does. While
@@ -371,6 +372,8 @@ public sealed partial class PlayerInputSystem : BaseSystem<World, FixedStepTime>
                 {
                     command.Yaw = Camera.Yaw;
                     command.Pitch = Camera.Pitch;
+                    command.Buttons |= PlayerButtons.Fly;
+                    command.FlyEye = Camera.Position;
                 }
 
                 return;
