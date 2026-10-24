@@ -38,10 +38,16 @@ public sealed class MeshInstances
     /// Draws mesh asset <paramref name="asset"/> (its index in <see cref="Assets.MeshAssets"/>) placed by
     /// <paramref name="transform"/> from its space to the world's (System.Numerics' row order: scale, then turn, then
     /// move; no mirroring), its colours multiplied by <paramref name="tint"/> (linear RGBA bytes, red in the low byte;
-    /// <see cref="NoTint"/> for none); <paramref name="shadow"/> says whether it is drawn and casts the sun's shadow.
+    /// <see cref="NoTint"/> for none); <paramref name="shadow"/> says whether it is drawn and casts the sun's shadow (a
+    /// hidden one is left out).
     /// </summary>
     public void Add(int asset, in Matrix4x4 transform, uint tint = NoTint, ModelShadow shadow = ModelShadow.Casts)
     {
+        if (shadow == ModelShadow.Hidden)
+        {
+            return;
+        }
+
         if (Count == MaxInstances)
         {
             Dropped++;
@@ -54,7 +60,8 @@ public sealed class MeshInstances
     /// <summary>
     /// Draws skinned mesh asset <paramref name="asset"/> posed: as <see cref="Add"/>, and returns where its
     /// <paramref name="joints"/> skinning matrices go (its rig's joint count; <c>Rig.WritePalette</c>), to be written
-    /// before the frame is built; an empty span when the frame is full, and the instance is dropped. With
+    /// before the frame is built; an empty span when the frame is full, and the instance is dropped, or when it is hidden.
+    /// With
     /// <paramref name="skinFirst"/> it is skinned before the instances without it when the frame cannot skin them all
     /// (<see cref="MeshInstance.SkinFirst"/>).
     /// </summary>
@@ -67,6 +74,11 @@ public sealed class MeshInstances
         bool skinFirst = false
     )
     {
+        if (shadow == ModelShadow.Hidden)
+        {
+            return Span<Matrix4x4>.Empty;
+        }
+
         if (Count == MaxInstances || joints <= 0 || PaletteJoints + joints > MaxPaletteJoints)
         {
             Dropped++;

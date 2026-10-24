@@ -28,7 +28,7 @@ public sealed class ModelInstances
     /// with the corner of its box, its tree's voxel (0, 0, 0), at <paramref name="corner"/> in world metres, turned by
     /// <paramref name="turn"/> from the model's axes to the world's, blended <paramref name="tint"/> of the way from
     /// its materials' base to their tint colours; <paramref name="shadow"/> says whether it is drawn and casts the sun's
-    /// shadow.
+    /// shadow (a hidden one is left out).
     /// </summary>
     public void Add(
         int model,
@@ -39,6 +39,11 @@ public sealed class ModelInstances
         ModelShadow shadow = ModelShadow.Casts
     )
     {
+        if (shadow == ModelShadow.Hidden)
+        {
+            return;
+        }
+
         if (Count == MaxModels)
         {
             Dropped++;
@@ -92,4 +97,10 @@ public enum ModelShadow
     /// views show.
     /// </summary>
     Only,
+
+    /// <summary>
+    /// Not drawn at all and casts no shadow, nor do the meshes attached to it (<c>MeshAttachment</c>): hidden for a while
+    /// without a structural change, such as a player a game draws another way while it flies the debug camera.
+    /// </summary>
+    Hidden,
 }

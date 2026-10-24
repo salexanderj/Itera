@@ -25,7 +25,8 @@ namespace Itera.Engine.Systems;
 /// <see cref="SmoothedPose"/> has its changes smoothed as it is drawn, after the shaping (<see cref="PoseSmoothing"/>: each
 /// starts from the pose drawn the frame before, moving as it was). An entity with a <see cref="MeshAttachment"/> is drawn
 /// at its holder's joint as the holder is posed this frame (<see cref="MeshPoses"/>; a smoothed holder as it was
-/// drawn). Reads those; writes only the
+/// drawn). A hidden mesh (<see cref="ModelShadow.Hidden"/>) is not posed or drawn, nor is one attached to a hidden
+/// holder. Reads those; writes only the
 /// slot a <see cref="SmoothedPose"/> keeps. Registers the console's <c>meshes</c> (the run's assets and their clips; placing one or many in
 /// front of the camera, on the ground where a voxel world is, playing a clip or held at a time of it, tagged
 /// <see cref="ConsoleMesh"/>; removing those).
@@ -141,9 +142,14 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
             var smoothings = smoothed ? chunk.GetSpan<SmoothedPose>() : default;
             foreach (var index in chunk)
             {
+                ref readonly var mesh = ref meshes[index];
+                if (mesh.Shadow == ModelShadow.Hidden)
+                {
+                    continue;
+                }
+
                 var entity = chunk.Entity(index);
                 var transform = MeshPoses.Placed(in placements[index], time.Alpha);
-                ref readonly var mesh = ref meshes[index];
                 if (
                     !MeshPoses.Sample(
                         _assets,
@@ -214,7 +220,13 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     private void DrawAttached(in MeshAttachment attachment, in DrawnMesh mesh, float alpha, ulong frame)
     {
         var holder = attachment.Holder;
-        if (!World.IsAlive(holder) || !World.Has<MeshPlacement>(holder) || !World.Has<DrawnMesh>(holder))
+        if (
+            mesh.Shadow == ModelShadow.Hidden
+            || !World.IsAlive(holder)
+            || !World.Has<MeshPlacement>(holder)
+            || !World.Has<DrawnMesh>(holder)
+            || World.Get<DrawnMesh>(holder).Shadow == ModelShadow.Hidden
+        )
         {
             return;
         }
@@ -595,6 +607,11 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
 
         public readonly void Update(ref MeshPlacement placement, ref DrawnMesh mesh, ref MeshAnimator animator)
         {
+            if (mesh.Shadow == ModelShadow.Hidden)
+            {
+                return;
+            }
+
             var transform = MeshPoses.Placed(in placement, Alpha);
             if (!MeshPoses.Sample(Assets, mesh.Asset, in animator, Alpha, Locals, FromLocals, out var rig))
             {

@@ -18,7 +18,8 @@ namespace Itera.Engine.Tests.Systems;
 /// with each joint blended between its two clips, a blended clip posed its shift further through its length, and with a <see cref="ShapedPose"/> shaped by the game's shaper; with a
 /// <see cref="SmoothedPose"/> a change of clip starting from the pose drawn before and settling into the new one, an
 /// unsmoothed one changing at once, a marked switch of the game's shaping smoothed too, a new entity in a gone one's slot starting afresh, and what it holds following it; a
-/// mesh attached to a joint of another's pose drawn there, and nothing when its holder is gone; the console's
+/// mesh attached to a joint of another's pose drawn there, and nothing when its holder is gone; a hidden mesh, posed or
+/// not, and what is attached to it, not drawn; the console's
 /// <c>meshes</c> lists the assets and their clips, places one or many in front of the camera facing it, playing a clip or
 /// held at a time of it, and clears only those it placed; and drawing allocates nothing.
 /// </summary>
@@ -425,6 +426,43 @@ public sealed class MeshDrawSystemTests
                 Vector3.Distance(Vector3.Transform(point, expected[j]), Vector3.Transform(point, palette[j])) < 1e-5f
             );
         }
+    }
+
+    [Fact]
+    public void A_hidden_mesh_posed_or_not_and_what_is_attached_to_it_are_not_drawn_and_drawn_again_once_shown()
+    {
+        using var world = World.Create();
+        using var system = Create(world);
+        var still = world.Create(MeshPlacement.At(Vector3.Zero, Quaternion.Identity), DrawnMesh.Of(1));
+        var posed = world.Create(
+            MeshPlacement.At(new Vector3(3, 0, 0), Quaternion.Identity),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f)
+        );
+        var shaped = world.Create(
+            MeshPlacement.At(new Vector3(6, 0, 0), Quaternion.Identity),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f),
+            new ShapedPose()
+        );
+        world.Create(DrawnMesh.Of(0), MeshAttachment.To(posed, 1, Vector3.Zero, Quaternion.Identity));
+        foreach (var entity in (Entity[])[still, posed, shaped])
+        {
+            world.Get<DrawnMesh>(entity).Shadow = ModelShadow.Hidden;
+        }
+
+        system.Update(new FrameTime(1f / 240, 1, 1, 1));
+        var hidden = _instances.Count;
+        _instances.Clear();
+        foreach (var entity in (Entity[])[still, posed, shaped])
+        {
+            world.Get<DrawnMesh>(entity).Shadow = ModelShadow.Casts;
+        }
+
+        system.Update(new FrameTime(1f / 240, 2, 2, 1));
+
+        Assert.Equal(0, hidden);
+        Assert.Equal(4, _instances.Count);
     }
 
     [Fact]

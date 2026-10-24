@@ -13,7 +13,8 @@ engine system follows are in `systems.md`. Test classes: `MeshDrawSystemTests` a
 - `MeshDrawSystem` (frame) hands every entity with a `MeshPlacement` and a `DrawnMesh` to `MeshInstances`, its pose
   blended by the frame's `Alpha`. A `MeshPlacement` holds the pose at the last two fixed steps and a uniform scale. A
   fixed system that moves a placement copies the pose into the previous one first. A `DrawnMesh` holds the asset's index
-  from `MeshAssets.Find`, a tint, and a `ModelShadow`.
+  from `MeshAssets.Find`, a tint, and a `ModelShadow`. A `Hidden` one is not posed or drawn, nor is a mesh attached to
+  it, so a game hides a figure for a while without a structural change.
 - A `MeshAnimator` poses the entity by a clip of the asset's rig (`MeshInstances.AddPosed`, `Rig.WritePalette`).
   A clip index of -1 shows the rest pose, a speed of 0 holds, and `Once` stops at the end. `MeshAnimator.FadeTo` keeps
   the old clip running while each joint blends to the new one by `FadeWeight`. `MeshAnimator.SetBlend` blends in a

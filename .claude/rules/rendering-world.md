@@ -138,6 +138,7 @@ Each frame `WorldMeshes` picks a level for each column.
   whose bounding sphere is in view, or casts into a cascade as the world's blocks do.
 - `ModelShadow` on each draw says what the draw does (`Casts`). `None` draws for the viewer alone (first-person arms
   and what they hold). `Only` casts a shadow without being drawn (the local player's own body in first person).
+  `Hidden` is neither: `ModelInstances` and `MeshInstances` leave it out.
 - Draws are grouped by model level with a counting sort. Each block of a level is one indexed indirect command whose
   instances are that level's draws (`MeshModelDraw`: corner, turn, voxel size, the block's vertex base and place,
   tint), in three lists like the world's.
