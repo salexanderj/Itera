@@ -254,7 +254,8 @@ mend them, and leave the toes out of the map, which keeps the model's own foot s
 form): each from a few key poses (`itera_models/keyed.py`), written into one `.glb` on the model's own nodes, which a
 `merge_clips.py` list then adds to the model. For each clip it:
 
-- stands the model in the first pose of its own clip `STAND`, which each clip starts and ends in;
+- stands the model in the first pose of its own clip `STAND`, which each clip starts and ends in, but a `loop` (a
+  climb's cycle), which ends in the pose it starts in;
 - keys at each key pose the hips (moved and turned), the spine and the neck (turned), each collarbone, and a target
   and a pole for each hand and foot. A hand goes to a place (`at`), moves from where it stands (`by`), or reaches a way
   from its shoulder (`reach`, a share of the arm's length). An elbow and a knee point the way the key gives. The
@@ -263,7 +264,8 @@ form): each from a few key poses (`itera_models/keyed.py`), written into one `.g
   every frame, and makes its mirror for the other side where the recipe asks;
 - checks it (`keyed.check`): a joint under the ground (a little allowed for the joints named as touching it, and those
   below them), a hand or foot that falls short of its place (with where its limb's root was), a knee or elbow bent past
-  a person's or a knee bent backwards, a joint named as planted that slides, and first and last poses off the stand;
+  a person's or a knee bent backwards, a joint named as planted that slides, and first and last poses off the stand
+  (a loop's off each other);
 - reports where its impacts put the joints named, for the game's hit windows, and draws a sheet of its frames from the
   side and from three quarters in front (`itera_models/strips.py`), with `--video` an MP4 too.
 

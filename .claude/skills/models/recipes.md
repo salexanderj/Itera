@@ -161,6 +161,8 @@ def build(ctx):
   the toes stay where they stood.
 - Name in `ground` the joints that touch the ground (a hand's fingers come with it), in `planted` those that must not
   slide, and in `impacts` the joints and times the game's hit windows come from.
+- A cycle that does not start at the stand (a climb) is a `loop`: its first key names every part, and its last key the
+  same pose. A loop the game poses by how far the body has gone, not by time, keeps its parts in step with the world.
 
 ## Motion capture onto the game's rig
 

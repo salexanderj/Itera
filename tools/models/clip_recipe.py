@@ -7,21 +7,22 @@ A clip recipe is a Python file with these names; its paths are from its own fold
 
     MODEL = "PATH.glb"      # the model whose rig the clips are for (its nodes, its rest, its stand clip)
     OUT = "PATH.glb"        # the clips on the model's nodes, which merge_clips.py adds to the model
-    STAND = "Idle_Loop"     # the model's clip whose first pose each clip starts and ends in
+    STAND = "Idle_Loop"     # the model's clip whose first pose each clip but a loop starts and ends in
     FPS = 30                # keys a second
     def build(ctx): ...     # makes the clips with ctx.clip
 
-`ctx.clip(name, keys, ground=(), planted=(), impacts=(), mirror=None)` makes one clip from `keys` (keyed.Key), checks it
-(keyed.check: `ground` names the joints that touch the ground, `planted` the joints that stand still, as (joint, from,
-to) in seconds), reports where each of its `impacts`, as (label, joints, seconds), puts the joints, and draws its sheet
-and, with --video, its video. `mirror` names the same clip made for the other side. `ctx.keyer` stands the model,
+`ctx.clip(name, keys, ground=(), planted=(), impacts=(), mirror=None, loop=False)` makes one clip from `keys`
+(keyed.Key), checks it (keyed.check: `ground` names the joints that touch the ground, `planted` the joints that stand
+still, as (joint, from, to) in seconds), reports where each of its `impacts`, as (label, joints, seconds), puts the
+joints, and draws its sheet and, with --video, its video. `mirror` names the same clip made for the other side. A
+`loop` (a climb's cycle) need not start at the stand: it ends in the pose it starts in. `ctx.keyer` stands the model,
 `ctx.stand(joint)` gives where a joint stands, in the model's axes, and `ctx.ankle_for(side, toes, turn)` where an ankle
 goes for its toes to rest at a place with the foot turned.
 
 `--out` writes the clips there in place of the recipe's OUT (build.py verify compares the two).
 
 The report lists, for each clip, its length, its lowest joints, its knees' and elbows' most bend, how far its ends lie
-from the stand, its impacts, and its pictures; and every problem the checks found.
+from the stand and from each other (its seam), its impacts, and its pictures; and every problem the checks found.
 """
 
 import importlib.util
@@ -70,8 +71,8 @@ class Context:
     def ankle_for(self, side: str, toes: tuple, turn=None) -> tuple:
         return self.keyer.ankle_for(side, toes, turn if turn is not None else keyed.Turn())
 
-    def clip(self, name, keys, ground=(), planted=(), impacts=(), mirror=None) -> None:
-        self._one(name, keys, tuple(ground), tuple(planted), tuple(impacts))
+    def clip(self, name, keys, ground=(), planted=(), impacts=(), mirror=None, loop=False) -> None:
+        self._one(name, keys, tuple(ground), tuple(planted), tuple(impacts), loop)
         if mirror:
             self._one(
                 mirror,
@@ -79,12 +80,13 @@ class Context:
                 tuple(swapped(joint) for joint in ground),
                 tuple((swapped(joint), start, end) for joint, start, end in planted),
                 tuple((label, tuple(swapped(j) for j in joints), seconds) for label, joints, seconds in impacts),
+                loop,
             )
 
-    def _one(self, name, keys, ground, planted, impacts) -> None:
+    def _one(self, name, keys, ground, planted, impacts, loop) -> None:
         keyer = self.keyer
         made = keyer.clip(name, keys)
-        report, problems = keyed.check(self.armature, keyer, made, ground=ground, planted=planted)
+        report, problems = keyed.check(self.armature, keyer, made, ground=ground, planted=planted, loop=loop)
         report["impacts"] = [
             {
                 "label": label,

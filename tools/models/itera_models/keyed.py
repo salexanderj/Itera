@@ -9,7 +9,8 @@ stand.
 
 Places are the model's metres and axes, from its origin on the ground: +left, +up, +front (Blender's +x, +z, -y). Turns
 are degrees from how the part stands: `bend` forward, `lean` to its left, `twist` to its left about the up axis. Every
-clip starts from the stand, a clip of the model's own at its first frame; a part moves between the keys that name it
+clip starts from the stand, a clip of the model's own at its first frame (a loop's first key names every part, and
+its last the same pose); a part moves between the keys that name it
 and holds after the last. A key's `ease` shapes the time from it to the next: "both" eases out and in, "in" speeds up
 into the next key (a blow), "out" slows into it, "linear" keeps one speed, and "hold" stays until the next.
 
@@ -590,6 +591,7 @@ def check(
     ends: float = 0.01,
     ground_slack: float = 0.02,
     slide: float = 0.01,
+    loop: bool = False,
 ) -> tuple[dict, list]:
     """Checks a baked clip: returns its report and its problems.
 
@@ -597,7 +599,7 @@ def check(
     it, and the joints below them: a hand's fingers). Each joint named in `planted`, as (joint, from seconds, to
     seconds), moves no more than `slide` metres across the ground in that time. Knees and elbows bend no further than a
     person's, and the knees bend forwards. The first and last poses lie within `ends` metres of the stand at every
-    joint.
+    joint; with `loop`, of each other (its seam), wherever it starts.
     """
     rig = keyer.rig
     bones = armature.pose.bones
@@ -649,7 +651,10 @@ def check(
     stand = {name: keyer.stand[name].translation for name in names}
     start_off = max((places[0][name] - stand[name]).length for name in names)
     end_off = max((places[-1][name] - stand[name]).length for name in names)
-    if start_off > ends or end_off > ends:
+    seam = max((places[-1][name] - places[0][name]).length for name in names)
+    if loop and seam > ends:
+        problems.append(f"{made.name}: a loop that ends {seam * 100:.1f} cm from its first pose")
+    if not loop and (start_off > ends or end_off > ends):
         problems.append(f"{made.name}: starts {start_off * 100:.1f} cm and ends {end_off * 100:.1f} cm from the stand")
     for miss in made.misses:
         problems.append(
@@ -664,6 +669,7 @@ def check(
         "bends": worst,
         "start_off": round(start_off, 4),
         "end_off": round(end_off, 4),
+        "seam": round(seam, 4),
     }
     return report, problems
 
