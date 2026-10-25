@@ -83,7 +83,7 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 6. A position it keeps across steps, in a component or a field, is local to the match's origin and moves when the
    origin does:
    - A game's component field goes in an `IOriginShiftHandler` the game registers in the match's scope
-     (`services.AddScoped<IOriginShiftHandler, NameShift>()`; the starter's `FoxRouteShift` moves `FoxRoute.Centre`).
+     (`services.AddScoped<IOriginShiftHandler, NameShift>()`), which moves the field by the origin's move.
      It also goes in the positions listed in the game's `ChecklistTests`, which fails for a vector field in neither of
      its lists.
    - An engine component's field goes in `OriginShifts`' moves and `ShiftedComponents` (`OriginShiftsTests`).

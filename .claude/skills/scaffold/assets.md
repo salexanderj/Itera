@@ -11,13 +11,13 @@ writes step 1's files and compresses its textures. A model from elsewhere starts
    compression), copied by the csproj's `Models/*/**` rule, and a row in `src/Game/Models/SOURCES.md` with its source,
    authors, licence, and changes. Its textures compressed for shipping: `dotnet run -c Release --project tools/Textures
    -- model src/Game/Models/NAME/NAME.gltf` writes `NAME.textures/` beside it (BC7 and BC5, a quarter of the decoded
-   size); commit it, and run it again when an image changes (a test like `FoxModelTests`' compressed-textures test
-   catches one forgotten).
+   size); commit it, and run it again when an image changes (a test of the model's compressed textures catches one
+   forgotten).
 2. A name in `GameModels` and a `Declare` line there: the path from the executable's folder and the file's unit
    (`metresPerUnit`: 1 for metres, 0.01 for centimetres). `GameRunStartup` declares them at the run's start; a mod
    declares its own at its startup.
 3. A system that places it: `World.Create(MeshPlacement.At(position, orientation, scale), DrawnMesh.Of(index))`, with
-   the index from `MeshAssets.Find(name)` looked up once (`FoxSystem`); the position is local, so a place the game
+   the index from `MeshAssets.Find(name)` looked up once, in the system's Initialize; the position is local, so a place the game
    knows in absolute terms (a `WorldPoint`, as its start pose is) goes through the match's `WorldOrigin`
    (`origin.ToLocal(point)`; CLAUDE.md's Units); a fixed system that moves it copies the pose
    into the previous one first. `MeshDrawSystem` draws it. A glTF model's front is +z.
@@ -32,8 +32,8 @@ writes step 1's files and compresses its textures. A model from elsewhere starts
    `GameModelsTests` checks every declared model (`ModelChecks`), each recipe's model against its budget class. In a
    run, `meshes` lists it (triangles, materials, textures, size, joints, clips), `meshes place NAME [CLIP [SECONDS]]`
    puts one in front of the camera, and the log's `Mesh assets:` lines have no Warning or note about it. A
-   `ScenarioTests` row finds it in `MeshInstances`, and for a skinned model a test like `FoxModelTests` compares its
-   clips with SharpGLTF's own world matrices.
+   `ScenarioTests` row finds it in `MeshInstances`, and for a skinned model a test can compare its clips
+   with SharpGLTF's own world matrices.
 
 ## A sound from a file
 
