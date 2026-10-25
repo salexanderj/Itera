@@ -115,6 +115,22 @@ class KeyerTests(unittest.TestCase):
         self.assertLess(max(report["start_off"], report["end_off"]), 1e-3)
         self.assertEqual(31, report["frames"])
 
+    def test_a_loop_ends_in_the_pose_it_starts_in_off_the_stand_and_one_that_does_not_is_a_problem(self):
+        raised = Hand((-0.45, 1.1, 0.3))
+        start = Key(0.0, Body(hips=(0.0, -0.1, 0.0)), hand_l=Hand(), hand_r=raised, foot_l=Foot(), foot_r=Foot())
+        loop = [start, Key(0.5, hand_r=Hand((-0.45, 1.3, 0.3))), Key(1.0, Body(hips=(0.0, -0.1, 0.0)), hand_r=raised)]
+        open_ = [start, Key(0.5, hand_r=Hand((-0.45, 1.3, 0.3))), Key(1.0, Body(), hand_r=Hand())]
+
+        looped, loop_problems = keyed.check(self.armature, self.keyer, self.keyer.clip("Loop", loop), loop=True)
+        _, open_problems = keyed.check(self.armature, self.keyer, self.keyer.clip("Open", open_), loop=True)
+        _, stand_problems = keyed.check(self.armature, self.keyer, self.keyer.clip("Not a loop", loop))
+
+        self.assertEqual([], loop_problems)
+        self.assertLess(looped["seam"], 1e-3)
+        self.assertGreater(looped["start_off"], 0.05)
+        self.assertIn("a loop that ends", "\n".join(open_problems))
+        self.assertIn("from the stand", "\n".join(stand_problems))
+
     def test_a_hand_reaching_from_its_shoulder_goes_that_way_its_share_of_the_arms_length(self):
         keys = [STAND, Key(0.5, hand_l=Hand(reach=(0.0, 0.0, 1.0), extend=0.9)), Key(1.0, hand_l=Hand())]
 
