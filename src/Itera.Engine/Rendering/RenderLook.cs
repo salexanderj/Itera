@@ -80,6 +80,16 @@ public readonly record struct RenderLook
     /// <summary>The light a material gives off at full glow, as a multiple of its colour.</summary>
     public float GlowStrength { get; init; } = 4f;
 
+    /// <summary>
+    /// How bright the edge light on the mesh assets (figures, creatures, guns) is, as a share of the sky's light: light
+    /// round their outlines from the sky behind them, so they stand out from the ground. 0, the default, none. Not the
+    /// world's own surfaces or the voxel models.
+    /// </summary>
+    public float RimStrength { get; init; }
+
+    /// <summary>How thin the edge light is: the power of one less the cosine to the eye; higher is thinner.</summary>
+    public float RimSharpness { get; init; } = 3f;
+
     /// <summary>Where the fog that hides the view's end starts, as a share of the view distance (all of it at the end).</summary>
     public float FogStart { get; init; } = 0.6f;
 

@@ -49,9 +49,11 @@ const vec3 LumaWeights = vec3(0.2126, 0.7152, 0.0722);
 
 // The colour a surface of colour ends as at offset from the camera: lit along lit (its normal as its relief tilts it)
 // with the shadow maps and the sky field read along its own normal, its sky and ground light kept by its openness and
-// cavity (its hollows hide it from the sky), and glowColour glowing by glow (0 for none) after the grade.
+// cavity (its hollows hide it from the sky), and glowColour glowing by glow (0 for none) after the grade. rim scales
+// the look's edge light (1 for the mesh assets, 0 for the world's surfaces and the voxel models): the sky's light round
+// the surface's outline, where it turns from the eye, as much as the sky reaches it.
 vec3 shadeSurface(vec3 colour, vec3 normal, vec3 lit, vec3 offset, float openness, float cavity, vec3 glowColour,
-    float glow)
+    float glow, float rim)
 {
     vec3 world = view.position + offset;
     float depth = dot(offset, view.forward);
@@ -68,6 +70,12 @@ vec3 shadeSurface(vec3 colour, vec3 normal, vec3 lit, vec3 offset, float opennes
     vec3 light = LOOK.sunLight * sunlight
         + ambientLight(lit, mix(LOOK.occlusionFloor, 1.0, open)) * LOOK.shadeCool * sky * cavity
         + pointLight(world, lit, depth);
+    if (rim > 0.0)
+    {
+        float edge = 1.0 - clamp(dot(normal, -viewRayTo(offset)), 0.0, 1.0);
+        light += LOOK.rimLight * (rim * sky * pow(edge, LOOK.rimSharpness));
+    }
+
     vec3 shaded = colour * light;
 
     float fog = fogAt(offset, view.maxDistance);

@@ -92,6 +92,12 @@ public struct LookConstants
     /// <summary>How many times the ground haze halves a metre higher: 1 over the look's falloff metres.</summary>
     public float GroundHazeFalloff;
 
+    /// <summary>The mesh assets' edge light: <see cref="SkyLight"/> times the look's rim strength.</summary>
+    public Vector3 RimLight;
+
+    /// <summary>The edge light's power, at least 1.</summary>
+    public float RimSharpness;
+
     private static readonly Vector3 s_luma = new(0.2126f, 0.7152f, 0.0722f);
 
     /// <summary>
@@ -107,13 +113,14 @@ public struct LookConstants
         var daylight = SunPath.Daylight(view.SunDirection);
         // A compass heading: from north (-z) round towards east (+x).
         var heading = look.CloudHeadingDegrees * MathF.PI / 180;
+        var skyLight = view.SkyHorizon * look.SkyLightShare * (1 + overcast);
         return new LookConstants
         {
             SunLight = view.SunColour * look.SunWarmth * daylight,
             WorldSaturation = look.WorldSaturation,
             ShadeCool = look.ShadeCool,
             WorldValue = look.WorldValue,
-            SkyLight = view.SkyHorizon * look.SkyLightShare * (1 + overcast),
+            SkyLight = skyLight,
             WorldSideShade = look.WorldSideShade,
             GroundLight = look.GroundLight + view.SunColour * (look.GroundBounce * MathF.Max(view.SunDirection.Y, 0)),
             WorldTopShade = look.WorldTopShade,
@@ -150,6 +157,8 @@ public struct LookConstants
             GroundHazePerMetre = MathF.Max(look.GroundHaze, 0) / MathF.Max(look.GroundHazeHalfMetres, 0.01f),
             GroundHazeFloor = look.GroundHazeFloor - (float)(view.OriginY / (double)VoxelConstants.CentimetresPerMetre),
             GroundHazeFalloff = 1 / MathF.Max(look.GroundHazeFalloffMetres, 0.01f),
+            RimLight = skyLight * MathF.Max(look.RimStrength, 0),
+            RimSharpness = MathF.Max(look.RimSharpness, 1),
         };
     }
 }

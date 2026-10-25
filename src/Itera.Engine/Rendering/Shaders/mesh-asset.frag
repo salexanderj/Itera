@@ -80,7 +80,8 @@ void main()
         : 1.0;
     vec3 emission = material.emission * emissionSample.rgb;
     float glow = max(emission.r, max(emission.g, emission.b)) > 0.0 ? 1.0 : 0.0;
-    vec3 shaded = shadeSurface(base.rgb, normal, lit, inOffset, OpennessFlat, cavity, emission, glow);
+    // The edge light is the mesh assets' alone: figures and creatures stand out from the ground.
+    vec3 shaded = shadeSurface(base.rgb, normal, lit, inOffset, OpennessFlat, cavity, emission, glow, 1.0);
 #ifdef MESH_ASSET_BLEND
     float alpha = clamp(base.a, 0.0, 1.0);
     outColor = vec4(shaded * alpha, alpha);

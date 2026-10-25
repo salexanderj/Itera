@@ -176,12 +176,12 @@ public sealed class RenderLookTests
     }
 
     /// <summary>
-    /// The sun's glow, the clouds, and the ground haze are off in the engine's look, so a game that sets none of them
-    /// draws as before; set, the record holds them with the atmosphere's colours, the heading as a direction, and the
-    /// ground haze's floor local to the origin.
+    /// The sun's glow, the clouds, the ground haze, and the edge light are off in the engine's look, so a game that
+    /// sets none of them draws as before; set, the record holds them with the atmosphere's colours, the heading as a
+    /// direction, and the ground haze's floor local to the origin.
     /// </summary>
     [Fact]
-    public void The_glow_clouds_and_ground_haze_are_off_by_default_and_worked_out_from_a_games_look()
+    public void The_glow_clouds_ground_haze_and_edge_light_are_off_by_default_and_worked_out_from_a_games_look()
     {
         var atmosphere = new Atmosphere(new Vector3(0.5f, 0.6f, 0.8f), new Vector3(1, 0.9f, 0.7f), 0.4f, 0.6f, 0.2f);
         var camera = CameraView.Default;
@@ -202,6 +202,7 @@ public sealed class RenderLookTests
         Assert.Equal(Vector3.Zero, plain.SunGlow);
         Assert.Equal(0, plain.CloudCover);
         Assert.Equal(0, plain.GroundHazePerMetre);
+        Assert.Equal(Vector3.Zero, plain.RimLight);
 
         var look = RenderLook.Default with
         {
@@ -215,6 +216,8 @@ public sealed class RenderLookTests
             GroundHazeHalfMetres = 50,
             GroundHazeFloor = 12,
             GroundHazeFalloffMetres = 20,
+            RimStrength = 0.4f,
+            RimSharpness = 0,
         };
         var constants = LookConstants.From(in look, in view);
 
@@ -231,6 +234,9 @@ public sealed class RenderLookTests
         // 12 m in the world is 9 m over an origin 3 m up.
         Assert.Equal(9, constants.GroundHazeFloor, 5);
         Assert.Equal(0.05f, constants.GroundHazeFalloff, 6);
+        // The edge light is the sky's light, so it takes the look's shade of the sky, not the horizon's colour.
+        AssertNear(constants.SkyLight * 0.4f, constants.RimLight);
+        Assert.Equal(1, constants.RimSharpness);
     }
 
     [Fact]

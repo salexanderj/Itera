@@ -25,6 +25,7 @@ A game's `IAtmosphereSource` gives the sky, the sunlight, the haze, and the colo
 - The sunlight's warmth and the shade's coolness.
 - The sky light's share of the horizon colour, the ground's light and bounce, the occlusion and sky floors, and full
   glow's strength.
+- The mesh assets' edge light: its strength, a share of the sky's light, and its sharpness.
 - Where the view's fog starts and the haze's half distance.
 - The ground haze: its thickness, half distance, floor height in the world, and falloff with height.
 - The sky's zenith (clear and overcast) and below-horizon shares, and the sun disc's sharpness, strength, and overcast
@@ -33,7 +34,11 @@ A game's `IAtmosphereSource` gives the sky, the sunlight, the haze, and the colo
 - The clouds: their cover, colour, opacity, scale, stretch, and heading.
 - The exposure, the grade's desaturation and darkening, and the split tone's tints and bounds.
 
-The glow, the clouds, and the ground haze are off in `RenderLook.Default`.
+The edge light, the glow, the clouds, and the ground haze are off in `RenderLook.Default`.
+
+- The edge light is in `shadeSurface` in `mesh-shade.glsl`, by its `rim` argument: `mesh-asset.frag` gives 1 and
+  `mesh.frag` 0, so only the mesh assets take it. It is the sky's light where a surface turns from the eye, as much as
+  the sky field lets the sky reach it.
 
 - The glow is part of `skyColour` in `sky.glsl`. The fog takes the sky's colour behind a surface, so the haze glows
   towards the sun too.

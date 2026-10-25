@@ -213,7 +213,7 @@ void main()
     vec3 lit = normalize(normal - surface.slope);
     // A material's glow is its share of full glow; the look says how bright full glow is.
     float glow = surface.glow * LOOK.glowStrength;
-    vec3 shaded = shadeSurface(colour, normal, lit, offset, openness, surface.cavity, surface.colour, glow);
+    vec3 shaded = shadeSurface(colour, normal, lit, offset, openness, surface.cavity, surface.colour, glow, 0.0);
     outColor = vec4(shaded, 1.0);
 #ifdef MESH_FADE
     // Last, so every pixel of a 2x2 group took its derivatives and texture reads above.

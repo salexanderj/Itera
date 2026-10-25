@@ -40,6 +40,8 @@ public sealed class LookTuning
         Number("OcclusionFloor", static l => l.OcclusionFloor, static (l, v) => l with { OcclusionFloor = v }),
         Number("SkyFloor", static l => l.SkyFloor, static (l, v) => l with { SkyFloor = v }),
         Number("GlowStrength", static l => l.GlowStrength, static (l, v) => l with { GlowStrength = v }),
+        Number("RimStrength", static l => l.RimStrength, static (l, v) => l with { RimStrength = v }),
+        Number("RimSharpness", static l => l.RimSharpness, static (l, v) => l with { RimSharpness = v }),
         Number("FogStart", static l => l.FogStart, static (l, v) => l with { FogStart = v }),
         Number("HazeHalfMetres", static l => l.HazeHalfMetres, static (l, v) => l with { HazeHalfMetres = v }),
         Number("GroundHaze", static l => l.GroundHaze, static (l, v) => l with { GroundHaze = v }),
