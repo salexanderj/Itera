@@ -35,19 +35,20 @@ float skyValueNoise(vec2 p)
     return mix(near, far, u.y);
 }
 
-// Four octaves of value noise, each turned and moved from the last so no lattice lines up, 0 to 1.
+// Three octaves of value noise, each turned and moved from the last so no lattice lines up, 0 to 1. A fourth looked the
+// same on soft streaks and cost about a fifth more.
 float skyCloudNoise(vec2 p)
 {
     float sum = 0.0;
     float weight = 0.5;
-    for (int octave = 0; octave < 4; octave++)
+    for (int octave = 0; octave < 3; octave++)
     {
         sum += weight * skyValueNoise(p);
         p = mat2(1.6, 1.2, -1.2, 1.6) * p + vec2(17.3, -9.1);
         weight *= 0.5;
     }
 
-    return sum / 0.9375;
+    return sum / 0.875;
 }
 
 // The sky colour of direction with the look's clouds over it (the sky's own pass, world-sky.frag; the fog takes the sky
