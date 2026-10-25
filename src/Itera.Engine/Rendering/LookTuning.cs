@@ -42,12 +42,36 @@ public sealed class LookTuning
         Number("GlowStrength", static l => l.GlowStrength, static (l, v) => l with { GlowStrength = v }),
         Number("FogStart", static l => l.FogStart, static (l, v) => l with { FogStart = v }),
         Number("HazeHalfMetres", static l => l.HazeHalfMetres, static (l, v) => l with { HazeHalfMetres = v }),
+        Number("GroundHaze", static l => l.GroundHaze, static (l, v) => l with { GroundHaze = v }),
+        Number(
+            "GroundHazeHalfMetres",
+            static l => l.GroundHazeHalfMetres,
+            static (l, v) => l with { GroundHazeHalfMetres = v }
+        ),
+        Number("GroundHazeFloor", static l => l.GroundHazeFloor, static (l, v) => l with { GroundHazeFloor = v }),
+        Number(
+            "GroundHazeFalloffMetres",
+            static l => l.GroundHazeFalloffMetres,
+            static (l, v) => l with { GroundHazeFalloffMetres = v }
+        ),
         Colour("ZenithClear", static l => l.ZenithClear, static (l, v) => l with { ZenithClear = v }),
         Colour("ZenithOvercast", static l => l.ZenithOvercast, static (l, v) => l with { ZenithOvercast = v }),
         Number("BelowHorizon", static l => l.BelowHorizon, static (l, v) => l with { BelowHorizon = v }),
         Number("SunDiscSharpness", static l => l.SunDiscSharpness, static (l, v) => l with { SunDiscSharpness = v }),
         Number("SunDiscStrength", static l => l.SunDiscStrength, static (l, v) => l with { SunDiscStrength = v }),
         Number("SunDiscOvercast", static l => l.SunDiscOvercast, static (l, v) => l with { SunDiscOvercast = v }),
+        Number("SunGlowStrength", static l => l.SunGlowStrength, static (l, v) => l with { SunGlowStrength = v }),
+        Number("SunGlowSharpness", static l => l.SunGlowSharpness, static (l, v) => l with { SunGlowSharpness = v }),
+        Number("CloudCover", static l => l.CloudCover, static (l, v) => l with { CloudCover = v }),
+        Colour("CloudColour", static l => l.CloudColour, static (l, v) => l with { CloudColour = v }),
+        Number("CloudOpacity", static l => l.CloudOpacity, static (l, v) => l with { CloudOpacity = v }),
+        Number("CloudScale", static l => l.CloudScale, static (l, v) => l with { CloudScale = v }),
+        Number("CloudStretch", static l => l.CloudStretch, static (l, v) => l with { CloudStretch = v }),
+        Number(
+            "CloudHeadingDegrees",
+            static l => l.CloudHeadingDegrees,
+            static (l, v) => l with { CloudHeadingDegrees = v }
+        ),
         Number("Exposure", static l => l.Exposure, static (l, v) => l with { Exposure = v }),
         Number("GradeDesaturate", static l => l.GradeDesaturate, static (l, v) => l with { GradeDesaturate = v }),
         Number("GradeDarken", static l => l.GradeDarken, static (l, v) => l with { GradeDarken = v }),

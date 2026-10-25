@@ -26,9 +26,22 @@ A game's `IAtmosphereSource` gives the sky, the sunlight, the haze, and the colo
 - The sky light's share of the horizon colour, the ground's light and bounce, the occlusion and sky floors, and full
   glow's strength.
 - Where the view's fog starts and the haze's half distance.
+- The ground haze: its thickness, half distance, floor height in the world, and falloff with height.
 - The sky's zenith (clear and overcast) and below-horizon shares, and the sun disc's sharpness, strength, and overcast
   hiding.
+- The glow round the sun: its strength and sharpness.
+- The clouds: their cover, colour, opacity, scale, stretch, and heading.
 - The exposure, the grade's desaturation and darkening, and the split tone's tints and bounds.
+
+The glow, the clouds, and the ground haze are off in `RenderLook.Default`.
+
+- The glow is part of `skyColour` in `sky.glsl`. The fog takes the sky's colour behind a surface, so the haze glows
+  towards the sun too.
+- The clouds are drawn by the sky's own pass alone (`skyClouds`, from `world-sky.frag`): value noise on a plane over
+  the eye. They thin to none at the horizon, so the fogged far ground still meets the sky. They stand still.
+- The ground haze is in `fogAt(vec3, float)` in `lighting.glsl`: its density is averaged along the ray between the eye's
+  height and the surface's. `mesh-shade.glsl` and the particles call it. `fogAt(float, float)` stays for shaders that
+  know only a distance, without the ground haze.
 
 How it reaches the shaders:
 
@@ -38,7 +51,8 @@ How it reaches the shaders:
   `RenderView.DrawnLook`).
 - `GameLoop` writes the drawn look into the frame slot's record (`MeshPass.LookOf`, `LookConstants.From`). The record
   holds the values and the light and colours worked out once a frame: the sunlight, the sky and ground light, the
-  zenith and below-horizon colours, the sun's disc, the grade's hue and amounts, and the haze's density.
+  zenith and below-horizon colours, the sun's disc and glow, the grade's hue and amounts, the clouds' colour and
+  heading, and the haze's and the ground haze's densities. The ground haze's floor is written local to the origin.
 - `look.glsl` declares it: set 0, binding 17, and binding 8 of the particles' draw set (compiled with
   `LOOK_BINDING 8`). `lighting.glsl`, `sky.glsl`, `mesh-shade.glsl`, and `mesh.frag` read it as `LOOK`, the slot's by
   `view.slot`.

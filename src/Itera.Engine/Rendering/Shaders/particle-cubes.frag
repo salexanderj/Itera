@@ -29,7 +29,7 @@ void main()
         shaded = inColour * (light + inLight.y);
     }
 
-    float fog = fogAt(length(inOffset), view.maxDistance);
+    float fog = fogAt(inOffset, view.maxDistance);
     shaded = mix(shaded, skyColour(viewRayTo(inOffset)), fog);
     shaded = gradeColour(toneMap(shaded * LOOK.exposure));
 

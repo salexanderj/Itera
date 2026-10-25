@@ -101,8 +101,7 @@ void main()
         opacity *= 1.0 - smoothstep(1.0 - recipe.fadeOutShare, 1.0, life);
     }
 
-    float distance = length(centre - view.position);
-    float fog = fogAt(distance, view.maxDistance);
+    float fog = fogAt(centre - view.position, view.maxDistance);
     // Faded right in front of the camera, where a sprite would fill the screen.
     opacity *= (1.0 - fog) * smoothstep(0.1, 0.5, depth + radius);
     outColour = vec4(gradeColour(toneMap(colour.rgb * light * LOOK.exposure)), opacity);

@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Voxels;
 
 namespace Itera.Engine.Rendering.GpuData;
 
@@ -61,6 +62,36 @@ public struct LookConstants
     /// <summary>How much of its light the sun gives (<see cref="SunPath.Daylight"/>): the particles' sunlight, which takes no warmth.</summary>
     public float Daylight;
 
+    /// <summary>The glow round the sun: the sun's colour times the look's glow strength, faded out as it sets.</summary>
+    public Vector3 SunGlow;
+
+    /// <summary>The glow's power of the cosine to the sun, at least 1.</summary>
+    public float SunGlowSharpness;
+
+    /// <summary>The clouds' colour: the horizon colour times the look's cloud colour.</summary>
+    public Vector3 CloudColour;
+
+    /// <summary>The look's cloud cover, 0 to 1: 0 draws no clouds.</summary>
+    public float CloudCover;
+    public float CloudOpacity;
+    public float CloudScale;
+
+    /// <summary>The look's cloud stretch, at least 0.01.</summary>
+    public float CloudStretch;
+
+    /// <summary>The direction the clouds' streaks run, a unit vector over x and z (the look's heading).</summary>
+    public float CloudAlongX;
+    public float CloudAlongZ;
+
+    /// <summary>The ground haze's density at its floor: the look's ground haze over its half distance.</summary>
+    public float GroundHazePerMetre;
+
+    /// <summary>The ground haze's floor, local: the look's absolute height less the origin's.</summary>
+    public float GroundHazeFloor;
+
+    /// <summary>How many times the ground haze halves a metre higher: 1 over the look's falloff metres.</summary>
+    public float GroundHazeFalloff;
+
     private static readonly Vector3 s_luma = new(0.2126f, 0.7152f, 0.0722f);
 
     /// <summary>
@@ -74,6 +105,8 @@ public struct LookConstants
         var grade = ((view.Air >> 16) & 0xFF) / 255f;
         // The sun fades out as it sets and gives no light, and shows no disc, at night.
         var daylight = SunPath.Daylight(view.SunDirection);
+        // A compass heading: from north (-z) round towards east (+x).
+        var heading = look.CloudHeadingDegrees * MathF.PI / 180;
         return new LookConstants
         {
             SunLight = view.SunColour * look.SunWarmth * daylight,
@@ -105,6 +138,18 @@ public struct LookConstants
             HazePerMetre = haze / look.HazeHalfMetres,
             Exposure = look.Exposure,
             Daylight = daylight,
+            SunGlow = view.SunColour * look.SunGlowStrength * daylight,
+            SunGlowSharpness = MathF.Max(look.SunGlowSharpness, 1),
+            CloudColour = view.SkyHorizon * look.CloudColour,
+            CloudCover = Math.Clamp(look.CloudCover, 0, 1),
+            CloudOpacity = Math.Clamp(look.CloudOpacity, 0, 1),
+            CloudScale = look.CloudScale,
+            CloudStretch = MathF.Max(look.CloudStretch, 0.01f),
+            CloudAlongX = MathF.Sin(heading),
+            CloudAlongZ = -MathF.Cos(heading),
+            GroundHazePerMetre = MathF.Max(look.GroundHaze, 0) / MathF.Max(look.GroundHazeHalfMetres, 0.01f),
+            GroundHazeFloor = look.GroundHazeFloor - (float)(view.OriginY / (double)VoxelConstants.CentimetresPerMetre),
+            GroundHazeFalloff = 1 / MathF.Max(look.GroundHazeFalloffMetres, 0.01f),
         };
     }
 }

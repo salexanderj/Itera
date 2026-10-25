@@ -70,7 +70,7 @@ vec3 shadeSurface(vec3 colour, vec3 normal, vec3 lit, vec3 offset, float opennes
         + pointLight(world, lit, depth);
     vec3 shaded = colour * light;
 
-    float fog = fogAt(length(offset), view.maxDistance);
+    float fog = fogAt(offset, view.maxDistance);
     shaded = mix(shaded, skyColour(viewRayTo(offset)), fog);
     vec3 toned = toneMap(shaded * LOOK.exposure);
     vec3 graded = gradeColour(toned);

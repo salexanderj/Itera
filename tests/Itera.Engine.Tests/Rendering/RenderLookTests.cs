@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Reflection;
 using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.GpuData;
+using Itera.Engine.Voxels;
 using Microsoft.Extensions.Options;
 
 namespace Itera.Engine.Tests.Rendering;
@@ -172,6 +173,64 @@ public sealed class RenderLookTests
             ViewSwitches.None
         );
         Assert.Equal(look.GroundLight, LookConstants.From(in look, in below).GroundLight);
+    }
+
+    /// <summary>
+    /// The sun's glow, the clouds, and the ground haze are off in the engine's look, so a game that sets none of them
+    /// draws as before; set, the record holds them with the atmosphere's colours, the heading as a direction, and the
+    /// ground haze's floor local to the origin.
+    /// </summary>
+    [Fact]
+    public void The_glow_clouds_and_ground_haze_are_off_by_default_and_worked_out_from_a_games_look()
+    {
+        var atmosphere = new Atmosphere(new Vector3(0.5f, 0.6f, 0.8f), new Vector3(1, 0.9f, 0.7f), 0.4f, 0.6f, 0.2f);
+        var camera = CameraView.Default;
+        var sun = Vector3.Normalize(new Vector3(0.3f, 0.6f, 0.2f));
+        var view = ViewConstants.Create(
+            in camera,
+            640,
+            480,
+            1,
+            sun,
+            in atmosphere,
+            256,
+            true,
+            new VoxelCoord(0, 300, 0)
+        );
+
+        var plain = LookConstants.From(RenderLook.Default, in view);
+        Assert.Equal(Vector3.Zero, plain.SunGlow);
+        Assert.Equal(0, plain.CloudCover);
+        Assert.Equal(0, plain.GroundHazePerMetre);
+
+        var look = RenderLook.Default with
+        {
+            SunGlowStrength = 0.5f,
+            SunGlowSharpness = 0,
+            CloudCover = 1.5f,
+            CloudColour = new Vector3(0.5f, 0.4f, 0.3f),
+            CloudHeadingDegrees = 90,
+            CloudStretch = 3,
+            GroundHaze = 0.5f,
+            GroundHazeHalfMetres = 50,
+            GroundHazeFloor = 12,
+            GroundHazeFalloffMetres = 20,
+        };
+        var constants = LookConstants.From(in look, in view);
+
+        AssertNear(atmosphere.SunColour * 0.5f, constants.SunGlow);
+        // A power under 1 would light the whole sky, and 0 gives no number where the sun is behind.
+        Assert.Equal(1, constants.SunGlowSharpness);
+        Assert.Equal(1, constants.CloudCover);
+        AssertNear(atmosphere.SkyHorizon * look.CloudColour, constants.CloudColour);
+        Assert.Equal(3, constants.CloudStretch);
+        // 90 degrees from north is east, +x.
+        Assert.Equal(1, constants.CloudAlongX, 5);
+        Assert.Equal(0, constants.CloudAlongZ, 5);
+        Assert.Equal(0.01f, constants.GroundHazePerMetre, 6);
+        // 12 m in the world is 9 m over an origin 3 m up.
+        Assert.Equal(9, constants.GroundHazeFloor, 5);
+        Assert.Equal(0.05f, constants.GroundHazeFalloff, 6);
     }
 
     [Fact]

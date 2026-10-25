@@ -86,6 +86,21 @@ public readonly record struct RenderLook
     /// <summary>The distance in metres at which full haze (the atmosphere's) hides half of a surface.</summary>
     public float HazeHalfMetres { get; init; } = 60f;
 
+    /// <summary>
+    /// 0 to 1: how thick the haze that lies in low ground is, on top of the atmosphere's haze; 0, the default, none. At 1,
+    /// half of a surface <see cref="GroundHazeHalfMetres"/> away is lost in it at <see cref="GroundHazeFloor"/>.
+    /// </summary>
+    public float GroundHaze { get; init; }
+
+    /// <summary>The distance in metres at which full ground haze at its floor hides half of a surface.</summary>
+    public float GroundHazeHalfMetres { get; init; } = 100f;
+
+    /// <summary>The height in metres in the world (absolute) at and below which the ground haze is thickest.</summary>
+    public float GroundHazeFloor { get; init; }
+
+    /// <summary>How many metres higher the ground haze is half as thick: smaller keeps it lower.</summary>
+    public float GroundHazeFalloffMetres { get; init; } = 10f;
+
     /// <summary>The sky's colour straight up under a clear sky, as a share of its horizon colour.</summary>
     public Vector3 ZenithClear { get; init; } = new(0.35f, 0.5f, 0.85f);
 
@@ -103,6 +118,36 @@ public readonly record struct RenderLook
 
     /// <summary>How much of the sun's disc full overcast hides.</summary>
     public float SunDiscOvercast { get; init; } = 0.9f;
+
+    /// <summary>
+    /// How bright the glow round the sun is, as a multiple of the sun's colour: the light the air scatters towards the
+    /// eye near the sun. 0, the default, none. The fog takes the sky's colour behind a surface, so the haze glows too.
+    /// </summary>
+    public float SunGlowStrength { get; init; }
+
+    /// <summary>How tight the glow round the sun is: the power of the cosine to the sun; higher is smaller.</summary>
+    public float SunGlowSharpness { get; init; } = 8f;
+
+    /// <summary>
+    /// 0 to 1: how much of the sky streaks of ash cloud cover, drawn on the sky alone and thinning to none at the horizon;
+    /// 0, the default, none.
+    /// </summary>
+    public float CloudCover { get; init; }
+
+    /// <summary>The clouds' colour, as a share of the sky's horizon colour.</summary>
+    public Vector3 CloudColour { get; init; } = new(0.5f, 0.5f, 0.5f);
+
+    /// <summary>0 to 1: how much of the sky behind the thickest cloud it hides.</summary>
+    public float CloudOpacity { get; init; } = 1f;
+
+    /// <summary>How many clouds lie across the sky: higher gives more, smaller ones.</summary>
+    public float CloudScale { get; init; } = 2f;
+
+    /// <summary>How many times longer than wide the clouds are, along <see cref="CloudHeadingDegrees"/>: streaks above 1.</summary>
+    public float CloudStretch { get; init; } = 1f;
+
+    /// <summary>The compass direction the clouds' streaks run, in degrees from north (-z) round towards east (+x).</summary>
+    public float CloudHeadingDegrees { get; init; }
 
     /// <summary>The light's multiple before the tone curve: higher is brighter.</summary>
     public float Exposure { get; init; } = 0.8f;

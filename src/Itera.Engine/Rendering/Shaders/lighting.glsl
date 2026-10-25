@@ -17,6 +17,26 @@ float fogAt(float t, float maxT)
     return max(smoothstep(LOOK.fogStart * maxT, maxT, t), 1.0 - exp2(-t * LOOK.hazePerMetre));
 }
 
+// The same for a surface at offset from the eye, with the look's ground haze too: haze that lies in low ground, thickest
+// at and below its floor and half as thick every falloff higher. Along the ray its density is averaged between the eye's
+// height and the surface's (an exponential in height has an exact mean), so a view across a hollow from a hill sees
+// it, and a view down into it from above sees less.
+float fogAt(vec3 offset, float maxT)
+{
+    float t = length(offset);
+    float density = LOOK.hazePerMetre;
+    if (LOOK.groundHazePerMetre > 0.0)
+    {
+        float eye = max(view.position.y - LOOK.groundHazeFloor, 0.0) * LOOK.groundHazeFalloff;
+        float point = max(view.position.y + offset.y - LOOK.groundHazeFloor, 0.0) * LOOK.groundHazeFalloff;
+        float rise = point - eye;
+        float mean = abs(rise) < 1e-3 ? exp2(-eye) : (exp2(-eye) - exp2(-point)) / (rise * 0.6931472);
+        density += LOOK.groundHazePerMetre * mean;
+    }
+
+    return max(smoothstep(LOOK.fogStart * maxT, maxT, t), 1.0 - exp2(-t * density));
+}
+
 // A filmic tone curve (Narkowicz's fit of the ACES curve): dark values a little darker, the middle a little brighter,
 // and bright light rolled off towards white instead of clipped.
 vec3 toneMap(vec3 colour)

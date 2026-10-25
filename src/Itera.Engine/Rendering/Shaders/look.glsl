@@ -43,6 +43,18 @@ struct Look
     float hazePerMetre;
     float exposure;
     float daylight;
+    vec3 sunGlow;
+    float sunGlowSharpness;
+    vec3 cloudColour;
+    float cloudCover;
+    float cloudOpacity;
+    float cloudScale;
+    float cloudStretch;
+    float cloudAlongX;
+    float cloudAlongZ;
+    float groundHazePerMetre;
+    float groundHazeFloor;
+    float groundHazeFalloff;
 };
 
 layout(scalar, set = LOOK_SET, binding = LOOK_BINDING) restrict readonly buffer Looks
