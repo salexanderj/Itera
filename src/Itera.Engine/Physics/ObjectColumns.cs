@@ -8,8 +8,9 @@ namespace Itera.Engine.Physics;
 /// The voxel objects a world places (<see cref="ObjectWorld"/>) as the character mover reads its cells: in columns of
 /// its cells (the world's level-0 voxels), each a few spans of blocked cells, one for each run of cells whose centres,
 /// turned into an object, land on its solid voxels that are not passable (<see cref="IVoxelPassability"/>: a tree's
-/// leaves, where the game says so). A span keeps the height of its object's surface over the column's centre (the top of
-/// the highest solid voxel of the object's column there under the span's top) and that voxel's material, so the mover
+/// leaves, where the game says so). A span keeps the height of its object's surface over the column's centre (where the
+/// density crosses one half over the highest solid voxel of the object's column there under the span's top, as the
+/// world's ground is read) and that voxel's material, so the mover
 /// stands on a rock as on the ground and reads its material and tags. It answers what the voxel world and the mesh
 /// colliders answer (<see cref="HighestTop"/>, <see cref="LowestBottom"/>, <see cref="BlockedCells"/>,
 /// <see cref="ColumnTops"/>, <see cref="SurfaceOver"/>, <see cref="TopAt"/>), with the same values for none, so the mover
@@ -194,7 +195,8 @@ internal sealed class ObjectColumns
 
     /// <summary>
     /// The height, in cells, of the surface of the object whose top is <paramref name="top"/> in column (x, z): its
-    /// surface over the column's centre, in the cell under the top; NaN when no object blocks that cell.
+    /// surface over the column's centre, from the cell under the top to half a cell over it where its span ends there,
+    /// else the top; NaN when no object blocks that cell.
     /// </summary>
     public double SurfaceOver(int x, int top, int z)
     {
@@ -206,7 +208,7 @@ internal sealed class ObjectColumns
                 continue;
             }
 
-            var height = Math.Min(span.Surface, top);
+            var height = span.Hi == top - 1 ? span.Surface : top;
             surface = double.IsNaN(surface) ? height : Math.Max(surface, height);
         }
 

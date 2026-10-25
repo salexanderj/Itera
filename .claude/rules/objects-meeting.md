@@ -16,9 +16,12 @@ Kinds, placement, and play are in `.claude/rules/objects.md`. Damage is in `.cla
 
 - A cell is blocked where its centre, turned into an object, lands on a solid voxel of the object that is not passable
   (`IVoxelPassability`: a tree's leaves where the game says so).
-- Each run of blocked cells keeps its object's surface over the column's centre, the top of the highest solid voxel
-  there, and that voxel's material. The mover reads them as the ground's (`PhysicsMaterials.OfVoxel`,
-  `IVoxelSurfaceTags`).
+- Each run of blocked cells keeps its object's surface over the column's centre, and the material of the highest solid
+  voxel there. The mover reads them as the ground's (`PhysicsMaterials.OfVoxel`, `IVoxelSurfaceTags`).
+- The surface lies where the density crosses one half between that voxel's centre and the one above, as the world's
+  ground does. So a smooth shape, such as a ramp, reads as its slope, not as steps a voxel high.
+- A blocking voxel above gives that voxel's top, and a passable one counts as empty. The surface stays between the top
+  cell's bottom and half a cell over its top.
 - It answers the voxel world's and the mesh colliders' queries, made 32 by 32 columns at a time. It keeps a chunk until
   `ObjectWorld.Version` changes, or `ObjectDamage.ReadChanges` names an object under it. It keeps at most `ObjectColumns.MostChunks` chunks.
 - A move waits where the areas round it within the map are not filled (`Known`, `ObjectWorld.IsKnown`).

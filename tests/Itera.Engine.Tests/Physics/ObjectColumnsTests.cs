@@ -22,6 +22,7 @@ public sealed class ObjectColumnsTests : IDisposable
     private const byte Leaves = 31;
     private const byte Rock = 40;
     private const float Step = 1f / 60;
+    private const int RampTurned = ObjectPlacement.HeadingSteps / 8;
     private static readonly CharacterShape s_shape = new(1.7f, 0.26f, 0.4f);
     private readonly VoxelObjectKinds _kinds = new();
     private readonly Dictionary<VoxelObjectKindId, VoxelObjectShape> _shapes = [];
@@ -67,6 +68,10 @@ public sealed class ObjectColumnsTests : IDisposable
         _placements.Add(new ObjectPlacement(new ObjectId(2), rock, new VoxelCoord(-300, 0, 300), 700));
         _placements.Add(new ObjectPlacement(new ObjectId(3), stone, new VoxelCoord(300, 0, 300), 0));
         _placements.Add(new ObjectPlacement(new ObjectId(4), bush, new VoxelCoord(0, 0, -300), 0));
+        // A ramp 12 m long and 3 m wide rising 35 cm a metre against a wall, as straight and turned 45 degrees.
+        var ramp = Register("ramp", 10, new VoxelCoord(140, 53, 42), new VoxelCoord(700, 10, 260), Ramp);
+        _placements.Add(new ObjectPlacement(new ObjectId(5), ramp, RampAnchor(0), 0));
+        _placements.Add(new ObjectPlacement(new ObjectId(6), ramp, RampAnchor(RampTurned), RampTurned));
         var rough = _materials.Register("rough", new PhysicsMaterial(2, 0));
         _materials.MapVoxel(Rock, rough);
         var generator = new PlacingGenerator(_placements);
@@ -181,6 +186,56 @@ public sealed class ObjectColumnsTests : IDisposable
 
         Assert.True(feet.X > 2.8f, $"It stopped at {feet.X}.");
         Assert.InRange(feet.Y, 0.25f, 0.35f);
+    }
+
+    /// <summary>
+    /// A character walking up a ramp of 10 cm voxels, straight up it or pressing towards the wall beside it, on the ramp
+    /// as placed and turned 45 degrees: its surface is read from the voxels' densities, so the feet rise with the slope,
+    /// never a voxel's step at once, and nothing stops it on the way to the top.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(0, 1)]
+    [InlineData(RampTurned, 0)]
+    [InlineData(RampTurned, 1)]
+    public void A_character_walks_up_an_objects_ramp_smoothly(int heading, float towardsWall)
+    {
+        var mover = Mover();
+        var anchor = RampAnchor(heading);
+        Vector3 Along(long x, long z)
+        {
+            var (wx, wz) = ObjectTurns.FromObject(heading, x, z);
+            return new Vector3(wx, 0, wz) / 100;
+        }
+
+        var up = Along(1000, 0) / 10;
+        var wall = Along(0, -1000) / 10;
+        var feet = new Vector3(anchor.X, 0, anchor.Z) / 100 + Along(-800, towardsWall > 0 ? -120 : 0);
+        var velocity = Vector3.Zero;
+        float slowest = float.MaxValue,
+            steepest = 0;
+        for (var i = 0; i < 240; i++)
+        {
+            var before = feet;
+            velocity = new Vector3(0, velocity.Y - 0.3f, 0) + up * 6 + wall * towardsWall;
+            mover.Move(ref feet, ref velocity, in s_shape, Step);
+            // Along the ramp from its foot, in metres: on it from 0.5 m to 11.5 m.
+            var along = Vector3.Dot(feet - new Vector3(anchor.X, 0, anchor.Z) / 100, up) + 6;
+            if (along is > 0.5f and < 11.5f)
+            {
+                slowest = Math.Min(slowest, Vector3.Dot(feet - before, up));
+                steepest = Math.Max(steepest, feet.Y - before.Y);
+            }
+            else if (along >= 12.5f)
+            {
+                break;
+            }
+        }
+
+        // At 6 m/s a step goes 10 cm along and rises 3.5 cm.
+        Assert.True(feet.Y > 4.1f, $"It stopped at {feet}, {feet.Y:F2} m up.");
+        Assert.True(slowest > 0.08f, $"A step went only {slowest:F3} m along.");
+        Assert.True(steepest < 0.06f, $"A step rose {steepest:F3} m at once.");
     }
 
     [Fact]
@@ -322,6 +377,46 @@ public sealed class ObjectColumnsTests : IDisposable
         var id = _kinds.Register(name, shape);
         _shapes[id] = shape;
         return id;
+    }
+
+    /// <summary>The ramp's anchor, 25 m east of the middle, as placed, and 20 m further south turned.</summary>
+    private static VoxelCoord RampAnchor(int heading) => new(2500, 0, heading == 0 ? 0 : 2000);
+
+    /// <summary>
+    /// The ramp's voxels, centimetres from its anchor on its floor's middle: from 6 m west of it to 6 m east, rising 35 cm
+    /// a metre to 4.2 m, 3 m wide, its footing 10 cm deep, and a wall 1 m thick and 5 m high along its north side. Each
+    /// voxel's density is its share under the surface (one half less its centre's distance over it, in voxels), air under
+    /// one half, as smooth shapes are written.
+    /// </summary>
+    private static void Ramp(VoxelObjectShape shape)
+    {
+        var slope = 1 / Math.Sqrt(1 + 0.35 * 0.35);
+        for (var k = 0; k < shape.Size.Z; k++)
+        {
+            for (var j = 0; j < shape.Size.Y; j++)
+            {
+                for (var i = 0; i < shape.Size.X; i++)
+                {
+                    double x = i * 10 + 5 - 700,
+                        y = j * 10 + 5 - 10,
+                        z = k * 10 + 5 - 260;
+                    var rise = Math.Clamp(x + 600, 0, 1200) * 0.35;
+                    var ramp = Math.Max(
+                        Math.Max((y - rise) * slope, -10 - y),
+                        Math.Max(Math.Abs(x) - 600, Math.Abs(z) - 150)
+                    );
+                    var wall = Math.Max(
+                        Math.Max(Math.Abs(x) - 700, Math.Abs(z + 200) - 50),
+                        Math.Max(-10 - y, y - 500)
+                    );
+                    var share = Math.Clamp(0.5 - Math.Min(ramp, wall) / 10, 0, 1);
+                    if (share > 0)
+                    {
+                        shape.Set(i, j, k, share >= 0.5 ? Rock : VoxelConstants.Air, (byte)Math.Round(share * 255));
+                    }
+                }
+            }
+        }
     }
 
     private ObjectColumns Columns() => new(_objects, _kinds, _passability, 10);

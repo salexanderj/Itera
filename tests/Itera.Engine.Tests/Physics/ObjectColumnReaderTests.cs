@@ -183,7 +183,9 @@ public sealed class ObjectColumnReaderTests
             }
             else if (!solid && start != int.MinValue)
             {
-                // Its surface: the top of the highest blocking voxel under the top cell's top, within that cell.
+                // Its surface: over the highest blocking voxel under the top cell's top, where the density crosses one
+                // half on the way to the voxel above (that voxel's top where the voxel above blocks), from the top cell's
+                // bottom to half a cell over its top.
                 var hi = y - 1;
                 var surface = (float)(hi + 1);
                 voxels.Voxel(vx, VoxelY((long)hi * cell + cell / 2), vz, out var material, out _);
@@ -191,9 +193,17 @@ public sealed class ObjectColumnReaderTests
                 {
                     if (Blocks(vy))
                     {
-                        voxels.Voxel(vx, vy, vz, out material, out _);
-                        var top = ((long)(vy + 1) * unit - kind.AnchorCentimetres.Y + anchor.Y) / (double)cell;
-                        surface = (float)Math.Clamp(top, hi, hi + 1);
+                        voxels.Voxel(vx, vy, vz, out material, out var low);
+                        double over = vy + 1;
+                        if (!Blocks(vy + 1))
+                        {
+                            voxels.Voxel(vx, vy + 1, vz, out var above, out var high);
+                            high = above == VoxelConstants.Air ? high : (byte)0;
+                            over = vy + 0.5 + (low - 127.5) / (low - (double)high);
+                        }
+
+                        var top = (over * unit - kind.AnchorCentimetres.Y + anchor.Y) / cell;
+                        surface = (float)Math.Clamp(top, hi, hi + 1.5);
                         break;
                     }
                 }

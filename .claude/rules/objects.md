@@ -25,7 +25,9 @@ A game builds each kind's voxels in a `VoxelObjectShape`: a box of voxels of its
   shape's distance to each voxel's centre, one half less the distance in voxels. A voxel is solid exactly when its
   centre lies inside, and the surface meshes smooth.
 - Shapes join by the larger density. The voxel takes the material of the shape that fills it more.
-- `Set` and `Clear` change one voxel.
+- `Set` and `Clear` change one voxel. `Set` fits the density to the material: a solid material's is one half or more.
+  A smooth shape written voxel by voxel sets air where its share is under one half, or its surface moves out to the
+  voxels' centres.
 - Build with integer maths, + - * /, and square roots only, as generators do. Every peer must build the same voxels.
 
 `VoxelObjectKinds` (run-wide, registered in `AddIteraEngine`) takes kinds by name at the game's `IRunStartup`.

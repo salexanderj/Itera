@@ -163,8 +163,12 @@ internal sealed class ObjectColumnReader
     }
 
     /// <summary>
-    /// The span of cells lo to hi of one object's column (vx, vz): its surface the top of the highest solid voxel of the
-    /// column under the top cell's top, in cells, and that voxel's material.
+    /// The span of cells lo to hi of one object's column (vx, vz): its surface over the highest solid voxel of the column
+    /// under the top cell's top, in cells, and that voxel's material. The surface lies where the density
+    /// (<see cref="VoxelDensity"/>) crosses one half between the centres of that voxel and the voxel above, as the mesher
+    /// draws it and the world's ground is read, so a smooth shape (a ramp) reads as its slope, not as steps a voxel high.
+    /// A voxel above that blocks too gives the voxel's top, and a passable one counts as empty. It is kept from the top
+    /// cell's bottom to half a cell over its top, as near as the ground's surface lies to its top.
     /// </summary>
     private ObjectSpan Span(
         IObjectVoxelSource voxels,
@@ -183,11 +187,20 @@ internal sealed class ObjectColumnReader
         var bottom = (int)DeterministicMath.FloorDivide((long)hi * _cell - anchor.Y + kind.AnchorCentimetres.Y, unit);
         for (var vy = top; vy >= bottom; vy--)
         {
-            voxels.Voxel(vx, vy, vz, out var material, out _);
+            voxels.Voxel(vx, vy, vz, out var material, out var low);
             if (material != VoxelConstants.Air && !_passable.Contains(material))
             {
-                var surface = ((long)(vy + 1) * unit - kind.AnchorCentimetres.Y + anchor.Y) / (double)_cell;
-                return new ObjectSpan(lo, hi, (float)Math.Clamp(surface, hi, hi + 1), material);
+                // In the object's voxels from its box's floor: the voxel's top, or the density's crossing.
+                double over = vy + 1;
+                voxels.Voxel(vx, vy + 1, vz, out var above, out var high);
+                if (above == VoxelConstants.Air || _passable.Contains(above))
+                {
+                    high = above == VoxelConstants.Air ? high : VoxelDensity.Empty;
+                    over = vy + 0.5 + (low - 127.5) / (low - (double)high);
+                }
+
+                var surface = (over * unit - kind.AnchorCentimetres.Y + anchor.Y) / _cell;
+                return new ObjectSpan(lo, hi, (float)Math.Clamp(surface, hi, hi + 1.5), material);
             }
         }
 
