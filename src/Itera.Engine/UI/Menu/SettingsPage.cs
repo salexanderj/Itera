@@ -36,8 +36,15 @@ public sealed class SettingsPage
     private const float KeyListWidth = 691;
     private const int VisibleKeyRows = 8;
 
+    // Room right of the rows for a scroll bar (the style's is 0.35 of the 32.4-unit body text wide), and a gap.
+    private const float ScrollBarRoom = 28;
+
     private static readonly int s_tabs = Ui.Id("settings.tabs");
     private static readonly int s_keyList = Ui.Id("settings.keys");
+    private static readonly int s_gameRows = Ui.Id("settings.rows.game");
+    private static readonly int s_graphicsRows = Ui.Id("settings.rows.graphics");
+    private static readonly int s_soundRows = Ui.Id("settings.rows.sound");
+    private static readonly int s_otherRows = Ui.Id("settings.rows.other");
     private static readonly int s_reset = Ui.Id("settings.reset");
     private static readonly int s_back = Ui.Id("settings.back");
     private static readonly int s_volume = Ui.Id("settings.volume");
@@ -158,7 +165,18 @@ public sealed class SettingsPage
             return;
         }
 
-        using (ui.Column(0, new UiBox { Gap = 0 }))
+        // As tall as its rows, up to the Keybindings list's height; the wheel scrolls a tab with more (a game's rows).
+        using (
+            ui.Scroll(
+                RowListOf(_tab),
+                new UiBox
+                {
+                    Gap = 0,
+                    Width = UiSize.Fixed(RowUnits + ScrollBarRoom),
+                    Height = UiSize.Fit.Within(0, VisibleKeyRows * KeyRowHeight),
+                }
+            )
+        )
         {
             if (_tab == SettingsRows.GameTab)
             {
@@ -325,6 +343,13 @@ public sealed class SettingsPage
             GameRows(ui);
         }
     }
+
+    /// <summary>Each tab's own scroll, so each keeps its place.</summary>
+    private static int RowListOf(string tab) =>
+        tab == SettingsRows.GameTab ? s_gameRows
+        : tab == SettingsRows.GraphicsTab ? s_graphicsRows
+        : tab == SettingsRows.SoundTab ? s_soundRows
+        : s_otherRows;
 
     /// <summary>
     /// The Screen row, a slider through <see cref="_screens"/>, when there is more than the main screen to choose from.

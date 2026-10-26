@@ -67,6 +67,8 @@ It has four tabs, and a game adds to them (`SettingsRows`):
 - Graphics: Quality, dynamic render scaling, its threshold, shadows, anti-aliasing, object detail, effects detail, and
   the render scale. Anti-aliasing is a slider through Off, SMAA, and the MSAA sample counts (`AntiAliasMode`, kept as
   `AntiAliasing` and `MsaaSamples` in `settings.json`). Render scale is disabled while dynamic scaling is on.
+- Each other tab's rows are a scroll area as tall as its rows, up to the Keybindings list's height; the wheel scrolls a
+  tab with more, such as a game's added rows.
 - Keybindings: a button per action (`KeyBindings` in `.claude/rules/ui-input.md`). A click waits for the next key or mouse button. Reset keys puts every binding back.
 
 Each setting applies at once through `PlayerSettings`:

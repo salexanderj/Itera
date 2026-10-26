@@ -254,7 +254,8 @@ public class UiStyle
     {
         ArgumentNullException.ThrowIfNull(painter);
         var inner = element.Inner;
-        if (element.Content <= inner.Height || inner.Height <= 0)
+        // Half a pixel's slack: a scroll area as tall as its content may differ from it by the layout's rounding.
+        if (element.Content <= inner.Height + 0.5f || inner.Height <= 0)
         {
             return;
         }

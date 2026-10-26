@@ -397,12 +397,16 @@ public sealed class MenuLayerTests : IDisposable
         // The engine's defaults: High, object detail High (1 pixel), effects 100 %.
         Assert.Equal(["High", "60 fps", "MSAA 4x", "High", "100 %", "100 %"], SliderTexts());
 
-        // The render scale is disabled while dynamic scaling is on: a drag on it changes nothing.
+        // The render scale, the last row, comes into view by the wheel. It is disabled while dynamic scaling is on: a drag
+        // on it changes nothing.
+        ScrollGraphicsRows(-10);
         Assert.True(Element(UiKind.Slider, 5).Disabled);
         var scale = Element(UiKind.Slider, 5).Rect;
         Hold(new Vector2(scale.Left + 1, scale.MidY), pressed: true);
         Release(new Vector2(scale.Left + 1, scale.MidY));
         Assert.Equal(1f, Settings.RenderScale);
+        Assert.Equal(SettingsRows.GraphicsTab, _menu.SettingsTab);
+        ScrollGraphicsRows(10);
 
         // Quality at its left end: Low's table at once.
         var quality = Element(UiKind.Slider, 0).Rect;
@@ -424,6 +428,7 @@ public sealed class MenuLayerTests : IDisposable
 
         // With dynamic scaling off, the render scale moves: its left end is 50 %.
         ClickAt(Centre(Element(UiKind.Switch, 0).Rect));
+        ScrollGraphicsRows(-10);
         Assert.False(Element(UiKind.Slider, 5).Disabled);
         scale = Element(UiKind.Slider, 5).Rect;
         Hold(new Vector2(scale.Left + 1, scale.MidY), pressed: true);
@@ -809,6 +814,15 @@ public sealed class MenuLayerTests : IDisposable
     {
         Assert.True(_menu.Ui.TryFind(label, out var element), $"Nothing reads '{label}':\n{_menu.Ui.Dump()}");
         return element;
+    }
+
+    /// <summary>The wheel over the Graphics tab's rows (its Shadows row, in view at either end).</summary>
+    private void ScrollGraphicsRows(int steps)
+    {
+        _pointer.Pointer = new UiPointer(Centre(Find("Shadows").Rect), false, false, false, steps);
+        Frame();
+        _pointer.Pointer = new UiPointer(Centre(Find("Shadows").Rect), false, false, false, 0);
+        Frame();
     }
 
     /// <summary>The <paramref name="nth"/> element of <paramref name="kind"/> in the order declared.</summary>
