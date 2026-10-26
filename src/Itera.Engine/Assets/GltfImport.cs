@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Itera.Engine.Rendering.GpuData;
 using SharpGLTF.Schema2;
@@ -19,6 +20,7 @@ namespace Itera.Engine.Assets;
 /// apply).</item>
 /// <item>Gives triangles without normals flat ones (each its own three vertices, as glTF asks), and normal-mapped
 /// materials' vertices without tangents generated ones (<see cref="MeshTangents"/>).</item>
+/// <item>Orders each primitive's triangles and vertices for the GPU's vertex caches (<see cref="VertexCacheOrder"/>).</item>
 /// <item>Reads the first skin a mesh uses, and the animations of its joints, into the asset's <see cref="Rig"/>
 /// (<c>GltfImport.Rig.cs</c>).</item>
 /// <item>Reads each material's factors and textures: each image a material uses, in each role, from the model's
@@ -565,15 +567,17 @@ internal static partial class GltfImport
             tangents.AddRange(tangentArray);
         }
 
+        // The triangles in an order the vertex caches reuse, and each vertex moved, every attribute with it, to where
+        // they first use it.
+        var order = VertexCacheOrder.Reorder(CollectionsMarshal.AsSpan(triangles), positions.Count);
         var vertexBase = (uint)context.Vertices.Count;
-        for (var i = 0; i < positions.Count; i++)
+        foreach (var i in order)
         {
             context.Vertices.Add(
                 MeshAssetVertex.Pack(positions[i], normals[i], tangents[i], uv0[i], uv1[i], colours[i])
             );
+            context.Skins.Add(skins[i]);
         }
-
-        context.Skins.AddRange(skins);
 
         context.Primitives.Add(new MeshPrimitive(context.Indices.Count, triangles.Count, materialIndex));
         foreach (var index in triangles)

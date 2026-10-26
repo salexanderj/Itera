@@ -152,6 +152,10 @@ judges (a host's hits on posed bodies). The deterministic skeletons for bodies, 
 - A normal-mapped material's vertices without tangents get generated ones (`MeshTangents`: Lengyel's method, not
   MikkTSpace, so they differ at mirrored UV seams). The bitangent `cross(normal, tangent) * w` points the way v
   increases. A file's own tangents are used when it has them.
+- Each primitive's triangles and vertices are reordered for the GPU's vertex caches (`VertexCacheOrder.Reorder`), after
+  its tangents are made. The triangles follow Forsyth's method for a cache of 32, with whole-number scores, so every
+  machine gets the same order. The vertices follow their first use, every attribute and skin entry moving with its
+  vertex; unused vertices come last. The same triangles are drawn, each with its winding.
 - Each image a material uses is decoded once (`TextureDecode`: PNG, JPEG, or WebP through Skia into RGBA8 with
   straight alpha and no colour conversion, as glTF asks). Its mip chain is made per role (`MipChain`, every level to
   1x1, a box filter for any size):
@@ -216,5 +220,5 @@ vertex whose weights sum to zero, so such a file is `Refused`. `tools/ModelCheck
 ### Tests
 
 `GltfImportTests`, `RigImportTests`, `RigClipTests`, `RigShapingTests`, `MeshAssetsTests`, `TextureDecodeTests`,
-`MipChainTests`, `MeshTangentsTests`, `CompressedTexturesTests`, `MeshPointsTests`, `MeshPartsTests`, `ModelInspectionTests`,
-`ClipGroundTests`, and `OctahedralTests`.
+`MipChainTests`, `MeshTangentsTests`, `VertexCacheOrderTests`, `CompressedTexturesTests`, `MeshPointsTests`,
+`MeshPartsTests`, `ModelInspectionTests`, `ClipGroundTests`, and `OctahedralTests`.
