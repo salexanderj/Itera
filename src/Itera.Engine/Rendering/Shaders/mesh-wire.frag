@@ -5,7 +5,7 @@
 // takes mesh.vert's outputs and uses none of them but, compiled with MESH_FADE for the models', the share they show.
 layout(location = 0) in vec4 inOffsetOpenness;
 layout(location = 1) in vec3 inNormal;
-layout(location = 2) flat in uvec2 inMaterialTint;
+layout(location = 2) flat in uvec4 inMaterialTint;
 #ifdef MESH_FADE
 // The models' share of their pixels (MeshModelDraw.shown; mesh-fade.glsl): the edges of the pixels it shows.
 #include "mesh-fade.glsl"

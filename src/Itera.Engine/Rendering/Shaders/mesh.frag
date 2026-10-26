@@ -16,10 +16,10 @@
 // (-1: the tint map's, for the world's blocks and the models shaded as the world, the voxel objects' parts).
 layout(location = 0) in vec4 inOffsetOpenness;
 layout(location = 1) in vec3 inNormal;
-layout(location = 2) flat in uvec2 inMaterialTint;
+// The material and its level, the tint's bits, and the mesh's palette (two words: mesh.vert).
+layout(location = 2) flat in uvec4 inMaterialTint;
 layout(location = 3) in vec4 inWeightsLow;
 layout(location = 4) in vec4 inWeightsHigh;
-layout(location = 5) flat in uvec2 inPalette;
 layout(location = 0) out vec4 outColor;
 
 #ifdef MESH_FADE
@@ -111,6 +111,18 @@ float materialHeight(uint index, vec3 offset, vec3 normal, vec3 dx, vec3 dy)
     return texture != 0u ? textureHeight(index, texture, metres, offset, normal, dx, dy) : RecipeHeight;
 }
 
+// The lowest and highest height material index can have at a border: its set's range, RecipeHeight without one drawn,
+// or the whole range where the debug views draw it from a set not its own.
+vec2 materialHeights(uint index)
+{
+    float metres;
+    vec3 mean;
+    uint texture = drawnTexture(index, metres, mean);
+    return texture == 0u ? vec2(RecipeHeight)
+        : texture == materials[index].texture ? materials[index].heights
+        : vec2(0.0, 1.0);
+}
+
 // The material of slot slot of a mesh's palette.
 uint paletteMaterial(uvec2 palette, uint slot)
 {
@@ -176,8 +188,8 @@ void main()
             }
         }
 
-        uint a = paletteMaterial(inPalette, first);
-        uint b = paletteMaterial(inPalette, second);
+        uint a = paletteMaterial(inMaterialTint.zw, first);
+        uint b = paletteMaterial(inMaterialTint.zw, second);
         if (a == 0u)
         {
             a = index;
@@ -185,9 +197,25 @@ void main()
 
         if (b != 0u && secondWeight > 0.0)
         {
-            float shareA = firstWeight / total + HeightBlend * (materialHeight(a, offset, normal, dx, dy) - 0.5);
-            float shareB = secondWeight / total + HeightBlend * (materialHeight(b, offset, normal, dx, dy) - 0.5);
-            a = shareB > shareA ? b : a;
+            // b shows where its weight's lack is less than HeightBlend times how much higher it is. The heights are read
+            // only where their ranges leave that open: a's lead past b's highest over a's lowest keeps a, b's lack under
+            // its lowest over a's highest takes b.
+            vec2 heightsA = materialHeights(a);
+            vec2 heightsB = materialHeights(b);
+            float lead = (firstWeight - secondWeight) / total;
+            if (lead < HeightBlend * (heightsB.y - heightsA.x))
+            {
+                if (lead < HeightBlend * (heightsB.x - heightsA.y))
+                {
+                    a = b;
+                }
+                else
+                {
+                    float shareA = firstWeight / total + HeightBlend * (materialHeight(a, offset, normal, dx, dy) - 0.5);
+                    float shareB = secondWeight / total + HeightBlend * (materialHeight(b, offset, normal, dx, dy) - 0.5);
+                    a = shareB > shareA ? b : a;
+                }
+            }
         }
 
         surface = worldSurface(a, mapTint, whole, part, offset, normal, dx, dy);
@@ -198,7 +226,7 @@ void main()
             ivec3 turnedWhole;
             vec3 turnedPart;
             turnPoint(whole, part, turnedWhole, turnedPart);
-            hue += LOOK.worldHueDrift * valueNoise2(turnedWhole.xz, turnedPart.xz, 11, 41u);
+            hue += LOOK.worldHueDrift * planeNoise(turnedWhole.xz, turnedPart.xz, 11, 41u, NoiseHueDrift);
         }
     }
 

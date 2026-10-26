@@ -11,7 +11,8 @@ namespace Itera.Engine.Rendering.Meshes;
 /// sets' colour with occlusion (BC7 sRGB), normals (BC5), and heights (BC4), then the small sets' the same. A group with
 /// no set has a 4-texel stand-in. <see cref="Initialize"/> reads the sets and copies their levels into an upload buffer;
 /// the first frame the pass records copies them into the arrays, and the buffer goes once no frame in flight can read it.
-/// One sampler for all: linear between texels and levels, repeating, anisotropic up to 16 times where the device can.
+/// Linear between texels and levels, repeating; anisotropic up to 16 times for the colours and 8 for the normals and
+/// heights where the device can. The plane noise's tables (<see cref="NoiseTables"/>, binding 18) go up with them.
 /// </summary>
 public sealed unsafe partial class MeshPass
 {
@@ -27,6 +28,10 @@ public sealed unsafe partial class MeshPass
     private readonly BufferImageCopy[][] _textureCopies = new BufferImageCopy[TextureArrays][];
     private GpuBuffer? _textureUpload;
     private Sampler _textureSampler;
+    private Sampler _reliefSampler;
+    private Sampler _noiseSampler;
+    private GpuImage? _noiseTables;
+    private BufferImageCopy[] _noiseCopies = [];
     private bool _texturesRecorded;
     private int _uploadFramesLeft;
 
@@ -54,16 +59,12 @@ public sealed unsafe partial class MeshPass
             }
         }
 
-        if (bytes > 0)
-        {
-            _textureUpload = _allocator.CreateBuffer(
-                bytes,
-                BufferUsageFlags.TransferSrcBit,
-                MemoryUsage.Upload,
-                "material texture upload"
-            );
-        }
-
+        _textureUpload = _allocator.CreateBuffer(
+            bytes + NoiseTables.Bytes,
+            BufferUsageFlags.TransferSrcBit,
+            MemoryUsage.Upload,
+            "material texture upload"
+        );
         ulong offset = 0;
         for (var array = 0; array < TextureArrays; array++)
         {
@@ -117,13 +118,41 @@ public sealed unsafe partial class MeshPass
             _textureCopies[array] = [.. copies];
         }
 
-        _textureUpload?.Flush(0, _textureUpload.Size);
+        CreateNoiseTables(offset);
+        _textureUpload.Flush(0, _textureUpload.Size);
         LogTextureSets(sets.Large.Count, sets.Small.Count, bytes / (1024.0 * 1024.0));
         sets.ReleaseFiles();
         CreateTextureSampler();
     }
 
     private static ulong AlignLevel(ulong bytes) => (bytes + 15) & ~15UL;
+
+    /// <summary>The plane noise's tables: written into the upload buffer at <paramref name="offset"/>, a copy a layer.</summary>
+    private void CreateNoiseTables(ulong offset)
+    {
+        const uint Cells = NoiseTables.Cells;
+        var layers = (uint)NoiseTables.Salts.Length;
+        _noiseTables = _allocator.CreateImage(
+            Format.R16Unorm,
+            new Extent2D(Cells, Cells),
+            ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
+            ImageAspectFlags.ColorBit,
+            "plane noise tables",
+            layers: layers,
+            arrayView: true
+        );
+        NoiseTables.Write(new Span<byte>(TextureUpload.Mapped + offset, NoiseTables.Bytes));
+        _noiseCopies = new BufferImageCopy[layers];
+        for (var layer = 0u; layer < layers; layer++)
+        {
+            _noiseCopies[layer] = new BufferImageCopy
+            {
+                BufferOffset = offset + layer * 2 * Cells * Cells,
+                ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, 0, layer, 1),
+                ImageExtent = new Extent3D(Cells, Cells, 1),
+            };
+        }
+    }
 
     private static Format VulkanFormat(DdsFormat format) =>
         format switch
@@ -134,10 +163,31 @@ public sealed unsafe partial class MeshPass
         };
 
     /// <summary>
-    /// The sets' sampler: linear between texels and mip levels, repeating, anisotropic up to 16 times where the device
-    /// can (8 is up to 0.25 ms quicker looking along the ground; docs/rendering-redesign.md).
+    /// The sets' samplers: linear between texels and mip levels, repeating, anisotropic where the device can, up to 16
+    /// times for the colours and 8 for the normals and heights (8 is up to 0.25 ms quicker looking along the ground;
+    /// docs/rendering-redesign.md; the relief takes the difference least). And the noise tables' sampler, which only
+    /// gathers: nearest, repeating.
     /// </summary>
     private void CreateTextureSampler()
+    {
+        _textureSampler = CreateSetSampler(16f, "material textures");
+        _reliefSampler = CreateSetSampler(8f, "material normals and heights");
+        var info = new SamplerCreateInfo
+        {
+            SType = StructureType.SamplerCreateInfo,
+            MagFilter = Filter.Nearest,
+            MinFilter = Filter.Nearest,
+            MipmapMode = SamplerMipmapMode.Nearest,
+            AddressModeU = SamplerAddressMode.Repeat,
+            AddressModeV = SamplerAddressMode.Repeat,
+            AddressModeW = SamplerAddressMode.Repeat,
+            MaxLod = 0,
+        };
+        _context.Vk.CreateSampler(_context.Device, &info, null, out _noiseSampler).ThrowIfFailed("vkCreateSampler");
+        _context.SetObjectName(ObjectType.Sampler, _noiseSampler.Handle, "plane noise tables");
+    }
+
+    private Sampler CreateSetSampler(float anisotropy, string name)
     {
         var anisotropic = _context.SupportsAnisotropy;
         var info = new SamplerCreateInfo
@@ -150,12 +200,16 @@ public sealed unsafe partial class MeshPass
             AddressModeV = SamplerAddressMode.Repeat,
             AddressModeW = SamplerAddressMode.Repeat,
             AnisotropyEnable = anisotropic,
-            MaxAnisotropy = anisotropic ? Math.Min(16f, _context.Limits.MaxSamplerAnisotropy) : 1f,
+            MaxAnisotropy = anisotropic ? Math.Min(anisotropy, _context.Limits.MaxSamplerAnisotropy) : 1f,
             MaxLod = Vk.LodClampNone,
         };
-        _context.Vk.CreateSampler(_context.Device, &info, null, out _textureSampler).ThrowIfFailed("vkCreateSampler");
-        _context.SetObjectName(ObjectType.Sampler, _textureSampler.Handle, "material textures");
+        _context.Vk.CreateSampler(_context.Device, &info, null, out var sampler).ThrowIfFailed("vkCreateSampler");
+        _context.SetObjectName(ObjectType.Sampler, sampler.Handle, name);
+        return sampler;
     }
+
+    /// <summary>The sampler of texture array <paramref name="array"/>: the colours', or the relief's for the others.</summary>
+    private Sampler SamplerOf(int array) => array % 3 == 0 ? _textureSampler : _reliefSampler;
 
     /// <summary>
     /// The first time only: copies every set's levels from the upload buffer into the arrays and leaves them for the
@@ -201,11 +255,29 @@ public sealed unsafe partial class MeshPass
             TextureBarrier(commandBuffer, image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
             _textureCopies[array] = [];
         }
+
+        var noise = NoiseImage;
+        TextureBarrier(commandBuffer, noise, ImageLayout.Undefined, ImageLayout.TransferDstOptimal);
+        fixed (BufferImageCopy* regions = _noiseCopies)
+        {
+            _context.Vk.CmdCopyBufferToImage(
+                commandBuffer,
+                TextureUpload.Buffer,
+                noise.Image,
+                ImageLayout.TransferDstOptimal,
+                (uint)_noiseCopies.Length,
+                regions
+            );
+        }
+
+        TextureBarrier(commandBuffer, noise, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
+        _noiseCopies = [];
     }
 
     /// <summary>Moves every level and layer of <paramref name="image"/> from <paramref name="from"/> to <paramref name="to"/>.</summary>
     private void TextureBarrier(CommandBuffer commandBuffer, GpuImage image, ImageLayout from, ImageLayout to)
     {
+        // The fragment shaders read the arrays and the tables; the grass's placing reads them too, frames later.
         var toShader = to == ImageLayout.ShaderReadOnlyOptimal;
         var barrier = new ImageMemoryBarrier2
         {
@@ -230,15 +302,22 @@ public sealed unsafe partial class MeshPass
         _context.Vk.CmdPipelineBarrier2(commandBuffer, &dependency);
     }
 
-    /// <summary>Destroys the sampler, the arrays, and the upload buffer if it is still there.</summary>
+    /// <summary>Destroys the samplers, the arrays, the noise tables, and the upload buffer if it is still there.</summary>
     private void DestroyTextures()
     {
-        if (!_context.IsAbandoned && _textureSampler.Handle != 0)
+        foreach (var sampler in (ReadOnlySpan<Sampler>)[_textureSampler, _reliefSampler, _noiseSampler])
         {
-            _context.Vk.DestroySampler(_context.Device, _textureSampler, null);
+            if (!_context.IsAbandoned && sampler.Handle != 0)
+            {
+                _context.Vk.DestroySampler(_context.Device, sampler, null);
+            }
         }
 
         _textureSampler = default;
+        _reliefSampler = default;
+        _noiseSampler = default;
+        _noiseTables?.Dispose();
+        _noiseTables = null;
         for (var i = 0; i < TextureArrays; i++)
         {
             _textureArrays[i]?.Dispose();
@@ -250,6 +329,8 @@ public sealed unsafe partial class MeshPass
     }
 
     private GpuImage TextureArray(int array) => _textureArrays[array] ?? throw NotInitialised();
+
+    private GpuImage NoiseImage => _noiseTables ?? throw NotInitialised();
 
     private GpuBuffer TextureUpload => _textureUpload ?? throw NotInitialised();
 

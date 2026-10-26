@@ -90,7 +90,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
 
     /// <summary>The wireframe's depth bias as a share of the face's depth slope: more for faces seen edge-on.</summary>
     private const float WireBiasSlope = 1.5f;
-    private const int Bindings = 18;
+    private const int Bindings = 19;
     private const int ShadowMapBinding = 5;
     private const int SkyFieldBinding = 8;
 
@@ -99,6 +99,12 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
 
     /// <summary>The frame's look, one <see cref="LookConstants"/> per slot (<c>look.glsl</c>), after the texture arrays.</summary>
     private const int LookBinding = 17;
+
+    /// <summary>The plane noise's tables (<see cref="NoiseTables"/>), after the look.</summary>
+    private const int NoiseTablesBinding = 18;
+
+    /// <summary>Bindings of images: the maps, the sky field, the maps as depths, the texture arrays, the noise tables.</summary>
+    private const int ImageBindings = 3 + TextureArrays + 1;
 
     /// <summary>
     /// The view's clusters of lights (<c>mesh-data.glsl</c>'s MESH_CLUSTER_*): 16 x 9 tiles by 24 slices, each a count and
@@ -526,7 +532,11 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         FlushSlot(slot, in frame);
         RecordTextures(commandBuffer);
         RecordBake(commandBuffer, slot);
-        RecordClusters(commandBuffer, in view, _set);
+        // With no light the clusters are not sorted, and pointLight reads none of them (the lighting record's count).
+        if (frame.Lights > 0)
+        {
+            RecordClusters(commandBuffer, in view, _set);
+        }
         draws?.RecordSkinning(commandBuffer, slot, timerSlot);
         passes?.Record(RenderStage.Compute, commandBuffer, in view, extent);
 
@@ -1552,8 +1562,8 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     {
         var poolSizes = stackalloc DescriptorPoolSize[2]
         {
-            new(DescriptorType.StorageBuffer, Bindings - 3 - TextureArrays),
-            new(DescriptorType.CombinedImageSampler, 3 + TextureArrays),
+            new(DescriptorType.StorageBuffer, Bindings - ImageBindings),
+            new(DescriptorType.CombinedImageSampler, ImageBindings),
         };
         var poolInfo = new DescriptorPoolCreateInfo
         {
@@ -1599,7 +1609,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         // tint map at their fixed places (multiples of 256 bytes, and so of any storage buffer alignment), the cascades'
         // records of every slot, the cascades' maps (an image), the model draws of every slot, the point lights of every
         // slot, the sky field (an image), the cascades' maps again, read as depths, the light clusters of every slot, the
-        // six arrays of the materials' texture sets (images), and the looks of every slot.
+        // six arrays of the materials' texture sets (images), the looks of every slot, and the noise tables (an image).
         var infos = stackalloc DescriptorBufferInfo[FirstTextureBinding]
         {
             new(Heap.Buffer, 0, Vk.WholeSize),
@@ -1615,14 +1625,16 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             new(clusters.Buffer, 0, Vk.WholeSize),
         };
         var look = new DescriptorBufferInfo(Look.Buffer, 0, Vk.WholeSize);
-        var images = stackalloc DescriptorImageInfo[3 + TextureArrays];
+        var images = stackalloc DescriptorImageInfo[ImageBindings];
         images[0] = new(_shadowSampler, ShadowMap.View, ImageLayout.ShaderReadOnlyOptimal);
         images[1] = new(_skySampler, SkyImage.View, ImageLayout.ShaderReadOnlyOptimal);
         images[2] = new(_shadowDepthSampler, ShadowMap.View, ImageLayout.ShaderReadOnlyOptimal);
         for (var i = 0; i < TextureArrays; i++)
         {
-            images[3 + i] = new(_textureSampler, TextureArray(i).View, ImageLayout.ShaderReadOnlyOptimal);
+            images[3 + i] = new(SamplerOf(i), TextureArray(i).View, ImageLayout.ShaderReadOnlyOptimal);
         }
+
+        images[3 + TextureArrays] = new(_noiseSampler, NoiseImage.View, ImageLayout.ShaderReadOnlyOptimal);
 
         var writes = stackalloc WriteDescriptorSet[Bindings];
         for (var i = 0; i < Bindings; i++)
@@ -1642,6 +1654,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
                     i == ShadowMapBinding ? &images[0]
                     : i == SkyFieldBinding ? &images[1]
                     : i == ShadowDepthBinding ? &images[2]
+                    : i == NoiseTablesBinding ? &images[3 + TextureArrays]
                     : TypeOf(i) == DescriptorType.CombinedImageSampler ? &images[3 + i - FirstTextureBinding]
                     : null,
             };
@@ -1653,7 +1666,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     }
 
     private static DescriptorType TypeOf(int binding) =>
-        binding is ShadowMapBinding or SkyFieldBinding or ShadowDepthBinding
+        binding is ShadowMapBinding or SkyFieldBinding or ShadowDepthBinding or NoiseTablesBinding
         || (binding >= FirstTextureBinding && binding < FirstTextureBinding + TextureArrays)
             ? DescriptorType.CombinedImageSampler
             : DescriptorType.StorageBuffer;

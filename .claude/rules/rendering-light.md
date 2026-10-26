@@ -78,7 +78,8 @@ through `view.glsl`'s `viewClip`, as every pass that draws into the view's depth
 - The point lights, the glow, the fog, the tone curve, and the grade.
 
 The near cascade has contact-hardening shadows: a blocker search over the maps read as depths (binding 9, no
-comparison), then comparison taps of a Poisson disc. The far and distant cascades use 3x3 comparison lookups. The near
+comparison), then comparison taps of a Poisson disc. The far and distant cascades use a 3x3 filter of comparisons, read as 4 bilinear comparisons with the same weights
+(`shadowGrid`). The near
 cascade blends into the far one before its end (`MeshLighting.NearBlendStart`). The far cascade's slice starts at
 `MeshLighting.NearBlendStart`, so the two overlap where the near one blends into the far one. The far shadows fade at
 their end (`FarFadeStart`) or blend there into the distant cascade's, which fade at theirs (`DistantFadeStart`).
@@ -130,6 +131,8 @@ every few.
   (`mesh-data.glsl`'s `meshClusterSlice`). Each cluster keeps the lights that matter most to it (binding 10, one
   region a slot).
 - `mesh-shade.glsl`'s `pointLight` loops over its pixel's cluster's lights.
+- A frame with no light (`MeshFrame.Lights`) sorts no clusters, and `pointLight` reads none (the lighting record's
+  count).
 - The console's `lights test N` scatters test lights for the run.
 
 ### Tests

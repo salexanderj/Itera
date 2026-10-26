@@ -33,8 +33,28 @@ const vec2 ShadowDisc[16] = vec2[](
     vec2(-0.24188840, 0.99706507), vec2(-0.81409955, 0.91437590), vec2(0.19984126, 0.78641367),
     vec2(0.14383161, -0.14100790));
 
+// The far and distant cascades' 3x3 filter as 4 lookups: three bilinear comparisons a texel apart weight the texels
+// along an axis 1 - f, 1, 1, f (f the point's fraction past its texel); two, at 1 / (2 - f) into the first pair and
+// f / (1 + f) into the second, weighted 2 - f and 1 + f, give exactly those. The same picture for 4 reads in place of 9.
+float shadowGrid(vec2 uv, float layer, float reference)
+{
+    vec2 size = vec2(textureSize(shadowMaps, 0).xy);
+    vec2 texels = uv * size - 0.5;
+    vec2 base = floor(texels);
+    vec2 f = texels - base;
+    vec2 low = 2.0 - f;
+    vec2 high = 1.0 + f;
+    vec2 first = (base - 0.5 + 1.0 / low) / size;
+    vec2 second = (base + 1.5 + f / high) / size;
+    float lit = low.x * low.y * texture(shadowMaps, vec4(first.x, first.y, layer, reference))
+        + high.x * low.y * texture(shadowMaps, vec4(second.x, first.y, layer, reference))
+        + low.x * high.y * texture(shadowMaps, vec4(first.x, second.y, layer, reference))
+        + high.x * high.y * texture(shadowMaps, vec4(second.x, second.y, layer, reference));
+    return lit / 9.0;
+}
+
 // How much of the sunlight cascade cascade (0 near, 1 far, 2 distant) lets reach world point world on a surface facing
-// normal: 0 to 1. The far and distant cascades: 3x3 lookups, each a 2x2 comparison the sampler blends. The near one:
+// normal: 0 to 1. The far and distant cascades: a 3x3 filter of 2x2 comparisons (shadowGrid). The near one:
 // the casters' mean depth at 8 points of the search disc, then 16 comparisons over a disc as wide as the sun's blur from
 // that gap, at least a texel; fully lit where the search finds no caster. 0.10 to 0.22 ms more than 3x3 at 2560x1440.
 float cascadeLight(MeshLighting cascades, uint cascade, vec3 world, vec3 normal)
@@ -50,20 +70,12 @@ float cascadeLight(MeshLighting cascades, uint cascade, vec3 world, vec3 normal)
     vec2 uv = clip.xy * 0.5 + 0.5;
     float reference = clip.z;
     float layer = float(cascade);
-    vec2 step = 1.0 / vec2(textureSize(shadowMaps, 0).xy);
     if (!near)
     {
-        float lit = 0.0;
-        for (int y = -1; y <= 1; y++)
-        {
-            for (int x = -1; x <= 1; x++)
-            {
-                lit += texture(shadowMaps, vec4(uv + vec2(x, y) * step, layer, reference));
-            }
-        }
-
-        return lit / 9.0;
+        return shadowGrid(uv, layer, reference);
     }
+
+    vec2 step = 1.0 / vec2(textureSize(shadowMaps, 0).xy);
 
     // Metres along the sun per unit of the map's depth: the projection's depth grows by its z row's length a metre.
     float depthMetres = 1.0 / length(vec3(projection[0][2], projection[1][2], projection[2][2]));

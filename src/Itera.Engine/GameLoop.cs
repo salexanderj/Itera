@@ -916,7 +916,7 @@ public sealed partial class GameLoop
                 _renderView.ScreenDim,
                 _renderView.AntiAliasDrawn,
                 _renderView.AntiAliasPicture,
-                _worldOnGpu ? _worldMeshes.Frame : default,
+                _worldOnGpu ? _worldMeshes.Frame with { Lights = _meshView.LastLights } : default,
                 meshAssets
             )
         );

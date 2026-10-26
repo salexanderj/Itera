@@ -37,7 +37,8 @@ The data is in `VoxelLook` and the game's `IVoxelPalette`, packed into the look 
   absolute centimetres; none by default; `FieldTintMap` makes one from any field). The CPU reads it at an absolute
   point with `VoxelTintSampler`. A model's draw takes its own tint instead.
 - Where two materials meet in a block, `mesh.frag` draws the one whose share plus its height is greater. `HeightBlend`
-  times the set's height map, less a half, gives the height (`RecipeHeight` without a set).
+  times the set's height map, less a half, gives the height (`RecipeHeight` without a set). It reads no height where the
+  sets' height ranges (`MeshMaterial.Heights`) decide it whatever the heights are.
 
 ### The texture sets
 
@@ -58,12 +59,16 @@ Every set's heights have a mean of a half.
   large group's colour, normals, and heights, and 14 to 16 the small group's. A group with no sets gets a stand-in
   that is never written.
 - Each set's height range (`HeightRange`, on `MaterialTextureSlot.Heights`) is found from the BC4 blocks of its largest
-  level when it is read.
+  level when it is read. `MeshMaterial.From` puts it in `Heights`.
 - The first frame copies every level from an upload buffer that goes `FrameSync.FramesInFlight` frames later.
 - `WorldMeshes` packs each material's set into `MeshMaterial`: `Texture` (layer plus 1, the large bit, the colour
   match), `TextureMetres`, and `TextureMean`. It warns for a name not loaded.
 - `surfaceTextured` reads the sides of x, y, and z that the surface faces, filtered anisotropically where the device
-  can (`VulkanContext.SupportsAnisotropy`). `textureCompressionBC` is required. Take derivatives before the branches.
+  can (`VulkanContext.SupportsAnisotropy`): up to 16 times for the colours, 8 for the normals and heights.
+  `textureCompressionBC` is required. Take derivatives before the branches.
+- The plane noise of every world pixel (the patches, the strata's wander, the hue drift) comes from tables
+  (`NoiseTables`, binding 18): one gather a lattice cell in place of four hashes (`planeNoise` in `mesh-surface.glsl`).
+  The bake hashes, its lattices wrapped at its tile.
 - The colour is kept round the set's mean by `VoxelLook.TextureDetail` and read `TextureBlur` mip levels softer
   (`MeshMaterial.TextureStyle`). `TextureRelief` sets the normal map's and the occlusion's strength.
 - The colour moves to the material's own colour by `VoxelLook.TextureColourMatch` (0 keeps the photograph's) and by

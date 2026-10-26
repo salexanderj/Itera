@@ -42,6 +42,27 @@ struct Surface
 
 #include "surface-noise.glsl"
 
+// valueNoise2 of salt salt at the point whole + part, on a lattice of 2^shift centimetres, read from the noise tables'
+// layer that holds that lattice (mesh-data.glsl): one gather of the cell's four corners in place of four hashes, the same
+// noise within 512 cells of the middle. The bake, whose lattices wrap at its tile, hashes.
+float planeNoise(ivec2 whole, vec2 part, int shift, uint salt, float layer)
+{
+#ifdef MESH_SURFACE_TILE
+    return valueNoise2(whole, part, shift, salt);
+#else
+    ivec2 cell = whole >> shift;
+    vec2 f = (vec2(whole - (cell << shift)) + part) / float(1 << shift);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    // The point between the cell's texel and the next on each axis: gather's w the cell, z the next along x, x the next
+    // along z, y the next along both.
+    vec2 between = (vec2(cell & (NoiseTableCells - 1)) + 1.0) / float(NoiseTableCells);
+    vec4 corners = textureGather(noiseTables, vec3(between, layer));
+    float near = mix(corners.w, corners.z, u.x);
+    float far = mix(corners.x, corners.y, u.x);
+    return mix(near, far, u.y) * 2.0 - 1.0;
+#endif
+}
+
 // The means that features fade to past their size, so a surface keeps its mean colour at any distance (worked out over
 // many cells of each recipe's layout): the share of bark that is plate rather than crack, a plate's mean shade, the
 // share of the ground a pebble covers for each part of the accent share that has pebbles (and its hollow's), and a
@@ -136,7 +157,8 @@ Surface surfaceFinish(vec3 colour, vec3 slope, float cavity, ivec3 whole, vec3 p
     ivec3 turnedWhole;
     vec3 turnedPart;
     turnPoint(whole, part, turnedWhole, turnedPart);
-    float patches = 0.6 * valueNoise2(turnedWhole.xz, turnedPart.xz, 10, 1u) + 0.4 * valueNoise(whole, part, ivec3(6), 2u).x;
+    float patches = 0.6 * planeNoise(turnedWhole.xz, turnedPart.xz, 10, 1u, NoisePatches)
+        + 0.4 * valueNoise(whole, part, ivec3(6), 2u).x;
     Surface surface;
     surface.colour = max(colour * (1.0 + PatchContrast * amount.z * patches), vec3(0.0));
     surface.slope = slope - dot(slope, normal) * normal;
@@ -155,7 +177,7 @@ vec3 baseColour(uint index, float tint)
 // colour factor at the point whole + part, which the world's pixels take (a 2D tile cannot hold them).
 vec3 strataBands(ivec3 whole, vec3 part)
 {
-    float height = float(whole.y) + part.y + 150.0 * valueNoise2(whole.xz, part.xz, 11, 4u);
+    float height = float(whole.y) + part.y + 150.0 * planeNoise(whole.xz, part.xz, 11, 4u, NoiseStrata);
     float band = floor(height);
     float bands = valueNoise1(int(band), height - band, 6, 5u) + 0.5 * valueNoise1(int(band), height - band, 4, 6u);
     return strataTint(height) * (1.0 + 0.08 * bands);

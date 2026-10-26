@@ -16,10 +16,10 @@
 
 layout(location = 0) out vec4 outOffsetOpenness;
 layout(location = 1) out vec3 outNormal;
-layout(location = 2) flat out uvec2 outMaterialTint;
+// The material and its level, the tint's bits, and the mesh's palette (two words), in one flat output.
+layout(location = 2) flat out uvec4 outMaterialTint;
 layout(location = 3) out vec4 outWeightsLow;
 layout(location = 4) out vec4 outWeightsHigh;
-layout(location = 5) flat out uvec2 outPalette;
 #ifdef MESH_FADE
 // The share of its pixels the model draw shows (MeshModelDraw.shown), which mesh.frag's fading variant keeps to: compiled
 // with MESH_MODEL for the draws of the camera's model list that fade.
@@ -43,23 +43,23 @@ void main()
     outNormal = meshNormal(draw, index);
     float tint = -1.0;
 #endif
+    uvec2 palette = uvec2(0u);
 #ifdef MESH_MODEL
     // A model shaded as the world (a voxel object's part, tint below 0) takes its mesh's weights and palette as the
     // world's blocks do; any other its own flat colour.
     if (tint < 0.0)
     {
         meshWeights(draw.vertexBase, index, outWeightsLow, outWeightsHigh);
-        outPalette = meshPalette(draw.vertexBase);
+        palette = meshPalette(draw.vertexBase);
     }
     else
     {
         outWeightsLow = vec4(0.0);
         outWeightsHigh = vec4(0.0);
-        outPalette = uvec2(0u);
     }
 #else
     meshWeights(draw.vertexBase, index, outWeightsLow, outWeightsHigh);
-    outPalette = meshPalette(draw.vertexBase);
+    palette = meshPalette(draw.vertexBase);
 #endif
 
     gl_Position = viewClip(offset);
@@ -67,5 +67,5 @@ void main()
     uint zm = meshMaterialWord(draw.vertexBase, index);
     uint level = uint(clamp(round(log2(draw.voxelMetres * CentimetresPerMetre)), 0.0, 15.0));
     outOffsetOpenness = vec4(offset, float(zm >> 24) / 255.0);
-    outMaterialTint = uvec2(((zm >> 16) & 0xFFu) | (level << 8), floatBitsToUint(tint));
+    outMaterialTint = uvec4(((zm >> 16) & 0xFFu) | (level << 8), floatBitsToUint(tint), palette);
 }

@@ -15,6 +15,12 @@ const float OpennessCorner = 0.125;
 // depth depth): Lambert, falling off with the square of the distance, and to nothing at each light's reach.
 vec3 pointLight(vec3 world, vec3 normal, float depth)
 {
+    // With no light the frame sorts no clusters (MeshPass.Record): theirs are an earlier frame's.
+    if (lighting[view.slot].lightCount == 0u)
+    {
+        return vec3(0.0);
+    }
+
     uint base = view.slot * MESH_CLUSTER_SLOT_WORDS;
     uint cluster = meshCluster(gl_FragCoord.xy, vec2(view.width, view.height), depth, viewOrthographic());
     uint count = min(clusterWords[base + cluster], MESH_CLUSTER_LIGHTS);

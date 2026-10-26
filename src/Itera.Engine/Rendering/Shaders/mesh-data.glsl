@@ -37,6 +37,8 @@ struct MeshMaterial
     uint textureStyle;
     // The match's origin's place within the material's texture tile, metres on each axis (tilePoint).
     vec3 tileOrigin;
+    // The lowest and highest height its texture set holds; RecipeHeight twice without one.
+    vec2 heights;
 };
 
 // MeshMaterial.texture: the set's layer plus 1 in bits 0 to 15 (0: the recipe), the large arrays' bit, and the colour
@@ -161,6 +163,17 @@ layout(set = MESH_SET, binding = 13) uniform sampler2DArray largeHeights;
 layout(set = MESH_SET, binding = 14) uniform sampler2DArray smallColours;
 layout(set = MESH_SET, binding = 15) uniform sampler2DArray smallNormals;
 layout(set = MESH_SET, binding = 16) uniform sampler2DArray smallHeights;
+
+// The plane value noise's lattices as tables (MeshPass.Textures.cs, NoiseTables): a layer each, 1024 cells a side, cell
+// c at texel c & 1023, holding the hash valueNoise2 takes for the cells from -512 to 511. Read with textureGather only.
+layout(set = MESH_SET, binding = 18) uniform sampler2DArray noiseTables;
+const int NoiseTableCells = 1024;
+
+// The layers: the surfaces' patches (2^10 cm cells, salt 1), the strata's wander (2^11, salt 4), the hue drift (2^11,
+// salt 41).
+const float NoisePatches = 0.0;
+const float NoiseStrata = 1.0;
+const float NoiseHueDrift = 2.0;
 
 // The slices: the first to 1 m, the last from 48 m on (the lights are gathered within 48 m), and between them 22 slices
 // each the same ratio deeper. An orthographic view's are even, across the 96 m round its middle (where its lights are

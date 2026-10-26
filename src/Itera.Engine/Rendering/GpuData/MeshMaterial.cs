@@ -57,6 +57,13 @@ public struct MeshMaterial
     public Vector3 TileOrigin;
 
     /// <summary>
+    /// The lowest and highest height (0 to 1) the texture set's heights hold (<see cref="HeightRange"/>), so mesh.frag
+    /// reads no height at a border between materials where the weights decide it whatever they are; the recipe's middle
+    /// without a set.
+    /// </summary>
+    public Vector2 Heights;
+
+    /// <summary>
     /// The tile's width, in metres, that the console's <c>materials all</c> draws a material without a set with (mesh.frag's
     /// <c>drawnTexture</c>).
     /// </summary>
@@ -118,7 +125,13 @@ public struct MeshMaterial
             Amounts = look.PackAmounts(),
             Accent = look.Accent,
             Glow = look.Glow,
+            Heights = texture is { } heights
+                ? new Vector2(heights.Heights.Low, heights.Heights.High)
+                : new Vector2(RecipeHeight),
         };
+
+    /// <summary>The height a material without a set has at a border (<c>mesh-surface.glsl</c>'s <c>RecipeHeight</c>).</summary>
+    public const float RecipeHeight = 0.5f;
 
     private static uint Unit(float value) => (uint)MathF.Round(Math.Clamp(value, 0f, 1f) * 255f);
 }

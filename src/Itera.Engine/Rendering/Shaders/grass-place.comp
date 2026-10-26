@@ -141,7 +141,7 @@ vec3 groundColour(vec3 root, vec3 normal, uint material)
         ivec3 turnedWhole;
         vec3 turnedPart;
         turnPoint(whole, part, turnedWhole, turnedPart);
-        hue += LOOK.worldHueDrift * valueNoise2(turnedWhole.xz, turnedPart.xz, 11, 41u);
+        hue += LOOK.worldHueDrift * planeNoise(turnedWhole.xz, turnedPart.xz, 11, 41u, NoiseHueDrift);
     }
 
     vec3 colour = mix(vec3(dot(surface.colour, Luma)), surface.colour * hue, LOOK.worldSaturation) * LOOK.worldValue;
