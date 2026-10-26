@@ -96,3 +96,38 @@ files.
   float.NaN, CameraProjection.Orthographic, metres, float.NaN)`".
 - Texture sources: "`SOURCES.md` lists every source and licence" (the starter's folder `src/Game/Textures/`).
 - The fox's textures: "the starter's `FoxModelTests` checks `Fox.textures` against the fox's image".
+
+## A performance pass (2026-10-26)
+
+A rendering audit of a game built on Itera, then its changes, built over one day. Every change was validated with both
+standard profiles. Engine commits, oldest first: `03cabae`, `1d18ceb`, `6798082`, `cdda144`, `9845229`, `a3360a4`,
+`3e8e20f`, `db34b51`, `c7ce7e8`, `da8d27a`, `f531b33`, `39373c7`, `3ed1f62`, `9c568cf`, `1f53163`, `1fce27e`,
+`9f53681`, `7c35ebc`, `ce96076`, `023aee9`, `86b2535`.
+
+- Probes first, at a valley's start and overview (world pass, ms): per-frame buffers in device-local host-visible
+  memory -0.07 / -0.14; the MSAA depth sampled -0.15 / -0.09, its colour too no more; opaque models before the ground
+  -0.37 / -0.28; only the frame's timestamp pair, no change, so the timestamps stay.
+- The game's valley, RX 5700 XT, 2560 x 1440 offscreen, Release, 4x MSAA, two runs each, world pass before and after:
+  start 4.184 to 3.156, start-low 4.310 to 3.262, down 2.572 to 1.800, up 3.726 to 2.613, high 2.890 to 2.532,
+  overview 6.001 to 4.973, flight 2.249 to 1.895. The shadow maps fell 60 to 65 % at the four ground views (start
+  0.548 to 0.218) and 80 % at the overview (0.421 to 0.082), mostly from the far cascade drawing coarser object levels.
+- Object levels by a voxel's size on screen: at 2 pixels the start took 3.39 ms and the overview 3.94, at 1 pixel 3.60
+  and 5.25 (before the later changes). The game chose 1, since 2 faded rust patches and thin glow bands from about
+  64 m; `Engine:Renderer:ObjectVoxelPixels` defaults to 1, the starter sets 4.
+- FSR 1 with its images kept at the screen's size and EASU's constants from the CPU, at scale 0.75: 0.407 ms before,
+  0.400 after. The images kept make EASU's taps reach up to two texels past the drawn picture, so pixels near its edge
+  read clamped texels; the constants from the CPU more than pay for the branch. A comment the change removed recorded
+  that clamping every read cost 0.06 ms of 0.42 when it was tried on 2026-10-05.
+- Skinning into two streams in one dispatch, in the game's test area's crowd of Trogs: the skinning took the same
+  0.14 ms a view, as the Trogs are all one size. The shadow maps, reading 12 bytes a vertex where they read 36, fell 3
+  to 6 % (the start 0.187 to 0.181 ms). The audit counted the waste the dispatch removes with mixed sizes: beside one
+  human, each Trog's row launched 134 groups and used 40.
+- Choices made while building:
+  - object detail is kept over the option's range, 0.5 to 16 pixels, and the slider offers 1 to 4, so a value from the
+    command line or a game's settings outside the slider stays exact;
+  - the settings tabs scroll past the Keybindings list's height, so the starter's Graphics tab scrolls its last row;
+  - a level of detail's rig rule takes any asset built on the same `Rig`, and its inverse binds are not compared;
+  - levels switch by drawn pixels, not the display's, and culling still uses the base asset's sphere.
+- Not built: the grass's candidates kept per block; the particle cubes drawn with the world's samples; dropping
+  `nonuniformEXT`; the tint map as an image; per-pixel constants from the CPU (`ARCHITECTURE.md`'s open work holds the
+  first two).
