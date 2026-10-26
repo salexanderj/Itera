@@ -179,7 +179,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         set => _objectVoxelPixels = Math.Clamp(value, 0.5f, 16f);
     }
 
-    private float _objectVoxelPixels = 2;
+    private float _objectVoxelPixels = 1;
 
     public long Uploads { get; private set; }
 

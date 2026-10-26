@@ -133,15 +133,16 @@ public sealed partial class WorldMeshesModelsTests
     {
         using var scene = new ObjectScene(this);
         // The view is 1440 pixels high and its Up 4 long: a metre a metre away is 180 pixels. The trees' 5 cm voxels are
-        // ObjectVoxelPixels (2) wide 4.5 m from a tree's nearest point, their 10 cm level's 9 m from it.
+        // ObjectVoxelPixels (1) wide 9 m from a tree's nearest point, their 10 cm level's 18 m from it.
         var levelZero = ObjectScene.Height / (2 * 4f) * 0.05f / new EngineOptions().Renderer.ObjectVoxelPixels;
         var levelOne = 2 * levelZero;
         var radius = scene.TreeRadiusMetres;
         var (fadeStart, fadeEnd) = scene.Meshes.HandOverFade();
         var bands = new HashSet<int>();
-        // From 3 m up trees lie in the bands round both levels' distances, and from 100 m up the far trees lie in the
-        // hand-over's fade (from 107 m: a level-2 column is 51.2 m wide), their columns not split.
-        foreach (var at in new[] { new Vector3(0, 3, 0), new Vector3(0, 25, 0), new Vector3(0, 100, 0) })
+        // From 12 m up trees lie in the bands round both levels' distances, well inside the view (a block outside it is
+        // not drawn), and from 100 m up the far trees lie in the hand-over's fade (from 107 m: a level-2 column is 51.2 m
+        // wide), their columns not split.
+        foreach (var at in new[] { new Vector3(0, 12, 0), new Vector3(0, 25, 0), new Vector3(0, 100, 0) })
         {
             scene.Settle(at, shadows: false);
             var slot = scene.Frame(at, shadows: false);
