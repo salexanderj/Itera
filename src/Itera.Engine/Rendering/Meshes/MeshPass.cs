@@ -860,7 +860,10 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             _shaders.Compile("mesh-shadow.vert", [ModelDefine]),
             _shaders.Compile("mesh-wire.frag"),
             _shaders.Compile("mesh-clusters.comp"),
-            _shaders.Compile("material-bake.comp"),
+            // Only a bake asks for this one (EnsureBake); a reload compiles it again once a bake has.
+            _bakeSpirv.Length > 0
+                ? _shaders.Compile("material-bake.comp")
+                : null,
             _shaders.Compile("mesh.vert", [ModelDefine, FadeDefine]),
             _shaders.Compile("mesh.frag", [FadeDefine]),
             _shaders.Compile("mesh-wire.frag", [FadeDefine]),
@@ -1237,6 +1240,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         _msaaDepth = null;
     }
 
+    /// <summary>Takes the compiled shaders. The bake's (index 10) is null until a bake has compiled it.</summary>
     private void TakeShaders(byte[][] compiled)
     {
         _skyVertexSpirv = compiled[0];
@@ -1249,7 +1253,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         _modelShadowVertexSpirv = compiled[7];
         _wireSpirv = compiled[8];
         _clustersSpirv = compiled[9];
-        _bakeSpirv = compiled[10];
+        _bakeSpirv = compiled[10] ?? _bakeSpirv;
         _modelFadeVertexSpirv = compiled[11];
         _modelFadeFragmentSpirv = compiled[12];
         _modelFadeWireSpirv = compiled[13];

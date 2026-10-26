@@ -80,7 +80,10 @@ folder's `Bakes/NAME/` (`MeshPass.Bake.cs`, `material-bake.comp`).
 - The images are colour at no tint, occlusion from the hollows, a normal map from the relief's slope, and height from
   the hollows.
 - `tools/Textures` makes them into a set as it makes a photograph's (`"site": "bake"`). Its README has the steps.
-- A shader reload makes the bake's pipeline again, so an edited recipe bakes without a restart.
+- `material-bake.comp` compiles at the first bake, on the render thread, and stays. A bake whose shader does not
+  compile logs an Error and makes nothing.
+- A shader reload compiles it again only if a bake has compiled it, and makes the bake's pipeline again, so an edited
+  recipe bakes without a restart.
 
 ### Console commands
 

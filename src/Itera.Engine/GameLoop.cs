@@ -623,6 +623,8 @@ public sealed partial class GameLoop
         _frameIndex = 0;
         _lastFrameSeconds = 0d;
         _noMatchStart = _clock.TotalSeconds;
+        // Start-up is done: the shader cache's old files go now, on a task of the thread pool.
+        _shaders.StartPruning();
         // The match the options start; with none, the menu. Steam's "Join game" starts the menu with the friend's lobby as
         // the address: the menu joins it at once, and comes back with the reason if it cannot.
         _flow.Begin(_options, _matchCommands);

@@ -211,6 +211,88 @@ public sealed class ShaderCompilerTests : IDisposable
         Assert.NotEqual(other, spirv);
     }
 
+    [Fact]
+    public void A_cache_entry_loaded_after_a_day_gets_a_fresh_write_time()
+    {
+        _compiler.CompileSource(VertexSource, ShaderKind.VertexShader, "test.vert");
+        var cachePath = Assert.Single(Directory.GetFiles(_cache, "*.spv"));
+        var old = DateTime.UtcNow - TimeSpan.FromDays(10);
+        File.SetLastWriteTimeUtc(cachePath, old);
+
+        _compiler.CompileSource(VertexSource, ShaderKind.VertexShader, "test.vert");
+
+        Assert.True(DateTime.UtcNow - File.GetLastWriteTimeUtc(cachePath) < TimeSpan.FromMinutes(5));
+    }
+
+    [Fact]
+    public void A_cache_entry_loaded_within_a_day_keeps_its_write_time()
+    {
+        _compiler.CompileSource(VertexSource, ShaderKind.VertexShader, "test.vert");
+        var cachePath = Assert.Single(Directory.GetFiles(_cache, "*.spv"));
+        var recent = new DateTime(DateTime.UtcNow.Ticks - TimeSpan.FromHours(6).Ticks, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(cachePath, recent);
+
+        _compiler.CompileSource(VertexSource, ShaderKind.VertexShader, "test.vert");
+
+        Assert.Equal(recent, File.GetLastWriteTimeUtc(cachePath));
+    }
+
+    [Fact]
+    public void Pruning_deletes_old_spv_files_and_keeps_young_ones_and_other_files()
+    {
+        var old = DateTime.UtcNow - ShaderCompiler.CacheMaxAge - TimeSpan.FromDays(1);
+        var young = DateTime.UtcNow - ShaderCompiler.CacheMaxAge + TimeSpan.FromDays(1);
+        var oldSpv = Path.Combine(_cache, "old.spv");
+        var youngSpv = Path.Combine(_cache, "young.spv");
+        var oldText = Path.Combine(_cache, "old.txt");
+        var oldTemporary = Path.Combine(_cache, "old.spv.123.tmp");
+        var outside = Path.Combine(_root, "outside.spv");
+        var nested = Path.Combine(_cache, "nested");
+        Directory.CreateDirectory(nested);
+        var nestedSpv = Path.Combine(nested, "old.spv");
+        foreach (var path in new[] { oldSpv, youngSpv, oldText, oldTemporary, outside, nestedSpv })
+        {
+            File.WriteAllText(path, "x");
+            File.SetLastWriteTimeUtc(path, path == youngSpv ? young : old);
+        }
+
+        var deleted = _compiler.PruneCache();
+
+        Assert.Equal(1, deleted);
+        Assert.False(File.Exists(oldSpv));
+        Assert.True(File.Exists(youngSpv));
+        Assert.True(File.Exists(oldText));
+        Assert.True(File.Exists(oldTemporary));
+        Assert.True(File.Exists(outside));
+        Assert.True(File.Exists(nestedSpv));
+    }
+
+    [Fact]
+    public void Pruning_a_missing_cache_folder_does_nothing()
+    {
+        Directory.Delete(_cache, recursive: true);
+
+        Assert.Equal(0, _compiler.PruneCache());
+    }
+
+    [Fact]
+    public void Pruning_starts_on_a_task_and_deletes_old_files()
+    {
+        var path = Path.Combine(_cache, "old.spv");
+        File.WriteAllText(path, "x");
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow - ShaderCompiler.CacheMaxAge - TimeSpan.FromDays(1));
+
+        _compiler.StartPruning();
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (File.Exists(path) && DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(10);
+        }
+
+        Assert.False(File.Exists(path));
+    }
+
     private void WriteSource(string relativePath, string text)
     {
         var path = Path.Combine(_sources, relativePath);

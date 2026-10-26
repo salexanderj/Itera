@@ -1,5 +1,6 @@
 using Itera.Engine.Rendering.Memory;
 using Itera.Engine.Rendering.Pipelines;
+using Itera.Engine.Rendering.Shaders;
 using Microsoft.Extensions.Logging;
 using Silk.NET.Vulkan;
 using SkiaSharp;
@@ -88,7 +89,16 @@ public sealed unsafe partial class MeshPass
         }
 
         _bakeSlot = slot;
-        EnsureBake();
+        if (!EnsureBake())
+        {
+            lock (_bakeLock)
+            {
+                _bakeInFlight = null;
+            }
+
+            return;
+        }
+
         var vk = _context.Vk;
         var image = _bakeImage!;
         BakeBarrier(
@@ -140,12 +150,29 @@ public sealed unsafe partial class MeshPass
         );
     }
 
-    /// <summary>The bake's image, readback buffer, set, and pipeline, made at the first bake. Render thread.</summary>
-    private void EnsureBake()
+    /// <summary>
+    /// The bake's shader, image, readback buffer, set, and pipeline, made at the first bake (the shader compiles here,
+    /// not at start-up, and stays; a shader reload compiles it again). Returns false, with nothing made, when the shader
+    /// does not compile. Render thread.
+    /// </summary>
+    private bool EnsureBake()
     {
         if (_bakeImage is not null)
         {
-            return;
+            return true;
+        }
+
+        if (_bakeSpirv.Length == 0)
+        {
+            try
+            {
+                _bakeSpirv = _shaders.Compile("material-bake.comp");
+            }
+            catch (ShaderCompilationException exception)
+            {
+                LogBakeShaderFailed(exception);
+                return false;
+            }
         }
 
         var vk = _context.Vk;
@@ -219,6 +246,7 @@ public sealed unsafe partial class MeshPass
             "material bake layout"
         );
         _bakePipeline = PipelineFactory.CreateCompute(_context, _bakeSpirv, _bakeLayout, "material bake");
+        return true;
     }
 
     /// <summary>
@@ -364,6 +392,9 @@ public sealed unsafe partial class MeshPass
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Meshes: baked material {Material}'s recipe into {Folder}")]
     private partial void LogBaked(byte material, string folder);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Meshes: the bake's shader did not compile; no bake was made")]
+    private partial void LogBakeShaderFailed(Exception exception);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Meshes: the bake into {Folder} failed")]
     private partial void LogBakeFailed(string folder, Exception exception);

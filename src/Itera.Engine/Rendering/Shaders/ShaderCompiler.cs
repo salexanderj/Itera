@@ -17,6 +17,17 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
     /// <summary>Change this when the cache file format or the key's contents change, so old entries are never used.</summary>
     private const int CacheFormat = 2;
 
+    private const string CacheExtension = ".spv";
+
+    /// <summary>
+    /// A cache file nobody has loaded or written for this long is deleted by <see cref="PruneCache"/>. A file in use is
+    /// never this old, because a load refreshes the file's write time once a day (<see cref="CacheRefreshAge"/>).
+    /// </summary>
+    public static readonly TimeSpan CacheMaxAge = TimeSpan.FromDays(30);
+
+    /// <summary>A cache file loaded when its write time is older than this gets the time of now.</summary>
+    private static readonly TimeSpan CacheRefreshAge = TimeSpan.FromDays(1);
+
     private const uint SpirvMagic = 0x07230203;
     private const int SpirvHeaderBytes = 20;
     private const OptimizationLevel Optimization = OptimizationLevel.Performance;
@@ -40,6 +51,7 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
     private Shaderc? _shaderc;
     private Compiler* _compiler;
     private CompileOptions* _options;
+    private int _pruneStarted;
 
     /// <param name="logger">Logger.</param>
     /// <param name="cacheDirectory">Folder for cached SPIR-V ("ShaderCache" in the application's data folder).</param>
@@ -205,6 +217,58 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
         }
     }
 
+    /// <summary>
+    /// Starts <see cref="PruneCache"/> on a thread-pool task, the first time it is called in the run; later calls do
+    /// nothing. Call it once start-up is done, so the pruning never delays the window.
+    /// </summary>
+    public void StartPruning()
+    {
+        if (Interlocked.Exchange(ref _pruneStarted, 1) == 0)
+        {
+            _ = Task.Run(PruneCache);
+        }
+    }
+
+    /// <summary>
+    /// Deletes the <c>.spv</c> files of the cache folder, and no other file, whose last write time is older than
+    /// <see cref="CacheMaxAge"/>. A file that cannot be deleted stays. Returns how many it deleted. Any thread.
+    /// </summary>
+    public int PruneCache()
+    {
+        var deleted = 0;
+        try
+        {
+            var oldest = DateTime.UtcNow - CacheMaxAge;
+            foreach (var path in Directory.EnumerateFiles(_cacheDirectory))
+            {
+                if (!string.Equals(Path.GetExtension(path), CacheExtension, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(path) < oldest)
+                    {
+                        File.Delete(path);
+                        deleted++;
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    LogPruneSkipped(path, ex.Message);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LogPruneSkipped(_cacheDirectory, ex.Message);
+        }
+
+        LogPruned(deleted, _cacheDirectory);
+        return deleted;
+    }
+
     public void Dispose()
     {
         if (_shaderc is null)
@@ -259,7 +323,7 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
 
         var key = $"{CompilerIdentity}\0{kind}\0{entryPoint}\0{source}";
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
-        return Path.Combine(_cacheDirectory, hash + ".spv");
+        return Path.Combine(_cacheDirectory, hash + CacheExtension);
     }
 
     /// <summary>Returns the cached SPIR-V, or null when there is none or the file is damaged (it is then deleted).</summary>
@@ -283,6 +347,7 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
 
         if (LooksLikeSpirv(cached))
         {
+            RefreshWriteTime(cachePath);
             LogCacheHit(name, cachePath);
             return cached;
         }
@@ -298,6 +363,26 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Sets the write time of a cache file in use to now when it is more than a day old, so <see cref="PruneCache"/>
+    /// keeps it. Last access times are not used: many mounts do not keep them.
+    /// </summary>
+    private void RefreshWriteTime(string cachePath)
+    {
+        try
+        {
+            var now = DateTime.UtcNow;
+            if (now - File.GetLastWriteTimeUtc(cachePath) > CacheRefreshAge)
+            {
+                File.SetLastWriteTimeUtc(cachePath, now);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LogCacheUnavailable(cachePath, ex.Message);
+        }
     }
 
     /// <summary>
@@ -352,6 +437,12 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Shader {Name} not in cache; compiling")]
     private partial void LogCacheMiss(string name);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Shader cache {Path} could not be pruned: {Reason}")]
+    private partial void LogPruneSkipped(string path, string reason);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Pruned {Count} unused file(s) from the shader cache {Path}")]
+    private partial void LogPruned(int count, string path);
 }
 
 /// <summary>Shaderc reported an error for a shader, or the shader's files could not be read or expanded.</summary>

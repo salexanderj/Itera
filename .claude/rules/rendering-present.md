@@ -26,6 +26,10 @@ Related files: `rendering.md` (the core), `rendering-light.md` (the world pass t
 - `WindowService.Screens` holds the connected screens' names, the main one first, read with `RefreshRate`. Names match
   by ordinal comparison, and a repeated name finds the first screen of that name.
 - The compiled shaders are cached in the data folder's `ShaderCache`.
+  - A cache load sets the file's write time to now when it is over a day old, since last access times are not kept on
+    many mounts.
+  - Once the loop has started, `ShaderCompiler.StartPruning` deletes the cache's `.spv` files not written for
+    `ShaderCompiler.CacheMaxAge` (30 days), on a thread-pool task. It touches no other file.
 - Without a window (`Engine:Window:Mode=Offscreen`, `WindowService.Offscreen`) the surface is headless
   (`HeadlessSurfaceSource`, `VK_EXT_headless_surface`). `WindowSurfaceSource` wraps GLFW's for a window. Both are
   `ISurfaceSource`, in `SurfaceSource.cs`.
