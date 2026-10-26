@@ -61,10 +61,33 @@ public sealed class SettingsCommandsTests : IDisposable
         Run("settings");
 
         Assert.Equal(
-            "volume 0.10, musicvolume 1.00, effectsvolume 1.00, sensitivity 0.10, fov 90, uiscale 1.00, scaling on, threshold 120, shadows on, aa 4x, vsync on, fullscreen off",
+            "volume 0.10, musicvolume 1.00, effectsvolume 1.00, sensitivity 0.10, fov 90, uiscale 1.00, scaling on, threshold 120, shadows on, aa 4x, vsync on, fullscreen off, screen main",
             Last()
         );
         Assert.False(File.Exists(FilePath));
+    }
+
+    [Fact]
+    public void A_screen_not_connected_is_refused_and_nothing_is_written()
+    {
+        Run("settings screen DP-1");
+
+        Assert.Equal("No screen named DP-1: no screen is connected.", Last());
+        Assert.Equal("", _settings.Screen);
+        Assert.False(File.Exists(FilePath));
+    }
+
+    [Fact]
+    public void Main_in_any_case_takes_the_main_screen_and_writes_the_file()
+    {
+        _settings.SetScreen("DP-1");
+
+        Run("settings screen MAIN");
+
+        Assert.Equal("", _settings.Screen);
+        Assert.Contains("screen main", Last(), StringComparison.Ordinal);
+        using var file = JsonDocument.Parse(File.ReadAllBytes(FilePath));
+        Assert.Equal("", file.RootElement.GetProperty("Screen").GetString());
     }
 
     [Fact]

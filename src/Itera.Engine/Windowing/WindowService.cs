@@ -23,6 +23,12 @@ public sealed partial class WindowService : IDisposable
 
     /// <summary>Set by <see cref="Wake"/>; what <see cref="WaitEvents"/> sleeps on.</summary>
     private readonly AutoResetEvent _wake = new(false);
+
+    /// <summary>The connected screens' names (<see cref="Screens"/>), read with the refresh rate.</summary>
+    private readonly List<string> _screens = [];
+
+    /// <summary>The screen full screen covers, by name; empty for the main one.</summary>
+    private string _screen = "";
     private bool _abandoned;
 
     public WindowService(IOptions<EngineOptions> options, ILogger<WindowService> logger)
@@ -45,13 +51,21 @@ public sealed partial class WindowService : IDisposable
 
     /// <summary>
     /// The refresh rate of the screen the window is on, in Hz, or 0 when unknown (before the window exists, or when no
-    /// screen says): the screen whose size the window's framebuffer has (full screen), the highest of those if several
-    /// do, and otherwise the highest of every screen. GLFW cannot tell which screen holds a window under Wayland (on
-    /// 2026-10-05 it named the 100 Hz screen for a window full screen on the 240 Hz one), and the highest never holds
-    /// dynamic render scaling under a rate the screen could show. Read when the window is made and when its state or
-    /// size changes, which a move to another screen in full screen brings.
+    /// screen says): in full screen the screen it was asked for when that one has the framebuffer's size; else the
+    /// screen whose size the window's framebuffer has (full screen), the highest of those if several do, and otherwise
+    /// the highest of every screen. GLFW cannot tell which screen holds a window under Wayland (on 2026-10-05 it named
+    /// the 100 Hz screen for a window full screen on the 240 Hz one), and the highest never holds dynamic render
+    /// scaling under a rate the screen could show. Read when the window is made and when its state or size changes,
+    /// which a move to another screen in full screen brings.
     /// </summary>
     public int RefreshRate { get; private set; }
+
+    /// <summary>
+    /// The names of the connected screens, as the system gives them (such as <c>DP-1</c>), the main one first. Read
+    /// with <see cref="RefreshRate"/>, and again by <see cref="ReadScreens"/>. Empty without a window. Two screens can
+    /// share a name (Windows names many "Generic PnP Monitor"); full screen then takes the first of them.
+    /// </summary>
+    public IReadOnlyList<string> Screens => _screens;
 
     /// <summary>The window. Throws before <see cref="Initialize"/>, and in a run without a window.</summary>
     public IWindow Window => _window ?? throw new InvalidOperationException("There is no window.");
@@ -83,14 +97,35 @@ public sealed partial class WindowService : IDisposable
             );
 
     /// <summary>
-    /// Puts the window over its whole screen, or back in a window; the resize follows as any resize does. Main thread;
-    /// nothing before the window exists.
+    /// Puts the window over the whole of the screen named <paramref name="screen"/> (the main one when it is empty or
+    /// not connected), or back in a window; the resize follows as any resize does. Main thread; before the window
+    /// exists it keeps the screen alone.
     /// </summary>
-    public void SetFullscreen(bool fullscreen)
+    public void SetFullscreen(bool fullscreen, string screen)
     {
-        if (_window is not null)
+        _screen = screen ?? "";
+        if (_window is null)
         {
-            _window.WindowState = fullscreen ? WindowState.Fullscreen : WindowState.Normal;
+            return;
+        }
+
+        _window.WindowState = fullscreen ? WindowState.Fullscreen : WindowState.Normal;
+        if (fullscreen)
+        {
+            MoveToScreen();
+        }
+    }
+
+    /// <summary>
+    /// Sets the screen full screen covers, by name (empty for the main one); a window in full screen moves to it at
+    /// once. Main thread.
+    /// </summary>
+    public void SetScreen(string screen)
+    {
+        _screen = screen ?? "";
+        if (_window is not null && _window.WindowState == WindowState.Fullscreen)
+        {
+            MoveToScreen();
         }
     }
 
@@ -115,9 +150,13 @@ public sealed partial class WindowService : IDisposable
             ? Math.Clamp(window.FramebufferSize.X / (float)window.Size.X, 1, 4)
             : null;
 
-    /// <summary>Creates the window without entering Silk.NET's own loop; offscreen, none.</summary>
-    public void Initialize(bool fullscreen = false)
+    /// <summary>
+    /// Creates the window without entering Silk.NET's own loop, in full screen on the screen named
+    /// <paramref name="screen"/> when <paramref name="fullscreen"/> (<see cref="SetFullscreen"/>); offscreen, none.
+    /// </summary>
+    public void Initialize(bool fullscreen = false, string screen = "")
     {
+        _screen = screen ?? "";
         if (Offscreen)
         {
             LogOffscreen(_settings.Width, _settings.Height);
@@ -156,11 +195,21 @@ public sealed partial class WindowService : IDisposable
 
         var backend = $"GLFW {_glfw.GetVersionString()}";
         LogWindowCreated(_window.Size.X, _window.Size.Y, _window.FramebufferSize.X, _window.FramebufferSize.Y, backend);
-        ReadRefreshRate();
+        ReadScreens();
+        if (fullscreen)
+        {
+            // Silk.NET has made the window full screen on the main screen; on Wayland that request and this move both
+            // reach the compositor before the first frame, so the window first shows on the screen named.
+            MoveToScreen();
+        }
     }
 
-    /// <summary>Reads the refresh rate of the window's screen (<see cref="RefreshRate"/>), and logs it when it changed.</summary>
-    private void ReadRefreshRate()
+    /// <summary>
+    /// Reads the connected screens (<see cref="Screens"/>) and the refresh rate of the window's screen
+    /// (<see cref="RefreshRate"/>), and logs the rate when it changed. Main thread; nothing without a window. It
+    /// allocates, so call it when a screen may have come or gone (the Settings page opening), not every frame.
+    /// </summary>
+    public void ReadScreens()
     {
         if (_window is null)
         {
@@ -168,33 +217,120 @@ public sealed partial class WindowService : IDisposable
         }
 
         var size = _window.FramebufferSize;
+        var named = 0;
         var matched = 0;
         var matchedName = "";
         var highest = 0;
         var highestName = "";
+        var fullscreen = _window.WindowState == WindowState.Fullscreen;
+        _screens.Clear();
         foreach (var monitor in Silk.NET.Windowing.Monitor.GetMonitors(_window))
         {
+            var name = monitor.Name;
+            _screens.Add(name);
             var mode = monitor.VideoMode;
             var rate = mode.RefreshRate ?? 0;
             if (rate > highest)
             {
                 highest = rate;
-                highestName = monitor.Name;
+                highestName = name;
             }
 
-            if (mode.Resolution == size && rate > matched)
+            if (mode.Resolution != size)
+            {
+                continue;
+            }
+
+            if (
+                fullscreen
+                && named == 0
+                && _screen.Length > 0
+                && string.Equals(name, _screen, StringComparison.Ordinal)
+            )
+            {
+                named = rate;
+            }
+
+            if (rate > matched)
             {
                 matched = rate;
-                matchedName = monitor.Name;
+                matchedName = name;
             }
         }
 
         var (refresh, screen, how) =
-            matched > 0 ? (matched, matchedName, "its size") : (highest, highestName, "the highest");
+            named > 0 ? (named, _screen, "the one asked for")
+            : matched > 0 ? (matched, matchedName, "its size")
+            : (highest, highestName, "the highest");
         if (refresh != RefreshRate)
         {
             RefreshRate = refresh;
             LogRefreshRate(screen, refresh, how);
+        }
+    }
+
+    /// <summary>
+    /// Where the screen named <paramref name="name"/> is in <paramref name="screens"/>, by ordinal comparison: the
+    /// first of that name, as names can repeat; -1 for an empty name or one not there.
+    /// </summary>
+    internal static int IndexOfScreen(IReadOnlyList<string> screens, string name)
+    {
+        ArgumentNullException.ThrowIfNull(screens);
+        if (string.IsNullOrEmpty(name))
+        {
+            return -1;
+        }
+
+        for (var i = 0; i < screens.Count; i++)
+        {
+            if (string.Equals(screens[i], name, StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Moves the full-screen window to the screen <see cref="_screen"/> names, or to the main one when it names none or
+    /// one not connected (a Warning), unless it is there already. Silk.NET's full screen always takes the main screen,
+    /// so this follows it.
+    /// </summary>
+    private void MoveToScreen()
+    {
+        if (_window is null)
+        {
+            return;
+        }
+
+        ReadScreens();
+        var monitors = Silk.NET.Windowing.Monitor.GetMonitors(_window).ToList();
+        var index = IndexOfScreen(_screens, _screen);
+        if (index < 0 && _screen.Length > 0)
+        {
+            LogScreenMissing(_screen);
+        }
+
+        // GLFW keeps the main screen first.
+        var target = index >= 0 && index < monitors.Count ? monitors[index] : monitors.FirstOrDefault();
+        if (target is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_window.Monitor?.Index != target.Index)
+            {
+                _window.Monitor = target;
+            }
+
+            LogFullscreenOn(target.Name);
+        }
+        catch (Exception ex) when (ex is GlfwException or InvalidOperationException)
+        {
+            LogScreenFailed(target.Name, ex.Message);
         }
     }
 
@@ -320,7 +456,7 @@ public sealed partial class WindowService : IDisposable
     private void OnFramebufferResize(Vector2D<int> size)
     {
         LogFramebufferResized(size.X, size.Y);
-        ReadRefreshRate();
+        ReadScreens();
         FramebufferResized?.Invoke(size);
     }
 
@@ -334,7 +470,7 @@ public sealed partial class WindowService : IDisposable
     private void OnStateChanged(WindowState state)
     {
         LogStateChanged(state);
-        ReadRefreshRate();
+        ReadScreens();
     }
 
     private void OnClosing()
@@ -363,6 +499,21 @@ public sealed partial class WindowService : IDisposable
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Window: refresh rate {Hz} Hz, of screen {Screen} ({How})")]
     private partial void LogRefreshRate(string screen, int hz, string how);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Window: full screen on screen {Screen}")]
+    private partial void LogFullscreenOn(string screen);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Window: no screen named {Screen} is connected; full screen takes the main screen"
+    )]
+    private partial void LogScreenMissing(string screen);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Window: full screen could not move to screen {Screen} ({Reason}); it stays where it is"
+    )]
+    private partial void LogScreenFailed(string screen, string reason);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Framebuffer resized to {Width}x{Height}")]
     private partial void LogFramebufferResized(int width, int height);

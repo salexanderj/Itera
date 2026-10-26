@@ -15,7 +15,7 @@ public sealed class SettingsCommands(ConsoleCommands commands, PlayerSettings se
     {
         commands.Register(
             "settings",
-            "[volume V|musicvolume V|effectsvolume V|sensitivity DEG|fov DEG|uiscale X|scaling on|off|threshold FPS|shadows on|off|aa off|smaa|2x|4x|8x|vsync on|off|fullscreen on|off]",
+            "[volume V|musicvolume V|effectsvolume V|sensitivity DEG|fov DEG|uiscale X|scaling on|off|threshold FPS|shadows on|off|aa off|smaa|2x|4x|8x|vsync on|off|fullscreen on|off|screen NAME|main]",
             "The player's settings (the menu's Settings), kept in settings.json; with nothing, each one.",
             CommandScope.Local,
             Run
@@ -37,7 +37,14 @@ public sealed class SettingsCommands(ConsoleCommands commands, PlayerSettings se
         }
 
         var name = context[0].ToUpperInvariant();
-        if (name == "AA")
+        if (name == "SCREEN")
+        {
+            if (!TrySetScreen(context))
+            {
+                return;
+            }
+        }
+        else if (name == "AA")
         {
             if (!TryAntiAliasMode(context, out var mode))
             {
@@ -112,6 +119,36 @@ public sealed class SettingsCommands(ConsoleCommands commands, PlayerSettings se
         Print(context);
     }
 
+    /// <summary>
+    /// Sets the screen full screen covers: <c>main</c>, or a connected screen's name in any case (kept as the system
+    /// spells it). False, with the connected screens printed, for a name not connected.
+    /// </summary>
+    private bool TrySetScreen(CommandContext context)
+    {
+        if (context.Is(1, PlayerSettings.MainScreenLabel))
+        {
+            settings.SetScreen("");
+            return true;
+        }
+
+        var screens = settings.Screens;
+        for (var i = 0; i < screens.Count; i++)
+        {
+            if (string.Equals(screens[i], context[1], StringComparison.OrdinalIgnoreCase))
+            {
+                settings.SetScreen(screens[i]);
+                return true;
+            }
+        }
+
+        context.PrintError(
+            screens.Count == 0
+                ? $"No screen named {context[1]}: no screen is connected."
+                : $"No screen named {context[1]}; the screens: {string.Join(", ", screens)}, or main."
+        );
+        return false;
+    }
+
     /// <summary>The settings' Anti-aliasing by its console name (off, smaa, 2x, 4x, 8x).</summary>
     private static bool TryAntiAliasMode(CommandContext context, out AntiAliasMode mode)
     {
@@ -134,7 +171,7 @@ public sealed class SettingsCommands(ConsoleCommands commands, PlayerSettings se
         context.Print(
             string.Create(
                 culture,
-                $"volume {settings.Volume:F2}, musicvolume {settings.MusicVolume:F2}, effectsvolume {settings.EffectsVolume:F2}, sensitivity {settings.MouseSensitivity:F2}, fov {settings.FieldOfViewDegrees:F0}, uiscale {settings.UiScale:F2}, scaling {CommandContext.OnOff(settings.DynamicScaling)}, threshold {settings.ScalingThreshold:F0}, shadows {CommandContext.OnOff(settings.Shadows)}, aa {AntiAliasModes.ConsoleName(settings.AntiAliasMode)}, vsync {CommandContext.OnOff(settings.VSync)}, fullscreen {CommandContext.OnOff(settings.Fullscreen)}"
+                $"volume {settings.Volume:F2}, musicvolume {settings.MusicVolume:F2}, effectsvolume {settings.EffectsVolume:F2}, sensitivity {settings.MouseSensitivity:F2}, fov {settings.FieldOfViewDegrees:F0}, uiscale {settings.UiScale:F2}, scaling {CommandContext.OnOff(settings.DynamicScaling)}, threshold {settings.ScalingThreshold:F0}, shadows {CommandContext.OnOff(settings.Shadows)}, aa {AntiAliasModes.ConsoleName(settings.AntiAliasMode)}, vsync {CommandContext.OnOff(settings.VSync)}, fullscreen {CommandContext.OnOff(settings.Fullscreen)}, screen {settings.ScreenLabel}"
             )
         );
     }

@@ -60,7 +60,9 @@ A game adds to the engine's menu:
 
 It has four tabs, and a game adds to them (`SettingsRows`):
 
-- Game: mouse sensitivity, field of view, UI scale, VSync, and full screen (`Engine:Window:Fullscreen`).
+- Game: mouse sensitivity, field of view, UI scale, VSync, full screen (`Engine:Window:Fullscreen`), and Screen
+  (`Engine:Window:Screen`). Screen is a slider through Main, each connected screen (`PlayerSettings.Screens`), and the
+  setting's screen when it is not connected. It shows only when there are two steps or more.
 - Sound: Master Volume, with Music Volume and Effects Volume under it. `settings.json` keeps them as `Volume`, `MusicVolume`, and `EffectsVolume`; `Engine:Audio:Volume`, `MusicVolume`, and `EffectsVolume` are their defaults.
 - Graphics: dynamic render scaling, its threshold, shadows, and anti-aliasing. Anti-aliasing is a slider through Off, SMAA, and the MSAA sample counts (`AntiAliasMode`, kept as `AntiAliasing` and `MsaaSamples` in `settings.json`).
 - Keybindings: a button per action (`KeyBindings` in `.claude/rules/ui-input.md`). A click waits for the next key or mouse button. Reset keys puts every binding back.
@@ -72,7 +74,9 @@ Each setting applies at once through `PlayerSettings`:
 - The world's samples remake the swapchain on the render thread, with `MeshPass`'s pipelines and images (`PlayerSettings.SamplesChanged`).
 - Sensitivity, field of view, and bindings apply where they are read: `PlayerInputSystem`, `PlayerCameraSystem`, `DebugFlyCameraSystem`, `CameraExtractSystem`, `StatsLayer`.
 - VSync remakes the swapchain on the render thread (`VulkanSwapchain.SetVSync`).
-- Full screen goes through `WindowService.SetFullscreen`.
+- Full screen goes through `WindowService.SetFullscreen`, and Screen through `WindowService.SetScreen`. Opening the page
+  reads the connected screens again (`PlayerSettings.ReadScreens`).
+- The console's `settings screen NAME|main` takes a connected screen's name in any case, and refuses any other.
 - The UI scale (`PlayerSettings.UiScale`, `"UiScale"` in `settings.json`, `settings uiscale`) goes to `UiToolkit.Scale`.
 
 ### `settings.json`

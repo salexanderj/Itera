@@ -67,6 +67,32 @@ public sealed class WindowServiceTests
     }
 
     [Fact]
+    public void A_screen_is_found_by_its_exact_name_and_a_repeated_name_finds_the_first()
+    {
+        string[] screens = ["HDMI-A-1", "DP-1", "Generic PnP Monitor", "Generic PnP Monitor"];
+
+        Assert.Equal(1, WindowService.IndexOfScreen(screens, "DP-1"));
+        Assert.Equal(2, WindowService.IndexOfScreen(screens, "Generic PnP Monitor"));
+        Assert.Equal(-1, WindowService.IndexOfScreen(screens, "dp-1"));
+        Assert.Equal(-1, WindowService.IndexOfScreen(screens, "DP-2"));
+        Assert.Equal(-1, WindowService.IndexOfScreen(screens, ""));
+    }
+
+    [Fact]
+    public void Offscreen_there_are_no_screens_and_full_screen_on_one_does_nothing()
+    {
+        using var window = Create(WindowMode.Offscreen);
+
+        window.Initialize(fullscreen: true, screen: "DP-1");
+        window.SetFullscreen(true, "HDMI-A-1");
+        window.SetScreen("DP-1");
+        window.ReadScreens();
+
+        Assert.Empty(window.Screens);
+        Assert.False(window.HasWindow);
+    }
+
+    [Fact]
     public void The_first_exit_request_sets_the_exit_code()
     {
         using var window = Create(WindowMode.Offscreen);

@@ -152,6 +152,16 @@ public sealed class WindowSettings
     public bool Fullscreen { get; set; }
 
     /// <summary>
+    /// The screen full screen covers, by the name the system gives it (such as <c>DP-1</c>), at most 128 characters;
+    /// empty (the default) for the system's main screen, which is also used while no screen of that name is connected.
+    /// The menu's settings change it (and keep it in settings.json).
+    /// </summary>
+    public string Screen { get; set; } = "";
+
+    /// <summary>The most characters <see cref="Screen"/> may hold.</summary>
+    public const int MostScreenNameLength = 128;
+
+    /// <summary>
     /// <see cref="WindowMode.Window"/> (the default): an OS window. <see cref="WindowMode.Offscreen"/>: no window; the
     /// game draws as usual at <see cref="Width"/> x <see cref="Height"/> pixels into a headless surface
     /// (<c>VK_EXT_headless_surface</c>), which nothing shows, for screenshots and checks that must not open a window. Input

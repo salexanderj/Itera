@@ -12,7 +12,8 @@ namespace Itera.Engine.UI.Menu;
 /// a slider (with its value) or a switch, and on Keybindings each action's binding, a click on which waits for the next
 /// key or mouse button (<see cref="CapturingBinding"/>, <see cref="BindingPressed"/>); then its buttons
 /// (<see cref="Footer"/>): Back, beside Reset keys on Keybindings. Game: mouse sensitivity, field of view, UI scale,
-/// VSync, full screen; Graphics: dynamic render scaling, its threshold, shadows, anti-aliasing; Sound: the volume, and
+/// VSync, full screen, and the screen it covers (shown while there is a screen to choose); Graphics: dynamic render
+/// scaling, its threshold, shadows, anti-aliasing; Sound: the volume, and
 /// under it music's and the effects'; a game's switches and sliders (<see cref="SettingsRows"/>) after the engine's on their tab. A setting
 /// changes at once (<see cref="PlayerSettings"/>); the caller writes them when the page is left
 /// (<see cref="PlayerSettings.Save"/>). Sizes are units for a menu whose body text is 32.4 units (3 % of the reference
@@ -46,6 +47,7 @@ public sealed class SettingsPage
     private static readonly int s_uiScale = Ui.Id("settings.uiscale");
     private static readonly int s_vsync = Ui.Id("settings.vsync");
     private static readonly int s_fullscreen = Ui.Id("settings.fullscreen");
+    private static readonly int s_screen = Ui.Id("settings.screen");
     private static readonly int s_scaling = Ui.Id("settings.scaling");
     private static readonly int s_threshold = Ui.Id("settings.threshold");
     private static readonly int s_shadows = Ui.Id("settings.shadows");
@@ -55,6 +57,17 @@ public sealed class SettingsPage
     private readonly SettingsRows _rows;
     private readonly Dictionary<int, string> _hints = [];
     private readonly Dictionary<int, (float Value, string Text)> _values = [];
+
+    /// <summary>
+    /// The Screen slider's steps: the main screen (empty), each connected screen, then the setting's when it is not
+    /// connected.
+    /// </summary>
+    private readonly List<string> _screens = [];
+
+    /// <summary>
+    /// The Screen slider's text, made once, as a method group of this page would make a delegate at each build.
+    /// </summary>
+    private readonly Func<int, float, string> _screenText;
     private string _tab = SettingsRows.GameTab;
     private int _bindAction = -1;
     private string _bindHint = "";
@@ -66,6 +79,7 @@ public sealed class SettingsPage
         ArgumentNullException.ThrowIfNull(settings);
         _settings = settings;
         _rows = rows ?? new SettingsRows();
+        _screenText = ScreenText;
     }
 
     /// <summary>The tab shown: "Game", "Graphics", "Keybindings", or a game's own.</summary>
@@ -82,11 +96,13 @@ public sealed class SettingsPage
     /// <summary>What element <paramref name="id"/> of the page does, for a hint line; null for none.</summary>
     public string? HintOf(int id) => _hints.TryGetValue(id, out var hint) ? hint : null;
 
-    /// <summary>The page opened: on Game, waiting for no key.</summary>
+    /// <summary>The page opened: on Game, waiting for no key, with the connected screens read again.</summary>
     public void Opened()
     {
         _tab = SettingsRows.GameTab;
         _bindAction = -1;
+        _settings.ReadScreens();
+        _values.Remove(s_screen);
     }
 
     /// <summary>
@@ -179,6 +195,7 @@ public sealed class SettingsPage
                     _settings.VSync
                 );
                 Switch(ui, s_fullscreen, "Full screen", "The window covers its screen.", _settings.Fullscreen);
+                ScreenRow(ui);
             }
             else if (_tab == SettingsRows.SoundTab)
             {
@@ -253,6 +270,59 @@ public sealed class SettingsPage
 
             GameRows(ui);
         }
+    }
+
+    /// <summary>
+    /// The Screen row, a slider through <see cref="_screens"/>, when there is more than the main screen to choose from.
+    /// Its steps are made again each build into the same list, so it allocates nothing.
+    /// </summary>
+    private void ScreenRow(Ui ui)
+    {
+        _screens.Clear();
+        _screens.Add("");
+        var connected = _settings.Screens;
+        for (var i = 0; i < connected.Count; i++)
+        {
+            _screens.Add(connected[i]);
+        }
+
+        var at = _settings.Screen.Length == 0 ? 0 : _screens.IndexOf(_settings.Screen);
+        if (at < 0)
+        {
+            at = _screens.Count;
+            _screens.Add(_settings.Screen);
+        }
+
+        if (_screens.Count < 2)
+        {
+            return;
+        }
+
+        Slider(
+            ui,
+            s_screen,
+            "Screen",
+            "The screen full screen covers; Main is the system's main screen.",
+            at,
+            0,
+            _screens.Count - 1,
+            _screenText
+        );
+    }
+
+    /// <summary>
+    /// The Screen slider's text at a step: Main, a screen's name, or the setting's with "not connected".
+    /// </summary>
+    private string ScreenText(int id, float step)
+    {
+        var at = Math.Clamp((int)MathF.Round(step), 0, _screens.Count - 1);
+        var name = _screens[at];
+        if (at == 0)
+        {
+            return "Main";
+        }
+
+        return at > _settings.Screens.Count ? $"{name} (not connected)" : name;
     }
 
     private void Tabs(Ui ui)
@@ -462,6 +532,10 @@ public sealed class SettingsPage
         else if (id == s_antiAliasing)
         {
             _settings.SetAntiAliasMode((AntiAliasMode)(int)MathF.Round(value));
+        }
+        else if (id == s_screen)
+        {
+            _settings.SetScreen(_screens[Math.Clamp((int)MathF.Round(value), 0, _screens.Count - 1)]);
         }
     }
 

@@ -275,6 +275,26 @@ public sealed class MenuLayerTests : IDisposable
         Assert.Equal(MenuView.Main, _menu.View);
     }
 
+    /// <summary>
+    /// Without a window no screen is connected, so the Screen row shows only for a screen the settings name, as not
+    /// connected; its slider's left end is the main screen.
+    /// </summary>
+    [Fact]
+    public void The_screen_row_shows_a_screen_not_connected_and_its_slider_takes_the_main_screen()
+    {
+        Settings.SetScreen("DP-1");
+
+        Click("Settings");
+        Assert.Equal(4, Count(UiKind.Slider));
+        Find("DP-1 (not connected)");
+
+        var screen = Element(UiKind.Slider, 3).Rect;
+        Hold(new Vector2(screen.Left + 1, screen.MidY), pressed: true);
+        Release(new Vector2(screen.Left + 1, screen.MidY));
+
+        Assert.Equal("", Settings.Screen);
+    }
+
     [Fact]
     public void The_settings_page_moves_a_setting_with_its_slider_and_flips_its_switches_on_each_tab()
     {

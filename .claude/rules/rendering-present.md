@@ -20,6 +20,11 @@ Related files: `rendering.md` (the core), `rendering-light.md` (the world pass t
 
 - `WindowService` calls `Window.PrioritizeGlfw()` before it makes the window, so Silk.NET picks GLFW where SDL is
   installed too.
+- Full screen covers the screen `Engine:Window:Screen` names, or the main one when it names none or one not connected.
+  Silk.NET's full screen always takes the main screen, so `WindowService` then moves the window with `IWindow.Monitor`.
+  On Wayland both requests reach the compositor before the first frame, so the window first shows on the named screen.
+- `WindowService.Screens` holds the connected screens' names, the main one first, read with `RefreshRate`. Names match
+  by ordinal comparison, and a repeated name finds the first screen of that name.
 - The compiled shaders are cached in the data folder's `ShaderCache`.
 - Without a window (`Engine:Window:Mode=Offscreen`, `WindowService.Offscreen`) the surface is headless
   (`HeadlessSurfaceSource`, `VK_EXT_headless_surface`). `WindowSurfaceSource` wraps GLFW's for a window. Both are

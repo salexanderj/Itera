@@ -13,14 +13,14 @@ namespace Itera.Engine.Settings;
 /// <summary>
 /// The player's settings: the volume, mouse sensitivity, field of view, dynamic render
 /// scaling and its threshold (in place of the render scale), shadows, anti-aliasing (SMAA's switch and
-/// the world's samples a pixel, one choice in the menu, <see cref="AntiAliasMode"/>), VSync, and full
-/// screen, changed in the menu and kept in
+/// the world's samples a pixel, one choice in the menu, <see cref="AntiAliasMode"/>), VSync, full
+/// screen, and the screen it covers, changed in the menu and kept in
 /// <c>settings.json</c> in the data folder. At start each is the options' value (<c>Engine:Audio:Volume</c> and so on), then the file's, except where the
 /// command line gave the option (<see cref="CommandLineKeys"/>): that one wins for the run and the file keeps what it
 /// had. Changes apply at once: the volume, render scaling, shadows, and anti-aliasing are handed to their services, the
 /// sensitivity and field of view are read where they are used, a VSync change has the render thread make the swapchain
 /// again (<see cref="PresentModeChanged"/>), as a change of the samples does with the world's pipelines and images
-/// (<see cref="SamplesChanged"/>), and full screen goes to the window. The file's <c>"Keys"</c> holds the
+/// (<see cref="SamplesChanged"/>), and full screen and its screen go to the window. The file's <c>"Keys"</c> holds the
 /// keybindings that differ from their defaults (<see cref="Keys"/>), and its <c>"Game"</c> holds a game's own on/off
 /// switches and numbers (<see cref="RegisterSwitch"/>, <see cref="RegisterValue"/>). <see cref="Initialize"/> reads the
 /// file, in a step before the window opens, and <see cref="Save"/> writes it. Main thread.
@@ -52,6 +52,7 @@ public sealed partial class PlayerSettings
     private const string GameKey = "Game";
     private const string VSyncKey = "VSync";
     private const string FullscreenKey = "Fullscreen";
+    private const string ScreenKey = "Screen";
     private const string UiScaleKey = "UiScale";
 
     /// <summary>
@@ -92,6 +93,7 @@ public sealed partial class PlayerSettings
         RetiredFrameBlendKey,
         VSyncKey,
         FullscreenKey,
+        ScreenKey,
         UiScaleKey,
         KeysKey,
         GameKey,
@@ -204,6 +206,7 @@ public sealed partial class PlayerSettings
         MsaaSamples = AntiAliasModes.SnapSamples(options.Renderer.MsaaSamples);
         VSync = options.Window.VSync;
         Fullscreen = options.Window.Fullscreen;
+        Screen = options.Window.Screen ?? "";
         Remember(commandLine, VolumeKey, "Engine:Audio:Volume");
         Remember(commandLine, MusicVolumeKey, "Engine:Audio:MusicVolume");
         Remember(commandLine, EffectsVolumeKey, "Engine:Audio:EffectsVolume");
@@ -216,6 +219,7 @@ public sealed partial class PlayerSettings
         Remember(commandLine, MsaaSamplesKey, "Engine:Renderer:MsaaSamples");
         Remember(commandLine, VSyncKey, "Engine:Window:VSync");
         Remember(commandLine, FullscreenKey, "Engine:Window:Fullscreen");
+        Remember(commandLine, ScreenKey, "Engine:Window:Screen");
         Remember(commandLine, UiScaleKey, "Engine:Ui:Scale");
     }
 
@@ -226,7 +230,7 @@ public sealed partial class PlayerSettings
         // The render settings a run measures with, whichever of the options, the command line, and settings.json gave
         // them (so a log shows them).
         var antiAliasing = AntiAliasModes.Label(AntiAliasMode);
-        LogApplied(DynamicScaling, ScalingThreshold, Shadows, antiAliasing, VSync, Fullscreen);
+        LogApplied(DynamicScaling, ScalingThreshold, Shadows, antiAliasing, VSync, Fullscreen, ScreenLabel);
     }
 
     /// <summary>The master volume, 0 to 1.</summary>
@@ -303,6 +307,25 @@ public sealed partial class PlayerSettings
 
     /// <summary>True when the window covers its screen.</summary>
     public bool Fullscreen { get; private set; }
+
+    /// <summary>
+    /// The screen full screen covers, by the name the system gives it (such as <c>DP-1</c>, one of
+    /// <see cref="Screens"/>); empty for the main screen, which full screen also takes while no screen of that name is
+    /// connected (<c>Engine:Window:Screen</c>).
+    /// </summary>
+    public string Screen { get; private set; }
+
+    /// <summary><see cref="Screen"/> as the menu and the console show it: its name, or "main".</summary>
+    public string ScreenLabel => Screen.Length > 0 ? Screen : MainScreenLabel;
+
+    /// <summary>What the menu and the console call the main screen (an empty <see cref="Screen"/>).</summary>
+    public const string MainScreenLabel = "main";
+
+    /// <summary>
+    /// The names of the connected screens, the main one first (<see cref="WindowService.Screens"/>); empty without a
+    /// window. <see cref="ReadScreens"/> reads them again.
+    /// </summary>
+    public IReadOnlyList<string> Screens => _window?.Screens ?? [];
 
     /// <summary>The keybindings, kept in the file's <c>"Keys"</c> (<see cref="KeyBindings"/>).</summary>
     public KeyBindings Keys { get; }
@@ -640,8 +663,33 @@ public sealed partial class PlayerSettings
 
         Fullscreen = fullscreen;
         Changed(FullscreenKey);
-        _window?.SetFullscreen(fullscreen);
+        _window?.SetFullscreen(fullscreen, Screen);
     }
+
+    /// <summary>
+    /// Sets the screen full screen covers, by name (empty for the main one); a window in full screen moves to it at
+    /// once. A name longer than <see cref="WindowSettings.MostScreenNameLength"/> characters changes nothing.
+    /// </summary>
+    public void SetScreen(string screen)
+    {
+        screen ??= "";
+        if (
+            screen.Length > WindowSettings.MostScreenNameLength
+            || string.Equals(screen, Screen, StringComparison.Ordinal)
+        )
+        {
+            return;
+        }
+
+        Screen = screen;
+        Changed(ScreenKey);
+        _window?.SetScreen(screen);
+    }
+
+    /// <summary>
+    /// Reads the connected screens again (<see cref="Screens"/>), such as when the Settings page opens.
+    /// </summary>
+    public void ReadScreens() => _window?.ReadScreens();
 
     /// <summary>
     /// Writes <c>settings.json</c> when a setting or a keybinding changed since: every setting, but those the command line
@@ -679,6 +727,7 @@ public sealed partial class PlayerSettings
                 WriteNumber(writer, MsaaSamplesKey, MsaaSamples);
                 WriteBoolean(writer, VSyncKey, VSync);
                 WriteBoolean(writer, FullscreenKey, Fullscreen);
+                WriteString(writer, ScreenKey, Screen);
                 WriteNumber(writer, UiScaleKey, UiScale);
                 Keys.Write(writer);
                 WriteGame(writer);
@@ -765,6 +814,7 @@ public sealed partial class PlayerSettings
         MsaaSamples = AntiAliasModes.SnapSamples((int)Read(MsaaSamplesKey, MsaaSamples, 1, 8));
         VSync = Read(VSyncKey, VSync);
         Fullscreen = Read(FullscreenKey, Fullscreen);
+        Screen = Read(ScreenKey, Screen);
         UiScale = Read(UiScaleKey, UiScale, LeastUiScale, MostUiScale);
         if (_file.TryGetValue(KeysKey, out var keys))
         {
@@ -788,6 +838,14 @@ public sealed partial class PlayerSettings
         && _file.TryGetValue(key, out var element)
         && element.ValueKind is JsonValueKind.True or JsonValueKind.False
             ? element.GetBoolean()
+            : value;
+
+    private string Read(string key, string value) =>
+        !_fromCommandLine.Contains(key)
+        && _file.TryGetValue(key, out var element)
+        && element.ValueKind == JsonValueKind.String
+        && element.GetString() is { Length: <= WindowSettings.MostScreenNameLength } read
+            ? read
             : value;
 
     private bool Change(string key, float before, float after, out float value)
@@ -876,12 +934,25 @@ public sealed partial class PlayerSettings
         }
     }
 
+    private void WriteString(Utf8JsonWriter writer, string key, string value)
+    {
+        if (!_fromCommandLine.Contains(key))
+        {
+            writer.WriteString(key, value);
+        }
+        else if (_file.TryGetValue(key, out var kept))
+        {
+            writer.WritePropertyName(key);
+            kept.WriteTo(writer);
+        }
+    }
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Settings: read {Path}")]
     private partial void LogLoaded(string path);
 
     [LoggerMessage(
         Level = LogLevel.Information,
-        Message = "Settings: dynamic render scaling {DynamicScaling} at {Threshold} fps, shadows {Shadows}, anti-aliasing {AntiAliasing}, VSync {VSync}, full screen {Fullscreen}"
+        Message = "Settings: dynamic render scaling {DynamicScaling} at {Threshold} fps, shadows {Shadows}, anti-aliasing {AntiAliasing}, VSync {VSync}, full screen {Fullscreen} on screen {Screen}"
     )]
     private partial void LogApplied(
         bool dynamicScaling,
@@ -889,7 +960,8 @@ public sealed partial class PlayerSettings
         bool shadows,
         string antiAliasing,
         bool vSync,
-        bool fullscreen
+        bool fullscreen,
+        string screen
     );
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Settings: wrote {Path}")]

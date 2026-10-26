@@ -18,8 +18,8 @@ namespace Itera.Engine.Tests.Settings;
 /// gave winning for the run and keeping the file's value when it is written; each change reaching its service (the
 /// volume, the render scale, shadows, smoothing, anti-aliasing, texture filtering, VSync's swapchain); a changed
 /// keybinding written alone and read back; the file read at <see cref="PlayerSettings.Initialize"/>; keys this build does
-/// not know written back; a byte order mark read; a failed write keeping the old file and tried again; and the command
-/// line's keys read from its arguments.
+/// not know written back; a byte order mark read; a failed write keeping the old file and tried again; the screen full
+/// screen covers, read, written, and kept to a name; and the command line's keys read from its arguments.
 /// </summary>
 public sealed class PlayerSettingsTests : IDisposable
 {
@@ -116,6 +116,57 @@ public sealed class PlayerSettingsTests : IDisposable
 
         using var written = JsonDocument.Parse(File.ReadAllText(FilePath));
         Assert.False(written.RootElement.GetProperty("AntiAliasing").GetBoolean());
+    }
+
+    [Fact]
+    public void The_screen_is_the_options_then_the_files_and_a_change_is_written_and_read_back()
+    {
+        var options = new EngineOptions();
+        options.Window.Screen = "HDMI-A-1";
+        Assert.Equal("HDMI-A-1", Create(options).Screen);
+
+        File.WriteAllText(FilePath, """{ "Screen": "DP-1" }""");
+        var settings = Create(options);
+        Assert.Equal("DP-1", settings.Screen);
+
+        settings.SetScreen("");
+        settings.Save();
+
+        var next = Create(options);
+        Assert.Equal("", next.Screen);
+        Assert.Equal(PlayerSettings.MainScreenLabel, next.ScreenLabel);
+    }
+
+    [Fact]
+    public void A_screen_name_that_is_not_text_or_is_too_long_changes_nothing()
+    {
+        var tooLong = new string('x', WindowSettings.MostScreenNameLength + 1);
+        File.WriteAllText(FilePath, """{ "Screen": 3 }""");
+        Assert.Equal("", Create(new EngineOptions()).Screen);
+
+        File.WriteAllText(FilePath, $$"""{ "Screen": "{{tooLong}}" }""");
+        var settings = Create(new EngineOptions());
+        Assert.Equal("", settings.Screen);
+
+        settings.SetScreen(tooLong);
+        Assert.Equal("", settings.Screen);
+    }
+
+    [Fact]
+    public void The_screen_from_the_command_line_wins_for_the_run_and_the_file_keeps_its_value()
+    {
+        File.WriteAllText(FilePath, """{ "Screen": "DP-1" }""");
+        var options = new EngineOptions();
+        options.Window.Screen = "HDMI-A-1";
+
+        var settings = Create(options, new CommandLineKeys(["--Engine:Window:Screen=HDMI-A-1"]));
+        Assert.Equal("HDMI-A-1", settings.Screen);
+
+        settings.SetShadows(false);
+        settings.Save();
+
+        using var written = JsonDocument.Parse(File.ReadAllText(FilePath));
+        Assert.Equal("DP-1", written.RootElement.GetProperty("Screen").GetString());
     }
 
     [Fact]

@@ -402,7 +402,12 @@ public sealed partial class GameLoop
             new("network", _network.Initialize, () => { }),
             new("steam", _steam.Initialize, _steam.Dispose),
             new("settings file", _playerSettings.Initialize, () => { }),
-            new("window", () => _window.Initialize(_playerSettings.Fullscreen), _window.Dispose, Graphics: true),
+            new(
+                "window",
+                () => _window.Initialize(_playerSettings.Fullscreen, _playerSettings.Screen),
+                _window.Dispose,
+                Graphics: true
+            ),
             new("vulkan context", () => _vulkan.Initialize(_window.SurfaceSource), _vulkan.Dispose, Graphics: true),
             new("swapchain", InitializeSwapchain, _swapchain.Dispose, Graphics: true),
             new("frame sync", () => _frameSync.Initialize(_swapchain.Images.Count), _frameSync.Dispose, Graphics: true),

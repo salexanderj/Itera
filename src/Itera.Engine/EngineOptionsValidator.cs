@@ -64,6 +64,12 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
 
         Range(failures, "Window:OffscreenFps", options.Window.OffscreenFps, 1, 1000);
         Range(failures, "Window:Height", options.Window.Height, 1, 32768);
+        if (options.Window.Screen is { Length: > WindowSettings.MostScreenNameLength })
+        {
+            failures.Add(
+                $"{Prefix}Window:Screen must hold at most {WindowSettings.MostScreenNameLength} characters, or be empty for the main screen."
+            );
+        }
 
         Range(failures, "Renderer:MeshFinestLevel", options.Renderer.MeshFinestLevel, 0, VoxelConstants.MaxLevel);
         Range(failures, "Renderer:MeshReachShare", options.Renderer.MeshReachShare, 0.05, 1);
