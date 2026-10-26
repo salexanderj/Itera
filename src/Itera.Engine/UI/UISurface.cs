@@ -1,28 +1,40 @@
 using System.Runtime.InteropServices;
+using Itera.Engine.Rendering;
 using Itera.Modding;
 using Microsoft.Extensions.Logging;
 using SkiaSharp;
 
 namespace Itera.Engine.UI;
 
-/// <summary>The rows of the UI one <see cref="UISurface.Draw"/> changed, and whether it shows anything.</summary>
-/// <param name="RowStart">First changed row.</param>
-/// <param name="Rows">Changed rows; 0 when nothing changed.</param>
+/// <summary>The bands of rows of the UI one <see cref="UISurface.Draw"/> changed, and whether it shows anything.</summary>
+/// <param name="Bands">The changed rows, in up to <see cref="UiBands.MostBands"/> bands; none when nothing changed.</param>
 /// <param name="Visible">True when any layer shows anything.</param>
-public readonly record struct UiDraw(int RowStart, int Rows, bool Visible);
+public readonly record struct UiDraw(UiBands Bands, bool Visible)
+{
+    /// <summary>One band of <paramref name="rows"/> rows from <paramref name="rowStart"/>; none when it has no rows.</summary>
+    public UiDraw(int rowStart, int rows, bool visible)
+        : this(UiBands.One(rowStart, rows), visible) { }
+
+    /// <summary>The changed rows of every band; 0 when nothing changed.</summary>
+    public int Rows => Bands.Rows;
+}
 
 /// <summary>
 /// The UI's pixels: a Skia CPU surface the size of the frame's image, in memory this class owns (four bytes a pixel,
 /// Skia's BGRA 8888 premultiplied, rows one after another), which <c>UiPass</c> copies to the GPU and draws over the
 /// picture. It draws its <see cref="IUiLayer"/>s in order, each clipped to its <see cref="IUiLayer.Bounds"/>. It redraws
-/// only the area of the layers that changed (a layer dirty, appearing, going, or with new bounds: what it covers now and
-/// covered before), clearing that area and drawing again every visible layer that meets it, and reports that area's rows
-/// (a small bar's step under a toolbar once redrew and sent the whole screen).
-/// The whole surface when the size changes or after <see cref="Invalidate"/>. An unchanged UI costs nothing per frame.
-/// Main thread.
+/// only the areas of the layers that changed (a layer dirty, appearing, going, or with new bounds: what it covers now and
+/// covered before), clearing each area and drawing again every visible layer that meets it, and reports the areas' rows
+/// (a small bar's step under a toolbar once redrew and sent the whole screen). Changes near one another share an area,
+/// and there are at most <see cref="UiBands.MostBands"/>, so a HUD that changes in several corners does not redraw and
+/// send everything between them. The whole surface when the size changes or after <see cref="Invalidate"/>. An
+/// unchanged UI costs nothing per frame. Main thread.
 /// </summary>
 public sealed unsafe partial class UISurface : IDisposable
 {
+    /// <summary>Pixels between two changed areas below which they are redrawn as one.</summary>
+    private const int AreaGap = 16;
+
     private readonly IUiLayer[] _below;
     private readonly IUiLayer[] _above;
     private IUiLayer[] _layers;
@@ -104,8 +116,8 @@ public sealed unsafe partial class UISurface : IDisposable
     }
 
     /// <summary>
-    /// Updates the layers, then repaints the area of those that changed on the surface at <paramref name="width"/> x
-    /// <paramref name="height"/> (the frame's image), and returns its rows. Once per frame.
+    /// Updates the layers, then repaints the areas of those that changed on the surface at <paramref name="width"/> x
+    /// <paramref name="height"/> (the frame's image), and returns their rows. Once per frame.
     /// </summary>
     public UiDraw Draw(in FrameTime time, int width, int height)
     {
@@ -115,7 +127,13 @@ public sealed unsafe partial class UISurface : IDisposable
         }
 
         var full = new SKRectI(0, 0, Width, Height);
-        var area = _redrawAll ? full : SKRectI.Empty;
+        Span<SKRectI> areas = stackalloc SKRectI[UiBands.MostBands];
+        var count = 0;
+        if (_redrawAll)
+        {
+            areas[count++] = full;
+        }
+
         var visible = false;
         for (var i = 0; i < _layers.Length; i++)
         {
@@ -127,42 +145,109 @@ public sealed unsafe partial class UISurface : IDisposable
             _bounds[i] = bounds;
             if (shown != _wasVisible[i] || (shown && (layer.Dirty || bounds != _drawnBounds[i])))
             {
-                area = Union(area, Union(bounds, _drawnBounds[i]));
+                count = AddArea(areas, count, Union(bounds, _drawnBounds[i]));
             }
 
             _wasVisible[i] = shown;
         }
 
-        if (area == SKRectI.Empty || _surface is null)
+        if (count == 0 || _surface is null)
         {
-            return new UiDraw(0, 0, visible);
+            return new UiDraw(default, visible);
         }
 
         var canvas = _surface.Canvas;
-        canvas.Save();
-        canvas.ClipRect(area);
-        canvas.Clear(SKColors.Transparent);
-        for (var i = 0; i < _layers.Length; i++)
+        var bands = default(UiBands);
+        for (var a = 0; a < count; a++)
         {
-            var bounds = _bounds[i];
-            _drawnBounds[i] = bounds;
-            if (!bounds.IntersectsWith(area))
+            var area = areas[a];
+            canvas.Save();
+            canvas.ClipRect(area);
+            canvas.Clear(SKColors.Transparent);
+            for (var i = 0; i < _layers.Length; i++)
             {
-                continue;
+                var bounds = _bounds[i];
+                if (!bounds.IntersectsWith(area))
+                {
+                    continue;
+                }
+
+                // A layer never leaves pixels outside its bounds, which a later redraw of another area would not clear.
+                // A layer that meets two areas is drawn into each.
+                canvas.Save();
+                canvas.ClipRect(bounds);
+                _layers[i].Draw(canvas, Width, Height);
+                canvas.Restore();
             }
 
-            // A layer never leaves pixels outside its bounds, which a later redraw of another area would not clear.
-            canvas.Save();
-            canvas.ClipRect(bounds);
-            _layers[i].Draw(canvas, Width, Height);
             canvas.Restore();
+            bands = bands.With(area.Top, area.Height);
         }
 
-        canvas.Restore();
+        _bounds.AsSpan().CopyTo(_drawnBounds);
         canvas.Flush();
         _redrawAll = false;
-        return new UiDraw(area.Top, area.Height, visible);
+        return new UiDraw(bands, visible);
     }
+
+    /// <summary>
+    /// Adds <paramref name="area"/> to the first <paramref name="count"/> of <paramref name="areas"/>, merged with every
+    /// area it meets or comes within <see cref="AreaGap"/> of, until none does. With no room left it is merged into the
+    /// area that grows least. Returns the new count.
+    /// </summary>
+    private static int AddArea(Span<SKRectI> areas, int count, SKRectI area)
+    {
+        if (area == SKRectI.Empty)
+        {
+            return count;
+        }
+
+        for (var i = 0; i < count; )
+        {
+            if (Near(areas[i], area))
+            {
+                area = SKRectI.Union(areas[i], area);
+                areas[i] = areas[--count];
+                i = 0;
+            }
+            else
+            {
+                i++;
+            }
+        }
+
+        if (count < areas.Length)
+        {
+            areas[count] = area;
+            return count + 1;
+        }
+
+        var least = 0;
+        var leastGrowth = long.MaxValue;
+        for (var i = 0; i < count; i++)
+        {
+            var growth = Size(SKRectI.Union(areas[i], area)) - Size(areas[i]);
+            if (growth < leastGrowth)
+            {
+                least = i;
+                leastGrowth = growth;
+            }
+        }
+
+        // The grown area may now come near another, so it is added again in the room it left.
+        var grown = SKRectI.Union(areas[least], area);
+        areas[least] = areas[--count];
+        return AddArea(areas, count, grown);
+    }
+
+    /// <summary>True when <paramref name="a"/> and <paramref name="b"/> meet or are within <see cref="AreaGap"/> of each other.</summary>
+    private static bool Near(SKRectI a, SKRectI b) =>
+        a.Left <= b.Right + AreaGap
+        && b.Left <= a.Right + AreaGap
+        && a.Top <= b.Bottom + AreaGap
+        && b.Top <= a.Bottom + AreaGap;
+
+    private static long Size(SKRectI rect) => (long)rect.Width * rect.Height;
 
     /// <summary>The part of <paramref name="bounds"/> within <paramref name="full"/>; <see cref="SKRectI.Empty"/> when none.</summary>
     private static SKRectI Within(SKRectI bounds, SKRectI full)

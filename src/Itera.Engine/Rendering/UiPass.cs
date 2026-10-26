@@ -10,10 +10,10 @@ namespace Itera.Engine.Rendering;
 /// <summary>
 /// Draws the UI (the pixels of <c>UISurface</c>, one per screen pixel) over the finished picture. The pixels live in
 /// a device-local storage buffer the size of the swapchain image, which <c>ui.frag</c> reads at each fragment's
-/// position; no image, layout change, or sampler is needed. When the UI changes, the main thread writes the changed rows
-/// into the upload region of the frame slot it builds (<see cref="Write"/>, between taking the request and publishing
-/// the frame), and the render thread copies them into the storage buffer before the frame's passes
-/// (<see cref="RecordUpload"/>). The buffers are made again, on the render thread with the device idle, only when the
+/// position; no image, layout change, or sampler is needed. When the UI changes, the main thread writes the changed bands
+/// of rows (<see cref="UiBands"/>) into the upload region of the frame slot it builds, each at its place in the pixel
+/// buffer (<see cref="Write"/>, between taking the request and publishing the frame), and the render thread copies them
+/// into the storage buffer before the frame's passes, a region each (<see cref="RecordUpload"/>). The buffers are made again, on the render thread with the device idle, only when the
 /// swapchain's size changes; the frame request that follows carries the new size, and the main thread writes rows only
 /// when its surface has that size, so the two always agree. Each remake raises <see cref="Generation"/>, which the
 /// surface follows by sending every row (a size that changed and changed back between
@@ -126,57 +126,71 @@ public sealed unsafe partial class UiPass : IDisposable, IReloadsShaders
     }
 
     /// <summary>
-    /// Writes rows <paramref name="rowStart"/> to <paramref name="rowStart"/> + <paramref name="rows"/> of
-    /// <paramref name="pixels"/> (<paramref name="width"/> x <paramref name="height"/>, four bytes a pixel, rows one
-    /// after another) into the upload region of <paramref name="slot"/>, at the place they take in the pixel buffer.
-    /// Returns the rows written: 0 when there are none, or when the pixels are not the size of the pass's buffers (the
-    /// frame's request had another size). Main thread, between taking the frame's request and publishing the frame.
-    /// Writes only, in address order.
+    /// Writes the rows of each of <paramref name="bands"/> of <paramref name="pixels"/> (<paramref name="width"/> x
+    /// <paramref name="height"/>, four bytes a pixel, rows one after another) into the upload region of
+    /// <paramref name="slot"/>, at the place they take in the pixel buffer. Returns the bands written: none when there
+    /// are none, or when the pixels are not the size of the pass's buffers (the frame's request had another size). Main
+    /// thread, between taking the frame's request and publishing the frame. Writes only, in address order.
     /// </summary>
-    public int Write(int slot, ReadOnlySpan<byte> pixels, int width, int height, int rowStart, int rows)
+    public UiBands Write(int slot, ReadOnlySpan<byte> pixels, int width, int height, in UiBands bands)
     {
         if ((uint)slot >= FrameSync.FramesInFlight)
         {
             throw new ArgumentOutOfRangeException(nameof(slot), slot, "No such frame slot.");
         }
 
-        if (rows <= 0 || _upload is null || (uint)width != _width || (uint)height != _height)
+        var written = default(UiBands);
+        if (bands.Count == 0 || _upload is null || (uint)width != _width || (uint)height != _height)
         {
-            return 0;
+            return written;
         }
 
-        rowStart = Math.Clamp(rowStart, 0, height);
-        rows = Math.Min(rows, height - rowStart);
-        var offset = (int)RowBytes * rowStart;
-        var bytes = (int)RowBytes * rows;
-        if (rows <= 0 || pixels.Length < offset + bytes)
+        for (var i = 0; i < bands.Count; i++)
         {
-            return 0;
+            var band = bands[i];
+            var rowStart = Math.Clamp(band.RowStart, 0, height);
+            var rows = Math.Min(band.Rows, height - rowStart);
+            var offset = (int)RowBytes * rowStart;
+            var bytes = (int)RowBytes * rows;
+            if (rows <= 0 || pixels.Length < offset + bytes)
+            {
+                continue;
+            }
+
+            pixels
+                .Slice(offset, bytes)
+                .CopyTo(new Span<byte>(_upload.Mapped + FrameBytes * (ulong)slot + (ulong)offset, bytes));
+            written = written.With(rowStart, rows);
         }
 
-        pixels
-            .Slice(offset, bytes)
-            .CopyTo(new Span<byte>(_upload.Mapped + FrameBytes * (ulong)slot + (ulong)offset, bytes));
-        return rows;
+        return written;
     }
 
     /// <summary>
-    /// Records the copy of the rows <see cref="Write"/> put in the region of <paramref name="slot"/> into the pixel
-    /// buffer, between two barriers: the first waits for earlier frames' reads of the buffer, the second makes the copy
-    /// visible to this frame's draw. Outside rendering. First makes the main thread's writes visible to the GPU when the
-    /// memory is not coherent. Render thread.
+    /// Records the copy of the bands of rows <see cref="Write"/> put in the region of <paramref name="slot"/> into the
+    /// pixel buffer, one region each in one copy, between two barriers: the first waits for earlier frames' reads of the
+    /// buffer, the second makes the copy visible to this frame's draw. Outside rendering. First makes the main thread's
+    /// writes visible to the GPU when the memory is not coherent. Render thread.
     /// </summary>
-    public void RecordUpload(CommandBuffer commandBuffer, int slot, int rowStart, int rows)
+    public void RecordUpload(CommandBuffer commandBuffer, int slot, in UiBands bands)
     {
-        if (rows <= 0 || _upload is null || _pixels is null)
+        if (bands.Count == 0 || _upload is null || _pixels is null)
         {
             return;
         }
 
-        var offset = RowBytes * (ulong)rowStart;
-        var bytes = RowBytes * (ulong)rows;
-        var source = FrameBytes * (ulong)slot + offset;
-        _upload.Flush(source, bytes);
+        // The bands neither overlap nor touch (UiBands), so the copy's regions never write the same bytes.
+        var regions = stackalloc BufferCopy[UiBands.MostBands];
+        for (var i = 0; i < bands.Count; i++)
+        {
+            var band = bands[i];
+            var offset = RowBytes * (ulong)band.RowStart;
+            var bytes = RowBytes * (ulong)band.Rows;
+            var source = FrameBytes * (ulong)slot + offset;
+            _upload.Flush(source, bytes);
+            regions[i] = new BufferCopy(source, offset, bytes);
+        }
+
         Barrier(
             commandBuffer,
             PipelineStageFlags2.FragmentShaderBit,
@@ -184,8 +198,7 @@ public sealed unsafe partial class UiPass : IDisposable, IReloadsShaders
             PipelineStageFlags2.CopyBit,
             AccessFlags2.TransferWriteBit
         );
-        var region = new BufferCopy(source, offset, bytes);
-        _context.Vk.CmdCopyBuffer(commandBuffer, _upload.Buffer, _pixels.Buffer, 1, &region);
+        _context.Vk.CmdCopyBuffer(commandBuffer, _upload.Buffer, _pixels.Buffer, (uint)bands.Count, regions);
         Barrier(
             commandBuffer,
             PipelineStageFlags2.CopyBit,

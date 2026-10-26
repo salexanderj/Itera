@@ -460,13 +460,13 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
 
         // The UI goes over everything, with the picture dimmed under it. Its changed rows are copied here, outside
         // rendering, only when the frame is fresh: a frame presented a second time must not copy its upload region again.
-        var uiRows = fresh ? frame.UiRows : 0;
+        var uiBands = fresh ? frame.UiBands : default;
         // The image views the HUD shows, under the UI's pixels.
         var panels = _viewPass.PanelsOf(frame.Slot);
-        if (uiRows > 0 || frame.UiVisible || frame.ScreenDim > 0 || !panels.IsEmpty)
+        if (uiBands.Count > 0 || frame.UiVisible || frame.ScreenDim > 0 || !panels.IsEmpty)
         {
             _timer.Begin(commandBuffer, slot, GpuPass.Ui);
-            _uiPass.RecordUpload(commandBuffer, frame.Slot, frame.UiRowStart, uiRows);
+            _uiPass.RecordUpload(commandBuffer, frame.Slot, in uiBands);
             if (frame.UiVisible || frame.ScreenDim > 0 || !panels.IsEmpty)
             {
                 _uiPass.Record(

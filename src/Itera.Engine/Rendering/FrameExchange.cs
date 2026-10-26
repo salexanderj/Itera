@@ -20,8 +20,7 @@ public readonly record struct RenderFrameRequest(int Slot, uint Width, uint Heig
 /// <param name="View">Where the frame is seen from: the camera of <see cref="RenderView"/> for the request's image size.</param>
 /// <param name="MeshCopies">Copy regions the world's meshes staged in the slot (<c>WorldMeshes.Regions</c>).</param>
 /// <param name="DebugLineVertices">Line ends <see cref="DebugLinePass.Write"/> put in the slot's region; 0 draws none.</param>
-/// <param name="UiRowStart">First row of the UI that <see cref="UiPass.Write"/> put in the slot's region.</param>
-/// <param name="UiRows">Rows of the UI <see cref="UiPass.Write"/> put in the slot's region; 0 copies none.</param>
+/// <param name="UiBands">Bands of rows of the UI <see cref="UiPass.Write"/> put in the slot's region; none copies none.</param>
 /// <param name="UiVisible">True when the UI shows anything; false draws no UI.</param>
 /// <param name="Particles">What <see cref="ParticlePass.Write"/> put in the slot's regions; not active draws none.</param>
 /// <param name="RenderScale">
@@ -50,8 +49,7 @@ public readonly record struct RenderFrame(
     ViewConstants View,
     int MeshCopies,
     int DebugLineVertices = 0,
-    int UiRowStart = 0,
-    int UiRows = 0,
+    UiBands UiBands = default,
     bool UiVisible = false,
     float RenderScale = 1,
     ParticleWrite Particles = default,

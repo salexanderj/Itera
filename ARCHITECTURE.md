@@ -1223,15 +1223,15 @@ The rules are in `.claude/rules/ui.md`.
 - `UISurface` draws its layers (`IUiLayer`) into memory it owns, four bytes a pixel, at the size of each frame's
   request, so the surface and the pass always agree. The order is the run's layers below the match's, then the match's
   (`IMatchUiLayer`s, a game's HUD), then the run's above them: the menu and the console. It draws only when a layer
-  changed, appeared, went, or moved, and then only the area of those layers, and reports the area's rows. So an
-  unchanged UI costs nothing and a change copies only its band. A layer's bounds hold everything it draws, which each
-  bounded layer's tests check (`LayerInk`).
+  changed, appeared, went, or moved, and then only the areas of those layers, up to four, and reports each area's rows
+  as a band. So an unchanged UI costs nothing, and a HUD changing in several corners copies only their bands, not the
+  rows between them. A layer's bounds hold everything it draws, which each bounded layer's tests check (`LayerInk`).
 - Skia's text calls allocate, so the UI allocates when it draws and never on a frame with nothing to draw. Skia's Vulkan
   backend is a later optimisation.
 - `UiPass` keeps the pixels in a device-local storage buffer the size of the swapchain image, not an image. The
   fragment shader (`ui.frag`) reads the pixel at `gl_FragCoord`, so no layout change or sampler is needed. The main
-  thread writes the changed rows into the slot's region of an upload buffer of its own, and the render thread copies
-  them before the draw. Skia premultiplied in sRGB, so the shader divides by alpha, turns the colour linear, and
+  thread writes the changed bands into the slot's region of an upload buffer of its own, and the render thread copies
+  them, a region each in one copy, before the draw. Skia premultiplied in sRGB, so the shader divides by alpha, turns the colour linear, and
   multiplies again before the premultiplied blend into the sRGB image. A screen larger than the device's largest
   storage buffer gets no UI and a Warning.
 - **One sizing rule** sizes the UI: a unit is a pixel of a 1080-pixel-high screen, scaled with the screen's height and

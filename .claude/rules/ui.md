@@ -16,7 +16,7 @@ The menu and the settings are in `.claude/rules/ui-menu.md`. Input, text entry, 
 
 ### The surface and the layers
 
-Skia draws the UI's layers (`UISurface`, `UiPass`) into a CPU surface the size of the frame. Only the area of the layers that changed is drawn again, and each layer is clipped to its bounds. `IUiLayer.Bounds` must hold all a layer draws; `LayerInk` checks that. The changed rows go to a storage buffer, and a full-screen pass blends them over the picture.
+Skia draws the UI's layers (`UISurface`, `UiPass`) into a CPU surface the size of the frame. Only the areas of the layers that changed are drawn again, and each layer is clipped to its bounds. Changed areas within 16 pixels of each other merge, and there are at most four; a layer that meets two areas is drawn into each. `IUiLayer.Bounds` must hold all a layer draws; `LayerInk` checks that. Each area's rows form a band (`UiBands`, merged where they overlap or touch). Each band is copied to a storage buffer, and a full-screen pass blends the pixels over the picture.
 
 Under those pixels the pass draws the image views a HUD layer shows this frame (`RenderViews.Show`: one rectangle of screen pixels each, taken from the layer's `Bounds`; `.claude/rules/rendering-views.md`). The layer draws its frame and marks over them and leaves the inside clear. A game's minimap layer is an example, such as the starter's `MinimapLayer`.
 

@@ -898,7 +898,7 @@ public sealed partial class GameLoop
         _particleCommands.UpdateStress();
         var particles = _particlePass.Write(request.Slot, in frame, in view, match.Physics.Gravity);
         _renderPasses.Write(request.Slot, in frame, in view);
-        var uiRows = WriteUi(in request, in ui);
+        var uiBands = WriteUi(in request, in ui);
         _exchange.Publish(
             new RenderFrame(
                 frame,
@@ -906,8 +906,7 @@ public sealed partial class GameLoop
                 view,
                 copies,
                 lines,
-                ui.RowStart,
-                uiRows,
+                uiBands,
                 ui.Visible,
                 _renderView.RenderScale,
                 particles,
@@ -1012,7 +1011,7 @@ public sealed partial class GameLoop
         var view = CreateView(in request);
         var lines = _linePass.Write(request.Slot, _debugLines.Vertices);
         var particles = _particlePass.Write(request.Slot, in frame, in view, PhysicsWorld.DefaultGravity);
-        var uiRows = WriteUi(in request, in ui);
+        var uiBands = WriteUi(in request, in ui);
         _exchange.Publish(
             new RenderFrame(
                 frame,
@@ -1020,8 +1019,7 @@ public sealed partial class GameLoop
                 view,
                 MeshCopies: 0,
                 DebugLineVertices: lines,
-                UiRowStart: ui.RowStart,
-                UiRows: uiRows,
+                UiBands: uiBands,
                 UiVisible: ui.Visible,
                 RenderScale: _renderView.RenderScale,
                 Particles: particles,
@@ -1064,9 +1062,9 @@ public sealed partial class GameLoop
         return _ui.Draw(in frame, (int)request.Width, (int)request.Height);
     }
 
-    /// <summary>Copies the UI's changed rows into the slot's region.</summary>
-    private int WriteUi(in RenderFrameRequest request, in UiDraw ui) =>
-        _uiPass.Write(request.Slot, _ui.Pixels, _ui.Width, _ui.Height, ui.RowStart, ui.Rows);
+    /// <summary>Copies each band of the UI's changed rows into the slot's region, and returns the bands written.</summary>
+    private UiBands WriteUi(in RenderFrameRequest request, in UiDraw ui) =>
+        _uiPass.Write(request.Slot, _ui.Pixels, _ui.Width, _ui.Height, ui.Bands);
 
     /// <summary>This iteration's sounds, heard from where the frame systems last put the camera.</summary>
     private void PublishAudio()

@@ -1,3 +1,4 @@
+using Itera.Engine.Rendering;
 using Itera.Engine.UI;
 using Itera.Modding;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -219,6 +220,147 @@ public sealed class UISurfaceTests : IDisposable
 
         Assert.Equal(new UiDraw(0, 48, true), Draw());
         Assert.Equal(new UiDraw(0, 0, true), Draw());
+    }
+
+    /// <summary>Changes in opposite corners are redrawn and sent as two bands, not as all the rows between them.</summary>
+    [Fact]
+    public void Changes_in_opposite_corners_send_two_bands()
+    {
+        using var top = new RectLayer(new SKRectI(0, 0, 8, 8), new SKColor(255, 0, 0));
+        using var bottom = new RectLayer(new SKRectI(56, 40, 64, 48), new SKColor(0, 255, 0));
+        using var surface = new UISurface([top, bottom], NullLogger<UISurface>.Instance);
+        surface.Initialize(64, 48);
+        Draw(surface);
+
+        top.Change();
+        bottom.Change();
+        var draw = Draw(surface);
+
+        Assert.Equal(UiBands.One(0, 8).With(40, 8), draw.Bands);
+        Assert.Equal(16, draw.Rows);
+    }
+
+    [Fact]
+    public void Overlapping_changes_send_one_band()
+    {
+        using var first = new RectLayer(new SKRectI(0, 0, 20, 20), new SKColor(255, 0, 0));
+        using var second = new RectLayer(new SKRectI(10, 10, 30, 30), new SKColor(0, 255, 0));
+        using var surface = new UISurface([first, second], NullLogger<UISurface>.Instance);
+        surface.Initialize(64, 48);
+        Draw(surface);
+
+        first.Change();
+        second.Change();
+
+        Assert.Equal(new UiDraw(0, 30, true), Draw(surface));
+    }
+
+    /// <summary>Two areas apart side by side share their rows, so they are sent as one band.</summary>
+    [Fact]
+    public void Areas_side_by_side_send_one_band_of_their_rows()
+    {
+        using var left = new RectLayer(new SKRectI(0, 4, 8, 12), new SKColor(255, 0, 0));
+        using var right = new RectLayer(new SKRectI(56, 0, 64, 8), new SKColor(0, 255, 0));
+        using var surface = new UISurface([left, right], NullLogger<UISurface>.Instance);
+        surface.Initialize(64, 48);
+        Draw(surface);
+
+        left.Change();
+        right.Change();
+
+        Assert.Equal(new UiDraw(0, 12, true), Draw(surface));
+    }
+
+    /// <summary>Five changes far apart share at most four bands, which hold every changed row.</summary>
+    [Fact]
+    public void Five_scattered_changes_send_at_most_four_bands_holding_them_all()
+    {
+        SKRectI[] places =
+        [
+            new(0, 0, 8, 8),
+            new(240, 60, 248, 68),
+            new(0, 120, 8, 128),
+            new(240, 180, 248, 188),
+            new(120, 240, 128, 248),
+        ];
+        var layers = places.Select(place => new RectLayer(place, new SKColor(255, 0, 0))).ToArray();
+        try
+        {
+            using var surface = new UISurface(layers, NullLogger<UISurface>.Instance);
+            surface.Initialize(256, 256);
+            surface.Draw(new FrameTime(0.016f, 0, 0, 0), 256, 256);
+            foreach (var layer in layers)
+            {
+                layer.Change();
+            }
+
+            var bands = surface.Draw(new FrameTime(0.016f, 0.016, 1, 0), 256, 256).Bands;
+
+            Assert.InRange(bands.Count, 1, UiBands.MostBands);
+            foreach (var place in places)
+            {
+                Assert.Contains(
+                    Enumerable.Range(0, bands.Count).Select(i => bands[i]),
+                    band => band.RowStart <= place.Top && place.Bottom <= band.RowEnd
+                );
+            }
+        }
+        finally
+        {
+            foreach (var layer in layers)
+            {
+                layer.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// A layer under two changed areas is drawn into each, clipped to it, and the pixels match a redraw of everything.
+    /// </summary>
+    [Fact]
+    public void A_layer_under_two_areas_is_drawn_into_both_as_a_full_redraw_draws_it()
+    {
+        using var under = new RectLayer(new SKRectI(0, 0, 64, 48), new SKColor(0, 0, 255, 160));
+        using var top = new RectLayer(new SKRectI(2, 2, 10, 10), new SKColor(255, 0, 0, 200));
+        using var bottom = new RectLayer(new SKRectI(50, 36, 60, 44), new SKColor(0, 255, 0, 200));
+        using var surface = new UISurface([under, top, bottom], NullLogger<UISurface>.Instance);
+        surface.Initialize(64, 48);
+        Draw(surface);
+        var drawnUnder = under.Draws;
+
+        top.Move(new SKRectI(4, 3, 12, 11));
+        bottom.Move(new SKRectI(48, 34, 58, 42));
+        var draw = Draw(surface);
+        var areas = surface.Pixels.ToArray();
+        surface.Invalidate();
+        Draw(surface);
+
+        Assert.Equal(2, draw.Bands.Count);
+        Assert.Equal(drawnUnder + 3, under.Draws);
+        Assert.True(areas.AsSpan().SequenceEqual(surface.Pixels));
+    }
+
+    /// <summary>Redrawing two areas a frame, apart from the first time, allocates nothing.</summary>
+    [Fact]
+    public void Redrawing_two_areas_allocates_nothing()
+    {
+        using var top = new RectLayer(new SKRectI(0, 0, 8, 8), new SKColor(255, 0, 0));
+        using var bottom = new RectLayer(new SKRectI(56, 40, 64, 48), new SKColor(0, 255, 0));
+        using var surface = new UISurface([top, bottom], NullLogger<UISurface>.Instance);
+        surface.Initialize(64, 48);
+        Draw(surface);
+        top.Change();
+        bottom.Change();
+        Draw(surface);
+        top.Change();
+        bottom.Change();
+
+        var start = SystemAllocation.StartMeasurement();
+        var draw = Draw(surface);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - start;
+
+        Assert.Equal(2, draw.Bands.Count);
+        Assert.Equal(0, allocated);
     }
 
     private UiDraw Draw() => Draw(_surface);
