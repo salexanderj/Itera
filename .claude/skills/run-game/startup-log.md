@@ -50,7 +50,8 @@ last folder's name. Read the newest file there first when a run misbehaves. A lo
 - every 10 s, a frame stats line: frames, frame times (median, 95th and 99th percentiles), fixed steps, bytes allocated
   per frame on the main and render threads, garbage collections, and GPU time;
 - Debug lines with each GPU pass (`GPU passes over ...`, with a game's passes and the image views among them), the
-  fixed steps' CPU time by part, and the eight slowest fixed systems (`SystemTimes`);
+  fixed steps' CPU time by part, the eight slowest fixed systems (`SystemTimes`), and the frame's CPU times
+  (`Frame CPU over ...`: the request's wait, the build, the recording, the present, and the fence wait with acquire);
 - a voxel stats line (columns, chunks, bricks, memory against the budget, loads, unloads, and job times);
 - a meshes line (blocks meshed and pending, uploads, the mesh heap, triangles drawn, and the main thread's time);
 - a `Particles:` line while any live;

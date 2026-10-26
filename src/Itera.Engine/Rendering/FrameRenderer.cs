@@ -14,8 +14,9 @@ namespace Itera.Engine.Rendering;
 /// <summary>
 /// Draws frames on the render thread: waits on the frame slot's fence, acquires a swapchain image, records the passes,
 /// submits, and presents. <see cref="RenderThread"/> calls <see cref="BeginFrame"/>, <see cref="TryAcquire"/>, and
-/// <see cref="Present"/> in that order. Apart from <see cref="SetFramebufferSize"/> and the resize handler, every
-/// member is for the render thread only: after the render thread starts, it alone uses the queues, the swapchain, and
+/// <see cref="Present"/> in that order, and times their CPU work (<see cref="FrameCpuTimings"/>): the fence wait and
+/// acquire, the recording and submit, and the present. Apart from <see cref="SetFramebufferSize"/> and the resize
+/// handler, every member is for the render thread only: after the render thread starts, it alone uses the queues, the swapchain, and
 /// <see cref="FrameSync"/>.
 /// </summary>
 public sealed unsafe partial class FrameRenderer : IFrameRenderer
@@ -39,6 +40,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
     private readonly RenderViewPass _viewPass;
     private readonly DepthTarget _depth;
     private readonly GpuTimer _timer;
+    private readonly FrameCpuTimings _cpu;
     private readonly ILogger<FrameRenderer> _logger;
     private readonly object _resizeLock = new();
 
@@ -49,6 +51,9 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
     private bool _frameBegun;
     private uint _acquiredImage = uint.MaxValue;
     private Result _acquireResult;
+
+    /// <summary>When <see cref="BeginFrame"/> began its fence wait, for the time to the acquire's end.</summary>
+    private long _fenceWaitStart;
 
     public FrameRenderer(
         VulkanContext context,
@@ -69,6 +74,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         RenderViewPass viewPass,
         DepthTarget depth,
         GpuTimer timer,
+        FrameCpuTimings cpu,
         PlayerSettings settings,
         ILogger<FrameRenderer> logger
     )
@@ -90,6 +96,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         _viewPass = viewPass;
         _depth = depth;
         _timer = timer;
+        _cpu = cpu;
         _logger = logger;
         window.FramebufferResized += OnFramebufferResized;
         settings.PresentModeChanged += () => OnPresentModeChanged(settings.VSync);
@@ -118,6 +125,8 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
             }
         }
 
+        // Timed after a swapchain recreate, so its rare wait for the device does not count as the fence wait.
+        _fenceWaitStart = Stopwatch.GetTimestamp();
         var fence = _sync.CurrentInFlightFence;
         _context.Vk.WaitForFences(_context.Device, 1, &fence, true, ulong.MaxValue).ThrowIfFailed("vkWaitForFences");
         _timer.Collect(_sync.CurrentFrame);
@@ -175,6 +184,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         _acquiredImage = acquired;
         _acquireResult = result;
         imageIndex = acquired;
+        _cpu.Record(FrameCpuInterval.FenceAndAcquire, Stopwatch.GetTimestamp() - _fenceWaitStart);
         return true;
     }
 
@@ -198,6 +208,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         }
 
         _acquiredImage = uint.MaxValue;
+        var recordStart = Stopwatch.GetTimestamp();
         if (fresh && frame.ShaderReload is { } reload)
         {
             ReloadShaders(reload);
@@ -209,6 +220,7 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
         var signalSemaphore = _sync.RenderFinishedFor(imageIndex);
         Submit(commandBuffer, _sync.CurrentImageAvailable, signalSemaphore, _sync.CurrentInFlightFence);
         _timer.OnSubmitted(_sync.CurrentFrame);
+        _cpu.Record(FrameCpuInterval.Record, Stopwatch.GetTimestamp() - recordStart);
 
         var swapchain = _swapchain.Swapchain;
         var presentInfo = new PresentInfoKHR
@@ -221,7 +233,9 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
             PImageIndices = &imageIndex,
         };
 
+        var presentStart = Stopwatch.GetTimestamp();
         var present = _context.KhrSwapchain.QueuePresent(_context.PresentQueue, &presentInfo);
+        _cpu.Record(FrameCpuInterval.Present, Stopwatch.GetTimestamp() - presentStart);
         LogFrame(frame.Time.FrameIndex, imageIndex, _acquireResult, present);
         if (present == Result.ErrorOutOfDateKhr)
         {

@@ -12,8 +12,10 @@ namespace Itera.Engine.Diagnostics;
 /// time by part (<see cref="RecordStepParts"/>): the fixed group of systems, the large edits applied in the step, the voxel
 /// colliders, the physics step, the loose bodies as voxels, and the step's tail (the mods, navigation's finished fields,
 /// the session, and the autosave's capture), with the most steps one loop iteration ran (a step longer
-/// than the step length makes the loop run several in the next frame), and a Debug line of the slowest fixed systems
-/// (<see cref="SystemTimes"/>).
+/// than the step length makes the loop run several in the next frame), a Debug line of the slowest fixed systems
+/// (<see cref="SystemTimes"/>), and a Debug line of the frame's CPU times (<see cref="FrameCpuTimings"/>): the wait from
+/// the render thread's request until the main thread takes it, the main thread's build, and the render thread's
+/// recording, present, and fence wait with acquire.
 /// Dropped steps also produce a warning, at most one per interval. Steps and frames are counted separately: while
 /// presentation blocks, no frames are built but steps continue, and the summary still appears. Call it from the thread
 /// that runs the game loop: the main-thread allocation count is per thread.
@@ -24,6 +26,7 @@ public sealed partial class FrameStats
     private readonly double _intervalSeconds;
     private readonly GpuTimings? _gpu;
     private readonly SystemTimes? _systems;
+    private readonly FrameCpuTimings? _cpu;
     private double _intervalStart;
     private int _frames;
     private double _sumMs;
@@ -49,24 +52,33 @@ public sealed partial class FrameStats
     /// <summary>How many of the slowest fixed systems the Debug line names.</summary>
     public const int SlowestSystems = 8;
 
-    public FrameStats(IOptions<EngineOptions> options, ILogger<FrameStats> logger, GpuTimings gpu, SystemTimes systems)
-        : this(options.Value.Logging.StatsIntervalSeconds, logger, gpu, systems) { }
+    public FrameStats(
+        IOptions<EngineOptions> options,
+        ILogger<FrameStats> logger,
+        GpuTimings gpu,
+        SystemTimes systems,
+        FrameCpuTimings cpu
+    )
+        : this(options.Value.Logging.StatsIntervalSeconds, logger, gpu, systems, cpu) { }
 
     /// <param name="intervalSeconds">Seconds between summaries. Zero or less disables them.</param>
     /// <param name="logger">Logger.</param>
     /// <param name="gpu">GPU pass times, or null to leave them out.</param>
     /// <param name="systems">Each fixed system's time, or null to leave them out.</param>
+    /// <param name="cpu">The frame's CPU times, or null to leave them out.</param>
     public FrameStats(
         double intervalSeconds,
         ILogger<FrameStats> logger,
         GpuTimings? gpu = null,
-        SystemTimes? systems = null
+        SystemTimes? systems = null,
+        FrameCpuTimings? cpu = null
     )
     {
         _intervalSeconds = intervalSeconds;
         _logger = logger;
         _gpu = gpu;
         _systems = systems;
+        _cpu = cpu;
     }
 
     /// <summary>True when summaries are produced.</summary>
@@ -317,6 +329,11 @@ public sealed partial class FrameStats
             }
         }
 
+        if (_cpu is not null)
+        {
+            LogCpu(summary.Seconds, _cpu);
+        }
+
         if (summary.FixedSteps > 0)
         {
             var steps = summary.FixedSteps;
@@ -371,6 +388,35 @@ public sealed partial class FrameStats
         _allocatedAtStart = GC.GetAllocatedBytesForCurrentThread();
         _renderAllocatedAtStart = renderAllocatedBytes;
         Reset();
+    }
+
+    /// <summary>Takes the frame's CPU times and logs their line when any frame was timed.</summary>
+    private void LogCpu(double seconds, FrameCpuTimings cpu)
+    {
+        var wait = cpu.Take(FrameCpuInterval.RequestWait);
+        var build = cpu.Take(FrameCpuInterval.Build);
+        var record = cpu.Take(FrameCpuInterval.Record);
+        var present = cpu.Take(FrameCpuInterval.Present);
+        var acquire = cpu.Take(FrameCpuInterval.FenceAndAcquire);
+        if (wait.Count + build.Count + record.Count + present.Count + acquire.Count == 0)
+        {
+            return;
+        }
+
+        LogFrameCpu(
+            seconds,
+            build.Count,
+            wait.AverageMs,
+            wait.MaxMs,
+            build.AverageMs,
+            build.MaxMs,
+            record.AverageMs,
+            record.MaxMs,
+            present.AverageMs,
+            present.MaxMs,
+            acquire.AverageMs,
+            acquire.MaxMs
+        );
     }
 
     private double PerFrame(long bytes)
@@ -500,6 +546,25 @@ public sealed partial class FrameStats
         double bodyVoxelsMaxMs,
         double tailAverageMs,
         double tailMaxMs
+    );
+
+    [LoggerMessage(
+        Level = LogLevel.Debug,
+        Message = "Frame CPU over {Seconds:F1} s ({Frames} frames built): request wait avg {RequestWaitAverageMs:F3} ms max {RequestWaitMaxMs:F2} ms, build avg {BuildAverageMs:F3} ms max {BuildMaxMs:F2} ms, record avg {RecordAverageMs:F3} ms max {RecordMaxMs:F2} ms, present avg {PresentAverageMs:F3} ms max {PresentMaxMs:F2} ms, fence and acquire avg {AcquireAverageMs:F3} ms max {AcquireMaxMs:F2} ms"
+    )]
+    private partial void LogFrameCpu(
+        double seconds,
+        long frames,
+        double requestWaitAverageMs,
+        double requestWaitMaxMs,
+        double buildAverageMs,
+        double buildMaxMs,
+        double recordAverageMs,
+        double recordMaxMs,
+        double presentAverageMs,
+        double presentMaxMs,
+        double acquireAverageMs,
+        double acquireMaxMs
     );
 
     [LoggerMessage(

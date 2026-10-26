@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Itera.Engine.Diagnostics;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Modding;
 
@@ -80,13 +82,17 @@ public readonly record struct LoadingDraw(float Alpha, float Seconds)
 /// <see cref="Request"/> once a frame slot is free, which wakes the main thread; the main thread takes the request,
 /// builds the frame, and <see cref="Publish"/>es it; the render thread receives it from <see cref="WaitForFrame"/>.
 /// The main thread never waits here, so presentation that blocks never stops the simulation. Nothing allocates per
-/// frame.
+/// frame. It times the wait from each request until the main thread takes it, and the build from taking it until
+/// publishing the frame (<see cref="FrameCpuInterval.RequestWait"/>, <see cref="FrameCpuInterval.Build"/>).
 /// </summary>
 public sealed class FrameExchange
 {
     private readonly Action _wakeMainThread;
+    private readonly FrameCpuTimings? _timings;
     private readonly object _lock = new();
     private RenderFrameRequest _request;
+    private long _requestedAt;
+    private long _takenAt;
     private int _requested;
     private RenderFrame _frame;
     private bool _frameReady;
@@ -94,9 +100,11 @@ public sealed class FrameExchange
     private bool _requestTaken;
 
     /// <param name="wakeMainThread">Wakes the main loop from its wait for window events. Called on the render thread.</param>
-    public FrameExchange(Action wakeMainThread)
+    /// <param name="timings">Where the request's wait and the frame's build are timed, or null to time nothing.</param>
+    public FrameExchange(Action wakeMainThread, FrameCpuTimings? timings = null)
     {
         _wakeMainThread = wakeMainThread;
+        _timings = timings;
     }
 
     /// <summary>True while a request waits for the main thread. Main thread.</summary>
@@ -113,6 +121,7 @@ public sealed class FrameExchange
     {
         // The fields are written before the flag, and the flag is read before the fields.
         _request = request;
+        _requestedAt = Stopwatch.GetTimestamp();
         Volatile.Write(ref _requested, 1);
         _wakeMainThread();
     }
@@ -127,6 +136,8 @@ public sealed class FrameExchange
         }
 
         request = _request;
+        _takenAt = Stopwatch.GetTimestamp();
+        _timings?.Record(FrameCpuInterval.RequestWait, _takenAt - _requestedAt);
         _requestTaken = true;
         return true;
     }
@@ -140,6 +151,7 @@ public sealed class FrameExchange
         }
 
         _requestTaken = false;
+        _timings?.Record(FrameCpuInterval.Build, Stopwatch.GetTimestamp() - _takenAt);
         lock (_lock)
         {
             _frame = frame;

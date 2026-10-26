@@ -257,6 +257,35 @@ public sealed class FrameStatsTests
         );
     }
 
+    [Fact]
+    public void The_frame_cpu_line_gives_each_intervals_average_and_longest_and_none_without_frames()
+    {
+        static long Ticks(double ms) => (long)Math.Round(ms * Stopwatch.Frequency / 1000);
+        var lines = new List<string>();
+        var cpu = new FrameCpuTimings();
+        var stats = new FrameStats(1.0, new ListLogger(lines), cpu: cpu);
+        stats.Start(0, 0);
+
+        // Two frames: builds of 2 and 4 ms, waits of 1 and 0, records of 0.5 and 1.5, presents and acquires of 3.
+        foreach (var (wait, build, record) in (ReadOnlySpan<(double, double, double)>)[(1, 2, 0.5), (0, 4, 1.5)])
+        {
+            cpu.Record(FrameCpuInterval.RequestWait, Ticks(wait));
+            cpu.Record(FrameCpuInterval.Build, Ticks(build));
+            cpu.Record(FrameCpuInterval.Record, Ticks(record));
+            cpu.Record(FrameCpuInterval.Present, Ticks(3));
+            cpu.Record(FrameCpuInterval.FenceAndAcquire, Ticks(3));
+        }
+
+        stats.Update(1.0, 0);
+        stats.Update(2.0, 0);
+
+        var line = Assert.Single(lines, l => l.StartsWith("Frame CPU", StringComparison.Ordinal));
+        Assert.Equal(
+            "Frame CPU over 1.0 s (2 frames built): request wait avg 0.500 ms max 1.00 ms, build avg 3.000 ms max 4.00 ms, record avg 1.000 ms max 1.50 ms, present avg 3.000 ms max 3.00 ms, fence and acquire avg 3.000 ms max 3.00 ms",
+            line
+        );
+    }
+
     /// <summary>Records one step whose parts took the given milliseconds.</summary>
     private static void Step(FrameStats stats, double systems, double colliders, double physics, double bodyVoxels)
     {

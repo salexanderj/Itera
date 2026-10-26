@@ -51,7 +51,8 @@ A game composes the engine in its `Program.cs`: `AddIteraEngine`, then its own c
 - `Time/`: `GameClock`, `FixedStepAccumulator`.
 - `Loading/`: `LoadingScreen`, `ILoadingTask`, `LoadingProgress`, `EngineLoadingTasks.cs` (`.claude/rules/ui.md`).
 - `Diagnostics/`: Serilog setup (`LoggingServiceCollectionExtensions`), the session header (`SessionInfo`), loop stats
-  (`FrameStats`), GPU pass times (`GpuTimings`), `ConsoleLogBuffer`, crash logging, and `ControlLog`.
+  (`FrameStats`), GPU pass times (`GpuTimings`), the frame's CPU times (`FrameCpuTimings`), `ConsoleLogBuffer`, crash
+  logging, and `ControlLog`.
 - `Modding/`: mod loading (`ModLoader`, `ModLoadContext`, `ModDispatcher`).
 - `Control/`: `ControlService`, `ControlRequest`, `InputScript`.
 - `Maths/`: `WorldPoint` (an absolute point in double metres), `WorldOrigin` (the match's origin on whole metres, a

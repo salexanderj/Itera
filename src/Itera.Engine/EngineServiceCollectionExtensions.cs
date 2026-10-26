@@ -122,10 +122,14 @@ public static class EngineServiceCollectionExtensions
             sp.GetRequiredService<IOptions<EngineOptions>>().Value.Renderer.DebugLines
         ));
         services.TryAddSingleton<GpuTimings>();
+        services.TryAddSingleton<FrameCpuTimings>();
         services.TryAddSingleton<SystemTimes>();
         services.TryAddSingleton<GpuTimer>();
         services.TryAddSingleton<FrameRenderer>();
-        services.TryAddSingleton(sp => new FrameExchange(sp.GetRequiredService<WindowService>().Wake));
+        services.TryAddSingleton(sp => new FrameExchange(
+            sp.GetRequiredService<WindowService>().Wake,
+            sp.GetRequiredService<FrameCpuTimings>()
+        ));
         services.TryAddSingleton<RenderThread>();
         services.TryAddSingleton<RenderView>();
         services.TryAddSingleton<DynamicRenderScale>();

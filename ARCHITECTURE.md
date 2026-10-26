@@ -436,9 +436,11 @@ mod code only use `ILogger`. The `run-game` skill describes the file's header, i
 - `GameLoop` logs the duration of every initialisation step, the reason the loop ended, each shutdown step, and a final
   line with uptime and exit code.
 - `FrameStats` logs a line at an interval with the frames built, the times between frames, fixed steps, dropped steps,
-  managed bytes allocated on the main and render threads, garbage collections, and GPU time. The allocation numbers are
-  the whole-loop check for the zero-allocation rule. In the steady state the main thread's should come only from log
-  lines, and the render thread's should be 0.
+  managed bytes allocated on the main and render threads, garbage collections, and GPU time. A Debug line gives the
+  frame's CPU times (`FrameCpuTimings`), each as an average and a longest: the wait from the render thread's request
+  until the main thread takes it, the main thread's build, and the render thread's recording, present, and fence wait
+  with acquire. The allocation numbers are the whole-loop check for the zero-allocation rule. In the steady state the
+  main thread's should come only from log lines, and the render thread's should be 0.
 - Each system's own zero-allocation test runs with tiered compilation off in the test projects. Every method is then
   optimised at its first call, so no test measures what unoptimised library code allocates.
 - `VoxelWorld` and `WorldMeshes` log a line at the same interval from running counts, so the lines cost nothing to

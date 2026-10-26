@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Itera.Engine.Diagnostics;
 using Itera.Engine.Rendering;
 using Itera.Modding;
 
@@ -39,6 +40,22 @@ public sealed class FrameExchangeTests
         var exchange = new FrameExchange(() => { });
 
         Assert.Throws<InvalidOperationException>(() => exchange.Publish(default));
+    }
+
+    [Fact]
+    public void Taking_a_request_times_its_wait_and_publishing_times_the_build()
+    {
+        var timings = new FrameCpuTimings();
+        var exchange = new FrameExchange(() => { }, timings);
+
+        exchange.Request(new RenderFrameRequest(0, 1, 1));
+        Assert.Equal(default, timings.Take(FrameCpuInterval.RequestWait));
+        Assert.True(exchange.TryTakeRequest(out var request));
+        Assert.Equal(1, timings.Take(FrameCpuInterval.RequestWait).Count);
+        Assert.Equal(default, timings.Take(FrameCpuInterval.Build));
+        exchange.Publish(new RenderFrame(default, request.Slot, default, 0));
+
+        Assert.Equal(1, timings.Take(FrameCpuInterval.Build).Count);
     }
 
     [Fact]
