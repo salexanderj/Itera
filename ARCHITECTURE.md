@@ -1463,7 +1463,12 @@ Engine work that is known and not done. Each item lists what is not built.
 - **Continuous integration** that builds and tests on Linux, Windows, and macOS.
 - **Edit log**: snapshots of edited chunks, so old edits and put-back pieces leave memory.
 - **Particles**: trails as ribbons, soft particles (fading where a sprite meets a surface), sprites at half resolution
-  for heavy smoke, and blood-style decals.
+  for heavy smoke, and blood-style decals. The cubes draw after the world's resolve with one sample a pixel, so small
+  casings and grit have hard edges; drawing them with the world's samples needs a second rendering and resolve, or a
+  frame's lag.
+- **Grass**: candidates kept per block between frames, so a frame only thins and culls them. A rendering audit put it
+  at about 0.1 ms of the place pass's 0.15 ms at a valley's start; edits, new meshes, origin moves, and level changes
+  would each have to clear a block's.
 - **Sound**: filters by distance and occlusion (OpenAL's EFX), reverb by place, Doppler, and voices.
 - **Skia's Vulkan backend** for the UI, and dirty rectangles narrower than whole rows.
 - **Steam on macOS arm64** (the package has no osx-arm64 build of the managed wrapper) and the two-account join test.
