@@ -95,6 +95,10 @@ void blockJoints(ivec2 whole, vec2 part, int shift, int aspect, uint salt, out f
     int lengthShift = shift + aspect;
     float length = float(1 << lengthShift);
     int along = whole.x + int(latticeHash(ivec3(course, 0, 0), salt) * length);
+#ifdef MESH_SURFACE_TILE
+    // A bake's course runs on round the tile, so its blocks meet themselves where the tile repeats.
+    along &= MESH_SURFACE_TILE - 1;
+#endif
     int block = along >> lengthShift;
     float u = float(along - (block << lengthShift)) + part.x;
     float v = float(whole.y - (course << shift)) + part.y;

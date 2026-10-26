@@ -106,6 +106,10 @@ public enum VoxelPattern : byte
 /// <param name="TextureDetail">0 to 1: how much of the texture's colour variation round its mean is kept (1 all of it).</param>
 /// <param name="TextureRelief">0 to 1: how strongly its normal map and occlusion shade it (1 fully).</param>
 /// <param name="TextureBlur">0 to 4: how many mip levels softer it is read (0 as sharp as the screen allows).</param>
+/// <param name="StrataBands">
+/// Whether a textured material takes strata's bands by height over its set, which a 2D tile cannot hold; null for its
+/// pattern's choice (<see cref="VoxelPattern.Strata"/> and <see cref="VoxelPattern.Mottle"/> take them).
+/// </param>
 public readonly record struct VoxelLook(
     Vector3 Colour,
     Vector3 TintColour,
@@ -123,7 +127,8 @@ public readonly record struct VoxelLook(
     float TextureColourMatch = 0,
     float TextureDetail = 1,
     float TextureRelief = 1,
-    float TextureBlur = 0
+    float TextureBlur = 0,
+    bool? StrataBands = null
 )
 {
     /// <summary>The <c>look</c> word's bit for <see cref="LivingAccent"/>.</summary>

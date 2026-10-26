@@ -30,7 +30,9 @@ The data is in `VoxelLook` and the game's `IVoxelPalette`, packed into the look 
 - A material with neither is drawn plain (`surfacePlain`: its colour with the patches).
 - The models keep flat colours.
 - A strata or mottle band by height cannot live in a 2D tile, so it is applied per pixel (`strataBands`,
-  `MeshMaterial.BandsTextureBit`).
+  `MeshMaterial.BandsTextureBit`). A textured material takes it where its look's `StrataBands` says, or else where its
+  pattern is `Strata` or `Mottle`.
+- A bake's `Blocks` courses wrap at the tile, so their joints meet where it repeats.
 - A game's tint map blends a material's colour towards its tint colour (`IVoxelTintMap`: its corner and texels in
   absolute centimetres; none by default; `FieldTintMap` makes one from any field). The CPU reads it at an absolute
   point with `VoxelTintSampler`. A model's draw takes its own tint instead.

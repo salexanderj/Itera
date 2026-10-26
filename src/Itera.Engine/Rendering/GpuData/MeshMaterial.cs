@@ -87,8 +87,8 @@ public struct MeshMaterial
 
     /// <summary>
     /// The <see cref="Texture"/> bit of strata's bands by height (<c>mesh-surface.glsl</c>'s <c>strataBands</c>), which a
-    /// set's 2D tile cannot hold: on for a material of the <see cref="VoxelPattern.Strata"/> or
-    /// <see cref="VoxelPattern.Mottle"/> recipe.
+    /// set's 2D tile cannot hold: on where the look's <see cref="VoxelLook.StrataBands"/> says, or by default for a material
+    /// of the <see cref="VoxelPattern.Strata"/> or <see cref="VoxelPattern.Mottle"/> recipe.
     /// </summary>
     public const uint BandsTextureBit = 1 << 17;
 
@@ -105,7 +105,11 @@ public struct MeshMaterial
             Texture = texture is { } slot
                 ? (uint)(slot.Layer + 1)
                     | (slot.Large ? LargeTextureBit : 0)
-                    | (look.Pattern is VoxelPattern.Strata or VoxelPattern.Mottle ? BandsTextureBit : 0)
+                    | (
+                        (look.StrataBands ?? look.Pattern is VoxelPattern.Strata or VoxelPattern.Mottle)
+                            ? BandsTextureBit
+                            : 0
+                    )
                     | (uint)MathF.Round(Math.Clamp(look.TextureColourMatch, 0f, 1f) * 255f) << 24
                 : 0,
             Colour = look.Colour,

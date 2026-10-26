@@ -145,6 +145,19 @@ public sealed class MaterialTextureSetsTests : IDisposable
         Assert.Equal(bands, (material.Texture & MeshMaterial.BandsTextureBit) != 0);
     }
 
+    [Theory]
+    [InlineData(VoxelPattern.Mottle, false, false)]
+    [InlineData(VoxelPattern.Soil, true, true)]
+    public void A_look_may_choose_its_bands_whatever_its_recipe(VoxelPattern pattern, bool chosen, bool bands)
+    {
+        var look = new VoxelLook(Vector3.One, Vector3.One, pattern, Texture: "a-stone", StrataBands: chosen);
+        var slot = new MaterialTextureSlot(false, 0, 2.56f, Vector3.One);
+
+        var material = MeshMaterial.From(in look, slot);
+
+        Assert.Equal(bands, (material.Texture & MeshMaterial.BandsTextureBit) != 0);
+    }
+
     private static List<byte[]> Levels(DdsFormat format, int texels, int seed) => Levels(format, texels, texels, seed);
 
     private static List<byte[]> Levels(DdsFormat format, int width, int height, int seed)
