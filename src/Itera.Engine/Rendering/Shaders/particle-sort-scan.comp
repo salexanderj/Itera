@@ -1,0 +1,40 @@
+#version 460
+
+// The sprites' sort (particle-sort.glsl), its second step: one group turns each bin's sprite count into the bin's first
+// place in the sprites' list, the farthest bin's first. Each invocation sums its PARTICLE_SORT_BINS_EACH bins, the
+// group scans the 64 sums in shared memory, and each invocation then writes its bins' first places in order.
+#include "particle-sort.glsl"
+
+layout(local_size_x = 64) in;
+
+shared uint sums[64];
+
+void main()
+{
+    uint invocation = gl_LocalInvocationID.x;
+    uint first = invocation * PARTICLE_SORT_BINS_EACH;
+    uint total = 0u;
+    for (uint i = 0u; i < PARTICLE_SORT_BINS_EACH; i++)
+    {
+        total += spriteBins[first + i];
+    }
+
+    sums[invocation] = total;
+    barrier();
+    // Each sum becomes its own plus all before it, in six doubling steps.
+    for (uint step = 1u; step < 64u; step <<= 1u)
+    {
+        uint before = invocation >= step ? sums[invocation - step] : 0u;
+        barrier();
+        sums[invocation] += before;
+        barrier();
+    }
+
+    uint place = sums[invocation] - total;
+    for (uint i = 0u; i < PARTICLE_SORT_BINS_EACH; i++)
+    {
+        uint count = spriteBins[first + i];
+        spriteBins[first + i] = place;
+        place += count;
+    }
+}

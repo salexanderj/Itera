@@ -62,6 +62,9 @@ Particles meet the world through the camera's depth image (`DepthTarget`, handed
   of the view in `particle-sprites.vert`, so it shades no pixel.
 - Lit cubes and soft sprites are drawn after the world, each by one indirect draw, tested against its depth. A blended
   mesh asset writes none, so a particle behind one draws over it, untinted.
+- The sprites are drawn back to front (`particle-sort.glsl`). The simulate pass lists each with its bin of depth
+  (`ParticlePass.SortBins`, even steps of the distance's logarithm), and `particle-sort-scan.comp` and
+  `particle-sort-scatter.comp` order the list by bin. Within a bin the order may change from frame to frame.
 - Their light and colour follow the frame's look: `look.glsl`, binding 8 of their draw set, compiled with
   `LOOK_BINDING 8`. This covers the exposure, the tone curve, and the grade. Their sunlight is scaled by `LOOK.daylight`,
   so it fades at dusk and is gone at night.

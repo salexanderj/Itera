@@ -72,8 +72,9 @@ internal sealed class ParticlePoolOrigin
 /// (<see cref="Write"/>) and flushed by the render thread when the memory is not coherent. Each frame with particles
 /// alive that draws the world, after the world's pass, the render thread resets the counters, makes the frame's new
 /// particles (<c>particle-spawn.comp</c>), moves every particle against the world's depth image, lights each lit one
-/// from the shadow cascades and the sky field, and lists those to draw (<c>particle-simulate.comp</c>), and copies the
-/// counters to the slot's readback region (<see cref="Collect"/> reads
+/// from the shadow cascades and the sky field, and lists those to draw (<c>particle-simulate.comp</c>), sorts the
+/// sprites back to front by bins of depth (<c>particle-sort-scan.comp</c> and <c>particle-sort-scatter.comp</c>), and
+/// copies the counters to the slot's readback region (<see cref="Collect"/> reads
 /// them after the slot's fence into <see cref="ParticleStats"/>). After the models it draws the cubes
 /// (<c>particle-cubes.vert</c> and <c>.frag</c>, writing depth) and then the sprites (<c>particle-sprites.vert</c> and
 /// <c>.frag</c>, premultiplied, testing depth only), each with one <c>vkCmdDrawIndirect</c> whose instance count the
@@ -97,7 +98,15 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
     /// </summary>
     private const int LookBinding = 8;
 
-    private const int Bindings = 9;
+    /// <summary>The sprites' sort keys and its bins (particle-sort.glsl), read by the compute passes alone.</summary>
+    private const int SpriteKeysBinding = 9;
+
+    private const int SortBinsBinding = 10;
+
+    private const int Bindings = 11;
+
+    /// <summary>The sprites' sort's bins of depth (particle-sort.glsl's <c>PARTICLE_SORT_BINS</c>).</summary>
+    internal const int SortBins = 1024;
 
     /// <summary>Where the draw shaders find the look: this set's <see cref="LookBinding"/>.</summary>
     private const string LookDefine = "LOOK_BINDING 8";
@@ -126,6 +135,8 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
     private GpuBuffer? _pool;
     private GpuBuffer? _cubes;
     private GpuBuffer? _sprites;
+    private GpuBuffer? _spriteKeys;
+    private GpuBuffer? _sortBins;
     private GpuBuffer? _counters;
     private GpuBuffer? _recipes;
     private GpuBuffer? _bursts;
@@ -139,6 +150,8 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
     private PipelineLayout _drawLayout;
     private Pipeline _spawnPipeline;
     private Pipeline _simulatePipeline;
+    private Pipeline _sortScanPipeline;
+    private Pipeline _sortScatterPipeline;
     private Pipeline _cubePipeline;
     private Pipeline _spritePipeline;
     private Format _format;
@@ -198,6 +211,18 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
             BufferUsageFlags.StorageBufferBit,
             MemoryUsage.DeviceLocal,
             "particle sprites"
+        );
+        _spriteKeys = _allocator.CreateBuffer(
+            capacity * sizeof(uint),
+            BufferUsageFlags.StorageBufferBit,
+            MemoryUsage.DeviceLocal,
+            "particle sprite keys"
+        );
+        _sortBins = _allocator.CreateBuffer(
+            SortBins * sizeof(uint),
+            BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit,
+            MemoryUsage.DeviceLocal,
+            "particle sort bins"
         );
         _counters = _allocator.CreateBuffer(
             (ulong)sizeof(ParticleCounters),
@@ -449,6 +474,7 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
 
         var start = ParticleCounters.Start;
         vk.CmdUpdateBuffer(commandBuffer, Counters.Buffer, 0, (ulong)sizeof(ParticleCounters), &start);
+        vk.CmdFillBuffer(commandBuffer, SortBinsBuffer.Buffer, 0, Vk.WholeSize, 0);
         Barrier(
             commandBuffer,
             PipelineStageFlags2.CopyBit | PipelineStageFlags2.ClearBit,
@@ -473,20 +499,24 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
         {
             vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Compute, _spawnPipeline);
             vk.CmdDispatch(commandBuffer, (constants.Spawns + GroupSize - 1) / GroupSize, 1, 1);
-            Barrier(
-                commandBuffer,
-                PipelineStageFlags2.ComputeShaderBit,
-                AccessFlags2.ShaderStorageWriteBit,
-                PipelineStageFlags2.ComputeShaderBit,
-                AccessFlags2.ShaderStorageReadBit | AccessFlags2.ShaderStorageWriteBit
-            );
+            ComputeBarrier(commandBuffer);
         }
 
         // Only the ring's slots that may hold a living particle (ParticleFrame's span): the groups' last few run past it,
         // onto slots no living particle holds.
         vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Compute, _simulatePipeline);
         var live = (uint)Math.Clamp(write.LiveCount, 0, (int)constants.Capacity);
-        vk.CmdDispatch(commandBuffer, (live + GroupSize - 1) / GroupSize, 1, 1);
+        var groups = (live + GroupSize - 1) / GroupSize;
+        vk.CmdDispatch(commandBuffer, groups, 1, 1);
+
+        // The sprites back to front: each bin's first place from the counts, then each sprite to its place. The scatter
+        // runs over the simulate pass's span, which holds every sprite listed.
+        ComputeBarrier(commandBuffer);
+        vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Compute, _sortScanPipeline);
+        vk.CmdDispatch(commandBuffer, 1, 1, 1);
+        ComputeBarrier(commandBuffer);
+        vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Compute, _sortScatterPipeline);
+        vk.CmdDispatch(commandBuffer, groups, 1, 1);
         _depth.RecordToAttachment(commandBuffer);
 
         // The pool, lists, and counters are read by this frame's draws, the indirect commands, and the copy below.
@@ -624,6 +654,16 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
                 vk.DestroyPipeline(device, _simulatePipeline, null);
             }
 
+            if (_sortScanPipeline.Handle != 0)
+            {
+                vk.DestroyPipeline(device, _sortScanPipeline, null);
+            }
+
+            if (_sortScatterPipeline.Handle != 0)
+            {
+                vk.DestroyPipeline(device, _sortScatterPipeline, null);
+            }
+
             if (_computeLayout.Handle != 0)
             {
                 vk.DestroyPipelineLayout(device, _computeLayout, null);
@@ -654,6 +694,8 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
         _depthSampler = default;
         _spawnPipeline = default;
         _simulatePipeline = default;
+        _sortScanPipeline = default;
+        _sortScatterPipeline = default;
         _computeLayout = default;
         _drawLayout = default;
         _descriptorPool = default;
@@ -663,6 +705,8 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
         _bursts?.Dispose();
         _recipes?.Dispose();
         _counters?.Dispose();
+        _sortBins?.Dispose();
+        _spriteKeys?.Dispose();
         _sprites?.Dispose();
         _cubes?.Dispose();
         _pool?.Dispose();
@@ -671,6 +715,8 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
         _bursts = null;
         _recipes = null;
         _counters = null;
+        _sortBins = null;
+        _spriteKeys = null;
         _sprites = null;
         _cubes = null;
         _pool = null;
@@ -688,7 +734,19 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
 
     private GpuBuffer Readback => _readback ?? throw NotInitialised();
 
+    private GpuBuffer SortBinsBuffer => _sortBins ?? throw NotInitialised();
+
     private static InvalidOperationException NotInitialised() => new("The particle pass has not been initialised.");
+
+    /// <summary>One compute pass's storage writes, before the next one reads and writes them.</summary>
+    private void ComputeBarrier(CommandBuffer commandBuffer) =>
+        Barrier(
+            commandBuffer,
+            PipelineStageFlags2.ComputeShaderBit,
+            AccessFlags2.ShaderStorageWriteBit,
+            PipelineStageFlags2.ComputeShaderBit,
+            AccessFlags2.ShaderStorageReadBit | AccessFlags2.ShaderStorageWriteBit
+        );
 
     private void Barrier(
         CommandBuffer commandBuffer,
@@ -725,6 +783,8 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
             _shaders.Compile("particle-cubes.frag", [LookDefine]),
             _shaders.Compile("particle-sprites.vert", [LookDefine]),
             _shaders.Compile("particle-sprites.frag", [LookDefine]),
+            _shaders.Compile("particle-sort-scan.comp"),
+            _shaders.Compile("particle-sort-scatter.comp"),
         };
     }
 
@@ -749,20 +809,31 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
         var shaders = (byte[][])compiled;
         _context.Vk.DestroyPipeline(_context.Device, _spawnPipeline, null);
         _context.Vk.DestroyPipeline(_context.Device, _simulatePipeline, null);
+        _context.Vk.DestroyPipeline(_context.Device, _sortScanPipeline, null);
+        _context.Vk.DestroyPipeline(_context.Device, _sortScatterPipeline, null);
         // Cleared at once: should making a new one fail, Dispose finds no handle destroyed already.
         _spawnPipeline = default;
         _simulatePipeline = default;
+        _sortScanPipeline = default;
+        _sortScatterPipeline = default;
         DestroyDrawPipelines();
         CreateComputePipelines(shaders);
         TakeShaders(shaders);
         CreateDrawPipelines(_format);
-        return 4;
+        return 6;
     }
 
     private void CreateComputePipelines(byte[][] compiled)
     {
         _spawnPipeline = PipelineFactory.CreateCompute(_context, compiled[0], _computeLayout, "particle spawn");
         _simulatePipeline = PipelineFactory.CreateCompute(_context, compiled[1], _computeLayout, "particle simulate");
+        _sortScanPipeline = PipelineFactory.CreateCompute(_context, compiled[6], _computeLayout, "particle sort scan");
+        _sortScatterPipeline = PipelineFactory.CreateCompute(
+            _context,
+            compiled[7],
+            _computeLayout,
+            "particle sort scatter"
+        );
     }
 
     private void TakeShaders(byte[][] compiled)
@@ -849,6 +920,16 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
             DescriptorCount = 1,
             StageFlags = DrawStages,
         };
+        for (var i = SpriteKeysBinding; i <= SortBinsBinding; i++)
+        {
+            bindings[i] = new DescriptorSetLayoutBinding
+            {
+                Binding = (uint)i,
+                DescriptorType = DescriptorType.StorageBuffer,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.ComputeBit,
+            };
+        }
 
         var layoutInfo = new DescriptorSetLayoutCreateInfo
         {
@@ -861,7 +942,7 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
 
         var poolSizes = stackalloc DescriptorPoolSize[2]
         {
-            new(DescriptorType.StorageBuffer, StorageBindings + 1),
+            new(DescriptorType.StorageBuffer, StorageBindings + 3),
             new(DescriptorType.CombinedImageSampler, 1),
         };
         var poolInfo = new DescriptorPoolCreateInfo
@@ -930,6 +1011,26 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
             PBufferInfo = &look,
         };
         vk.UpdateDescriptorSets(device, 1, &lookWrite, 0, null);
+        var sortInfos = stackalloc DescriptorBufferInfo[2]
+        {
+            new(_spriteKeys!.Buffer, 0, Vk.WholeSize),
+            new(SortBinsBuffer.Buffer, 0, Vk.WholeSize),
+        };
+        var sortWrites = stackalloc WriteDescriptorSet[2];
+        for (var i = 0; i < 2; i++)
+        {
+            sortWrites[i] = new WriteDescriptorSet
+            {
+                SType = StructureType.WriteDescriptorSet,
+                DstSet = _set,
+                DstBinding = (uint)(SpriteKeysBinding + i),
+                DescriptorCount = 1,
+                DescriptorType = DescriptorType.StorageBuffer,
+                PBufferInfo = &sortInfos[i],
+            };
+        }
+
+        vk.UpdateDescriptorSets(device, 2, sortWrites, 0, null);
         _context.SetObjectName(ObjectType.DescriptorSet, _set.Handle, "particles");
     }
 

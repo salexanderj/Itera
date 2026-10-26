@@ -150,6 +150,7 @@ layout(scalar, set = 0, binding = 5) readonly buffer ParticleAttractors
     vec4 attractors[];
 };
 
+// The frame's sprites to draw, back to front (particle-sort.glsl).
 layout(scalar, set = 0, binding = 6) PARTICLE_ACCESS buffer ParticleSprites
 {
     uint spriteList[];

@@ -1,0 +1,22 @@
+#version 460
+
+// The sprites' sort (particle-sort.glsl), its last step: one invocation per sprite the simulate pass listed puts the
+// sprite's pool index at its bin's next place in the sprites' list, which the draw reads back to front. Dispatched over
+// the simulate pass's span, so the invocations past the frame's sprites stop at once.
+#define PARTICLE_WRITES
+#include "particle-data.glsl"
+#include "particle-sort.glsl"
+
+layout(local_size_x = 64) in;
+
+void main()
+{
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= counters[0].spriteInstanceCount)
+    {
+        return;
+    }
+
+    uint key = spriteKeys[i];
+    spriteList[atomicAdd(spriteBins[key >> PARTICLE_INDEX_BITS], 1u)] = key & PARTICLE_INDEX_MASK;
+}

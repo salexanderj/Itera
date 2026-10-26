@@ -140,6 +140,22 @@ public sealed class ParticlePassTests : IDisposable
         Assert.Equal([0u], GpuLayout.DescriptorSets(_compiler.Compile("particle-sprites.vert", [Look])));
     }
 
+    /// <summary>
+    /// The sprites' sort: the scan reads only the bins, and the scatter the counters, the keys, and the bins, all in the
+    /// particles' own set; the bins are as many as the scan covers.
+    /// </summary>
+    [Fact]
+    public void The_sort_passes_read_the_counters_and_only_the_particles_set()
+    {
+        var scan = _compiler.Compile("particle-sort-scan.comp");
+        var scatter = _compiler.Compile("particle-sort-scatter.comp");
+
+        Assert.Equal([0u], GpuLayout.DescriptorSets(scan));
+        Assert.Equal([0u], GpuLayout.DescriptorSets(scatter));
+        Assert.Empty(GpuLayout.ArrayElementDifferences<ParticleCounters>(scatter, 0, 2));
+        Assert.Equal(1024, ParticlePass.SortBins);
+    }
+
     [Fact]
     public unsafe void The_structs_have_the_sizes_the_buffers_are_made_for()
     {

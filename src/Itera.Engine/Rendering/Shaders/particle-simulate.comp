@@ -7,7 +7,8 @@
 // there: it bounces off it, sticks, or dies as its recipe says (the surface's slope from the neighbouring depths). Off
 // the image, behind the camera, or nearer than NearestMetres (the first-person arms), it meets nothing. A resting
 // particle falls again where the image shows its support gone. Particles in view and within the view distance go on the
-// frame's list of cubes or of sprites, whose counts are the instance counts of the two indirect draws; a lit one among
+// frame's list of cubes or of sprites, whose counts are the instance counts of the two indirect draws; a sprite goes on
+// as its sort key, its depth bin over its index, and is counted in its bin (particle-sort.glsl); a lit one among
 // them takes its sunlight from the shadow cascades and its sky light from the sky field (mesh-light.glsl, MeshPass's
 // set as set 1), eased halfway each frame so a particle crossing a shadow's edge does not flicker. When the match's
 // origin has moved since the pool was last simulated, every particle made before this frame first moves by it the other
@@ -18,6 +19,7 @@
 #define MESH_SET 1
 #include "mesh-data.glsl"
 #include "mesh-light.glsl"
+#include "particle-sort.glsl"
 
 layout(local_size_x = 64) in;
 
@@ -41,11 +43,34 @@ const float RestSlackMetres = 0.1;
 // Below this speed, in metres per second, a particle that bounced off a floor rests there.
 const float RestSpeed = 0.4;
 
+// The nearest distance the sprites' sort tells apart: its bins are even steps of the distance's logarithm from here to
+// the view distance.
+const float NearestSortMetres = 0.5;
+
 // True for an orthographic view: parallel rays along push.forward, push.right and push.up the image's half width and
 // half height in metres, push.camera the middle of what it shows.
 bool orthographic()
 {
     return push.orthographic != 0u;
+}
+
+// The sprites' sort bin of a particle distance metres from the camera, ahead along the view: 0 the farthest. The bins
+// are even steps of the distance's logarithm from NearestSortMetres to the view distance, under 1 % of the distance
+// each; orthographically, even steps of ahead from the view's near end to its far end.
+uint sortBin(float distance, float ahead)
+{
+    float farness;
+    if (orthographic())
+    {
+        farness = (ahead - push.near) / max(push.far - push.near, 1e-3);
+    }
+    else
+    {
+        float farthest = max(push.maxDistance, 2.0 * NearestSortMetres);
+        farness = log(max(distance, NearestSortMetres) / NearestSortMetres) / log(farthest / NearestSortMetres);
+    }
+
+    return uint((1.0 - clamp(farness, 0.0, 1.0)) * float(PARTICLE_SORT_BINS - 1u) + 0.5);
 }
 
 // Where world point world lies on the drawn image (pixel, rows from the top) and its distance along the view; false off
@@ -304,6 +329,8 @@ void main()
     }
     else
     {
-        spriteList[atomicAdd(counters[0].spriteInstanceCount, 1u)] = index;
+        uint bin = sortBin(distance, ahead);
+        spriteKeys[atomicAdd(counters[0].spriteInstanceCount, 1u)] = bin << PARTICLE_INDEX_BITS | index;
+        atomicAdd(spriteBins[bin], 1u);
     }
 }
