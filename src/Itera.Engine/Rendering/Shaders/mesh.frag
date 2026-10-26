@@ -129,6 +129,7 @@ void main()
     vec3 dx = dFdx(offset);
     vec3 dy = dFdy(offset);
     Surface surface;
+    vec3 hue = vec3(1.0);
     if (tint >= 0.0)
     {
         // A model, its own tint: its flat colour for now (its recipes need a point in the model's own space, or they would
@@ -190,12 +191,21 @@ void main()
         }
 
         surface = worldSurface(a, mapTint, whole, part, offset, normal, dx, dy);
+        if (LOOK.worldHueDrift != vec3(0.0))
+        {
+            // The world's colour wandering over about 20 m where the look asks, at the turned point, so the lattice's
+            // squares do not line up with the world's axes.
+            ivec3 turnedWhole;
+            vec3 turnedPart;
+            turnPoint(whole, part, turnedWhole, turnedPart);
+            hue += LOOK.worldHueDrift * valueNoise2(turnedWhole.xz, turnedPart.xz, 11, 41u);
+        }
     }
 
     vec3 colour = surface.colour;
     if (tint < 0.0 && surface.glow <= 0.0)
     {
-        colour = mix(vec3(dot(colour, LumaWeights)), colour, LOOK.worldSaturation) * LOOK.worldValue;
+        colour = mix(vec3(dot(colour, LumaWeights)), colour * hue, LOOK.worldSaturation) * LOOK.worldValue;
         colour *= mix(
             LOOK.worldSideShade,
             LOOK.worldTopShade,

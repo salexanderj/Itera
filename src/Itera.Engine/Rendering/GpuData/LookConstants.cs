@@ -98,6 +98,9 @@ public struct LookConstants
     /// <summary>The edge light's power, at least 1.</summary>
     public float RimSharpness;
 
+    /// <summary>How far the world's colour wanders over about 20 m, each channel (<see cref="RenderLook.WorldHueDrift"/>).</summary>
+    public Vector3 WorldHueDrift;
+
     private static readonly Vector3 s_luma = new(0.2126f, 0.7152f, 0.0722f);
 
     /// <summary>
@@ -159,6 +162,7 @@ public struct LookConstants
             GroundHazeFalloff = 1 / MathF.Max(look.GroundHazeFalloffMetres, 0.01f),
             RimLight = skyLight * MathF.Max(look.RimStrength, 0),
             RimSharpness = MathF.Max(look.RimSharpness, 1),
+            WorldHueDrift = look.WorldHueDrift,
         };
     }
 }

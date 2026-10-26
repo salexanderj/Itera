@@ -57,6 +57,7 @@ struct Look
     float groundHazeFalloff;
     vec3 rimLight;
     float rimSharpness;
+    vec3 worldHueDrift;
 };
 
 layout(scalar, set = LOOK_SET, binding = LOOK_BINDING) restrict readonly buffer Looks

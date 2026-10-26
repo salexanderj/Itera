@@ -32,6 +32,7 @@ public sealed class LookTuning
         Number("WorldTopShade", static l => l.WorldTopShade, static (l, v) => l with { WorldTopShade = v }),
         Number("SideShadeBelow", static l => l.SideShadeBelow, static (l, v) => l with { SideShadeBelow = v }),
         Number("TopShadeAbove", static l => l.TopShadeAbove, static (l, v) => l with { TopShadeAbove = v }),
+        Colour("WorldHueDrift", static l => l.WorldHueDrift, static (l, v) => l with { WorldHueDrift = v }),
         Colour("SunWarmth", static l => l.SunWarmth, static (l, v) => l with { SunWarmth = v }),
         Colour("ShadeCool", static l => l.ShadeCool, static (l, v) => l with { ShadeCool = v }),
         Colour("SkyLightShare", static l => l.SkyLightShare, static (l, v) => l with { SkyLightShare = v }),

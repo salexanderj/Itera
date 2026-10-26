@@ -21,7 +21,8 @@ A game's `IAtmosphereSource` gives the sky, the sunlight, the haze, and the colo
 
 `RenderLook` is a record struct. `RenderLook.Default` is the engine's value. It holds the art direction's values:
 
-- The world's own surfaces: saturation, value, and the side and top shade.
+- The world's own surfaces: saturation, value, the side and top shade, and how far their colour wanders over about
+  20 m (`WorldHueDrift`, each channel scaled by a value noise in `mesh.frag`).
 - The sunlight's warmth and the shade's coolness.
 - The sky light's share of the horizon colour, the ground's light and bounce, the occlusion and sky floors, and full
   glow's strength.
@@ -34,7 +35,7 @@ A game's `IAtmosphereSource` gives the sky, the sunlight, the haze, and the colo
 - The clouds: their cover, colour, opacity, scale, stretch, and heading.
 - The exposure, the grade's desaturation and darkening, and the split tone's tints and bounds.
 
-The edge light, the glow, the clouds, and the ground haze are off in `RenderLook.Default`.
+The edge light, the glow, the clouds, the ground haze, and the hue's wandering are off in `RenderLook.Default`.
 
 - The edge light is in `shadeSurface` in `mesh-shade.glsl`, by its `rim` argument: `mesh-asset.frag` gives 1 and
   `mesh.frag` 0, so only the mesh assets take it. It is the sky's light where a surface turns from the eye, as much as

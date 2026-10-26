@@ -56,6 +56,12 @@ public readonly record struct RenderLook
     /// <summary>The normal's height at and above which a world surface takes <see cref="WorldTopShade"/>.</summary>
     public float TopShadeAbove { get; init; } = 0.9f;
 
+    /// <summary>
+    /// How far the world's own surfaces' colour wanders over about 20 m: each channel is multiplied by 1 plus this times a
+    /// value noise from -1 to 1, so (0.04, 0, -0.04) wanders warm to cool by 4 %. Zero, the default, leaves it.
+    /// </summary>
+    public Vector3 WorldHueDrift { get; init; }
+
     /// <summary>The tint of direct sunlight on everything drawn, times the atmosphere's sun colour.</summary>
     public Vector3 SunWarmth { get; init; } = new(1.08f, 1.0f, 0.88f);
 
