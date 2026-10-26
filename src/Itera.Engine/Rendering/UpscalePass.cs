@@ -13,14 +13,14 @@ namespace Itera.Engine.Rendering;
 /// into the swapchain image. The world, models, and debug lines draw into the source image
 /// (<see cref="BeginSource"/>), which has the swapchain's format, so their pipelines serve both paths. FSR 1 wants
 /// sRGB-encoded values, so EASU reads the source through a UNORM view, and the upscaled image holds them as they are.
-/// The two images are made on the render thread the first time a frame is drawn below scale 1, and again when the
-/// drawn size or the screen's size changes, which dynamic render scaling (<see cref="DynamicRenderScale"/>) does at most
-/// every 11 frames. Nothing waits for the device: each frame slot has its own descriptor sets,
-/// pointed at the images only after that slot's fence, and images replaced, or no longer used because frames have been
-/// drawn at scale 1 for <see cref="FullSizeFramesBeforeFree"/> frames (<see cref="DrawnAtFullSize"/>), are destroyed
-/// once the frame before has passed its fence. (Images the screen's size with the picture in their top-left part would
-/// need no new image for a new scale, but EASU's reads past the picture's edge then need clamping in the shader, which
-/// cost 0.06 ms of the upscale's 0.42 ms on 2026-10-05 however it was written.)
+/// Both images are the screen's size. The picture fills the source's top-left part, the drawn size, as the depth image
+/// holds it, so a new render scale (<see cref="DynamicRenderScale"/>) needs no new image. EASU takes the drawn size as
+/// its input viewport and the source's size as its input size (<see cref="EasuConstants.Create"/>), and holds the reads
+/// of its pixels near the picture's right and bottom edges inside the picture. The images are made on the render thread
+/// the first time a frame is drawn below scale 1, and again for a new screen. Nothing waits for the device: each frame
+/// slot has its own descriptor sets, pointed at the images only after that slot's fence, and images replaced, or no
+/// longer used because frames have been drawn at scale 1 for <see cref="FullSizeFramesBeforeFree"/> frames
+/// (<see cref="DrawnAtFullSize"/>), are destroyed once the frame before has passed its fence.
 /// </summary>
 public sealed unsafe partial class UpscalePass : IDisposable, IReloadsShaders
 {
@@ -57,6 +57,7 @@ public sealed unsafe partial class UpscalePass : IDisposable, IReloadsShaders
     private readonly DescriptorSet[] _easuSets = new DescriptorSet[FrameSync.FramesInFlight];
     private readonly DescriptorSet[] _rcasSets = new DescriptorSet[FrameSync.FramesInFlight];
     private readonly FrameImages<Images> _images = new();
+    private Extent2D _drawn;
     private bool _disposed;
 
     public UpscalePass(
@@ -181,15 +182,23 @@ public sealed unsafe partial class UpscalePass : IDisposable, IReloadsShaders
 
     /// <summary>
     /// For a frame of <paramref name="slot"/> drawn below scale 1, after the slot's fence: frees the images the slot's
-    /// fence has released, makes the images when they do not exist or have other sizes (retiring the old ones), points
-    /// the slot's descriptor sets at them, then records the barrier before the frame's first write to the source image:
-    /// earlier frames' reads of it finish first, and its old contents are dropped (the world's pass covers it). Returns the
-    /// view the passes draw into, <paramref name="drawn"/> in size, in the colour attachment layout. Render thread.
+    /// fence has released, makes the images when they do not exist or are not the screen's size (retiring the old ones),
+    /// points the slot's descriptor sets at them, then records the barrier before the frame's first write to the source
+    /// image: earlier frames' reads of it finish first, and its old contents are dropped (the world's pass covers the
+    /// drawn part, and EASU reads no other). Returns the view the passes draw into, in the colour attachment layout: the
+    /// screen's size, of which they draw the top-left part, <paramref name="drawn"/> in size. Render thread.
     /// </summary>
     public ImageView BeginSource(CommandBuffer commandBuffer, int slot, Extent2D drawn, Extent2D screen)
     {
         _images.Use(slot);
         var images = EnsureImages(slot, drawn, screen);
+        if (drawn.Width != _drawn.Width || drawn.Height != _drawn.Height)
+        {
+            // Trace: dynamic render scaling may ask for a new drawn size every few frames.
+            LogResized(drawn.Width, drawn.Height);
+        }
+
+        _drawn = drawn;
         if (_images.SetsNeedWriting(slot))
         {
             // The slot's fence has passed, so no submitted frame uses its sets.
@@ -213,7 +222,8 @@ public sealed unsafe partial class UpscalePass : IDisposable, IReloadsShaders
     }
 
     /// <summary>
-    /// Records the upscale of the source image, which the frame's passes drew after <see cref="BeginSource"/>, into
+    /// Records the upscale of the picture in the source image's top-left part, which the frame's passes drew after
+    /// <see cref="BeginSource"/> at its drawn size, into
     /// <paramref name="target"/> (<paramref name="screen"/> in size, in the colour attachment layout), which it covers
     /// completely. <paramref name="linearOutput"/> is true when the target is sRGB. Render thread.
     /// </summary>
@@ -245,11 +255,11 @@ public sealed unsafe partial class UpscalePass : IDisposable, IReloadsShaders
             PipelineStageFlags2.ColorAttachmentOutputBit,
             AccessFlags2.ColorAttachmentWriteBit
         );
-        var easu = new EasuConstants
-        {
-            InputSize = new(source.Extent.Width, source.Extent.Height),
-            OutputSize = new(screen.Width, screen.Height),
-        };
+        var easu = EasuConstants.Create(
+            new(_drawn.Width, _drawn.Height),
+            new(source.Extent.Width, source.Extent.Height),
+            new(screen.Width, screen.Height)
+        );
         Draw(
             commandBuffer,
             upscaled.View,
@@ -383,31 +393,34 @@ public sealed unsafe partial class UpscalePass : IDisposable, IReloadsShaders
         vk.CmdEndRendering(commandBuffer);
     }
 
-    /// <summary>The frame's images, made when there are none or they have other sizes; the old ones are retired.</summary>
+    /// <summary>
+    /// True when images of <paramref name="images"/> serve a frame drawn at <paramref name="drawn"/> for a screen of
+    /// <paramref name="screen"/>: they are the screen's size, and the drawn size fits in them. A new render scale keeps
+    /// them; a new screen does not.
+    /// </summary>
+    internal static bool ImagesFit(Extent2D images, Extent2D drawn, Extent2D screen) =>
+        images.Width == screen.Width
+        && images.Height == screen.Height
+        && drawn.Width <= images.Width
+        && drawn.Height <= images.Height;
+
+    /// <summary>
+    /// The frame's images, made at the screen's size when there are none or they are another size; the old ones are
+    /// retired.
+    /// </summary>
     private Images EnsureImages(int slot, Extent2D drawn, Extent2D screen)
     {
         var images = _images.Current;
-        if (
-            images is not null
-            && images.Source.Extent.Width == drawn.Width
-            && images.Source.Extent.Height == drawn.Height
-            && images.Upscaled.Extent.Width == screen.Width
-            && images.Upscaled.Extent.Height == screen.Height
-        )
+        if (images is not null && ImagesFit(images.Source.Extent, drawn, screen))
         {
             return images;
         }
 
-        // Debug for the first images of a screen, Trace for each new drawn size dynamic render scaling asks for.
-        var newScreen =
-            images is null
-            || images.Upscaled.Extent.Width != screen.Width
-            || images.Upscaled.Extent.Height != screen.Height;
         var format = _swapchain.ImageFormat;
         var unorm = Unorm(format);
         var source = _allocator.CreateImage(
             format,
-            drawn,
+            screen,
             ImageUsageFlags.ColorAttachmentBit | ImageUsageFlags.SampledBit,
             ImageAspectFlags.ColorBit,
             "upscale source",
@@ -423,15 +436,7 @@ public sealed unsafe partial class UpscalePass : IDisposable, IReloadsShaders
         );
         var made = new Images(_context, source, sourceUnorm, upscaled);
         _images.Replace(made, slot);
-        if (newScreen)
-        {
-            LogImages(drawn.Width, drawn.Height, screen.Width, screen.Height);
-        }
-        else
-        {
-            LogResized(drawn.Width, drawn.Height);
-        }
-
+        LogImages(drawn.Width, drawn.Height, screen.Width, screen.Height);
         return made;
     }
 
@@ -584,7 +589,7 @@ public sealed unsafe partial class UpscalePass : IDisposable, IReloadsShaders
     [LoggerMessage(Level = LogLevel.Trace, Message = "Upscale: drawn at {Width}x{Height}")]
     private partial void LogResized(uint width, uint height);
 
-    /// <summary>The images of one drawn size: the source, its UNORM view that EASU reads, and the upscaled image.</summary>
+    /// <summary>The images of one screen: the source, its UNORM view that EASU reads, and the upscaled image.</summary>
     private sealed class Images(VulkanContext context, GpuImage source, ImageView sourceUnorm, GpuImage upscaled)
         : IDisposable
     {

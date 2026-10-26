@@ -513,8 +513,8 @@ public sealed unsafe partial class FrameRenderer : IFrameRenderer
     /// </summary>
     private void RecordWorld(CommandBuffer commandBuffer, uint imageIndex, in RenderFrame frame, int slot, bool fresh)
     {
-        // Below render scale 1 the world, models, and debug lines draw into the upscale's source image, the drawn size,
-        // and FSR 1 upscales it into the swapchain image; the depth image is the screen's size, and the passes use its
+        // Below render scale 1 the world, models, and debug lines draw into the top-left part of the upscale's source
+        // image, the drawn size of the screen-sized image, and FSR 1 upscales it into the swapchain image; the depth image is the screen's size, and the passes use its
         // top-left part. At scale 1 they draw straight into the swapchain image. With SMAA they draw into its scene
         // image, the drawn size, at any scale.
         var screen = _swapchain.Extent;

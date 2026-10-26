@@ -6,7 +6,8 @@ namespace Itera.Engine.Rendering.Pipelines;
 /// <summary>
 /// Creates the Vulkan objects a pass needs: shader modules, pipeline layouts, and graphics pipelines for dynamic
 /// rendering. Pipelines take their viewport and scissor at record time, so they survive a swapchain resize; a
-/// change of the swapchain's format needs a new pipeline. Call from the thread that owns Vulkan at the time. A game's
+/// change of the swapchain's format needs a new pipeline. Every pipeline is made through the run's pipeline cache
+/// (<see cref="VulkanContext.PipelineCache"/>). Call from the thread that owns Vulkan at the time. A game's
 /// passes use it too (<see cref="RenderPassSetup"/> fills in a stage's formats and samples).
 /// </summary>
 public static unsafe class PipelineFactory
@@ -319,7 +320,7 @@ public static unsafe class PipelineFactory
             };
 
             Pipeline pipeline;
-            vk.CreateGraphicsPipelines(device, default, 1, &info, null, &pipeline)
+            vk.CreateGraphicsPipelines(device, context.PipelineCache, 1, &info, null, &pipeline)
                 .ThrowIfFailed("vkCreateGraphicsPipelines");
             context.SetObjectName(ObjectType.Pipeline, pipeline.Handle, name);
             return pipeline;
@@ -360,7 +361,7 @@ public static unsafe class PipelineFactory
             };
 
             Pipeline pipeline;
-            vk.CreateComputePipelines(device, default, 1, &info, null, &pipeline)
+            vk.CreateComputePipelines(device, context.PipelineCache, 1, &info, null, &pipeline)
                 .ThrowIfFailed("vkCreateComputePipelines");
             context.SetObjectName(ObjectType.Pipeline, pipeline.Handle, name);
             return pipeline;

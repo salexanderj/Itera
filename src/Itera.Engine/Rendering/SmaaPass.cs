@@ -188,9 +188,9 @@ public sealed unsafe partial class SmaaPass : IDisposable, IReloadsShaders
 
     /// <summary>
     /// Records SMAA's three passes over the scene image, which the frame drew after <see cref="BeginScene"/>, into
-    /// <paramref name="target"/>: an image of the swapchain's format and the drawn size, in the colour attachment layout,
-    /// which the blend covers completely. <paramref name="picture"/> shows the edges or the weights instead. Render
-    /// thread.
+    /// <paramref name="target"/>: an image of the swapchain's format, in the colour attachment layout, whose top-left
+    /// part of the drawn size the blend covers completely (FSR 1's source is the screen's size). <paramref name="picture"/>
+    /// shows the edges or the weights instead. Render thread.
     /// </summary>
     public void Record(CommandBuffer commandBuffer, int slot, ImageView target, SmaaPicture picture)
     {

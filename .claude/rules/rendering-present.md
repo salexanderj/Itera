@@ -70,6 +70,11 @@ Effects give way before the scale (`EffectsBudget`, run-wide):
 - Detail particle recipes thin by the share (`particles.md`), and a game's grass source may (`rendering-grass.md`).
 - SMAA runs before FSR 1.
 
+FSR 1's source and upscaled images are the screen's size, so a new render scale makes no new image. The picture fills
+the source's top-left part, the drawn size. `EasuConstants.Create` works out EASU's constants on the CPU once a frame,
+with the drawn size as the input viewport and the source's size as the input size. Near the picture's right and bottom
+edges, `fsr-easu.frag` reads texels clamped to the picture in place of its gathers.
+
 ### Anti-aliasing
 
 The world is drawn with `Engine:Renderer:MsaaSamples` samples a pixel. With one, SMAA 1x runs instead when
@@ -88,7 +93,7 @@ The world is drawn with `Engine:Renderer:MsaaSamples` samples a pixel. With one,
     `SearchTex.bin`, copied to the GPU in the first anti-aliased frame).
   - The blend pass blends in linear light into the swapchain image (scale 1) or FSR 1's source.
 - The console's `aa edges` and `aa weights` show what SMAA found.
-- `FrameImages` keeps the drawn-size images of SMAA and the upscale until no frame in flight uses them.
+- `FrameImages` keeps SMAA's drawn-size images and the upscale's images until no frame in flight uses them.
 
 ### Debug views
 

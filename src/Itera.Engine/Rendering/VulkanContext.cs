@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
+using Itera.Engine.Rendering.Pipelines;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Silk.NET.Core.Native;
@@ -48,6 +49,7 @@ public sealed unsafe partial class VulkanContext : IDisposable
     {
         _settings = options.Value.Renderer;
         _applicationName = options.Value.Application.Name;
+        _pipelineCachePath = Path.Combine(options.Value.Application.DataDirectory(), PipelineCacheFile.FileName);
         _logger = logger;
         _debugCallback = DebugCallback;
         _debugCallbackPointer = new PfnDebugUtilsMessengerCallbackEXT(_debugCallback);
@@ -160,6 +162,7 @@ public sealed unsafe partial class VulkanContext : IDisposable
         CreateSurface(surfaceSource);
         PickPhysicalDevice();
         CreateLogicalDevice();
+        CreatePipelineCache();
     }
 
     /// <summary>
@@ -226,6 +229,7 @@ public sealed unsafe partial class VulkanContext : IDisposable
         if (Device.Handle != 0)
         {
             Vk.DeviceWaitIdle(Device);
+            SaveAndDestroyPipelineCache();
             KhrSwapchain?.Dispose();
             Vk.DestroyDevice(Device, null);
             Device = default;
@@ -692,6 +696,11 @@ public sealed unsafe partial class VulkanContext : IDisposable
         };
         Vk.GetPhysicalDeviceProperties2(PhysicalDevice, &properties2);
         _limits = properties2.Properties.Limits;
+        _vendorId = properties2.Properties.VendorID;
+        _deviceId = properties2.Properties.DeviceID;
+        new ReadOnlySpan<byte>(properties2.Properties.PipelineCacheUuid, PipelineCacheFile.UuidBytes).CopyTo(
+            _pipelineCacheUuid
+        );
         _maxBufferSize = properties13.MaxBufferSize;
         Vk.GetPhysicalDeviceMemoryProperties(PhysicalDevice, out var memory);
         _memoryProperties = memory;

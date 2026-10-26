@@ -1274,9 +1274,11 @@ waits for the navigation thread (5 s at most).
 `Engine:Renderer:RenderScale` and the console's `scale` set the share of the screen's size, on each axis, that the
 world, the models, the particles, and the debug lines draw at. The main thread builds the view at that size. The render
 thread sizes the drawn image from the swapchain's size and the frame's scale (`RenderScale.Apply`). `UpscalePass` owns
-the source image and the upscaled image, made on the render thread the first time a frame is drawn below 1 and again
-when a size changes. Nothing waits for the device: each frame slot has its own descriptor sets, pointed at the images
-only after that slot's fence, and replaced or retired images are destroyed once the frame before has passed its fence
+the source image and the upscaled image, both the screen's size, made on the render thread the first time a frame is
+drawn below 1 and again for a new screen. The picture fills the source's top-left part, as the depth image holds it, so
+a new scale makes no new image. EASU takes the drawn size as its input viewport, and holds its reads near the picture's
+right and bottom edges inside it. Nothing waits for the device: each frame slot has its own descriptor sets, pointed at
+the images only after that slot's fence, and replaced or retired images are destroyed once the frame before has passed its fence
 (`FrameImages`). EASU reads the source through the UNORM view, because FSR 1 wants sRGB-encoded values. RCAS writes the
 swapchain image. The UI draws after it at full size. FSR 1 runs on any GPU brand; FSR 2 and DLSS were not chosen.
 

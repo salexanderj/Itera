@@ -77,6 +77,9 @@ dedicated allocation. Non-coherent memory is not chosen on the development machi
 - `PipelineFactory` builds the shader modules (length a multiple of 4), the pipeline layout (push range checked against
   `maxPushConstantsSize`), and the pipeline (`PipelineRenderingCreateInfo`, no render pass, modules destroyed after
   creation).
+- Every pipeline is made through the run's `VulkanContext.PipelineCache`, made after the device and saved and destroyed
+  before it. `PipelineCacheFile` keeps its data in the data folder between runs, used only when its
+  `VkPipelineCacheHeaderVersionOne` names the device.
 - A full-screen triangle (`fullscreen.vert`) with `ViewConstants` in push constants, `LoadOp.DontCare` where every pixel
   is written, and a viewport of negative height are how the full-screen passes and `MeshPass` draw.
 - `DebugLinePass` draws the frame's `DebugLines` after the world pass. It has one host-visible storage buffer

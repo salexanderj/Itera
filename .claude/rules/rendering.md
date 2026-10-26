@@ -127,5 +127,5 @@ Everything the renderer draws is local to the match's origin (`WorldOrigin`, CLA
 
 `GpuLayoutTests`, `ViewConstantsTests`, `VulkanContextTests`,
 `DeviceChoiceTests`, `RenderThreadTests`, `FrameExchangeTests`, `ShaderCompilerTests`, `ShaderReloadTests`,
-`GpuTimerParseTests`, `UiPassTests`, `UiBandsTests`, `LoadingPassTests`, `GpuMemoryAllocatorTests`, `BlockSuballocatorTests`, and
-`MemoryTypeSelectorTests`.
+`GpuTimerParseTests`, `UiPassTests`, `UiBandsTests`, `LoadingPassTests`, `GpuMemoryAllocatorTests`, `BlockSuballocatorTests`,
+`PipelineCacheFileTests`, and `MemoryTypeSelectorTests`.
