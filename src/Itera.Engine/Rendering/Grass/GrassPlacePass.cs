@@ -1,6 +1,7 @@
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Rendering.Memory;
 using Itera.Engine.Rendering.Meshes;
+using Microsoft.Extensions.Logging;
 using Silk.NET.Vulkan;
 
 namespace Itera.Engine.Rendering.Grass;
@@ -15,9 +16,15 @@ namespace Itera.Engine.Rendering.Grass;
 /// grass, near and far; then <c>grass-count.comp</c>, which writes the two draws. The blades and the draws are one copy
 /// each, on the device: each fresh frame waits for the last one's draws before writing them again, and a frame
 /// presented again draws the last ones made. Nothing is listed while the source gives no grass or none to a square
-/// metre, under an orthographic lens, or with no block near, and then nothing is drawn.
+/// metre, under an orthographic lens, or with no block near, and then nothing is drawn. The counts of blades placed come
+/// back through the slot's readback region: blades past <see cref="NearMost"/> or <see cref="FarMost"/> are not drawn,
+/// and a Debug line says so, at most every <see cref="OverflowLineSeconds"/>.
 /// </summary>
-public sealed unsafe class GrassPlacePass(WorldMeshes meshes, IGrassSource source) : IRenderPass
+public sealed unsafe partial class GrassPlacePass(
+    WorldMeshes meshes,
+    IGrassSource source,
+    ILogger<GrassPlacePass> logger
+) : IRenderPass
 {
     /// <summary>The shaders, under the shader folder.</summary>
     public const string PlaceShader = "grass-place.comp";
@@ -58,8 +65,12 @@ public sealed unsafe class GrassPlacePass(WorldMeshes meshes, IGrassSource sourc
     /// </summary>
     public const float BlockReach = 0.9f;
 
-    // The two counts' place in the draws' buffer, after the two commands.
+    // The two counts' place in the draws' buffer, after the two commands, and their bytes.
     private const ulong PlacedOffset = 2 * 20;
+    private const ulong PlacedBytes = 2 * sizeof(uint);
+
+    /// <summary>The least seconds between two Debug lines of blades past the lists' room.</summary>
+    private const long OverflowLineSeconds = 10;
 
     // Invocations in a workgroup of grass-place.comp, one a triangle.
     private const uint GroupSize = 64;
@@ -79,12 +90,17 @@ public sealed unsafe class GrassPlacePass(WorldMeshes meshes, IGrassSource sourc
 
     // Whether each slot's frame draws blades (render thread): set as its compute stage records, read by the draw pass.
     private readonly bool[] _shown = new bool[RenderPassSetup.FramesInFlight];
+
+    // Whether each slot's readback region holds the counts of a frame placed in it (render thread).
+    private readonly bool[] _counted = new bool[RenderPassSetup.FramesInFlight];
+    private long _nextOverflowLine;
     private RenderPassSetup? _setup;
     private GpuBuffer? _frames;
     private GpuBuffer? _blocks;
     private GpuBuffer? _blades;
     private GpuBuffer? _draws;
     private GpuBuffer? _indices;
+    private GpuBuffer? _readback;
     private RenderPassBufferSet? _set;
     private PipelineLayout _layout;
     private Pipeline _place;
@@ -136,9 +152,18 @@ public sealed unsafe class GrassPlacePass(WorldMeshes meshes, IGrassSource sourc
         );
         _draws = setup.Allocator.CreateBuffer(
             DrawsBytes,
-            BufferUsageFlags.StorageBufferBit | BufferUsageFlags.IndirectBufferBit | BufferUsageFlags.TransferDstBit,
+            BufferUsageFlags.StorageBufferBit
+                | BufferUsageFlags.IndirectBufferBit
+                | BufferUsageFlags.TransferDstBit
+                | BufferUsageFlags.TransferSrcBit,
             MemoryUsage.DeviceLocal,
             "grass draws"
+        );
+        _readback = setup.Allocator.CreateBuffer(
+            PlacedBytes * slots,
+            BufferUsageFlags.TransferDstBit,
+            MemoryUsage.Readback,
+            "grass placed readback"
         );
         var indexCount = NearIndices + BladesAnInstance * FarCorners;
         _indices = setup.Allocator.CreateBuffer(
@@ -201,12 +226,15 @@ public sealed unsafe class GrassPlacePass(WorldMeshes meshes, IGrassSource sourc
     {
         var slot = context.Slot;
         _shown[slot] = false;
+        // The slot's fence has passed: the counts of the frame it last placed are back.
+        CheckPlaced(slot);
         if (
             !_active[slot]
             || _frames is null
             || _blocks is null
             || _set is null
             || _draws is null
+            || _readback is null
             || _place.Handle == 0
         )
         {
@@ -225,11 +253,12 @@ public sealed unsafe class GrassPlacePass(WorldMeshes meshes, IGrassSource sourc
         _blocks.Flush(s_blocksBytes * (ulong)slot, s_blocksBytes);
         var vk = Setup.Context.Vk;
         var commandBuffer = context.CommandBuffer;
-        // The last frame's draws, indirect reads, and writes finish before this frame writes what they read.
+        // The last frame's draws, indirect reads, copy, and writes finish before this frame writes what they read.
         Barrier(
             commandBuffer,
             PipelineStageFlags2.VertexShaderBit
                 | PipelineStageFlags2.DrawIndirectBit
+                | PipelineStageFlags2.CopyBit
                 | PipelineStageFlags2.ComputeShaderBit,
             AccessFlags2.ShaderStorageWriteBit,
             PipelineStageFlags2.ClearBit | PipelineStageFlags2.ComputeShaderBit,
@@ -260,16 +289,55 @@ public sealed unsafe class GrassPlacePass(WorldMeshes meshes, IGrassSource sourc
         );
         vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Compute, _count);
         vk.CmdDispatch(commandBuffer, 1, 1, 1);
-        // The blades, the counts, and the draws are read by this frame's draw, its indirect commands, and its vertices.
+        // The blades, the counts, and the draws are read by this frame's draw, its indirect commands, its vertices, and
+        // the counts' copy.
         Barrier(
             commandBuffer,
             PipelineStageFlags2.ComputeShaderBit,
             AccessFlags2.ShaderStorageWriteBit,
-            PipelineStageFlags2.DrawIndirectBit | PipelineStageFlags2.VertexShaderBit,
-            AccessFlags2.IndirectCommandReadBit | AccessFlags2.ShaderStorageReadBit
+            PipelineStageFlags2.DrawIndirectBit | PipelineStageFlags2.VertexShaderBit | PipelineStageFlags2.CopyBit,
+            AccessFlags2.IndirectCommandReadBit | AccessFlags2.ShaderStorageReadBit | AccessFlags2.TransferReadBit
         );
+        var copy = new BufferCopy(PlacedOffset, PlacedBytes * (ulong)slot, PlacedBytes);
+        vk.CmdCopyBuffer(commandBuffer, _draws.Buffer, _readback.Buffer, 1, &copy);
+        Barrier(
+            commandBuffer,
+            PipelineStageFlags2.CopyBit,
+            AccessFlags2.TransferWriteBit,
+            PipelineStageFlags2.HostBit,
+            AccessFlags2.HostReadBit
+        );
+        _counted[slot] = true;
         _placed = true;
         _shown[slot] = true;
+    }
+
+    /// <summary>
+    /// Reads the counts of blades the frame last placed in <paramref name="slot"/> placed, once, and logs a Debug line
+    /// when they passed the lists' room, at most every <see cref="OverflowLineSeconds"/>. Render thread, after the
+    /// slot's fence.
+    /// </summary>
+    private void CheckPlaced(int slot)
+    {
+        if (!_counted[slot] || _readback is null)
+        {
+            return;
+        }
+
+        _counted[slot] = false;
+        var offset = PlacedBytes * (ulong)slot;
+        _readback.Invalidate(offset, PlacedBytes);
+        var placed = (uint*)(_readback.Mapped + offset);
+        var near = placed[0];
+        var far = placed[1];
+        var now = Environment.TickCount64;
+        if ((near <= NearMost && far <= FarMost) || now < _nextOverflowLine)
+        {
+            return;
+        }
+
+        _nextOverflowLine = now + OverflowLineSeconds * 1000;
+        LogOverflow(near, far, NearMost, FarMost);
     }
 
     /// <summary>True when the frame of slot <paramref name="slot"/> draws blades: its compute stage placed them, or a frame presented again keeps the last. Render thread.</summary>
@@ -307,6 +375,8 @@ public sealed unsafe class GrassPlacePass(WorldMeshes meshes, IGrassSource sourc
         _set = null;
         _indices?.Dispose();
         _indices = null;
+        _readback?.Dispose();
+        _readback = null;
         _draws?.Dispose();
         _draws = null;
         _blades?.Dispose();
@@ -473,4 +543,10 @@ public sealed unsafe class GrassPlacePass(WorldMeshes meshes, IGrassSource sourc
         _place = default;
         _count = default;
     }
+
+    [LoggerMessage(
+        Level = LogLevel.Debug,
+        Message = "Grass: {Near} near and {Far} far blades placed, past the room of {NearMost} and {FarMost}: the rest are not drawn"
+    )]
+    private partial void LogOverflow(uint near, uint far, int nearMost, int farMost);
 }

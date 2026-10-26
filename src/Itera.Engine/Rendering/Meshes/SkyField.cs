@@ -19,10 +19,10 @@ namespace Itera.Engine.Rendering.Meshes;
 /// </summary>
 internal sealed class SkyField
 {
-    /// <summary>Cells along x and z: 160 m of the game's 80 cm cells (128 m at 64 cm).</summary>
+    /// <summary>Cells along x and z: 200 times <see cref="CellMetres"/> across (128 m at 64 cm cells).</summary>
     public const int SizeXZ = 200;
 
-    /// <summary>Cells along y: 80 m of the game's 80 cm cells (64 m at 64 cm).</summary>
+    /// <summary>Cells along y: 100 times <see cref="CellMetres"/> (64 m at 64 cm cells).</summary>
     public const int SizeY = 100;
 
     /// <summary>Cells in the box.</summary>

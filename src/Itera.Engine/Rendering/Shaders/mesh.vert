@@ -32,7 +32,7 @@ void main()
 #ifdef MESH_MODEL
     MeshModelDraw draw = modelDraws[gl_InstanceIndex];
     vec3 offset = meshModelWorld(draw, index) - view.position;
-    outNormal = meshTurn(draw.turn, meshNormalAt(draw.vertexBase, index));
+    outNormal = turnBy(draw.turn, meshNormalAt(draw.vertexBase, index));
     float tint = draw.tint;
 #ifdef MESH_FADE
     outShown = draw.shown;

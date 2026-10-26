@@ -11,7 +11,8 @@ public sealed unsafe partial class WorldMeshes
 {
     /// <summary>
     /// The far cascade's blocks are chosen with the reaches times this, on top of <c>MeshReachShare</c>: one level
-    /// coarser than the camera's at the same distance, as its texels are about 20 cm wide. Its pass is not balanced
+    /// coarser than the camera's at the same distance, as its texels are about 24 cm wide with 2048 of them
+    /// (<see cref="MeshView.FarTexelMetres"/>). Its pass is not balanced
     /// (<see cref="SelectAll"/>), so the coarser cut holds.
     /// </summary>
     private const double FarShadowCutShare = 0.5;

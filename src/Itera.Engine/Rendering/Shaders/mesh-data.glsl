@@ -1,9 +1,11 @@
 // The raster pipeline's world data (MeshPass, WorldMeshes): the mesh heap's words, which hold each block's vertices
-// (MeshVertex, three words each: x and y; z, material, and openness; the octahedral normal), its 16-bit indices, the
-// materials, and the tint map; the frame's draws, one per block (MeshDraw); the sun's two shadow cascades, one record per
-// frame slot (MeshLighting), and their maps; the frame's model draws, one per block of each model drawn (MeshModelDraw).
+// (MeshVertex, four words each: x and y; z, material, and openness; the octahedral normal; the palette's weights), its
+// 16-bit indices, the materials, and the tint map; the frame's draws, one per block (MeshDraw); the sun's two shadow
+// cascades, one record per frame slot (MeshLighting), and their maps; the frame's model draws, one per block of each
+// model drawn (MeshModelDraw).
 // Mirrors GpuData.MeshDraw, MeshMaterial, MeshLighting, and MeshModelDraw member for member; GpuLayout tests check them.
 #extension GL_EXT_scalar_block_layout : require
+#include "turns.glsl"
 
 // The set these bindings are in: MeshPass's own, 0, or 1 where a pass binds its own set first (ParticlePass).
 #ifndef MESH_SET
@@ -256,20 +258,13 @@ vec3 meshWorld(MeshDraw draw, uint index)
     return draw.origin + meshLocal(draw.vertexBase, index) * draw.voxelMetres;
 }
 
-// v turned by the unit quaternion q (x, y, z, w), as System.Numerics turns it.
-vec3 meshTurn(vec4 q, vec3 v)
-{
-    vec3 t = 2.0 * cross(q.xyz, v);
-    return v + q.w * t + cross(q.xyz, t);
-}
-
 // The world position, in metres, of vertex index of a model's draw: its place in the model's box, turned and moved. A
 // model's blocks start one voxel before its box (WorldMeshes.ModelBlockShift).
 vec3 meshModelWorld(MeshModelDraw draw, uint index)
 {
     vec3 block = vec3(float(draw.block & 0xFFu), float((draw.block >> 8) & 0xFFu), float((draw.block >> 16) & 0xFFu));
     vec3 local = (meshLocal(draw.vertexBase, index) + 32.0 * block - 1.0) * draw.voxelMetres;
-    return draw.corner + meshTurn(draw.turn, local);
+    return draw.corner + turnBy(draw.turn, local);
 }
 
 // The unit normal of vertex index of the block whose vertices start at vertexBase (MeshVertex's octahedral encoding).

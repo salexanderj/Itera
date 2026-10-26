@@ -1,5 +1,5 @@
-// Turns by unit quaternions, and the corners of a box as triangles, for the models (model-data.glsl) and the particle
-// cubes (particle-data.glsl).
+// Turns by unit quaternions, as System.Numerics turns them, and the corners of a box as triangles, for the models
+// (mesh-data.glsl) and the particle cubes (particle-data.glsl).
 
 // v turned by the unit quaternion q.
 vec3 turnBy(vec4 q, vec3 v)

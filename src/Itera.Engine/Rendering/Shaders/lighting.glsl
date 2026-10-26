@@ -44,12 +44,14 @@ vec3 toneMap(vec3 colour)
     return clamp(colour * (2.51 * colour + 0.03) / (colour * (2.43 * colour + 0.59) + 0.14), 0.0, 1.0);
 }
 
+// The luma of a linear colour: its dot with these (Rec. 709).
+const vec3 LumaWeights = vec3(0.2126, 0.7152, 0.0722);
+
 // The grade (the atmosphere's) desaturates and darkens the picture and shifts it towards the sky's hue, as the look
 // says how far; 0 leaves it alone.
 vec3 gradeColour(vec3 colour)
 {
-    const vec3 luma = vec3(0.2126, 0.7152, 0.0722);
-    vec3 graded = mix(colour, dot(colour, luma) * LOOK.gradeHue, LOOK.gradeMix);
+    vec3 graded = mix(colour, dot(colour, LumaWeights) * LOOK.gradeHue, LOOK.gradeMix);
     return graded * LOOK.gradeScale;
 }
 

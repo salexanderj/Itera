@@ -12,9 +12,14 @@ public struct MeshDraw
     /// <summary>The block's lowest corner in world metres.</summary>
     public Vector3 Origin;
 
-    /// <summary>The edge of one of the block's voxels in metres (0.01 times 2 to the level).</summary>
+    /// <summary>
+    /// The edge of one of the block's voxels in metres: the grid's edge at the block's level (<c>VoxelGrid.EdgeMetres</c>).
+    /// </summary>
     public float VoxelMetres;
 
-    /// <summary>The first word of the block's vertices in the mesh heap (<see cref="MeshVertex"/>, three words each).</summary>
+    /// <summary>
+    /// The first word of the block's vertices in the mesh heap (<see cref="MeshVertex"/>, <see cref="MeshVertex.Words"/>
+    /// words each).
+    /// </summary>
     public uint VertexBase;
 }

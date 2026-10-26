@@ -19,8 +19,6 @@ layout(location = 3) in vec3 inGround;
 layout(location = 4) flat in vec2 inLight;
 layout(location = 0) out vec4 outColor;
 
-const vec3 Luma = vec3(0.2126, 0.7152, 0.0722);
-
 void main()
 {
     vec3 world = view.position + inOffset;
@@ -40,7 +38,7 @@ void main()
     vec3 split = mix(
         LOOK.gradeShadows,
         LOOK.gradeLights,
-        smoothstep(LOOK.shadowsBelow, LOOK.lightsAbove, dot(graded, Luma)));
+        smoothstep(LOOK.shadowsBelow, LOOK.lightsAbove, dot(graded, LumaWeights)));
     graded *= mix(split, vec3(1.0), fog);
     outColor = vec4(min(graded, vec3(1.0)), 1.0);
 }

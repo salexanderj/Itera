@@ -50,8 +50,8 @@ vec3 pointLight(vec3 world, vec3 normal, float depth)
 // - Sunlight is tinted by its sun warmth and the sky and ground light by its shade coolness, on everything drawn; a
 //   surface keeps at least its sky floor of the sky's and the ground's light however deep it is.
 // - After the grade, the picture's dark tones turn towards its shadow tint and its light tones towards its light tint,
-//   blending between luma shadowsBelow and lightsAbove; less as the fog thickens, to none in the sky.
-const vec3 LumaWeights = vec3(0.2126, 0.7152, 0.0722);
+//   blending between luma shadowsBelow and lightsAbove (lighting.glsl's LumaWeights); less as the fog thickens, to none
+//   in the sky.
 
 // The colour a surface of colour ends as at offset from the camera: lit along lit (its normal as its relief tilts it)
 // with the shadow maps and the sky field read along its own normal, its sky and ground light kept by its openness and

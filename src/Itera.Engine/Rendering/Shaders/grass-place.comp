@@ -33,9 +33,6 @@ const float GrowBand = 0.15;
 // it, not a speck of its texture.
 const float ColourFootprint = 0.1;
 
-// The luma of a linear colour (mesh-shade.glsl's weights).
-const vec3 Luma = vec3(0.2126, 0.7152, 0.0722);
-
 // The 16-bit index k of the heap (counted from the heap's start).
 uint heapIndex(uint k)
 {
@@ -144,7 +141,7 @@ vec3 groundColour(vec3 root, vec3 normal, uint material)
         hue += LOOK.worldHueDrift * planeNoise(turnedWhole.xz, turnedPart.xz, 11, 41u, NoiseHueDrift);
     }
 
-    vec3 colour = mix(vec3(dot(surface.colour, Luma)), surface.colour * hue, LOOK.worldSaturation) * LOOK.worldValue;
+    vec3 colour = mix(vec3(dot(surface.colour, LumaWeights)), surface.colour * hue, LOOK.worldSaturation) * LOOK.worldValue;
     return colour * mix(LOOK.worldSideShade, LOOK.worldTopShade, smoothstep(LOOK.sideShadeBelow, LOOK.topShadeAbove, normal.y));
 }
 

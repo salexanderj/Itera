@@ -41,6 +41,8 @@ Blades of grass made each frame on the GPU from the voxel terrain the camera dra
   patches, the tint map, and the look's world values.
 - Near blades have three segments, far ones one triangle. Each list has room for `GrassPlacePass.NearMost` or
   `FarMost`. A triangle reserves its blades with one atomic add a list.
+- The counts placed come back through a readback region a slot. Blades past the room are not drawn, and a Debug line
+  says so, at most every 10 s.
 - `grass-count.comp` then writes the two indexed indirect draws.
 - The blades and the draws are one copy each, on the device. Each fresh frame waits for the last frame's draws before
   writing them. A frame presented again draws the last blades made.
