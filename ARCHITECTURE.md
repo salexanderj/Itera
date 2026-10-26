@@ -340,8 +340,9 @@ game's own tasks come after them. Loading is a phase of the loop, not a wait bef
 the session, and the console run as usual, because most of what loading waits for moves on only while they do. The
 game gets empty input snapshots meanwhile, and Escape and the console still work.
 
-The frame carries a `LoadingDraw`. The render thread still records the mesh copies and the particle simulate call, then
-draws the loading shader over the whole swapchain image instead of the world (`LoadingPass`), then the UI. After
+The frame carries a `LoadingDraw`. The render thread still records the mesh copies. It skips the particles, whose clock
+stops (`ParticlePass.SkipSimulate`), and draws the loading shader over the whole swapchain image instead of the world
+(`LoadingPass`), then the UI. After
 `MaxSeconds` the screen gives up waiting for a task and logs a Warning naming it. After a reset of the world it covers
 the picture again (`LoadingScreen.BeginAgain`) and waits for every task afresh. `.claude/rules/ui.md` has the details.
 
@@ -1337,9 +1338,10 @@ thread only the bursts. The rules are in `.claude/rules/particles.md`.
 - The pool (`Engine:Particles:Capacity`) is a ring. When particles are made faster than they die, the oldest are
   overwritten.
 - `ParticlePass` runs after the world's pass in frames that draw the world while particles can be alive. A spawn
-  dispatch and a simulate dispatch over the whole pool move each particle, meet the world, and list those in view as
-  cubes or sprites with atomic counts that are the two indirect draws' instance counts. Then the cubes (tumbling to a
-  stop, lit as the world is, writing depth) and the sprites (premultiplied, testing depth only) are drawn.
+  dispatch, then a simulate dispatch over the pool's span that can be alive, move each particle, meet the world, and
+  list those in view as cubes or sprites with atomic counts that are the two indirect draws' instance counts. A
+  counting sort by bins of depth orders the sprites back to front. Then the cubes (tumbling to a stop, lit as the world
+  is, writing depth) and the sprites (premultiplied, testing depth only) are drawn.
 - Particles meet the world through the camera's depth image: a particle that moves to just behind the surface the image
   shows bounces off it, sticks, or dies as its recipe says, with the slope from the neighbouring depths. Off the image,
   behind something, or near the camera it meets nothing, and a resting particle falls again where the image shows its
@@ -1453,8 +1455,9 @@ Engine work that is known and not done. Each item lists what is not built.
 - **Underground play**: lighting without the sky, connectivity or occlusion culling for caves, layered navigation, and
   the levels chosen by three-dimensional distance. The sky field's rebuild after edits could be local with summaries
   kept with the columns.
-- **Low-end hardware.** Presets for weak GPUs (no MSAA, one cheap shadow cascade, coarser meshes) were measured on an
-  integrated GPU and not built. Shadow and material quality rows for the Graphics tab wait for them.
+- **Low-end hardware.** The Graphics quality presets (`GraphicsPreset`) set anti-aliasing, shadows on or off, object
+  detail, and effects detail. A preset for weak GPUs (one cheap shadow cascade, coarser world meshes) was measured on an
+  integrated GPU and not built. Shadow and material quality rows for the Graphics tab wait for it.
 - **Mod API hardening.** A stable, versioned service surface for mods instead of the raw service provider, dependency
   ordering between mods, and a mod project template.
 - **Continuous integration** that builds and tests on Linux, Windows, and macOS.
