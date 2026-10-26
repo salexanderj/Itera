@@ -76,11 +76,13 @@ class Tile:
         kernel = np.exp(-2 * np.pi**2 * sigma**2 * self._f2)
         return np.fft.irfft2(np.fft.rfft2(a) * kernel, s=a.shape).astype(F32)
 
-    def noise(self, wavelength, name, width=0.5, stretch=1.0):
+    def noise(self, wavelength, name, width=0.5, stretch=1.0, angle=0.0):
         """Noise with a standard deviation of 1 and features about wavelength metres across, stretch times longer along
-        u. width is the band's spread in octaves."""
+        the direction angle radians from u towards v. width is the band's spread in octaves."""
         white = self.rng(name).standard_normal((self.texels, self.texels)).astype(F32)
-        frequency = np.sqrt((self._fu * stretch) ** 2 + self._fv**2)
+        along = self._fu * np.cos(angle) + self._fv * np.sin(angle)
+        across = self._fv * np.cos(angle) - self._fu * np.sin(angle)
+        frequency = np.sqrt((along * stretch) ** 2 + across**2)
         with np.errstate(divide="ignore"):
             octave = np.log2(np.maximum(frequency, 1e-9) * wavelength)
         weight = np.exp(-0.5 * (octave / width) ** 2)

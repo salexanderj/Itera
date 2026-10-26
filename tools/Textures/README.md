@@ -81,7 +81,7 @@ each time, then makes the set from those maps as from a bake.
   and optionally the occlusion (made from the height if left out). A recipe may import modules beside it, such as a
   palette its game's recipes share.
 - `tiles.py`: the tile, whose every operation wraps at its edges, so the set repeats without a seam. Noise by
-  wavelength in metres, blurs, slopes, hollows and edges of a height, Voronoi cells on a jittered grid (some merged,
+  wavelength in metres, stretched along any direction, blurs, slopes, hollows and edges of a height, Voronoi cells on a jittered grid (some merged,
   their borders made to wander by a warp),
   rectangles cut again and again (panels), courses of blocks, colour ramps, and the writing of the maps. Its random
   numbers come from the seed and a name, so a feature added to a recipe leaves the others as they were.
