@@ -4,7 +4,7 @@
     python3 make.py RECIPE.py OUT [--texels N] [--preview SHEET.png]
 
 A recipe is a Python file with METRES (the tile's width), optionally TEXELS (2048 by default) and SEED (1), and a
-function make(tile) that takes a tiles.Tile and returns a tiles.Maps. --texels makes it smaller to try it quickly;
+function make(tile) that takes a tiles.Tile and returns a tiles.Maps. It may import modules from its own folder. --texels makes it smaller to try it quickly;
 the recipe's sizes are in metres, so it looks the same. --preview also writes a lit preview sheet (preview.py).
 """
 
@@ -21,6 +21,8 @@ import tiles  # noqa: E402
 
 
 def load(path):
+    # A recipe may import modules beside it, such as a palette its game's recipes share.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(path)))
     name = os.path.splitext(os.path.basename(path))[0].replace("-", "_")
     spec = importlib.util.spec_from_file_location(f"recipe_{name}", path)
     module = importlib.util.module_from_spec(spec)

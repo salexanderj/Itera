@@ -78,9 +78,11 @@ each time, then makes the set from those maps as from a bake.
 
 - A recipe is a Python file with `METRES` (the tile's width), optionally `TEXELS` (2048) and `SEED` (1), and
   `make(tile)`, which takes a `tiles.Tile` and returns a `tiles.Maps`: the colour in linear RGB, the height in metres,
-  and optionally the occlusion (made from the height if left out).
+  and optionally the occlusion (made from the height if left out). A recipe may import modules beside it, such as a
+  palette its game's recipes share.
 - `tiles.py`: the tile, whose every operation wraps at its edges, so the set repeats without a seam. Noise by
-  wavelength in metres, blurs, slopes, hollows and edges of a height, Voronoi cells on a jittered grid (some merged),
+  wavelength in metres, blurs, slopes, hollows and edges of a height, Voronoi cells on a jittered grid (some merged,
+  their borders made to wander by a warp),
   rectangles cut again and again (panels), courses of blocks, colour ramps, and the writing of the maps. Its random
   numbers come from the seed and a name, so a feature added to a recipe leaves the others as they were.
 - Arrays are [row, column]: u along a row, v up the rows. On a wall v is the world's up, so row 0 is the bottom of the

@@ -118,10 +118,11 @@ class Tile:
         shut = near_strength * self.cavity(h, near) + far_strength * self.cavity(h, far)
         return np.clip(1 - shut, floor, 1).astype(F32)
 
-    def grid_cells(self, columns, rows, name, jitter=0.8, merge=0.0, row_jitter=None):
+    def grid_cells(self, columns, rows, name, jitter=0.8, merge=0.0, row_jitter=None, warp=None):
         """Voronoi cells round one point in each of columns by rows boxes, each moved up to jitter of its box from the
         box's middle (row_jitter for v, jitter if None). Distances are measured in boxes, so cells are as long along u
-        as the boxes are. With merge, that share of the cells joins the cell to its right into one (and chains)."""
+        as the boxes are. With merge, that share of the cells joins the cell to its right into one (and chains). warp,
+        a pair of arrays in metres (along u and v), moves each texel before it is placed, so the borders wander."""
         rng = self.rng(name)
         row_jitter = jitter if row_jitter is None else row_jitter
         width, height = self.metres / columns, self.metres / rows
@@ -145,8 +146,13 @@ class Tile:
         group = group.reshape(rows, columns)
 
         # The texel's place in boxes, and its box.
-        bu = np.broadcast_to(self.u / width, (self.texels, self.texels))
-        bv = np.broadcast_to(self.v / height, (self.texels, self.texels))
+        pu = np.broadcast_to(self.u, (self.texels, self.texels))
+        pv = np.broadcast_to(self.v, (self.texels, self.texels))
+        if warp is not None:
+            pu = (pu + warp[0]) % self.metres
+            pv = (pv + warp[1]) % self.metres
+        bu = pu / width
+        bv = pv / height
         iu = np.floor(bu).astype(np.int32)
         iv = np.floor(bv).astype(np.int32)
         offsets = [(a, b) for a in range(-2, 3) for b in range(-2, 3)]
@@ -186,8 +192,8 @@ class Tile:
         count = int(group.max()) + 1
         middle_u, middle_v = self._group_middles(group, jitter_u, jitter_v, width, height)
         index = near_group.astype(np.int32)
-        du = self.wrap(np.broadcast_to(self.u, index.shape) - middle_u[index])
-        dv = self.wrap(np.broadcast_to(self.v, index.shape) - middle_v[index])
+        du = self.wrap(pu - middle_u[index])
+        dv = self.wrap(pv - middle_v[index])
         return Cells(index, edge.astype(F32), du.astype(F32), dv.astype(F32), count, middle_u, middle_v)
 
     def _group_middles(self, group, jitter_u, jitter_v, width, height):
