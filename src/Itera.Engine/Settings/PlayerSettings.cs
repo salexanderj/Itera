@@ -2,6 +2,7 @@ using System.Text.Json;
 using Itera.Engine.Audio;
 using Itera.Engine.Input;
 using Itera.Engine.Rendering;
+using Itera.Engine.Rendering.Meshes;
 using Itera.Engine.UI.Toolkit;
 using Itera.Engine.Windowing;
 using Microsoft.Extensions.Logging;
@@ -12,8 +13,9 @@ namespace Itera.Engine.Settings;
 
 /// <summary>
 /// The player's settings: the volume, mouse sensitivity, field of view, dynamic render
-/// scaling and its threshold (in place of the render scale), shadows, anti-aliasing (SMAA's switch and
-/// the world's samples a pixel, one choice in the menu, <see cref="AntiAliasMode"/>), VSync, full
+/// scaling and its threshold, the render scale while it is off, shadows, anti-aliasing (SMAA's switch and
+/// the world's samples a pixel, one choice in the menu, <see cref="AntiAliasMode"/>), object detail, effects detail, the
+/// graphics preset those follow (<see cref="GraphicsPreset"/>), VSync, full
 /// screen, and the screen it covers, changed in the menu and kept in
 /// <c>settings.json</c> in the data folder. At start each is the options' value (<c>Engine:Audio:Volume</c> and so on), then the file's, except where the
 /// command line gave the option (<see cref="CommandLineKeys"/>): that one wins for the run and the file keeps what it
@@ -54,6 +56,21 @@ public sealed partial class PlayerSettings
     private const string FullscreenKey = "Fullscreen";
     private const string ScreenKey = "Screen";
     private const string UiScaleKey = "UiScale";
+    private const string GraphicsPresetKey = "GraphicsPreset";
+    private const string ObjectDetailKey = "ObjectDetail";
+    private const string EffectsDetailKey = "EffectsDetail";
+
+    /// <summary>
+    /// The render scale while dynamic scaling is off. Not <c>"RenderScale"</c>, the retired key, so an old file's value
+    /// is not taken.
+    /// </summary>
+    private const string RenderScaleKey = "FixedRenderScale";
+
+    /// <summary>
+    /// The dynamic scaling threshold's default before the presets came: a file written before them (no
+    /// <c>"GraphicsPreset"</c>) that holds it takes the options' threshold.
+    /// </summary>
+    private const float OldDefaultThreshold = 120;
 
     /// <summary>
     /// Frame blending's switch, a setting until 2026-10-05; frame blending left with the raymarcher on 2026-10-06.
@@ -95,9 +112,21 @@ public sealed partial class PlayerSettings
         FullscreenKey,
         ScreenKey,
         UiScaleKey,
+        GraphicsPresetKey,
+        ObjectDetailKey,
+        EffectsDetailKey,
+        RenderScaleKey,
         KeysKey,
         GameKey,
     };
+
+    /// <summary>The engine's part of each preset's table, by <see cref="GraphicsPreset"/> (Low, Medium, High).</summary>
+    private static readonly PresetTable[] s_presets =
+    [
+        new(AntiAliasMode.Smaa, true, 2, 0.5f),
+        new(AntiAliasMode.Msaa2, true, 2, 0.75f),
+        new(AntiAliasMode.Msaa4, true, 1, 1),
+    ];
 
     private static readonly byte[] s_byteOrderMark = [0xEF, 0xBB, 0xBF];
 
@@ -106,6 +135,10 @@ public sealed partial class PlayerSettings
     private readonly RenderView? _view;
     private readonly WindowService? _window;
     private readonly UiToolkit? _toolkit;
+    private readonly WorldMeshes? _meshes;
+    private readonly EffectsBudget? _effects;
+    private readonly float _optionsThreshold;
+    private readonly List<PresetValue> _presetValues = [];
     private readonly ILogger<PlayerSettings> _logger;
     private readonly HashSet<string> _fromCommandLine = new(StringComparer.Ordinal);
     private readonly Dictionary<string, JsonElement> _file = new(StringComparer.Ordinal);
@@ -128,6 +161,8 @@ public sealed partial class PlayerSettings
         WindowService window,
         KeyBindings keys,
         UiToolkit toolkit,
+        WorldMeshes meshes,
+        EffectsBudget effects,
         ILogger<PlayerSettings> logger
     )
         : this(
@@ -139,7 +174,9 @@ public sealed partial class PlayerSettings
             view,
             window,
             keys,
-            toolkit
+            toolkit,
+            meshes,
+            effects
         ) { }
 
     /// <summary>
@@ -170,6 +207,8 @@ public sealed partial class PlayerSettings
     /// <param name="window">Goes full screen; null for none.</param>
     /// <param name="keys">The keybindings, read from and written to the file's <c>"Keys"</c>; null for the defaults.</param>
     /// <param name="toolkit">Takes the UI scale; null for none.</param>
+    /// <param name="meshes">Takes the object detail; null for none.</param>
+    /// <param name="effects">Takes the effects detail; null for none.</param>
     internal PlayerSettings(
         EngineOptions options,
         CommandLineKeys commandLine,
@@ -179,11 +218,15 @@ public sealed partial class PlayerSettings
         RenderView? view = null,
         WindowService? window = null,
         KeyBindings? keys = null,
-        UiToolkit? toolkit = null
+        UiToolkit? toolkit = null,
+        WorldMeshes? meshes = null,
+        EffectsBudget? effects = null
     )
     {
         _path = path;
         _toolkit = toolkit;
+        _meshes = meshes;
+        _effects = effects;
         UiScale = Math.Clamp(options.Ui.Scale, LeastUiScale, MostUiScale);
         Keys = keys ?? new KeyBindings();
         _audio = audio;
@@ -201,9 +244,13 @@ public sealed partial class PlayerSettings
             DynamicRenderScale.LeastThreshold,
             DynamicRenderScale.MostThreshold
         );
+        _optionsThreshold = ScalingThreshold;
         Shadows = options.Renderer.Shadows;
         AntiAliasing = options.Renderer.AntiAliasing;
         MsaaSamples = AntiAliasModes.SnapSamples(options.Renderer.MsaaSamples);
+        ObjectDetail = Math.Clamp(options.Renderer.ObjectVoxelPixels, LeastObjectDetail, MostObjectDetail);
+        EffectsDetail = EffectsBudget.MostShare;
+        RenderScale = Math.Clamp(options.Renderer.RenderScale, Rendering.RenderScale.Min, Rendering.RenderScale.Max);
         VSync = options.Window.VSync;
         Fullscreen = options.Window.Fullscreen;
         Screen = options.Window.Screen ?? "";
@@ -217,6 +264,8 @@ public sealed partial class PlayerSettings
         Remember(commandLine, ShadowsKey, "Engine:Renderer:Shadows");
         Remember(commandLine, AntiAliasingKey, "Engine:Renderer:AntiAliasing");
         Remember(commandLine, MsaaSamplesKey, "Engine:Renderer:MsaaSamples");
+        Remember(commandLine, ObjectDetailKey, "Engine:Renderer:ObjectVoxelPixels");
+        Remember(commandLine, RenderScaleKey, "Engine:Renderer:RenderScale");
         Remember(commandLine, VSyncKey, "Engine:Window:VSync");
         Remember(commandLine, FullscreenKey, "Engine:Window:Fullscreen");
         Remember(commandLine, ScreenKey, "Engine:Window:Screen");
@@ -231,6 +280,8 @@ public sealed partial class PlayerSettings
         // them (so a log shows them).
         var antiAliasing = AntiAliasModes.Label(AntiAliasMode);
         LogApplied(DynamicScaling, ScalingThreshold, Shadows, antiAliasing, VSync, Fullscreen, ScreenLabel);
+        var preset = GraphicsPresets.Label(GraphicsPreset);
+        LogGraphics(preset, ObjectDetail, EffectsDetail, RenderScale);
     }
 
     /// <summary>The master volume, 0 to 1.</summary>
@@ -301,6 +352,63 @@ public sealed partial class PlayerSettings
             8 => AntiAliasMode.Msaa8,
             _ => AntiAliasing ? AntiAliasMode.Smaa : AntiAliasMode.Off,
         };
+
+    /// <summary>
+    /// The least object detail kept: a voxel object's voxel covers this many pixels before its level is drawn
+    /// (<c>Engine:Renderer:ObjectVoxelPixels</c>'s range, as <see cref="WorldMeshes.ObjectVoxelPixels"/> takes it).
+    /// </summary>
+    public const float LeastObjectDetail = 0.5f;
+
+    /// <summary>The most object detail number kept: coarser levels nearer.</summary>
+    public const float MostObjectDetail = 16;
+
+    /// <summary>The finest object detail the Settings page's slider offers (High).</summary>
+    public const float SliderFinestObjectDetail = 1;
+
+    /// <summary>The coarsest object detail the Settings page's slider offers (Low).</summary>
+    public const float SliderCoarsestObjectDetail = 4;
+
+    /// <summary>
+    /// The settings' Object detail: how wide one voxel of a voxel object's model level must be on the drawn image, in
+    /// pixels, for that level to be drawn (<c>Engine:Renderer:ObjectVoxelPixels</c>, kept within
+    /// <see cref="LeastObjectDetail"/> to <see cref="MostObjectDetail"/>; <see cref="WorldMeshes.ObjectVoxelPixels"/>).
+    /// 1 is the finest; larger numbers draw coarser levels nearer.
+    /// </summary>
+    public float ObjectDetail { get; private set; }
+
+    /// <summary>
+    /// The settings' Effects detail: the most share of cosmetic effects drawn, <see cref="EffectsBudget.MinimumShare"/>
+    /// to 1 (<see cref="EffectsBudget.Ceiling"/>).
+    /// </summary>
+    public float EffectsDetail { get; private set; }
+
+    /// <summary>
+    /// The settings' Render scale: the share of the screen's size the world is drawn at while dynamic render scaling is
+    /// off, <see cref="Rendering.RenderScale.Min"/> to 1 (<c>Engine:Renderer:RenderScale</c>,
+    /// <see cref="RenderView.FixedRenderScale"/>). The console's <c>scale</c> sets one for the run over it.
+    /// </summary>
+    public float RenderScale { get; private set; }
+
+    /// <summary>
+    /// The settings' Quality: the preset whose table every value matches (the engine's anti-aliasing, shadows, object
+    /// detail, and effects detail, and the game's values added with <see cref="AddPresetValue"/>), else
+    /// <see cref="GraphicsPreset.Custom"/>. Allocates nothing.
+    /// </summary>
+    public GraphicsPreset GraphicsPreset
+    {
+        get
+        {
+            for (var preset = GraphicsPreset.Low; preset <= GraphicsPreset.High; preset++)
+            {
+                if (Matches(preset))
+                {
+                    return preset;
+                }
+            }
+
+            return GraphicsPreset.Custom;
+        }
+    }
 
     /// <summary>True for FIFO presentation, false for mailbox (or immediate where there is none).</summary>
     public bool VSync { get; private set; }
@@ -478,6 +586,98 @@ public sealed partial class PlayerSettings
         Version++;
     }
 
+    /// <summary>
+    /// Adds a game's value to the graphics presets' table (such as its grass's density): choosing Low, Medium, or High
+    /// sets it to <paramref name="low"/>, <paramref name="medium"/>, or <paramref name="high"/>, each kept within the
+    /// value's bounds, and <see cref="GraphicsPreset"/> matches it too. A game calls it once for each such value at its
+    /// run's <c>game</c> step, after <see cref="RegisterValue"/>.
+    /// </summary>
+    /// <exception cref="ArgumentException">The value was added before, or a number is not finite.</exception>
+    public void AddPresetValue(GameValue which, float low, float medium, float high)
+    {
+        if (!float.IsFinite(low) || !float.IsFinite(medium) || !float.IsFinite(high))
+        {
+            throw new ArgumentException(
+                $"The game value '{ValueName(which)}' needs finite preset values.",
+                nameof(which)
+            );
+        }
+
+        foreach (var added in _presetValues)
+        {
+            if (added.Value == which)
+            {
+                throw new ArgumentException(
+                    $"The game value '{ValueName(which)}' is in the presets twice.",
+                    nameof(which)
+                );
+            }
+        }
+
+        var least = _valueLeast[which.Index];
+        var most = _valueMost[which.Index];
+        _presetValues.Add(
+            new PresetValue(
+                which,
+                Math.Clamp(low, least, most),
+                Math.Clamp(medium, least, most),
+                Math.Clamp(high, least, most)
+            )
+        );
+    }
+
+    /// <summary>
+    /// Sets every value in <paramref name="preset"/>'s table at once, each applied at once as its own setter does:
+    /// anti-aliasing, shadows, object detail, effects detail, and the game's values (<see cref="AddPresetValue"/>).
+    /// <see cref="GraphicsPreset.Custom"/> changes nothing. Dynamic render scaling, its threshold, and the render scale
+    /// are in no preset.
+    /// </summary>
+    public void SetGraphicsPreset(GraphicsPreset preset)
+    {
+        if (preset is not (GraphicsPreset.Low or GraphicsPreset.Medium or GraphicsPreset.High))
+        {
+            return;
+        }
+
+        var table = s_presets[(int)preset];
+        SetAntiAliasMode(table.AntiAlias);
+        SetShadows(table.Shadows);
+        SetObjectDetail(table.ObjectDetail);
+        SetEffectsDetail(table.EffectsDetail);
+        foreach (var value in _presetValues)
+        {
+            SetValue(value.Value, value.Of(preset));
+        }
+    }
+
+    /// <summary>True when every value in <paramref name="preset"/>'s table (Low, Medium, or High) is set as it says.</summary>
+    private bool Matches(GraphicsPreset preset)
+    {
+        var table = s_presets[(int)preset];
+        if (
+            AntiAliasMode != table.AntiAlias
+            || Shadows != table.Shadows
+            || !Near(ObjectDetail, table.ObjectDetail)
+            || !Near(EffectsDetail, table.EffectsDetail)
+        )
+        {
+            return false;
+        }
+
+        foreach (var value in _presetValues)
+        {
+            if (!Near(ValueOf(value.Value), value.Of(preset)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Equal to the four places the file keeps.</summary>
+    private static bool Near(float a, float b) => Math.Abs(a - b) < 1e-4f;
+
     /// <summary>Rises whenever a setting changes.</summary>
     public int Version { get; private set; }
 
@@ -512,8 +712,72 @@ public sealed partial class PlayerSettings
         {
             _view.DynamicScaling = DynamicScaling;
             _view.ScalingThreshold = ScalingThreshold;
+            _view.FixedRenderScale = RenderScale;
             _view.Shadows = Shadows;
             _view.AntiAliasing = AntiAliasing;
+        }
+
+        if (_meshes is not null)
+        {
+            _meshes.ObjectVoxelPixels = ObjectDetail;
+        }
+
+        if (_effects is not null)
+        {
+            _effects.Ceiling = EffectsDetail;
+        }
+    }
+
+    /// <summary>
+    /// Sets the object detail, kept within <see cref="LeastObjectDetail"/> and <see cref="MostObjectDetail"/>; at once.
+    /// </summary>
+    public void SetObjectDetail(float pixels)
+    {
+        if (!float.IsFinite(pixels))
+        {
+            return;
+        }
+
+        var clamped = Math.Clamp(pixels, LeastObjectDetail, MostObjectDetail);
+        if (Change(ObjectDetailKey, ObjectDetail, clamped, out var value))
+        {
+            ObjectDetail = value;
+            Apply();
+        }
+    }
+
+    /// <summary>Sets the effects detail, kept within <see cref="EffectsBudget.MinimumShare"/> and 1; at once.</summary>
+    public void SetEffectsDetail(float share)
+    {
+        if (!float.IsFinite(share))
+        {
+            return;
+        }
+
+        var clamped = Math.Clamp(share, EffectsBudget.MinimumShare, EffectsBudget.MostShare);
+        if (Change(EffectsDetailKey, EffectsDetail, clamped, out var value))
+        {
+            EffectsDetail = value;
+            Apply();
+        }
+    }
+
+    /// <summary>
+    /// Sets the render scale used while dynamic render scaling is off, kept within
+    /// <see cref="Rendering.RenderScale.Min"/> and 1; at once.
+    /// </summary>
+    public void SetRenderScale(float scale)
+    {
+        if (!float.IsFinite(scale))
+        {
+            return;
+        }
+
+        var clamped = Math.Clamp(scale, Rendering.RenderScale.Min, Rendering.RenderScale.Max);
+        if (Change(RenderScaleKey, RenderScale, clamped, out var value))
+        {
+            RenderScale = value;
+            Apply();
         }
     }
 
@@ -725,6 +989,10 @@ public sealed partial class PlayerSettings
                 WriteBoolean(writer, ShadowsKey, Shadows);
                 WriteBoolean(writer, AntiAliasingKey, AntiAliasing);
                 WriteNumber(writer, MsaaSamplesKey, MsaaSamples);
+                writer.WriteString(GraphicsPresetKey, GraphicsPresets.Label(GraphicsPreset));
+                WriteNumber(writer, ObjectDetailKey, ObjectDetail);
+                WriteNumber(writer, EffectsDetailKey, EffectsDetail);
+                WriteNumber(writer, RenderScaleKey, RenderScale);
                 WriteBoolean(writer, VSyncKey, VSync);
                 WriteBoolean(writer, FullscreenKey, Fullscreen);
                 WriteString(writer, ScreenKey, Screen);
@@ -809,9 +1077,27 @@ public sealed partial class PlayerSettings
             DynamicRenderScale.LeastThreshold,
             DynamicRenderScale.MostThreshold
         );
+        if (
+            !_file.ContainsKey(GraphicsPresetKey)
+            && !_fromCommandLine.Contains(ScalingThresholdKey)
+            && _file.TryGetValue(ScalingThresholdKey, out var threshold)
+            && threshold.ValueKind == JsonValueKind.Number
+            && threshold.TryGetSingle(out var stored)
+            && stored == OldDefaultThreshold
+        )
+        {
+            // A file from before the presets holds the threshold's old default: it takes the new one, and the next
+            // save writes it with the preset.
+            ScalingThreshold = _optionsThreshold;
+            _changed = true;
+        }
+
         Shadows = Read(ShadowsKey, Shadows);
         AntiAliasing = Read(AntiAliasingKey, AntiAliasing);
         MsaaSamples = AntiAliasModes.SnapSamples((int)Read(MsaaSamplesKey, MsaaSamples, 1, 8));
+        ObjectDetail = Read(ObjectDetailKey, ObjectDetail, LeastObjectDetail, MostObjectDetail);
+        EffectsDetail = Read(EffectsDetailKey, EffectsDetail, EffectsBudget.MinimumShare, EffectsBudget.MostShare);
+        RenderScale = Read(RenderScaleKey, RenderScale, Rendering.RenderScale.Min, Rendering.RenderScale.Max);
         VSync = Read(VSyncKey, VSync);
         Fullscreen = Read(FullscreenKey, Fullscreen);
         Screen = Read(ScreenKey, Screen);
@@ -964,8 +1250,34 @@ public sealed partial class PlayerSettings
         string screen
     );
 
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Settings: graphics {Preset}, object detail {ObjectDetail}, effects detail {EffectsDetail}, render scale {RenderScale} with dynamic scaling off"
+    )]
+    private partial void LogGraphics(string preset, float objectDetail, float effectsDetail, float renderScale);
+
     [LoggerMessage(Level = LogLevel.Debug, Message = "Settings: wrote {Path}")]
     private partial void LogSaved(string path);
+
+    /// <summary>The engine's values in one preset's table.</summary>
+    private readonly record struct PresetTable(
+        AntiAliasMode AntiAlias,
+        bool Shadows,
+        float ObjectDetail,
+        float EffectsDetail
+    );
+
+    /// <summary>A game's value in the presets' table (<see cref="AddPresetValue"/>).</summary>
+    private readonly record struct PresetValue(GameValue Value, float Low, float Medium, float High)
+    {
+        public float Of(GraphicsPreset preset) =>
+            preset switch
+            {
+                GraphicsPreset.Low => Low,
+                GraphicsPreset.Medium => Medium,
+                _ => High,
+            };
+    }
 
     [LoggerMessage(
         Level = LogLevel.Warning,

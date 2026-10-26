@@ -21,9 +21,13 @@ namespace Itera.Engine.Rendering;
 /// When that worst frame is over the aim, it lowers the scale at once to where the worst frame would meet the aim, or to
 /// the least when the mean fixed part alone is over. When their mean is under <see cref="RaiseBelow"/> of the aim, it raises the scale by at most <see cref="MostRaise"/>
 /// a step, never past where the mean would meet the aim, so it takes about a second to rise 0.2 and does not swing.
-/// Between the two it holds, and at 1 with time to spare it does nothing. Off, or with the console's <c>scale</c> set
-/// (<see cref="RenderView.ScaleOverride"/>), or where the GPU cannot measure, the scale is fixed. Main thread, once a
-/// frame before the view is made; allocates nothing.
+/// Between the two it holds, and at 1 with time to spare it does nothing. Effects give way before the resolution
+/// (<see cref="EffectsBudget"/>): over the aim, a step lowers the effects' share by
+/// <see cref="EffectsBudget.LowerStep"/> and leaves the scale, until the share is at its least; under the raise line,
+/// a step raises the scale first, and the share by <see cref="EffectsBudget.RaiseStep"/> only once the scale is at 1.
+/// Off, or with the console's <c>scale</c> set (<see cref="RenderView.ScaleOverride"/>), or where the GPU cannot
+/// measure, the scale is fixed and the share is its ceiling. Main thread, once a frame before the view is made;
+/// allocates nothing.
 /// </summary>
 public sealed partial class DynamicRenderScale
 {
@@ -80,6 +84,7 @@ public sealed partial class DynamicRenderScale
     private readonly RenderView _view;
     private readonly GpuTimings _timings;
     private readonly WindowService? _window;
+    private readonly EffectsBudget _effects;
     private readonly ILogger<DynamicRenderScale> _logger;
     private readonly float[] _passes = new float[GpuTimings.PassCount];
     private bool _running;
@@ -92,23 +97,32 @@ public sealed partial class DynamicRenderScale
     private double _intervalStart = -1;
     private float _least;
     private float _most;
+    private float _leastShare;
+    private float _mostShare;
     private double _scaleSum;
     private double _gpuSum;
     private double _gpuFixedSum;
     private int _intervalFrames;
     private int _gpuFrames;
 
+    /// <param name="view">The view whose render scale it sets.</param>
+    /// <param name="timings">The GPU's times.</param>
+    /// <param name="window">The window, for the screen's refresh rate; null for none.</param>
+    /// <param name="logger">Logger.</param>
+    /// <param name="effects">The effects' share it lowers before the scale; one of its own when null (tests).</param>
     public DynamicRenderScale(
         RenderView view,
         GpuTimings timings,
         WindowService? window,
-        ILogger<DynamicRenderScale> logger
+        ILogger<DynamicRenderScale> logger,
+        EffectsBudget? effects = null
     )
     {
         _view = view;
         _timings = timings;
         _window = window;
         _logger = logger;
+        _effects = effects ?? new EffectsBudget();
     }
 
     /// <summary>The thresholds the settings offer: common refresh rates, in frames a second, lowest first.</summary>
@@ -200,17 +214,59 @@ public sealed partial class DynamicRenderScale
             var meanFixed = _fixedSum / _count;
             var mean = new GpuFrameTime(_sum / _count, meanFixed);
             var worst = new GpuFrameTime(meanFixed + _mostPixels, meanFixed);
-            var next = Next(view.RenderScale, worst, mean, TargetFps);
+            var effects = _effects;
+            var (next, share) = Step(view.RenderScale, effects.Share, effects.Ceiling, worst, mean, TargetFps);
             StartStep();
-            if (next != view.RenderScale)
+            if (next != view.RenderScale || share != effects.Share)
             {
                 view.RenderScale = next;
+                effects.Share = share;
                 _settle = SettleFrames;
             }
         }
 
-        Track(now, view.RenderScale);
+        Track(now, view.RenderScale, _effects.Share);
     }
+
+    /// <summary>
+    /// The scale and the effects' share after a step's frames drawn at <paramref name="scale"/> with
+    /// <paramref name="share"/> of the effects, for <paramref name="targetFps"/> frames a second. Over the aim, the share
+    /// falls by <see cref="EffectsBudget.LowerStep"/> to <see cref="EffectsBudget.MinimumShare"/> at least, and the scale
+    /// holds; at the least share, the scale falls (<see cref="Next"/>). Under <see cref="RaiseBelow"/> of the aim, the
+    /// scale rises first; at <see cref="RenderScale.Max"/>, the share rises by <see cref="EffectsBudget.RaiseStep"/> to
+    /// <paramref name="ceiling"/> at most. Shares are whole hundredths. Pure.
+    /// </summary>
+    public static (float Scale, float Share) Step(
+        float scale,
+        float share,
+        float ceiling,
+        GpuFrameTime worst,
+        GpuFrameTime mean,
+        double targetFps
+    )
+    {
+        var aim = Aim * 1000 / targetFps;
+        if (worst.Milliseconds > aim && share > EffectsBudget.MinimumShare)
+        {
+            return (scale, ShareHundredths(Math.Max(EffectsBudget.MinimumShare, share - EffectsBudget.LowerStep)));
+        }
+
+        var next = Next(scale, worst, mean, targetFps);
+        if (
+            next == scale
+            && next >= RenderScale.Max
+            && worst.Milliseconds <= aim
+            && mean.Milliseconds < RaiseBelow * aim
+            && share < ceiling
+        )
+        {
+            return (next, ShareHundredths(Math.Min(ceiling, share + EffectsBudget.RaiseStep)));
+        }
+
+        return (next, share);
+    }
+
+    private static float ShareHundredths(float share) => MathF.Round(share * 100) / 100;
 
     /// <summary>
     /// The scale after a step's frames drawn at <paramref name="scale"/>, for <paramref name="targetFps"/> frames a
@@ -287,6 +343,7 @@ public sealed partial class DynamicRenderScale
     {
         _running = false;
         _view.RenderScale = scale;
+        _effects.Share = _effects.Ceiling;
     }
 
     private void StartInterval(double now)
@@ -294,6 +351,8 @@ public sealed partial class DynamicRenderScale
         _intervalStart = now;
         _least = _view.RenderScale;
         _most = _view.RenderScale;
+        _leastShare = _effects.Share;
+        _mostShare = _effects.Share;
         _scaleSum = 0;
         _gpuSum = 0;
         _gpuFixedSum = 0;
@@ -301,11 +360,16 @@ public sealed partial class DynamicRenderScale
         _gpuFrames = 0;
     }
 
-    /// <summary>Keeps the interval's range of scales, and gives it in a Debug line every <see cref="LogSeconds"/>.</summary>
-    private void Track(double now, float scale)
+    /// <summary>
+    /// Keeps the interval's range of scales and of effects' shares, and gives them in a Debug line every
+    /// <see cref="LogSeconds"/>.
+    /// </summary>
+    private void Track(double now, float scale, float share)
     {
         _least = Math.Min(_least, scale);
         _most = Math.Max(_most, scale);
+        _leastShare = Math.Min(_leastShare, share);
+        _mostShare = Math.Max(_mostShare, share);
         _scaleSum += scale;
         _intervalFrames++;
         if (now - _intervalStart < LogSeconds)
@@ -316,15 +380,24 @@ public sealed partial class DynamicRenderScale
         var mean = _scaleSum / _intervalFrames;
         var gpu = _gpuFrames > 0 ? _gpuSum / _gpuFrames : 0;
         var gpuFixed = _gpuFrames > 0 ? _gpuFixedSum / _gpuFrames : 0;
-        LogInterval(_least, _most, mean, TargetFps, gpu, gpuFixed);
+        LogInterval(_least, _most, mean, _leastShare, _mostShare, TargetFps, gpu, gpuFixed);
         StartInterval(now);
     }
 
     [LoggerMessage(
         Level = LogLevel.Debug,
-        Message = "Render scale: {Least:F2} to {Most:F2}, mean {Mean:F2}, holding {Fps} fps (GPU {Gpu:F2} ms a frame, {GpuFixed:F2} ms of it fixed)"
+        Message = "Render scale: {Least:F2} to {Most:F2}, mean {Mean:F2}, effects {LeastShare:F2} to {MostShare:F2}, holding {Fps} fps (GPU {Gpu:F2} ms a frame, {GpuFixed:F2} ms of it fixed)"
     )]
-    private partial void LogInterval(float least, float most, double mean, float fps, double gpu, double gpuFixed);
+    private partial void LogInterval(
+        float least,
+        float most,
+        double mean,
+        float leastShare,
+        float mostShare,
+        float fps,
+        double gpu,
+        double gpuFixed
+    );
 }
 
 /// <summary>A frame's GPU time and its fixed part (<see cref="DynamicRenderScale.FixedPasses"/>), in milliseconds.</summary>

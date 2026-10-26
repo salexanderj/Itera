@@ -134,6 +134,8 @@ public static class EngineServiceCollectionExtensions
         ));
         services.TryAddSingleton<RenderThread>();
         services.TryAddSingleton<RenderView>();
+        // The share of cosmetic effects drawn, which dynamic scaling lowers before the render scale.
+        services.TryAddSingleton<EffectsBudget>();
         services.TryAddSingleton<DynamicRenderScale>();
         services.TryAddSingleton(sp =>
         {

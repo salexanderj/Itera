@@ -71,7 +71,9 @@ public readonly record struct GrassLook
 
 /// <summary>
 /// Where the grass's passes ask what to grow (<see cref="GrassPlacePass"/>): a game that wants grass implements it and
-/// registers it with <see cref="GrassServiceCollectionExtensions.AddIteraGrass{TSource}"/>. Run-wide.
+/// registers it with <see cref="GrassServiceCollectionExtensions.AddIteraGrass{TSource}"/>. Run-wide. Grass is an
+/// effect that may give way when frames take too long: a source takes the run's <see cref="EffectsBudget"/> in its
+/// constructor and scales what it chooses (its density, its radius) by <see cref="EffectsBudget.Share"/>.
 /// </summary>
 public interface IGrassSource
 {

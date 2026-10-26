@@ -10,7 +10,9 @@ namespace Itera.Engine.Tests.Rendering;
 /// (the square of the scale), with a little noise, measured <see cref="FrameSync.FramesInFlight"/> frames after each
 /// frame is built, as the render thread reads its timestamps after the slot's fence. The fixed part is recorded as the
 /// shadow maps' time before the whole frame's, as the render thread records a frame's passes. 120 frames a second; the
-/// target is 120 fps, 8.33 ms a frame, which the scaler aims 5 % under.
+/// target is 120 fps, 8.33 ms a frame, which the scaler aims 5 % under. The simulated GPU's time does not follow the
+/// effects' share, so the tests of the scale alone hold the share at its least (a ceiling of
+/// <see cref="EffectsBudget.MinimumShare"/>), and those of the share raise the ceiling.
 /// </summary>
 public sealed class DynamicRenderScaleTests
 {
@@ -19,6 +21,7 @@ public sealed class DynamicRenderScaleTests
 
     private readonly RenderView _view;
     private readonly GpuTimings _timings = new() { Enabled = true };
+    private readonly EffectsBudget _effects = new() { Ceiling = EffectsBudget.MinimumShare };
     private readonly DynamicRenderScale _scaler;
     private readonly float[] _inFlight = new float[FrameSync.FramesInFlight];
     private int _frame;
@@ -28,7 +31,7 @@ public sealed class DynamicRenderScaleTests
     {
         _view = new RenderView(Options.Create(new EngineOptions()));
         _view.ScalingThreshold = (float)Fps;
-        _scaler = new DynamicRenderScale(_view, _timings, null, NullLogger<DynamicRenderScale>.Instance);
+        _scaler = new DynamicRenderScale(_view, _timings, null, NullLogger<DynamicRenderScale>.Instance, _effects);
         Array.Fill(_inFlight, 1f);
     }
 
@@ -241,9 +244,94 @@ public sealed class DynamicRenderScaleTests
         Assert.True(_scaler.Running);
     }
 
+    [Theory]
+    // Over the aim with effects to spare: the share falls by a quarter, and the scale holds.
+    [InlineData(1f, 1f, 9.5, 1f, 0.75f)]
+    [InlineData(0.8f, 0.4f, 9.5, 0.8f, 0.25f)]
+    // Over the aim at the least share: the scale falls as it would alone.
+    [InlineData(1f, 0.25f, 9.5, 0.91f, 0.25f)]
+    // Under the raise line below 1: the scale rises first, and the share holds.
+    [InlineData(0.6f, 0.25f, 2.0, 0.62f, 0.25f)]
+    // Under the raise line at 1: the share rises by a tenth, up to the ceiling.
+    [InlineData(1f, 0.25f, 3.0, 1f, 0.35f)]
+    [InlineData(1f, 0.95f, 3.0, 1f, 1f)]
+    [InlineData(1f, 1f, 3.0, 1f, 1f)]
+    // Between the two: both hold.
+    [InlineData(1f, 0.5f, 7.5, 1f, 0.5f)]
+    public void A_step_lowers_the_effects_share_before_the_scale_and_raises_it_after(
+        float scale,
+        float share,
+        double meanMs,
+        float expectedScale,
+        float expectedShare
+    )
+    {
+        var frame = new GpuFrameTime(meanMs, 0);
+
+        var (nextScale, nextShare) = DynamicRenderScale.Step(scale, share, 1, frame, frame, Fps);
+
+        Assert.Equal((expectedScale, expectedShare), (nextScale, nextShare));
+    }
+
+    [Fact]
+    public void The_effects_share_falls_before_the_scale_and_rises_after_it()
+    {
+        _effects.Ceiling = 1;
+        _effects.Share = 1;
+        Run(120, 1.5, 4);
+        Assert.Equal((1f, 1f), (_view.RenderScale, _effects.Share));
+
+        // A heavier GPU: the share falls to its least before the scale leaves 1.
+        for (var i = 0; i < 240; i++)
+        {
+            Run(1, 0, 12);
+            if (_view.RenderScale < 1 && _effects.Share > EffectsBudget.MinimumShare)
+            {
+                Assert.Fail($"The scale fell to {_view.RenderScale} with the share at {_effects.Share}.");
+            }
+        }
+
+        Assert.Equal(EffectsBudget.MinimumShare, _effects.Share);
+        Assert.True(_view.RenderScale < 1f, $"{_view.RenderScale}");
+
+        // A lighter one: the scale is back at 1 before the share rises, and then the share climbs to the ceiling.
+        for (var i = 0; i < 600; i++)
+        {
+            Run(1, 0, 3);
+            if (_effects.Share > EffectsBudget.MinimumShare && _view.RenderScale < 1)
+            {
+                Assert.Fail($"The share rose to {_effects.Share} with the scale at {_view.RenderScale}.");
+            }
+        }
+
+        Assert.Equal((1f, 1f), (_view.RenderScale, _effects.Share));
+    }
+
+    [Fact]
+    public void The_share_never_passes_the_ceiling_and_is_the_ceiling_while_off()
+    {
+        _effects.Ceiling = 0.5f;
+        Run(600, 0, 3);
+        Assert.Equal(0.5f, _effects.Share);
+
+        _effects.Ceiling = 1;
+        Run(240, 0, 30);
+        Assert.Equal(EffectsBudget.MinimumShare, _effects.Share);
+
+        _view.DynamicScaling = false;
+        _scaler.Update(10);
+        Assert.Equal(1f, _effects.Share);
+
+        // A lower ceiling lowers the share with it.
+        _effects.Ceiling = 0.75f;
+        Assert.Equal(0.75f, _effects.Share);
+    }
+
     [Fact]
     public void Updates_allocate_nothing()
     {
+        // The share moves too.
+        _effects.Ceiling = 1;
         Run(600, 0, 10);
         var start = SystemAllocation.StartMeasurement();
         Run(1200, 0, 10);

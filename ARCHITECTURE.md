@@ -1296,8 +1296,14 @@ aim, or to the least when the mean fixed part alone is over it. A square root of
 little and take several steps. The largest pixel part catches single slow frames that a mean would let through. A frame
 slow in its fixed passes, such as a large upload, does not move the scale, because a lower scale cannot make it faster.
 When the mean is under 90 % of the aim, the
-scale rises by a small step, so it does not swing. Between the two it holds. Off, the scale is
-`Engine:Renderer:RenderScale`, which the benchmark sets with scaling off; the console's `scale auto` gives control back.
+scale rises by a small step, so it does not swing. Between the two it holds. Off, the scale is the settings' Render
+scale, from `Engine:Renderer:RenderScale`, which the benchmark sets with scaling off; the console's `scale auto` gives
+control back.
+
+Effects give way before the resolution, as a game's readability needs. `EffectsBudget.Share` is the share of cosmetic
+effects drawn, under the player's Effects detail. A step over the aim lowers the share first and the scale only once
+the share is at its least. A step with time to spare raises the scale first and the share only at scale 1. Detail
+particle recipes thin by the share, and a game's grass source may read it. The engine never thins what play depends on.
 
 ### Anti-aliasing with SMAA 1x
 

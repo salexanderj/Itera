@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Time;
 using Microsoft.Extensions.Logging;
@@ -44,7 +45,8 @@ public readonly record struct ParticleFrame(
 /// the oldest are overwritten, living or not. Particles live only on the GPU: they move, meet the world, and are drawn
 /// there, and nothing reads them back into the game. A frame takes at most
 /// <see cref="ParticleSettings.MaxBurstsPerFrame"/> bursts and <see cref="ParticleSettings.MaxSpawnsPerFrame"/>
-/// particles; the rest are dropped, with one Warning. Each frame that makes particles is kept as a spawn batch (where
+/// particles; the rest are dropped, with one Warning. A burst of a detail recipe (<see cref="ParticleRecipe.Detail"/>)
+/// makes the effects' share of its particles as it is drained (<see cref="EffectsBudget.Share"/>). Each frame that makes particles is kept as a spawn batch (where
 /// it starts in the ring, and when its longest-lived particle dies), so a frame knows which slots can still be alive
 /// (<see cref="ParticleFrame.LiveFirst"/>). It also holds the attractors (points that bursts' particles fly to) and the
 /// console's stress test. Main thread only; allocates nothing.
@@ -64,6 +66,7 @@ public sealed partial class ParticleEmitter
     private readonly Vector4[] _attractors = new Vector4[MaxAttractors];
     private readonly SpawnBatch[] _batches = new SpawnBatch[MaxBatches];
     private readonly ILogger<ParticleEmitter> _logger;
+    private readonly EffectsBudget _effects;
     private int _queued;
     private int _queuedSpawns;
     private int _head;
@@ -80,10 +83,21 @@ public sealed partial class ParticleEmitter
     private bool _clear;
     private bool _warned;
 
-    public ParticleEmitter(IOptions<EngineOptions> options, ILogger<ParticleEmitter> logger)
+    /// <param name="options">The particles' options.</param>
+    /// <param name="logger">Logger.</param>
+    /// <param name="effects">
+    /// The share of a detail recipe's particles made (<see cref="ParticleRecipe.Detail"/>); one of its own, at its
+    /// ceiling, when null (tests).
+    /// </param>
+    public ParticleEmitter(
+        IOptions<EngineOptions> options,
+        ILogger<ParticleEmitter> logger,
+        EffectsBudget? effects = null
+    )
     {
         var settings = options.Value.Particles;
         _logger = logger;
+        _effects = effects ?? new EffectsBudget();
         Enabled = settings.Enabled;
         Capacity = settings.Capacity;
         MaxBursts = settings.MaxBurstsPerFrame;
@@ -110,7 +124,10 @@ public sealed partial class ParticleEmitter
     /// <summary>Bursts waiting for the next frame.</summary>
     public int QueuedBursts => _queued;
 
-    /// <summary>Particles the waiting bursts make.</summary>
+    /// <summary>
+    /// Particles the waiting bursts ask for, before a detail recipe's are thinned (<see cref="EffectsBudget.Share"/>):
+    /// what the frame's cap counts.
+    /// </summary>
     public int QueuedSpawns => _queuedSpawns;
 
     /// <summary>Bursts dropped since the start because a frame was full.</summary>
@@ -267,7 +284,10 @@ public sealed partial class ParticleEmitter
         for (var i = 0; i < count; i++)
         {
             ref readonly var burst = ref _queue[i];
-            if (_head + burst.Count > Capacity)
+            ref readonly var recipe = ref Recipes[burst.Recipe];
+            // A detail recipe's burst makes the effects' share of its particles.
+            var made = recipe.Detail ? _effects.Thin(burst.Count) : burst.Count;
+            if (_head + made > Capacity)
             {
                 _written += Capacity - _head;
                 _head = 0;
@@ -283,7 +303,7 @@ public sealed partial class ParticleEmitter
                 Origin = burst.Origin,
                 Prefix = (uint)spawns,
                 Direction = burst.Direction,
-                Count = (uint)burst.Count,
+                Count = (uint)made,
                 End = burst.End,
                 Radius = burst.Radius,
                 Velocity = burst.Velocity,
@@ -295,10 +315,10 @@ public sealed partial class ParticleEmitter
                 Colour = burst.Tint == Vector4.Zero ? uint.MaxValue : GpuParticleRecipe.PackColour(burst.Tint),
                 Seed = burst.Seed != 0 ? burst.Seed : NextSeed(),
             };
-            _head = (_head + burst.Count) % Capacity;
-            _written += burst.Count;
-            spawns += burst.Count;
-            longest = Math.Max(longest, Recipes[burst.Recipe].LifetimeMax);
+            _head = (_head + made) % Capacity;
+            _written += made;
+            spawns += made;
+            longest = Math.Max(longest, recipe.LifetimeMax);
         }
 
         _queued = 0;

@@ -19,6 +19,8 @@ Blades of grass made each frame on the GPU from the voxel terrain the camera dra
 - The starter game does not call it, so Itera's own validation runs never draw grass.
 - Each frame the place pass asks the source's `TryGetLook` for a `GrassLook`: the material blades stand on and the
   field's numbers. False, no density, or no radius places nothing, and nothing is drawn.
+- Grass gives way when frames take too long only as the game says. A source takes the run's `EffectsBudget` in its
+  constructor and scales what it chooses by `EffectsBudget.Share`.
 
 ### Placing
 

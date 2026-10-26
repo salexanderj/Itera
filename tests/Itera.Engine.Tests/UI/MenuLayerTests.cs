@@ -6,6 +6,7 @@ using Itera.Engine.Commands;
 using Itera.Engine.Input;
 using Itera.Engine.Matches;
 using Itera.Engine.Networking;
+using Itera.Engine.Rendering;
 using Itera.Engine.Settings;
 using Itera.Engine.UI;
 using Itera.Engine.UI.Menu;
@@ -316,13 +317,14 @@ public sealed class MenuLayerTests : IDisposable
         Assert.False(Settings.VSync);
         Assert.Equal([false, false], Switches());
 
-        // Graphics: dynamic render scaling and its threshold, shadows, anti-aliasing. The threshold's slider steps
-        // through the offered rates: at its left end the first, 30, past its right end the last, 360.
+        // Graphics: Quality, dynamic render scaling and its threshold, shadows, anti-aliasing, then the rows the next
+        // test works. The threshold's slider steps through the offered rates: at its left end the first, 30, past its
+        // right end the last, 360.
         Click("Graphics");
         Assert.Equal(SettingsRows.GraphicsTab, _menu.SettingsTab);
         Assert.Equal([true, true], Switches());
         Assert.Equal(60, Settings.ScalingThreshold);
-        var threshold = Element(UiKind.Slider, 0).Rect;
+        var threshold = Element(UiKind.Slider, 1).Rect;
         Hold(new Vector2(threshold.Left + 1, threshold.MidY), pressed: true);
         Assert.Equal(30, Settings.ScalingThreshold);
         Hold(new Vector2(threshold.Right + 200, threshold.MidY), pressed: false);
@@ -331,7 +333,7 @@ public sealed class MenuLayerTests : IDisposable
 
         // Anti-aliasing's slider steps through Off, SMAA, MSAA 2x, 4x (the default), and 8x.
         Assert.Equal(AntiAliasMode.Msaa4, Settings.AntiAliasMode);
-        var antiAliasing = Element(UiKind.Slider, 1).Rect;
+        var antiAliasing = Element(UiKind.Slider, 2).Rect;
         Hold(new Vector2(antiAliasing.Left + 1, antiAliasing.MidY), pressed: true);
         Assert.Equal(AntiAliasMode.Off, Settings.AntiAliasMode);
         Assert.Equal(1, Settings.MsaaSamples);
@@ -378,6 +380,57 @@ public sealed class MenuLayerTests : IDisposable
         Assert.Equal(MenuView.Main, _menu.View);
         Click("Settings");
         Assert.Equal(SettingsRows.GameTab, _menu.SettingsTab);
+    }
+
+    [Fact]
+    public void The_graphics_tab_shows_quality_first_sets_a_preset_and_the_detail_rows_and_disables_the_render_scale()
+    {
+        Click("Settings");
+        Click("Graphics");
+        // Quality, the threshold, anti-aliasing, object detail, effects detail, and the render scale.
+        Assert.Equal(6, Count(UiKind.Slider));
+        Assert.True(Find("Quality").Rect.Top < Find("Dynamic render scaling").Rect.Top);
+        Assert.True(Find("Anti-aliasing").Rect.Top < Find("Object detail").Rect.Top);
+        Assert.True(Find("Object detail").Rect.Top < Find("Effects detail").Rect.Top);
+        Assert.True(Find("Effects detail").Rect.Top < Find("Render scale").Rect.Top);
+        Assert.Equal(GraphicsPreset.High, Settings.GraphicsPreset);
+        // The engine's defaults: High, object detail High (1 pixel), effects 100 %.
+        Assert.Equal(["High", "60 fps", "MSAA 4x", "High", "100 %", "100 %"], SliderTexts());
+
+        // The render scale is disabled while dynamic scaling is on: a drag on it changes nothing.
+        Assert.True(Element(UiKind.Slider, 5).Disabled);
+        var scale = Element(UiKind.Slider, 5).Rect;
+        Hold(new Vector2(scale.Left + 1, scale.MidY), pressed: true);
+        Release(new Vector2(scale.Left + 1, scale.MidY));
+        Assert.Equal(1f, Settings.RenderScale);
+
+        // Quality at its left end: Low's table at once.
+        var quality = Element(UiKind.Slider, 0).Rect;
+        Hold(new Vector2(quality.Left + 1, quality.MidY), pressed: true);
+        Release(new Vector2(quality.Left + 1, quality.MidY));
+        Assert.Equal(GraphicsPreset.Low, Settings.GraphicsPreset);
+        Assert.Equal(AntiAliasMode.Smaa, Settings.AntiAliasMode);
+        Assert.Equal(["Low", "60 fps", "SMAA", "Medium", "50 %", "100 %"], SliderTexts());
+
+        // Object detail runs from Low on the left to High on the right: at its left end, Low, and the preset is Custom.
+        var detail = Element(UiKind.Slider, 3).Rect;
+        Hold(new Vector2(detail.Left + 1, detail.MidY), pressed: true);
+        Hold(new Vector2(detail.Left - 50, detail.MidY), pressed: false);
+        Release(new Vector2(detail.Left - 50, detail.MidY));
+        Assert.Equal(PlayerSettings.SliderCoarsestObjectDetail, Settings.ObjectDetail);
+        Assert.Equal(GraphicsPreset.Custom, Settings.GraphicsPreset);
+        Assert.Equal("Custom", SliderTexts()[0]);
+        Assert.Equal("Low", SliderTexts()[3]);
+
+        // With dynamic scaling off, the render scale moves: its left end is 50 %.
+        ClickAt(Centre(Element(UiKind.Switch, 0).Rect));
+        Assert.False(Element(UiKind.Slider, 5).Disabled);
+        scale = Element(UiKind.Slider, 5).Rect;
+        Hold(new Vector2(scale.Left + 1, scale.MidY), pressed: true);
+        Hold(new Vector2(scale.Left - 50, scale.MidY), pressed: false);
+        Release(new Vector2(scale.Left - 50, scale.MidY));
+        Assert.Equal(RenderScale.Min, Settings.RenderScale);
+        Assert.Equal("50 %", SliderTexts()[5]);
     }
 
     [Fact]
@@ -782,6 +835,27 @@ public sealed class MenuLayerTests : IDisposable
         }
 
         return count;
+    }
+
+    /// <summary>Each slider's value text, the text just before it in its row, in order.</summary>
+    private List<string> SliderTexts()
+    {
+        var texts = new List<string>();
+        string? last = null;
+        for (var i = 0; i < _menu.Ui.Count; i++)
+        {
+            var element = _menu.Ui.ElementAt(i);
+            if (element.Kind == UiKind.Text)
+            {
+                last = element.Text;
+            }
+            else if (element.Kind == UiKind.Slider)
+            {
+                texts.Add(last ?? "");
+            }
+        }
+
+        return texts;
     }
 
     /// <summary>The switches shown, on or off, in order.</summary>

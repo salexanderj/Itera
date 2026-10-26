@@ -61,7 +61,7 @@ public sealed class SettingsCommandsTests : IDisposable
         Run("settings");
 
         Assert.Equal(
-            "volume 0.10, musicvolume 1.00, effectsvolume 1.00, sensitivity 0.10, fov 90, uiscale 1.00, scaling on, threshold 60, shadows on, aa 4x, vsync on, fullscreen off, screen main",
+            "volume 0.10, musicvolume 1.00, effectsvolume 1.00, sensitivity 0.10, fov 90, uiscale 1.00, scaling on, threshold 60, renderscale 1.00, shadows on, aa 4x, preset high, objectdetail 1.00, effectsdetail 1.00, vsync on, fullscreen off, screen main",
             Last()
         );
         Assert.False(File.Exists(FilePath));
@@ -154,6 +154,26 @@ public sealed class SettingsCommandsTests : IDisposable
         Assert.Equal(144, file.RootElement.GetProperty("DynamicScalingThreshold").GetDouble());
     }
 
+    [Fact]
+    public void A_preset_sets_its_table_and_the_graphics_rows_change_one_value_each()
+    {
+        Run("settings preset low");
+        Assert.Equal(GraphicsPreset.Low, _settings.GraphicsPreset);
+        Assert.Equal(AntiAliasMode.Smaa, _settings.AntiAliasMode);
+        Assert.True(_view.AntiAliasing);
+        Assert.Contains("preset low, objectdetail 2.00, effectsdetail 0.50", Last(), StringComparison.Ordinal);
+
+        Run("settings objectdetail 20; settings effectsdetail 0.6; settings renderscale 0.7");
+        Assert.Equal(PlayerSettings.MostObjectDetail, _settings.ObjectDetail);
+        Assert.Equal(0.6f, _settings.EffectsDetail);
+        Assert.Equal(0.7f, _view.FixedRenderScale);
+        Assert.Contains("renderscale 0.70", Last(), StringComparison.Ordinal);
+        Assert.Contains("preset custom", Last(), StringComparison.Ordinal);
+        using var file = JsonDocument.Parse(File.ReadAllBytes(FilePath));
+        Assert.Equal("Custom", file.RootElement.GetProperty("GraphicsPreset").GetString());
+        Assert.Equal(0.7, file.RootElement.GetProperty("FixedRenderScale").GetDouble(), 3);
+    }
+
     /// <summary>Frame blending, smooth normals, and texture filtering were the raymarcher's, and left with it.</summary>
     [Theory]
     [InlineData("settings blend off")]
@@ -196,6 +216,8 @@ public sealed class SettingsCommandsTests : IDisposable
     [InlineData("settings colour 3")]
     [InlineData("settings volume loud")]
     [InlineData("settings volume 0.5 more")]
+    [InlineData("settings preset custom")]
+    [InlineData("settings preset ultra")]
     public void Anything_else_prints_the_usage_and_changes_nothing(string line)
     {
         Run(line);

@@ -16,6 +16,8 @@ Particles (`Engine:Particles`, `ParticleEmitter`, `ParticlePass`) live on the GP
 ### Making and moving them
 
 - Game code queues bursts of a recipe by name (`ParticleRecipes`, registered once a run).
+- A recipe marked `ParticleRecipe.Detail` is a cosmetic extra. As `Drain` writes its burst, it makes
+  `EffectsBudget.Share` of the particles, rounded, and at least one. The flag stays on the CPU.
 - `StockEffects` registers seven general recipes, `flare`, `sparks`, `embers`, `debris`, `smoke`, `dust-puff`, and
   `grit`, with helpers to emit them, when a game makes it.
 - A spawn and a simulate compute pass make and move the particles after the world's pass. They run in frames that draw

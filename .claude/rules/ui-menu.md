@@ -1,7 +1,7 @@
 ---
 paths:
   - "src/Itera.Engine/UI/Menu/**"
-  - "src/Itera.Engine/Settings/{PlayerSettings,CommandLineKeys,AntiAliasMode,GameSwitch}.cs"
+  - "src/Itera.Engine/Settings/{PlayerSettings,CommandLineKeys,AntiAliasMode,GameSwitch,GraphicsPreset}.cs"
   - "tests/Itera.Engine.Tests/UI/{MenuJoinPage,MenuLayer,MenuPictures,RadialMenu,RadialRing,ScrollBar}Tests.cs"
   - "tests/Itera.Engine.Tests/Settings/PlayerSettingsTests.cs"
 ---
@@ -64,13 +64,17 @@ It has four tabs, and a game adds to them (`SettingsRows`):
   (`Engine:Window:Screen`). Screen is a slider through Main, each connected screen (`PlayerSettings.Screens`), and the
   setting's screen when it is not connected. It shows only when there are two steps or more.
 - Sound: Master Volume, with Music Volume and Effects Volume under it. `settings.json` keeps them as `Volume`, `MusicVolume`, and `EffectsVolume`; `Engine:Audio:Volume`, `MusicVolume`, and `EffectsVolume` are their defaults.
-- Graphics: dynamic render scaling, its threshold, shadows, and anti-aliasing. Anti-aliasing is a slider through Off, SMAA, and the MSAA sample counts (`AntiAliasMode`, kept as `AntiAliasing` and `MsaaSamples` in `settings.json`).
+- Graphics: Quality, dynamic render scaling, its threshold, shadows, anti-aliasing, object detail, effects detail, and
+  the render scale. Anti-aliasing is a slider through Off, SMAA, and the MSAA sample counts (`AntiAliasMode`, kept as
+  `AntiAliasing` and `MsaaSamples` in `settings.json`). Render scale is disabled while dynamic scaling is on.
 - Keybindings: a button per action (`KeyBindings` in `.claude/rules/ui-input.md`). A click waits for the next key or mouse button. Reset keys puts every binding back.
 
 Each setting applies at once through `PlayerSettings`:
 
 - The volumes go to `AudioService`.
-- Render scaling, shadows (`Engine:Renderer:Shadows`), and SMAA go to `RenderView`.
+- Render scaling, the render scale, shadows (`Engine:Renderer:Shadows`), and SMAA go to `RenderView`.
+- Object detail goes to `WorldMeshes.ObjectVoxelPixels`. It keeps the option's range; its slider offers 1 to 4 pixels.
+  Effects detail goes to `EffectsBudget.Ceiling`.
 - The world's samples remake the swapchain on the render thread, with `MeshPass`'s pipelines and images (`PlayerSettings.SamplesChanged`).
 - Sensitivity, field of view, and bindings apply where they are read: `PlayerInputSystem`, `PlayerCameraSystem`, `DebugFlyCameraSystem`, `CameraExtractSystem`, `StatsLayer`.
 - VSync remakes the swapchain on the render thread (`VulkanSwapchain.SetVSync`).
@@ -78,6 +82,21 @@ Each setting applies at once through `PlayerSettings`:
   reads the connected screens again (`PlayerSettings.ReadScreens`).
 - The console's `settings screen NAME|main` takes a connected screen's name in any case, and refuses any other.
 - The UI scale (`PlayerSettings.UiScale`, `"UiScale"` in `settings.json`, `settings uiscale`) goes to `UiToolkit.Scale`.
+
+### Graphics presets
+
+- Quality is a slider through Low, Medium, High, and Custom (`GraphicsPreset`). Moving it to a preset calls
+  `PlayerSettings.SetGraphicsPreset`, which sets every value in that preset's table at once. Custom changes nothing.
+- The engine's table holds anti-aliasing, shadows, object detail, and effects detail (`PlayerSettings`' preset table).
+  Dynamic scaling, its threshold, and the render scale are in no preset.
+- `PlayerSettings.GraphicsPreset` is the preset whose table every value matches, else Custom. So a row changed after a
+  preset makes Custom, and values set back to a preset's make it that preset again.
+- A game adds its own values to the table with `PlayerSettings.AddPresetValue(value, low, medium, high)`, after
+  `RegisterValue`.
+- `settings.json` keeps `GraphicsPreset`, `ObjectDetail`, `EffectsDetail`, and `FixedRenderScale`. The retired
+  `RenderScale` key is not read.
+- A file with no `GraphicsPreset` key whose `DynamicScalingThreshold` is 120, the old default, takes the options'
+  threshold.
 
 ### `settings.json`
 
@@ -114,4 +133,4 @@ A game's own number settings are `GameValue`s:
 ### Files in `src/Itera.Engine`
 
 - `UI/Menu/`: `IMenu`, `MenuLayer`, `MenuPages` with `IMenuPage` and `IMenuCorner`, `SettingsPage`, `SettingsRows`, `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`.
-- `Settings/`: `PlayerSettings`, `CommandLineKeys`, `AntiAliasMode`, `GameSwitch`, `GameValue`.
+- `Settings/`: `PlayerSettings`, `CommandLineKeys`, `AntiAliasMode`, `GameSwitch`, `GameValue`, `GraphicsPreset`.

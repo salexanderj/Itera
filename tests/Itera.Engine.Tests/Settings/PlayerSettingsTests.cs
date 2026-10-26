@@ -2,7 +2,10 @@ using System.Text.Json;
 using Itera.Engine.Audio;
 using Itera.Engine.Input;
 using Itera.Engine.Rendering;
+using Itera.Engine.Rendering.Meshes;
+using Itera.Engine.Rendering.Voxels;
 using Itera.Engine.Settings;
+using Itera.Engine.Tests.Rendering.Meshes;
 using Itera.Engine.UI;
 using Itera.Engine.UI.Menu;
 using Itera.Engine.UI.Toolkit;
@@ -19,7 +22,9 @@ namespace Itera.Engine.Tests.Settings;
 /// volume, the render scale, shadows, smoothing, anti-aliasing, texture filtering, VSync's swapchain); a changed
 /// keybinding written alone and read back; the file read at <see cref="PlayerSettings.Initialize"/>; keys this build does
 /// not know written back; a byte order mark read; a failed write keeping the old file and tried again; the screen full
-/// screen covers, read, written, and kept to a name; and the command line's keys read from its arguments.
+/// screen covers, read, written, and kept to a name; the command line's keys read from its arguments; and the graphics
+/// presets: each sets its table at once, a row changed after makes Custom and matching values the preset again, a game's
+/// value joins them, a file from before them takes the new threshold, and the graphics settings' round trip.
 /// </summary>
 public sealed class PlayerSettingsTests : IDisposable
 {
@@ -808,6 +813,236 @@ public sealed class PlayerSettingsTests : IDisposable
         File.WriteAllText(FilePath, """{ "Volume": 0.3 }""");
         Assert.Equal(1f, Create(new EngineOptions()).MusicVolume);
     }
+
+    [Theory]
+    [InlineData(GraphicsPreset.Low, AntiAliasMode.Smaa, 2f, 0.5f)]
+    [InlineData(GraphicsPreset.Medium, AntiAliasMode.Msaa2, 2f, 0.75f)]
+    [InlineData(GraphicsPreset.High, AntiAliasMode.Msaa4, 1f, 1f)]
+    public void Choosing_a_preset_sets_its_table_and_applies_it_at_once(
+        GraphicsPreset preset,
+        AntiAliasMode antiAliasing,
+        float objectDetail,
+        float effectsDetail
+    )
+    {
+        var options = Options.Create(new EngineOptions());
+        var view = new RenderView(options);
+        var effects = new EffectsBudget();
+        using var targets = new FakeWorldTargets(1 << 20);
+        using var meshes = Meshes(targets, options);
+        var settings = new PlayerSettings(
+            options.Value,
+            CommandLineKeys.None,
+            FilePath,
+            NullLogger<PlayerSettings>.Instance,
+            view: view,
+            meshes: meshes,
+            effects: effects
+        );
+        settings.Initialize();
+        settings.Apply();
+        // Start from values that match no preset, with the shadows off.
+        settings.SetAntiAliasMode(AntiAliasMode.Msaa8);
+        settings.SetShadows(false);
+        settings.SetObjectDetail(3.5f);
+        settings.SetEffectsDetail(0.3f);
+        Assert.Equal(GraphicsPreset.Custom, settings.GraphicsPreset);
+
+        settings.SetGraphicsPreset(preset);
+
+        Assert.Equal(preset, settings.GraphicsPreset);
+        Assert.Equal(antiAliasing, settings.AntiAliasMode);
+        Assert.True(settings.Shadows);
+        Assert.Equal((objectDetail, effectsDetail), (settings.ObjectDetail, settings.EffectsDetail));
+        // Applied at once: the view, the world's meshes, and the effects' share see it.
+        Assert.True(view.Shadows);
+        Assert.Equal(settings.AntiAliasing, view.AntiAliasing);
+        Assert.Equal(objectDetail, meshes.ObjectVoxelPixels);
+        // The share rises to a higher ceiling as dynamic scaling finds time for it.
+        Assert.Equal(effectsDetail, effects.Ceiling);
+    }
+
+    [Fact]
+    public void A_row_changed_after_a_preset_makes_custom_and_matching_values_make_the_preset_again()
+    {
+        var settings = Create(new EngineOptions());
+        // The engine's defaults are High's values.
+        Assert.Equal(GraphicsPreset.High, settings.GraphicsPreset);
+
+        settings.SetGraphicsPreset(GraphicsPreset.Medium);
+        settings.SetEffectsDetail(0.8f);
+        Assert.Equal(GraphicsPreset.Custom, settings.GraphicsPreset);
+        settings.SetEffectsDetail(0.75f);
+        Assert.Equal(GraphicsPreset.Medium, settings.GraphicsPreset);
+
+        // Set row by row to Low's values, it is Low.
+        settings.SetAntiAliasMode(AntiAliasMode.Smaa);
+        Assert.Equal(GraphicsPreset.Custom, settings.GraphicsPreset);
+        settings.SetEffectsDetail(0.5f);
+        Assert.Equal(GraphicsPreset.Low, settings.GraphicsPreset);
+
+        // Rows in no preset leave it as it is; Custom changes nothing.
+        settings.SetDynamicScaling(false);
+        settings.SetRenderScale(0.7f);
+        settings.SetScalingThreshold(144);
+        settings.SetGraphicsPreset(GraphicsPreset.Custom);
+        Assert.Equal(GraphicsPreset.Low, settings.GraphicsPreset);
+        Assert.Equal(AntiAliasMode.Smaa, settings.AntiAliasMode);
+    }
+
+    [Fact]
+    public void A_games_value_joins_the_presets()
+    {
+        var settings = Create(new EngineOptions());
+        var grass = settings.RegisterValue("Grass", 1, 0, 1);
+        var other = settings.RegisterValue("Other", 0.5f, 0, 1);
+        settings.AddPresetValue(grass, 0.25f, 0.5f, 3);
+        Assert.Throws<ArgumentException>(() => settings.AddPresetValue(grass, 0, 0, 0));
+        Assert.Throws<ArgumentException>(() => settings.AddPresetValue(other, float.NaN, 0, 0));
+        // High's grass is kept within its bounds: 1, its default, so the defaults are still High.
+        Assert.Equal(GraphicsPreset.High, settings.GraphicsPreset);
+
+        settings.SetGraphicsPreset(GraphicsPreset.Low);
+        Assert.Equal(0.25f, settings.ValueOf(grass));
+        Assert.Equal(0.5f, settings.ValueOf(other));
+        Assert.Equal(GraphicsPreset.Low, settings.GraphicsPreset);
+
+        settings.SetValue(grass, 0.3f);
+        Assert.Equal(GraphicsPreset.Custom, settings.GraphicsPreset);
+        settings.SetValue(grass, 0.25f);
+        Assert.Equal(GraphicsPreset.Low, settings.GraphicsPreset);
+
+        settings.SetGraphicsPreset(GraphicsPreset.Medium);
+        Assert.Equal(0.5f, settings.ValueOf(grass));
+    }
+
+    [Theory]
+    // Written before the presets with the old default: the new one.
+    [InlineData("""{ "DynamicScalingThreshold": 120 }""", 60f)]
+    // Another value is kept.
+    [InlineData("""{ "DynamicScalingThreshold": 144 }""", 144f)]
+    [InlineData("""{ "DynamicScalingThreshold": 30 }""", 30f)]
+    // Written with the presets: 120 was the player's choice.
+    [InlineData("""{ "GraphicsPreset": "Custom", "DynamicScalingThreshold": 120 }""", 120f)]
+    public void A_file_from_before_the_presets_takes_the_new_thresholds_default(string file, float threshold)
+    {
+        File.WriteAllText(FilePath, file);
+
+        Assert.Equal(threshold, Create(new EngineOptions()).ScalingThreshold);
+    }
+
+    [Fact]
+    public void A_migrated_threshold_is_written_with_the_preset_and_the_command_line_keeps_its_own()
+    {
+        File.WriteAllText(FilePath, """{ "DynamicScalingThreshold": 120 }""");
+        var options = new EngineOptions();
+        options.Renderer.DynamicScalingThreshold = 120;
+        var given = Create(options, new CommandLineKeys(["--Engine:Renderer:DynamicScalingThreshold=120"]));
+        Assert.Equal(120, given.ScalingThreshold);
+
+        Create(new EngineOptions()).Save();
+
+        using var written = JsonDocument.Parse(File.ReadAllText(FilePath));
+        Assert.Equal(60, written.RootElement.GetProperty("DynamicScalingThreshold").GetDouble());
+        Assert.Equal("High", written.RootElement.GetProperty("GraphicsPreset").GetString());
+    }
+
+    [Theory]
+    [InlineData("""{ "MsaaSamples": 2, "ObjectDetail": 2, "EffectsDetail": 0.75 }""", GraphicsPreset.Medium)]
+    [InlineData(
+        """{ "MsaaSamples": 1, "AntiAliasing": true, "ObjectDetail": 2, "EffectsDetail": 0.5 }""",
+        GraphicsPreset.Low
+    )]
+    [InlineData("""{ "GraphicsPreset": "Low", "MsaaSamples": 8 }""", GraphicsPreset.Custom)]
+    [InlineData("""{ "Shadows": false }""", GraphicsPreset.Custom)]
+    [InlineData("""{ "Volume": 0.3 }""", GraphicsPreset.High)]
+    public void A_files_preset_is_the_one_its_values_match(string file, GraphicsPreset preset)
+    {
+        File.WriteAllText(FilePath, file);
+
+        Assert.Equal(preset, Create(new EngineOptions()).GraphicsPreset);
+    }
+
+    [Fact]
+    public void The_graphics_settings_are_written_kept_within_their_ranges_and_read_back()
+    {
+        var options = new EngineOptions();
+        options.Renderer.ObjectVoxelPixels = 20;
+        options.Renderer.RenderScale = 0.8f;
+        var settings = Create(options);
+        // The options' values, within the settings' ranges.
+        Assert.Equal(
+            (PlayerSettings.MostObjectDetail, 1f, 0.8f),
+            (settings.ObjectDetail, settings.EffectsDetail, settings.RenderScale)
+        );
+
+        settings.SetObjectDetail(2.5f);
+        settings.SetEffectsDetail(0.1f);
+        settings.SetRenderScale(0.75f);
+        settings.SetObjectDetail(float.NaN);
+        settings.Save();
+
+        using (var written = JsonDocument.Parse(File.ReadAllText(FilePath)))
+        {
+            var root = written.RootElement;
+            Assert.Equal(2.5, root.GetProperty("ObjectDetail").GetDouble(), 3);
+            Assert.Equal(0.25, root.GetProperty("EffectsDetail").GetDouble(), 3);
+            Assert.Equal(0.75, root.GetProperty("FixedRenderScale").GetDouble(), 3);
+            Assert.Equal("Custom", root.GetProperty("GraphicsPreset").GetString());
+            Assert.False(root.TryGetProperty("RenderScale", out _));
+        }
+
+        var next = Create(new EngineOptions());
+        Assert.Equal((2.5f, 0.25f, 0.75f), (next.ObjectDetail, next.EffectsDetail, next.RenderScale));
+        Assert.Equal(GraphicsPreset.Custom, next.GraphicsPreset);
+
+        // Out of range in the file: kept within the ranges.
+        File.WriteAllText(FilePath, """{ "ObjectDetail": 0, "EffectsDetail": 7, "FixedRenderScale": 0.1 }""");
+        var read = Create(new EngineOptions());
+        Assert.Equal(
+            (PlayerSettings.LeastObjectDetail, 1f, RenderScale.Min),
+            (read.ObjectDetail, read.EffectsDetail, read.RenderScale)
+        );
+    }
+
+    [Fact]
+    public void The_render_scale_and_object_detail_the_command_line_gave_win_for_the_run()
+    {
+        File.WriteAllText(FilePath, """{ "FixedRenderScale": 0.6, "ObjectDetail": 3 }""");
+        var options = Options.Create(new EngineOptions());
+        options.Value.Renderer.RenderScale = 0.9f;
+        options.Value.Renderer.ObjectVoxelPixels = 0.5f;
+        var view = new RenderView(options);
+        using var targets = new FakeWorldTargets(1 << 20);
+        using var meshes = Meshes(targets, options);
+        var settings = new PlayerSettings(
+            options.Value,
+            new CommandLineKeys(["--Engine:Renderer:RenderScale=0.9", "--Engine:Renderer:ObjectVoxelPixels=0.5"]),
+            FilePath,
+            NullLogger<PlayerSettings>.Instance,
+            view: view,
+            meshes: meshes
+        );
+        settings.Initialize();
+        settings.Apply();
+
+        Assert.Equal(0.9f, view.FixedRenderScale);
+        // Below the setting's range, the option's own value stays the meshes' until the player changes it.
+        Assert.Equal(0.5f, meshes.ObjectVoxelPixels);
+        settings.SetObjectDetail(2);
+        Assert.Equal(2f, meshes.ObjectVoxelPixels);
+    }
+
+    /// <summary>The world's meshes over targets in memory, for the object detail they take.</summary>
+    private static WorldMeshes Meshes(FakeWorldTargets targets, IOptions<EngineOptions> options) =>
+        new(
+            new GreyVoxelPalette(),
+            targets,
+            new MeshView(targets, options),
+            targets,
+            options,
+            NullLogger<WorldMeshes>.Instance
+        );
 
     private PlayerSettings Create(EngineOptions options, CommandLineKeys? keys = null, KeyBindings? bindings = null)
     {

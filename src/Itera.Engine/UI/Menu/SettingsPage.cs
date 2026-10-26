@@ -12,8 +12,9 @@ namespace Itera.Engine.UI.Menu;
 /// a slider (with its value) or a switch, and on Keybindings each action's binding, a click on which waits for the next
 /// key or mouse button (<see cref="CapturingBinding"/>, <see cref="BindingPressed"/>); then its buttons
 /// (<see cref="Footer"/>): Back, beside Reset keys on Keybindings. Game: mouse sensitivity, field of view, UI scale,
-/// VSync, full screen, and the screen it covers (shown while there is a screen to choose); Graphics: dynamic render
-/// scaling, its threshold, shadows, anti-aliasing; Sound: the volume, and
+/// VSync, full screen, and the screen it covers (shown while there is a screen to choose); Graphics: Quality (a preset,
+/// <see cref="GraphicsPreset"/>), dynamic render scaling, its threshold, shadows, anti-aliasing, object detail, effects
+/// detail, and the render scale (disabled while dynamic scaling is on); Sound: the volume, and
 /// under it music's and the effects'; a game's switches and sliders (<see cref="SettingsRows"/>) after the engine's on their tab. A setting
 /// changes at once (<see cref="PlayerSettings"/>); the caller writes them when the page is left
 /// (<see cref="PlayerSettings.Save"/>). Sizes are units for a menu whose body text is 32.4 units (3 % of the reference
@@ -52,6 +53,10 @@ public sealed class SettingsPage
     private static readonly int s_threshold = Ui.Id("settings.threshold");
     private static readonly int s_shadows = Ui.Id("settings.shadows");
     private static readonly int s_antiAliasing = Ui.Id("settings.aa");
+    private static readonly int s_quality = Ui.Id("settings.quality");
+    private static readonly int s_objectDetail = Ui.Id("settings.objectdetail");
+    private static readonly int s_effectsDetail = Ui.Id("settings.effectsdetail");
+    private static readonly int s_renderScale = Ui.Id("settings.renderscale");
 
     private readonly PlayerSettings _settings;
     private readonly SettingsRows _rows;
@@ -232,6 +237,16 @@ public sealed class SettingsPage
             }
             else if (_tab == SettingsRows.GraphicsTab)
             {
+                Slider(
+                    ui,
+                    s_quality,
+                    "Quality",
+                    "Low, Medium, or High sets anti-aliasing, shadows, object detail, and effects detail at once. Custom: they match no preset.",
+                    (int)_settings.GraphicsPreset,
+                    0,
+                    (int)GraphicsPreset.Custom,
+                    Quality
+                );
                 Switch(
                     ui,
                     s_scaling,
@@ -265,6 +280,45 @@ public sealed class SettingsPage
                     0,
                     (int)AntiAliasMode.Msaa8,
                     AntiAliasing
+                );
+                Slider(
+                    ui,
+                    s_objectDetail,
+                    "Object detail",
+                    "How near objects such as trees switch to coarser models. Low is quickest.",
+                    // The slider runs from Low on the left to High on the right, as the other rows run from less to more;
+                    // an object detail past its ends (from the options) shows at the nearer end.
+                    ObjectDetailStep(
+                        Math.Clamp(
+                            _settings.ObjectDetail,
+                            PlayerSettings.SliderFinestObjectDetail,
+                            PlayerSettings.SliderCoarsestObjectDetail
+                        )
+                    ),
+                    PlayerSettings.SliderFinestObjectDetail,
+                    PlayerSettings.SliderCoarsestObjectDetail,
+                    ObjectDetail
+                );
+                Slider(
+                    ui,
+                    s_effectsDetail,
+                    "Effects detail",
+                    "The most of the cosmetic effects drawn: sparks, dust, and the like. Dynamic scaling lowers it first.",
+                    _settings.EffectsDetail,
+                    EffectsBudget.MinimumShare,
+                    EffectsBudget.MostShare,
+                    Percent
+                );
+                Slider(
+                    ui,
+                    s_renderScale,
+                    "Render scale",
+                    "The size the world is drawn at while dynamic render scaling is off; FSR 1 fills the screen.",
+                    _settings.RenderScale,
+                    RenderScale.Min,
+                    RenderScale.Max,
+                    Percent,
+                    _settings.DynamicScaling ? UiMarks.Disabled : UiMarks.None
                 );
             }
 
@@ -420,16 +474,20 @@ public sealed class SettingsPage
         float value,
         float least,
         float most,
-        Func<int, float, string> text
+        Func<int, float, string> text,
+        UiMarks marks = UiMarks.None
     )
     {
-        if (SliderRow(ui, id, name, hint, value, least, most, ValueText(id, value, text)) is { } moved)
+        if (SliderRow(ui, id, name, hint, value, least, most, ValueText(id, value, text), marks) is { } moved)
         {
             Set(id, moved);
         }
     }
 
-    /// <summary>A row of a name, a value's text, and a slider; the value the slider moved to, or null.</summary>
+    /// <summary>
+    /// A row of a name, a value's text, and a slider; the value the slider moved to, or null. A disabled row's name is dim
+    /// and its slider does not move.
+    /// </summary>
     private float? SliderRow(
         Ui ui,
         int id,
@@ -438,15 +496,24 @@ public sealed class SettingsPage
         float value,
         float least,
         float most,
-        string valueText
+        string valueText,
+        UiMarks marks = UiMarks.None
     )
     {
         _hints[id] = hint;
         using (ui.Row(0, Row()))
         {
-            ui.Text(name, box: new UiBox { Width = UiSize.Grow() });
+            var disabled = (marks & UiMarks.Disabled) != 0;
+            ui.Text(
+                name,
+                disabled ? UiText.Body with { Tone = UiTone.Dim } : UiText.Body,
+                new UiBox { Width = UiSize.Grow() }
+            );
             ui.Text(valueText, UiText.Body with { Tone = UiTone.Dim });
-            if (ui.Slider(id, value, least, most, UiBox.Fixed(ControlWidth, ControlHeight)) is { Changed: true } moved)
+            if (
+                ui.Slider(id, value, least, most, UiBox.Fixed(ControlWidth, ControlHeight), marks) is
+                { Changed: true } moved
+            )
             {
                 return moved.Value;
             }
@@ -532,6 +599,24 @@ public sealed class SettingsPage
         else if (id == s_antiAliasing)
         {
             _settings.SetAntiAliasMode((AntiAliasMode)(int)MathF.Round(value));
+        }
+        else if (id == s_quality)
+        {
+            // Custom, at the slider's end, changes nothing: it shows that the values match no preset.
+            _settings.SetGraphicsPreset((GraphicsPreset)(int)MathF.Round(value));
+        }
+        else if (id == s_objectDetail)
+        {
+            // In half pixels.
+            _settings.SetObjectDetail(MathF.Round(ObjectDetailStep(value) * 2) / 2);
+        }
+        else if (id == s_effectsDetail)
+        {
+            _settings.SetEffectsDetail(MathF.Round(value * 20) / 20);
+        }
+        else if (id == s_renderScale)
+        {
+            _settings.SetRenderScale(MathF.Round(value * 20) / 20);
         }
         else if (id == s_screen)
         {
@@ -676,6 +761,25 @@ public sealed class SettingsPage
 
     private static string AntiAliasing(int id, float value) =>
         AntiAliasModes.Label((AntiAliasMode)(int)MathF.Round(value));
+
+    private static string Quality(int id, float value) =>
+        GraphicsPresets.Label((GraphicsPreset)(int)MathF.Round(value));
+
+    /// <summary>The object detail's name at a slider step: High at 1 pixel, Medium up to 2.5, Low above.</summary>
+    private static string ObjectDetail(int id, float step)
+    {
+        var pixels = ObjectDetailStep(step);
+        return pixels < 1.5f ? "High"
+            : pixels <= 2.5f ? "Medium"
+            : "Low";
+    }
+
+    /// <summary>
+    /// The object detail's pixels at a slider step, and the step at some pixels: the slider runs the other way, so its
+    /// right end is the finest.
+    /// </summary>
+    private static float ObjectDetailStep(float value) =>
+        PlayerSettings.SliderFinestObjectDetail + PlayerSettings.SliderCoarsestObjectDetail - value;
 
     /// <summary>
     /// Where <paramref name="fps"/> lies among the offered thresholds, in steps from the first: a threshold read from the

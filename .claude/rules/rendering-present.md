@@ -2,6 +2,7 @@
 paths:
   - "src/Itera.Engine/Windowing/**"
   - "src/Itera.Engine/Rendering/{SurfaceSource,VulkanSwapchain,SwapchainState,FrameImages,RenderScale,DynamicRenderScale}.cs"
+  - "src/Itera.Engine/Rendering/EffectsBudget.cs"
   - "src/Itera.Engine/Rendering/{UpscalePass,SmaaPass,SmaaTextures,DebugLines,DebugLinePass}.cs"
   - "src/Itera.Engine/Rendering/{Screenshots,ScreenshotPass,ScreenshotEncoder}.cs"
   - "src/Itera.Engine/Rendering/Smaa/**"
@@ -55,8 +56,18 @@ before the UI.
 - A step is taken every few frames. It predicts the worst frame as the mean fixed part plus the largest pixel part.
   When that is over the aim, the scale drops at once to where it meets the aim. A frame slow in its fixed passes alone
   does not move the scale. When the mean is well under the aim, the scale rises by a small amount at most.
-- With dynamic scaling off, the scale is `Engine:Renderer:RenderScale`. The console's `scale` sets one for the run
-  (`scale auto` gives it back).
+- With dynamic scaling off, the scale is the settings' Render scale (`RenderView.FixedRenderScale`, from
+  `Engine:Renderer:RenderScale`). The console's `scale` sets one for the run (`scale auto` gives it back).
+
+Effects give way before the scale (`EffectsBudget`, run-wide):
+
+- `EffectsBudget.Share` is the share of cosmetic effects drawn, from `EffectsBudget.MinimumShare` to `Ceiling`, the
+  settings' Effects detail.
+- Over the aim, a step lowers the share by `EffectsBudget.LowerStep` and holds the scale. Only at the least share does
+  the scale drop.
+- Under the raise line, a step raises the scale first. At scale 1 it raises the share by `EffectsBudget.RaiseStep`.
+- A change of either waits the settle frames. Off, overridden, or unmeasured, the share is its ceiling.
+- Detail particle recipes thin by the share (`particles.md`), and a game's grass source may (`rendering-grass.md`).
 - SMAA runs before FSR 1.
 
 ### Anti-aliasing

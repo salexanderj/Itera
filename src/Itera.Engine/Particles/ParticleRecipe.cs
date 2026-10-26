@@ -156,4 +156,10 @@ public struct ParticleRecipe
 
     /// <summary>The share of its life, at the end, over which it fades out with <see cref="ParticleTraits.FadeOut"/>.</summary>
     public float FadeOutShare = 0.4f;
+
+    /// <summary>
+    /// True for cosmetic extras that may thin: a burst makes <see cref="Rendering.EffectsBudget.Share"/> of its particles,
+    /// at least one. False, the default, makes every particle a burst asks for. The emitter reads it; the GPU does not.
+    /// </summary>
+    public bool Detail;
 }

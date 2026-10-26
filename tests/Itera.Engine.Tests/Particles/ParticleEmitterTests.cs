@@ -1,5 +1,6 @@
 using System.Numerics;
 using Itera.Engine.Particles;
+using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Time;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -10,18 +11,23 @@ namespace Itera.Engine.Tests.Particles;
 /// <summary>
 /// <see cref="ParticleEmitter"/>: bursts take the ring's slots in one piece and in order, a frame's caps drop the rest,
 /// the frame stays active for the longest life among its bursts' recipes, the frame names the ring's slots that can be
-/// alive, off drops everything, a frame without graphics drops its queue without counting drops, the recipes table
-/// checks its values, and emitting and draining allocate nothing.
+/// alive, off drops everything, a frame without graphics drops its queue without counting drops, a detail recipe's
+/// bursts thin by the effects' share, the recipes table checks its values, and emitting and draining allocate nothing.
 /// </summary>
 public sealed class ParticleEmitterTests
 {
-    private static ParticleEmitter Create(int capacity = 16_384, int bursts = 16, int spawns = 1024)
+    private static ParticleEmitter Create(
+        int capacity = 16_384,
+        int bursts = 16,
+        int spawns = 1024,
+        EffectsBudget? effects = null
+    )
     {
         var options = new EngineOptions();
         options.Particles.Capacity = capacity;
         options.Particles.MaxBurstsPerFrame = bursts;
         options.Particles.MaxSpawnsPerFrame = spawns;
-        var emitter = new ParticleEmitter(Options.Create(options), NullLogger<ParticleEmitter>.Instance);
+        var emitter = new ParticleEmitter(Options.Create(options), NullLogger<ParticleEmitter>.Instance, effects);
         emitter.Recipes.Register("test", new ParticleRecipe { LifetimeMin = 1, LifetimeMax = 2 });
         return emitter;
     }
@@ -423,12 +429,44 @@ public sealed class ParticleEmitterTests
     }
 
     [Fact]
+    public void A_detail_recipes_bursts_make_the_effects_share_of_their_particles_and_others_all()
+    {
+        var effects = new EffectsBudget();
+        var emitter = Create(effects: effects);
+        var sparks = emitter.Recipes.Register("sparks", new ParticleRecipe { Detail = true });
+        var target = new GpuParticleBurst[16];
+
+        // At the full share every particle is made.
+        emitter.Emit(Burst(40) with { Recipe = sparks });
+        Assert.Equal(40, emitter.Drain(target, Step).Spawns);
+
+        // At a quarter: a detail burst of 40 makes 10, rounded; one of 1 still makes 1; a plain burst makes all 40.
+        effects.Share = 0.25f;
+        emitter.Emit(Burst(40) with { Recipe = sparks });
+        emitter.Emit(Burst(1) with { Recipe = sparks });
+        emitter.Emit(Burst(40));
+        emitter.Emit(Burst(6) with { Recipe = sparks });
+        var frame = emitter.Drain(target, Step);
+
+        Assert.Equal(10 + 1 + 40 + 2, frame.Spawns);
+        Assert.Equal([10u, 1u, 40u, 2u], target[..4].ToArray().Select(b => b.Count).ToArray());
+        // The thinned bursts take only the slots they fill.
+        Assert.Equal([40u, 50u, 51u, 91u], target[..4].ToArray().Select(b => b.First).ToArray());
+        Assert.Equal([0u, 10u, 11u, 51u], target[..4].ToArray().Select(b => b.Prefix).ToArray());
+    }
+
+    [Fact]
     public void Emitting_and_draining_allocate_nothing()
     {
-        var emitter = Create(bursts: 256, spawns: 16_384);
+        var emitter = Create(bursts: 256, spawns: 16_384, effects: new EffectsBudget { Ceiling = 0.5f });
         var target = new GpuParticleBurst[256];
         var burst = Burst(10);
+        var detail = Burst(10) with
+        {
+            Recipe = emitter.Recipes.Register("detail", new ParticleRecipe { Detail = true }),
+        };
         emitter.Emit(in burst);
+        emitter.Emit(in detail);
         emitter.Drain(target, 0);
 
         // Frames 5 ms apart for 3 s: more batches live than the record holds, so they join, and the oldest die.
@@ -438,6 +476,7 @@ public sealed class ParticleEmitterTests
             for (var i = 0; i < 20; i++)
             {
                 emitter.Emit(in burst);
+                emitter.Emit(in detail);
             }
 
             emitter.Drain(target, 0.005f);

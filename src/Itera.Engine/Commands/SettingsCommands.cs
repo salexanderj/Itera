@@ -15,7 +15,7 @@ public sealed class SettingsCommands(ConsoleCommands commands, PlayerSettings se
     {
         commands.Register(
             "settings",
-            "[volume V|musicvolume V|effectsvolume V|sensitivity DEG|fov DEG|uiscale X|scaling on|off|threshold FPS|shadows on|off|aa off|smaa|2x|4x|8x|vsync on|off|fullscreen on|off|screen NAME|main]",
+            "[volume V|musicvolume V|effectsvolume V|sensitivity DEG|fov DEG|uiscale X|scaling on|off|threshold FPS|renderscale X|shadows on|off|aa off|smaa|2x|4x|8x|preset low|medium|high|objectdetail PX|effectsdetail X|vsync on|off|fullscreen on|off|screen NAME|main]",
             "The player's settings (the menu's Settings), kept in settings.json; with nothing, each one.",
             CommandScope.Local,
             Run
@@ -43,6 +43,16 @@ public sealed class SettingsCommands(ConsoleCommands commands, PlayerSettings se
             {
                 return;
             }
+        }
+        else if (name == "PRESET")
+        {
+            if (!TryPreset(context, out var preset))
+            {
+                context.PrintUsage();
+                return;
+            }
+
+            settings.SetGraphicsPreset(preset);
         }
         else if (name == "AA")
         {
@@ -103,6 +113,15 @@ public sealed class SettingsCommands(ConsoleCommands commands, PlayerSettings se
                 case "THRESHOLD":
                     // The menu's thresholds, as its slider offers them.
                     settings.SetScalingThreshold(DynamicRenderScale.NearestThreshold(value));
+                    break;
+                case "RENDERSCALE":
+                    settings.SetRenderScale(value);
+                    break;
+                case "OBJECTDETAIL":
+                    settings.SetObjectDetail(value);
+                    break;
+                case "EFFECTSDETAIL":
+                    settings.SetEffectsDetail(value);
                     break;
                 default:
                     context.PrintUsage();
@@ -165,13 +184,29 @@ public sealed class SettingsCommands(ConsoleCommands commands, PlayerSettings se
         return false;
     }
 
+    /// <summary>A graphics preset by its console name (low, medium, high); Custom is no choice.</summary>
+    private static bool TryPreset(CommandContext context, out GraphicsPreset preset)
+    {
+        for (var i = GraphicsPreset.Low; i <= GraphicsPreset.High; i++)
+        {
+            if (context.Is(1, GraphicsPresets.ConsoleName(i)))
+            {
+                preset = i;
+                return true;
+            }
+        }
+
+        preset = default;
+        return false;
+    }
+
     private void Print(CommandContext context)
     {
         var culture = CultureInfo.InvariantCulture;
         context.Print(
             string.Create(
                 culture,
-                $"volume {settings.Volume:F2}, musicvolume {settings.MusicVolume:F2}, effectsvolume {settings.EffectsVolume:F2}, sensitivity {settings.MouseSensitivity:F2}, fov {settings.FieldOfViewDegrees:F0}, uiscale {settings.UiScale:F2}, scaling {CommandContext.OnOff(settings.DynamicScaling)}, threshold {settings.ScalingThreshold:F0}, shadows {CommandContext.OnOff(settings.Shadows)}, aa {AntiAliasModes.ConsoleName(settings.AntiAliasMode)}, vsync {CommandContext.OnOff(settings.VSync)}, fullscreen {CommandContext.OnOff(settings.Fullscreen)}, screen {settings.ScreenLabel}"
+                $"volume {settings.Volume:F2}, musicvolume {settings.MusicVolume:F2}, effectsvolume {settings.EffectsVolume:F2}, sensitivity {settings.MouseSensitivity:F2}, fov {settings.FieldOfViewDegrees:F0}, uiscale {settings.UiScale:F2}, scaling {CommandContext.OnOff(settings.DynamicScaling)}, threshold {settings.ScalingThreshold:F0}, renderscale {settings.RenderScale:F2}, shadows {CommandContext.OnOff(settings.Shadows)}, aa {AntiAliasModes.ConsoleName(settings.AntiAliasMode)}, preset {GraphicsPresets.ConsoleName(settings.GraphicsPreset)}, objectdetail {settings.ObjectDetail:F2}, effectsdetail {settings.EffectsDetail:F2}, vsync {CommandContext.OnOff(settings.VSync)}, fullscreen {CommandContext.OnOff(settings.Fullscreen)}, screen {settings.ScreenLabel}"
             )
         );
     }
