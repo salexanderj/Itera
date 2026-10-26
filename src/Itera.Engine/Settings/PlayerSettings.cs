@@ -302,7 +302,7 @@ public sealed partial class PlayerSettings
             _ => AntiAliasing ? AntiAliasMode.Smaa : AntiAliasMode.Off,
         };
 
-    /// <summary>True for FIFO presentation, false for mailbox.</summary>
+    /// <summary>True for FIFO presentation, false for mailbox (or immediate where there is none).</summary>
     public bool VSync { get; private set; }
 
     /// <summary>True when the window covers its screen.</summary>

@@ -15,34 +15,11 @@ layout(location = 0) in vec3 inOffset;
 layout(location = 1) in vec3 inColour;
 layout(location = 2) in vec3 inNormal;
 layout(location = 3) in vec3 inGround;
+// A far blade's shadow and sky from its corner (grass.vert); below 0 for a near blade, read here.
+layout(location = 4) flat in vec2 inLight;
 layout(location = 0) out vec4 outColor;
 
 const vec3 Luma = vec3(0.2126, 0.7152, 0.0722);
-
-// How much of the sunlight reaches world on ground facing normal at view depth depth: one lookup of the near cascade,
-// or of the far one faded out over its last stretch (a 2x2 comparison the sampler blends); 1 past them or without
-// shadows.
-float grassShadow(vec3 world, vec3 normal, float depth)
-{
-    MeshLighting cascades = lighting[view.slot];
-    if (cascades.shadows == 0u || depth >= cascades.farEnd)
-    {
-        return 1.0;
-    }
-
-    bool near = depth < cascades.nearEnd;
-    mat4 projection = near ? cascades.nearCascade : cascades.farCascade;
-    float texel = near ? cascades.nearTexelMetres : cascades.farTexelMetres;
-    vec4 clip = projection * vec4(world + normal * (ShadowNormalTexels * texel), 1.0);
-    float lit = texture(shadowMaps, vec4(clip.xy * 0.5 + 0.5, near ? 0.0 : 1.0, clip.z));
-    if (near)
-    {
-        return lit;
-    }
-
-    float fade = clamp((depth - cascades.farFadeStart) / (cascades.farEnd - cascades.farFadeStart), 0.0, 1.0);
-    return mix(lit, 1.0, fade);
-}
 
 void main()
 {
@@ -50,8 +27,9 @@ void main()
     vec3 normal = normalize(inNormal);
     vec3 ground = normalize(inGround);
     float depth = dot(inOffset, view.forward);
-    float sunlight = max(dot(normal, view.sunDirection), 0.0) * grassShadow(world, ground, viewCascadeDepth(depth));
-    float sky = max(skyVisibility(view.slot, world, ground), LOOK.skyFloor);
+    float shadow = inLight.x >= 0.0 ? inLight.x : sunShadowOnce(view.slot, world, ground, viewCascadeDepth(depth));
+    float sunlight = max(dot(normal, view.sunDirection), 0.0) * shadow;
+    float sky = max(inLight.y >= 0.0 ? inLight.y : skyVisibility(view.slot, world, ground), LOOK.skyFloor);
     vec3 light = LOOK.sunLight * sunlight + ambientLight(normal, 1.0) * LOOK.shadeCool * sky;
     vec3 shaded = inColour * light;
 

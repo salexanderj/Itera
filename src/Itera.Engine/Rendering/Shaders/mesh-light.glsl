@@ -159,6 +159,31 @@ float sunShadow(uint slot, vec3 world, vec3 normal, float depth)
     return mix(far, distant ? distantLight(cascades, world, normal, depth) : 1.0, fade);
 }
 
+// How much of the sunlight reaches world on a surface facing normal at view depth depth, in frame slot slot, from one
+// lookup: of the near cascade, or of the far one faded out over its last stretch (a 2x2 comparison the sampler blends);
+// 1 past them or without shadows. For what takes its light cheaply: the grass's blades, the particles' sunlight.
+float sunShadowOnce(uint slot, vec3 world, vec3 normal, float depth)
+{
+    MeshLighting cascades = lighting[slot];
+    if (cascades.shadows == 0u || depth >= cascades.farEnd)
+    {
+        return 1.0;
+    }
+
+    bool near = depth < cascades.nearEnd;
+    mat4 projection = near ? cascades.nearCascade : cascades.farCascade;
+    float texel = near ? cascades.nearTexelMetres : cascades.farTexelMetres;
+    vec4 clip = projection * vec4(world + normal * (ShadowNormalTexels * texel), 1.0);
+    float lit = texture(shadowMaps, vec4(clip.xy * 0.5 + 0.5, near ? 0.0 : 1.0, clip.z));
+    if (near)
+    {
+        return lit;
+    }
+
+    float fade = clamp((depth - cascades.farFadeStart) / (cascades.farEnd - cascades.farFadeStart), 0.0, 1.0);
+    return mix(lit, 1.0, fade);
+}
+
 // How much of the open sky the air in front of a surface at world (facing normal) sees, 0 to 1: the sky field, blended
 // between its cells by the sampler; 1 with no field, and past its edges (the border). Half a cell along the normal, so a
 // surface reads its air.

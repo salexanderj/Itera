@@ -62,13 +62,15 @@ public sealed class DeviceChoiceTests
     }
 
     [Fact]
-    public void Vsync_is_fifo_and_without_it_mailbox_when_offered()
+    public void Vsync_is_fifo_and_without_it_mailbox_when_offered_else_immediate()
     {
         PresentModeKHR[] both = [PresentModeKHR.FifoKhr, PresentModeKHR.MailboxKhr];
-        PresentModeKHR[] fifo = [PresentModeKHR.FifoKhr, PresentModeKHR.ImmediateKhr];
+        PresentModeKHR[] immediate = [PresentModeKHR.FifoKhr, PresentModeKHR.ImmediateKhr];
+        PresentModeKHR[] fifo = [PresentModeKHR.FifoKhr];
 
         Assert.Equal(PresentModeKHR.FifoKhr, VulkanSwapchain.ChoosePresentMode(both, vsync: true));
         Assert.Equal(PresentModeKHR.MailboxKhr, VulkanSwapchain.ChoosePresentMode(both, vsync: false));
+        Assert.Equal(PresentModeKHR.ImmediateKhr, VulkanSwapchain.ChoosePresentMode(immediate, vsync: false));
         Assert.Equal(PresentModeKHR.FifoKhr, VulkanSwapchain.ChoosePresentMode(fifo, vsync: false));
     }
 

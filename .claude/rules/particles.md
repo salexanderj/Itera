@@ -32,6 +32,8 @@ Particles (`Engine:Particles`, `ParticleEmitter`, `ParticlePass`) live on the GP
   batch not yet dead to the head.
 - The batches are a fixed ring of `ParticleEmitter.MaxBatches`. When it is full, the two oldest become one, with the
   later death. A span of a full lap or more is the whole pool.
+- The simulate pass reads only the span: invocation i reads slot `LiveFirst` + i round the pool
+  (`ParticleConstants.LiveFirst`), in as many groups as `LiveCount` needs.
 - Under the loading screen (`ParticlePass.Write` told the world is not drawn) and while off, the clock stops and the
   particles wait. Bursts drained under the loading screen are not made and get no batch.
 - Nothing comes back to the game and nothing is sent: each game makes its own particles.
@@ -55,7 +57,9 @@ Particles meet the world through the camera's depth image (`DepthTarget`, handed
 
 - A lit particle in view takes its sunlight from the shadow cascades and its sky light from the sky field
   (`mesh-light.glsl`, with `MeshPass`'s set bound as set 1). The values ease halfway each frame into two bytes of its
-  record.
+  record. The sunlight is one lookup (`sunShadowOnce`), not the near cascade's soft filter.
+- A sprite whose opacity is under a level of 255 at its axis (a smoke's faded tail, a sprite deep in fog) is moved out
+  of the view in `particle-sprites.vert`, so it shades no pixel.
 - Lit cubes and soft sprites are drawn after the world, each by one indirect draw, tested against its depth. A blended
   mesh asset writes none, so a particle behind one draws over it, untinted.
 - Their light and colour follow the frame's look: `look.glsl`, binding 8 of their draw set, compiled with

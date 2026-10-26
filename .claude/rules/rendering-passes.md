@@ -39,7 +39,8 @@ core), `rendering-views.md` (a game's image views), `rendering-light.md` (the ma
 For `Scene` and `Screen`, `RenderPasses` begins the rendering itself, after a barrier from the frame's earlier colour
 and depth writes. The attachments are loaded and stored. The viewport (+y up) and scissor are set. Inside the world's
 rendering they are the mesh pass's. The mesh pass sets its viewport, scissor, set, and constants again after the
-`Opaque` stage.
+`Opaque` stage. In a frame where none of the stage's passes draws (`IRenderPass.Draws`, true by default; a pass
+answers it from its `Write`), the stage begins no rendering.
 
 ### What the engine calls
 

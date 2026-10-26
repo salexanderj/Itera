@@ -32,6 +32,8 @@ Blades of grass made each frame on the GPU from the voxel terrain the camera dra
 - A candidate stands where four things together pass its own threshold: the material's share of the ground (its
   corners' weights), the slope, the thinning from the look's full density out to its radius, and the hue cover.
 - It grows from nothing as they pass it. So craters, paths, and the field's edge clear blades without popping.
+- A first round counts the blades that stand and marks them, a bit each. The second writes only those, so the hue
+  cover's reads are made again only for blades that stand.
 - The hue cover compares the material's texture set's own colour, over the set's mean, with grey as unit directions
   (`groundCover`). A texel past the look's `HueTolerance` holds fewer blades, and past twice it none. So a patch of
   another hue in a texture (bare ash in a grass) stays bare.
@@ -53,8 +55,9 @@ Blades of grass made each frame on the GPU from the voxel terrain the camera dra
   eye when seen edge on.
 - Its colour runs from the look's `RootShade` of the ground's at its root to `TipLight` at its tip. Through the thinning
   band its shading fades into the ground's, so a far blade that comes and goes changes the picture little.
-- `grass.frag` lights it cheaply: one filtered lookup of the shadow cascade that holds the pixel, the sky field, and no
-  point lights. It then takes the fog, the tone curve, and the grade as `shadeSurface` in `mesh-shade.glsl` does.
+- `grass.frag` lights it cheaply: one filtered lookup of the shadow cascade that holds the pixel (`sunShadowOnce`), the
+  sky field, and no point lights. A far blade, a few pixels, takes both from its corners (`grass.vert`), not its
+  pixels. It then takes the fog, the tone curve, and the grade as `shadeSurface` in `mesh-shade.glsl` does.
 - Blades are solid, drawn on both faces, and write depth. They cast no shadow and show in no image view.
 
 ### Sync

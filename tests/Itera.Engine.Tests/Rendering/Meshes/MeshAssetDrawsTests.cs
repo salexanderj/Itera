@@ -13,7 +13,7 @@ namespace Itera.Engine.Tests.Rendering.Meshes;
 /// <see cref="MeshAssetDraws"/> over regions in memory: instances culled by the view and the cascades as their shadow
 /// allows, grouped into one command per primitive with its instances' draws, by pipeline range; posed instances bounded
 /// by their joints, given skin groups and skinning matrices in the slot's regions, their draws reading their skinned
-/// copies, and past the slot's room the marked and then the nearest skinned and the rest drawn unposed, as are those
+/// copies, and past the slot's room the marked and then the nearest skinned and the rest not drawn; drawn unposed are those
 /// with the wrong joints; nothing allocated.
 /// </summary>
 public sealed class MeshAssetDrawsTests
@@ -277,7 +277,7 @@ public sealed class MeshAssetDrawsTests
 
     /// <summary>
     /// With room for two of three posed instances, the one marked to skin first is skinned first though it is the farthest,
-    /// then the nearest; the one between them is drawn unposed.
+    /// then the nearest; the one between them is not drawn.
     /// </summary>
     [Fact]
     public void A_short_room_skins_the_marked_instance_and_then_the_nearest()
@@ -298,12 +298,11 @@ public sealed class MeshAssetDrawsTests
 
         var frame = draws.Write(0, view, [middle, near, far], palettes);
 
-        Assert.Equal((2, 4), (frame.SkinGroups, frame.SkinJoints));
-        // The draws nearest first: the near one reads the room's second copy, the middle one its asset's vertices, and the
-        // far one the room's first copy.
+        Assert.Equal((2, 4, 2), (frame.SkinGroups, frame.SkinJoints, frame.Camera.Draws));
+        // The draws nearest first: the near one reads the room's second copy and the far one the room's first.
         var written = targets.Draws(0, 0);
         var first = targets.SkinVertexBase(0) - targets.Layout.Assets[1].FirstVertex;
-        Assert.Equal((first + 3, 0, first), (written[0].VertexDelta, written[1].VertexDelta, written[2].VertexDelta));
+        Assert.Equal((first + 3, first), (written[0].VertexDelta, written[1].VertexDelta));
     }
 
     [Fact]

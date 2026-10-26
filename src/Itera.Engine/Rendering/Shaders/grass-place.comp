@@ -317,12 +317,15 @@ void main()
     bool near;
     uint nearCount = 0u;
     uint farCount = 0u;
+    // Which candidates stand, a bit each, so the second round reads the ground's colour again only for them.
+    uvec3 stands = uvec3(0u);
     for (uint c = 0u; c < candidates; c++)
     {
         if (candidate(frame, tri, c, root, corners, random, grow, near))
         {
             nearCount += near ? 1u : 0u;
             farCount += near ? 0u : 1u;
+            stands[c >> 5u] |= 1u << (c & 31u);
         }
     }
 
@@ -335,7 +338,7 @@ void main()
     uint farNext = farCount > 0u ? atomicAdd(grassDraws.farPlaced, farCount) : 0u;
     for (uint c = 0u; c < candidates; c++)
     {
-        if (!candidate(frame, tri, c, root, corners, random, grow, near))
+        if ((stands[c >> 5u] & (1u << (c & 31u))) == 0u || !candidate(frame, tri, c, root, corners, random, grow, near))
         {
             continue;
         }

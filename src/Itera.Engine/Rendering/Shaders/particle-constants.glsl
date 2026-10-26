@@ -13,7 +13,8 @@ layout(push_constant, scalar) uniform ParticlePush
     vec3 sunDirection;
     float maxDistance;
     vec3 camera;
-    uint draw;
+    // The first ring slot the simulate pass reads; invocation i reads (liveFirst + i) % capacity.
+    uint liveFirst;
     vec3 forward;
     float viewCosine;
     uint burstStart;

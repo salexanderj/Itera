@@ -325,7 +325,10 @@ public sealed unsafe partial class VulkanSwapchain : IDisposable
         return CompositeAlphaFlagsKHR.OpaqueBitKhr;
     }
 
-    /// <summary>FIFO with VSync; without it, mailbox when offered, else FIFO (every surface offers FIFO).</summary>
+    /// <summary>
+    /// FIFO with VSync; without it, mailbox when offered (no tearing), else immediate (tearing, but VSync off is asked),
+    /// else FIFO (every surface offers FIFO).
+    /// </summary>
     internal static PresentModeKHR ChoosePresentMode(PresentModeKHR[] modes, bool vsync)
     {
         if (vsync)
@@ -333,7 +336,9 @@ public sealed unsafe partial class VulkanSwapchain : IDisposable
             return PresentModeKHR.FifoKhr;
         }
 
-        return modes.Contains(PresentModeKHR.MailboxKhr) ? PresentModeKHR.MailboxKhr : PresentModeKHR.FifoKhr;
+        return modes.Contains(PresentModeKHR.MailboxKhr) ? PresentModeKHR.MailboxKhr
+            : modes.Contains(PresentModeKHR.ImmediateKhr) ? PresentModeKHR.ImmediateKhr
+            : PresentModeKHR.FifoKhr;
     }
 
     /// <summary>

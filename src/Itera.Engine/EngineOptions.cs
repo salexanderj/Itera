@@ -145,7 +145,7 @@ public sealed class WindowSettings
     /// <summary>Initial height in logical pixels.</summary>
     public int Height { get; set; } = 720;
 
-    /// <summary>When true the swapchain uses FIFO presentation. When false it prefers mailbox.</summary>
+    /// <summary>When true the swapchain uses FIFO presentation. When false it prefers mailbox, then immediate.</summary>
     public bool VSync { get; set; } = true;
 
     /// <summary>When true the window covers its screen. The menu's settings change it (and keep it in settings.json).</summary>
@@ -244,7 +244,7 @@ public sealed class RendererSettings
     /// Megabytes of GPU memory a frame slot takes for the posed mesh assets' skinned vertices, 1 to 512, taken once at
     /// start and only when a skinned asset was read: 16 by default (about 466,000 vertices, 270 of the starter's fox). It is
     /// lowered to fit the device's storage buffer range beside every asset's own vertices. Posed instances past it are
-    /// drawn unposed (warned once a run).
+    /// not drawn (warned once a run).
     /// </summary>
     public int SkinMegabytes { get; set; } = 16;
 

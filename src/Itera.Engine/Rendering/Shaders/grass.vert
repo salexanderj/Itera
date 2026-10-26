@@ -8,14 +8,19 @@
 // wind (a gust that drifts over the ground plus a sway of the blade's own phase), as wide as its width tapering to the
 // tip, and never narrower than leastPixels pixels at its root, so a far blade stays a pixel wide and does not shimmer. A
 // blade seen edge on turns its width towards the eye. Its colour is the ground's under it, darker at its root and
-// lighter at its tip; grass.frag lights it.
+// lighter at its tip; grass.frag lights it. A far blade, a few pixels, has its sunlight's shadow and its sky read here,
+// once a corner, in place of once a pixel.
 #include "view.glsl"
 #include "grass-data.glsl"
+#include "mesh-data.glsl"
+#include "mesh-light.glsl"
 
 layout(location = 0) out vec3 outOffset;
 layout(location = 1) out vec3 outColour;
 layout(location = 2) out vec3 outNormal;
 layout(location = 3) out vec3 outGround;
+// A far blade's shadow and sky (sunShadowOnce, skyVisibility) at its corner; below 0 for a near one, lit by its pixels.
+layout(location = 4) flat out vec2 outLight;
 
 // Value noise from 0 to 1 over the plane, on a lattice of whole numbers.
 float gustNoise(vec2 p)
@@ -52,6 +57,7 @@ void main()
         outColour = vec3(0.0);
         outNormal = vec3(0.0, 1.0, 0.0);
         outGround = vec3(0.0, 1.0, 0.0);
+        outLight = vec2(-1.0);
         return;
     }
 
@@ -119,6 +125,10 @@ void main()
     face *= dot(face, toEye) < 0.0 ? -1.0 : 1.0;
     outNormal = normalize(mix(normal, face, 0.5 * along * contrast));
     outGround = normal;
+    outLight = near ? vec2(-1.0)
+        : vec2(
+            sunShadowOnce(view.slot, position, normal, viewCascadeDepth(dot(position - view.position, view.forward))),
+            skyVisibility(view.slot, position, normal));
 
     vec4 colour = unpackUnorm4x8(blade.colour);
     outColour = colour.rgb * colour.rgb * mix(1.0, mix(frame.rootShade, frame.tipLight, along), contrast);

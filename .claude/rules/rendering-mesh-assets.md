@@ -68,8 +68,8 @@ their import, and their rigs are in `mesh-assets.md`. Related files: `rendering.
   its output's first vertex, its first skinning matrix, and its vertex count). Its matrices go in the slot's regions.
 - Its draws read its skinned copy (`MeshAssetDraw.VertexDelta`, added to `gl_VertexIndex`).
 - When the slot's room cannot take every instance, those marked `DrawnMesh.SkinFirst` (`MeshInstance.SkinFirst`: a
-  game's players, say) are skinned first, then the rest, each nearest the camera first. Those left over, or with matrices
-  that do not match their rig, are drawn unposed, with one Warning a run.
+  game's players, say) are skinned first, then the rest, each nearest the camera first. Those left over are not drawn
+  that frame, and those with matrices that do not match their rig are drawn unposed, each with one Warning a run.
 - When the run read a skinned asset, the vertex buffer also holds a region for each frame slot
   (`Engine:Renderer:SkinMegabytes`, lowered to fit the device's range).
 - `RecordSkinning` runs before the cascades, outside rendering, and only on a fresh frame (a frame presented again
@@ -77,7 +77,7 @@ their import, and their rigs are in `mesh-assets.md`. Related files: `rendering.
   four joints' matrices blended by its weights. Its normal and tangent turn by the blended matrix, right for turns and
   uniform scales; a joint scaled unevenly skews them. They are packed again in `Octahedral`'s encoding. An unweighted
   vertex is copied.
-- An asset of more than `MostSkinnedVertices`, or past the slot's room, is drawn unposed, with one Warning.
+- An asset of more than `MostSkinnedVertices` is drawn unposed, with one Warning.
 - A barrier from the compute writes to the vertex shaders' reads follows. The pass is timed as `Skinning`, part of
   `Voxels`.
 

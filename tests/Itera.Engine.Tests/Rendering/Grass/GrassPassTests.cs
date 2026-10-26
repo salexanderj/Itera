@@ -36,7 +36,7 @@ public sealed class GrassPassTests : IDisposable
     }
 
     [Fact]
-    public void Its_shaders_read_the_frame_and_the_blocks_as_the_cpu_writes_them_in_set_1()
+    public void Its_shaders_read_the_frame_and_the_blocks_as_the_cpu_writes_them_in_set_1_and_far_blades_light_from_set_0()
     {
         var place = _compiler.Compile(GrassPlacePass.PlaceShader);
         var count = _compiler.Compile(GrassPlacePass.CountShader);
@@ -51,7 +51,7 @@ public sealed class GrassPassTests : IDisposable
         Assert.Empty(GpuLayout.PushConstantDifferences<ViewConstants>(vertex));
         Assert.Empty(GpuLayout.PushConstantDifferences<ViewConstants>(fragment));
         Assert.Equal([0u, 1u], GpuLayout.DescriptorSets(place));
-        Assert.Equal([1u], GpuLayout.DescriptorSets(vertex));
+        Assert.Equal([0u, 1u], GpuLayout.DescriptorSets(vertex));
         Assert.Equal([0u], GpuLayout.DescriptorSets(fragment));
     }
 

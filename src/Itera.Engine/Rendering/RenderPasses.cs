@@ -86,6 +86,14 @@ public interface IRenderPass : IReloadsShaders, IDisposable
     /// asks on the render thread, only in frames whose passes were written. None by default: nothing is copied.
     /// </summary>
     bool ReadsPicture(int slot) => false;
+
+    /// <summary>
+    /// True when the pass may draw in the frame of slot <paramref name="slot"/>. The Scene and Screen stages begin their
+    /// own rendering, a load and store of the whole image: in a frame where none of a stage's passes draws, it is not
+    /// begun. A pass sets what it answers in <see cref="Write"/>; the engine asks on the render thread, only in frames
+    /// whose passes were written. True by default.
+    /// </summary>
+    bool Draws(int slot) => true;
 }
 
 /// <summary>What a game's pass is given at <see cref="IRenderPass.Write"/>: the frame's time and view.</summary>
@@ -563,7 +571,7 @@ public sealed unsafe partial class RenderPasses : IDisposable
         in ViewConstants view
     )
     {
-        if (!_atStage[(int)RenderStage.Scene])
+        if (!_atStage[(int)RenderStage.Scene] || !AnyDraws(RenderStage.Scene))
         {
             return;
         }
@@ -588,6 +596,12 @@ public sealed unsafe partial class RenderPasses : IDisposable
     {
         if (!_atStage[(int)RenderStage.Screen])
         {
+            return;
+        }
+
+        if (!AnyDraws(RenderStage.Screen))
+        {
+            _pictures.NotUsed(_timerSlot, PictureFramesBeforeFree);
             return;
         }
 
@@ -627,6 +641,28 @@ public sealed unsafe partial class RenderPasses : IDisposable
         }
 
         _context.Vk.CmdEndRendering(commandBuffer);
+    }
+
+    /// <summary>
+    /// True when a pass of <paramref name="stage"/> may draw in this frame (<see cref="IRenderPass.Draws"/>); true in a
+    /// frame whose passes were not written.
+    /// </summary>
+    private bool AnyDraws(RenderStage stage)
+    {
+        if (!_passesWritten)
+        {
+            return true;
+        }
+
+        for (var i = 0; i < _passes.Length; i++)
+        {
+            if (_passes[i].Stage == stage && _passes[i].Draws(_slot))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>The swapchain was made again: each pass makes its pipelines again if its targets changed. Render thread, device idle.</summary>

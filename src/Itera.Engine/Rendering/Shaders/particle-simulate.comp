@@ -133,8 +133,14 @@ vec3 sceneNormal(ivec2 pixel, vec3 point, float along)
 
 void main()
 {
-    uint index = gl_GlobalInvocationID.x;
-    if (index >= push.capacity || particles[index].lifetime <= 0.0)
+    if (gl_GlobalInvocationID.x >= push.capacity)
+    {
+        return;
+    }
+
+    // The frame's live span of the ring, from its first slot round the pool's end.
+    uint index = (push.liveFirst + gl_GlobalInvocationID.x) % push.capacity;
+    if (particles[index].lifetime <= 0.0)
     {
         return;
     }
@@ -258,11 +264,6 @@ void main()
     particles[index].packed = packed;
     atomicAdd(counters[0].living, 1u);
 
-    if (push.draw == 0u)
-    {
-        return;
-    }
-
     vec3 fromCamera = position - push.camera;
     float distance = length(fromCamera);
     float reach = max(recipe.sizeStart, recipe.sizeEnd) * particle.size
@@ -284,8 +285,9 @@ void main()
 
     if ((recipe.flags & PARTICLE_FLAG_LIT) != 0u)
     {
-        // The cascades lie round an orthographic view's middle (view.glsl's viewCascadeDepth).
-        float sun = sunShadow(push.slot, position, push.sunDirection, orthographic() ? abs(ahead) : ahead);
+        // The cascades lie round an orthographic view's middle (view.glsl's viewCascadeDepth). One lookup: the light is
+        // eased over frames into a byte, so the near cascade's soft filter would add nothing seen.
+        float sun = sunShadowOnce(push.slot, position, push.sunDirection, orthographic() ? abs(ahead) : ahead);
         float sky = skyVisibility(push.slot, position, vec3(0.0, 1.0, 0.0));
         uint oldSun = packed >> PARTICLE_SUN_SHIFT;
         uint oldSky = (packed >> PARTICLE_SKY_SHIFT) & 255u;

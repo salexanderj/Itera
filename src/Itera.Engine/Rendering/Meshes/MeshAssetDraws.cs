@@ -21,7 +21,7 @@ namespace Itera.Engine.Rendering.Meshes;
 /// and reaches, gets a skin group (<see cref="MeshSkinGroup"/>) and its skinning matrices in the slot's regions, and its
 /// draws read its skinned copy (<see cref="MeshAssetDraw.VertexDelta"/>); when the slot's room cannot take every one,
 /// those marked <see cref="MeshInstance.SkinFirst"/> are skinned first, then the rest, each nearest the camera first, and
-/// those left over are drawn as their asset stores it, with one Warning a run. Blended primitives (<see cref="MeshAssetRange.Blended"/>) are in no list's ranges and
+/// those left over are not drawn that frame, with one Warning a run. Blended primitives (<see cref="MeshAssetRange.Blended"/>) are in no list's ranges and
 /// cast no shadow: each seen instance's are drawn in the slot's blended list (<see cref="MeshAssetPass.BlendedList"/>),
 /// instances sorted back to front by their sphere's centre, each primitive one draw and command (a two-sided one two: its
 /// back faces, then its front faces, <see cref="MeshAssetDraw.Sides"/>), at most <see cref="MeshAssetPass.MaxCommands"/>
@@ -261,6 +261,8 @@ public sealed partial class MeshAssetDraws
                 || joints + place.Joints > region.Length
             )
             {
+                // Left out this frame, as a figure in its rest pose would show more than a missing one.
+                _lists[i] = 0;
                 continue;
             }
 
@@ -793,7 +795,7 @@ public sealed partial class MeshAssetDraws
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Mesh assets: the frame slot's room for skinned vertices ({Vertices} vertices; Engine:Renderer:SkinMegabytes) took {Groups} of {Posed} posed instance(s), or an asset has more vertices than one skinning takes; those marked to skin first and then the nearest were skinned, and the rest are drawn unposed"
+        Message = "Mesh assets: the frame slot's room for skinned vertices ({Vertices} vertices; Engine:Renderer:SkinMegabytes) took {Groups} of {Posed} posed instance(s), or an asset has more vertices than one skinning takes; those marked to skin first and then the nearest were skinned, and the rest are not drawn"
     )]
     private partial void LogSkinFull(int vertices, int groups, int posed);
 

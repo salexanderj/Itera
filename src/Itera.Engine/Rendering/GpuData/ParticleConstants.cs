@@ -34,8 +34,11 @@ public struct ParticleConstants
     /// <summary>The camera, metres from the match's origin.</summary>
     public Vector3 Camera;
 
-    /// <summary>1 when the sprites' and cubes' lists are filled; 0 simulates without drawing.</summary>
-    public uint Draw;
+    /// <summary>
+    /// The first ring slot the simulate pass reads (<see cref="Particles.ParticleFrame.LiveFirst"/>): invocation i reads
+    /// slot (LiveFirst + i) modulo <see cref="Capacity"/>, over the frame's live span.
+    /// </summary>
+    public uint LiveFirst;
 
     /// <summary>The way the camera looks, unit length.</summary>
     public Vector3 Forward;

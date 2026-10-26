@@ -22,11 +22,16 @@ namespace Itera.Engine.Rendering;
 /// are made.
 /// </param>
 /// <param name="Origin">The frame's origin in absolute centimetres, which its bursts and attractors are local to.</param>
+/// <param name="LiveCount">
+/// The pool's places from <see cref="ParticleConstants.LiveFirst"/> that may hold a living particle
+/// (<see cref="ParticleFrame.LiveCount"/>): the simulate dispatch covers only these.
+/// </param>
 public readonly record struct ParticleWrite(
     ParticleConstants Constants,
     bool Active,
     bool Clear = false,
-    VoxelCoord Origin = default
+    VoxelCoord Origin = default,
+    int LiveCount = 0
 );
 
 /// <summary>
@@ -336,7 +341,7 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
             SunDirection = view.SunDirection,
             MaxDistance = view.MaxDistance,
             Camera = view.Position,
-            Draw = 1,
+            LiveFirst = (uint)frame.LiveFirst,
             Forward = view.Forward,
             ViewCosine = 1 / MathF.Sqrt(1 + cornerTangent2),
             BurstStart = (uint)(slot * _emitter.MaxBursts),
@@ -348,7 +353,7 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
             Far = view.Far,
             Orthographic = view.Orthographic ? 1u : 0u,
         };
-        return new ParticleWrite(constants, true, frame.Clear, view.Origin);
+        return new ParticleWrite(constants, true, frame.Clear, view.Origin, frame.LiveCount);
     }
 
     /// <summary>
@@ -477,8 +482,11 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
             );
         }
 
+        // Only the ring's slots that may hold a living particle (ParticleFrame's span): the groups' last few run past it,
+        // onto slots no living particle holds.
         vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Compute, _simulatePipeline);
-        vk.CmdDispatch(commandBuffer, (constants.Capacity + GroupSize - 1) / GroupSize, 1, 1);
+        var live = (uint)Math.Clamp(write.LiveCount, 0, (int)constants.Capacity);
+        vk.CmdDispatch(commandBuffer, (live + GroupSize - 1) / GroupSize, 1, 1);
         _depth.RecordToAttachment(commandBuffer);
 
         // The pool, lists, and counters are read by this frame's draws, the indirect commands, and the copy below.

@@ -106,4 +106,10 @@ void main()
     opacity *= (1.0 - fog) * smoothstep(0.1, 0.5, depth + radius);
     outColour = vec4(gradeColour(toneMap(colour.rgb * light * LOOK.exposure)), opacity);
     outCover = recipe.cover;
+    // A sprite so faint (its axis, its most opaque, under a level of 255; graded colours are at most 1) changes no
+    // pixel: its quad goes outside the view, so it shades none (a smoke's long faded tail, a sprite deep in the fog).
+    if (opacity < 1.0 / 255.0)
+    {
+        gl_Position = vec4(0.0, 0.0, -1.0, 1.0);
+    }
 }
