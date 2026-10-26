@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 using System.Text;
 using Itera.Engine.Audio;
@@ -501,6 +502,60 @@ public sealed class MenuLayerTests : IDisposable
         Click("Display");
         ClickAt(Centre(Element(UiKind.Switch, 0).Rect));
         Assert.True(Settings.IsOn(hud));
+    }
+
+    [Fact]
+    public void A_games_slider_row_shows_its_text_on_its_tab_in_the_order_added_and_a_move_sets_the_value()
+    {
+        var grass = Settings.RegisterValue("grass", 0.5f, 0, 1);
+        var reach = Settings.RegisterValue("reach", 20, 10, 40);
+        var fade = Settings.RegisterValue("fade", 5, 0, 10);
+        var detail = Settings.RegisterSwitch("detail", false);
+        _rows.AddSlider(
+            grass,
+            "Grass",
+            "How much grass grows.",
+            "Game",
+            v => v.ToString("P0", CultureInfo.InvariantCulture)
+        );
+        _rows.AddSlider(reach, "Reach", "How far it grows.", "Display", v => $"{v:F0} m");
+        _rows.AddSwitch(detail, "Detail", "Finer blades.", "Display");
+        _rows.AddSlider(fade, "Fade", "How soon it fades.", "Display", v => $"{v:F0} s");
+        Click("Settings");
+
+        // Game: the engine's three sliders, then the game's.
+        Assert.Equal(4, Count(UiKind.Slider));
+        Assert.True(_menu.Ui.TryFind("Grass", out _));
+        Assert.True(_menu.Ui.TryFind("50 %", out _));
+        var bar = Element(UiKind.Slider, 3).Rect;
+        Hold(new Vector2(bar.Right - 1, bar.MidY), pressed: true);
+        Hold(new Vector2(bar.Right + 200, bar.MidY), pressed: false);
+        Release(new Vector2(bar.Right + 200, bar.MidY));
+        Assert.Equal(1f, Settings.ValueOf(grass));
+        Assert.True(_menu.Ui.TryFind("100 %", out _));
+        Assert.False(_menu.Ui.TryFind("50 %", out _));
+        Hold(new Vector2(bar.Left + 1, bar.MidY), pressed: true);
+        Hold(new Vector2(bar.Left - 50, bar.MidY), pressed: false);
+        Release(new Vector2(bar.Left - 50, bar.MidY));
+        Assert.True(_menu.Ui.TryFind("0 %", out _));
+        Assert.Equal(0f, Settings.ValueOf(grass));
+
+        // Display: a slider, a switch, and a slider, in the order added; the sliders' ids are not the switch's.
+        Click("Display");
+        Assert.Equal(2, Count(UiKind.Slider));
+        Assert.Equal(1, Count(UiKind.Switch));
+        Assert.True(_menu.Ui.TryFind("20 m", out _));
+        var first = Element(UiKind.Slider, 0);
+        var second = Element(UiKind.Slider, 1);
+        var switchRow = Element(UiKind.Switch, 0);
+        Assert.True(first.Rect.Top < switchRow.Rect.Top && switchRow.Rect.Top < second.Rect.Top);
+        Assert.NotEqual(first.Id, switchRow.Id);
+        Assert.NotEqual(second.Id, switchRow.Id);
+        Hold(new Vector2(first.Rect.Right - 1, first.Rect.MidY), pressed: true);
+        Hold(new Vector2(first.Rect.Right + 200, first.Rect.MidY), pressed: false);
+        Release(new Vector2(first.Rect.Right + 200, first.Rect.MidY));
+        Assert.Equal(40f, Settings.ValueOf(reach));
+        Assert.True(_menu.Ui.TryFind("40 m", out _));
     }
 
     [Fact]

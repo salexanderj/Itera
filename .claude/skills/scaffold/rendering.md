@@ -59,7 +59,7 @@ starter's minimap (`src/Game/Minimap.cs`, `MinimapLayer.cs`, `Systems/MinimapSys
 
 1. Declare it in the game's `IRunStartup.Start`: `views.Declare(name, width, height, everyFrames)` (keep the index),
    and its key (`KeyBindings.Register`) and a saved on/off (`PlayerSettings.RegisterSwitch`) if the player turns it on
-   and off ("A game's own on/off setting", below).
+   and off ("A game's own on/off setting or slider", below).
 2. A frame system (after `CameraExtractSystem`) asks for it each frame it should be drawn: `views.Draw(index, camera)`
    with a `CameraView` (an orthographic one: `CameraProjection.Orthographic`, a height in metres, NaN near and far for
    the view distance each way round its position). It goes in `SystemOrderTests`, with a behaviour test

@@ -2,10 +2,10 @@
 
 The `scaffold` skill's recipes for settings, screens, menus, and the hud. Each lists every file the addition touches, in order, and the test that fails when one is missed; finish with the skill's "Then".
 
-## A game's own on/off setting
+## A game's own on/off setting or slider
 
-A choice the player makes and the game keeps in `settings.json` (the starter's minimap shown or hidden;
-`.claude/rules/ui.md`).
+A choice the player makes and the game keeps in `settings.json` (the starter's minimap shown or hidden; a slider for a
+number, such as a density from 0 % to 100 %; `.claude/rules/ui.md`).
 
 1. In the game's `IRunStartup.Start`: `settings.RegisterSwitch(name, defaultValue)` (keep the `GameSwitch`), and a key
    for it if the player toggles it (`KeyBindings.Register(id, label, hint, InputBinding.Of(key))`; the Keybindings tab
@@ -17,6 +17,15 @@ A choice the player makes and the game keeps in `settings.json` (the starter's m
    The file is written when the player next leaves the Settings page or at the run's end.
 3. Test it as the starter's `MinimapSystemTests` does (the key hides and shows it in the player's settings, and does
    nothing while the input is blocked); the engine's `PlayerSettingsTests` cover the file.
+
+A slider takes the same steps with a number:
+
+1. In `IRunStartup.Start`: `settings.RegisterValue(name, defaultValue, least, most)` (keep the `GameValue`). The name
+   must differ from every switch's and value's.
+2. A row: `SettingsRows.AddSlider(which, label, hint, tab, text)` in the same `Start`, where `text` turns the value into
+   the text beside the slider (`v => $"{v:P0}"`). The slider's range is `least` to `most`.
+3. The code the setting controls reads `settings.ValueOf(which)` (it allocates nothing), and runs again when
+   `settings.Version` changes if it keeps a result. Test the row as `MenuLayerTests` does for a game's slider row.
 
 ## A text box, or a screen that Escape closes
 
@@ -80,7 +89,7 @@ An inventory, a shop, a scoreboard, a dialogue box (`.claude/rules/ui.md`, the t
    `pages.Add(label, hint, page, MenuPlace.Main)` (or `MenuPlace.InGame` over a match, or `MenuPlace.Both`; `Main` by
    default; `MenuPages`, run-wide). Its button shows above
    Settings; the menu adds the title and Back.
-2. Settings rows: `SettingsRows.AddSwitch` (the on/off setting's section above).
+2. Settings rows: `SettingsRows.AddSwitch` or `AddSlider` (the on/off setting or slider's section above).
 3. Test it through the engine's menu as `MenuLayerTests.A_games_page_opens_from_its_button_and_its_switch_rows_show_on_their_tabs` does.
 
 ## A game's own menu

@@ -22,8 +22,8 @@ namespace Itera.Engine.Settings;
 /// again (<see cref="PresentModeChanged"/>), as a change of the samples does with the world's pipelines and images
 /// (<see cref="SamplesChanged"/>), and full screen goes to the window. The file's <c>"Keys"</c> holds the
 /// keybindings that differ from their defaults (<see cref="Keys"/>), and its <c>"Game"</c> holds a game's own on/off
-/// switches (<see cref="RegisterSwitch"/>). <see cref="Initialize"/> reads the file, in a step
-/// before the window opens, and <see cref="Save"/> writes it. Main thread.
+/// switches and numbers (<see cref="RegisterSwitch"/>, <see cref="RegisterValue"/>). <see cref="Initialize"/> reads the
+/// file, in a step before the window opens, and <see cref="Save"/> writes it. Main thread.
 /// </summary>
 public sealed partial class PlayerSettings
 {
@@ -110,6 +110,11 @@ public sealed partial class PlayerSettings
     private readonly List<string> _switchNames = [];
     private readonly List<bool> _switchValues = [];
     private readonly Dictionary<string, int> _switchIndex = new(StringComparer.Ordinal);
+    private readonly List<string> _valueNames = [];
+    private readonly List<float> _valueNumbers = [];
+    private readonly List<float> _valueLeast = [];
+    private readonly List<float> _valueMost = [];
+    private readonly Dictionary<string, int> _valueIndex = new(StringComparer.Ordinal);
     private bool _changed;
     private int _keysSaved;
 
@@ -308,13 +313,15 @@ public sealed partial class PlayerSettings
     /// each switch at its run's <c>game</c> step (<c>IRunStartup.Start</c>), which runs after <see cref="Initialize"/>
     /// has read the file.
     /// </summary>
-    /// <exception cref="ArgumentException">The name is empty or white space, or was registered before.</exception>
+    /// <exception cref="ArgumentException">
+    /// The name is empty or white space, or was registered before as a switch or a value.
+    /// </exception>
     public GameSwitch RegisterSwitch(string name, bool defaultValue)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        if (_switchIndex.ContainsKey(name))
+        if (_switchIndex.ContainsKey(name) || _valueIndex.ContainsKey(name))
         {
-            throw new ArgumentException($"The game switch '{name}' is registered twice.", nameof(name));
+            throw new ArgumentException($"The game setting '{name}' is registered twice.", nameof(name));
         }
 
         var on = defaultValue;
@@ -353,6 +360,97 @@ public sealed partial class PlayerSettings
         }
 
         _switchValues[which.Index] = on;
+        _changed = true;
+        Version++;
+    }
+
+    /// <summary>
+    /// Makes one of a game's own number settings, kept as <paramref name="name"/> in the file's <c>"Game"</c> object. Its
+    /// value is the file's when that is a JSON number, else <paramref name="defaultValue"/>, kept within
+    /// <paramref name="least"/> and <paramref name="most"/> either way. A game calls it once for each value at its run's
+    /// <c>game</c> step (<c>IRunStartup.Start</c>), which runs after <see cref="Initialize"/> has read the file. Switches
+    /// and values share one set of names.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// The name is empty or white space, or was registered before as a switch or a value; a bound or the default is not a
+    /// finite number; or <paramref name="least"/> is above <paramref name="most"/>.
+    /// </exception>
+    public GameValue RegisterValue(string name, float defaultValue, float least, float most)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        if (_switchIndex.ContainsKey(name) || _valueIndex.ContainsKey(name))
+        {
+            throw new ArgumentException($"The game setting '{name}' is registered twice.", nameof(name));
+        }
+
+        if (!float.IsFinite(least) || !float.IsFinite(most) || !float.IsFinite(defaultValue))
+        {
+            throw new ArgumentException(
+                $"The game value '{name}' needs a finite default and finite bounds.",
+                nameof(name)
+            );
+        }
+
+        if (least > most)
+        {
+            throw new ArgumentException(
+                $"The game value '{name}' has its least ({least}) above its most ({most}).",
+                nameof(least)
+            );
+        }
+
+        var number = Math.Clamp(defaultValue, least, most);
+        if (
+            _file.TryGetValue(GameKey, out var section)
+            && section.ValueKind == JsonValueKind.Object
+            && section.TryGetProperty(name, out var element)
+            && element.ValueKind == JsonValueKind.Number
+            && element.TryGetSingle(out var read)
+            && float.IsFinite(read)
+        )
+        {
+            number = Math.Clamp(read, least, most);
+        }
+
+        var which = new GameValue(_valueNames.Count);
+        _valueIndex.Add(name, which.Index);
+        _valueNames.Add(name);
+        _valueNumbers.Add(number);
+        _valueLeast.Add(least);
+        _valueMost.Add(most);
+        return which;
+    }
+
+    /// <summary>A game's number setting. Allocates nothing.</summary>
+    public float ValueOf(GameValue which) => _valueNumbers[which.Index];
+
+    /// <summary>The least a game's number setting can be.</summary>
+    public float LeastOf(GameValue which) => _valueLeast[which.Index];
+
+    /// <summary>The most a game's number setting can be.</summary>
+    public float MostOf(GameValue which) => _valueMost[which.Index];
+
+    /// <summary>The name a game's value was registered with, as it is kept in the file.</summary>
+    public string ValueName(GameValue which) => _valueNames[which.Index];
+
+    /// <summary>
+    /// Sets a game's number setting, kept within its bounds. A change is written by the next <see cref="Save"/>; the same
+    /// value (after keeping it within the bounds), or one that is not a finite number, changes nothing. Allocates nothing.
+    /// </summary>
+    public void SetValue(GameValue which, float value)
+    {
+        if (!float.IsFinite(value))
+        {
+            return;
+        }
+
+        value = Math.Clamp(value, _valueLeast[which.Index], _valueMost[which.Index]);
+        if (_valueNumbers[which.Index] == value)
+        {
+            return;
+        }
+
+        _valueNumbers[which.Index] = value;
         _changed = true;
         Version++;
     }
@@ -547,11 +645,11 @@ public sealed partial class PlayerSettings
 
     /// <summary>
     /// Writes <c>settings.json</c> when a setting or a keybinding changed since: every setting, but those the command line
-    /// gave keep what the file had, then the keybindings that differ from their defaults, then the game's switches
-    /// (<c>"Game"</c>: every registered one, then what the file's object held that this run did not register), then what
-    /// the file held that this build does not know. It writes a file beside it and moves that
-    /// over the old one, so a failed write leaves the old file whole; a failure is a Warning,
-    /// the game goes on, and the next save tries again.
+    /// gave keep what the file had, then the keybindings that differ from their defaults, then the game's switches and
+    /// values (<c>"Game"</c>: every registered switch, every registered value, then what the file's object held that
+    /// this run did not register), then what the file held that this build does not know. It writes a file beside it and
+    /// moves that over the old one, so a failed write leaves the old file whole; a failure is a Warning, the game goes on,
+    /// and the next save tries again.
     /// </summary>
     public void Save()
     {
@@ -715,9 +813,9 @@ public sealed partial class PlayerSettings
     private void WriteGame(Utf8JsonWriter writer)
     {
         _file.TryGetValue(GameKey, out var section);
-        if (_switchNames.Count == 0)
+        if (_switchNames.Count == 0 && _valueNames.Count == 0)
         {
-            // No switch registered: the file's value stays as it was, whatever it is.
+            // No switch and no value registered: the file's value stays as it was, whatever it is.
             if (section.ValueKind != JsonValueKind.Undefined)
             {
                 writer.WritePropertyName(GameKey);
@@ -733,11 +831,16 @@ public sealed partial class PlayerSettings
             writer.WriteBoolean(_switchNames[i], _switchValues[i]);
         }
 
+        for (var i = 0; i < _valueNames.Count; i++)
+        {
+            writer.WriteNumber(_valueNames[i], MathF.Round(_valueNumbers[i], 4));
+        }
+
         if (section.ValueKind == JsonValueKind.Object)
         {
             foreach (var property in section.EnumerateObject())
             {
-                if (!_switchIndex.ContainsKey(property.Name))
+                if (!_switchIndex.ContainsKey(property.Name) && !_valueIndex.ContainsKey(property.Name))
                 {
                     property.WriteTo(writer);
                 }

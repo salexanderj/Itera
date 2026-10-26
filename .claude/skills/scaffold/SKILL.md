@@ -1,6 +1,6 @@
 ---
 name: scaffold
-description: "Steps, file lists, and templates for adding to Itera or a game on it: a system (engine or game), an option, a console command, a game message, a generator change, a model from glTF, a sound from a file, music, the game's look and sun, the main camera's lens, a render pass of the game's own, an image view (a minimap, a screen in the world), a game's own on/off setting, a text box or a screen Escape closes, a HUD screen or panel on the UI toolkit, a page in the engine's menu, a game's own menu, a UI style, a physics material, a collision layer or group, a trigger zone, impact events, a test that plays the real game, and a game without voxel terrain. Use before adding any of these, so every place they touch changes together; the checklist tests (ChecklistTests, ShippedSettingsTests, SystemOrderTests, WorldTests) fail when one is missed."
+description: "Steps, file lists, and templates for adding to Itera or a game on it: a system (engine or game), an option, a console command, a game message, a generator change, a model from glTF, a sound from a file, music, the game's look and sun, the main camera's lens, a render pass of the game's own, an image view (a minimap, a screen in the world), a game's own on/off setting or slider, a text box or a screen Escape closes, a HUD screen or panel on the UI toolkit, a page in the engine's menu, a game's own menu, a UI style, a physics material, a collision layer or group, a trigger zone, impact events, a test that plays the real game, and a game without voxel terrain. Use before adding any of these, so every place they touch changes together; the checklist tests (ChecklistTests, ShippedSettingsTests, SystemOrderTests, WorldTests) fail when one is missed."
 ---
 
 # Adding to Itera
@@ -16,7 +16,7 @@ The common recipes are below. The others are in files beside this one; read the 
 | --- | --- |
 | A model from glTF, a sound from a file, music | `assets.md` |
 | The game's look and sun, the main camera's lens, a render pass of the game's own, an image view | `rendering.md` |
-| A game's own on/off setting, a text box or a screen Escape closes, a HUD screen or panel, a page in the engine's menu, a game's own menu, a UI style | `ui.md` |
+| A game's own on/off setting or slider, a text box or a screen Escape closes, a HUD screen or panel, a page in the engine's menu, a game's own menu, a UI style | `ui.md` |
 | A physics material, a collision layer or group, a trigger zone, impact events | `physics.md` |
 | A game without voxel terrain | `no-terrain.md` |
 

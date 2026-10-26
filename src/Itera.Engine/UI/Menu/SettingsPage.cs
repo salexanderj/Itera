@@ -13,7 +13,7 @@ namespace Itera.Engine.UI.Menu;
 /// key or mouse button (<see cref="CapturingBinding"/>, <see cref="BindingPressed"/>); then its buttons
 /// (<see cref="Footer"/>): Back, beside Reset keys on Keybindings. Game: mouse sensitivity, field of view, UI scale,
 /// VSync, full screen; Graphics: dynamic render scaling, its threshold, shadows, anti-aliasing; Sound: the volume, and
-/// under it music's and the effects'; a game's switches (<see cref="SettingsRows"/>) after the engine's on their tab. A setting
+/// under it music's and the effects'; a game's switches and sliders (<see cref="SettingsRows"/>) after the engine's on their tab. A setting
 /// changes at once (<see cref="PlayerSettings"/>); the caller writes them when the page is left
 /// (<see cref="PlayerSettings.Save"/>). Sizes are units for a menu whose body text is 32.4 units (3 % of the reference
 /// screen's height). Its texts allocate only when a value they show changes. Main thread.
@@ -283,22 +283,61 @@ public sealed class SettingsPage
         }
     }
 
-    /// <summary>The game's switches on the tab shown, after the engine's rows.</summary>
+    /// <summary>The game's switches and sliders on the tab shown, in the order added, after the engine's rows.</summary>
     private void GameRows(Ui ui)
     {
-        for (var i = 0; i < _rows.Switches.Count; i++)
+        var order = _rows.Order;
+        for (var i = 0; i < order.Count; i++)
         {
-            var row = _rows.Switches[i];
-            if (row.Tab != _tab)
+            var at = order[i];
+            if (at.IsSlider)
             {
-                continue;
+                GameSlider(ui, _rows.Sliders[at.Index]);
             }
+            else
+            {
+                GameSwitchRow(ui, _rows.Switches[at.Index]);
+            }
+        }
+    }
 
-            var id = Ui.Id(Ui.Id("settings.game"), row.Switch.Index);
-            if (Switch(ui, id, row.Label, row.Hint, _settings.IsOn(row.Switch)))
-            {
-                _settings.SetSwitch(row.Switch, !_settings.IsOn(row.Switch));
-            }
+    private void GameSwitchRow(Ui ui, SettingsSwitchRow row)
+    {
+        if (row.Tab != _tab)
+        {
+            return;
+        }
+
+        var id = Ui.Id(Ui.Id("settings.game"), row.Switch.Index);
+        if (Switch(ui, id, row.Label, row.Hint, _settings.IsOn(row.Switch)))
+        {
+            _settings.SetSwitch(row.Switch, !_settings.IsOn(row.Switch));
+        }
+    }
+
+    private void GameSlider(Ui ui, SettingsSliderRow row)
+    {
+        if (row.Tab != _tab)
+        {
+            return;
+        }
+
+        // Its own seed, so no slider's id is a switch's.
+        var id = Ui.Id(Ui.Id("settings.game.value"), row.Value.Index);
+        var value = _settings.ValueOf(row.Value);
+        var moved = SliderRow(
+            ui,
+            id,
+            row.Label,
+            row.Hint,
+            value,
+            _settings.LeastOf(row.Value),
+            _settings.MostOf(row.Value),
+            ValueText(id, value, row.Text)
+        );
+        if (moved is { } to)
+        {
+            _settings.SetValue(row.Value, to);
         }
     }
 
@@ -314,16 +353,36 @@ public sealed class SettingsPage
         Func<int, float, string> text
     )
     {
+        if (SliderRow(ui, id, name, hint, value, least, most, ValueText(id, value, text)) is { } moved)
+        {
+            Set(id, moved);
+        }
+    }
+
+    /// <summary>A row of a name, a value's text, and a slider; the value the slider moved to, or null.</summary>
+    private float? SliderRow(
+        Ui ui,
+        int id,
+        string name,
+        string hint,
+        float value,
+        float least,
+        float most,
+        string valueText
+    )
+    {
         _hints[id] = hint;
         using (ui.Row(0, Row()))
         {
             ui.Text(name, box: new UiBox { Width = UiSize.Grow() });
-            ui.Text(ValueText(id, value, text), UiText.Body with { Tone = UiTone.Dim });
+            ui.Text(valueText, UiText.Body with { Tone = UiTone.Dim });
             if (ui.Slider(id, value, least, most, UiBox.Fixed(ControlWidth, ControlHeight)) is { Changed: true } moved)
             {
-                Set(id, moved.Value);
+                return moved.Value;
             }
         }
+
+        return null;
     }
 
     /// <summary>A row with a switch; true when it was clicked.</summary>
@@ -507,6 +566,19 @@ public sealed class SettingsPage
         }
 
         var made = text(id, value);
+        _values[id] = (value, made);
+        return made;
+    }
+
+    /// <summary>A game slider's text, made again only when the value changes (the game's function runs then alone).</summary>
+    private string ValueText(int id, float value, Func<float, string> text)
+    {
+        if (_values.TryGetValue(id, out var known) && known.Value == value)
+        {
+            return known.Text;
+        }
+
+        var made = text(value);
         _values[id] = (value, made);
         return made;
     }

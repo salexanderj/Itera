@@ -91,6 +91,18 @@ A game's own on/off settings are `GameSwitch`es:
 - A game shows a switch on the Settings page with `SettingsRows.AddSwitch(switch, label, hint, tab)`. The row goes after the engine's rows on Game or Graphics, or on a tab it names, before Keybindings.
 - A game may instead set a switch itself: its own `KeyBindings` row, read with `PlayerSettings.Keys.WasPressed`.
 
+A game's own number settings are `GameValue`s:
+
+- Its `IRunStartup` registers each once a run with `PlayerSettings.RegisterValue(name, default, least, most)`. Switches and values share one set of names, and a repeat throws `ArgumentException`.
+- The bounds must be finite, with `least` not above `most`. The default is kept within them.
+- The file's value is used when the `"Game"` object holds a number of that name, kept within the bounds.
+- `ValueOf` and `SetValue` read and set it, and allocate nothing. `SetValue` keeps the value within the bounds and ignores one that is not finite or does not change.
+- `LeastOf`, `MostOf`, and `ValueName` give the bounds and the name kept in the file.
+- `settings.json` writes the values after the switches, rounded to four places, then the entries this run did not register.
+- A game shows a value on the Settings page with `SettingsRows.AddSlider(value, label, hint, tab, text)`. `text` gives the value's text, such as `v => $"{v:P0}"`. The slider takes its bounds from `PlayerSettings`.
+- `SettingsPage` calls `text` only when the value changes, and a move calls `SetValue` at once.
+- A tab shows the game's switch and slider rows in the order they were added, after the engine's rows. `SettingsRows.Switches` and `Sliders` list each kind.
+
 ### Tests
 
 `MenuLayerTests` and `MenuJoinPageTests` work the menu by what its elements read. `MenuPicturesTests` draws every menu page. Other classes: `RadialMenuTests`, `RadialRingTests`, `ScrollBarTests`, `PlayerSettingsTests`.
@@ -98,4 +110,4 @@ A game's own on/off settings are `GameSwitch`es:
 ### Files in `src/Itera.Engine`
 
 - `UI/Menu/`: `IMenu`, `MenuLayer`, `MenuPages` with `IMenuPage` and `IMenuCorner`, `SettingsPage`, `SettingsRows`, `MenuStyle`, `RadialMenu`, `RadialRing`, `ScrollBar`.
-- `Settings/`: `PlayerSettings`, `CommandLineKeys`, `AntiAliasMode`, `GameSwitch`.
+- `Settings/`: `PlayerSettings`, `CommandLineKeys`, `AntiAliasMode`, `GameSwitch`, `GameValue`.

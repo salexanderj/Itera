@@ -528,6 +528,172 @@ public sealed class PlayerSettingsTests : IDisposable
         Assert.Equal(500, on);
     }
 
+    [Fact]
+    public void A_game_value_is_its_default_when_the_file_has_none_and_keeps_its_bounds_and_name()
+    {
+        var settings = Create(new EngineOptions());
+
+        var grass = settings.RegisterValue("Grass", 0.5f, 0, 1);
+        var clamped = settings.RegisterValue("Reach", 90, 10, 40);
+
+        Assert.Equal(0.5f, settings.ValueOf(grass));
+        Assert.Equal(40f, settings.ValueOf(clamped));
+        Assert.Equal(0f, settings.LeastOf(grass));
+        Assert.Equal(1f, settings.MostOf(grass));
+        Assert.Equal(10f, settings.LeastOf(clamped));
+        Assert.Equal(40f, settings.MostOf(clamped));
+        Assert.Equal("Grass", settings.ValueName(grass));
+        Assert.Equal("Reach", settings.ValueName(clamped));
+        settings.Save();
+        Assert.False(File.Exists(FilePath));
+    }
+
+    [Fact]
+    public void A_game_value_is_read_from_the_file_clamped_and_a_value_that_is_not_a_number_is_ignored()
+    {
+        File.WriteAllText(
+            FilePath,
+            """{ "Game": { "Grass": 0.25, "High": 7, "Low": -3, "Text": "5", "Flag": true, "Nothing": null } }"""
+        );
+        var settings = Create(new EngineOptions());
+
+        var grass = settings.RegisterValue("Grass", 0.5f, 0, 1);
+        var high = settings.RegisterValue("High", 0.5f, 0, 1);
+        var low = settings.RegisterValue("Low", 0.5f, 0, 1);
+        var text = settings.RegisterValue("Text", 0.5f, 0, 1);
+        var flag = settings.RegisterValue("Flag", 0.5f, 0, 1);
+        var nothing = settings.RegisterValue("Nothing", 0.5f, 0, 1);
+        var absent = settings.RegisterValue("Absent", 0.75f, 0, 1);
+
+        Assert.Equal(0.25f, settings.ValueOf(grass));
+        Assert.Equal(1f, settings.ValueOf(high));
+        Assert.Equal(0f, settings.ValueOf(low));
+        Assert.Equal(0.5f, settings.ValueOf(text));
+        Assert.Equal(0.5f, settings.ValueOf(flag));
+        Assert.Equal(0.5f, settings.ValueOf(nothing));
+        Assert.Equal(0.75f, settings.ValueOf(absent));
+    }
+
+    [Fact]
+    public void Setting_a_game_value_keeps_it_within_its_bounds_and_changes_the_version_only_when_it_moves()
+    {
+        var settings = Create(new EngineOptions());
+        var grass = settings.RegisterValue("Grass", 0.5f, 0, 1);
+        var version = settings.Version;
+
+        settings.SetValue(grass, 0.5f);
+        settings.SetValue(grass, float.NaN);
+        settings.SetValue(grass, float.PositiveInfinity);
+        Assert.Equal(version, settings.Version);
+        Assert.Equal(0.5f, settings.ValueOf(grass));
+
+        settings.SetValue(grass, 3);
+        Assert.Equal(1f, settings.ValueOf(grass));
+        Assert.Equal(version + 1, settings.Version);
+
+        // Past the bound again: the same value once kept within it.
+        settings.SetValue(grass, 7);
+        Assert.Equal(version + 1, settings.Version);
+
+        settings.SetValue(grass, -2);
+        Assert.Equal(0f, settings.ValueOf(grass));
+        Assert.Equal(version + 2, settings.Version);
+
+        settings.SetValue(grass, 0.25f);
+        Assert.Equal(0.25f, settings.ValueOf(grass));
+        Assert.Equal(version + 3, settings.Version);
+    }
+
+    [Fact]
+    public void A_changed_game_value_is_written_rounded_after_the_switches_with_the_files_other_entries_and_read_back()
+    {
+        File.WriteAllText(FilePath, """{ "Game": { "Old": 7, "Names": ["a"] }, "Colour": "red" }""");
+        var settings = Create(new EngineOptions());
+        var grass = settings.RegisterValue("Grass", 0.5f, 0, 1);
+        var minimap = settings.RegisterSwitch("Minimap", defaultValue: true);
+
+        settings.SetValue(grass, 0.123456f);
+        settings.Save();
+
+        using (var written = JsonDocument.Parse(File.ReadAllText(FilePath)))
+        {
+            var section = written.RootElement.GetProperty("Game");
+            Assert.Equal(["Minimap", "Grass", "Old", "Names"], section.EnumerateObject().Select(p => p.Name).ToArray());
+            Assert.Equal(0.1235f, section.GetProperty("Grass").GetSingle());
+            Assert.True(section.GetProperty("Minimap").GetBoolean());
+            Assert.Equal(7, section.GetProperty("Old").GetInt32());
+            Assert.Equal("a", section.GetProperty("Names")[0].GetString());
+            Assert.Equal("red", written.RootElement.GetProperty("Colour").GetString());
+        }
+
+        var next = Create(new EngineOptions());
+        var again = next.RegisterValue("Grass", 0.5f, 0, 1);
+        Assert.Equal(0.1235f, next.ValueOf(again));
+        Assert.True(settings.IsOn(minimap));
+    }
+
+    [Fact]
+    public void A_game_section_with_only_a_value_registered_is_rewritten_and_one_with_none_is_kept()
+    {
+        File.WriteAllText(FilePath, """{ "Game": { "Minimap": false, "Old": 7 } }""");
+        var settings = Create(new EngineOptions());
+        var grass = settings.RegisterValue("Grass", 0.5f, 0, 1);
+
+        settings.SetValue(grass, 0.8f);
+        settings.Save();
+
+        using var written = JsonDocument.Parse(File.ReadAllText(FilePath));
+        var section = written.RootElement.GetProperty("Game");
+        Assert.Equal(["Grass", "Minimap", "Old"], section.EnumerateObject().Select(p => p.Name).ToArray());
+        Assert.Equal(0.8f, section.GetProperty("Grass").GetSingle());
+        Assert.False(section.GetProperty("Minimap").GetBoolean());
+    }
+
+    [Fact]
+    public void A_name_a_switch_or_a_value_took_is_refused_for_both_and_bad_bounds_are_refused()
+    {
+        var settings = Create(new EngineOptions());
+        settings.RegisterSwitch("Minimap", defaultValue: true);
+        settings.RegisterValue("Grass", 0.5f, 0, 1);
+
+        Assert.Throws<ArgumentException>(() => settings.RegisterValue("Minimap", 0.5f, 0, 1));
+        Assert.Throws<ArgumentException>(() => settings.RegisterSwitch("Grass", defaultValue: true));
+        Assert.Throws<ArgumentException>(() => settings.RegisterValue("Grass", 0.5f, 0, 1));
+        Assert.Throws<ArgumentException>(() => settings.RegisterValue("", 0.5f, 0, 1));
+        Assert.Throws<ArgumentException>(() => settings.RegisterValue("A", 0.5f, 1, 0));
+        Assert.Throws<ArgumentException>(() => settings.RegisterValue("B", 0.5f, float.NaN, 1));
+        Assert.Throws<ArgumentException>(() => settings.RegisterValue("C", 0.5f, 0, float.PositiveInfinity));
+        Assert.Throws<ArgumentException>(() => settings.RegisterValue("D", float.NaN, 0, 1));
+        Assert.Throws<ArgumentException>(() => settings.RegisterValue("E", float.NegativeInfinity, 0, 1));
+        // A refused name stays free.
+        Assert.Equal(1f, settings.ValueOf(settings.RegisterValue("A", 2, 0, 1)));
+        // Equal bounds are allowed.
+        Assert.Equal(3f, settings.ValueOf(settings.RegisterValue("F", 0, 3, 3)));
+    }
+
+    [Fact]
+    public void Reading_and_setting_a_game_value_allocate_nothing()
+    {
+        var settings = Create(new EngineOptions());
+        var grass = settings.RegisterValue("Grass", 0.5f, 0, 1);
+        for (var i = 0; i < 100; i++)
+        {
+            settings.SetValue(grass, i % 2);
+            _ = settings.ValueOf(grass);
+        }
+
+        var before = SystemAllocation.StartMeasurement();
+        var sum = 0f;
+        for (var i = 0; i < 1000; i++)
+        {
+            settings.SetValue(grass, i % 2);
+            sum += settings.ValueOf(grass);
+        }
+
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal(500f, sum);
+    }
+
     /// <summary>The settings with the file read, as the run's <c>settings file</c> step does.</summary>
     [Fact]
     public void The_ui_scale_comes_from_the_options_then_the_file_within_its_range_and_reaches_the_toolkit()
