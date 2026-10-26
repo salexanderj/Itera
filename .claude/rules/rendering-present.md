@@ -49,7 +49,12 @@ before the UI.
 - `DynamicRenderScale` (`Engine:Renderer:DynamicRenderScaling`) sets the scale from the GPU's time per frame, so the
   frame rate holds the lower of `Engine:Renderer:DynamicScalingThreshold` and the screen's refresh rate
   (`WindowService.RefreshRate`). At scale 1 with time to spare it stays at 1.
-- A step is taken every few frames: down at once by the square root of the time's excess, up by a small amount at most.
+- Each frame's GPU time is split into a fixed part, the passes in `DynamicRenderScale.FixedPasses`, and a rest that
+  follows the square of the scale. `GpuTimings.LastFrame` gives each pass's time in the last frame. `GpuTimer.Collect`
+  records the whole frame last, after its passes.
+- A step is taken every few frames. It predicts the worst frame as the mean fixed part plus the largest pixel part.
+  When that is over the aim, the scale drops at once to where it meets the aim. A frame slow in its fixed passes alone
+  does not move the scale. When the mean is well under the aim, the scale rises by a small amount at most.
 - With dynamic scaling off, the scale is `Engine:Renderer:RenderScale`. The console's `scale` sets one for the run
   (`scale auto` gives it back).
 - SMAA runs before FSR 1.

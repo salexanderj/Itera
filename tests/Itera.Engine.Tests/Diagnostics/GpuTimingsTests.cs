@@ -40,6 +40,31 @@ public sealed class GpuTimingsTests
     }
 
     [Fact]
+    public void The_last_frame_holds_the_passes_recorded_before_its_whole_time()
+    {
+        var timings = new GpuTimings();
+        var passes = new float[GpuTimings.PassCount];
+        Assert.Equal(0, timings.LastFrame(passes));
+
+        timings.Record(GpuPass.ShadowMaps, 1_000_000);
+        timings.Record(GpuPass.Ui, 500_000);
+        timings.Record(GpuPass.Frame, 6_000_000);
+        Assert.Equal(6.0, timings.LastFrame(passes), 6);
+        Assert.Equal(1f, passes[(int)GpuPass.ShadowMaps], 6);
+        Assert.Equal(0.5f, passes[(int)GpuPass.Ui], 6);
+        Assert.Equal(6f, passes[(int)GpuPass.Frame], 6);
+
+        // The next frame's passes stay apart until its whole time closes it; a pass it did not run reads 0.
+        timings.Record(GpuPass.ShadowMaps, 2_000_000);
+        Assert.Equal(6.0, timings.LastFrame(passes), 6);
+        Assert.Equal(1f, passes[(int)GpuPass.ShadowMaps], 6);
+        timings.Record(GpuPass.Frame, 4_000_000);
+        Assert.Equal(4.0, timings.LastFrame(passes), 6);
+        Assert.Equal(2f, passes[(int)GpuPass.ShadowMaps], 6);
+        Assert.Equal(0f, passes[(int)GpuPass.Ui]);
+    }
+
+    [Fact]
     public void Recording_from_another_thread_loses_nothing()
     {
         var timings = new GpuTimings();
@@ -77,8 +102,10 @@ public sealed class GpuTimingsTests
     public void Recording_and_taking_allocate_nothing()
     {
         var timings = new GpuTimings();
+        var passes = new float[GpuTimings.PassCount];
         timings.Record(GpuPass.Voxels, 1);
         timings.Take(GpuPass.Voxels);
+        timings.LastFrame(passes);
 
         var before = SystemAllocation.StartMeasurement();
         for (var i = 0; i < 1000; i++)
@@ -86,6 +113,7 @@ public sealed class GpuTimingsTests
             timings.Record(GpuPass.Voxels, i);
             timings.Record(GpuPass.Frame, i);
             timings.Take(GpuPass.Voxels);
+            timings.LastFrame(passes);
         }
 
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);

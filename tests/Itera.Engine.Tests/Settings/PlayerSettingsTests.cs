@@ -294,7 +294,7 @@ public sealed class PlayerSettingsTests : IDisposable
         Assert.False(written.RootElement.TryGetProperty("SmoothNormals", out _));
         Assert.False(written.RootElement.TryGetProperty("TextureFiltering", out _));
         Assert.True(written.RootElement.GetProperty("DynamicRenderScaling").GetBoolean());
-        Assert.Equal(120, written.RootElement.GetProperty("DynamicScalingThreshold").GetDouble());
+        Assert.Equal(60, written.RootElement.GetProperty("DynamicScalingThreshold").GetDouble());
         Assert.Equal("red", written.RootElement.GetProperty("Colour").GetString());
     }
 

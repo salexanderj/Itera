@@ -321,7 +321,7 @@ public sealed class MenuLayerTests : IDisposable
         Click("Graphics");
         Assert.Equal(SettingsRows.GraphicsTab, _menu.SettingsTab);
         Assert.Equal([true, true], Switches());
-        Assert.Equal(120, Settings.ScalingThreshold);
+        Assert.Equal(60, Settings.ScalingThreshold);
         var threshold = Element(UiKind.Slider, 0).Rect;
         Hold(new Vector2(threshold.Left + 1, threshold.MidY), pressed: true);
         Assert.Equal(30, Settings.ScalingThreshold);

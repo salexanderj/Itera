@@ -97,7 +97,7 @@ public sealed unsafe partial class GpuTimer : IDisposable
         Parse(_results, _validMask, _nanosecondsPerTick, nanoseconds);
         for (var pass = 0; pass < GpuTimings.PassCount; pass++)
         {
-            if (nanoseconds[pass] >= 0 && pass != (int)GpuPass.Game)
+            if (nanoseconds[pass] >= 0 && pass != (int)GpuPass.Game && pass != (int)GpuPass.Frame)
             {
                 _timings.Record((GpuPass)pass, nanoseconds[pass]);
             }
@@ -118,6 +118,12 @@ public sealed unsafe partial class GpuTimer : IDisposable
         if (game >= 0)
         {
             _timings.Record(GpuPass.Game, game);
+        }
+
+        // The whole frame last: it closes the frame's passes (GpuTimings.LastFrame).
+        if (nanoseconds[(int)GpuPass.Frame] >= 0)
+        {
+            _timings.Record(GpuPass.Frame, nanoseconds[(int)GpuPass.Frame]);
         }
     }
 

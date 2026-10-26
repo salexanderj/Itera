@@ -74,6 +74,8 @@ public readonly record struct GpuPassTimes(long Count, double AverageMs, double 
 /// control port's <c>gpu</c> request (<see cref="StartWindow"/>, <see cref="Window"/>) without touching the interval's.
 /// A game's passes, up to <see cref="MostGamePasses"/>, are measured one by one after the engine's
 /// (<see cref="GamePassNames"/>, <see cref="RecordGame"/>, <see cref="GamePass"/>), and their sum as <see cref="GpuPass.Game"/>.
+/// The last whole frame's time of each engine pass is kept too (<see cref="LastFrame"/>): a frame's passes are recorded
+/// before its <see cref="GpuPass.Frame"/>, which closes the frame.
 /// </summary>
 public sealed class GpuTimings
 {
@@ -97,6 +99,8 @@ public sealed class GpuTimings
     private readonly long[] _windowCount = new long[Entries];
     private readonly long[] _windowSumNanoseconds = new long[Entries];
     private readonly long[] _windowMaxNanoseconds = new long[Entries];
+    private readonly long[] _framePassNanoseconds = new long[PassCount];
+    private readonly long[] _lastFramePassNanoseconds = new long[PassCount];
     private int _frameTimeCount;
     private long _lastFrameNanoseconds;
     private long _framesMeasured;
@@ -124,16 +128,38 @@ public sealed class GpuTimings
     /// <summary>The game's passes measured one by one, by their index (at most <see cref="MostGamePasses"/>); set once before the render thread starts.</summary>
     public IReadOnlyList<string> GamePassNames { get; set; } = [];
 
-    /// <summary>Adds one frame's time for a pass. Render thread.</summary>
+    /// <summary>
+    /// Adds one frame's time for a pass. Render thread. A frame's other passes are recorded before its
+    /// <see cref="GpuPass.Frame"/>, which closes the frame for <see cref="LastFrame"/>.
+    /// </summary>
     public void Record(GpuPass pass, long nanoseconds)
     {
-        if (pass == GpuPass.Frame)
+        var frame = pass == GpuPass.Frame;
+        Add((int)pass, nanoseconds, frame);
+        if (frame)
         {
             Interlocked.Exchange(ref _lastFrameNanoseconds, nanoseconds);
             Interlocked.Increment(ref _framesMeasured);
         }
+    }
 
-        Add((int)pass, nanoseconds, pass == GpuPass.Frame);
+    /// <summary>
+    /// Copies the last whole frame's time of each engine pass, in milliseconds, into <paramref name="passes"/> (indexed
+    /// by <see cref="GpuPass"/>, at most <see cref="PassCount"/>; 0 for a pass that did not run in it), and returns the
+    /// whole frame's time, 0 before the first. All come from the same frame. Main thread.
+    /// </summary>
+    public double LastFrame(Span<float> passes)
+    {
+        lock (_lock)
+        {
+            var count = Math.Min(passes.Length, PassCount);
+            for (var i = 0; i < count; i++)
+            {
+                passes[i] = _lastFramePassNanoseconds[i] / 1e6f;
+            }
+
+            return _lastFramePassNanoseconds[(int)GpuPass.Frame] / 1e6;
+        }
     }
 
     /// <summary>Adds one frame's time for the game's pass <paramref name="index"/> (<see cref="GamePassNames"/>). Render thread.</summary>
@@ -155,9 +181,21 @@ public sealed class GpuTimings
             _windowCount[i]++;
             _windowSumNanoseconds[i] += nanoseconds;
             _windowMaxNanoseconds[i] = Math.Max(_windowMaxNanoseconds[i], nanoseconds);
-            if (frame && _frameTimeCount < _frameTimes.Length)
+            if (frame)
             {
-                _frameTimes[_frameTimeCount++] = nanoseconds / 1e6f;
+                if (_frameTimeCount < _frameTimes.Length)
+                {
+                    _frameTimes[_frameTimeCount++] = nanoseconds / 1e6f;
+                }
+
+                // The passes recorded since the last frame are this frame's.
+                _framePassNanoseconds.CopyTo(_lastFramePassNanoseconds, 0);
+                Array.Clear(_framePassNanoseconds);
+                _lastFramePassNanoseconds[i] = nanoseconds;
+            }
+            else if (i < PassCount)
+            {
+                _framePassNanoseconds[i] = nanoseconds;
             }
         }
     }

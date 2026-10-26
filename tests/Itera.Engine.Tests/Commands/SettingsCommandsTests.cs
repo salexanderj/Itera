@@ -61,7 +61,7 @@ public sealed class SettingsCommandsTests : IDisposable
         Run("settings");
 
         Assert.Equal(
-            "volume 0.10, musicvolume 1.00, effectsvolume 1.00, sensitivity 0.10, fov 90, uiscale 1.00, scaling on, threshold 120, shadows on, aa 4x, vsync on, fullscreen off, screen main",
+            "volume 0.10, musicvolume 1.00, effectsvolume 1.00, sensitivity 0.10, fov 90, uiscale 1.00, scaling on, threshold 60, shadows on, aa 4x, vsync on, fullscreen off, screen main",
             Last()
         );
         Assert.False(File.Exists(FilePath));

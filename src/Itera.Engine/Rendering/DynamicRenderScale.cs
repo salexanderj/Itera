@@ -12,13 +12,18 @@ namespace Itera.Engine.Rendering;
 /// (<see cref="WindowService.RefreshRate"/>: frames past it are not shown whole). It steers by the GPU's
 /// time, not the whole frame's: the scale changes only the GPU's work, so a frame the CPU holds up would only lose
 /// sharpness. It aims for <see cref="Aim"/> of the target's frame time, so frames' usual variation stays under the
-/// target. Each step takes the mean of <see cref="StepFrames"/> frames measured after the last change reached the GPU
-/// (the <see cref="SettleFrames"/> before are skipped), about 0.1 s at 120 frames a second. Over the aim it lowers the
-/// scale at once by the square root of the excess (the time follows the pixels, the square of the scale); under
-/// <see cref="RaiseBelow"/> of the aim it raises it by at most <see cref="MostRaise"/> a step, so it takes about a
-/// second to rise 0.2 and does not swing. Between the two it holds, and at 1 with time to spare it does nothing. Off, or
-/// with the console's <c>scale</c> set (<see cref="RenderView.ScaleOverride"/>), or where the GPU cannot measure, the
-/// scale is fixed. Main thread, once a frame before the view is made; allocates nothing.
+/// target. Each frame's time is split in two: a fixed part, the passes whose work does not follow the drawn size
+/// (<see cref="FixedPasses"/>: the shadow maps, skinning, uploads, the particles' simulation, image views, the UI, the
+/// upscale, the loading screen), and the rest, which follows the pixels (the square of the scale). Each step takes
+/// <see cref="StepFrames"/> frames measured after the last change reached the GPU (the <see cref="SettleFrames"/> before
+/// are skipped), about 0.2 s at 60 frames a second. Their worst frame is predicted as their mean fixed part plus their
+/// largest pixel part, so a frame whose fixed passes are slow, which a lower scale cannot help, does not move the scale.
+/// When that worst frame is over the aim, it lowers the scale at once to where the worst frame would meet the aim, or to
+/// the least when the mean fixed part alone is over. When their mean is under <see cref="RaiseBelow"/> of the aim, it raises the scale by at most <see cref="MostRaise"/>
+/// a step, never past where the mean would meet the aim, so it takes about a second to rise 0.2 and does not swing.
+/// Between the two it holds, and at 1 with time to spare it does nothing. Off, or with the console's <c>scale</c> set
+/// (<see cref="RenderView.ScaleOverride"/>), or where the GPU cannot measure, the scale is fixed. Main thread, once a
+/// frame before the view is made; allocates nothing.
 /// </summary>
 public sealed partial class DynamicRenderScale
 {
@@ -31,7 +36,10 @@ public sealed partial class DynamicRenderScale
     /// <summary>The most it raises the scale in a step.</summary>
     public const float MostRaise = 0.02f;
 
-    /// <summary>Frames measured whose mean makes a step.</summary>
+    /// <summary>
+    /// Frames measured that make a step: their largest pixel part lowers the scale, their mean raises it. Of 8 frames the
+    /// largest is also the 90th percentile (the 8th by nearest rank).
+    /// </summary>
     public const int StepFrames = 8;
 
     /// <summary>
@@ -52,22 +60,41 @@ public sealed partial class DynamicRenderScale
     // Scales are whole hundredths: a smaller change would redraw the picture at a few pixels' difference for nothing.
     private const int Hundredths = 100;
 
+    // The most a step can multiply the scale by, when the part of the time that follows the pixels is too small to measure.
+    private const double MostRatio = 2;
+
     private static readonly float[] s_thresholds = [30, 60, 75, 90, 100, 120, 144, 165, 180, 240, 360];
+
+    private static readonly GpuPass[] s_fixedPasses =
+    [
+        GpuPass.ShadowMaps,
+        GpuPass.Skinning,
+        GpuPass.Upload,
+        GpuPass.ParticleSimulate,
+        GpuPass.ImageViews,
+        GpuPass.Ui,
+        GpuPass.Upscale,
+        GpuPass.Loading,
+    ];
 
     private readonly RenderView _view;
     private readonly GpuTimings _timings;
     private readonly WindowService? _window;
     private readonly ILogger<DynamicRenderScale> _logger;
+    private readonly float[] _passes = new float[GpuTimings.PassCount];
     private bool _running;
     private long _seen;
     private int _settle;
     private double _sum;
+    private double _fixedSum;
+    private double _mostPixels;
     private int _count;
     private double _intervalStart = -1;
     private float _least;
     private float _most;
     private double _scaleSum;
     private double _gpuSum;
+    private double _gpuFixedSum;
     private int _intervalFrames;
     private int _gpuFrames;
 
@@ -86,6 +113,9 @@ public sealed partial class DynamicRenderScale
 
     /// <summary>The thresholds the settings offer: common refresh rates, in frames a second, lowest first.</summary>
     public static ReadOnlySpan<float> Thresholds => s_thresholds;
+
+    /// <summary>The passes whose GPU time does not follow the drawn size: a frame's fixed part.</summary>
+    public static ReadOnlySpan<GpuPass> FixedPasses => s_fixedPasses;
 
     /// <summary>The frame rate held: the lower of the threshold and the screen's refresh rate when it is known.</summary>
     public float TargetFps => TargetFor(_view.ScalingThreshold, _window?.RefreshRate ?? 0);
@@ -138,8 +168,7 @@ public sealed partial class DynamicRenderScale
             _running = true;
             _seen = _timings.FramesMeasured;
             _settle = SettleFrames;
-            _sum = 0;
-            _count = 0;
+            StartStep();
             StartInterval(now);
         }
 
@@ -154,19 +183,25 @@ public sealed partial class DynamicRenderScale
             }
             else
             {
-                var milliseconds = _timings.LastFrameMilliseconds;
-                _sum += milliseconds;
+                var frame = LastFrame();
+                _sum += frame.Milliseconds;
+                _fixedSum += frame.FixedMilliseconds;
+                _mostPixels = Math.Max(_mostPixels, frame.Milliseconds - frame.FixedMilliseconds);
+
                 _count++;
-                _gpuSum += milliseconds;
+                _gpuSum += frame.Milliseconds;
+                _gpuFixedSum += frame.FixedMilliseconds;
                 _gpuFrames++;
             }
         }
 
         if (_count >= StepFrames)
         {
-            var next = Next(view.RenderScale, _sum / _count, TargetFps);
-            _sum = 0;
-            _count = 0;
+            var meanFixed = _fixedSum / _count;
+            var mean = new GpuFrameTime(_sum / _count, meanFixed);
+            var worst = new GpuFrameTime(meanFixed + _mostPixels, meanFixed);
+            var next = Next(view.RenderScale, worst, mean, TargetFps);
+            StartStep();
             if (next != view.RenderScale)
             {
                 view.RenderScale = next;
@@ -178,27 +213,28 @@ public sealed partial class DynamicRenderScale
     }
 
     /// <summary>
-    /// The scale after frames drawn at <paramref name="scale"/> took <paramref name="meanMilliseconds"/> of GPU time on
-    /// average, for <paramref name="targetFps"/> frames a second: in whole hundredths, from <see cref="RenderScale.Min"/>
-    /// to <see cref="RenderScale.Max"/>. Pure.
+    /// The scale after a step's frames drawn at <paramref name="scale"/>, for <paramref name="targetFps"/> frames a
+    /// second: in whole hundredths, from <see cref="RenderScale.Min"/> to <see cref="RenderScale.Max"/>.
+    /// <paramref name="worst"/> is their worst frame predicted (their mean fixed part plus their largest pixel part), and
+    /// <paramref name="mean"/> their mean. Pure.
     /// </summary>
-    public static float Next(float scale, double meanMilliseconds, double targetFps)
+    public static float Next(float scale, GpuFrameTime worst, GpuFrameTime mean, double targetFps)
     {
         var aim = Aim * 1000 / targetFps;
         var current = (int)Math.Round(scale * Hundredths);
         var least = (int)Math.Round(RenderScale.Min * Hundredths);
         var most = (int)Math.Round(RenderScale.Max * Hundredths);
         int next;
-        if (meanMilliseconds > aim)
+        if (worst.Milliseconds > aim)
         {
-            // Down at once, by at least a hundredth.
-            next = Math.Min(current - 1, (int)Math.Floor(current * Math.Sqrt(aim / meanMilliseconds)));
+            // Down at once, by at least a hundredth; to the least when the fixed part alone is over the aim.
+            next = Math.Min(current - 1, (int)Math.Floor(current * Ratio(worst, aim)));
         }
-        else if (meanMilliseconds < RaiseBelow * aim)
+        else if (mean.Milliseconds < RaiseBelow * aim)
         {
             // Up by at most MostRaise, never past the time the aim allows.
             var raise = (int)Math.Round(MostRaise * Hundredths);
-            next = Math.Min(current + raise, (int)Math.Floor(current * Math.Sqrt(aim / meanMilliseconds)));
+            next = Math.Min(current + raise, (int)Math.Floor(current * Ratio(mean, aim)));
             next = Math.Max(next, current);
         }
         else
@@ -207,6 +243,44 @@ public sealed partial class DynamicRenderScale
         }
 
         return Math.Clamp(next, least, most) / (float)Hundredths;
+    }
+
+    /// <summary>
+    /// The ratio r of the scale at which <paramref name="frame"/> would take <paramref name="aim"/>: its fixed part plus
+    /// the rest times r squared. 0 when the fixed part alone reaches the aim.
+    /// </summary>
+    private static double Ratio(GpuFrameTime frame, double aim)
+    {
+        var fixedPart = Math.Clamp(frame.FixedMilliseconds, 0, frame.Milliseconds);
+        if (fixedPart >= aim)
+        {
+            return 0;
+        }
+
+        var scaled = frame.Milliseconds - fixedPart;
+        var squared = (aim - fixedPart) / scaled;
+        return scaled > 0 && squared < MostRatio * MostRatio ? Math.Sqrt(squared) : MostRatio;
+    }
+
+    /// <summary>The last frame measured: its whole time and the sum of its <see cref="FixedPasses"/>.</summary>
+    private GpuFrameTime LastFrame()
+    {
+        var milliseconds = _timings.LastFrame(_passes);
+        var fixedPart = 0.0;
+        foreach (var pass in s_fixedPasses)
+        {
+            fixedPart += _passes[(int)pass];
+        }
+
+        return new GpuFrameTime(milliseconds, Math.Min(fixedPart, milliseconds));
+    }
+
+    private void StartStep()
+    {
+        _sum = 0;
+        _fixedSum = 0;
+        _mostPixels = 0;
+        _count = 0;
     }
 
     private void Stop(float scale)
@@ -222,6 +296,7 @@ public sealed partial class DynamicRenderScale
         _most = _view.RenderScale;
         _scaleSum = 0;
         _gpuSum = 0;
+        _gpuFixedSum = 0;
         _intervalFrames = 0;
         _gpuFrames = 0;
     }
@@ -240,13 +315,19 @@ public sealed partial class DynamicRenderScale
 
         var mean = _scaleSum / _intervalFrames;
         var gpu = _gpuFrames > 0 ? _gpuSum / _gpuFrames : 0;
-        LogInterval(_least, _most, mean, TargetFps, gpu);
+        var gpuFixed = _gpuFrames > 0 ? _gpuFixedSum / _gpuFrames : 0;
+        LogInterval(_least, _most, mean, TargetFps, gpu, gpuFixed);
         StartInterval(now);
     }
 
     [LoggerMessage(
         Level = LogLevel.Debug,
-        Message = "Render scale: {Least:F2} to {Most:F2}, mean {Mean:F2}, holding {Fps} fps (GPU {Gpu:F2} ms a frame)"
+        Message = "Render scale: {Least:F2} to {Most:F2}, mean {Mean:F2}, holding {Fps} fps (GPU {Gpu:F2} ms a frame, {GpuFixed:F2} ms of it fixed)"
     )]
-    private partial void LogInterval(float least, float most, double mean, float fps, double gpu);
+    private partial void LogInterval(float least, float most, double mean, float fps, double gpu, double gpuFixed);
 }
+
+/// <summary>A frame's GPU time and its fixed part (<see cref="DynamicRenderScale.FixedPasses"/>), in milliseconds.</summary>
+/// <param name="Milliseconds">The whole frame's time.</param>
+/// <param name="FixedMilliseconds">The time of its passes whose work does not follow the drawn size.</param>
+public readonly record struct GpuFrameTime(double Milliseconds, double FixedMilliseconds);

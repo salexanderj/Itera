@@ -1282,8 +1282,19 @@ swapchain image. The UI draws after it at full size. FSR 1 runs on any GPU brand
 steers by the GPU's time of the whole frame (`GpuTimings`), not the frame's wall time: the scale changes only the GPU's
 work, so a frame the CPU holds up would only lose sharpness. The target is the lower of
 `Engine:Renderer:DynamicScalingThreshold` and the screen's refresh rate (`WindowService.RefreshRate`), VSync on or off.
-It aims for 95 % of the target's frame time. Over that it lowers the scale at once by the square root of the excess.
-Under 90 % it raises the scale by a small step. Between the two it holds. Off, the scale is
+The threshold is 60 by default: a higher one lowers the scale on a fast screen and softens the picture. It aims for
+95 % of the target's frame time.
+
+Much of the GPU's time does not shrink with the pixels: the shadow maps, skinning, uploads, the particles' simulation,
+image views, the UI, and the upscale itself. So each frame's time is split into that fixed part
+(`DynamicRenderScale.FixedPasses`, from the frame's own pass times, `GpuTimings.LastFrame`) and a rest that follows the
+square of the scale. A step looks at 8 frames. It predicts their worst frame as their mean fixed part plus their
+largest pixel part, the 90th percentile of 8. When that is over the aim, the scale drops at once to where it meets the
+aim, or to the least when the mean fixed part alone is over it. A square root of the whole time's excess would drop too
+little and take several steps. The largest pixel part catches single slow frames that a mean would let through. A frame
+slow in its fixed passes, such as a large upload, does not move the scale, because a lower scale cannot make it faster.
+When the mean is under 90 % of the aim, the
+scale rises by a small step, so it does not swing. Between the two it holds. Off, the scale is
 `Engine:Renderer:RenderScale`, which the benchmark sets with scaling off; the console's `scale auto` gives control back.
 
 ### Anti-aliasing with SMAA 1x

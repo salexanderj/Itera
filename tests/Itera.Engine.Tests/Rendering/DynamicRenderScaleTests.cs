@@ -8,8 +8,9 @@ namespace Itera.Engine.Tests.Rendering;
 /// <summary>
 /// Dynamic render scaling against a simulated GPU whose frame time is a fixed part plus a part that follows the pixels
 /// (the square of the scale), with a little noise, measured <see cref="FrameSync.FramesInFlight"/> frames after each
-/// frame is built, as the render thread reads its timestamps after the slot's fence. 120 frames a second; the target is
-/// 120 fps, 8.33 ms a frame, which the scaler aims 5 % under.
+/// frame is built, as the render thread reads its timestamps after the slot's fence. The fixed part is recorded as the
+/// shadow maps' time before the whole frame's, as the render thread records a frame's passes. 120 frames a second; the
+/// target is 120 fps, 8.33 ms a frame, which the scaler aims 5 % under.
 /// </summary>
 public sealed class DynamicRenderScaleTests
 {
@@ -26,6 +27,7 @@ public sealed class DynamicRenderScaleTests
     public DynamicRenderScaleTests()
     {
         _view = new RenderView(Options.Create(new EngineOptions()));
+        _view.ScalingThreshold = (float)Fps;
         _scaler = new DynamicRenderScale(_view, _timings, null, NullLogger<DynamicRenderScale>.Instance);
         Array.Fill(_inFlight, 1f);
     }
@@ -45,7 +47,47 @@ public sealed class DynamicRenderScaleTests
     [InlineData(0.5f, 30.0, 0.5f)]
     public void A_step_lowers_holds_or_raises_by_the_time_against_the_aim(float scale, double meanMs, float expected)
     {
-        Assert.Equal(expected, DynamicRenderScale.Next(scale, meanMs, Fps));
+        var frame = new GpuFrameTime(meanMs, 0);
+        Assert.Equal(expected, DynamicRenderScale.Next(scale, frame, frame, Fps));
+    }
+
+    [Fact]
+    public void A_large_fixed_part_lowers_the_scale_further_than_the_whole_time_would()
+    {
+        // 9.5 ms at 1, 4 of them fixed: 4 + 5.5 s² meets the aim (7.92 ms) at 0.84. Taken all as pixels, at 0.91.
+        var frame = new GpuFrameTime(9.5, 4);
+        var whole = DynamicRenderScale.Next(1f, new GpuFrameTime(9.5, 0), new GpuFrameTime(9.5, 0), Fps);
+
+        Assert.Equal(0.84f, DynamicRenderScale.Next(1f, frame, frame, Fps));
+        Assert.Equal(0.91f, whole);
+    }
+
+    [Fact]
+    public void A_fixed_part_alone_over_the_aim_goes_to_the_least_scale()
+    {
+        var frame = new GpuFrameTime(12, 8.5);
+
+        Assert.Equal(RenderScale.Min, DynamicRenderScale.Next(1f, frame, frame, Fps));
+    }
+
+    [Fact]
+    public void The_worst_frame_lowers_the_scale_where_the_mean_would_hold_it()
+    {
+        // The mean (7.6 ms) is between the share under which it raises and the aim, but one frame drew for 9.5 ms.
+        var mean = new GpuFrameTime(7.6, 0);
+        var worst = new GpuFrameTime(9.5, 0);
+
+        Assert.Equal(0.8f, DynamicRenderScale.Next(0.8f, mean, mean, Fps));
+        Assert.True(DynamicRenderScale.Next(0.8f, worst, mean, Fps) < 0.8f);
+    }
+
+    [Fact]
+    public void A_large_fixed_part_still_raises_by_a_small_step()
+    {
+        // 4 + 2 s² at 0.6 is 4.72 ms, far under the aim: up by MostRaise, however much room the model finds.
+        var frame = new GpuFrameTime(4.72, 4);
+
+        Assert.Equal(0.62f, DynamicRenderScale.Next(0.6f, frame, frame, Fps));
     }
 
     [Theory]
@@ -94,8 +136,13 @@ public sealed class DynamicRenderScaleTests
     }
 
     [Fact]
-    public void A_large_fixed_cost_takes_more_steps_but_settles()
+    public void A_large_fixed_cost_settles_in_one_step()
     {
+        // 12 ms at 1, 4 of them fixed: the first step lands where the worst frame meets the aim. The square root of
+        // the whole time's excess would stop at 0.81.
+        Run(DynamicRenderScale.SettleFrames + DynamicRenderScale.StepFrames + 1, 4, 8);
+        Assert.InRange(_view.RenderScale, 0.62f, 0.71f);
+
         Run(360, 4, 8);
         var (least, most, meanMs) = Run(600, 4, 8);
 
@@ -103,6 +150,36 @@ public sealed class DynamicRenderScaleTests
         Assert.InRange(least, 0.62f, 0.71f);
         Assert.True(most - least <= 0.03f, $"{least} to {most}");
         Assert.True(meanMs < BudgetMs, $"{meanMs:F2} ms");
+    }
+
+    [Fact]
+    public void One_frame_slow_in_its_pixels_in_each_step_lowers_the_scale()
+    {
+        // 5 ms at 1: held at 1.
+        Run(240, 0, 5);
+        Assert.Equal(1f, _view.RenderScale);
+
+        // One frame in 8 draws 4 ms more: the mean (5.5 ms) is well within the aim, that frame (9 ms) is not.
+        Run(3 * DynamicRenderScale.StepFrames, 0, 5, slowEvery: DynamicRenderScale.StepFrames, slowMs: 4);
+        Assert.True(_view.RenderScale < 1f, $"{_view.RenderScale}");
+    }
+
+    [Fact]
+    public void One_frame_slow_in_its_fixed_passes_in_each_step_holds_the_scale()
+    {
+        Run(240, 0, 5);
+
+        // One frame in 8 spends 10 ms more in its fixed passes, alone over the aim: a lower scale would not help it. The mean fixed
+        // part (1.25 ms) and the largest pixel part (5.15 ms) stay within the aim.
+        Run(
+            10 * DynamicRenderScale.StepFrames,
+            0,
+            5,
+            slowEvery: DynamicRenderScale.StepFrames,
+            slowMs: 10,
+            slowFixed: true
+        );
+        Assert.Equal(1f, _view.RenderScale);
     }
 
     [Fact]
@@ -177,10 +254,18 @@ public sealed class DynamicRenderScaleTests
 
     /// <summary>
     /// Builds <paramref name="frames"/> frames on a GPU taking <paramref name="fixedMs"/> plus
-    /// <paramref name="pixelMs"/> times the scale squared, ±3 %. Returns the least and most scale drawn, and the mean GPU
-    /// time measured.
+    /// <paramref name="pixelMs"/> times the scale squared, ±3 %, and <paramref name="slowMs"/> more in one frame of each
+    /// <paramref name="slowEvery"/> (none at 0), in its fixed part when <paramref name="slowFixed"/>. Returns the least and
+    /// most scale drawn, and the mean GPU time measured.
     /// </summary>
-    private (float Least, float Most, double MeanMs) Run(int frames, double fixedMs, double pixelMs)
+    private (float Least, float Most, double MeanMs) Run(
+        int frames,
+        double fixedMs,
+        double pixelMs,
+        int slowEvery = 0,
+        double slowMs = 0,
+        bool slowFixed = false
+    )
     {
         var least = float.MaxValue;
         var most = float.MinValue;
@@ -198,8 +283,10 @@ public sealed class DynamicRenderScaleTests
             _inFlight[slot] = scale;
             _noise = _noise * 1664525 + 1013904223;
             var noise = 1 + 0.03 * ((_noise >> 8) / (double)(1 << 24) * 2 - 1);
-            var milliseconds = (fixedMs + pixelMs * drawn * drawn) * noise;
+            var slow = slowEvery > 0 && i % slowEvery == 0 ? slowMs : 0;
+            var milliseconds = (fixedMs + pixelMs * drawn * drawn) * noise + slow;
             sum += milliseconds;
+            _timings.Record(GpuPass.ShadowMaps, (long)((fixedMs * noise + (slowFixed ? slow : 0)) * 1e6));
             _timings.Record(GpuPass.Frame, (long)(milliseconds * 1e6));
             _frame++;
         }

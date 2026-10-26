@@ -335,9 +335,10 @@ public sealed class RendererSettings
 
     /// <summary>
     /// The frame rate dynamic render scaling holds, 30 to 360 frames a second; the settings' Dynamic scaling threshold
-    /// offers the common refresh rates (<see cref="Rendering.DynamicRenderScale.Thresholds"/>).
+    /// offers the common refresh rates (<see cref="Rendering.DynamicRenderScale.Thresholds"/>). 60 by default: a higher
+    /// one lowers the scale on a fast screen, which softens the picture.
     /// </summary>
-    public float DynamicScalingThreshold { get; set; } = 120;
+    public float DynamicScalingThreshold { get; set; } = 60;
 
     /// <summary>Starts with the debug lines on (outlines of loose bodies and their collision cells); the console's <c>lines</c> turns them off and on.</summary>
     public bool DebugLines { get; set; }
