@@ -14,7 +14,8 @@ namespace Itera.Engine.Tests.Rendering.Meshes;
 /// allows, grouped into one command per primitive with its instances' draws, by pipeline range; posed instances bounded
 /// by their joints, given skin groups and skinning matrices in the slot's regions, their draws reading their skinned
 /// copies, and past the slot's room the marked and then the nearest skinned and the rest not drawn; drawn unposed are those
-/// with the wrong joints; nothing allocated.
+/// with the wrong joints; levels chosen per list by the sphere's height in pixels or texels, each level drawn skinned
+/// once; nothing allocated.
 /// </summary>
 public sealed class MeshAssetDrawsTests
 {
@@ -677,7 +678,236 @@ public sealed class MeshAssetDrawsTests
         );
     }
 
-    private static ViewConstants LookingAlongMinusZ(bool shadows) =>
+    /// <summary>
+    /// An asset with a level under 50 pixels draws itself while its sphere is taller on the image and the level once it is
+    /// shorter, either side of the depth where it is 50 pixels tall.
+    /// </summary>
+    [Theory]
+    [InlineData(0.5f, false)]
+    [InlineData(0.999f, false)]
+    [InlineData(1.001f, true)]
+    [InlineData(4f, true)]
+    public void An_asset_draws_its_level_where_its_sphere_is_shorter_than_the_levels_height(float share, bool level)
+    {
+        var (targets, view, draws) = Levelled();
+        view.Begin(0, LookingAlongMinusZ(shadows: false, ImageHeight));
+        // The image's half height is a metre at a metre's depth: the sphere is 50 pixels tall at this depth.
+        var boundary = 2 * targets.Layout.Assets[0].Radius * (ImageHeight / 2f) / LevelPixels;
+
+        var frame = draws.Write(
+            0,
+            view,
+            [
+                new MeshInstance(
+                    0,
+                    Matrix4x4.CreateTranslation(0, 0, -boundary * share),
+                    MeshInstances.NoTint,
+                    ModelShadow.Casts
+                ),
+            ]
+        );
+
+        Assert.Equal(1, frame.Camera.Draws);
+        Assert.Equal(level ? targets.Layout.Assets[1].FirstVertex : 0, targets.Commands(0, 0)[0].VertexOffset);
+    }
+
+    [Fact]
+    public void A_cascade_whose_texels_are_large_draws_the_level_while_the_camera_draws_the_asset()
+    {
+        var (targets, view, draws) = Levelled(shadowTexels: 512);
+        view.Begin(0, LookingAlongMinusZ(shadows: true, ImageHeight));
+        Assert.True(2 * targets.Layout.Assets[0].Radius / view.NearTexelMetres < LevelPixels);
+
+        var frame = draws.Write(
+            0,
+            view,
+            [new MeshInstance(0, Matrix4x4.CreateTranslation(0, 0, -10), MeshInstances.NoTint, ModelShadow.Casts)]
+        );
+
+        Assert.Equal((1, 1), (frame.Camera.Draws, frame.Near.Draws));
+        Assert.Equal(0, targets.Commands(0, 0)[0].VertexOffset);
+        Assert.Equal(targets.Layout.Assets[1].FirstVertex, targets.Commands(0, 1)[0].VertexOffset);
+    }
+
+    [Fact]
+    public void A_cascade_whose_texels_are_small_draws_the_cameras_coarser_level()
+    {
+        var (targets, view, draws) = Levelled(shadowTexels: 4096);
+        // 100 pixels high: the sphere is about 11 pixels tall at 10 m, and over 50 of the near cascade's texels.
+        view.Begin(0, LookingAlongMinusZ(shadows: true, 100));
+        Assert.True(2 * targets.Layout.Assets[0].Radius / view.NearTexelMetres > LevelPixels);
+
+        var frame = draws.Write(
+            0,
+            view,
+            [new MeshInstance(0, Matrix4x4.CreateTranslation(0, 0, -10), MeshInstances.NoTint, ModelShadow.Casts)]
+        );
+
+        Assert.Equal(1, frame.Near.Draws);
+        Assert.Equal(targets.Layout.Assets[1].FirstVertex, targets.Commands(0, 1)[0].VertexOffset);
+    }
+
+    /// <summary>
+    /// A posed instance the camera draws as its asset and the near cascade at its level is skinned twice, once each, from
+    /// one copy of its skinning matrices, and each list's draws read their level's copy.
+    /// </summary>
+    [Fact]
+    public void A_posed_instance_drawn_at_two_levels_gets_a_skin_group_for_each()
+    {
+        var (targets, view, draws) = Levelled(shadowTexels: 512, skinCapacity: 100);
+        view.Begin(0, LookingAlongMinusZ(shadows: true, ImageHeight));
+        var posed = new MeshInstance(
+            0,
+            Matrix4x4.CreateTranslation(0, 0, -10),
+            MeshInstances.NoTint,
+            ModelShadow.Casts,
+            FirstJoint: 0,
+            Joints: 2
+        );
+
+        var frame = draws.Write(0, view, [posed], [Matrix4x4.Identity, Matrix4x4.Identity]);
+
+        Assert.Equal((2, 2, 3), (frame.SkinGroups, frame.SkinJoints, frame.SkinVertices));
+        var groups = targets.SkinGroupsOf(0)[..2].ToArray();
+        var (body, low) = (targets.Layout.Assets[0], targets.Layout.Assets[1]);
+        var bodyGroup = Assert.Single(groups, group => group.SourceFirst == (uint)body.FirstVertex);
+        var lowGroup = Assert.Single(groups, group => group.SourceFirst == (uint)low.FirstVertex);
+        Assert.Equal((uint)low.FirstSkin, lowGroup.SkinFirst);
+        Assert.Equal(bodyGroup.PaletteFirst, lowGroup.PaletteFirst);
+        Assert.Equal((int)bodyGroup.OutputFirst - body.FirstVertex, targets.Draws(0, 0)[0].VertexDelta);
+        Assert.Equal((int)lowGroup.OutputFirst - low.FirstVertex, targets.Draws(0, 1)[0].VertexDelta);
+    }
+
+    /// <summary>
+    /// A posed instance the camera draws at its level (about 17 pixels tall on an image 100 high), and so the near cascade
+    /// too, is skinned once.
+    /// </summary>
+    [Fact]
+    public void A_posed_instance_drawn_at_one_level_in_every_list_gets_one_skin_group()
+    {
+        var (targets, view, draws) = Levelled(skinCapacity: 100);
+        view.Begin(0, LookingAlongMinusZ(shadows: true, 100));
+        var posed = new MeshInstance(
+            0,
+            Matrix4x4.CreateTranslation(0, 0, -10),
+            MeshInstances.NoTint,
+            ModelShadow.Casts,
+            FirstJoint: 0,
+            Joints: 2
+        );
+
+        var frame = draws.Write(0, view, [posed], [Matrix4x4.Identity, Matrix4x4.Identity]);
+
+        Assert.Equal((1, 1, 1), (frame.SkinGroups, frame.Camera.Draws, frame.Near.Draws));
+        Assert.Equal((uint)targets.Layout.Assets[1].FirstVertex, targets.SkinGroupsOf(0)[0].SourceFirst);
+        Assert.Equal(targets.Draws(0, 0)[0].VertexDelta, targets.Draws(0, 1)[0].VertexDelta);
+    }
+
+    /// <summary>An image view chooses the level by the sphere's height on its own image: 9 pixels high, the level; 9,000, the asset.</summary>
+    [Fact]
+    public void An_image_view_chooses_the_level_by_its_own_image()
+    {
+        var (targets, view, draws) = Levelled();
+        var lists = new FakeViewLists();
+        view.Begin(0, LookingAlongMinusZ(shadows: false, ImageHeight));
+        MeshInstance[] behind =
+        [
+            new(0, Matrix4x4.CreateTranslation(0, 0, 20), MeshInstances.NoTint, ModelShadow.Casts),
+        ];
+
+        lists.View.Begin(0, FakeViewLists.LookingDown(new Vector3(0, 10, 20)) with { Height = 9 });
+        draws.Write(0, view, behind, default, [lists]);
+        var small = lists.AssetCommandsOf(0, RenderViewTarget.AssetSeenList)[0].VertexOffset;
+        lists.View.Begin(0, FakeViewLists.LookingDown(new Vector3(0, 10, 20)) with { Height = 9000 });
+        draws.Write(0, view, behind, default, [lists]);
+        var large = lists.AssetCommandsOf(0, RenderViewTarget.AssetSeenList)[0].VertexOffset;
+
+        Assert.Equal((targets.Layout.Assets[1].FirstVertex, 0), (small, large));
+    }
+
+    /// <summary>A frame of posed and static instances with levels, at depths that draw each level, allocates nothing.</summary>
+    [Fact]
+    public void A_frame_with_levels_allocates_nothing()
+    {
+        var (_, view, draws) = Levelled(shadowTexels: 512, skinCapacity: 1000);
+        var constants = LookingAlongMinusZ(shadows: true, ImageHeight);
+        var instances = new MeshInstance[100];
+        var palettes = new Matrix4x4[200];
+        Array.Fill(palettes, Matrix4x4.Identity);
+        for (var i = 0; i < instances.Length; i++)
+        {
+            instances[i] = new MeshInstance(
+                0,
+                Matrix4x4.CreateTranslation(i % 10, 0, -5 - (i * 3 % 90)),
+                MeshInstances.NoTint,
+                ModelShadow.Casts,
+                i % 2 == 0 ? 2 * i : -1,
+                i % 2 == 0 ? 2 : 0
+            );
+        }
+
+        void Frame()
+        {
+            view.Begin(0, in constants);
+            draws.Write(0, view, instances, palettes);
+            view.End(0, []);
+        }
+
+        for (var i = 0; i < 50; i++)
+        {
+            Frame();
+        }
+
+        var bytes = SystemAllocation.BytesAllocatedWithoutCollection(() =>
+        {
+            for (var i = 0; i < 200; i++)
+            {
+                Frame();
+            }
+        });
+
+        Assert.Equal(0, bytes);
+    }
+
+    /// <summary>The height a level is drawn under in <see cref="Levelled"/>.</summary>
+    private const float LevelPixels = 50;
+
+    /// <summary>The image's height in pixels in the level tests.</summary>
+    private const uint ImageHeight = 1000;
+
+    /// <summary>
+    /// A skinned asset (0) with a level (1) on the same joints under <see cref="LevelPixels"/>, or two static ones without
+    /// <paramref name="skinCapacity"/>; the view's shadow maps <paramref name="shadowTexels"/> wide.
+    /// </summary>
+    private static (FakeTargets Targets, MeshView View, MeshAssetDraws Draws) Levelled(
+        int shadowTexels = 2048,
+        int skinCapacity = 0
+    )
+    {
+        MeshAsset Make(string name) =>
+            skinCapacity > 0
+                ? MeshAssetPassTests.SkinnedAsset(name)
+                : MeshAssetPassTests.Asset(name, MeshMaterialData.Default, vertices: 3);
+        var targets = new FakeTargets(
+            MeshAssetLayout.From(
+                [Make("body"), Make("low")],
+                [
+                    [new MeshAssetLevel(1, LevelPixels)],
+                    [],
+                ]
+            ),
+            skinCapacity
+        );
+        var options = new EngineOptions();
+        options.Renderer.ShadowMapTexels = shadowTexels;
+        return (
+            targets,
+            new MeshView(targets, Options.Create(options)),
+            new MeshAssetDraws(targets, NullLogger<MeshAssetDraws>.Instance)
+        );
+    }
+
+    private static ViewConstants LookingAlongMinusZ(bool shadows, uint height = 0) =>
         new()
         {
             Position = Vector3.Zero,
@@ -687,6 +917,7 @@ public sealed class MeshAssetDrawsTests
             SunDirection = ViewConstants.DefaultSunDirection,
             MaxDistance = 200,
             Switches = shadows ? ViewSwitches.Shadows : ViewSwitches.None,
+            Height = height,
         };
 
     /// <summary>The asset draws' and the view's regions of two slots, in memory.</summary>

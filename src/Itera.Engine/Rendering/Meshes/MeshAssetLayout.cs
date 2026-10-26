@@ -13,7 +13,8 @@ namespace Itera.Engine.Rendering.Meshes;
 /// primitive in that order, come out grouped by pipeline. A skinned asset's joints and weights lie in one skin buffer
 /// (<see cref="AssetPlace.FirstSkin"/>), and its joints' places in the bound pose and their reaches in
 /// <see cref="JointPositions"/> and <see cref="JointReaches"/> (from <see cref="AssetPlace.FirstJoint"/>), which bound a
-/// posed instance. Built once, after the run has read its assets.
+/// posed instance. An asset's levels of detail (<see cref="LevelAssets"/>) are assets of their own, each with its place.
+/// Built once, after the run has read its assets.
 /// </summary>
 public sealed class MeshAssetLayout
 {
@@ -38,9 +39,13 @@ public sealed class MeshAssetLayout
         int[] textureSlots,
         int skinVertexCount,
         Vector3[] jointPositions,
-        float[] jointReaches
+        float[] jointReaches,
+        int[] levelAssets,
+        float[] levelPixels
     )
     {
+        LevelAssets = levelAssets;
+        LevelPixels = levelPixels;
         Textures = textures;
         TextureSlots = textureSlots;
         SkinVertexCount = skinVertexCount;
@@ -91,24 +96,43 @@ public sealed class MeshAssetLayout
     /// <summary>How far from its joint each joint's vertices reach (<c>Rig.Reaches</c>), beside <see cref="JointPositions"/>.</summary>
     public float[] JointReaches { get; }
 
-    /// <summary>The layout of the run's assets, every one read (<see cref="MeshAssets.Loaded"/>).</summary>
+    /// <summary>
+    /// Each asset's levels' assets (<see cref="MeshAssets.DeclareLevel"/>), from its <see cref="AssetPlace.FirstLevel"/>,
+    /// largest <see cref="LevelPixels"/> first.
+    /// </summary>
+    public int[] LevelAssets { get; }
+
+    /// <summary>The heights in pixels under which each level of <see cref="LevelAssets"/> is drawn, beside it.</summary>
+    public float[] LevelPixels { get; }
+
+    /// <summary>The layout of the run's assets, every one read (<see cref="MeshAssets.Loaded"/>), with their levels.</summary>
     public static MeshAssetLayout From(MeshAssets assets)
     {
         ArgumentNullException.ThrowIfNull(assets);
         var list = new MeshAsset[assets.Count];
+        var levels = new IReadOnlyList<MeshAssetLevel>[assets.Count];
         for (var i = 0; i < list.Length; i++)
         {
             list[i] = assets[i];
+            levels[i] = assets.LevelsOf(i);
         }
 
-        return From(list);
+        return From(list, levels);
     }
 
-    /// <summary>The layout of <paramref name="assets"/>, in their order.</summary>
-    public static MeshAssetLayout From(IReadOnlyList<MeshAsset> assets)
+    /// <summary>
+    /// The layout of <paramref name="assets"/>, in their order, each with its <paramref name="levels"/> (by the same
+    /// index; none without).
+    /// </summary>
+    public static MeshAssetLayout From(
+        IReadOnlyList<MeshAsset> assets,
+        IReadOnlyList<IReadOnlyList<MeshAssetLevel>>? levels = null
+    )
     {
         ArgumentNullException.ThrowIfNull(assets);
         var places = new AssetPlace[assets.Count];
+        var levelAssets = new List<int>();
+        var levelPixels = new List<float>();
         var unsorted = new List<(PrimitivePlace Place, int Asset, int Local)>();
         var jointPositions = new List<Vector3>();
         var jointReaches = new List<float>();
@@ -141,7 +165,32 @@ public sealed class MeshAssetLayout
             )
             {
                 VertexCount = asset.Vertices.Length,
+                FirstLevel = levelAssets.Count,
             };
+            if (levels is not null && a < levels.Count)
+            {
+                if (levels[a].Count > MeshAssets.MostLevels)
+                {
+                    throw new ArgumentException(
+                        $"Asset {a} has {levels[a].Count} levels, more than {MeshAssets.MostLevels}.",
+                        nameof(levels)
+                    );
+                }
+
+                foreach (var level in levels[a].OrderByDescending(level => level.BelowPixels))
+                {
+                    if ((uint)level.Asset >= (uint)assets.Count || level.Asset == a)
+                    {
+                        throw new ArgumentException($"Asset {a}'s level names asset {level.Asset}.", nameof(levels));
+                    }
+
+                    levelAssets.Add(level.Asset);
+                    levelPixels.Add(level.BelowPixels);
+                }
+
+                places[a] = places[a] with { LevelCount = levelAssets.Count - places[a].FirstLevel };
+            }
+
             if (asset.Rig is { } rig)
             {
                 jointPositions.AddRange(rig.BindPositions);
@@ -229,7 +278,9 @@ public sealed class MeshAssetLayout
             [.. slots],
             skins,
             [.. jointPositions],
-            [.. jointReaches]
+            [.. jointReaches],
+            [.. levelAssets],
+            [.. levelPixels]
         );
     }
 
@@ -279,7 +330,7 @@ public sealed class MeshAssetLayout
     /// <see cref="TextureSlots"/>, its primitives' first entry
     /// in <see cref="AssetPrimitives"/> and their count, and its bounding sphere in its own space; for a skinned asset, its
     /// first skin entry (-1 for a static asset), its first joint in <see cref="JointPositions"/> and its joint count, and
-    /// the sphere of its vertices no joint moves (a radius of -1 for none).
+    /// the sphere of its vertices no joint moves (a radius of -1 for none); and its levels in <see cref="LevelAssets"/>.
     /// </summary>
     public readonly record struct AssetPlace(
         int FirstVertex,
@@ -299,6 +350,12 @@ public sealed class MeshAssetLayout
     {
         /// <summary>The asset's vertices (from its first to the next asset's).</summary>
         public int VertexCount { get; init; }
+
+        /// <summary>The asset's first level in <see cref="LevelAssets"/>.</summary>
+        public int FirstLevel { get; init; }
+
+        /// <summary>The asset's levels; 0 for an asset drawn as it is at any size.</summary>
+        public int LevelCount { get; init; }
     }
 
     /// <summary>

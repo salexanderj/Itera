@@ -110,6 +110,12 @@ judges (a host's hits on posed bodies). The deterministic skeletons for bodies, 
   source's). It replaces the base colour of each material named, in linear RGBA: a team's colours, where a tint, which
   multiplies every colour, cannot turn one hue into another. It is made at the step after the files are read. A
   material its source lacks stops the step, naming it.
+- `DeclareLevel(asset, level, belowPixels)` draws `level` in place of `asset` where an instance's sphere is less than
+  `belowPixels` pixels tall (`rendering-mesh-assets.md`). Both are declared or added before it. An asset has at most
+  `MeshAssets.MostLevels` levels, largest height first, no two heights alike. A level has no levels.
+- A skinned asset's level is bound on its rig (`rigOf: asset`, a variant of such a level, or built on the same `Rig`),
+  so one palette poses every level. A rigid asset's level is rigid. The step stops, naming both, otherwise.
+- A variant takes none of its source's levels. It has levels only by its own `DeclareLevel`. `LevelsOf` lists them.
 - The run's "mesh assets" step, after the mods', reads every declared file on worker threads (`LoadAll`). Without
   graphics (`Engine:Window:Mode=None`, and `HeadlessRun`) it decodes no images and materials name no textures.
 - It opens each file once (`GltfFile`) and reads every asset declared from it in turn: its whole and its parts. They

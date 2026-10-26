@@ -49,6 +49,10 @@ their import, and their rigs are in `mesh-assets.md`. Related files: `rendering.
   sphere is the asset's, its radius times the transform's largest scale. A posed instance's comes from its joints'
   posed places grown by their reaches (`MeshAssetLayout.JointPositions` and `JointReaches`), and its unweighted
   vertices' sphere.
+- An asset with levels (`MeshAssetLayout.LevelAssets`) is drawn in each list at the coarsest level whose height is
+  above its sphere's. The camera's and each image view's measure pixels: `2 * radius * PixelsPerMetre`, over the depth
+  (at least `Near`) in perspective. A cascade measures texels (`NearTexelMetres`, `FarTexelMetres`) and never draws
+  finer than the camera. The blended list takes the camera's level.
 - It groups the draws by asset primitive with a counting sort.
 - The camera's list puts each primitive's draws nearest first, so the depth test rejects hidden pixels before they are
   shaded. A counting sort takes the distances into 16 buckets by their float's exponent. The cascades' and the image
@@ -64,9 +68,11 @@ their import, and their rigs are in `mesh-assets.md`. Related files: `rendering.
 
 ### Skinning
 
-- Each posed instance that any list draws gets a skin group (`MeshSkinGroup`: its asset's first vertex and skin entry,
-  its output's first vertex, its first skinning matrix, and its vertex count). Its matrices go in the slot's regions.
-- Its draws read its skinned copy (`MeshAssetDraw.VertexDelta`, added to `gl_VertexIndex`).
+- Each posed instance that any list draws gets a skin group for each level it is drawn at (`MeshSkinGroup`: the
+  level's first vertex and skin entry, its output's first vertex, its first skinning matrix, and its vertex count). Its
+  matrices go in the slot's regions once, shared by its groups.
+- Each list's draws read the skinned copy of the level it draws (`MeshAssetDraw.VertexDelta`, added to
+  `gl_VertexIndex`). An instance is skinned whole or not at all.
 - When the slot's room cannot take every instance, those marked `DrawnMesh.SkinFirst` (`MeshInstance.SkinFirst`: a
   game's players, say) are skinned first, then the rest, each nearest the camera first. Those left over are not drawn
   that frame, and those with matrices that do not match their rig are drawn unposed, each with one Warning a run.

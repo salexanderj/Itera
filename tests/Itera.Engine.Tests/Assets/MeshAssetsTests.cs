@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Itera.Engine.Assets;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Tests.Matches;
+using Itera.Engine.Tests.Rendering.Meshes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -188,6 +189,103 @@ public sealed class MeshAssetsTests : IDisposable
         Assert.Contains("paint", error.Message, StringComparison.Ordinal);
         Assert.Contains("'plane' lacks", error.Message, StringComparison.Ordinal);
         Assert.False(_assets.Loaded);
+    }
+
+    [Fact]
+    public void Levels_are_kept_largest_height_first_and_a_skinned_ones_on_its_rig_are_read()
+    {
+        var body = MeshAssetPassTests.SkinnedAsset("body");
+        var asset = _assets.Add("body", body);
+        var low = _assets.Add("low", OnRig("low", body.Rig!));
+        var lowest = _assets.Add("lowest", OnRig("lowest", body.Rig!));
+
+        _assets.DeclareLevel("body", "lowest", 20);
+        _assets.DeclareLevel("body", "low", 80);
+        _assets.LoadAll(textures: false);
+
+        Assert.Equal([new MeshAssetLevel(low, 80), new MeshAssetLevel(lowest, 20)], _assets.LevelsOf(asset));
+        Assert.Empty(_assets.LevelsOf(low));
+    }
+
+    [Fact]
+    public void A_level_on_another_rig_or_a_skinned_level_of_a_rigid_asset_stops_the_step()
+    {
+        var other = new MeshAssets(NullLogger<MeshAssets>.Instance);
+        other.Add("body", MeshAssetPassTests.SkinnedAsset("body"));
+        other.Add("stranger", MeshAssetPassTests.SkinnedAsset("stranger"));
+        other.DeclareLevel("body", "stranger", 50);
+        var rigid = new MeshAssets(NullLogger<MeshAssets>.Instance);
+        rigid.Add("crate", MeshAssetPassTests.Asset("crate", MeshMaterialData.Default, vertices: 3));
+        rigid.Add("skinned", MeshAssetPassTests.SkinnedAsset("skinned"));
+        rigid.DeclareLevel("crate", "skinned", 50);
+
+        var onOther = Assert.Throws<InvalidOperationException>(() => other.LoadAll(textures: false));
+        var onRigid = Assert.Throws<InvalidOperationException>(() => rigid.LoadAll(textures: false));
+
+        Assert.Contains(
+            "'stranger' is a level of 'body' but not bound on its rig",
+            onOther.Message,
+            StringComparison.Ordinal
+        );
+        Assert.Contains("'crate', which is rigid", onRigid.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_level_with_levels_a_level_of_a_level_and_a_height_twice_are_refused()
+    {
+        foreach (var name in (string[])["a", "b", "c", "d"])
+        {
+            _assets.Add(name, MeshAssetPassTests.Asset(name, MeshMaterialData.Default, vertices: 3));
+        }
+
+        _assets.DeclareLevel("a", "b", 50);
+
+        Assert.Throws<InvalidOperationException>(() => _assets.DeclareLevel("b", "c", 20));
+        Assert.Throws<InvalidOperationException>(() => _assets.DeclareLevel("c", "a", 20));
+        var twice = Assert.Throws<InvalidOperationException>(() => _assets.DeclareLevel("a", "c", 50));
+        Assert.Contains("below 50 pixels already", twice.Message, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() => _assets.DeclareLevel("d", "d", 20));
+        Assert.Throws<ArgumentOutOfRangeException>(() => _assets.DeclareLevel("a", "c", 0));
+        Assert.Throws<InvalidOperationException>(() => _assets.DeclareLevel("a", "nothing", 20));
+        _assets.LoadAll(textures: false);
+        Assert.Throws<InvalidOperationException>(() => _assets.DeclareLevel("a", "c", 20));
+    }
+
+    [Fact]
+    public void A_variant_has_no_levels_of_its_sources_and_takes_a_variant_of_a_level()
+    {
+        var body = MeshMaterialData.Default with { Name = "body" };
+        var mesh = MeshAssetPassTests.SkinnedAsset("person");
+        mesh = new MeshAsset("person", mesh.Vertices, mesh.Indices, mesh.Primitives, [body], [], mesh.Rig, mesh.Skin);
+        _assets.Add("person", mesh);
+        _assets.Add("person-low", OnRig("person-low", mesh.Rig!, body));
+        _assets.DeclareLevel("person", "person-low", 40);
+        var red = new Dictionary<string, Vector4> { ["body"] = new(1, 0, 0, 1) };
+        var soldier = _assets.DeclareVariant("soldier", "person", red);
+        var soldierLow = _assets.DeclareVariant("soldier-low", "person-low", red);
+        var plain = _assets.DeclareVariant("plain", "person", red);
+        _assets.DeclareLevel("soldier", "soldier-low", 40);
+
+        _assets.LoadAll(textures: false);
+
+        Assert.Equal([new MeshAssetLevel(soldierLow, 40)], _assets.LevelsOf(soldier));
+        Assert.Empty(_assets.LevelsOf(plain));
+    }
+
+    /// <summary>A skinned triangle on <paramref name="rig"/>, as a level built in code is.</summary>
+    private static MeshAsset OnRig(string name, Rig rig, MeshMaterialData? material = null)
+    {
+        var made = MeshAssetPassTests.SkinnedAsset(name);
+        return new MeshAsset(
+            name,
+            made.Vertices,
+            made.Indices,
+            made.Primitives,
+            material is null ? made.Materials : [material],
+            [],
+            rig,
+            made.Skin
+        );
     }
 
     private string WriteTriangle(string name)

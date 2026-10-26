@@ -10,7 +10,8 @@ namespace Itera.Engine.Assets;
 /// The run's mesh assets (<see cref="MeshAsset"/>): models a game declares from glTF files (<see cref="Declare"/>: a whole
 /// file, a part of one by its node, or a model bound to another's rig), meshes it builds in code (<see cref="Add"/>), and
 /// variants of either with some materials' base colours replaced
-/// (<see cref="DeclareVariant"/>: a team's colours), each known by its name and its index (<see cref="Find"/>). A game
+/// (<see cref="DeclareVariant"/>: a team's colours), each known by its name and its index (<see cref="Find"/>), and
+/// which assets are drawn in another's place where it is small on the image (<see cref="DeclareLevel"/>). A game
 /// declares them at its run startup (<c>IRunStartup</c>, the run's "game" step), mods at theirs; the run's "mesh assets"
 /// step, after the mods', declares the extra models of <c>Engine:Assets:Extra</c> and reads every declared file on
 /// worker threads (<see cref="LoadAll"/>), and a file that cannot be read stops the run with a message naming it. Assets
@@ -118,6 +119,105 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             }
         );
     }
+
+    /// <summary>The most levels one asset may have (<see cref="DeclareLevel"/>).</summary>
+    public const int MostLevels = 8;
+
+    /// <summary>
+    /// Declares the asset <paramref name="level"/> (declared or added before it) a level of detail of the asset
+    /// <paramref name="asset"/>: drawn in its place where an instance's bounding sphere is less than
+    /// <paramref name="belowPixels"/> pixels tall on the image it is drawn into (in a shadow cascade, texels). An asset
+    /// has at most <see cref="MostLevels"/> levels, kept largest <paramref name="belowPixels"/> first, no two alike. A
+    /// level has no levels of its own. A skinned asset's level is bound on its rig (<c>rigOf: asset</c> in
+    /// <see cref="Declare"/>, a variant of such a level, or a mesh built on the same <see cref="Rig"/>), so its
+    /// instances' skinning matrices pose every level; a rigid asset's level is rigid. The step stops, naming both, when
+    /// a level is not. A variant (<see cref="DeclareVariant"/>) has no levels unless its own are declared. Before the
+    /// "mesh assets" step only.
+    /// </summary>
+    public void DeclareLevel(string asset, string level, float belowPixels)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(asset);
+        ArgumentException.ThrowIfNullOrWhiteSpace(level);
+        if (Loaded)
+        {
+            throw new InvalidOperationException(
+                $"The level '{level}' of '{asset}' comes after the run's mesh assets step: declare levels at the run's startup."
+            );
+        }
+
+        if (!(belowPixels > 0) || !float.IsFinite(belowPixels))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(belowPixels),
+                belowPixels,
+                "A level's height must be a positive number of pixels."
+            );
+        }
+
+        if (!_byName.TryGetValue(asset, out var assetIndex) || !_byName.TryGetValue(level, out var levelIndex))
+        {
+            throw new InvalidOperationException(
+                $"The level '{level}' of '{asset}': both must be declared or added before it."
+            );
+        }
+
+        if (assetIndex == levelIndex)
+        {
+            throw new ArgumentException($"The mesh asset '{asset}' cannot be a level of itself.", nameof(level));
+        }
+
+        var entry = _entries[assetIndex];
+        var made = _entries[levelIndex];
+        if (entry.IsLevel || made.Levels is not null)
+        {
+            throw new InvalidOperationException(
+                $"The level '{level}' of '{asset}': a level has no levels of its own, and '{(entry.IsLevel ? asset : level)}' "
+                    + (entry.IsLevel ? "is a level." : "has levels.")
+            );
+        }
+
+        // A level bound on a rig must be bound on the asset's (a variant on either side counts as its source).
+        if (Root(made).RigOf is { } rigOf && !ReferenceEquals(Root(_entries[_byName[rigOf]]), Root(entry)))
+        {
+            throw new InvalidOperationException(
+                $"The level '{level}' of '{asset}' is bound on the rig of '{rigOf}': bind it with rigOf: '{asset}'."
+            );
+        }
+
+        var levels = entry.Levels ??= [];
+        if (levels.Count == MostLevels)
+        {
+            throw new InvalidOperationException($"The mesh asset '{asset}' has {MostLevels} levels, the most it may.");
+        }
+
+        var at = 0;
+        foreach (var other in levels)
+        {
+            if (other.Asset == levelIndex)
+            {
+                throw new InvalidOperationException($"The mesh asset '{level}' is a level of '{asset}' already.");
+            }
+
+            if (other.BelowPixels == belowPixels)
+            {
+                throw new InvalidOperationException(
+                    $"The mesh asset '{asset}' has a level below {belowPixels} pixels already: give '{level}' another height."
+                );
+            }
+
+            at += other.BelowPixels > belowPixels ? 1 : 0;
+        }
+
+        levels.Insert(at, new MeshAssetLevel(levelIndex, belowPixels));
+        made.IsLevel = true;
+    }
+
+    /// <summary>
+    /// The levels of the asset at <paramref name="index"/> (<see cref="DeclareLevel"/>), largest
+    /// <see cref="MeshAssetLevel.BelowPixels"/> first; none for an asset without levels.
+    /// </summary>
+    public IReadOnlyList<MeshAssetLevel> LevelsOf(int index) =>
+        _entries[index].Levels ?? (IReadOnlyList<MeshAssetLevel>)[];
 
     /// <summary>The index of the asset <paramref name="name"/>, or -1 when there is none.</summary>
     public int Find(string name) => _byName.TryGetValue(name, out var index) ? index : -1;
@@ -253,6 +353,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
 
         BindRigs();
         MakeVariants();
+        CheckLevels();
         Loaded = true;
         long triangles = 0;
         long textureBytes = 0;
@@ -487,6 +588,58 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
         }
     }
 
+    /// <summary>
+    /// Checks each level against its asset, the assets read (<see cref="DeclareLevel"/>): a rigid asset's level is rigid,
+    /// and a skinned asset's is bound on its rig (declared with <c>rigOf</c> it, a variant of one so declared, or built on
+    /// the same <see cref="Rig"/>). Throws, naming both, at the first that is not.
+    /// </summary>
+    private void CheckLevels()
+    {
+        foreach (var entry in _entries)
+        {
+            foreach (var level in entry.Levels ?? [])
+            {
+                var made = _entries[level.Asset];
+                var (rig, levelRig) = (entry.Asset!.Rig, made.Asset!.Rig);
+                if (ReferenceEquals(rig, levelRig))
+                {
+                    continue;
+                }
+
+                if (rig is null)
+                {
+                    throw new InvalidOperationException(
+                        $"The mesh asset '{made.Name}' is a level of '{entry.Name}', which is rigid: a rigid asset's levels are rigid."
+                    );
+                }
+
+                var boundOn = Root(made).RigOf;
+                if (
+                    levelRig is null
+                    || boundOn is null
+                    || !ReferenceEquals(Root(_entries[_byName[boundOn]]), Root(entry))
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"The mesh asset '{made.Name}' is a level of '{entry.Name}' but not bound on its rig: declare it with "
+                            + $"rigOf: '{entry.Name}', so the same skinning matrices pose both."
+                    );
+                }
+            }
+        }
+    }
+
+    /// <summary>The entry a variant is made from at the end of its chain (<see cref="DeclareVariant"/>); any other entry itself.</summary>
+    private Entry Root(Entry entry)
+    {
+        while (entry.Of is not null)
+        {
+            entry = _entries[_byName[entry.Of]];
+        }
+
+        return entry;
+    }
+
     private int AddEntry(string name, Entry entry)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -527,6 +680,12 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
 
         /// <summary>A variant's base colours by material name.</summary>
         public Dictionary<string, Vector4>? Colours { get; init; }
+
+        /// <summary>The asset's levels, largest height first, or null for none.</summary>
+        public List<MeshAssetLevel>? Levels { get; set; }
+
+        /// <summary>True for an asset that is a level of another.</summary>
+        public bool IsLevel { get; set; }
     }
 
     [LoggerMessage(
@@ -555,3 +714,11 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
     [LoggerMessage(Level = LogLevel.Error, Message = "Mesh assets: {Name} ({Path}) could not be read")]
     private partial void LogFailed(Exception exception, string name, string path);
 }
+
+/// <summary>
+/// A level of detail of a mesh asset (<see cref="MeshAssets.DeclareLevel"/>): the asset drawn in its place (its index in
+/// <see cref="MeshAssets"/>) where an instance's bounding sphere is less than <paramref name="BelowPixels"/> pixels tall.
+/// </summary>
+/// <param name="Asset">The level's asset index.</param>
+/// <param name="BelowPixels">The height in pixels (in a shadow cascade, texels) under which it is drawn.</param>
+public readonly record struct MeshAssetLevel(int Asset, float BelowPixels);

@@ -136,6 +136,27 @@ public sealed class MeshPartsTests : IDisposable
     }
 
     /// <summary>
+    /// A level of a body bound on its rig (<c>rigOf</c>) is read; one bound on another body's rig is refused as it is
+    /// declared, naming the rig to bind it on.
+    /// </summary>
+    [Fact]
+    public void A_bodys_level_bound_on_its_rig_is_read_and_one_on_another_rig_refused()
+    {
+        var assets = new MeshAssets(NullLogger<MeshAssets>.Instance);
+        var body = assets.Declare("body", WriteBody("body", aFirst: true, clip: true));
+        assets.Declare("other", WriteBody("other", aFirst: true, clip: false));
+        var low = assets.Declare("low", WriteBody("low", aFirst: false, clip: false), rigOf: "body");
+        assets.Declare("stray", WriteBody("stray", aFirst: true, clip: false), rigOf: "other");
+
+        assets.DeclareLevel("body", "low", 30);
+        var stray = Assert.Throws<InvalidOperationException>(() => assets.DeclareLevel("body", "stray", 10));
+        assets.LoadAll(textures: false);
+
+        Assert.Contains("bind it with rigOf: 'body'", stray.Message, StringComparison.Ordinal);
+        Assert.Equal([new MeshAssetLevel(low, 30)], assets.LevelsOf(body));
+    }
+
+    /// <summary>
     /// A body in metres: the hip joint 1 up, its children a (<paramref name="aAt"/> along x) and b (0.2 along -x), the
     /// skin listing a before b or after it; a triangle skinned on the hip, a, and b in the material flesh; and under a,
     /// through a holder 0.1 up and turned a quarter about z, the guard, a triangle in the material iron not skinned (and a
