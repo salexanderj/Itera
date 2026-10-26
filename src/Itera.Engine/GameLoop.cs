@@ -896,7 +896,7 @@ public sealed partial class GameLoop
 
         var lines = _linePass.Write(request.Slot, _debugLines.Vertices);
         _particleCommands.UpdateStress();
-        var particles = _particlePass.Write(request.Slot, in frame, in view, match.Physics.Gravity);
+        var particles = _particlePass.Write(request.Slot, in frame, in view, match.Physics.Gravity, !loading.Covers);
         _renderPasses.Write(request.Slot, in frame, in view);
         var uiBands = WriteUi(in request, in ui);
         _exchange.Publish(
@@ -1010,7 +1010,14 @@ public sealed partial class GameLoop
         _dynamicScale.Update(now);
         var view = CreateView(in request);
         var lines = _linePass.Write(request.Slot, _debugLines.Vertices);
-        var particles = _particlePass.Write(request.Slot, in frame, in view, PhysicsWorld.DefaultGravity);
+        // The loading screen covers this frame whole: no particle is made or moved.
+        var particles = _particlePass.Write(
+            request.Slot,
+            in frame,
+            in view,
+            PhysicsWorld.DefaultGravity,
+            worldDrawn: false
+        );
         var uiBands = WriteUi(in request, in ui);
         _exchange.Publish(
             new RenderFrame(

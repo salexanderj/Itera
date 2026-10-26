@@ -272,10 +272,18 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
     /// Writes the frame's recipes, the bursts the emitter queued (<see cref="ParticleEmitter.Drain"/>), and the
     /// attractors into the regions of <paramref name="slot"/>, keeping the camera's attractor at the camera, and
     /// returns the compute passes' constants; each recipe's gravity a multiple of the match's <paramref name="gravity"/>
-    /// (the Earth's with no match). Main thread, between taking the frame's request and publishing the frame. Writes
-    /// only, in address order.
+    /// (the Earth's with no match). <paramref name="worldDrawn"/> is false when the loading screen covers the world
+    /// (<see cref="LoadingDraw.Covers"/>): the render thread then skips the particles (<see cref="SkipSimulate"/>), so
+    /// the emitter's clock does not advance. Main thread, between taking the frame's request and publishing the frame.
+    /// Writes only, in address order.
     /// </summary>
-    public ParticleWrite Write(int slot, in FrameTime time, in ViewConstants view, System.Numerics.Vector3 gravity)
+    public ParticleWrite Write(
+        int slot,
+        in FrameTime time,
+        in ViewConstants view,
+        System.Numerics.Vector3 gravity,
+        bool worldDrawn
+    )
     {
         if ((uint)slot >= FrameSync.FramesInFlight)
         {
@@ -284,7 +292,9 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
 
         _emitter.SetAttractor(ParticleEmitter.CameraAttractor, view.Position - new System.Numerics.Vector3(0, 0.3f, 0));
         var bursts = new Span<GpuParticleBurst>(Bursts.Mapped + BurstSlotBytes * (ulong)slot, _emitter.MaxBursts);
-        var frame = _emitter.Drain(bursts, time.TotalSeconds);
+        // The simulate pass ages the particles by the frame's delta (the constants' Delta below), so the emitter's
+        // clock takes the same.
+        var frame = _emitter.Drain(bursts, time.DeltaSeconds, worldDrawn);
         if (!frame.Active)
         {
             return new ParticleWrite(default, false, frame.Clear, view.Origin);

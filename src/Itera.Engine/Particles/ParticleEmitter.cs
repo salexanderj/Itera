@@ -1,5 +1,6 @@
 using System.Numerics;
 using Itera.Engine.Rendering.GpuData;
+using Itera.Engine.Time;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -9,14 +10,31 @@ namespace Itera.Engine.Particles;
 /// <param name="Bursts">Bursts written.</param>
 /// <param name="Spawns">Particles they make.</param>
 /// <param name="Active">
-/// True while particles may be alive: from a frame that spawns until the longest recipe's life has passed. Only then
-/// does the frame simulate and draw them, and copy the world's depth for them.
+/// True while particles may be alive: from a frame that spawns until the longest life among the recipes of its bursts
+/// has passed on the particles' clock, which runs only in frames that simulate them. Only then does the frame simulate
+/// and draw them, and copy the world's depth for them.
 /// </param>
 /// <param name="Clear">
 /// True in the first frame after <see cref="ParticleEmitter.Clear"/>: every particle made before it dies before this
 /// frame's bursts are made.
 /// </param>
-public readonly record struct ParticleFrame(int Bursts, int Spawns, bool Active, bool Clear = false);
+/// <param name="LiveFirst">
+/// The first pool slot that may hold a living particle once this frame's bursts are made: 0 to the pool's capacity less
+/// one, and 0 when <paramref name="LiveCount"/> is 0.
+/// </param>
+/// <param name="LiveCount">
+/// How many pool slots, from <paramref name="LiveFirst"/> on and wrapping round from the pool's last slot to slot 0,
+/// may hold a living particle: 0 to the pool's capacity. No slot outside them holds one. 0 when the frame is not
+/// <paramref name="Active"/>; the whole pool, from slot 0, when particles still alive were overwritten.
+/// </param>
+public readonly record struct ParticleFrame(
+    int Bursts,
+    int Spawns,
+    bool Active,
+    bool Clear = false,
+    int LiveFirst = 0,
+    int LiveCount = 0
+);
 
 /// <summary>
 /// Where game code asks for particles. Fixed and frame systems queue <see cref="ParticleBurst"/>s with
@@ -26,8 +44,10 @@ public readonly record struct ParticleFrame(int Bursts, int Spawns, bool Active,
 /// the oldest are overwritten, living or not. Particles live only on the GPU: they move, meet the world, and are drawn
 /// there, and nothing reads them back into the game. A frame takes at most
 /// <see cref="ParticleSettings.MaxBurstsPerFrame"/> bursts and <see cref="ParticleSettings.MaxSpawnsPerFrame"/>
-/// particles; the rest are dropped, with one Warning. It also holds the attractors (points that bursts' particles fly
-/// to) and the console's stress test. Main thread only; allocates nothing.
+/// particles; the rest are dropped, with one Warning. Each frame that makes particles is kept as a spawn batch (where
+/// it starts in the ring, and when its longest-lived particle dies), so a frame knows which slots can still be alive
+/// (<see cref="ParticleFrame.LiveFirst"/>). It also holds the attractors (points that bursts' particles fly to) and the
+/// console's stress test. Main thread only; allocates nothing.
 /// </summary>
 public sealed partial class ParticleEmitter
 {
@@ -37,14 +57,26 @@ public sealed partial class ParticleEmitter
     /// <summary>The attractor the console's pulled test bursts fly to, which the engine keeps at the camera.</summary>
     public const int CameraAttractor = MaxAttractors - 1;
 
+    /// <summary>The spawn batches kept; when full, the two oldest become one.</summary>
+    internal const int MaxBatches = 256;
+
     private readonly ParticleBurst[] _queue;
     private readonly Vector4[] _attractors = new Vector4[MaxAttractors];
+    private readonly SpawnBatch[] _batches = new SpawnBatch[MaxBatches];
     private readonly ILogger<ParticleEmitter> _logger;
     private int _queued;
     private int _queuedSpawns;
     private int _head;
+
+    // Slots handed out since the start or the last clear, with those a burst skipped at the pool's end: the head's
+    // place along the ring, laps and all. The head is always this modulo the capacity.
+    private long _written;
+    private int _oldestBatch;
+    private int _batchCount;
+
+    // The particles' clock in seconds: the sum of the deltas of the frames that moved them, as the GPU ages them.
+    private double _particleSeconds;
     private uint _seed = 0x9E37_79B9;
-    private double _activeUntil = double.NegativeInfinity;
     private bool _clear;
     private bool _warned;
 
@@ -187,7 +219,8 @@ public sealed partial class ParticleEmitter
         _queuedSpawns = 0;
         StressBursts = 0;
         _head = 0;
-        _activeUntil = double.NegativeInfinity;
+        _written = 0;
+        _batchCount = 0;
         _clear = true;
     }
 
@@ -204,29 +237,45 @@ public sealed partial class ParticleEmitter
 
     /// <summary>
     /// Writes the queued bursts, and the stress test's, into <paramref name="destination"/> with their pool slots, and
-    /// empties the queue. <paramref name="now"/> is the frame's time in seconds. Main thread, once per frame built.
+    /// empties the queue. <paramref name="delta"/> is the step in seconds the frame's simulate pass ages particles by
+    /// (<c>ParticleConstants.Delta</c>). <paramref name="worldDrawn"/> is false when the loading screen covers the
+    /// world: the GPU then neither makes nor moves particles. Main thread, once per frame built.
     /// </summary>
-    public ParticleFrame Drain(Span<GpuParticleBurst> destination, double now)
+    /// <remarks>
+    /// The particles' clock advances by <paramref name="delta"/> only in frames that simulate, so a spawn batch dies when
+    /// the GPU's ages say it does, whatever the wall clock did.
+    /// </remarks>
+    public ParticleFrame Drain(Span<GpuParticleBurst> destination, float delta, bool worldDrawn = true)
     {
         var clear = _clear;
         _clear = false;
         if (!Enabled)
         {
+            // Nothing is simulated while off: the particles wait, and their batches with them.
             _queued = 0;
             _queuedSpawns = 0;
-            _activeUntil = double.NegativeInfinity;
             return new ParticleFrame(0, 0, false, clear);
         }
 
+        // A batch whose particles all died in the last frame that moved them is not simulated again.
+        DropDeadBatches();
         AddStress();
         var count = Math.Min(_queued, destination.Length);
         var spawns = 0;
+        var batchStart = 0L;
+        var longest = 0f;
         for (var i = 0; i < count; i++)
         {
             ref readonly var burst = ref _queue[i];
             if (_head + burst.Count > Capacity)
             {
+                _written += Capacity - _head;
                 _head = 0;
+            }
+
+            if (i == 0)
+            {
+                batchStart = _written;
             }
 
             destination[i] = new GpuParticleBurst
@@ -247,17 +296,77 @@ public sealed partial class ParticleEmitter
                 Seed = burst.Seed != 0 ? burst.Seed : NextSeed(),
             };
             _head = (_head + burst.Count) % Capacity;
+            _written += burst.Count;
             spawns += burst.Count;
+            longest = Math.Max(longest, Recipes[burst.Recipe].LifetimeMax);
         }
 
         _queued = 0;
         _queuedSpawns = 0;
-        if (spawns > 0)
+
+        // The GPU makes and moves particles only in a frame that draws the world and has some alive or new; only such a
+        // frame ages them. Under the loading screen this frame's bursts are not made, so they need no batch.
+        if (worldDrawn && (spawns > 0 || _batchCount > 0))
         {
-            _activeUntil = Math.Max(_activeUntil, now + Recipes.LongestLifetime + 0.1);
+            _particleSeconds += delta;
+            if (spawns > 0)
+            {
+                // A new particle's age after a later frame is at least the clock then less the clock now. Once the clock
+                // before a frame has passed the clock now plus its life, the GPU ended it in an earlier frame.
+                AddBatch(batchStart, _particleSeconds + longest + DeathMargin(longest));
+            }
         }
 
-        return new ParticleFrame(count, spawns, now < _activeUntil, clear);
+        var (liveFirst, liveCount) = LiveSlots();
+        return new ParticleFrame(count, spawns, _batchCount > 0, clear, liveFirst, liveCount);
+    }
+
+    /// <summary>
+    /// How much longer than its life a batch is kept, in seconds: one capped frame step, and a 128th of the life for the
+    /// float rounding of the GPU's ages, which can fall behind the clock's sum over thousands of frames.
+    /// </summary>
+    internal static double DeathMargin(float lifetime) => GameClock.MaxDeltaSeconds + lifetime / 128.0;
+
+    private void AddBatch(long start, double dies)
+    {
+        if (_batchCount == MaxBatches)
+        {
+            // The two oldest become one: from the older's start (the newer's slots follow it in the ring) until the
+            // later death. It covers every slot either took, so the live slots stay a superset of the living.
+            var next = (_oldestBatch + 1) % MaxBatches;
+            ref var merged = ref _batches[next];
+            merged.Start = _batches[_oldestBatch].Start;
+            merged.Dies = Math.Max(merged.Dies, _batches[_oldestBatch].Dies);
+            _oldestBatch = next;
+            _batchCount--;
+        }
+
+        _batches[(_oldestBatch + _batchCount) % MaxBatches] = new SpawnBatch(start, dies);
+        _batchCount++;
+    }
+
+    private void DropDeadBatches()
+    {
+        while (_batchCount > 0 && _batches[_oldestBatch].Dies <= _particleSeconds)
+        {
+            _oldestBatch = (_oldestBatch + 1) % MaxBatches;
+            _batchCount--;
+        }
+    }
+
+    // The ring from the oldest batch kept to the head. Every slot outside it was last written by a batch whose
+    // particles have all died, or never, because batches are dropped only from the oldest end. A full lap or more
+    // means living particles were overwritten, and the whole pool may hold some.
+    private (int First, int Count) LiveSlots()
+    {
+        if (_batchCount == 0)
+        {
+            return (0, 0);
+        }
+
+        var start = _batches[_oldestBatch].Start;
+        var length = _written - start;
+        return length >= Capacity ? (0, Capacity) : ((int)(start % Capacity), (int)length);
     }
 
     private void AddStress()
@@ -305,6 +414,12 @@ public sealed partial class ParticleEmitter
             throw new ArgumentOutOfRangeException(nameof(slot), slot, "Attractors are 1 to 63.");
         }
     }
+
+    /// <summary>
+    /// The slots one frame's bursts took: from <see cref="Start"/> (a place along the ring, laps and all) to the next
+    /// batch's start or the head, and the particles' clock in seconds by which all its particles are dead.
+    /// </summary>
+    private record struct SpawnBatch(long Start, double Dies);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

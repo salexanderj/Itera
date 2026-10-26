@@ -1,6 +1,7 @@
 using System.Numerics;
 using Itera.Engine.Particles;
 using Itera.Engine.Rendering.GpuData;
+using Itera.Engine.Time;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -8,8 +9,9 @@ namespace Itera.Engine.Tests.Particles;
 
 /// <summary>
 /// <see cref="ParticleEmitter"/>: bursts take the ring's slots in one piece and in order, a frame's caps drop the rest,
-/// the frame stays active for the longest life, off drops everything, a frame without graphics drops its queue without
-/// counting drops, the recipes table checks its values, and emitting and draining allocate nothing.
+/// the frame stays active for the longest life among its bursts' recipes, the frame names the ring's slots that can be
+/// alive, off drops everything, a frame without graphics drops its queue without counting drops, the recipes table
+/// checks its values, and emitting and draining allocate nothing.
 /// </summary>
 public sealed class ParticleEmitterTests
 {
@@ -23,6 +25,25 @@ public sealed class ParticleEmitterTests
         emitter.Recipes.Register("test", new ParticleRecipe { LifetimeMin = 1, LifetimeMax = 2 });
         return emitter;
     }
+
+    /// <summary>A frame's step in seconds: the cap of a long frame, and exact in binary.</summary>
+    private const float Step = GameClock.MaxDeltaSeconds;
+
+    /// <summary>Drains frames of <paramref name="step"/> seconds with no bursts while they are active, and counts them.</summary>
+    private static int FramesStillActive(ParticleEmitter emitter, GpuParticleBurst[] target, float step)
+    {
+        var frames = 0;
+        while (frames < 100_000 && emitter.Drain(target, step).Active)
+        {
+            frames++;
+        }
+
+        return frames;
+    }
+
+    /// <summary>The later frames of <paramref name="step"/> seconds a batch of <paramref name="life"/> seconds stays in.</summary>
+    private static int ExpectedFrames(float life, float step) =>
+        (int)Math.Ceiling((life + ParticleEmitter.DeathMargin(life)) / step);
 
     private static ParticleBurst Burst(int count) =>
         new()
@@ -43,11 +64,11 @@ public sealed class ParticleEmitterTests
         emitter.Emit(Burst(2_000));
         var first = emitter.Drain(target, 0);
         emitter.Emit(Burst(8_000));
-        emitter.Drain(target.AsSpan(2), 0.1);
+        emitter.Drain(target.AsSpan(2), Step);
         emitter.Emit(Burst(2_000));
-        var third = emitter.Drain(target.AsSpan(3), 0.2);
+        var third = emitter.Drain(target.AsSpan(3), Step);
 
-        Assert.Equal(new ParticleFrame(2, 8_000, true), first);
+        Assert.Equal(new ParticleFrame(2, 8_000, true, LiveFirst: 0, LiveCount: 8_000), first);
         Assert.Equal((0u, 0u), (target[0].First, target[0].Prefix));
         Assert.Equal((6_000u, 6_000u), (target[1].First, target[1].Prefix));
         Assert.Equal(8_000u, target[2].First);
@@ -102,17 +123,184 @@ public sealed class ParticleEmitterTests
         Assert.Equal(6, emitter.DroppedBursts);
     }
 
+    /// <summary>
+    /// A burst's frame stays active while its life and margin have not passed on the particles' clock, which adds the
+    /// frames' steps: a long frame counts its capped step, not the time it took.
+    /// </summary>
     [Fact]
-    public void A_frame_stays_active_for_the_longest_life_after_a_spawn()
+    public void A_frame_stays_active_for_the_life_after_a_spawn_counted_in_steps()
     {
         var emitter = Create();
         var target = new GpuParticleBurst[16];
 
-        Assert.False(emitter.Drain(target, 0).Active);
+        var before = emitter.Drain(target, Step).Active;
         emitter.Emit(Burst(5));
-        Assert.True(emitter.Drain(target, 10).Active);
-        Assert.True(emitter.Drain(target, 11.9).Active);
-        Assert.False(emitter.Drain(target, 12.2).Active);
+        emitter.Drain(target, Step);
+        var capped = FramesStillActive(emitter, target, Step);
+        emitter.Emit(Burst(5));
+        emitter.Drain(target, Step / 2);
+        var half = FramesStillActive(emitter, target, Step / 2);
+
+        // 2 s, a quarter second, and a 128th of 2 s: 2.265625 s.
+        Assert.False(before);
+        Assert.Equal((10, 19), (capped, half));
+    }
+
+    /// <summary>
+    /// A short recipe's burst keeps the frame active for its own life, though a longer recipe is registered; a burst of
+    /// the longer one extends the time.
+    /// </summary>
+    [Fact]
+    public void The_active_time_follows_the_recipes_of_the_bursts_made()
+    {
+        var emitter = Create();
+        var smoke = emitter.Recipes.Register("smoke", new ParticleRecipe { LifetimeMin = 4, LifetimeMax = 8 });
+        var target = new GpuParticleBurst[16];
+
+        emitter.Emit(Burst(5));
+        emitter.Drain(target, Step);
+        var flash = FramesStillActive(emitter, target, Step);
+        emitter.Emit(Burst(5));
+        emitter.Drain(target, Step);
+        emitter.Emit(Burst(5) with { Recipe = smoke });
+        emitter.Drain(target, Step);
+        var smoked = FramesStillActive(emitter, target, Step);
+
+        Assert.Equal(ExpectedFrames(2, Step), flash);
+        Assert.Equal(ExpectedFrames(8, Step), smoked);
+    }
+
+    /// <summary>
+    /// Frames under the loading screen neither make nor move particles: the particles' clock stops, the frame's bursts
+    /// get no slots that can be alive, and the particles made before wait for the world to show again.
+    /// </summary>
+    [Fact]
+    public void Frames_that_do_not_draw_the_world_leave_the_particles_waiting()
+    {
+        var emitter = Create();
+        var target = new GpuParticleBurst[16];
+
+        emitter.Emit(Burst(5));
+        var covered = emitter.Drain(target, Step, worldDrawn: false);
+        emitter.Emit(Burst(5));
+        emitter.Drain(target, Step);
+        var waiting = true;
+        for (var i = 0; i < 100; i++)
+        {
+            var frame = emitter.Drain(target, Step, worldDrawn: false);
+            waiting &= frame is { Active: true, LiveFirst: 5, LiveCount: 5 };
+        }
+
+        var after = FramesStillActive(emitter, target, Step);
+
+        Assert.Equal((1, 5, false, 0), (covered.Bursts, covered.Spawns, covered.Active, covered.LiveCount));
+        Assert.True(waiting);
+        Assert.Equal(ExpectedFrames(2, Step), after);
+    }
+
+    [Fact]
+    public void The_live_slots_are_those_made_within_their_lives()
+    {
+        var emitter = Create();
+        var target = new GpuParticleBurst[16];
+
+        // Made with the clock at 0.25, 0.5, and 0.75 s; each lives 2.265625 s with its margin.
+        emitter.Emit(Burst(100));
+        emitter.Drain(target, Step);
+        emitter.Emit(Burst(50));
+        emitter.Drain(target, Step);
+        emitter.Emit(Burst(30));
+        var all = emitter.Drain(target, Step);
+        for (var i = 0; i < 7; i++)
+        {
+            emitter.Drain(target, Step);
+        }
+
+        var lastAll = emitter.Drain(target, Step);
+        var firstDead = emitter.Drain(target, Step);
+        var secondDead = emitter.Drain(target, Step);
+        var none = emitter.Drain(target, Step);
+
+        // The clock before these frames: 2.5, 2.75, 3, and 3.25 s.
+        Assert.Equal((0, 180), (all.LiveFirst, all.LiveCount));
+        Assert.Equal((0, 180), (lastAll.LiveFirst, lastAll.LiveCount));
+        Assert.Equal((100, 80), (firstDead.LiveFirst, firstDead.LiveCount));
+        Assert.Equal((150, 30), (secondDead.LiveFirst, secondDead.LiveCount));
+        Assert.Equal((false, 0, 0), (none.Active, none.LiveFirst, none.LiveCount));
+    }
+
+    [Fact]
+    public void The_live_slots_wrap_round_the_pools_end()
+    {
+        var emitter = Create(capacity: 1024, spawns: 512);
+        var target = new GpuParticleBurst[16];
+        for (var i = 0; i < 4; i++)
+        {
+            emitter.Emit(Burst(256));
+            emitter.Drain(target, Step);
+        }
+
+        for (var i = 0; i < 7; i++)
+        {
+            emitter.Drain(target, Step);
+        }
+
+        // The first frame's slots, 0 to 255, have died and are taken again: the pool is full of living particles.
+        emitter.Emit(Burst(256));
+        var full = emitter.Drain(target, Step);
+        var wrapped = emitter.Drain(target, Step);
+
+        Assert.Equal((0, 1024), (full.LiveFirst, full.LiveCount));
+        // The second frame's slots have died too: 512 to 1023, then 0 to 255.
+        Assert.Equal((512, 768), (wrapped.LiveFirst, wrapped.LiveCount));
+    }
+
+    [Fact]
+    public void Overwriting_living_particles_makes_the_whole_pool_live()
+    {
+        var emitter = Create(capacity: 1024, spawns: 512);
+        var target = new GpuParticleBurst[16];
+        for (var i = 0; i < 2; i++)
+        {
+            emitter.Emit(Burst(500));
+            emitter.Drain(target, Step);
+        }
+
+        var before = emitter.Drain(target, Step);
+        emitter.Emit(Burst(500));
+        var overwritten = emitter.Drain(target, Step);
+
+        Assert.Equal((0, 1000), (before.LiveFirst, before.LiveCount));
+        Assert.Equal((0, 1024), (overwritten.LiveFirst, overwritten.LiveCount));
+    }
+
+    /// <summary>
+    /// More frames than the record holds: the oldest batches become one, which keeps the later death. A long-lived
+    /// burst in the second frame stays among the live slots after every short one has died.
+    /// </summary>
+    [Fact]
+    public void Joining_the_oldest_batches_keeps_every_living_slot()
+    {
+        var emitter = Create(capacity: 16_384);
+        var smoke = emitter.Recipes.Register("smoke", new ParticleRecipe { LifetimeMin = 9, LifetimeMax = 10 });
+        var target = new GpuParticleBurst[16];
+        var frames = ParticleEmitter.MaxBatches + 50;
+        for (var i = 0; i < frames; i++)
+        {
+            emitter.Emit(i == 1 ? Burst(10) with { Recipe = smoke } : Burst(10));
+            emitter.Drain(target, 0.001f);
+        }
+
+        // 4.5 s later on the particles' clock, every 2 s burst has died and the 10 s one has not.
+        ParticleFrame later = default;
+        for (var i = 0; i < 18; i++)
+        {
+            later = emitter.Drain(target, Step);
+        }
+
+        Assert.True(later.Active);
+        Assert.True(later.LiveFirst <= 10 && later.LiveFirst + later.LiveCount >= 20, $"{later}");
+        Assert.True(later.LiveFirst + later.LiveCount <= frames * 10, $"{later}");
     }
 
     [Fact]
@@ -127,15 +315,16 @@ public sealed class ParticleEmitterTests
 
         emitter.Clear();
         emitter.Emit(Burst(7));
-        var cleared = emitter.Drain(target, 0.5);
-        var next = emitter.Drain(target, 0.6);
+        var cleared = emitter.Drain(target, Step);
+        var next = emitter.Drain(target, Step);
 
-        // Only the burst queued after the clear is made, from slot 0; the frame is active for its life alone.
-        Assert.Equal(new ParticleFrame(1, 7, true, Clear: true), cleared);
+        // Only the burst queued after the clear is made, from slot 0; the frame is active for its life alone, and the
+        // 5,000 made before the clear are not among the live slots.
+        Assert.Equal(new ParticleFrame(1, 7, true, Clear: true, LiveFirst: 0, LiveCount: 7), cleared);
         Assert.Equal(0u, target[0].First);
         Assert.Equal(0, emitter.StressBursts);
         Assert.False(next.Clear);
-        Assert.False(emitter.Drain(target, 2.7).Active);
+        Assert.Equal(ExpectedFrames(2, Step) - 1, FramesStillActive(emitter, target, Step));
     }
 
     [Fact]
@@ -154,7 +343,7 @@ public sealed class ParticleEmitterTests
 
         // A frame without graphics drops each frame's bursts, so the queue never fills; one that draws makes the rest.
         Assert.Equal((0, 0, 0L), discarded);
-        Assert.Equal(new ParticleFrame(1, 7, true), emitter.Drain(target, 0));
+        Assert.Equal(new ParticleFrame(1, 7, true, LiveCount: 7), emitter.Drain(target, 0));
     }
 
     [Fact]
@@ -167,22 +356,32 @@ public sealed class ParticleEmitterTests
 
         emitter.Clear();
 
-        Assert.Equal(new ParticleFrame(0, 0, false, Clear: true), emitter.Drain(target, 0.1));
+        Assert.Equal(new ParticleFrame(0, 0, false, Clear: true), emitter.Drain(target, Step));
     }
 
+    /// <summary>Off simulates nothing, so the particles alive wait, and move again from where they were when on.</summary>
     [Fact]
-    public void Off_drops_bursts_and_ends_the_active_time()
+    public void Off_drops_bursts_and_pauses_the_particles()
     {
         var emitter = Create();
         var target = new GpuParticleBurst[16];
         emitter.Emit(Burst(5));
-        emitter.Drain(target, 0);
+        emitter.Drain(target, Step);
 
         emitter.Enabled = false;
         emitter.Emit(Burst(5));
+        var queued = emitter.QueuedBursts;
+        var off = emitter.Drain(target, Step);
+        for (var i = 0; i < 100; i++)
+        {
+            emitter.Drain(target, Step);
+        }
 
-        Assert.Equal(0, emitter.QueuedBursts);
-        Assert.Equal(default, emitter.Drain(target, 0.5));
+        emitter.Enabled = true;
+
+        Assert.Equal(0, queued);
+        Assert.Equal(default, off);
+        Assert.Equal(ExpectedFrames(2, Step), FramesStillActive(emitter, target, Step));
     }
 
     [Fact]
@@ -232,15 +431,16 @@ public sealed class ParticleEmitterTests
         emitter.Emit(in burst);
         emitter.Drain(target, 0);
 
+        // Frames 5 ms apart for 3 s: more batches live than the record holds, so they join, and the oldest die.
         var start = SystemAllocation.StartMeasurement();
-        for (var frame = 0; frame < 100; frame++)
+        for (var frame = 0; frame < 600; frame++)
         {
             for (var i = 0; i < 20; i++)
             {
                 emitter.Emit(in burst);
             }
 
-            emitter.Drain(target, frame * 0.016);
+            emitter.Drain(target, 0.005f);
         }
 
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - start);

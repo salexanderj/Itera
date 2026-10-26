@@ -69,7 +69,7 @@ public sealed class StockEffectsTests
         {
             EmitAll(effects, ids, tint);
             effects.Dust(new Vector3(1, 2, 3), tint, 5, 0.3f);
-            emitter.Drain(target, frame * 0.016);
+            emitter.Drain(target, 0.016f);
         }
 
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);

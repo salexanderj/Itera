@@ -23,6 +23,17 @@ Particles (`Engine:Particles`, `ParticleEmitter`, `ParticlePass`) live on the GP
 - A frame without graphics (the loop's with `Engine:Window:Mode=None`, and `HeadlessMatch.Frame`) has no pool. It drops
   the bursts queued since the last at its start (`ParticleEmitter.Discard`), so the queue never fills.
 - The pool is a ring that overwrites the oldest particle. Its size is `Engine:Particles:Capacity`.
+- The emitter keeps a particles' clock that runs as the GPU ages them. It adds the frame's capped delta (the constants'
+  `Delta`) only in frames that simulate: ones that draw the world with particles alive or made.
+- A frame that makes particles keeps the pass active until the longest life among its bursts' recipes has passed on
+  that clock, with a margin (`ParticleEmitter.DeathMargin`) for the GPU's float rounding.
+- The emitter keeps each such frame as a spawn batch: where it starts in the ring and when its particles are all dead.
+  The frame carries the span of the ring that can be alive (`ParticleFrame.LiveFirst` and `LiveCount`): from the oldest
+  batch not yet dead to the head.
+- The batches are a fixed ring of `ParticleEmitter.MaxBatches`. When it is full, the two oldest become one, with the
+  later death. A span of a full lap or more is the whole pool.
+- Under the loading screen (`ParticlePass.Write` told the world is not drawn) and while off, the clock stops and the
+  particles wait. Bursts drained under the loading screen are not made and get no batch.
 - Nothing comes back to the game and nothing is sent: each game makes its own particles.
 - The console's `particles` tests recipes by name.
 
