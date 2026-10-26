@@ -158,6 +158,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         _coarsestLevel = VoxelWorld.LevelsFor(engine.Voxels) - 1;
         _finestLevel = Math.Min(engine.Renderer.MeshFinestLevel, _coarsestLevel);
         _reachShare = engine.Renderer.MeshReachShare;
+        ObjectVoxelPixels = engine.Renderer.ObjectVoxelPixels;
         _statsIntervalSeconds = engine.Logging.StatsIntervalSeconds;
         for (var i = 0; i < _byLevel.Length; i++)
         {
@@ -166,6 +167,19 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     }
 
     public bool IsUpToDate { get; private set; }
+
+    /// <summary>
+    /// How wide one voxel of a voxel object's model level must be on the drawn image, in pixels, for that level to be
+    /// drawn (<c>Engine:Renderer:ObjectVoxelPixels</c>, 0.5 to 16); a graphics setting may change it during the run. Main
+    /// thread.
+    /// </summary>
+    public float ObjectVoxelPixels
+    {
+        get => _objectVoxelPixels;
+        set => _objectVoxelPixels = Math.Clamp(value, 0.5f, 16f);
+    }
+
+    private float _objectVoxelPixels = 2;
 
     public long Uploads { get; private set; }
 
@@ -1618,6 +1632,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         var averageMs = _stats.Frames == 0 ? 0 : _stats.Ticks * 1000.0 / Stopwatch.Frequency / _stats.Frames;
         var undrawnMegabytes = UndrawnBytes() / (1024.0 * 1024.0);
         var maxMs = _stats.MaxTicks * 1000.0 / Stopwatch.Frequency;
+        var farTexelCentimetres = _view.FarTexelMetres * VoxelConstants.CentimetresPerMetre;
         LogStats(
             elapsed,
             _columns.Count,
@@ -1639,6 +1654,8 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
             Frame.FarShadows,
             Frame.DistantShadows,
             _stats.LastShadowTriangles,
+            _stats.LastModelShadowTriangles,
+            farTexelCentimetres,
             _trackedModels.Count,
             _stats.ModelsStarted,
             Frame.ModelCamera.Commands,
@@ -1661,12 +1678,14 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         );
         var triangles = _stats.LastTriangles;
         var shadowTriangles = _stats.LastShadowTriangles;
+        var modelShadowTriangles = _stats.LastModelShadowTriangles;
         var modelTriangles = _stats.LastModelTriangles;
         var unbalanced = _stats.LastUnbalanced;
         _stats = default;
         _stats.LastUnbalanced = unbalanced;
         _stats.LastTriangles = triangles;
         _stats.LastShadowTriangles = shadowTriangles;
+        _stats.LastModelShadowTriangles = modelShadowTriangles;
         _stats.LastModelTriangles = modelTriangles;
         _statsStart = nowSeconds;
     }
@@ -1694,6 +1713,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         public int Resyncs;
         public long LastTriangles;
         public long LastShadowTriangles;
+        public long LastModelShadowTriangles;
         public long LastModelTriangles;
         public int LastUnbalanced;
         public int ModelsStarted;
@@ -1758,7 +1778,7 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
 
     [LoggerMessage(
         Level = LogLevel.Information,
-        Message = "Meshes over {Seconds:F1} s: {Columns} columns, {Meshed} blocks with meshes, {Pending} pending, {Started} jobs started, {Uploaded} uploaded ({Overflowed} with more than 8 surface materials), {Empty} empty, {UploadedMegabytes:F1} MB uploaded, heap {HeapUsedMegabytes:F1} MB of {HeapMegabytes} MB used; {Draws} blocks ({Stitched} stitched) and {Triangles} triangles drawn in the last frame, {StitchesStarted} stitched meshes started and {StitchesUploaded} uploaded, {NearShadows}, {FarShadows}, and {DistantShadows} blocks and {ShadowTriangles} triangles into the shadow cascades; {Models} models followed, {ModelsStarted} meshed, {ModelCommands} model blocks drawn as {ModelRecords} instances of {ModelTriangles} triangles ({LevelZero}, {LevelOne}, and {LevelTwo} at levels 0, 1, and 2 or coarser); {Resyncs} resyncs; {Unbalanced} columns beside ones two levels finer in the last frame; {UndrawnMegabytes:F1} MB in columns the last frame did not draw, {Evicted} columns ({EvictedMegabytes:F1} MB) freed to make room; {UnmeshedFrames} frames drew columns not meshed yet (at most {MostUnmeshed}); {Lights} point lights shaded in the last frame, of {EventLights} events' lights; main thread avg {AverageMs:F3} ms max {MaxMs:F2} ms per frame"
+        Message = "Meshes over {Seconds:F1} s: {Columns} columns, {Meshed} blocks with meshes, {Pending} pending, {Started} jobs started, {Uploaded} uploaded ({Overflowed} with more than 8 surface materials), {Empty} empty, {UploadedMegabytes:F1} MB uploaded, heap {HeapUsedMegabytes:F1} MB of {HeapMegabytes} MB used; {Draws} blocks ({Stitched} stitched) and {Triangles} triangles drawn in the last frame, {StitchesStarted} stitched meshes started and {StitchesUploaded} uploaded, {NearShadows}, {FarShadows}, and {DistantShadows} blocks and {ShadowTriangles} triangles into the shadow cascades ({ModelShadowTriangles} of them the models', the far cascade's texels {FarTexelCentimetres:F1} cm); {Models} models followed, {ModelsStarted} meshed, {ModelCommands} model blocks drawn as {ModelRecords} instances of {ModelTriangles} triangles ({LevelZero}, {LevelOne}, and {LevelTwo} at levels 0, 1, and 2 or coarser); {Resyncs} resyncs; {Unbalanced} columns beside ones two levels finer in the last frame; {UndrawnMegabytes:F1} MB in columns the last frame did not draw, {Evicted} columns ({EvictedMegabytes:F1} MB) freed to make room; {UnmeshedFrames} frames drew columns not meshed yet (at most {MostUnmeshed}); {Lights} point lights shaded in the last frame, of {EventLights} events' lights; main thread avg {AverageMs:F3} ms max {MaxMs:F2} ms per frame"
     )]
     private partial void LogStats(
         double seconds,
@@ -1781,6 +1801,8 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
         int farShadows,
         int distantShadows,
         long shadowTriangles,
+        long modelShadowTriangles,
+        double farTexelCentimetres,
         int models,
         int modelsStarted,
         int modelCommands,

@@ -151,9 +151,15 @@ public sealed unsafe partial class WorldMeshes
         // The areas whose objects may reach a split column: as far round it as the widest kind reaches.
         var round = (int)((kinds.MostReachCentimetres + width - 1) / width);
         var origin = _origin;
-        var levelZero = (float)(_distances.ReachCentimetres(0) * _reachShare / VoxelConstants.CentimetresPerMetre);
-        var levelOne = (float)(_distances.ReachCentimetres(1) * _reachShare / VoxelConstants.CentimetresPerMetre);
         var (fadeStart, fadeEnd) = HandOverFade();
+        var copies = _world?.Copies;
+        // A kind with no copy has nothing to hand over to: its models are drawn, whole, as far as the view reaches.
+        var anyUncopied = false;
+        for (var k = 0; k < kinds.Count && copies is not null; k++)
+        {
+            anyUncopied |= !copies.IsCopied(new VoxelObjectKindId((ushort)k));
+        }
+
         // An area holds its objects' anchors, so it may hold one nearer than the fade's end when its middle (across) is
         // within that and its half diagonal.
         var areaReach = width * Math.Sqrt(2) / 2 / VoxelConstants.CentimetresPerMetre;
@@ -163,7 +169,7 @@ public sealed unsafe partial class WorldMeshes
         for (var a = 0; a < areas.Length; a++)
         {
             var area = areas[a].Area;
-            var near = Math.Sqrt(areas[a].Squared) - areaReach < fadeEnd;
+            var near = anyUncopied || Math.Sqrt(areas[a].Squared) - areaReach < fadeEnd;
             if (!near && !AnySplitRound(area.X, area.Z, round))
             {
                 continue;
@@ -192,25 +198,36 @@ public sealed unsafe partial class WorldMeshes
                     dy = anchor.Y / (double)VoxelConstants.CentimetresPerMetre - _viewAt.Y,
                     dz = anchor.Z / (double)VoxelConstants.CentimetresPerMetre - _viewAt.Z;
                 var distance = (float)Math.Sqrt(dx * dx + dy * dy + dz * dz);
+                var copied = copies is null || copies.IsCopied(placement.Kind);
                 // An object under no split column has its copy drawn: the camera draws its model over it, fading out over
-                // the hand-over's band. One under a split column has none: its model stays whole.
+                // the hand-over's band. One under a split column has none, nor has a kind not copied: its model stays
+                // whole, and casts into the cascades its bounds meet.
                 var split = (lists & CameraList) != 0;
                 lists |= distance < fadeEnd ? CameraList : 0;
+                lists |= copied ? 0 : CameraList | NearList | FarList | views;
                 if (lists == 0)
                 {
                     continue;
                 }
 
+                // Its level follows its voxels' size on the drawn image at its nearest point (ObjectVoxelPixels).
+                var unit = kind.UnitCentimetres / (float)VoxelConstants.CentimetresPerMetre;
+                var nearest = Math.Max(distance - KindRadiusMetres(kind), 0);
+                var (levelZero, levelOne) = ObjectLevelDistances(unit);
                 var level =
-                    distance < levelZero ? 0
-                    : distance < levelOne ? 1
+                    nearest < levelZero ? 0
+                    : nearest < levelOne ? 1
                     : 2;
+                // The cascades cast its level, or a coarser one whose voxels are no narrower than the map's texels: the
+                // far cascade's 22 cm or so take a 10 cm object's 40 cm level.
+                var nearLevel = Math.Max(level, LevelForTexel(unit, _view.NearTexelMetres));
+                var farLevel = Math.Max(level, LevelForTexel(unit, _view.FarTexelMetres));
                 // The shares of the dither's thresholds each level shows at its distance: level 0 from the band to level 1
                 // up, level 1 between that and the band to level 2, level 2 below that, each over the hand-over's fade
                 // (which, with a hand-over level of 1, may begin before level 2's band).
-                var toOne = Ramp(distance, levelZero - LevelFadeMetres, levelZero + LevelFadeMetres);
-                var toTwo = Ramp(distance, levelOne - LevelFadeMetres, levelOne + LevelFadeMetres);
-                var toCopy = split ? 0 : Ramp(distance, fadeStart, fadeEnd);
+                var toOne = Ramp(nearest, levelZero - LevelFadeMetres, levelZero + LevelFadeMetres);
+                var toTwo = Ramp(nearest, levelOne - LevelFadeMetres, levelOne + LevelFadeMetres);
+                var toCopy = split || !copied ? 0 : Ramp(distance, fadeStart, fadeEnd);
                 var local =
                     new Vector3(anchor.X - origin.X, anchor.Y - origin.Y, anchor.Z - origin.Z)
                     / VoxelConstants.CentimetresPerMetre;
@@ -228,11 +245,12 @@ public sealed unsafe partial class WorldMeshes
                             1 => (Math.Max(toCopy, toTwo), toOne),
                             _ => (toCopy, toTwo),
                         };
-                        // The camera draws every level with a share; the cascades cast its level by its distance alone.
+                        // The camera draws every level with a share; each cascade casts its one level.
                         var shown = MeshModelDraw.Shows(from, to);
                         var drawnLists =
                             (shown != MeshModelDraw.ShowsNone ? lists & CameraList : 0)
-                            | (drawn == level ? lists & (NearList | FarList) : 0);
+                            | (drawn == nearLevel ? lists & NearList : 0)
+                            | (drawn == farLevel ? lists & FarList : 0);
                         if (drawnLists != 0)
                         {
                             GatherModel(
@@ -257,6 +275,48 @@ public sealed unsafe partial class WorldMeshes
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// The distances from the eye, in metres, past which an object of <paramref name="unitMetres"/> voxels draws its
+    /// level 1 and its level 2: where one voxel of the finer level is <see cref="ObjectVoxelPixels"/> wide on the drawn
+    /// image. An orthographic view is the same size at every distance: its levels are all or nothing.
+    /// </summary>
+    private (float LevelZero, float LevelOne) ObjectLevelDistances(float unitMetres)
+    {
+        var pixels = _view.PixelsPerMetre * unitMetres / ObjectVoxelPixels;
+        if (!_view.Orthographic)
+        {
+            return (pixels, 2 * pixels);
+        }
+
+        // Past every distance (the finer level drawn) or before every one (the coarser).
+        const float Always = 65504;
+        const float Never = -65504;
+        return (pixels >= 1 ? Always : Never, 2 * pixels >= 1 ? Always : Never);
+    }
+
+    /// <summary>
+    /// The finest of an object's three levels whose voxels (<paramref name="unitMetres"/> at level 0, doubling) are at
+    /// least <paramref name="texelMetres"/> wide; 0 without a map; the coarsest when none is.
+    /// </summary>
+    private static int LevelForTexel(float unitMetres, float texelMetres)
+    {
+        var level = 0;
+        while (level < VoxelModels.MaxLevels - 1 && unitMetres * (1 << level) < texelMetres)
+        {
+            level++;
+        }
+
+        return level;
+    }
+
+    /// <summary>How far from its anchor a kind's voxels reach in any direction, in metres: across, up, and down.</summary>
+    internal static float KindRadiusMetres(VoxelObjectKind kind)
+    {
+        double across = kind.ReachCentimetres;
+        double upDown = Math.Max(Math.Abs(kind.TopCentimetres), Math.Abs(kind.BottomCentimetres));
+        return (float)(Math.Sqrt(across * across + upDown * upDown) / VoxelConstants.CentimetresPerMetre);
     }
 
     /// <summary>

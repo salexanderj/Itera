@@ -61,9 +61,11 @@ columns the near cascade and the image views share; `FarSplit`).
 - An object's part models go into a pass's lists when a level-K column under its reach is split there. They go into the
   camera's when the column is known and nearer than the hand-over's fade's end. They are turned by `ObjectTurns.Rotation`
   about the object's anchor.
-- An object's level follows its anchor's distance: its own voxels within level 0's reach times the mesh share, twice them
-  within level 1's, else four times. Each level fades into the next over `LevelFadeMetres` each side of the distance
-  between them.
+- An object's level follows its voxels' size on the drawn image at its nearest point (its anchor's distance less
+  `WorldMeshes.KindRadiusMetres`). It draws its own voxels while one covers `Engine:Renderer:ObjectVoxelPixels` pixels
+  (`WorldMeshes.ObjectVoxelPixels`), then twice them while one of those does, else four times
+  (`WorldMeshes.ObjectLevelDistances`, from `MeshView.PixelsPerMetre`). Each level fades into the next over
+  `LevelFadeMetres` each side of the distance between them.
 - The coarsest level fades out over its far copy, over `HandOverFadeMetres` (`WorldMeshes.HandOverFade`). Where the
   hand-over's fade begins before level 2's band (a hand-over level of 1), every level drawn fades out over it. The fade starts at the farthest an object of a split level-K
   column can lie: the reach that splits it, the column's width's diagonal, and the widest kind's reach. The hand-over
@@ -74,9 +76,12 @@ columns the near cascade and the image views share; `FarSplit`).
   sides of one share. No world shader discards anything.
 - The copy stays drawn whole under the model. Where both draw, they show together, the copy's surface about at the model's.
   The copy and the model also show together nearer than the fade's band.
-- The fades are the camera's. The cascades cast each object's one level by its distance, whole. The image views draw the
+- The fades are the camera's. Each cascade casts one level, whole: the camera's level, or a coarser one whose voxels are
+  no narrower than the cascade's texels (`MeshView.NearTexelMetres`, `FarTexelMetres`). The image views draw the
   coarsest level, whole.
 - An object under a split column has no copy, so its model never fades out.
+- A kind with no copy (`ObjectCopies.IsCopied`) never fades out either. Its models are drawn and cast as far as the view
+  reaches, and its areas are never passed over.
 - Objects are gathered after the game's models and the retired ones, their areas nearest the camera first (an insertion
   sort: no allocation). An area is passed over when no column within the widest kind's reach of it is split and it lies
   past the fade's end.

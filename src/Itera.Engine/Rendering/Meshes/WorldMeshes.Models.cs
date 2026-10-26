@@ -440,6 +440,7 @@ public sealed unsafe partial class WorldMeshes
     {
         var models = _models!;
         _stats.LastModelTriangles = 0;
+        _stats.LastModelShadowTriangles = 0;
         Array.Clear(_modelTrianglesByLevel);
         _modelFrameCount = 0;
 
@@ -527,8 +528,80 @@ public sealed unsafe partial class WorldMeshes
         }
 
         var baseLevel = models.BaseLevel(handle);
-        var tree = Math.Clamp(level - baseLevel, 0, mesh.DrawnTrees - 1);
+        var tree =
+            level == ModelInstances.LevelBySize
+                ? TreeBySize(models, mesh, handle, corner, turn)
+                : Math.Clamp(level - baseLevel, 0, mesh.DrawnTrees - 1);
         if (mesh.Drawn[tree].Count == 0)
+        {
+            return;
+        }
+
+        // The far cascade casts a coarser level where the model's voxels are narrower than its map's texels.
+        if ((lists & FarList) != 0 && shadow != ModelShadow.None)
+        {
+            var farTree = tree;
+            while (
+                farTree + 1 < mesh.DrawnTrees
+                && models.VoxelMetres(handle, farTree) < _view.FarTexelMetres
+                && mesh.Drawn[farTree + 1].Count > 0
+            )
+            {
+                farTree++;
+            }
+
+            if (farTree != tree)
+            {
+                GatherTree(models, mesh, handle, farTree, corner, turn, tint, shadow, FarList, shown);
+                lists &= ~FarList;
+            }
+        }
+
+        GatherTree(models, mesh, handle, tree, corner, turn, tint, shadow, lists, shown);
+    }
+
+    /// <summary>
+    /// The tree a model draw given <see cref="ModelInstances.LevelBySize"/> takes: its finest while one of that tree's
+    /// voxels is <see cref="ObjectVoxelPixels"/> wide on the drawn image at the nearest point of its finest tree's
+    /// bounding sphere, then each coarser one in turn (the voxel objects' rule).
+    /// </summary>
+    private int TreeBySize(VoxelModels models, ModelMesh mesh, int handle, Vector3 corner, Quaternion turn)
+    {
+        var unit = models.VoxelMetres(handle, 0);
+        var size = models.Size(handle);
+        var extent = new Vector3(size.X, size.Y, size.Z) * unit;
+        var centre = corner + Vector3.Transform(extent * 0.5f, turn);
+        var nearest = Math.Max(Vector3.Distance(centre, _view.Position) - extent.Length() * 0.5f, 0);
+        var (levelZero, levelOne) = ObjectLevelDistances(unit);
+        var tree =
+            nearest < levelZero ? 0
+            : nearest < levelOne ? 1
+            : 2;
+        // The coarsest tree with blocks at or below that.
+        tree = Math.Min(tree, mesh.DrawnTrees - 1);
+        while (tree > 0 && mesh.Drawn[tree].Count == 0)
+        {
+            tree--;
+        }
+
+        return tree;
+    }
+
+    /// <summary>Takes one model draw of tree <paramref name="tree"/> into the lists of <paramref name="lists"/> it meets.</summary>
+    private void GatherTree(
+        VoxelModels models,
+        ModelMesh mesh,
+        int handle,
+        int tree,
+        Vector3 corner,
+        Quaternion turn,
+        float tint,
+        ModelShadow shadow,
+        int lists,
+        uint shown
+    )
+    {
+        if (_modelFrameCount == _modelFrame.Length)
         {
             return;
         }
@@ -769,19 +842,24 @@ public sealed unsafe partial class WorldMeshes
             return;
         }
 
-        faded += fades ? blocks.Count : 0;
         foreach (var block in blocks)
         {
-            commands[commanded++] = new DrawIndexedIndirectCommand(
-                (uint)block.IndexCount,
-                (uint)instances,
-                block.FirstIndex,
-                0,
-                (uint)(recordBase + written)
-            );
+            // Each draw's block is taken only where the list sees it: a part's sphere may meet the view while most of
+            // its blocks lie outside it. Block b covers voxels 32 b - 1 to 32 b + 30 (its vertices a little past them).
+            var middle =
+                new Vector3(block.Block & 0xFF, (block.Block >> 8) & 0xFF, (block.Block >> 16) & 0xFF)
+                    * SurfaceNets.BlockSize
+                + new Vector3(SurfaceNets.BlockSize * 0.5f - ModelBlockShift);
+            var start = written;
             foreach (var draw in group)
             {
                 ref readonly var model = ref _modelFrame[draw];
+                var centre = model.Corner + Vector3.Transform(middle * model.VoxelMetres, model.Turn);
+                if (!ListMeets(list, centre, BlockRadiusVoxels * model.VoxelMetres))
+                {
+                    continue;
+                }
+
                 records[written++] = new MeshModelDraw
                 {
                     Corner = model.Corner,
@@ -794,7 +872,21 @@ public sealed unsafe partial class WorldMeshes
                 };
             }
 
-            var triangles = (long)block.IndexCount / 3 * instances;
+            var kept = written - start;
+            if (kept == 0)
+            {
+                continue;
+            }
+
+            commands[commanded++] = new DrawIndexedIndirectCommand(
+                (uint)block.IndexCount,
+                (uint)kept,
+                block.FirstIndex,
+                0,
+                (uint)(recordBase + start)
+            );
+            faded += fades ? 1 : 0;
+            var triangles = (long)block.IndexCount / 3 * kept;
             if (list == 0)
             {
                 _stats.LastModelTriangles += triangles;
@@ -803,9 +895,26 @@ public sealed unsafe partial class WorldMeshes
             else if (list < MeshPass.Lists)
             {
                 _stats.LastShadowTriangles += triangles;
+                _stats.LastModelShadowTriangles += triangles;
             }
         }
     }
+
+    // A model block's vertices lie within about 17 voxels of its middle on each axis: a sphere of 29.5 voxels holds them.
+    private const float BlockRadiusVoxels = 29.5f;
+
+    /// <summary>
+    /// True when list <paramref name="list"/> (the camera's, a cascade's, or an image view's) may draw something in the
+    /// sphere of <paramref name="radius"/> at <paramref name="centre"/>, by the tests the draws were gathered with.
+    /// </summary>
+    private bool ListMeets(int list, Vector3 centre, float radius) =>
+        list switch
+        {
+            0 => _view.InView(centre, radius),
+            1 => _view.NearCascade.Holds(centre, radius),
+            2 => _view.FarCascade.Holds(centre, radius),
+            _ => _views[list - MeshPass.Lists].View.InView(centre, radius),
+        };
 
     private int KeyOf(int draw)
     {

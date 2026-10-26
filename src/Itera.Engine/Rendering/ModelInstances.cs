@@ -12,6 +12,14 @@ public sealed class ModelInstances
     /// <summary>Models a frame can draw; more are dropped (<see cref="Dropped"/>).</summary>
     public const int MaxModels = 32_768;
 
+    /// <summary>
+    /// The level to give <see cref="Add"/> for the engine to choose it each frame by the model's size on the drawn image,
+    /// as the voxel objects' levels are (<c>Engine:Renderer:ObjectVoxelPixels</c>): its finest level while one of its voxels
+    /// covers that many pixels at its nearest point, then each coarser one in turn. The switch between levels is not
+    /// faded.
+    /// </summary>
+    public const int LevelBySize = -1;
+
     private readonly ModelDraw[] _draws = new ModelDraw[MaxModels];
 
     /// <summary>Models added this frame, up to <see cref="MaxModels"/>.</summary>
@@ -24,7 +32,8 @@ public sealed class ModelInstances
     public ReadOnlySpan<ModelDraw> Draws => _draws.AsSpan(0, Count);
 
     /// <summary>
-    /// Draws level <paramref name="level"/> of model <paramref name="model"/> (or its finest level when it has fewer)
+    /// Draws level <paramref name="level"/> of model <paramref name="model"/> (or its coarsest level when it has fewer;
+    /// <see cref="LevelBySize"/> for the engine to choose)
     /// with the corner of its box, its tree's voxel (0, 0, 0), at <paramref name="corner"/> in world metres, turned by
     /// <paramref name="turn"/> from the model's axes to the world's, blended <paramref name="tint"/> of the way from
     /// its materials' base to their tint colours; <paramref name="shadow"/> says whether it is drawn and casts the sun's
@@ -63,7 +72,7 @@ public sealed class ModelInstances
 
 /// <summary>A model to draw (<see cref="ModelInstances.Add"/>).</summary>
 /// <param name="Model">The model's handle in <see cref="Itera.Engine.Voxels.VoxelModels"/>.</param>
-/// <param name="Level">The level of detail to draw, clamped to the model's.</param>
+/// <param name="Level">The level of detail to draw, clamped to the model's, or <see cref="ModelInstances.LevelBySize"/>.</param>
 /// <param name="Corner">The corner of the model's box in world metres.</param>
 /// <param name="Turn">The turn from the model's axes to the world's.</param>
 /// <param name="Tint">How far its materials are blended from their base to their tint colour, 0 to 1.</param>

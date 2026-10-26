@@ -132,13 +132,15 @@ public sealed partial class WorldMeshesModelsTests
     public void An_objects_levels_fade_into_each_other_by_distance()
     {
         using var scene = new ObjectScene(this);
-        var levelZero = (float)(scene.World.Distances.ReachCentimetres(0) * 0.5 / 100);
-        var levelOne = (float)(scene.World.Distances.ReachCentimetres(1) * 0.5 / 100);
+        // The view is 1440 pixels high and its Up 4 long: a metre a metre away is 180 pixels. The trees' 5 cm voxels are
+        // ObjectVoxelPixels (2) wide 4.5 m from a tree's nearest point, their 10 cm level's 9 m from it.
+        var levelZero = ObjectScene.Height / (2 * 4f) * 0.05f / new EngineOptions().Renderer.ObjectVoxelPixels;
+        var levelOne = 2 * levelZero;
+        var radius = scene.TreeRadiusMetres;
         var (fadeStart, fadeEnd) = scene.Meshes.HandOverFade();
         var bands = new HashSet<int>();
-        // From 3 m up a tree lies in the band round level 0's distance, from 25 m up one in the band round level 1's, and
-        // from 100 m up the far trees lie in the hand-over's fade (from 107 m: a level-2 column is 51.2 m wide), their
-        // columns not split.
+        // From 3 m up trees lie in the bands round both levels' distances, and from 100 m up the far trees lie in the
+        // hand-over's fade (from 107 m: a level-2 column is 51.2 m wide), their columns not split.
         foreach (var at in new[] { new Vector3(0, 3, 0), new Vector3(0, 25, 0), new Vector3(0, 100, 0) })
         {
             scene.Settle(at, shadows: false);
@@ -166,8 +168,9 @@ public sealed partial class WorldMeshesModelsTests
                 }
 
                 var distance = Vector3.Distance(at, ObjectScene.Local(placement.Anchor));
-                var toOne = Math.Clamp((distance - levelZero + 2) / 4, 0, 1);
-                var toTwo = Math.Clamp((distance - levelOne + 2) / 4, 0, 1);
+                var nearest = Math.Max(distance - radius, 0);
+                var toOne = Math.Clamp((nearest - levelZero + 2) / 4, 0, 1);
+                var toTwo = Math.Clamp((nearest - levelOne + 2) / 4, 0, 1);
                 var split = scene.SplitUnder(placement, scene.Meshes.CameraSplit);
                 var toCopy = split ? 0 : Math.Clamp((distance - fadeStart) / (fadeEnd - fadeStart), 0, 1);
                 var expected = new List<(float Metres, uint Shown)>();
@@ -204,7 +207,7 @@ public sealed partial class WorldMeshesModelsTests
                 }
                 else if (levels.Count > 1)
                 {
-                    bands.Add(distance < (levelZero + levelOne) / 2 ? 0 : 1);
+                    bands.Add(nearest < (levelZero + levelOne) / 2 ? 0 : 1);
                 }
             }
         }
@@ -300,6 +303,12 @@ public sealed partial class WorldMeshesModelsTests
 
         public WorldMeshes Meshes { get; }
 
+        /// <summary>The image height every frame's view has, in pixels.</summary>
+        public const uint Height = 1440;
+
+        /// <summary>How far a tree's voxels reach from its anchor in any direction, in metres.</summary>
+        public float TreeRadiusMetres => WorldMeshes.KindRadiusMetres(_kinds[default]);
+
         /// <summary>Fills every area of objects the world wants.</summary>
         public void FillAreas()
         {
@@ -349,6 +358,8 @@ public sealed partial class WorldMeshesModelsTests
                 Right = new Vector3(4, 0, 0),
                 Up = new Vector3(0, 0, -4),
                 MaxDistance = 400,
+                Width = Height,
+                Height = Height,
             };
             if (shadows)
             {

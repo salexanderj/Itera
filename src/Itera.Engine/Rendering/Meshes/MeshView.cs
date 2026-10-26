@@ -129,6 +129,18 @@ public sealed class MeshView
     /// <summary>Where an orthographic view's box ends along the view this frame (<see cref="ViewConstants.Far"/>).</summary>
     public float Far { get; private set; }
 
+    /// <summary>
+    /// How many pixels of the drawn image's height one metre across covers this frame: at one metre from the eye for a
+    /// perspective view (divide by the distance along it), anywhere for an orthographic one. For choosing models' levels.
+    /// </summary>
+    public float PixelsPerMetre { get; private set; }
+
+    /// <summary>The width of one texel of the near cascade's map this frame, in metres (0 without shadows).</summary>
+    public float NearTexelMetres { get; private set; }
+
+    /// <summary>The width of one texel of the far cascade's map this frame, in metres (0 without shadows).</summary>
+    public float FarTexelMetres { get; private set; }
+
     /// <summary>The near cascade's casters this frame.</summary>
     public CascadeBounds NearCascade { get; } = new();
 
@@ -164,6 +176,9 @@ public sealed class MeshView
         Orthographic = view.Orthographic;
         Near = view.Near;
         Far = view.Far;
+        // The image's half height covers Up's length at a metre along the view (an orthographic box: in metres).
+        var half = view.Up.Length();
+        PixelsPerMetre = half > 0 ? view.Height / (2 * half) : 0;
         _offeredCount = 0;
         SetPlanes(view.Forward, view.Right, view.Up);
         WriteCascades(slot, in view);
@@ -376,6 +391,8 @@ public sealed class MeshView
             farLast,
             view.SunDirection
         );
+        NearTexelMetres = Shadows ? near.TexelMetres : 0;
+        FarTexelMetres = Shadows ? far.TexelMetres : 0;
         _pass.LightingOf(slot) = new MeshLighting
         {
             Near = near.ViewProjection,

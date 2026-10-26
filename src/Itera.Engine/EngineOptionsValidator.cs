@@ -73,6 +73,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
 
         Range(failures, "Renderer:MeshFinestLevel", options.Renderer.MeshFinestLevel, 0, VoxelConstants.MaxLevel);
         Range(failures, "Renderer:MeshReachShare", options.Renderer.MeshReachShare, 0.05, 1);
+        Range(failures, "Renderer:ObjectVoxelPixels", options.Renderer.ObjectVoxelPixels, 0.5, 16);
         Range(failures, "Renderer:ViewDistanceMetres", options.Renderer.ViewDistanceMetres, 0, 8000);
         if (options.Renderer.MsaaSamples is not (1 or 2 or 4 or 8))
         {

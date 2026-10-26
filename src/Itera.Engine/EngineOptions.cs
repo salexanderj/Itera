@@ -210,6 +210,16 @@ public sealed class RendererSettings
     public float MeshReachShare { get; set; } = 0.5f;
 
     /// <summary>
+    /// How wide on the drawn image one voxel of a voxel object's model must be, in pixels, for that level to be drawn,
+    /// 0.5 to 16: 2 by default. An object (<c>Objects/</c>) draws its finest level while one of its own voxels covers at
+    /// least this many pixels at its nearest point, then each coarser level while one of that level's voxels does, so
+    /// its detail follows its voxel size, the screen's height, and the lens, not the terrain's levels. At 2 and 1440p with
+    /// a 90 degree view, 10 cm objects draw their own voxels to about 64 m and 20 cm ones to about 128 m. Larger numbers
+    /// draw coarser models nearer: fewer triangles, softer far shapes.
+    /// </summary>
+    public float ObjectVoxelPixels { get; set; } = 2;
+
+    /// <summary>
     /// The view distance in metres, where the fog is whole and the world's meshes stop: 256 by default, 0 to 8000; 0 for
     /// the coarsest streamed level's radius (473.6 m with four levels), which also ends a longer one. 8000 is the
     /// farthest measured (nine levels on the starter's 8 km map; ARCHITECTURE.md).

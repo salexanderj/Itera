@@ -19,6 +19,8 @@ public sealed class ShippedSettingsTests
         "Engine:Window:Title",
         // The starter's map is 8 km across: it is seen to its end, nine levels deep.
         "Engine:Renderer:ViewDistanceMetres",
+        // Its forest's 5 cm trees keep their own voxels to about 16 m at 1440p, the detail its benchmark is measured at.
+        "Engine:Renderer:ObjectVoxelPixels",
         "Engine:Voxels:Levels",
     };
 

@@ -139,12 +139,18 @@ Each frame `WorldMeshes` picks a level for each column.
   without graphics (`GameLoop`'s or `HeadlessMatch`'s) removes them after it.
 - Each frame `GameLoop` hands `ModelInstances` to `WorldMeshes.Upload`. It keeps the draws (and the retired models)
   whose bounding sphere is in view, or casts into a cascade as the world's blocks do.
+- A draw given `ModelInstances.LevelBySize` takes its level by its voxels' size on the drawn image, as the voxel
+  objects do (`objects-copies.md`), with no fade between levels.
+- The far cascade casts a model's coarser level where its voxels are narrower than the cascade's texels
+  (`MeshView.FarTexelMetres`).
 - `ModelShadow` on each draw says what the draw does (`Casts`). `None` draws for the viewer alone (first-person arms
   and what they hold). `Only` casts a shadow without being drawn (the local player's own body in first person).
   `Hidden` is neither: `ModelInstances` and `MeshInstances` leave it out.
 - Draws are grouped by model level with a counting sort. Each block of a level is one indexed indirect command whose
-  instances are that level's draws (`MeshModelDraw`: corner, turn, voxel size, the block's vertex base and place,
-  tint), in three lists like the world's.
+  instances are that level's draws (`MeshModelDraw`: corner, turn, voxel size, the block's vertex base and place, tint),
+  in three lists like the world's.
+- A draw's block goes into a list only where the list meets the block's sphere (`WorldMeshes.ListMeets`). A command
+  that keeps no instance is left out.
 - `mesh.vert` and `mesh-shadow.vert` compiled with `MESH_MODEL` place and turn them. `mesh.frag` takes the draw's
   tint in place of the tint map's. A model draw with a tint below 0 (an object's part) is shaded as the world's
   surfaces.
