@@ -39,8 +39,8 @@ The data is in `VoxelLook` and the game's `IVoxelPalette`, packed into the look 
 
 ### The texture sets
 
-A set is a folder `Textures/<set>/` of a game, made by `tools/Textures` from a recipe's bake or from CC0 photographs,
-and copied next to the executable. It holds:
+A set is a folder `Textures/<set>/` of a game, made by `tools/Textures` from a recipe's bake, from a texture recipe in
+Python (`tools/Textures/RecipeTools`), or from CC0 photographs, and copied next to the executable. It holds:
 
 - `colour.dds`: BC7 sRGB, with occlusion in alpha.
 - `normal.dds`: BC5, x and y.

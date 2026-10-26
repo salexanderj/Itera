@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.IO.Compression;
 using System.Numerics;
@@ -14,8 +15,9 @@ namespace Itera.Tools.Textures;
 /// <summary>
 /// Makes the world materials' texture sets (README.md), or with <c>model PATH.gltf ...</c> a model's compressed textures
 /// (<see cref="ModelTextures"/>): for each set in <c>src/Game/Textures/sources.json</c> (or those
-/// named on the command line), downloads its CC0 photograph's colour, normal, occlusion, and height maps from Poly Haven
-/// or ambientCG into a cache, makes every mip level (colour and occlusion averaged in linear light, normals averaged and
+/// named on the command line), takes its colour, normal, occlusion, and height maps from the game's bake, from a texture
+/// recipe it runs (<c>RecipeTools/make.py</c>), or from a CC0 photograph downloaded from Poly Haven or ambientCG into a
+/// cache, makes every mip level (colour and occlusion averaged in linear light, normals averaged and
 /// made unit length again), compresses them (BC7 sRGB with occlusion in alpha, BC5, BC4), and writes the set's folder
 /// (<c>colour.dds</c>, <c>normal.dds</c>, <c>height.dds</c>, <c>set.json</c>) and <c>SOURCES.md</c>.
 /// </summary>
@@ -50,7 +52,14 @@ internal static class Program
         var sources = ReadSources(Path.Combine(folder, "sources.json"));
         if (args.Length == 4 && args[0] == "--preview")
         {
-            return Preview(sources, args[1], float.Parse(args[2], CultureInfo.InvariantCulture), args[3], dataFolder);
+            return Preview(
+                sources,
+                args[1],
+                float.Parse(args[2], CultureInfo.InvariantCulture),
+                args[3],
+                dataFolder,
+                repo
+            );
         }
 
         var wanted =
@@ -69,7 +78,7 @@ internal static class Program
         foreach (var source in wanted)
         {
             var started = DateTime.UtcNow;
-            var maps = Download(source, cache);
+            var maps = Download(source, cache, repo);
             Make(source, maps, Path.Combine(folder, source.Set));
             Console.WriteLine(
                 $"{source.Set}: {source.Site} {source.Asset}, {source.Texels} texels, {maps.Metres:F2} m, "
@@ -86,7 +95,14 @@ internal static class Program
     /// Kuwahara filter at <paramref name="radius"/> texels (0 for none), written as a PNG without compressing anything,
     /// to judge the filter quickly.
     /// </summary>
-    private static int Preview(List<Source> sources, string set, float radius, string output, string dataFolder)
+    private static int Preview(
+        List<Source> sources,
+        string set,
+        float radius,
+        string output,
+        string dataFolder,
+        string repo
+    )
     {
         var source = sources.FirstOrDefault(s => s.Set == set);
         if (source is null)
@@ -100,7 +116,7 @@ internal static class Program
             dataFolder,
             "TextureDownloads"
         );
-        var maps = Download(source, cache);
+        var maps = Download(source, cache, repo);
         var colour = Decode(maps.Colour, source.Texels);
         var started = DateTime.UtcNow;
         if (radius > 0)
@@ -165,13 +181,20 @@ internal static class Program
     private static List<Source> ReadSources(string path) =>
         JsonSerializer.Deserialize<List<Source>>(File.ReadAllText(path), s_read) ?? [];
 
-    /// <summary>The four maps' files of <paramref name="source"/> and its width in metres, downloaded once into the cache.</summary>
-    private static Maps Download(Source source, string cache)
+    /// <summary>
+    /// The four maps' files of <paramref name="source"/> and its width in metres: the game's bake, its texture recipe run
+    /// into the cache, or its photograph downloaded once into the cache.
+    /// </summary>
+    private static Maps Download(Source source, string cache, string repo)
     {
-        if (source.Site == "bake")
+        if (source.Site is "bake" or "recipe")
         {
-            // The game's own bake of a recipe (the console's materials bake), in the data folder's Bakes/.
-            var baked = Path.Combine(Path.GetDirectoryName(cache)!, "Bakes", source.Asset);
+            // The game's own bake of a recipe (the console's materials bake), in the data folder's Bakes/; or a texture
+            // recipe's maps, made again each time into the cache.
+            var baked =
+                source.Site == "bake"
+                    ? Path.Combine(Path.GetDirectoryName(cache)!, "Bakes", source.Asset)
+                    : RunRecipe(source, Path.Combine(cache, "recipe", source.Set), repo);
             string? Baked(string name) => File.Exists(Path.Combine(baked, name)) ? Path.Combine(baked, name) : null;
             return new Maps(
                 Baked("colour.png") ?? throw new InvalidDataException($"{source.Set}: no bake in {baked}."),
@@ -205,6 +228,34 @@ internal static class Program
             Find("height.jpg"),
             float.Parse(File.ReadAllText(info), CultureInfo.InvariantCulture)
         );
+    }
+
+    /// <summary>
+    /// Runs the texture recipe <paramref name="source"/> names (its asset: the recipe's file from the repository's root,
+    /// with / between folders) at the set's size, writing its maps into <paramref name="output"/>, which it returns.
+    /// </summary>
+    private static string RunRecipe(Source source, string output, string repo)
+    {
+        var start = new ProcessStartInfo(OperatingSystem.IsWindows() ? "python" : "python3")
+        {
+            UseShellExecute = false,
+        };
+        start.ArgumentList.Add(Path.Combine(repo, "tools", "Textures", "RecipeTools", "make.py"));
+        start.ArgumentList.Add(Path.Combine([repo, .. source.Asset.Split('/')]));
+        start.ArgumentList.Add(output);
+        start.ArgumentList.Add("--texels");
+        start.ArgumentList.Add(source.Texels.ToString(CultureInfo.InvariantCulture));
+        using var process =
+            Process.Start(start) ?? throw new InvalidOperationException($"{source.Set}: Python did not start.");
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidDataException(
+                $"{source.Set}: the recipe {source.Asset} failed (exit code {process.ExitCode})."
+            );
+        }
+
+        return output;
     }
 
     private static float DownloadPolyHaven(string asset, string resolution, string folder)
@@ -377,7 +428,12 @@ internal static class Program
             ["site"] = source.Site,
             ["asset"] = source.Asset,
             ["link"] = Link(source),
-            ["licence"] = source.Site == "bake" ? "the game's own (baked from its recipe)" : "CC0 1.0",
+            ["licence"] = source.Site switch
+            {
+                "bake" => "the game's own (baked from its recipe)",
+                "recipe" => "the game's own (made by its recipe)",
+                _ => "CC0 1.0",
+            },
             ["maps"] =
                 (maps.Occlusion is null ? "no occlusion; " : "") + (maps.Height is null ? "no height" : "all four"),
             ["kuwahara"] = source.Kuwahara is { } k
@@ -513,6 +569,7 @@ internal static class Program
         {
             "polyhaven" => $"https://polyhaven.com/a/{source.Asset}",
             "ambientcg" => $"https://ambientcg.com/view?id={source.Asset}",
+            "recipe" => $"made by the recipe {source.Asset}",
             _ => "baked by the game (materials bake)",
         };
 
@@ -522,8 +579,8 @@ internal static class Program
         text.AppendLine("# The world materials' texture sets and their sources");
         text.AppendLine();
         text.AppendLine(
-            "Every set is made by `tools/Textures` from the game's own recipe baked by the console's `materials bake`, or "
-                + "from a CC0 1.0 photograph (public domain: commercial use, redistribution in a game, and no credit are all "
+            "Every set is made by `tools/Textures` from the game's own recipe baked by the console's `materials bake`, from "
+                + "a texture recipe the tool runs (`tools/Textures/RecipeTools`), or from a CC0 1.0 photograph (public domain: commercial use, redistribution in a game, and no credit are all "
                 + "allowed; Poly Haven's and ambientCG's licence pages, checked 2026-10-08). Written by the tool from "
                 + "`sources.json`."
         );
@@ -534,9 +591,13 @@ internal static class Program
         {
             var texels = source.Texels.ToString(CultureInfo.InvariantCulture);
             text.AppendLine(
-                source.Site == "bake"
-                    ? $"| {source.Set} | {texels} | bake | {source.Asset}: the game's recipe, baked | the game's own |"
-                    : $"| {source.Set} | {texels} | {source.Site} | [{source.Asset}]({Link(source)}) | CC0 1.0 |"
+                source.Site switch
+                {
+                    "bake" =>
+                        $"| {source.Set} | {texels} | bake | {source.Asset}: the game's recipe, baked | the game's own |",
+                    "recipe" => $"| {source.Set} | {texels} | recipe | `{source.Asset}` | the game's own |",
+                    _ => $"| {source.Set} | {texels} | {source.Site} | [{source.Asset}]({Link(source)}) | CC0 1.0 |",
+                }
             );
         }
 
