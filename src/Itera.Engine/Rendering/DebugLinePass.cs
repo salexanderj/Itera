@@ -59,7 +59,7 @@ public sealed unsafe partial class DebugLinePass : IDisposable, IReloadsShaders
         _buffer = _allocator.CreateBuffer(
             SlotBytes * FrameSync.FramesInFlight,
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "debug lines"
         );
         CreateDescriptors();

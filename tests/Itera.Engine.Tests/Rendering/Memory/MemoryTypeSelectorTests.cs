@@ -59,6 +59,21 @@ public sealed class MemoryTypeSelectorTests
     }
 
     [Fact]
+    public void Stream_prefers_coherent_vram_the_cpu_can_map_then_system_memory()
+    {
+        Assert.Equal(2, Best(ResizableBar, MemoryUsage.Stream));
+        Assert.Equal(3, Best(SmallBar, MemoryUsage.Stream));
+        Assert.Equal(1, Best(Unified, MemoryUsage.Stream));
+        // No VRAM the CPU can map: coherent system memory.
+        Assert.Equal(1, Best(CachedNotCoherent, MemoryUsage.Stream));
+
+        // A full window falls back to system memory next.
+        Span<int> order = stackalloc int[SmallBar.Length];
+        var count = MemoryTypeSelector.Rank(SmallBar, AllTypes, MemoryUsage.Stream, order);
+        Assert.Equal([3, 1, 2], order[..count].ToArray());
+    }
+
+    [Fact]
     public void Readback_prefers_cached_memory_even_when_it_is_not_coherent()
     {
         Assert.Equal(3, Best(ResizableBar, MemoryUsage.Readback));

@@ -119,13 +119,13 @@ public sealed unsafe class GrassPlacePass(WorldMeshes meshes, IGrassSource sourc
         _frames = setup.Allocator.CreateBuffer(
             s_frameBytes * slots,
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "grass frames"
         );
         _blocks = setup.Allocator.CreateBuffer(
             s_blocksBytes * slots,
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "grass blocks"
         );
         _blades = setup.Allocator.CreateBuffer(
@@ -144,7 +144,7 @@ public sealed unsafe class GrassPlacePass(WorldMeshes meshes, IGrassSource sourc
         _indices = setup.Allocator.CreateBuffer(
             (ulong)(indexCount * sizeof(ushort)),
             BufferUsageFlags.IndexBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "grass indices"
         );
         WritePattern(new Span<ushort>(_indices.Mapped, indexCount));

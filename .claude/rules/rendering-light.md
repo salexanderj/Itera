@@ -56,10 +56,13 @@ cascades, the sky field's corner and cell, and the light count.
 
 1. The cluster pass (`mesh-clusters.comp`), the skinning (`rendering-mesh-assets.md`), and the game's `Compute` passes.
 2. The cascades into the depth map array.
-3. The world's blocks, then the models, then the mesh assets (`rendering-mesh-assets.md`), then the game's `Opaque`
-   passes. They draw with `Engine:Renderer:MsaaSamples` samples a pixel, into images of their own. Rendering resolves
+3. The models shown whole, the world's blocks, the fading models, the mesh assets (`rendering-mesh-assets.md`), then
+   the game's `Opaque` passes. The models go first so the ground behind them fails the depth test before it is
+   shaded. They draw with `Engine:Renderer:MsaaSamples` samples a pixel, into images of their own. Rendering resolves
    into the target (the mean) and into the depth image (sample 0, which the particles and the lines test against).
    The depth image's frame-start barrier covers the resolve, which Vulkan counts as a colour attachment write.
+   The multisampled depth image is sampled where the device allows that count, though no shader reads it: RADV then
+   keeps it compressed for the resolve.
 4. The sky where the depth is still 0 (`world-sky.frag`).
 5. The blended mesh assets, then the game's `Transparent` passes (`rendering-passes.md`).
 

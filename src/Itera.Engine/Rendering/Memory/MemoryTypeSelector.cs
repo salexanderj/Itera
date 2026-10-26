@@ -16,6 +16,13 @@ public enum MemoryUsage
 
     /// <summary>The GPU writes it and the CPU reads it. Must be host-visible. Prefers host-cached memory.</summary>
     Readback = 2,
+
+    /// <summary>
+    /// The CPU writes it, write only and in order, and the GPU reads it where it lies, every frame: draw records,
+    /// indirect commands, a frame's constants. Must be host-visible. Prefers host-coherent VRAM the CPU can map (all of
+    /// it with resizable BAR, a 256 MB window without), so the GPU does not read it across the bus; then system memory.
+    /// </summary>
+    Stream = 3,
 }
 
 /// <summary>
@@ -89,6 +96,7 @@ internal static class MemoryTypeSelector
             MemoryUsage.DeviceLocal => MemoryPropertyFlags.DeviceLocalBit,
             MemoryUsage.Upload => MemoryPropertyFlags.HostVisibleBit,
             MemoryUsage.Readback => MemoryPropertyFlags.HostVisibleBit,
+            MemoryUsage.Stream => MemoryPropertyFlags.HostVisibleBit,
             _ => throw new ArgumentOutOfRangeException(nameof(usage), usage, "Unknown memory usage."),
         };
 
@@ -106,6 +114,8 @@ internal static class MemoryTypeSelector
             MemoryUsage.Upload => (coherent ? 4 : 0) + (deviceLocal ? 0 : 2) + (cached ? 0 : 1),
             // Cached matters most (reads of uncached memory are very slow); then coherent.
             MemoryUsage.Readback => (cached ? 4 : 0) + (coherent ? 2 : 0),
+            // Coherent matters most (no flushes); then VRAM over system memory, then write-combined over cached.
+            MemoryUsage.Stream => (coherent ? 4 : 0) + (deviceLocal ? 2 : 0) + (cached ? 0 : 1),
             _ => 0,
         };
     }

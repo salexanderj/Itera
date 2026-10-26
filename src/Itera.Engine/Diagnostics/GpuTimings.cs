@@ -15,7 +15,10 @@ public enum GpuPass
     /// <summary>The debug lines, when <c>lines</c> shows any.</summary>
     DebugLines = 3,
 
-    /// <summary>Part of <see cref="Voxels"/>: the models drawn in the world's pass, when the frame has any.</summary>
+    /// <summary>
+    /// Part of <see cref="Voxels"/>: the models drawn whole in the world's pass, before the ground, when the frame has
+    /// any (the fading ones, after the ground, count in <see cref="Voxels"/> alone).
+    /// </summary>
     Models = 4,
 
     /// <summary>The UI: its copy when it changed, and its draw over the picture when anything is shown.</summary>

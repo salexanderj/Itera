@@ -129,25 +129,25 @@ public sealed unsafe partial class MeshAssetPass
         _skinGroups = _allocator.CreateBuffer(
             (skinned ? slots * MaxSkinGroups : 1) * (ulong)sizeof(MeshSkinGroup),
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "mesh asset skin groups"
         );
         _palettes = _allocator.CreateBuffer(
             (skinned ? slots * MeshInstances.MaxPaletteJoints : 1) * (ulong)sizeof(System.Numerics.Matrix4x4),
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "mesh asset skinning matrices"
         );
         _draws = _allocator.CreateBuffer(
             slots * SlotLists * MaxDraws * (ulong)sizeof(MeshAssetDraw),
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "mesh asset draws"
         );
         _commands = _allocator.CreateBuffer(
             slots * SlotLists * MaxCommands * (ulong)sizeof(DrawIndexedIndirectCommand),
             BufferUsageFlags.IndirectBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "mesh asset commands"
         );
 

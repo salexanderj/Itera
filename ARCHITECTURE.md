@@ -361,8 +361,8 @@ The frame's commands run in this order:
 
 1. The copies from the slot's staging region into the mesh heap, and a new sky field copied into its image.
 2. The lights sorted into the view's clusters, and the particle passes when particles can be alive.
-3. The world (`MeshPass.Record`): skinning and a game's `Compute` passes, the sun's shadow cascades, the blocks nearest
-   first, the models, the mesh assets, a game's `Opaque` passes, the sky, the blended mesh assets, and a game's
+3. The world (`MeshPass.Record`): skinning and a game's `Compute` passes, the sun's shadow cascades, the models shown
+   whole, the blocks nearest first, the fading models, the mesh assets, a game's `Opaque` passes, the sky, the blended mesh assets, and a game's
    `Transparent` passes. The world is drawn into multisampled images that are resolved as rendering ends.
 4. Each image view due (`RenderViewPass.Record`), the particles, and the debug lines.
 5. A game's `Scene` passes, SMAA when the world is drawn with one sample a pixel, and FSR 1's upscale when the render

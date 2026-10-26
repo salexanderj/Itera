@@ -206,19 +206,19 @@ public sealed unsafe partial class ParticlePass : IDisposable, IReloadsShaders
         _recipes = _allocator.CreateBuffer(
             RecipeSlotBytes * slots,
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "particle recipes"
         );
         _bursts = _allocator.CreateBuffer(
             BurstSlotBytes * slots,
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "particle bursts"
         );
         _attractors = _allocator.CreateBuffer(
             AttractorSlotBytes * slots,
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "particle attractors"
         );
         _readback = _allocator.CreateBuffer(

@@ -376,7 +376,7 @@ internal sealed unsafe class RenderViewTarget : IRenderViewLists, IDisposable
     }
 
     private GpuBuffer Upload(ulong bytes, BufferUsageFlags usage, string what) =>
-        _allocator.CreateBuffer(bytes, usage, MemoryUsage.Upload, $"image view {Info.Name} {what}");
+        _allocator.CreateBuffer(bytes, usage, MemoryUsage.Stream, $"image view {Info.Name} {what}");
 
     private void CreateImages(MeshPass meshPass)
     {

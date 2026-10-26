@@ -155,7 +155,7 @@ Each frame `WorldMeshes` picks a level for each column.
   tint in place of the tint map's. A model draw with a tint below 0 (an object's part) is shaded as the world's
   surfaces.
 - The camera's list writes the draws that show every pixel first and the fading ones (a voxel object's) last
-  (`MeshModelList.Faded`). The fading draws use `mesh.vert` and `mesh.frag` compiled with `MESH_FADE` too. They draw
+  (`MeshModelList.Faded`). `MeshPass` draws the first before the world's blocks and the fading ones after them. The fading draws use `mesh.vert` and `mesh.frag` compiled with `MESH_FADE` too. They draw
   only the pixels whose screen-space dither threshold lies in the draw's share (`MeshModelDraw.Shown`, 0 for all,
   `mesh-fade.glsl`). The wireframe's model draws all take the fade.
 - A shader that may discard keeps the depth test from running before it shades, so only the fading draws use one.

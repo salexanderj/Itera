@@ -157,8 +157,10 @@ in step 5.
 - Itera has its own block sub-allocator in `Rendering/Memory/`. No VMA binding. Create buffers with `GpuMemoryAllocator.CreateBuffer(size, usage,
   MemoryUsage, name)`; never call `vkAllocateMemory` elsewhere. `MaxMemoryAllocationCount` can be as low
   as 4096.
-- The allocator picks the memory type (`MemoryTypeSelector`: `DeviceLocal`, `Upload`, `Readback`). When a heap is
-  full, it falls back to the next acceptable type. A resource that finds no room for a new block in a type first takes
+- The allocator picks the memory type (`MemoryTypeSelector`: `DeviceLocal`, `Upload`, `Readback`, `Stream`). When a
+  heap is full, it falls back to the next acceptable type.
+- `Upload` is for copy sources (staging): system memory. `Stream` is for what the CPU writes and shaders read where it
+  lies each frame (draw records, indirect commands, a frame's constants): VRAM the CPU can map first. A resource that finds no room for a new block in a type first takes
   memory of its own there, with a Warning once.
 - It takes 64 MB blocks (an eighth of a smaller heap). It keeps buffers and optimal-tiling images in separate blocks, so
   `BufferImageGranularity` never applies. Resources of half a block or more, or that the driver asks for, get a

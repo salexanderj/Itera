@@ -274,37 +274,37 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         _draws = _allocator.CreateBuffer(
             slots * MaxRecords * (ulong)sizeof(MeshDraw),
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "mesh draws"
         );
         _commands = _allocator.CreateBuffer(
             slots * WorldLists * MaxDraws * (ulong)sizeof(DrawIndexedIndirectCommand),
             BufferUsageFlags.IndirectBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "mesh draw commands"
         );
         _lighting = _allocator.CreateBuffer(
             slots * (ulong)sizeof(MeshLighting),
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "mesh lighting"
         );
         _modelDraws = _allocator.CreateBuffer(
             slots * Lists * MaxModelRecords * (ulong)sizeof(MeshModelDraw),
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "mesh model draws"
         );
         _modelCommands = _allocator.CreateBuffer(
             slots * Lists * MaxModelCommands * (ulong)sizeof(DrawIndexedIndirectCommand),
             BufferUsageFlags.IndirectBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "mesh model commands"
         );
         _lights = _allocator.CreateBuffer(
             slots * MostLights * (ulong)sizeof(MeshLight),
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "mesh lights"
         );
         _clusters = _allocator.CreateBuffer(
@@ -316,7 +316,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         _look = _allocator.CreateBuffer(
             slots * (ulong)sizeof(LookConstants),
             BufferUsageFlags.StorageBufferBit,
-            MemoryUsage.Upload,
+            MemoryUsage.Stream,
             "look"
         );
         _shadowMap = _allocator.CreateImage(
@@ -612,10 +612,28 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         vk.CmdPushConstants(commandBuffer, _layout, Stages, 0, (uint)sizeof(ViewConstants), &constants);
         var assets = draws;
         var worldDraws = Math.Clamp(frame.Draws, 0, MaxDraws);
+        var models = Math.Clamp(frame.ModelCamera.Commands, 0, MaxModelCommands);
+        var fading = Math.Clamp(frame.ModelCamera.Faded, 0, models);
+        vk.CmdBindIndexBuffer(commandBuffer, Heap.Buffer, 0, IndexType.Uint16);
+        // The models shown whole before the ground, so the ground behind them (a wall, a building) fails the depth test
+        // before it is shaded; their time is part of the world's, their shadows part of the shadow maps'.
+        if (models > fading)
+        {
+            _timer.Begin(commandBuffer, timerSlot, GpuPass.Models);
+            vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _modelPipeline);
+            vk.CmdDrawIndexedIndirect(
+                commandBuffer,
+                ModelCommands.Buffer,
+                ModelCommandsOffset(slot, 0),
+                (uint)(models - fading),
+                (uint)sizeof(DrawIndexedIndirectCommand)
+            );
+            _timer.End(commandBuffer, timerSlot, GpuPass.Models);
+        }
+
         if (worldDraws > 0)
         {
             vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _meshPipeline);
-            vk.CmdBindIndexBuffer(commandBuffer, Heap.Buffer, 0, IndexType.Uint16);
             vk.CmdDrawIndexedIndirect(
                 commandBuffer,
                 Commands.Buffer,
@@ -625,39 +643,17 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             );
         }
 
-        var models = Math.Clamp(frame.ModelCamera.Commands, 0, MaxModelCommands);
-        if (models > 0)
+        // Those that fade after the ground: their shader may discard, so only what is drawn before can reject them.
+        if (fading > 0)
         {
-            // Part of the world's time; their shadows are part of the shadow maps'. The draws shown whole first, then
-            // those that fade.
-            var fading = Math.Clamp(frame.ModelCamera.Faded, 0, models);
-            _timer.Begin(commandBuffer, timerSlot, GpuPass.Models);
-            vk.CmdBindIndexBuffer(commandBuffer, Heap.Buffer, 0, IndexType.Uint16);
-            if (models > fading)
-            {
-                vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _modelPipeline);
-                vk.CmdDrawIndexedIndirect(
-                    commandBuffer,
-                    ModelCommands.Buffer,
-                    ModelCommandsOffset(slot, 0),
-                    (uint)(models - fading),
-                    (uint)sizeof(DrawIndexedIndirectCommand)
-                );
-            }
-
-            if (fading > 0)
-            {
-                vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _modelFadePipeline);
-                vk.CmdDrawIndexedIndirect(
-                    commandBuffer,
-                    ModelCommands.Buffer,
-                    ModelCommandsOffset(slot, 0) + (ulong)((models - fading) * sizeof(DrawIndexedIndirectCommand)),
-                    (uint)fading,
-                    (uint)sizeof(DrawIndexedIndirectCommand)
-                );
-            }
-
-            _timer.End(commandBuffer, timerSlot, GpuPass.Models);
+            vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Graphics, _modelFadePipeline);
+            vk.CmdDrawIndexedIndirect(
+                commandBuffer,
+                ModelCommands.Buffer,
+                ModelCommandsOffset(slot, 0) + (ulong)((models - fading) * sizeof(DrawIndexedIndirectCommand)),
+                (uint)fading,
+                (uint)sizeof(DrawIndexedIndirectCommand)
+            );
         }
 
         assets?.RecordCamera(commandBuffer, slot, in constants, timerSlot);
@@ -1222,10 +1218,15 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
             "mesh colour samples",
             samples: _samples
         );
+        // Sampled, though no shader reads it: RADV keeps depth compressed for the resolve only in an image a shader could
+        // read ("TC-compatible" metadata), and otherwise expands every sample first (0.15 ms at 1440p with 4 samples).
+        // Where the device cannot sample depth at this count, a plain transient image.
+        var sampled = (_context.Limits.SampledImageDepthSampleCounts & _samples) != 0;
         _msaaDepth = _allocator.CreateImage(
             DeviceRequirements.DepthFormat,
             extent,
-            ImageUsageFlags.DepthStencilAttachmentBit | ImageUsageFlags.TransientAttachmentBit,
+            ImageUsageFlags.DepthStencilAttachmentBit
+                | (sampled ? ImageUsageFlags.SampledBit : ImageUsageFlags.TransientAttachmentBit),
             ImageAspectFlags.DepthBit,
             "mesh depth samples",
             samples: _samples
