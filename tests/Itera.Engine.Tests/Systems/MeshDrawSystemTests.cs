@@ -5,6 +5,7 @@ using Itera.Engine.Commands;
 using Itera.Engine.Components;
 using Itera.Engine.Networking;
 using Itera.Engine.Rendering;
+using Itera.Engine.Rendering.Meshes;
 using Itera.Engine.Systems;
 using Itera.Engine.Tests.Rendering.Meshes;
 using Itera.Modding;
@@ -643,6 +644,242 @@ public sealed class MeshDrawSystemTests
         Assert.Equal(660, _instances.Count);
     }
 
+    [Fact]
+    public void With_culling_a_mesh_in_view_is_posed_and_one_behind_the_camera_outside_every_cascade_is_not()
+    {
+        using var world = World.Create();
+        var harness = new PoseCullingHarness();
+        using var system = Create(world, culling: harness.Culling);
+        world.Create(Placed(0, 0, -10), DrawnMesh.Of(2), MeshAnimator.Playing(0, 0.4f));
+        world.Create(Placed(0, 0, 60), DrawnMesh.Of(2), MeshAnimator.Playing(0, 0.4f));
+
+        CullingFrame(system, harness, 1, PoseCullingHarness.Ahead);
+
+        var instance = Assert.Single(_instances.Instances.ToArray());
+        Assert.Equal(-10, instance.Transform.Translation.Z, 1e-4f);
+        Assert.Equal(instance.Joints, _instances.PaletteJoints);
+        Assert.Equal((1, 1), (system.LastPosed, system.LastCulled));
+    }
+
+    [Fact]
+    public void With_culling_a_mesh_out_of_view_is_posed_while_it_casts_into_a_cascade()
+    {
+        using var world = World.Create();
+        var harness = new PoseCullingHarness();
+        using var system = Create(world, culling: harness.Culling);
+        // 40 m up, above the view, between the sun and the ground ahead; one that casts and one that does not.
+        world.Create(Placed(0, 40, -20), DrawnMesh.Of(2), MeshAnimator.Playing(0, 0.4f));
+        world.Create(
+            Placed(0, 40, -20),
+            DrawnMesh.Of(2, MeshInstances.NoTint, ModelShadow.None),
+            MeshAnimator.Playing(0, 0.4f)
+        );
+
+        CullingFrame(system, harness, 1, PoseCullingHarness.Ahead);
+        var casting = _instances.Instances.ToArray();
+        harness.View.Shadows = false;
+        CullingFrame(system, harness, 2, PoseCullingHarness.Ahead);
+
+        Assert.Equal(ModelShadow.Casts, Assert.Single(casting).Shadow);
+        Assert.True(Assert.Single(casting).Posed);
+        Assert.Equal(0, _instances.Count);
+    }
+
+    [Fact]
+    public void Without_a_camera_set_this_frame_every_mesh_is_posed()
+    {
+        using var world = World.Create();
+        var harness = new PoseCullingHarness();
+        using var system = Create(world, culling: harness.Culling);
+        world.Create(Placed(0, 0, 60), DrawnMesh.Of(2), MeshAnimator.Playing(0, 0.4f));
+        harness.View.BeginFrame(
+            PoseCullingHarness.Width,
+            PoseCullingHarness.Height,
+            PoseCullingHarness.Distance,
+            default
+        );
+
+        system.Update(new FrameTime(1f / 60, 0, 1, 1));
+
+        Assert.True(Assert.Single(_instances.Instances.ToArray()).Posed);
+        Assert.Equal((1, 0), (system.LastPosed, system.LastCulled));
+    }
+
+    [Fact]
+    public void With_culling_what_a_culled_holder_holds_is_left_out_and_shaped_holders_and_holders_of_drawn_meshes_are_posed()
+    {
+        using var world = World.Create();
+        var harness = new PoseCullingHarness(shadows: false);
+        var shaper = new TurningShaper();
+        using var system = Create(world, shaper: shaper, culling: harness.Culling);
+        var behind = world.Create(Placed(0, 0, 60), DrawnMesh.Of(2), MeshAnimator.Playing(0, 0.4f));
+        world.Create(DrawnMesh.Of(0), MeshAttachment.To(behind, 1, Vector3.Zero, Quaternion.Identity));
+        // Shaped, so posed wherever it is: a game's shaper may move its joints anywhere.
+        var shaped = world.Create(Placed(5, 0, 60), DrawnMesh.Of(2), MeshAnimator.Playing(0, 0.4f), new ShapedPose());
+        world.Create(DrawnMesh.Of(0), MeshAttachment.To(shaped, 1, Vector3.Zero, Quaternion.Identity));
+        // Beside the view, holding a box 30 m past its tip, which is in view.
+        var beside = world.Create(Placed(-40, 0, -10), DrawnMesh.Of(2), MeshAnimator.Playing(-1, 0, speed: 0));
+        world.Create(DrawnMesh.Of(0), MeshAttachment.To(beside, 1, new Vector3(30, 0, 0), Quaternion.Identity));
+
+        CullingFrame(system, harness, 1, PoseCullingHarness.Ahead);
+
+        Assert.NotEmpty(shaper.Shaped);
+        Assert.All(shaper.Shaped, entity => Assert.Equal(shaped, entity));
+        Assert.Equal((2, 1), (system.LastPosed, system.LastCulled));
+        var instances = _instances.Instances.ToArray();
+        Assert.Equal(4, instances.Length);
+        Assert.Equal([-40f, 5f], instances.Where(i => i.Asset == 2).Select(i => i.Transform.Translation.X).Order());
+        Assert.Equal(
+            [-9f, 6f],
+            instances.Where(i => i.Asset == 0).Select(i => MathF.Round(i.Transform.Translation.X, 3)).Order()
+        );
+    }
+
+    /// <summary>
+    /// A smoothed mesh changes clip in view, is culled for eight frames with the camera turned away, and comes back: its
+    /// slot is kept, and it is drawn as its twin, posed every frame without culling, is.
+    /// </summary>
+    [Fact]
+    public void With_culling_a_culled_smoothed_mesh_keeps_its_change_going_and_returns_as_if_drawn_throughout()
+    {
+        using var world = World.Create();
+        using var twinWorld = World.Create();
+        var harness = new PoseCullingHarness(shadows: false);
+        using var system = Create(world, culling: harness.Culling);
+        var twinInstances = new MeshInstances();
+        using var twinSystem = new MeshDrawSystem(twinWorld, twinInstances, _assets);
+        twinSystem.Initialize();
+        var mesh = world.Create(
+            Placed(0, 0, -10),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f, speed: 0),
+            SmoothedPose.Of(0.5f)
+        );
+        var twin = twinWorld.Create(
+            Placed(0, 0, -10),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f, speed: 0),
+            SmoothedPose.Of(0.5f)
+        );
+        void Both(ulong frame, CameraView camera)
+        {
+            CullingFrame(system, harness, frame, camera);
+            twinInstances.Clear();
+            twinSystem.Update(new FrameTime(1f / 60, frame / 60.0, frame, 1));
+        }
+
+        Both(1, PoseCullingHarness.Ahead);
+        world.Get<MeshAnimator>(mesh).FadeTo(-1, 0);
+        twinWorld.Get<MeshAnimator>(twin).FadeTo(-1, 0);
+        Both(2, PoseCullingHarness.Ahead);
+        var slot = world.Get<SmoothedPose>(mesh).Slot;
+        var culled = 0;
+        for (ulong frame = 3; frame < 11; frame++)
+        {
+            Both(frame, PoseCullingHarness.Behind);
+            culled += system.LastCulled;
+        }
+
+        var kept = system.Smoothing.Count;
+        Both(11, PoseCullingHarness.Ahead);
+
+        var drawn = Vector3.Transform(new Vector3(2, 0, 0), _instances.Palettes[1]);
+        var expected = Vector3.Transform(new Vector3(2, 0, 0), twinInstances.Palettes[1]);
+        Assert.Equal((8, 1, slot), (culled, kept, world.Get<SmoothedPose>(mesh).Slot));
+        Assert.True(Vector3.Distance(drawn, expected) < 1e-5f, $"Drawn at {drawn}, its twin at {expected}.");
+        // Still part way through the change, so the test sees the change going on.
+        var share = Share(expected, Tip(0, 0.4f), Tip(-1, 0));
+        Assert.InRange(share, 0.05f, 0.95f);
+    }
+
+    /// <summary>
+    /// A smoothed mesh is culled, changes clip while culled, and comes back: the change started from the pose last drawn
+    /// and is blending in, as its twin, posed every frame without culling, shows it.
+    /// </summary>
+    [Fact]
+    public void With_culling_a_change_marked_while_culled_blends_in_when_the_mesh_returns()
+    {
+        using var world = World.Create();
+        using var twinWorld = World.Create();
+        var harness = new PoseCullingHarness(shadows: false);
+        using var system = Create(world, culling: harness.Culling);
+        var twinInstances = new MeshInstances();
+        using var twinSystem = new MeshDrawSystem(twinWorld, twinInstances, _assets);
+        twinSystem.Initialize();
+        var mesh = world.Create(
+            Placed(0, 0, -10),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f, speed: 0),
+            SmoothedPose.Of(0.5f)
+        );
+        var twin = twinWorld.Create(
+            Placed(0, 0, -10),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f, speed: 0),
+            SmoothedPose.Of(0.5f)
+        );
+        void Both(ulong frame, CameraView camera)
+        {
+            CullingFrame(system, harness, frame, camera);
+            twinInstances.Clear();
+            twinSystem.Update(new FrameTime(1f / 60, frame / 60.0, frame, 1));
+        }
+
+        Both(1, PoseCullingHarness.Ahead);
+        Both(2, PoseCullingHarness.Behind);
+        world.Get<MeshAnimator>(mesh).FadeTo(-1, 0);
+        twinWorld.Get<MeshAnimator>(twin).FadeTo(-1, 0);
+        for (ulong frame = 3; frame < 6; frame++)
+        {
+            Both(frame, PoseCullingHarness.Behind);
+        }
+
+        Both(6, PoseCullingHarness.Ahead);
+
+        var drawn = Vector3.Transform(new Vector3(2, 0, 0), _instances.Palettes[1]);
+        var expected = Vector3.Transform(new Vector3(2, 0, 0), twinInstances.Palettes[1]);
+        Assert.True(Vector3.Distance(drawn, expected) < 1e-5f, $"Drawn at {drawn}, its twin at {expected}.");
+        // Still near the pose last drawn, not the new clip's at once.
+        Assert.True(Share(drawn, Tip(0, 0.4f), Tip(-1, 0)) > 0.5f, $"Drawn at {drawn}.");
+    }
+
+    [Fact]
+    public void Drawing_with_culling_allocates_nothing()
+    {
+        using var world = World.Create();
+        var harness = new PoseCullingHarness();
+        using var system = Create(world, shaper: new TurningShaper { Keep = false }, culling: harness.Culling);
+        var holder = world.Create(Placed(0, 0, -10), DrawnMesh.Of(2), MeshAnimator.Playing(0, 0.2f), new ShapedPose());
+        world.Create(DrawnMesh.Of(0), MeshAttachment.To(holder, 1, Vector3.UnitY, Quaternion.Identity));
+        var behind = world.Create(Placed(0, 0, 60), DrawnMesh.Of(2), MeshAnimator.Playing(0, 0.2f));
+        world.Create(DrawnMesh.Of(0), MeshAttachment.To(behind, 1, Vector3.UnitY, Quaternion.Identity));
+        var smoothed = MeshAnimator.Playing(0, 0.3f);
+        smoothed.FadeTo(-1, 0);
+        world.Create(Placed(0, 0, 70), DrawnMesh.Of(2), smoothed, SmoothedPose.Of());
+        world.Create(Placed(0, 2, -12), DrawnMesh.Of(2), MeshAnimator.Playing(0, 0.3f), SmoothedPose.Of());
+        harness.BeginFrame(PoseCullingHarness.Ahead);
+
+        // The list is cleared between frames by the loop; here every update adds three, far below the limit.
+        Assert.Equal(
+            0,
+            SystemAllocation.BytesAllocated(system, new FrameTime(1f / 240, 1, 1, 0.5f), warmup: 10, measured: 100)
+        );
+        Assert.Equal((2, 2), (system.LastPosed, system.LastCulled));
+        Assert.Equal(330, _instances.Count);
+    }
+
+    /// <summary>A placement at a point, unturned.</summary>
+    private static MeshPlacement Placed(float x, float y, float z) =>
+        MeshPlacement.At(new Vector3(x, y, z), Quaternion.Identity);
+
+    /// <summary>A frame as the loop runs it with a view: the instances cleared, the frame started, the camera set.</summary>
+    private void CullingFrame(MeshDrawSystem system, PoseCullingHarness harness, ulong frame, CameraView camera)
+    {
+        _instances.Clear();
+        harness.BeginFrame(in camera);
+        system.Update(new FrameTime(1f / 60, frame / 60.0, frame, 1));
+    }
+
     private static ConsoleCommands NewCommands() =>
         new(() => SessionRole.Offline, NullLogger<ConsoleCommands>.Instance);
 
@@ -714,9 +951,21 @@ public sealed class MeshDrawSystemTests
     private static float Share(Vector3 at, Vector3 from, Vector3 to) =>
         Vector3.Distance(at, to) / MathF.Max(Vector3.Distance(from, to), 1e-6f);
 
-    private MeshDrawSystem Create(World world, ConsoleCommands? commands = null, IMeshPoseShaper? shaper = null)
+    private MeshDrawSystem Create(
+        World world,
+        ConsoleCommands? commands = null,
+        IMeshPoseShaper? shaper = null,
+        MeshPoseCulling? culling = null
+    )
     {
-        var system = new MeshDrawSystem(world, _instances, _assets, commands: commands, shaper: shaper);
+        var system = new MeshDrawSystem(
+            world,
+            _instances,
+            _assets,
+            commands: commands,
+            shaper: shaper,
+            culling: culling
+        );
         system.Initialize();
         return system;
     }

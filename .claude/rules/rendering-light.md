@@ -1,7 +1,7 @@
 ---
 paths:
   - "src/Itera.Engine/Rendering/{ShadowCascades,PointLights}.cs"
-  - "src/Itera.Engine/Rendering/Meshes/{MeshPass,MeshView,CascadeBounds,SkyField,WorldMeshes.Sky,WorldMeshes.Lights}.cs"
+  - "src/Itera.Engine/Rendering/Meshes/{MeshPass,MeshView,ViewVolume,CascadeBounds,SkyField,WorldMeshes.Sky,WorldMeshes.Lights}.cs"
   - "src/Itera.Engine/Rendering/GpuData/MeshLighting.cs"
   - "src/Itera.Engine/Rendering/Shaders/{lighting.glsl,sky.glsl,mesh.frag,mesh-light.glsl,mesh-shade.glsl,mesh-clusters.comp,mesh-shadow.vert,depth-only.frag,world-sky.frag}"
   - "tests/Itera.Engine.Tests/Rendering/{ShadowCascadesTests,PointLightsTests}.cs"
@@ -20,6 +20,12 @@ The main pass draws the world, the models, and the mesh assets with one lighting
 cascades, and lights are shared by every list `MeshPass` draws. It writes the slot's `MeshLighting` record: the
 cascades, the sky field's corner and cell, and the light count.
 
+- `ViewVolume` holds the frustum, the fitted cascades, the pixels a metre covers (`PixelsPerMetre`), and the cascades'
+  texel widths. `MeshView` sets its own at `Begin` and passes these on.
+- `MeshView.Predict` sets another volume as `Begin` would, before the frame's `Begin`, with the image axis the view
+  carries. `MeshPoseCulling` culls the posed meshes by it (`rendering-mesh-assets.md`). Change the fit in
+  `ViewVolume` alone, so the two never differ.
+
 ### Shadow cascades
 
 `ShadowCascades.Fit` fits the sun's cascades to the view.
@@ -29,8 +35,8 @@ cascades, the sky field's corner and cell, and the light count.
 - The distant cascade is drawn only while the sun is low (`MeshView.DistantSunDegrees`) and fades in as it lowers
   (`MeshView.DistantStrength`, `MeshLighting.DistantStrength`). `MeshView.DistantShadows` says whether the frame draws
   it. Its casters reach further towards the sun (`DistantCasterShare`).
-- Each cascade is a square round the bounding sphere of its slice. Its centre snaps to whole texels. It reaches
-  towards the sun as far as the casters need, and further as the sun sinks (`MeshView.CasterReach`).
+- `ViewVolume.Set` fits them. Each cascade is a square round the bounding sphere of its slice. Its centre snaps to whole
+  texels. It reaches towards the sun as far as the casters need, and further as the sun sinks (`MeshView.CasterReach`).
 - While the sun moves, `MeshView` carries the maps' image axis from frame to frame (`ShadowCascades.ImageAxis`: the
   least turn that keeps it square to the sun, also overhead). A sun that never moved keeps the fit's own axis. A
   match's end forgets the sun (`MeshView.ForgetSun`).

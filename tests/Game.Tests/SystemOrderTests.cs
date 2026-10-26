@@ -37,8 +37,8 @@ public sealed class SystemOrderTests
         "CameraExtractSystem",
         "MinimapSystem",
         "LooseBodyModelSystem",
-        "MeshDrawSystem",
         "AtmosphereSystem",
+        "MeshDrawSystem",
     ];
 
     [Fact]

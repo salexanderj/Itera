@@ -31,10 +31,28 @@ engine system follows are in `systems.md`. Test classes: `MeshDrawSystemTests` a
   is posed, shaped, and smoothed this frame, and is not drawn once the holder is gone. A model's named point under a
   joint (`MeshPoint`) gives the attachment's joint, offset, and turn as it is.
 - `MeshPoses` (`Placed`, `Sample`, `JointInWorld`) poses a mesh as the system draws it, for a game that poses a body it
-  does not draw.
+  does not draw. Posing for hit shapes (`MeshPosePurpose.HitShapes`) is never culled.
 - `MeshAnimatorSystem` moves each clip's time on by its speed, so clips follow the match's time and stop while it is
   paused. It wraps both times of a looping clip together, moves the old clip and the fade on during a fade, and ends
   the fade a step after it is whole.
+
+### Posing only what a list may draw
+
+Given a `MeshPoseCulling`, `MeshDrawSystem` poses an animated mesh only when some list of the frame may draw it: the
+camera's view, a cascade it casts into as its `ModelShadow` allows, or an image view due this frame.
+
+- It tests a sphere round every pose of the asset (`MeshBounds.EveryPose`), grown by `MeshDrawSystem.BoundShare`, scaled
+  by the placement, and `CullMarginMetres` wider. Without a `MeshPoseCulling` it makes no such spheres.
+- A mesh with a `ShapedPose` is always posed. A game's shaper may move its joints anywhere: a ragdoll or a toppling body
+  posed from its physics bodies while its `MeshPlacement` stays where it died. Unshaped meshes, such as a swarm's, are
+  culled.
+- A mesh left out is neither sampled nor added to `MeshInstances`. `LastPosed` and `LastCulled` count them.
+- An attached mesh follows its holder: it is left out only when its holder is. A holder that may be culled is posed while
+  a mesh attached to it may be drawn: the holder's sphere grown by the attachment's offset and the mesh's own reach.
+- A smoothed mesh left out keeps its slot (`PoseSmoothing.Hold`). A change marked meanwhile starts from the pose last
+  drawn, and a change under way goes on, so it is drawn again as far through the change as posing every frame would
+  show. It starts still, with no speed from the poses before.
+- With no picture (a run without graphics) or no camera set this frame, every mesh is posed.
 
 ### The console's `meshes`
 

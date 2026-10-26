@@ -10,6 +10,7 @@ using Itera.Engine.Maths;
 using Itera.Engine.Particles;
 using Itera.Engine.Physics;
 using Itera.Engine.Rendering;
+using Itera.Engine.Rendering.Meshes;
 using Itera.Engine.Rendering.Voxels;
 using Itera.Engine.Settings;
 using Itera.Engine.Systems;
@@ -242,13 +243,15 @@ public static class MeshSampleServiceCollectionExtensions
             sp.GetRequiredService<VoxelTintSampler>(),
             sp.GetRequiredService<RenderView>()
         ));
+        // Last: it poses only what the frame's lists may draw, by the camera and the yard camera's view set before it.
         services.AddScoped<IFrameUpdateSystem>(sp => new MeshDrawSystem(
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<MeshInstances>(),
             sp.GetRequiredService<MeshAssets>(),
             null,
             sp.GetRequiredService<ConsoleCommands>(),
-            shifts: sp.GetRequiredService<OriginShifts>()
+            shifts: sp.GetRequiredService<OriginShifts>(),
+            culling: sp.GetRequiredService<MeshPoseCulling>()
         ));
     }
 }

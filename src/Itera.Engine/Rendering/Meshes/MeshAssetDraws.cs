@@ -12,7 +12,8 @@ namespace Itera.Engine.Rendering.Meshes;
 /// its largest scale) is culled against the frame's view and its two shadow cascades (<see cref="MeshView"/>) as its
 /// <see cref="ModelShadow"/> allows, then each list's draws are grouped by primitive with a counting sort, in the layout's
 /// order (so by pipeline range: <see cref="MeshAssetRange"/>): one indexed indirect command per primitive drawn, whose
-/// instances are its draws (<see cref="MeshAssetDraw"/>, one per instance and primitive). Draws and commands are built in
+/// instances are its draws (<see cref="MeshAssetDraw"/>, one per instance and primitive), the camera's nearest first by
+/// a counting sort of their distances into 16 buckets. Draws and commands are built in
 /// arrays of its own and copied into the slot's regions in address order. An instance that would take a list past
 /// <see cref="MeshAssetPass.MaxDraws"/> draws is left out of it, and the primitives past
 /// <see cref="MeshAssetPass.MaxCommands"/> commands (the last in the layout's order) are not drawn in it, each with one
@@ -66,6 +67,11 @@ public sealed partial class MeshAssetDraws
     private readonly DrawIndexedIndirectCommand[] _blendCommands = new DrawIndexedIndirectCommand[
         MeshAssetPass.MaxCommands
     ];
+
+    // The camera's list's instances nearest first, a counting sort of their keys into NearBuckets buckets (NearBucket).
+    private const int NearBuckets = 16;
+    private readonly int[] _nearOrder = new int[MeshInstances.MaxInstances];
+    private readonly int[] _nearStarts = new int[NearBuckets + 1];
     private bool _blendFullReported;
     private int[] _counts = [];
     private int[] _starts = [];
@@ -349,41 +355,6 @@ public sealed partial class MeshAssetDraws
     }
 
     /// <summary>
-    /// A posed instance's bounding sphere in its asset's space: the box round each joint's posed place grown by its reach
-    /// (times the joint's scale), and the asset's unmoved vertices' sphere; the asset's own sphere when no joint reaches.
-    /// </summary>
-    private static (Vector3 Centre, float Radius) PosedSphere(
-        in MeshAssetLayout.AssetPlace place,
-        MeshAssetLayout layout,
-        ReadOnlySpan<Matrix4x4> palette
-    )
-    {
-        var min = new Vector3(float.MaxValue);
-        var max = new Vector3(float.MinValue);
-        for (var j = 0; j < place.Joints; j++)
-        {
-            var reach = layout.JointReaches[place.FirstJoint + j];
-            if (!(reach >= 0))
-            {
-                continue;
-            }
-
-            var centre = Vector3.Transform(layout.JointPositions[place.FirstJoint + j], palette[j]);
-            var grow = new Vector3(reach * LargestScale(in palette[j]));
-            min = Vector3.Min(min, centre - grow);
-            max = Vector3.Max(max, centre + grow);
-        }
-
-        if (place.StaticRadius >= 0)
-        {
-            min = Vector3.Min(min, place.StaticCentre - new Vector3(place.StaticRadius));
-            max = Vector3.Max(max, place.StaticCentre + new Vector3(place.StaticRadius));
-        }
-
-        return min.X > max.X ? (place.Centre, place.Radius) : ((min + max) / 2, (max - min).Length() / 2);
-    }
-
-    /// <summary>
     /// The lists an instance is drawn in: the camera's and each image view's where its sphere may be seen, the cascades'
     /// where it may cast; and its sphere's centre's key for the blended sort (<see cref="MeshView.NearFirstKey"/>: the
     /// squared distance from the camera, or an orthographic view's depth), and each view's (in its keys at
@@ -418,11 +389,19 @@ public sealed partial class MeshAssetDraws
 
         var (localCentre, localRadius) =
             instance.Posed && PaletteFits(in instance, layout, palettes)
-                ? PosedSphere(in place, layout, palettes.Slice(instance.FirstJoint, instance.Joints))
+                ? MeshBounds.Posed(
+                    layout.JointPositions.AsSpan(place.FirstJoint, place.Joints),
+                    layout.JointReaches.AsSpan(place.FirstJoint, place.Joints),
+                    palettes.Slice(instance.FirstJoint, instance.Joints),
+                    place.StaticCentre,
+                    place.StaticRadius,
+                    place.Centre,
+                    place.Radius
+                )
                 : (place.Centre, place.Radius);
         var transform = instance.Transform;
         var centre = Vector3.Transform(localCentre, transform);
-        var radius = localRadius * LargestScale(in transform);
+        var radius = localRadius * MeshBounds.LargestScale(in transform);
         var seen = instance.Shadow != ModelShadow.Only && view.InView(centre, radius);
         distance = view.NearFirstKey(centre);
         var casts = instance.Shadow != ModelShadow.None && view.Shadows;
@@ -529,8 +508,12 @@ public sealed partial class MeshAssetDraws
             next += _counts[k];
         }
 
-        for (var i = 0; i < instances.Length; i++)
+        // The camera's draws nearest first in each primitive's run, so the depth test rejects hidden pixels before they are
+        // shaded; the cascades' and the views' keep the instances' order.
+        var ordered = bitIndex == 0 ? SortNearFirst(instances.Length) : instances.Length;
+        for (var n = 0; n < ordered; n++)
         {
+            var i = bitIndex == 0 ? _nearOrder[n] : n;
             if ((_lists[i] & bit) == 0)
             {
                 continue;
@@ -609,6 +592,48 @@ public sealed partial class MeshAssetDraws
         _commands.AsSpan(0, commands).CopyTo(commandsTarget);
         return new MeshAssetList(opaque, opaqueTwoSided, masked, maskedTwoSided, next);
     }
+
+    /// <summary>
+    /// Writes the camera's list's instances (bit 0 of their lists) into <c>_nearOrder</c> nearest first, by a counting sort
+    /// of their keys into <see cref="NearBuckets"/> buckets (<see cref="NearBucket"/>; in the order given within one), and
+    /// returns how many.
+    /// </summary>
+    private int SortNearFirst(int count)
+    {
+        Array.Clear(_nearStarts);
+        for (var i = 0; i < count; i++)
+        {
+            if ((_lists[i] & 1) != 0)
+            {
+                _nearStarts[NearBucket(_distances[i]) + 1]++;
+            }
+        }
+
+        for (var b = 1; b <= NearBuckets; b++)
+        {
+            _nearStarts[b] += _nearStarts[b - 1];
+        }
+
+        var total = _nearStarts[NearBuckets];
+        for (var i = 0; i < count; i++)
+        {
+            if ((_lists[i] & 1) != 0)
+            {
+                _nearOrder[_nearStarts[NearBucket(_distances[i])]++] = i;
+            }
+        }
+
+        return total;
+    }
+
+    /// <summary>
+    /// The bucket of a key nearest first (<see cref="MeshView.NearFirstKey"/>), 0 to <see cref="NearBuckets"/> - 1: its
+    /// float's exponent from 1 up. Bucket 0 holds the squared distances under 2 (nearer than about 1.41 m), and each one
+    /// after reaches √2 times as far, the last from about 181 m on (an orthographic view's depths: from 2 m, each twice
+    /// as far, the last from 32 km).
+    /// </summary>
+    private static int NearBucket(float key) =>
+        Math.Clamp((BitConverter.SingleToInt32Bits(MathF.Max(key, 0)) >> 23) - 127, 0, NearBuckets - 1);
 
     /// <summary>
     /// The blended list: each seen instance's blended primitives, instances sorted back to front (farthest first, then in
@@ -740,15 +765,6 @@ public sealed partial class MeshAssetDraws
             primitive.FirstVertex,
             (uint)(drawBase + index)
         );
-    }
-
-    /// <summary>The largest length an axis of the asset's space takes in the world's: the scale its bounding sphere grows by.</summary>
-    private static float LargestScale(in Matrix4x4 m)
-    {
-        var x = m.M11 * m.M11 + m.M12 * m.M12 + m.M13 * m.M13;
-        var y = m.M21 * m.M21 + m.M22 * m.M22 + m.M23 * m.M23;
-        var z = m.M31 * m.M31 + m.M32 * m.M32 + m.M33 * m.M33;
-        return MathF.Sqrt(Math.Max(x, Math.Max(y, z)));
     }
 
     [LoggerMessage(

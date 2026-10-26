@@ -67,6 +67,33 @@ public sealed class MeshAssetDrawsTests
     }
 
     [Fact]
+    public void The_cameras_draws_are_nearest_first_and_a_cascades_keep_the_instances_order()
+    {
+        _view.Begin(0, LookingAlongMinusZ(shadows: true));
+        float[] depths = [80, 5, 40, 10, 20];
+        var instances = depths
+            .Select(z => new MeshInstance(
+                0,
+                Matrix4x4.CreateTranslation(0, 0, -z),
+                MeshInstances.NoTint,
+                ModelShadow.Casts
+            ))
+            .ToArray();
+
+        var frame = _draws.Write(0, _view, instances);
+
+        Assert.Equal(depths.Length, frame.Camera.Draws);
+        Assert.Equal(
+            [-5f, -10f, -20f, -40f, -80f],
+            _targets.Draws(0, 0).Take(depths.Length).Select(d => d.Transform.Translation.Z)
+        );
+        // The far cascade's in the order given.
+        var far = _targets.Draws(0, 2).Take(frame.Far.Draws).Select(d => -d.Transform.Translation.Z).ToArray();
+        Assert.True(far.Length > 1, $"The far cascade drew {far.Length}.");
+        Assert.Equal(depths.Where(far.Contains), far);
+    }
+
+    [Fact]
     public void Instances_out_of_view_are_not_drawn()
     {
         _view.Begin(0, LookingAlongMinusZ(shadows: false));
@@ -272,11 +299,11 @@ public sealed class MeshAssetDrawsTests
         var frame = draws.Write(0, view, [middle, near, far], palettes);
 
         Assert.Equal((2, 4), (frame.SkinGroups, frame.SkinJoints));
-        // The draws in the instances' order: the middle one reads its asset's vertices, the far one the room's first
-        // copy, and the near one the next.
+        // The draws nearest first: the near one reads the room's second copy, the middle one its asset's vertices, and the
+        // far one the room's first copy.
         var written = targets.Draws(0, 0);
         var first = targets.SkinVertexBase(0) - targets.Layout.Assets[1].FirstVertex;
-        Assert.Equal((0, first + 3, first), (written[0].VertexDelta, written[1].VertexDelta, written[2].VertexDelta));
+        Assert.Equal((first + 3, 0, first), (written[0].VertexDelta, written[1].VertexDelta, written[2].VertexDelta));
     }
 
     [Fact]

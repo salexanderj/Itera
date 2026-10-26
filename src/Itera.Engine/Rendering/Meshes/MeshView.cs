@@ -7,8 +7,9 @@ namespace Itera.Engine.Rendering.Meshes;
 /// <summary>
 /// The frame's view for what <see cref="MeshPass"/> draws, shared by everything that lists draws in it (the world's
 /// blocks and models, <see cref="WorldMeshes"/>): the frustum (<see cref="InView"/>), the sun shadow cascades fitted to
-/// it (<see cref="ShadowCascades.Fit"/>, <see cref="NearCascade"/>, <see cref="FarCascade"/>, and with
-/// <c>Engine:Renderer:DistantShadowMetres</c> under a low sun <see cref="DistantCascade"/>) with the slot's lighting
+/// it (<see cref="ViewVolume"/>, <see cref="NearCascade"/>, <see cref="FarCascade"/>, and with
+/// <c>Engine:Renderer:DistantShadowMetres</c> under a low sun <see cref="DistantCascade"/>; <see cref="Predict"/> gives
+/// the same before the frame's <see cref="Begin"/>) with the slot's lighting
 /// record for <c>mesh.frag</c> and <c>mesh-shadow.vert</c>, and the frame's point lights (docs/rendering-redesign.md,
 /// stage 1.5 and phase 3). The drawers offer their lights (<see cref="Offer"/>: the world's glowing blocks), and
 /// <see cref="End"/> the events' (<see cref="PointLights"/>: beams, muzzle flashes, blasts); those within
@@ -83,10 +84,8 @@ public sealed class MeshView
     private readonly float _distantShadowMetres;
     private readonly int _lightBudget;
 
-    // The side planes of the view's frustum, facing in: left, right, bottom, top; each the inward normal (xyz) and the dot
-    // product a point on it has with that normal, relative to the camera (w: 0 through the camera, as a perspective view's
-    // are; an orthographic view's lie its half width or height out).
-    private readonly Vector4[] _planes = new Vector4[4];
+    // The frame's frustum and cascades.
+    private readonly ViewVolume _volume = new();
     private readonly MeshLight[] _offered = new MeshLight[MostOffered];
     private readonly float[] _offeredRanks = new float[MostOffered];
     private int _offeredCount;
@@ -109,53 +108,53 @@ public sealed class MeshView
     }
 
     /// <summary>The eye's position this frame, in world metres; an orthographic view's middle.</summary>
-    public Vector3 Position { get; private set; }
+    public Vector3 Position => _volume.Position;
 
     /// <summary>The unit view direction this frame.</summary>
-    public Vector3 Forward { get; private set; }
+    public Vector3 Forward => _volume.Forward;
 
     /// <summary>How far the view reaches this frame, in metres.</summary>
-    public float Distance { get; private set; }
+    public float Distance => _volume.Distance;
 
     /// <summary>True when the view's shadows are on this frame.</summary>
-    public bool Shadows { get; private set; }
+    public bool Shadows => _volume.Shadows;
 
     /// <summary>True when the view is orthographic this frame (<see cref="ViewSwitches.Orthographic"/>).</summary>
-    public bool Orthographic { get; private set; }
+    public bool Orthographic => _volume.Orthographic;
 
     /// <summary>Where the drawn depth starts along the view this frame (<see cref="ViewConstants.Near"/>).</summary>
-    public float Near { get; private set; }
+    public float Near => _volume.Near;
 
     /// <summary>Where an orthographic view's box ends along the view this frame (<see cref="ViewConstants.Far"/>).</summary>
-    public float Far { get; private set; }
+    public float Far => _volume.Far;
 
     /// <summary>
     /// How many pixels of the drawn image's height one metre across covers this frame: at one metre from the eye for a
     /// perspective view (divide by the distance along it), anywhere for an orthographic one. For choosing models' levels.
     /// </summary>
-    public float PixelsPerMetre { get; private set; }
+    public float PixelsPerMetre => _volume.PixelsPerMetre;
 
     /// <summary>The width of one texel of the near cascade's map this frame, in metres (0 without shadows).</summary>
-    public float NearTexelMetres { get; private set; }
+    public float NearTexelMetres => _volume.NearTexelMetres;
 
     /// <summary>The width of one texel of the far cascade's map this frame, in metres (0 without shadows).</summary>
-    public float FarTexelMetres { get; private set; }
+    public float FarTexelMetres => _volume.FarTexelMetres;
 
     /// <summary>The near cascade's casters this frame.</summary>
-    public CascadeBounds NearCascade { get; } = new();
+    public CascadeBounds NearCascade => _volume.NearCascade;
 
     /// <summary>The far cascade's casters this frame.</summary>
-    public CascadeBounds FarCascade { get; } = new();
+    public CascadeBounds FarCascade => _volume.FarCascade;
 
     /// <summary>The distant cascade's casters this frame, when <see cref="DistantShadows"/>.</summary>
-    public CascadeBounds DistantCascade { get; } = new();
+    public CascadeBounds DistantCascade => _volume.DistantCascade;
 
     /// <summary>
     /// True when the distant cascade is drawn this frame: the view's shadows on, <c>Engine:Renderer:DistantShadowMetres</c>
     /// set and reaching past the far cascade within the view's distance, and the sun under
     /// <see cref="DistantSunDegrees"/>.
     /// </summary>
-    public bool DistantShadows { get; private set; }
+    public bool DistantShadows => _volume.DistantShadows;
 
     /// <summary>Lights the last <see cref="End"/> wrote into its slot's list.</summary>
     public int LastLights { get; private set; }
@@ -169,57 +168,37 @@ public sealed class MeshView
     /// </summary>
     public void Begin(int slot, in ViewConstants view)
     {
-        Position = view.Position;
-        Forward = view.Forward;
-        Distance = view.MaxDistance;
-        Shadows = view.Has(ViewSwitches.Shadows);
-        Orthographic = view.Orthographic;
-        Near = view.Near;
-        Far = view.Far;
-        // The image's half height covers Up's length at a metre along the view (an orthographic box: in metres).
-        var half = view.Up.Length();
-        PixelsPerMetre = half > 0 ? view.Height / (2 * half) : 0;
+        // A sun that moves turns the maps' image axis as little as it turns (no jump as it passes overhead); a sun that
+        // has never moved keeps the fit's own.
+        _imageAxis = ImageAxisFor(view.SunDirection);
+        _lastSun = view.SunDirection;
         _offeredCount = 0;
-        SetPlanes(view.Forward, view.Right, view.Up);
-        WriteCascades(slot, in view);
+        _volume.Set(in view, _imageAxis, _shadowMapTexels, _distantShadowMetres);
+        WriteLighting(slot);
+    }
+
+    /// <summary>
+    /// Sets <paramref name="into"/> to the volume <see cref="Begin"/> would give <paramref name="view"/> now: the same
+    /// frustum and cascades, with the image axis the sun this view carries would take. Changes nothing of this view.
+    /// Main thread, before this frame's <see cref="Begin"/> (<see cref="MeshPoseCulling"/>).
+    /// </summary>
+    public void Predict(in ViewConstants view, ViewVolume into)
+    {
+        ArgumentNullException.ThrowIfNull(into);
+        into.Set(in view, ImageAxisFor(view.SunDirection), _shadowMapTexels, _distantShadowMetres);
     }
 
     /// <summary>
     /// True when the cube of half-size <paramref name="extent"/> at <paramref name="centre"/> may be seen: within the view
     /// distance ahead (an orthographic view: between its near and far ends) and inside each side plane.
     /// </summary>
-    public bool InView(Vector3 centre, float extent)
-    {
-        var offset = centre - Position;
-        var forward = Forward;
-        var ahead = Vector3.Dot(offset, forward);
-        var reach = extent * (MathF.Abs(forward.X) + MathF.Abs(forward.Y) + MathF.Abs(forward.Z));
-        var (first, last) = Orthographic ? (Near, Far) : (0f, Distance);
-        if (ahead + reach < first || ahead - reach > last)
-        {
-            return false;
-        }
-
-        foreach (var plane in _planes)
-        {
-            var spread = extent * (MathF.Abs(plane.X) + MathF.Abs(plane.Y) + MathF.Abs(plane.Z));
-            if (Vector3.Dot(new Vector3(plane.X, plane.Y, plane.Z), offset) - plane.W + spread < 0)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+    public bool InView(Vector3 centre, float extent) => _volume.InView(centre, extent);
 
     /// <summary>
     /// A key that orders points nearest the viewer first, 0 or more: the squared distance from the eye, or how far past an
     /// orthographic view's near end the point lies along it (no farther than 0). For sorting this frame's draws.
     /// </summary>
-    public float NearFirstKey(Vector3 point) =>
-        Orthographic
-            ? Math.Max(Vector3.Dot(point - Position, Forward) - Near, 0)
-            : Vector3.DistanceSquared(point, Position);
+    public float NearFirstKey(Vector3 point) => _volume.NearFirstKey(point);
 
     /// <summary>
     /// Offers a light of <paramref name="power"/> at <paramref name="position"/> for the frame's list: kept when it lies
@@ -283,132 +262,45 @@ public sealed class MeshView
     }
 
     /// <summary>
-    /// Fits the cascades to the view (<see cref="ShadowCascades.Fit"/>) and writes their record for <c>mesh.frag</c> and
-    /// <c>mesh-shadow.vert</c>: the near and far ones, and the distant one from where the far one starts to fade to
-    /// <c>Engine:Renderer:DistantShadowMetres</c> or the view's distance (<see cref="DistantShadows"/>).
+    /// The shadow maps' image axis for a sun along <paramref name="sun"/>: the last axis turned square to it when the sun
+    /// moved since the last frame (the fit's own, turned, when it first moves), else the last axis (zero: the fit's own).
     /// </summary>
-    private void WriteCascades(int slot, in ViewConstants view)
+    private Vector3 ImageAxisFor(Vector3 sun)
     {
-        // A sun that moves turns the maps' image axis as little as it turns (no jump as it passes overhead); a sun that
-        // has never moved keeps the fit's own.
-        var sun = view.SunDirection;
-        if (_lastSun != Vector3.Zero && sun != _lastSun)
+        if (_lastSun == Vector3.Zero || sun == _lastSun)
         {
-            var previous = _imageAxis != Vector3.Zero ? _imageAxis : ShadowCascades.ImageAxis(_lastSun, Vector3.Zero);
-            _imageAxis = ShadowCascades.ImageAxis(sun, previous);
+            return _imageAxis;
         }
 
-        _lastSun = sun;
-        var reach = CasterReach(sun);
-        var farEnd = Math.Max(Math.Min(FarShadowMetres, view.MaxDistance), 2 * NearShadowMetres);
-        var farStart = NearShadowMetres - NearBlendMetres;
-        // Each cascade's slice of the view's depth. An orthographic view's cascades lie round its middle, chosen by how
-        // far before or behind it a point lies (view.glsl's viewCascadeDepth), so each reaches both ways, within the box.
-        var (nearFirst, nearLast) = Slice(0, NearShadowMetres);
-        var (farFirst, farLast) = Slice(farStart, farEnd);
-        var near = ShadowCascades.Fit(
-            view.Position,
-            view.Forward,
-            view.Right,
-            view.Up,
-            nearFirst,
-            nearLast,
-            view.SunDirection,
-            _shadowMapTexels,
-            reach,
-            _imageAxis,
-            Orthographic,
-            view.Origin
-        );
-        var far = ShadowCascades.Fit(
-            view.Position,
-            view.Forward,
-            view.Right,
-            view.Up,
-            farFirst,
-            farLast,
-            view.SunDirection,
-            _shadowMapTexels,
-            reach,
-            _imageAxis,
-            Orthographic,
-            view.Origin
-        );
-        var farFadeStart = farEnd * (1 - FarFadeShare);
-        var distantEnd = Math.Min(_distantShadowMetres, view.MaxDistance);
-        var strength = DistantStrength(sun);
-        // An orthographic view's cascades are chosen by how far before or behind its middle a point lies: a box that ends
-        // before the far cascade fades would never read the distant one.
-        var reaches = !Orthographic || Math.Max(-view.Near, view.Far) > farFadeStart;
-        DistantShadows = Shadows && strength > 0 && distantEnd > farEnd && reaches;
-        var distant = default(CascadeFit);
-        if (DistantShadows)
-        {
-            var (distantFirst, distantLast) = Slice(farFadeStart, distantEnd);
-            distant = ShadowCascades.Fit(
-                view.Position,
-                view.Forward,
-                view.Right,
-                view.Up,
-                distantFirst,
-                distantLast,
-                view.SunDirection,
-                _shadowMapTexels,
-                reach * DistantCasterShare,
-                _imageAxis,
-                Orthographic,
-                view.Origin
-            );
-            DistantCascade.Set(
-                in distant,
-                _shadowMapTexels,
-                view.Position,
-                view.Forward,
-                _planes,
-                distantFirst,
-                distantLast,
-                view.SunDirection
-            );
-        }
+        var previous = _imageAxis != Vector3.Zero ? _imageAxis : ShadowCascades.ImageAxis(_lastSun, Vector3.Zero);
+        return ShadowCascades.ImageAxis(sun, previous);
+    }
 
-        NearCascade.Set(
-            in near,
-            _shadowMapTexels,
-            view.Position,
-            view.Forward,
-            _planes,
-            nearFirst,
-            nearLast,
-            view.SunDirection
-        );
-        FarCascade.Set(
-            in far,
-            _shadowMapTexels,
-            view.Position,
-            view.Forward,
-            _planes,
-            farFirst,
-            farLast,
-            view.SunDirection
-        );
-        NearTexelMetres = Shadows ? near.TexelMetres : 0;
-        FarTexelMetres = Shadows ? far.TexelMetres : 0;
+    /// <summary>
+    /// Writes the cascades' record for <c>mesh.frag</c> and <c>mesh-shadow.vert</c>: the near and far ones, and the
+    /// distant one from where the far one starts to fade to <c>Engine:Renderer:DistantShadowMetres</c> or the view's
+    /// distance (<see cref="DistantShadows"/>).
+    /// </summary>
+    private void WriteLighting(int slot)
+    {
+        var fits = _volume.Cascades;
+        var distant = DistantShadows;
         _pass.LightingOf(slot) = new MeshLighting
         {
-            Near = near.ViewProjection,
-            Far = far.ViewProjection,
+            Near = fits.Near.ViewProjection,
+            Far = fits.Far.ViewProjection,
             NearEnd = NearShadowMetres,
-            FarEnd = farEnd,
-            NearTexelMetres = near.TexelMetres,
-            FarTexelMetres = far.TexelMetres,
+            FarEnd = fits.FarEnd,
+            NearTexelMetres = fits.Near.TexelMetres,
+            FarTexelMetres = fits.Far.TexelMetres,
             Shadows = Shadows ? 1u : 0u,
-            NearBlendStart = farStart,
-            FarFadeStart = farFadeStart,
-            Distant = distant.ViewProjection,
-            DistantEnd = DistantShadows ? distantEnd : 0,
-            DistantTexelMetres = distant.TexelMetres,
-            DistantFadeStart = DistantShadows ? distantEnd * (1 - FarFadeShare) : 0,
-            DistantStrength = DistantShadows ? strength : 0,
+            NearBlendStart = fits.NearBlendStart,
+            FarFadeStart = fits.FarFadeStart,
+            Distant = fits.Distant.ViewProjection,
+            DistantEnd = distant ? fits.DistantEnd : 0,
+            DistantTexelMetres = fits.Distant.TexelMetres,
+            DistantFadeStart = distant ? fits.DistantEnd * (1 - FarFadeShare) : 0,
+            DistantStrength = distant ? fits.DistantStrength : 0,
         };
     }
 
@@ -421,23 +313,6 @@ public sealed class MeshView
     {
         var degrees = MathF.Asin(Math.Clamp(towardsSun.Y, -1, 1)) * 180 / MathF.PI;
         return Math.Clamp((DistantSunDegrees - degrees) / (DistantSunDegrees - DistantFullDegrees), 0, 1);
-    }
-
-    /// <summary>
-    /// The slice of view depth a cascade covers from <paramref name="first"/> to <paramref name="last"/>: those depths, or
-    /// in an orthographic view the depths no farther than <paramref name="last"/> before or behind its middle within its
-    /// box (a metre deep where the box misses them, so the fit has a slice; no point is then shaded from it).
-    /// </summary>
-    private (float First, float Last) Slice(float first, float last)
-    {
-        if (!Orthographic)
-        {
-            return (first, last);
-        }
-
-        var low = Math.Max(-last, Near);
-        var high = Math.Min(last, Far);
-        return (low, Math.Max(high, low + 1));
     }
 
     /// <summary>
@@ -465,34 +340,5 @@ public sealed class MeshView
 
         var tangent = sine / MathF.Sqrt(Math.Max(1 - (sine * sine), 1e-12f));
         return Math.Clamp(CasterMetres * s_casterTangent / tangent, CasterMetres, MostCasterMetres);
-    }
-
-    /// <summary>
-    /// The frustum's side planes from the view's axes (right and up reach the image's edges at unit forward, or
-    /// orthographically at their length in metres from the middle).
-    /// </summary>
-    private void SetPlanes(Vector3 forward, Vector3 right, Vector3 up)
-    {
-        if (Orthographic)
-        {
-            var across = right.Length();
-            var high = up.Length();
-            _planes[0] = new Vector4(right / across, -across);
-            _planes[1] = new Vector4(-right / across, -across);
-            _planes[2] = new Vector4(up / high, -high);
-            _planes[3] = new Vector4(-up / high, -high);
-            return;
-        }
-
-        _planes[0] = new Vector4(InwardNormal(Vector3.Cross(forward - right, up), forward), 0);
-        _planes[1] = new Vector4(InwardNormal(Vector3.Cross(forward + right, up), forward), 0);
-        _planes[2] = new Vector4(InwardNormal(Vector3.Cross(forward - up, right), forward), 0);
-        _planes[3] = new Vector4(InwardNormal(Vector3.Cross(forward + up, right), forward), 0);
-    }
-
-    private static Vector3 InwardNormal(Vector3 normal, Vector3 forward)
-    {
-        normal = Vector3.Normalize(normal);
-        return Vector3.Dot(normal, forward) < 0 ? -normal : normal;
     }
 }

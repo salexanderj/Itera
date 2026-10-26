@@ -45,8 +45,10 @@ registers what they share: `PlayArea` (round the match's grid, or `PlayArea.With
 - `ReplicationReceiveSystem` runs early and `ReplicationSendSystem` last (`.claude/rules/replication.md`).
 - `MapResetSystem` runs after the origin and after the game's spawns.
 - `MeshAnimatorSystem` runs after every system that chooses a clip.
-- `MeshDrawSystem` (frame) runs after `LooseBodyModelSystem`. `CameraExtractSystem` (frame) runs after every system
-  that moves the camera, including a game's roll and zoom.
+- `MeshDrawSystem` (frame) runs after `LooseBodyModelSystem`. With a `MeshPoseCulling` it culls by the camera, the sun,
+  and the image views set so far, so it runs after `CameraExtractSystem`, `AtmosphereSystem`, and every system that asks
+  for an image view. `GameLoop` warns once a run when one of them changes after it.
+- `CameraExtractSystem` (frame) runs after every system that moves the camera, including a game's roll and zoom.
 
 ### The player
 

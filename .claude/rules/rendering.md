@@ -58,6 +58,8 @@ This file is the core. The sub-areas have their own files, each loaded with its 
   (`RenderView.CameraOverride`, a `CameraPlace`), through the camera's lens. `RenderView.Camera` stays the camera's
   own, so the listener and the streaming follow it. `ShiftCamera` moves the override with the origin, and
   `ResetAfterMatch` clears it.
+- `RenderView.CreateView` makes the frame's view constants. `RenderView.TryFrameView` gives them to the frame systems
+  (`rendering-mesh-assets.md`).
 
 ### Under a moved origin
 

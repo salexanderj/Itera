@@ -1,10 +1,10 @@
 ---
 paths:
   - "src/Itera.Engine/Rendering/MeshInstances.cs"
-  - "src/Itera.Engine/Rendering/Meshes/{MeshAssetDraws,MeshAssetPass,MeshAssetPass.Resources,MeshAssetLayout,MeshAssetFrame}.cs"
+  - "src/Itera.Engine/Rendering/Meshes/{MeshAssetDraws,MeshAssetPass,MeshAssetPass.Resources,MeshAssetLayout,MeshAssetFrame,MeshBounds,MeshPoseCulling}.cs"
   - "src/Itera.Engine/Rendering/GpuData/{MeshAssetDraw,MeshAssetMaterial,MeshSkinGroup,MeshSkinVertex}.cs"
   - "src/Itera.Engine/Rendering/Shaders/{mesh-asset-data.glsl,mesh-asset.vert,mesh-asset.frag,mesh-asset-shadow.vert,mesh-asset-shadow.frag,mesh-skin.comp}"
-  - "tests/Itera.Engine.Tests/Rendering/Meshes/{MeshAssetDrawsTests,MeshAssetPassTests}.cs"
+  - "tests/Itera.Engine.Tests/Rendering/Meshes/{MeshAssetDrawsTests,MeshAssetPassTests,MeshPoseCullingTests}.cs"
 ---
 
 ## Drawing mesh assets
@@ -24,6 +24,23 @@ their import, and their rigs are in `mesh-assets.md`. Related files: `rendering.
 - A skinned asset drawn posed (`AddPosed`) also gives its rig's skinning matrices (`Rig.WritePalette`), kept in the
   frame's pool (`MeshInstances.Palettes`).
 
+### Culling before the posing
+
+`MeshPoseCulling` (run-wide) tells a frame system what the frame's lists may draw, so it poses nothing else.
+
+- `GameLoop` gives `RenderView` the picture's size, the view's distance, and the origin before the frame systems
+  (`RenderView.BeginFrame`). `RenderView.TryFrameView` then gives the view the frame will have, once a frame system set
+  the camera. `GameLoop` builds the frame's own view by the same `RenderView.CreateView`.
+- `Begin` fits the camera's volume (`MeshView.Predict`), and each due image view's frustum alone
+  (`ViewVolume.SetFrustum`: image views draw no shadows). It returns false without a picture
+  or a camera set this frame: then nothing is culled.
+- `MayDraw` tests a sphere as `MeshAssetDraws` tests an instance: the camera's view, the near and far cascades as its
+  shadow allows, and each due image view.
+- `GameLoop` calls `Check` after the views begin. When the camera, the sun, or the views due differ from those culled
+  by, it warns once a run. A change of the shadows' switch alone is not checked: the settings turn it during the UI.
+- `MeshBounds` holds the spheres: a posed instance's (`Posed`), and one round every pose of an asset (`EveryPose`: the
+  rest pose and each clip at `MeshBounds.SamplesPerClip` times).
+
 ### The draw lists
 
 `MeshAssetDraws.Write` runs on the main thread after `WorldMeshes.Upload` and before `MeshView.End`.
@@ -33,6 +50,9 @@ their import, and their rigs are in `mesh-assets.md`. Related files: `rendering.
   posed places grown by their reaches (`MeshAssetLayout.JointPositions` and `JointReaches`), and its unweighted
   vertices' sphere.
 - It groups the draws by asset primitive with a counting sort.
+- The camera's list puts each primitive's draws nearest first, so the depth test rejects hidden pixels before they are
+  shaded. A counting sort takes the distances into 16 buckets by their float's exponent. The cascades' and the image
+  views' lists keep the instances' order.
 - It writes into the frame slot's regions one `DrawIndexedIndirectCommand` per primitive with instances. The command's
   `vertexOffset` is the asset's first vertex and its `firstInstance` its first `MeshAssetDraw`: the transform, the
   material, the tint, and the vertex delta.
@@ -137,4 +157,4 @@ ranges and cast no shadow.
 
 ### Tests
 
-`MeshAssetDrawsTests` and `MeshAssetPassTests`.
+`MeshAssetDrawsTests`, `MeshAssetPassTests`, and `MeshPoseCullingTests`.

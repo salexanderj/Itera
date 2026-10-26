@@ -9,6 +9,7 @@ using Itera.Engine.Ecs;
 using Itera.Engine.Matches;
 using Itera.Engine.Maths;
 using Itera.Engine.Rendering;
+using Itera.Engine.Rendering.Meshes;
 using Itera.Engine.Voxels;
 using Itera.Modding;
 
@@ -16,7 +17,8 @@ namespace Itera.Engine.Systems;
 
 /// <summary>
 /// Hands every placed mesh asset to the renderer (<see cref="MeshInstances"/>) (frame group, after
-/// <c>CameraExtractSystem</c> and <see cref="LooseBodyModelSystem"/>, before <c>AtmosphereSystem</c>): each entity with a
+/// <c>CameraExtractSystem</c>, the systems that ask for image views or set the atmosphere, and
+/// <see cref="LooseBodyModelSystem"/>): each entity with a
 /// <see cref="MeshPlacement"/> and a <see cref="DrawnMesh"/> is drawn where it is between the last two fixed steps, its
 /// pose blended by <see cref="FrameTime.Alpha"/> and scaled; one that also has a <see cref="MeshAnimator"/> is posed by
 /// its clip at the blend of its last two times (its rig's skinning matrices, <c>Rig.WritePalette</c>), and while it fades
@@ -26,7 +28,12 @@ namespace Itera.Engine.Systems;
 /// starts from the pose drawn the frame before, moving as it was). An entity with a <see cref="MeshAttachment"/> is drawn
 /// at its holder's joint as the holder is posed this frame (<see cref="MeshPoses"/>; a smoothed holder as it was
 /// drawn). A hidden mesh (<see cref="ModelShadow.Hidden"/>) is not posed or drawn, nor is one attached to a hidden
-/// holder. Reads those; writes only the
+/// holder. With a <see cref="MeshPoseCulling"/>, an animated mesh without a <see cref="ShapedPose"/> is posed only when
+/// some list of the frame may draw it (the camera's view, a shadow cascade it casts into, an image view due), tested by a
+/// sphere round its every pose (<see cref="MeshBounds.EveryPose"/>), or when what it holds may be drawn; one left out
+/// keeps its smoothing (<see cref="PoseSmoothing.Hold"/>), and what it holds is left out too. A shaped one is always
+/// posed: a game's shaper may move its joints anywhere. Without a camera set this frame, or a picture, every one is
+/// posed. Reads those; writes only the
 /// slot a <see cref="SmoothedPose"/> keeps. Registers the console's <c>meshes</c> (the run's assets and their clips; placing one or many in
 /// front of the camera, on the ground where a voxel world is, playing a clip or held at a time of it, tagged
 /// <see cref="ConsoleMesh"/>; removing those).
@@ -38,6 +45,15 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
 
     /// <summary>The most meshes <c>meshes test</c> places.</summary>
     public const int MostTest = 4096;
+
+    /// <summary>
+    /// The share an asset's sphere round its sampled poses grows by before it culls: for poses between the samples, blends
+    /// of clips, and a game's shaping.
+    /// </summary>
+    public const float BoundShare = 0.25f;
+
+    /// <summary>How much wider than its grown sphere a mesh is culled, in metres: past a cascade's snap of half a texel.</summary>
+    public const float CullMarginMetres = 0.5f;
 
     private static readonly QueryDescription s_static = new QueryDescription()
         .WithAll<MeshPlacement, DrawnMesh>()
@@ -58,10 +74,26 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     private readonly ConsoleCommands? _commands;
     private readonly IMeshPoseShaper? _shaper;
     private readonly OriginShifts? _shifts;
+    private readonly MeshPoseCulling? _culling;
     private readonly PoseSmoothing _smoothing = new();
     private JointTransform[] _locals = [];
     private JointTransform[] _fromLocals = [];
     private Matrix4x4[] _globals = [];
+
+    // Each asset's sphere round every pose in its own space (MeshBounds.EveryPose, grown by BoundShare), and how far from
+    // its origin an attached one reaches (its bound sphere's centre's distance plus its radius).
+    private Vector3[] _boundCentres = [];
+    private float[] _boundRadii = [];
+    private float[] _originReaches = [];
+
+    // This frame: whether the culling runs, and the holders that a mesh attached to them may be drawn with, posed then
+    // whatever their own test says, sorted by their ids (beside them).
+    private bool _culls;
+    private Entity[] _holders = new Entity[16];
+    private int[] _holderIds = new int[16];
+    private int _holderCount;
+    private int _posed;
+    private int _culled;
 
     /// <param name="world">The ECS world.</param>
     /// <param name="instances">The frame's mesh instances.</param>
@@ -70,6 +102,10 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     /// <param name="commands">The console's commands, for <c>meshes</c>; none in tests.</param>
     /// <param name="shaper">The game's shaping of the poses with a <see cref="ShapedPose"/>; none leaves them as sampled.</param>
     /// <param name="shifts">The match's origin, which <c>meshes place NAME at</c> reads world positions from; none refuses it.</param>
+    /// <param name="culling">
+    /// What the frame's lists may draw, by which a posed mesh no list would draw is neither posed nor drawn; none poses
+    /// every one.
+    /// </param>
     public MeshDrawSystem(
         World world,
         MeshInstances instances,
@@ -77,10 +113,12 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
         VoxelWorld? voxels = null,
         ConsoleCommands? commands = null,
         IMeshPoseShaper? shaper = null,
-        OriginShifts? shifts = null
+        OriginShifts? shifts = null,
+        MeshPoseCulling? culling = null
     )
         : base(world)
     {
+        _culling = culling;
         _shifts = shifts;
         _shaper = shaper;
         _instances = instances;
@@ -107,6 +145,12 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
         _locals = new JointTransform[most];
         _fromLocals = new JointTransform[most];
         _globals = new Matrix4x4[most];
+        // Only a system that culls needs the spheres round every pose.
+        if (_culling is not null)
+        {
+            FindBounds();
+        }
+
         _commands?.Register(
             "meshes",
             "[place NAME [at X Y Z YAW] [SCALE] [CLIP [SECONDS]] | test COUNT [NAME [CLIP]] | clear]",
@@ -119,87 +163,33 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     /// <summary>The smoothed meshes' last poses (for tests).</summary>
     public PoseSmoothing Smoothing => _smoothing;
 
+    /// <summary>The posed meshes the last frame posed: those some list may draw, or every one without culling.</summary>
+    public int LastPosed { get; private set; }
+
+    /// <summary>The posed meshes the last frame left out: no list would draw them, nor what they hold.</summary>
+    public int LastCulled { get; private set; }
+
     public override void Update(in FrameTime time)
     {
+        _culls = _culling is not null && _culling.Begin();
+        _posed = 0;
+        _culled = 0;
+        _holderCount = 0;
+        if (_culls)
+        {
+            FindHolders(time.Alpha);
+        }
+
         var still = new AddMeshes { Instances = _instances, Alpha = time.Alpha };
         World.InlineQuery<AddMeshes, MeshPlacement, DrawnMesh>(in s_static, ref still);
-        var posed = new AddPosed
+        foreach (ref var chunk in World.Query(in s_posed))
         {
-            Instances = _instances,
-            Assets = _assets,
-            Locals = _locals,
-            FromLocals = _fromLocals,
-            Alpha = time.Alpha,
-        };
-        World.InlineQuery<AddPosed, MeshPlacement, DrawnMesh, MeshAnimator>(in s_posed, ref posed);
+            Pose(ref chunk, in time);
+        }
+
         foreach (ref var chunk in World.Query(in s_shaped))
         {
-            var placements = chunk.GetSpan<MeshPlacement>();
-            var meshes = chunk.GetSpan<DrawnMesh>();
-            var animators = chunk.GetSpan<MeshAnimator>();
-            var shaped = chunk.Has<ShapedPose>();
-            var smoothed = chunk.Has<SmoothedPose>();
-            var smoothings = smoothed ? chunk.GetSpan<SmoothedPose>() : default;
-            foreach (var index in chunk)
-            {
-                ref readonly var mesh = ref meshes[index];
-                if (mesh.Shadow == ModelShadow.Hidden)
-                {
-                    continue;
-                }
-
-                var entity = chunk.Entity(index);
-                var transform = MeshPoses.Placed(in placements[index], time.Alpha);
-                if (
-                    !MeshPoses.Sample(
-                        _assets,
-                        mesh.Asset,
-                        in animators[index],
-                        time.Alpha,
-                        _locals,
-                        _fromLocals,
-                        out var rig
-                    )
-                )
-                {
-                    _instances.Add(mesh.Asset, in transform, mesh.Tint, mesh.Shadow);
-                    continue;
-                }
-
-                var locals = _locals.AsSpan(0, rig.JointCount);
-                if (shaped)
-                {
-                    _shaper?.Shape(World, entity, rig, locals, _globals, time.Alpha, MeshPosePurpose.Drawing);
-                }
-
-                // The pose as drawn, shaping and all, so a switch of the game's own layer is smoothed as a clip's change.
-                if (smoothed)
-                {
-                    ref var smoothing = ref smoothings[index];
-                    smoothing.Slot = _smoothing.Smooth(
-                        entity,
-                        smoothing.Slot,
-                        animators[index].Changes,
-                        smoothing.Seconds,
-                        locals,
-                        time.DeltaSeconds,
-                        time.FrameIndex
-                    );
-                }
-
-                var palette = _instances.AddPosed(
-                    mesh.Asset,
-                    in transform,
-                    rig.JointCount,
-                    mesh.Tint,
-                    mesh.Shadow,
-                    mesh.SkinFirst
-                );
-                if (!palette.IsEmpty)
-                {
-                    rig.WritePalette(locals, palette);
-                }
-            }
+            Pose(ref chunk, in time);
         }
 
         foreach (ref var chunk in World.Query(in s_attached))
@@ -212,28 +202,281 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
             }
         }
 
-        // A smoothed mesh not drawn this frame is gone, or no longer smoothed.
+        // A smoothed mesh neither drawn nor held this frame is gone, or no longer smoothed.
         _smoothing.Sweep(time.FrameIndex);
+        LastPosed = _posed;
+        LastCulled = _culled;
     }
 
-    /// <summary>A mesh at its holder's joint, the holder posed (and shaped) as it is drawn this frame.</summary>
+    /// <summary>
+    /// Poses each mesh of a chunk of animated ones that some list may draw: its clip sampled at the blend of its last two
+    /// times (wrapped by a looping clip's length), shaped where it has a <see cref="ShapedPose"/>, smoothed where it has a
+    /// <see cref="SmoothedPose"/>, and its rig's skinning matrices written where <see cref="MeshInstances.AddPosed"/> keeps
+    /// them; a static asset, or a rig larger than the room made at the start, is drawn as its asset stores it. One no list
+    /// would draw (<see cref="MayDraw"/>) and holding nothing drawn is left out, a smoothed one's slot held; a shaped one
+    /// never is, as a game's shaper may move its joints anywhere.
+    /// </summary>
+    private void Pose(ref Chunk chunk, in FrameTime time)
+    {
+        var placements = chunk.GetSpan<MeshPlacement>();
+        var meshes = chunk.GetSpan<DrawnMesh>();
+        var animators = chunk.GetSpan<MeshAnimator>();
+        var shaped = chunk.Has<ShapedPose>();
+        var smoothed = chunk.Has<SmoothedPose>();
+        var smoothings = smoothed ? chunk.GetSpan<SmoothedPose>() : default;
+        foreach (var index in chunk)
+        {
+            ref readonly var mesh = ref meshes[index];
+            if (mesh.Shadow == ModelShadow.Hidden)
+            {
+                continue;
+            }
+
+            var entity = chunk.Entity(index);
+            var transform = MeshPoses.Placed(in placements[index], time.Alpha);
+            if (_culls && !shaped && !MayDraw(mesh.Asset, in transform, mesh.Shadow) && !Holds(entity))
+            {
+                _culled++;
+                if (smoothed)
+                {
+                    ref readonly var held = ref smoothings[index];
+                    _smoothing.Hold(
+                        entity,
+                        held.Slot,
+                        animators[index].Changes,
+                        held.Seconds,
+                        time.DeltaSeconds,
+                        time.FrameIndex
+                    );
+                }
+
+                continue;
+            }
+
+            _posed++;
+            if (
+                !MeshPoses.Sample(
+                    _assets,
+                    mesh.Asset,
+                    in animators[index],
+                    time.Alpha,
+                    _locals,
+                    _fromLocals,
+                    out var rig
+                )
+            )
+            {
+                _instances.Add(mesh.Asset, in transform, mesh.Tint, mesh.Shadow);
+                continue;
+            }
+
+            var locals = _locals.AsSpan(0, rig.JointCount);
+            if (shaped)
+            {
+                _shaper?.Shape(World, entity, rig, locals, _globals, time.Alpha, MeshPosePurpose.Drawing);
+            }
+
+            // The pose as drawn, shaping and all, so a switch of the game's own layer is smoothed as a clip's change.
+            if (smoothed)
+            {
+                ref var smoothing = ref smoothings[index];
+                smoothing.Slot = _smoothing.Smooth(
+                    entity,
+                    smoothing.Slot,
+                    animators[index].Changes,
+                    smoothing.Seconds,
+                    locals,
+                    time.DeltaSeconds,
+                    time.FrameIndex
+                );
+            }
+
+            var palette = _instances.AddPosed(
+                mesh.Asset,
+                in transform,
+                rig.JointCount,
+                mesh.Tint,
+                mesh.Shadow,
+                mesh.SkinFirst
+            );
+            if (!palette.IsEmpty)
+            {
+                rig.WritePalette(locals, palette);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The sphere round each asset's every pose (<see cref="MeshBounds.EveryPose"/>, once for the assets that share a rig
+    /// and vertices: a model's variants), grown by <see cref="BoundShare"/>, and how far an attached one reaches from its
+    /// origin.
+    /// </summary>
+    private void FindBounds()
+    {
+        _boundCentres = new Vector3[_assets.Count];
+        _boundRadii = new float[_assets.Count];
+        _originReaches = new float[_assets.Count];
+        var shared = new Dictionary<(Rig, Array), (Vector3, float)>();
+        for (var i = 0; i < _assets.Count; i++)
+        {
+            if (!_assets.TryGet(i, out var asset))
+            {
+                continue;
+            }
+
+            (Vector3 Centre, float Radius) bound;
+            if (asset.Rig is not { } rig)
+            {
+                bound = MeshBounds.EveryPose(asset);
+            }
+            else if (!shared.TryGetValue((rig, asset.Vertices), out bound))
+            {
+                bound = MeshBounds.EveryPose(asset);
+                shared[(rig, asset.Vertices)] = bound;
+            }
+
+            _boundCentres[i] = bound.Centre;
+            _boundRadii[i] = bound.Radius * (1 + BoundShare);
+            var (centre, radius) = MeshBounds.Bind(asset);
+            _originReaches[i] = centre.Length() + radius;
+        }
+    }
+
+    /// <summary>
+    /// True when a mesh of <paramref name="asset"/> placed by <paramref name="transform"/>, in any pose, may be drawn in a
+    /// list this frame as its <paramref name="shadow"/> allows (<see cref="MeshPoseCulling.MayDraw"/>): its sphere round
+    /// every pose, scaled, and <see cref="CullMarginMetres"/> wider.
+    /// </summary>
+    private bool MayDraw(int asset, in Matrix4x4 transform, ModelShadow shadow)
+    {
+        if ((uint)asset >= (uint)_boundRadii.Length)
+        {
+            return true;
+        }
+
+        var centre = Vector3.Transform(_boundCentres[asset], transform);
+        var radius = _boundRadii[asset] * MeshBounds.LargestScale(in transform) + CullMarginMetres;
+        return _culling!.MayDraw(centre, radius, shadow);
+    }
+
+    /// <summary>
+    /// True when <paramref name="mesh"/>, attached to a holder of <paramref name="holderAsset"/> placed by
+    /// <paramref name="placed"/>, may be drawn this frame: the holder's sphere round every pose (which holds its joints)
+    /// grown by the attachment's offset and the mesh's reach from its origin, scaled, and <see cref="CullMarginMetres"/>
+    /// wider.
+    /// </summary>
+    private bool AttachedMayDraw(in MeshAttachment attachment, in DrawnMesh mesh, int holderAsset, in Matrix4x4 placed)
+    {
+        if ((uint)holderAsset >= (uint)_boundRadii.Length || (uint)mesh.Asset >= (uint)_originReaches.Length)
+        {
+            return true;
+        }
+
+        var centre = Vector3.Transform(_boundCentres[holderAsset], placed);
+        var reach = _boundRadii[holderAsset] + attachment.Offset.Length() + _originReaches[mesh.Asset];
+        return _culling!.MayDraw(centre, reach * MeshBounds.LargestScale(in placed) + CullMarginMetres, mesh.Shadow);
+    }
+
+    /// <summary>
+    /// The holders that may be culled (animated, not shaped) and that a mesh attached to them may be drawn with this frame
+    /// (<see cref="AttachedMayDraw"/>), sorted by their ids: each is posed whatever its own test says, so what it holds is
+    /// drawn at its posed joint.
+    /// </summary>
+    private void FindHolders(float alpha)
+    {
+        var count = World.CountEntities(in s_attached);
+        if (_holders.Length < count)
+        {
+            _holders = new Entity[Math.Max(count, _holders.Length * 2)];
+            _holderIds = new int[_holders.Length];
+        }
+
+        foreach (ref var chunk in World.Query(in s_attached))
+        {
+            var attachments = chunk.GetSpan<MeshAttachment>();
+            var meshes = chunk.GetSpan<DrawnMesh>();
+            foreach (var index in chunk)
+            {
+                ref readonly var attachment = ref attachments[index];
+                ref readonly var mesh = ref meshes[index];
+                if (
+                    _holderCount < _holders.Length
+                    && HolderOf(in attachment, in mesh, alpha, out var holder)
+                    && MayCull(attachment.Holder)
+                    && AttachedMayDraw(in attachment, in mesh, holder.Asset, holder.Placed)
+                )
+                {
+                    _holders[_holderCount] = attachment.Holder;
+                    _holderIds[_holderCount++] = attachment.Holder.Id;
+                }
+            }
+        }
+
+        Array.Sort(_holderIds, _holders, 0, _holderCount);
+    }
+
+    /// <summary>True when <paramref name="entity"/> holds a mesh that may be drawn this frame (<see cref="FindHolders"/>).</summary>
+    private bool Holds(Entity entity)
+    {
+        if (_holderCount == 0)
+        {
+            return false;
+        }
+
+        // Entries of one id are one holder, listed once for each mesh it holds.
+        var found = Array.BinarySearch(_holderIds, 0, _holderCount, entity.Id);
+        return found >= 0 && _holders[found] == entity;
+    }
+
+    /// <summary>True when the culling may leave out <paramref name="holder"/>: it is animated, and not shaped.</summary>
+    private bool MayCull(Entity holder) => World.Has<MeshAnimator>(holder) && !World.Has<ShapedPose>(holder);
+
+    /// <summary>
+    /// The holder of an attached mesh that is drawn: the mesh and its holder not hidden, and the holder alive and placed.
+    /// Gives the holder's asset, its shadow, and its placement's transform at <paramref name="alpha"/>.
+    /// </summary>
+    private bool HolderOf(in MeshAttachment attachment, in DrawnMesh mesh, float alpha, out HeldBy holder)
+    {
+        var entity = attachment.Holder;
+        holder = default;
+        if (
+            mesh.Shadow == ModelShadow.Hidden
+            || !World.IsAlive(entity)
+            || !World.Has<MeshPlacement>(entity)
+            || !World.Has<DrawnMesh>(entity)
+            || World.Get<DrawnMesh>(entity).Shadow == ModelShadow.Hidden
+        )
+        {
+            return false;
+        }
+
+        ref readonly var drawn = ref World.Get<DrawnMesh>(entity);
+        holder = new HeldBy(drawn.Asset, drawn.Shadow, MeshPoses.Placed(in World.Get<MeshPlacement>(entity), alpha));
+        return true;
+    }
+
+    /// <summary>
+    /// True when an attached mesh's holder is left out this frame (<see cref="Pose"/>): the culling may leave it out, no
+    /// list would draw it, and nothing it holds may be drawn.
+    /// </summary>
+    private bool HolderCulled(Entity entity, in HeldBy holder) =>
+        MayCull(entity) && !MayDraw(holder.Asset, holder.Placed, holder.Shadow) && !Holds(entity);
+
+    /// <summary>
+    /// A mesh at its holder's joint, the holder posed (and shaped) as it is drawn this frame; none when its holder is left
+    /// out (<see cref="HolderCulled"/>), so the holder is never posed for it then.
+    /// </summary>
     private void DrawAttached(in MeshAttachment attachment, in DrawnMesh mesh, float alpha, ulong frame)
     {
         var holder = attachment.Holder;
-        if (
-            mesh.Shadow == ModelShadow.Hidden
-            || !World.IsAlive(holder)
-            || !World.Has<MeshPlacement>(holder)
-            || !World.Has<DrawnMesh>(holder)
-            || World.Get<DrawnMesh>(holder).Shadow == ModelShadow.Hidden
-        )
+        if (!HolderOf(in attachment, in mesh, alpha, out var held) || (_culls && HolderCulled(holder, in held)))
         {
             return;
         }
 
-        var placed = MeshPoses.Placed(in World.Get<MeshPlacement>(holder), alpha);
+        var asset = held.Asset;
+        var placed = held.Placed;
         var at = placed;
-        var asset = World.Get<DrawnMesh>(holder).Asset;
         if (
             _assets.TryGet(asset, out var drawn)
             && drawn.Rig is { } drawnRig
@@ -592,45 +835,6 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
         }
     }
 
-    /// <summary>
-    /// A posed mesh: its clip sampled at the blend of its last two times (wrapped by a looping clip's length), its rig's
-    /// skinning matrices written where <see cref="MeshInstances.AddPosed"/> keeps them. A static asset, or a rig larger
-    /// than the room made at the start, is drawn as its asset stores it.
-    /// </summary>
-    private struct AddPosed : IForEach<MeshPlacement, DrawnMesh, MeshAnimator>
-    {
-        public MeshInstances Instances;
-        public MeshAssets Assets;
-        public JointTransform[] Locals;
-        public JointTransform[] FromLocals;
-        public float Alpha;
-
-        public readonly void Update(ref MeshPlacement placement, ref DrawnMesh mesh, ref MeshAnimator animator)
-        {
-            if (mesh.Shadow == ModelShadow.Hidden)
-            {
-                return;
-            }
-
-            var transform = MeshPoses.Placed(in placement, Alpha);
-            if (!MeshPoses.Sample(Assets, mesh.Asset, in animator, Alpha, Locals, FromLocals, out var rig))
-            {
-                Instances.Add(mesh.Asset, in transform, mesh.Tint, mesh.Shadow);
-                return;
-            }
-
-            var palette = Instances.AddPosed(
-                mesh.Asset,
-                in transform,
-                rig.JointCount,
-                mesh.Tint,
-                mesh.Shadow,
-                mesh.SkinFirst
-            );
-            if (!palette.IsEmpty)
-            {
-                rig.WritePalette(Locals.AsSpan(0, rig.JointCount), palette);
-            }
-        }
-    }
+    /// <summary>An attached mesh's holder as it is drawn this frame: its asset, its shadow, and its placement's transform.</summary>
+    private readonly record struct HeldBy(int Asset, ModelShadow Shadow, Matrix4x4 Placed);
 }

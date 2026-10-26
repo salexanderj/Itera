@@ -1,4 +1,3 @@
-using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Rendering.Memory;
 using Itera.Engine.Rendering.Meshes;
 using Itera.Engine.Voxels;
@@ -114,8 +113,6 @@ public sealed partial class RenderViewPass : IDisposable
     )
     {
         var count = 0;
-        var atmosphere = renderView.Atmosphere;
-        var sun = renderView.DrawnSun;
         foreach (var target in _targets)
         {
             ref var frame = ref target.FrameOf(slot);
@@ -127,17 +124,7 @@ public sealed partial class RenderViewPass : IDisposable
 
             var info = target.Info;
             frame.Due = true;
-            frame.View = ViewConstants.Create(
-                in camera,
-                (uint)info.Width,
-                (uint)info.Height,
-                slot,
-                sun,
-                in atmosphere,
-                maxDistance,
-                shadows: false,
-                origin
-            );
+            frame.View = renderView.CreateImageView(in camera, in info, slot, maxDistance, origin);
             target.View.Begin(slot, in frame.View);
             _due[count++] = target;
         }

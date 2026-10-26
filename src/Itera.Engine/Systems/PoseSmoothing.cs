@@ -14,8 +14,10 @@ namespace Itera.Engine.Systems;
 /// where the last pose was and as it was moving, and the new clip comes in smoothly however fast it moves; a change during
 /// another starts from what was drawn then, as it was moving. Drawn only; a pose posed for hit shapes never comes here. At
 /// most <see cref="MostPoses"/> meshes at once; one past them is drawn as sampled. Each slot keeps the entity it is for, so
-/// one whose entity is gone and was taken by another starts afresh; a slot not drawn in a frame is let go at its end. Main
-/// thread; allocates a slot's storage at its first use alone.
+/// one whose entity is gone and was taken by another starts afresh; a slot neither drawn nor held in a frame is let go at
+/// its end. A mesh no list would draw this frame is held (<see cref="Hold"/>): its slot stays, a change marked meanwhile
+/// starts from the pose last drawn, and a change under way goes on, so it is drawn again as far through the change as
+/// had it been drawn throughout, starting still. Main thread; allocates a slot's storage at its first use alone.
 /// </summary>
 public sealed class PoseSmoothing
 {
@@ -73,6 +75,8 @@ public sealed class PoseSmoothing
             return slot;
         }
 
+        var returning = pose.Held;
+        pose.Held = false;
         if (pose.Changes != changes)
         {
             Mark(pose);
@@ -84,8 +88,47 @@ public sealed class PoseSmoothing
             Blend(pose, changeSeconds > 0 ? changeSeconds : SmoothedPose.DefaultSeconds, step, locals);
         }
 
+        if (returning)
+        {
+            // Drawn again after it was held: the poses drawn before are too old to give a speed, so it starts still.
+            locals.CopyTo(pose.Drawn.AsSpan(0, pose.Joints));
+            Keep(pose, locals, 0, frame);
+            return slot;
+        }
+
         Keep(pose, locals, step, frame);
         return slot;
+    }
+
+    /// <summary>
+    /// Keeps <paramref name="entity"/>'s slot through frame <paramref name="frame"/> without a pose, when no list would
+    /// draw its mesh this frame: a new mark (<paramref name="changes"/>) starts a change from the pose last drawn, and a
+    /// change under way goes on over the frame's <paramref name="seconds"/> as if drawn (its time
+    /// <paramref name="changeSeconds"/>), so it is as far on when the mesh is drawn again. Nothing for an entity without a
+    /// slot.
+    /// </summary>
+    public void Hold(Entity entity, int slot, uint changes, float changeSeconds, float seconds, ulong frame)
+    {
+        var pose = Of(entity, slot);
+        if (pose is null)
+        {
+            return;
+        }
+
+        if (pose.Changes != changes)
+        {
+            Mark(pose);
+            pose.Changes = changes;
+        }
+
+        if (pose.Blending)
+        {
+            var step = float.IsFinite(seconds) ? MathF.Max(seconds, 0) : 0;
+            Advance(pose, changeSeconds > 0 ? changeSeconds : SmoothedPose.DefaultSeconds, step);
+        }
+
+        pose.Held = true;
+        pose.Frame = frame;
     }
 
     /// <summary>
@@ -95,7 +138,7 @@ public sealed class PoseSmoothing
     public bool TryDrawn(Entity entity, int slot, ulong frame, Span<JointTransform> locals)
     {
         var pose = Of(entity, slot);
-        if (pose is null || pose.Frame != frame || pose.Joints != locals.Length)
+        if (pose is null || pose.Held || pose.Frame != frame || pose.Joints != locals.Length)
         {
             return false;
         }
@@ -104,7 +147,9 @@ public sealed class PoseSmoothing
         return true;
     }
 
-    /// <summary>Lets go every slot not drawn in frame <paramref name="frame"/>: its mesh is gone or no longer smoothed.</summary>
+    /// <summary>
+    /// Lets go every slot neither drawn nor held in frame <paramref name="frame"/>: its mesh is gone or no longer smoothed.
+    /// </summary>
     public void Sweep(ulong frame)
     {
         for (var slot = 0; slot < _poses.Length; slot++)
@@ -139,6 +184,7 @@ public sealed class PoseSmoothing
             }
 
             pose.Live = true;
+            pose.Held = false;
             pose.Owner = entity;
             Count++;
             return slot;
@@ -154,6 +200,7 @@ public sealed class PoseSmoothing
         pose.Joints = locals.Length;
         pose.Changes = changes;
         pose.Blending = false;
+        pose.Held = false;
         locals.CopyTo(pose.Drawn.AsSpan(0, pose.Joints));
         Keep(pose, locals, 0, frame);
     }
@@ -189,21 +236,10 @@ public sealed class PoseSmoothing
     /// </summary>
     private static void Blend(Pose pose, float changeSeconds, float seconds, Span<JointTransform> locals)
     {
-        pose.Clock += seconds;
-        var share = Math.Clamp(pose.Clock / changeSeconds, 0, 1);
-        var weight = share * share * (3 - 2 * share);
-        var fade = MathF.Exp(-MathF.Log(2) * seconds / (changeSeconds / 4));
+        var weight = Advance(pose, changeSeconds, seconds);
         for (var j = 0; j < pose.Joints; j++)
         {
-            pose.Spin[j] *= fade;
-            pose.Drift[j] *= fade;
             var source = pose.Source[j];
-            source = source with
-            {
-                Rotation = Quaternion.Normalize(Exp(pose.Spin[j] * seconds) * source.Rotation),
-                Translation = source.Translation + pose.Drift[j] * seconds,
-            };
-            pose.Source[j] = source;
             var target = locals[j];
             locals[j] = target with
             {
@@ -211,8 +247,31 @@ public sealed class PoseSmoothing
                 Translation = Vector3.Lerp(source.Translation, target.Translation, weight),
             };
         }
+    }
+
+    /// <summary>
+    /// A change's clock and source moved on over <paramref name="seconds"/>, the source's speed fading with a half-life of
+    /// a quarter of <paramref name="changeSeconds"/>; returns the new clip's weight, eased in and out.
+    /// </summary>
+    private static float Advance(Pose pose, float changeSeconds, float seconds)
+    {
+        pose.Clock += seconds;
+        var share = Math.Clamp(pose.Clock / changeSeconds, 0, 1);
+        var fade = MathF.Exp(-MathF.Log(2) * seconds / (changeSeconds / 4));
+        for (var j = 0; j < pose.Joints; j++)
+        {
+            pose.Spin[j] *= fade;
+            pose.Drift[j] *= fade;
+            var source = pose.Source[j];
+            pose.Source[j] = source with
+            {
+                Rotation = Quaternion.Normalize(Exp(pose.Spin[j] * seconds) * source.Rotation),
+                Translation = source.Translation + pose.Drift[j] * seconds,
+            };
+        }
 
         pose.Blending = share < 1;
+        return share * share * (3 - 2 * share);
     }
 
     /// <summary>The pose drawn this frame, kept with the one before it and the frame's length.</summary>
@@ -269,6 +328,9 @@ public sealed class PoseSmoothing
         public Entity Owner = Entity.Null;
         public bool Live;
         public bool Blending;
+
+        /// <summary>True while its mesh is not drawn (<see cref="Hold"/>): its drawn poses are those of before.</summary>
+        public bool Held;
         public int Joints;
         public uint Changes;
         public ulong Frame;

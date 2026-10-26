@@ -115,6 +115,8 @@ public static class EngineServiceCollectionExtensions
         // The game's own passes (IRenderPass, registered by the game), run at their stages.
         services.TryAddSingleton<RenderPasses>();
         services.TryAddSingleton<MeshAssetDraws>();
+        // What a frame's lists may draw, known while the frame systems run, so MeshDrawSystem poses only that.
+        services.TryAddSingleton<MeshPoseCulling>();
         services.TryAddSingleton<PointLights>();
         services.TryAddScoped<VoxelTintSampler>();
         services.TryAddSingleton(sp => new DebugLines(

@@ -13,6 +13,7 @@ using Itera.Engine.Objects;
 using Itera.Engine.Particles;
 using Itera.Engine.Physics;
 using Itera.Engine.Rendering;
+using Itera.Engine.Rendering.Meshes;
 using Itera.Engine.Rendering.Voxels;
 using Itera.Engine.Settings;
 using Itera.Engine.Systems;
@@ -245,8 +246,9 @@ public static class GameServiceCollectionExtensions
 
     /// <summary>
     /// The frame systems, in their run order: the camera at the player's eye, or the fly camera (and the benchmark over
-    /// it); the debug outlines; the camera to the renderer; the loose bodies' models; the mesh assets placed (the fox);
-    /// and the sky from where the camera is.
+    /// it); the debug outlines; the camera to the renderer; the minimap; the loose bodies' models; the sky from where the
+    /// camera is; and the mesh assets placed (the fox), posed only where the frame's view, cascades, and minimap may draw
+    /// them.
     /// </summary>
     private static void AddFrameSystems(IServiceCollection services, BenchmarkSettings? benchmark)
     {
@@ -324,19 +326,21 @@ public static class GameServiceCollectionExtensions
             sp.GetRequiredService<VoxelTintSampler>(),
             sp.GetRequiredService<RenderView>()
         ));
+        services.AddScoped<IFrameUpdateSystem>(sp => new AtmosphereSystem(
+            sp.GetRequiredService<EcsWorld>().World,
+            sp.GetRequiredService<RenderView>(),
+            sp.GetRequiredService<IAtmosphereSource>(),
+            sp.GetRequiredService<WorldOrigin>()
+        ));
+        // Last: it poses only what the frame's lists may draw, by the camera, the sun, and the image views set before it.
         services.AddScoped<IFrameUpdateSystem>(sp => new MeshDrawSystem(
             sp.GetRequiredService<EcsWorld>().World,
             sp.GetRequiredService<MeshInstances>(),
             sp.GetRequiredService<MeshAssets>(),
             sp.GetRequiredService<VoxelWorld>(),
             sp.GetRequiredService<ConsoleCommands>(),
-            shifts: sp.GetRequiredService<OriginShifts>()
-        ));
-        services.AddScoped<IFrameUpdateSystem>(sp => new AtmosphereSystem(
-            sp.GetRequiredService<EcsWorld>().World,
-            sp.GetRequiredService<RenderView>(),
-            sp.GetRequiredService<IAtmosphereSource>(),
-            sp.GetRequiredService<WorldOrigin>()
+            shifts: sp.GetRequiredService<OriginShifts>(),
+            culling: sp.GetRequiredService<MeshPoseCulling>()
         ));
     }
 

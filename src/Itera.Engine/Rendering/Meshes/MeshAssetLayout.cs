@@ -123,7 +123,7 @@ public sealed class MeshAssetLayout
             var asset = assets[a];
             var centre = (asset.BoundsMin + asset.BoundsMax) / 2;
             var radius = (asset.BoundsMax - asset.BoundsMin).Length() / 2;
-            var (staticCentre, staticRadius) = UnweightedSphere(asset);
+            var (staticCentre, staticRadius) = MeshBounds.Unweighted(asset);
             places[a] = new AssetPlace(
                 vertices,
                 indices,
@@ -257,31 +257,6 @@ public sealed class MeshAssetLayout
             EmissionTexture = Slot(material.EmissionTexture),
             MetalRoughTexture = Slot(material.MetalRoughTexture),
         };
-    }
-
-    /// <summary>
-    /// The bounding sphere of a skinned asset's vertices that no joint moves (their weights all zero), which stand where
-    /// the asset stores them; a radius of -1 when there are none, or for a static asset.
-    /// </summary>
-    private static (Vector3 Centre, float Radius) UnweightedSphere(MeshAsset asset)
-    {
-        if (asset.Skin is not { } skin)
-        {
-            return (Vector3.Zero, -1);
-        }
-
-        var min = new Vector3(float.MaxValue);
-        var max = new Vector3(float.MinValue);
-        for (var v = 0; v < skin.Length; v++)
-        {
-            if (skin[v].Weights01 == 0 && skin[v].Weights23 == 0)
-            {
-                min = Vector3.Min(min, asset.Vertices[v].Position);
-                max = Vector3.Max(max, asset.Vertices[v].Position);
-            }
-        }
-
-        return min.X > max.X ? (Vector3.Zero, -1) : ((min + max) / 2, (max - min).Length() / 2);
     }
 
     /// <summary>The pipeline range a material's primitives draw in.</summary>

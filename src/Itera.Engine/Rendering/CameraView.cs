@@ -1,6 +1,7 @@
 using System.Numerics;
 using Itera.Engine.Components;
 using Itera.Engine.Rendering.GpuData;
+using Itera.Engine.Voxels;
 using Microsoft.Extensions.Options;
 
 namespace Itera.Engine.Rendering;
@@ -98,6 +99,12 @@ public sealed class RenderView
     private float _fixedRenderScale = 1;
     private float _screenDim;
     private readonly Atmosphere _clearSky;
+
+    // The frame being built: the screen's size (0 for none: no picture is drawn), the view's distance, and the origin.
+    private uint _frameWidth;
+    private uint _frameHeight;
+    private float _frameDistance;
+    private VoxelCoord _frameOrigin;
 
     public RenderView(IOptions<EngineOptions> options)
     {
@@ -260,7 +267,105 @@ public sealed class RenderView
     public SmaaPicture AntiAliasPicture { get; set; }
 
     /// <summary>Sets the camera for the frame being built.</summary>
-    public void SetCamera(in CameraView camera) => Camera = camera;
+    public void SetCamera(in CameraView camera)
+    {
+        Camera = camera;
+        CameraSet = true;
+    }
+
+    /// <summary>
+    /// True once a frame system has set the camera (<see cref="SetCamera"/>) since the frame being built started
+    /// (<see cref="BeginFrame"/>).
+    /// </summary>
+    public bool CameraSet { get; private set; }
+
+    /// <summary>The view's distance of the frame being built, in metres (<see cref="BeginFrame"/>).</summary>
+    internal float FrameDistance => _frameDistance;
+
+    /// <summary>The match's origin of the frame being built, in absolute centimetres (<see cref="BeginFrame"/>).</summary>
+    internal VoxelCoord FrameOrigin => _frameOrigin;
+
+    /// <summary>
+    /// Starts a frame, before the frame systems: drawn on a <paramref name="width"/> x <paramref name="height"/> screen (0
+    /// x 0 for a frame without a picture), as far as <paramref name="maxDistance"/>, local to <paramref name="origin"/>; no
+    /// camera set yet (<see cref="CameraSet"/>).
+    /// </summary>
+    internal void BeginFrame(uint width, uint height, float maxDistance, VoxelCoord origin)
+    {
+        _frameWidth = width;
+        _frameHeight = height;
+        _frameDistance = maxDistance;
+        _frameOrigin = origin;
+        CameraSet = false;
+    }
+
+    /// <summary>
+    /// The constants the frame being built will be drawn with (<see cref="CreateView"/>), from the camera, sun, and
+    /// atmosphere set so far: false for a frame without a picture, or when no frame system has set the camera since the
+    /// frame started.
+    /// </summary>
+    public bool TryFrameView(out ViewConstants view)
+    {
+        if (_frameWidth == 0 || _frameHeight == 0 || !CameraSet)
+        {
+            view = default;
+            return false;
+        }
+
+        view = CreateView(_frameWidth, _frameHeight, 0, _frameDistance, _frameOrigin);
+        return true;
+    }
+
+    /// <summary>
+    /// The constants for drawing <see cref="DrawnCamera"/> on a <paramref name="width"/> x <paramref name="height"/> screen
+    /// in frame slot <paramref name="slot"/>, with the sun, atmosphere, shadows, render scale, and debug views set now, as
+    /// far as <paramref name="maxDistance"/>, local to <paramref name="origin"/> (<see cref="ViewConstants.Create"/>).
+    /// </summary>
+    internal ViewConstants CreateView(uint width, uint height, int slot, float maxDistance, VoxelCoord origin)
+    {
+        var camera = DrawnCamera;
+        var atmosphere = Atmosphere;
+        return ViewConstants.Create(
+            in camera,
+            width,
+            height,
+            slot,
+            DrawnSun,
+            in atmosphere,
+            maxDistance,
+            Shadows,
+            origin,
+            RenderScale,
+            DebugViews
+        );
+    }
+
+    /// <summary>
+    /// The constants for drawing image view <paramref name="info"/> from <paramref name="camera"/> in frame slot
+    /// <paramref name="slot"/>: at its size, with the sun and atmosphere set now, without shadows, as far as
+    /// <paramref name="maxDistance"/>, local to <paramref name="origin"/>.
+    /// </summary>
+    internal ViewConstants CreateImageView(
+        in CameraView camera,
+        in RenderViewInfo info,
+        int slot,
+        float maxDistance,
+        VoxelCoord origin
+    )
+    {
+        var atmosphere = Atmosphere;
+        return ViewConstants.Create(
+            in camera,
+            (uint)info.Width,
+            (uint)info.Height,
+            slot,
+            DrawnSun,
+            in atmosphere,
+            maxDistance,
+            shadows: false,
+            origin
+        );
+    }
 
     /// <summary>
     /// The match's origin moved by <paramref name="metres"/>: the camera last set moves the other way, so what reads it

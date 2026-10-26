@@ -73,6 +73,7 @@ public sealed partial class GameLoop
     private readonly RenderViews _renderViews;
     private readonly RenderViewPass _renderViewPass;
     private readonly MeshAssetDraws _meshAssetDraws;
+    private readonly MeshPoseCulling _poseCulling;
     private readonly PointLights _pointLights;
     private readonly DepthTarget _depth;
     private readonly DebugLines _debugLines;
@@ -164,6 +165,7 @@ public sealed partial class GameLoop
         RenderViews renderViews,
         RenderViewPass renderViewPass,
         MeshAssetDraws meshAssetDraws,
+        MeshPoseCulling poseCulling,
         PointLights pointLights,
         DepthTarget depth,
         DebugLines debugLines,
@@ -236,6 +238,7 @@ public sealed partial class GameLoop
         _renderViews = renderViews;
         _renderViewPass = renderViewPass;
         _meshAssetDraws = meshAssetDraws;
+        _poseCulling = poseCulling;
         _pointLights = pointLights;
         _depth = depth;
         _debugLines = debugLines;
@@ -854,6 +857,8 @@ public sealed partial class GameLoop
         _meshInstances.Clear();
         _pointLights.BeginFrame(now);
         _renderViews.BeginFrame();
+        // The frame systems know the picture's size, so the meshes are posed only where a list may draw them.
+        _renderView.BeginFrame(request.Width, request.Height, _maxViewDistance, Origin);
         match.Ecs.Update(in frame);
         _mods.Update(in frame);
         if (_modelInstances.Dropped > 0 && !_modelsDroppedReported)
@@ -877,6 +882,7 @@ public sealed partial class GameLoop
         // events give; and the image views due this frame, in theirs.
         _meshView.Begin(request.Slot, in view);
         var views = _renderViewPass.BeginViews(request.Slot, _renderView, _maxViewDistance, Origin);
+        _poseCulling.Check(request.Slot, in view, views);
         // Without terrain no world is followed: nothing to upload or draw of it.
         var copies = _worldOnGpu ? _worldMeshes.Upload(request.Slot, now, in view, _modelInstances.Draws, views) : 0;
         var meshAssets = _meshAssetDraws.Write(
@@ -942,6 +948,8 @@ public sealed partial class GameLoop
         _meshInstances.Clear();
         _pointLights.BeginFrame(now);
         _renderViews.BeginFrame();
+        // No picture: every mesh is posed, as no list culls it.
+        _renderView.BeginFrame(0, 0, _maxViewDistance, Origin);
         // No pool makes the particles queued since the last frame: they go, so the queue never fills.
         _particles.Discard();
         match.Ecs.Update(in frame);
@@ -1039,24 +1047,8 @@ public sealed partial class GameLoop
         _stats.RecordFrame(frameSeconds);
     }
 
-    private ViewConstants CreateView(in RenderFrameRequest request)
-    {
-        var camera = _renderView.DrawnCamera;
-        var atmosphere = _renderView.Atmosphere;
-        return ViewConstants.Create(
-            in camera,
-            request.Width,
-            request.Height,
-            request.Slot,
-            _renderView.DrawnSun,
-            in atmosphere,
-            _maxViewDistance,
-            _renderView.Shadows,
-            Origin,
-            _renderView.RenderScale,
-            _renderView.DebugViews
-        );
-    }
+    private ViewConstants CreateView(in RenderFrameRequest request) =>
+        _renderView.CreateView(request.Width, request.Height, request.Slot, _maxViewDistance, Origin);
 
     /// <summary>
     /// Draws the UI at the request's size: every row when the pass's buffers were made again since the last frame. The
