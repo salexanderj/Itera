@@ -17,7 +17,8 @@ core), `rendering-views.md` (a game's image views), `rendering-light.md` (the ma
 
 ### Registering
 
-- A game registers a pass in its composition: `services.AddSingleton<IRenderPass, MyPass>()`.
+- A game registers a pass in its composition: `services.AddSingleton<IRenderPass, MyPass>()`. The engine's grass is a
+  pair of passes a game opts into (`rendering-grass.md`).
 - At most `GpuTimings.MostGamePasses` passes may exist, and each is named apart. Otherwise the run's "render passes" step
   stops the run.
 - Each pass records at one stage of the frame (`RenderStage`).

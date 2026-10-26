@@ -1,0 +1,388 @@
+#version 460
+
+// The grass's blades for the frame (GrassPlacePass), made afresh each frame from the ground the camera draws:
+// one invocation a triangle of the frame's near blocks (grassBlocks, nearest first). A triangle far from the eye, out of
+// view, too steep, or with no grass among its corners' materials makes none. Else it makes its area times the density of
+// candidates, each at a point of it seeded from the triangle's place in the world (its block's absolute corner and its
+// corners' places in the block), so the same ground grows the same blades in every frame and every game. A candidate
+// stands where the grass's share of the ground there, the slope, the thinning with distance, and how much of the
+// ground there keeps the material's hue in its texture (groundCover) together pass its own threshold; it grows from
+// nothing as they pass it, so blades shrink into the ground at the field's edge and at the borders of the grass, not
+// pop. Each blade takes the ground's colour under it, as mesh.frag draws it (the material's
+// texture set read at a fixed footprint, its patches, the tint map, and the world's own look), so the field meets the
+// ground without an edge. The near blades (within nearMetres) go into the blades from the first, the far ones from
+// nearMost; each triangle reserves its blades with one atomic add on each count.
+#define GRASS_PLACE
+#define GRASS_DRAWS_WRITE
+
+layout(local_size_x = 64) in;
+
+#include "view.glsl"
+#include "lighting.glsl"
+#include "mesh-data.glsl"
+#include "mesh-surface.glsl"
+#include "grass-data.glsl"
+
+// The most candidates one triangle makes (a 1 m mesh's triangles are about half a square metre).
+const uint MostCandidates = 96u;
+
+// How far past a candidate's threshold its share must come for the blade to stand at its full height.
+const float GrowBand = 0.15;
+
+// The ground's colour is read as though a pixel covered this many metres, so a blade takes the ground's colour about
+// it, not a speck of its texture.
+const float ColourFootprint = 0.1;
+
+// The luma of a linear colour (mesh-shade.glsl's weights).
+const vec3 Luma = vec3(0.2126, 0.7152, 0.0722);
+
+// The 16-bit index k of the heap (counted from the heap's start).
+uint heapIndex(uint k)
+{
+    return (meshWords[k >> 1u] >> ((k & 1u) * 16u)) & 0xFFFFu;
+}
+
+// The palette slot of material in a mesh's palette, or 8 where the palette lacks it.
+uint paletteSlot(uvec2 palette, uint material)
+{
+    for (uint i = 0u; i < 8u; i++)
+    {
+        if ((((i < 4u ? palette.x : palette.y) >> (8u * (i & 3u))) & 0xFFu) == material)
+        {
+            return i;
+        }
+    }
+
+    return 8u;
+}
+
+// The share of vertex index's cell's surface corners that are the material in palette slot slot (8: the palette lacks
+// it, so a vertex counts it only as its own material, all or nothing).
+float materialShare(uint vertexBase, uint index, uint slot, uint material)
+{
+    if (slot == 8u)
+    {
+        return ((meshMaterialWord(vertexBase, index) >> 16u) & 0xFFu) == material ? 1.0 : 0.0;
+    }
+
+    vec4 low;
+    vec4 high;
+    meshWeights(vertexBase, index, low, high);
+    float total = dot(low, vec4(1.0)) + dot(high, vec4(1.0));
+    float weight = slot < 4u ? low[slot] : high[slot - 4u];
+    return total > 0.0 ? weight / total : 0.0;
+}
+
+// A key of vertex index's place in its block: its quantised x, y, and z (MeshVertex).
+uint vertexKey(uint vertexBase, uint index)
+{
+    uint base = vertexBase + MESH_VERTEX_WORDS * index;
+    return meshWords[base] ^ ((meshWords[base + 1u] & 0xFFFFu) * 0x9E3779B1u);
+}
+
+// True when a sphere of radius metres at offset from the eye may show: before the eye and within the view's four sides
+// (right and up reach the image's edges at unit forward). Orthographic views keep every one.
+bool inView(vec3 offset, float radius)
+{
+    if (viewOrthographic())
+    {
+        return true;
+    }
+
+    float depth = dot(offset, view.forward);
+    if (depth < -radius)
+    {
+        return false;
+    }
+
+    float across = length(view.right);
+    float up = length(view.up);
+    float x = abs(dot(offset, view.right)) / across;
+    float y = abs(dot(offset, view.up)) / up;
+    return x - depth * across <= radius * sqrt(1.0 + across * across)
+        && y - depth * up <= radius * sqrt(1.0 + up * up);
+}
+
+// The ground's colour at root on a surface facing normal, before its light: material's as mesh.frag draws it, with the
+// world's own look.
+vec3 groundColour(vec3 root, vec3 normal, uint material)
+{
+    vec3 offset = root - view.position;
+    vec3 centimetres = root * CentimetresPerMetre;
+    ivec3 whole = ivec3(floor(centimetres));
+    vec3 part = centimetres - vec3(whole);
+    whole += viewOrigin();
+    float mapTint = meshTintAt(whole, part);
+    uint texture = materials[material].texture;
+    Surface surface;
+    if (texture != 0u && !viewSwitch(ViewMaterialsFlat))
+    {
+        surface = surfaceTextured(
+            material,
+            texture,
+            materials[material].textureMetres,
+            materials[material].textureMean,
+            mapTint,
+            whole,
+            part,
+            offset,
+            normal,
+            vec3(ColourFootprint, 0.0, 0.0),
+            vec3(0.0, 0.0, ColourFootprint));
+    }
+    else
+    {
+        surface = surfacePlain(material, mapTint, whole, part, normal);
+    }
+
+    vec3 hue = vec3(1.0);
+    if (LOOK.worldHueDrift != vec3(0.0))
+    {
+        ivec3 turnedWhole;
+        vec3 turnedPart;
+        turnPoint(whole, part, turnedWhole, turnedPart);
+        hue += LOOK.worldHueDrift * valueNoise2(turnedWhole.xz, turnedPart.xz, 11, 41u);
+    }
+
+    vec3 colour = mix(vec3(dot(surface.colour, Luma)), surface.colour * hue, LOOK.worldSaturation) * LOOK.worldValue;
+    return colour * mix(LOOK.worldSideShade, LOOK.worldTopShade, smoothstep(LOOK.sideShadeBelow, LOOK.topShadeAbove, normal.y));
+}
+
+// The triangle in hand: its corners, their grass shares and normals, how much its slope lets grow, and its seed.
+struct Triangle
+{
+    vec3 p0;
+    vec3 p1;
+    vec3 p2;
+    vec3 shares;
+    vec3 n0;
+    vec3 n1;
+    vec3 n2;
+    float slope;
+    uvec3 seed;
+};
+
+// A texture set's colour (linear, its occlusion in alpha) at uv in layer, read at a footprint of size of the tile.
+vec3 setColour(bool large, vec3 uvLayer, float size)
+{
+    vec2 dx = vec2(size, 0.0);
+    vec2 dy = vec2(0.0, size);
+    return large ? textureGrad(largeColours, uvLayer, dx, dy).rgb : textureGrad(smallColours, uvLayer, dx, dy).rgb;
+}
+
+// How much of the ground at root (facing normal) keeps material's hue, 0 to 1: its texture set's own colour there,
+// over the set's mean, is compared with grey as unit directions, so a patch of another hue in the texture (bare ash in
+// a grass) holds no blades, whatever its lightness. 1 within tolerance of the mean's hue, falling to 0 at twice it; 1
+// for a material without a set, with the materials drawn flat, or with no tolerance.
+float groundCover(vec3 root, vec3 normal, uint material, float tolerance)
+{
+    uint texture = materials[material].texture;
+    if (tolerance <= 0.0 || texture == 0u || viewSwitch(ViewMaterialsFlat))
+    {
+        return 1.0;
+    }
+
+    bool large = (texture & MESH_TEXTURE_LARGE) != 0u;
+    float layer = float(int(texture & 0xFFFFu) - 1);
+    float metres = materials[material].textureMetres;
+    vec3 weights = triplanarWeights(normal);
+    vec3 p = tilePoint(material, root - view.position, metres);
+    float size = ColourFootprint * textureBlur(material) / metres;
+    vec3 colour = vec3(0.0);
+    if (weights.x > 0.0)
+    {
+        colour += weights.x * setColour(large, vec3(p.zy, layer), size);
+    }
+
+    if (weights.y > 0.0)
+    {
+        colour += weights.y * setColour(large, vec3(p.xz, layer), size);
+    }
+
+    if (weights.z > 0.0)
+    {
+        colour += weights.z * setColour(large, vec3(p.xy, layer), size);
+    }
+
+    vec3 ratio = colour / max(materials[material].textureMean, vec3(1e-3)) + vec3(1e-4);
+    float off = length(normalize(ratio) - vec3(0.57735027));
+    return 1.0 - smoothstep(tolerance, 2.0 * tolerance, off);
+}
+
+// Candidate c of the triangle: its root, its point's weights of the corners, its random words, how much of its height
+// it grows to (0: none stands), and whether it is near. The texture is read only for a candidate the rest lets stand.
+bool candidate(GrassFrame frame, Triangle tri, uint c, out vec3 root, out vec3 corners, out uvec3 random, out float grow,
+    out bool near)
+{
+    random = grassHash3(tri.seed + uvec3(c, c * 7919u, 0x5Bu));
+    float su = sqrt(grassUnit(random.x));
+    float v = grassUnit(random.y);
+    corners = vec3(1.0 - su, su * (1.0 - v), su * v);
+    root = tri.p0 * corners.x + tri.p1 * corners.y + tri.p2 * corners.z;
+    vec3 offset = root - view.position;
+    float distance = length(offset);
+    float thin = 1.0 - smoothstep(frame.fullMetres, frame.radius, distance);
+    float have = dot(tri.shares, corners) * tri.slope * thin;
+    float threshold = grassUnit(random.z);
+    near = distance < frame.nearMetres;
+    grow = 0.0;
+    if (have <= threshold || !inView(offset, frame.height * (1.0 + frame.heightSpread)))
+    {
+        return false;
+    }
+
+    vec3 normal = normalize(tri.n0 * corners.x + tri.n1 * corners.y + tri.n2 * corners.z);
+    have *= groundCover(root, normal, frame.material, frame.hueTolerance);
+    grow = clamp((have - threshold) / GrowBand, 0.0, 1.0);
+    return grow > 0.0;
+}
+
+void main()
+{
+    GrassFrame frame = grassFrames[view.slot];
+    uint t = gl_GlobalInvocationID.x;
+    if (t >= frame.triangles)
+    {
+        return;
+    }
+
+    // The block: the last whose first triangle is at or before t.
+    uint first = view.slot * GRASS_MOST_BLOCKS;
+    uint low = 0u;
+    uint high = frame.blocks - 1u;
+    while (low < high)
+    {
+        uint middle = (low + high + 1u) >> 1u;
+        if (grassBlocks[first + middle].firstTriangle <= t)
+        {
+            low = middle;
+        }
+        else
+        {
+            high = middle - 1u;
+        }
+    }
+
+    GrassBlock block = grassBlocks[first + low];
+    MeshDraw draw = draws[block.draw];
+    uint k = block.firstIndex + 3u * (t - block.firstTriangle);
+    uint i0 = heapIndex(k);
+    uint i1 = heapIndex(k + 1u);
+    uint i2 = heapIndex(k + 2u);
+    Triangle tri;
+    tri.p0 = meshWorld(draw, i0);
+    tri.p1 = meshWorld(draw, i1);
+    tri.p2 = meshWorld(draw, i2);
+    vec3 middle = (tri.p0 + tri.p1 + tri.p2) / 3.0;
+    float reach = frame.height * (1.0 + frame.heightSpread) + draw.voxelMetres;
+    vec3 offset = middle - view.position;
+    if (length(offset) - reach > frame.radius || !inView(offset, reach))
+    {
+        return;
+    }
+
+    uint slot = paletteSlot(meshPalette(draw.vertexBase), frame.material);
+    tri.shares = vec3(
+        materialShare(draw.vertexBase, i0, slot, frame.material),
+        materialShare(draw.vertexBase, i1, slot, frame.material),
+        materialShare(draw.vertexBase, i2, slot, frame.material));
+    if (max(tri.shares.x, max(tri.shares.y, tri.shares.z)) <= 0.0)
+    {
+        return;
+    }
+
+    tri.n0 = meshNormal(draw, i0);
+    tri.n1 = meshNormal(draw, i1);
+    tri.n2 = meshNormal(draw, i2);
+    tri.slope = smoothstep(frame.leastUp, frame.leastUp + 0.1, normalize(tri.n0 + tri.n1 + tri.n2).y);
+    if (tri.slope <= 0.0)
+    {
+        return;
+    }
+
+    // Seeded from the block's absolute corner (whole metres: the corner and the origin are) and its corners' places.
+    ivec3 corner = ivec3(round(draw.origin)) + viewOrigin() / 100;
+    tri.seed = grassHash3(uvec3(corner) + uvec3(
+        vertexKey(draw.vertexBase, i0),
+        vertexKey(draw.vertexBase, i1),
+        vertexKey(draw.vertexBase, i2)));
+    float area = 0.5 * length(cross(tri.p1 - tri.p0, tri.p2 - tri.p0));
+    uint candidates = min(uint(area * frame.density + grassUnit(tri.seed.x ^ tri.seed.y)), MostCandidates);
+
+    // First the blades that stand, near and far, so one add on each count reserves them.
+    vec3 root;
+    vec3 corners;
+    uvec3 random;
+    float grow;
+    bool near;
+    uint nearCount = 0u;
+    uint farCount = 0u;
+    for (uint c = 0u; c < candidates; c++)
+    {
+        if (candidate(frame, tri, c, root, corners, random, grow, near))
+        {
+            nearCount += near ? 1u : 0u;
+            farCount += near ? 0u : 1u;
+        }
+    }
+
+    if (nearCount + farCount == 0u)
+    {
+        return;
+    }
+
+    uint nearNext = nearCount > 0u ? atomicAdd(grassDraws.nearPlaced, nearCount) : 0u;
+    uint farNext = farCount > 0u ? atomicAdd(grassDraws.farPlaced, farCount) : 0u;
+    for (uint c = 0u; c < candidates; c++)
+    {
+        if (!candidate(frame, tri, c, root, corners, random, grow, near))
+        {
+            continue;
+        }
+
+        uint index;
+        if (near)
+        {
+            index = nearNext++;
+            if (index >= frame.nearMost)
+            {
+                continue;
+            }
+        }
+        else
+        {
+            index = farNext++;
+            if (index >= frame.farMost)
+            {
+                continue;
+            }
+
+            index += frame.nearMost;
+        }
+
+        uvec3 more = grassHash3(random ^ uvec3(0xA511E9B3u, 0x63D83595u, 0xB5297A4Du));
+        vec3 normal = normalize(tri.n0 * corners.x + tri.n1 * corners.y + tri.n2 * corners.z);
+        // Clumps: the height and the colour drift together over about 40 cm.
+        vec3 centimetres = root * CentimetresPerMetre;
+        ivec3 whole = ivec3(floor(centimetres)) + viewOrigin();
+        float clump = valueNoise2(whole.xz, fract(centimetres.xz), 6, 23u);
+        float distance = length(root - view.position);
+        float thin = 1.0 - smoothstep(frame.fullMetres, frame.radius, distance);
+        float height = frame.height * grow * (1.0 + frame.heightSpread * (grassUnit(more.x) * 1.4 - 0.7 + 0.6 * clump));
+        // Thinner grass is wider, so the field keeps its cover as it thins.
+        float width = frame.width * mix(0.75, 1.25, grassUnit(more.y)) / sqrt(max(thin, 0.25));
+        float angle = 6.2831853 * grassUnit(more.z);
+        vec3 colour = groundColour(root, normal, frame.material);
+        colour *= 1.0 + frame.colourSpread * (grassUnit(random.x ^ more.y) * 2.0 - 1.0 + clump);
+        float lean = clamp(frame.lean * (0.4 + 1.2 * grassUnit(random.y ^ more.z)) / GrassMostLean, 0.0, 1.0);
+
+        GrassBlade blade;
+        blade.root = root;
+        blade.colour = packUnorm4x8(vec4(sqrt(max(colour, vec3(0.0))), 1.0));
+        blade.facing = packHalf2x16(vec2(cos(angle), sin(angle)));
+        blade.size = packHalf2x16(vec2(max(height, 0.0), width));
+        blade.normal = packSnorm4x8(vec4(normal, lean * 2.0 - 1.0));
+        blade.motion = packUnorm4x8(vec4(grassUnit(more.x ^ random.z), grassUnit(more.z ^ random.x), grassUnit(more.y ^ random.y), 0.0));
+        blades[index] = blade;
+    }
+}

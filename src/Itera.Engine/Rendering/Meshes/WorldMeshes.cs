@@ -190,6 +190,12 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     /// </summary>
     public ReadOnlySpan<float> CameraKeys => _cameraDistances.AsSpan(0, Frame.Draws);
 
+    /// <summary>
+    /// How wide a block of the finest meshed level is, in metres (<see cref="SurfaceNets.BlockSize"/> of its voxels), in
+    /// the match's world: for a pass that finds the blocks near a point by their centres' distances (<see cref="CameraKeys"/>).
+    /// </summary>
+    public float FinestBlockMetres => SurfaceNets.BlockSize * _grid.EdgeMetres(_finestLevel);
+
     /// <summary>The frame's view the world's draws are culled by. For tests.</summary>
     internal MeshView View => _view;
 

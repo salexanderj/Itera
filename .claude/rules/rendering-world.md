@@ -98,7 +98,8 @@ Each frame `WorldMeshes` picks a level for each column.
 - `MeshFrame` holds what `WorldMeshes` wrote into a frame slot: the draw records, each list's commands, and whether
   the cascades are drawn. `IMeshDrawTarget` and `IStagingRegions` (in `IMeshTargets.cs`) are the interfaces tests replace.
 - `WorldMeshes.CameraCommands` and `CameraKeys` keep the camera's commands and their sort keys in CPU memory until the
-  next upload. A game's pass reads them there, never from the slot's mapped list.
+  next upload. A game's pass reads them there, never from the slot's mapped list. `FinestBlockMetres` is the finest
+  level's block width, for finding blocks near a point by their keys (`rendering-grass.md`).
 - The shadow lists and the sky field are in `rendering-light.md`.
 - `WorldMeshes` also prepares the palette, counts each model as uploaded at the next frame, removes retired models,
   and answers `IWorldOnGpu` (`IsUpToDate`, `Uploads`), which the world loading task and the benchmark wait on.

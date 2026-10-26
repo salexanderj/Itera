@@ -1,0 +1,29 @@
+#version 460
+
+// The grass's two draws for the frame (GrassPlacePass), after grass-place.comp: each an indexed indirect
+// command over the index pattern of GRASS_BLADES_AN_INSTANCE blades, as many instances as the blades placed fill (at
+// most each list's room). The near draw's instances count from 0, the far draw's from the far blades' first instance,
+// which grass.vert tells them apart by.
+#define GRASS_DRAWS_WRITE
+
+layout(local_size_x = 1) in;
+
+#include "view.glsl"
+#include "grass-data.glsl"
+
+void main()
+{
+    GrassFrame frame = grassFrames[view.slot];
+    uint near = min(grassDraws.nearPlaced, frame.nearMost);
+    uint far = min(grassDraws.farPlaced, frame.farMost);
+    grassDraws.nearIndexCount = GRASS_BLADES_AN_INSTANCE * 15u;
+    grassDraws.nearInstances = (near + GRASS_BLADES_AN_INSTANCE - 1u) / GRASS_BLADES_AN_INSTANCE;
+    grassDraws.nearFirstIndex = 0u;
+    grassDraws.nearVertexOffset = 0;
+    grassDraws.nearFirstInstance = 0u;
+    grassDraws.farIndexCount = GRASS_BLADES_AN_INSTANCE * 3u;
+    grassDraws.farInstances = (far + GRASS_BLADES_AN_INSTANCE - 1u) / GRASS_BLADES_AN_INSTANCE;
+    grassDraws.farFirstIndex = GRASS_BLADES_AN_INSTANCE * 15u;
+    grassDraws.farVertexOffset = 0;
+    grassDraws.farFirstInstance = frame.nearMost / GRASS_BLADES_AN_INSTANCE;
+}

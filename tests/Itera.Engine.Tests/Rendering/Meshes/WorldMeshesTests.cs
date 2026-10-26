@@ -142,6 +142,8 @@ public sealed class WorldMeshesTests(ITestOutputHelper output) : WorldMeshesTest
 
         var commands = Meshes.CameraCommands;
         var keys = Meshes.CameraKeys;
+        // The slope world's finest voxels are 1 cm: its blocks are 32 cm wide.
+        Assert.Equal(0.32f, Meshes.FinestBlockMetres, 5);
         Assert.True(Meshes.DrawCount > 4);
         Assert.Equal(Meshes.DrawCount, commands.Length);
         Assert.Equal(Meshes.DrawCount, keys.Length);

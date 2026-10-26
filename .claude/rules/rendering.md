@@ -22,6 +22,7 @@ This file is the core. The sub-areas have their own files, each loaded with its 
 - `rendering-mesh-assets.md`: drawing the mesh assets, their skinning, and blended materials. The assets themselves are
   in `mesh-assets.md`.
 - `rendering-passes.md`: the render passes a game adds.
+- `rendering-grass.md`: the grass a game may opt into.
 - `rendering-views.md`: image views.
 - `rendering-present.md`: the window, the surface, render scale, anti-aliasing, and the debug views.
 - `particles.md`: particles.
