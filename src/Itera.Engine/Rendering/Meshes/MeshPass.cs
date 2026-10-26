@@ -458,8 +458,9 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     /// <summary>
     /// Records the frame's copies from the staging region of the slot into the heap, between two barriers: the first
     /// waits for earlier frames' reads of the heap (as vertices, indices, materials, and the tint map), so ranges freed
-    /// and taken again are safe to overwrite; the second makes the copies visible to this frame's draws. Outside
-    /// rendering. Render thread.
+    /// and taken again are safe to overwrite; the second makes the copies visible to this frame's draws, and to a game's
+    /// compute pass that reads the camera's blocks (<see cref="WorldMeshes.CameraCommands"/>). Outside rendering. Render
+    /// thread.
     /// </summary>
     public void RecordUploads(CommandBuffer commandBuffer, ReadOnlySpan<BufferCopy> regions)
     {
@@ -469,7 +470,8 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         }
 
         const PipelineStageFlags2 readers =
-            PipelineStageFlags2.IndexInputBit
+            PipelineStageFlags2.ComputeShaderBit
+            | PipelineStageFlags2.IndexInputBit
             | PipelineStageFlags2.VertexShaderBit
             | PipelineStageFlags2.FragmentShaderBit;
         Barrier(

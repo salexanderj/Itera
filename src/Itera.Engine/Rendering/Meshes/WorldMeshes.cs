@@ -175,6 +175,21 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
     /// <summary>Blocks the last <see cref="Upload(int, double, in ViewConstants, ReadOnlySpan{ModelDraw})"/> wrote draws for in the camera's list.</summary>
     public int DrawCount => Frame.Draws;
 
+    /// <summary>
+    /// The camera's commands the last <see cref="Upload(int, double, in ViewConstants, ReadOnlySpan{ModelDraw})"/> wrote
+    /// (<see cref="DrawCount"/> of them), nearest first, as the slot's list holds them, from memory the CPU can read: for a
+    /// game's pass that works on the ground the camera draws (a compute pass reads each block's triangles from the heap,
+    /// and its <see cref="MeshDraw"/> from <c>draws[firstInstance]</c> in the mesh pass's set). Main thread, until
+    /// the next upload.
+    /// </summary>
+    public ReadOnlySpan<DrawIndexedIndirectCommand> CameraCommands => _cameraCommands.AsSpan(0, Frame.Draws);
+
+    /// <summary>
+    /// The keys <see cref="CameraCommands"/> are sorted by, one a command: the squared distance from the view's position to
+    /// its block's centre in metres, or an orthographic view's depth past its near end (<see cref="MeshView.NearFirstKey"/>).
+    /// </summary>
+    public ReadOnlySpan<float> CameraKeys => _cameraDistances.AsSpan(0, Frame.Draws);
+
     /// <summary>The frame's view the world's draws are culled by. For tests.</summary>
     internal MeshView View => _view;
 

@@ -46,7 +46,7 @@ public sealed unsafe partial class WorldMeshes
     private Func<ColumnKey, bool>? _canSplit;
 
     // The camera's commands and their blocks' keys (squared distances from the camera, MeshView.NearFirstKey), sorted nearest
-    // first before they go into the slot's list, which is mapped memory and slow to read back.
+    // first before they go into the slot's list, which is mapped memory and slow to read back; kept for CameraCommands.
     private readonly DrawIndexedIndirectCommand[] _cameraCommands = new DrawIndexedIndirectCommand[MeshPass.MaxDraws];
     private readonly float[] _cameraDistances = new float[MeshPass.MaxDraws];
 

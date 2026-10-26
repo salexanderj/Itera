@@ -129,6 +129,32 @@ public sealed class WorldMeshesTests(ITestOutputHelper output) : WorldMeshesTest
     }
 
     /// <summary>
+    /// The camera's commands are also kept where the CPU can read them, as the slot's list holds them, each with its
+    /// block's squared distance from the view, for a game's pass that works on the ground in view.
+    /// </summary>
+    [Fact]
+    public void The_camera_commands_and_their_distances_can_be_read_on_the_cpu()
+    {
+        Begin();
+        RunUntilUpToDate();
+        var at = Centre + new Vector3(1.3f, 0, -0.7f);
+        var slot = Frame(at);
+
+        var commands = Meshes.CameraCommands;
+        var keys = Meshes.CameraKeys;
+        Assert.True(Meshes.DrawCount > 4);
+        Assert.Equal(Meshes.DrawCount, commands.Length);
+        Assert.Equal(Meshes.DrawCount, keys.Length);
+        for (var i = 0; i < commands.Length; i++)
+        {
+            Assert.Equal(Targets.CommandsOf(slot, 0)[i], commands[i]);
+            var draw = Targets.DrawsOf(slot)[RecordOf(commands[i], slot)];
+            var centre = draw.Origin + new Vector3(16 * draw.VoxelMetres);
+            Assert.Equal(Vector3.DistanceSquared(centre, at), keys[i], 4);
+        }
+    }
+
+    /// <summary>
     /// With the match's origin moved 300 m, 20 m down, and 512 m back, a view at the same place in the world draws the
     /// blocks it draws with the origin at the middle, in the same order and from the same meshes, each block's corner
     /// local to the origin (less it, to float rounding), and the sky field's corner with them.

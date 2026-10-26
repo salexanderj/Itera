@@ -25,7 +25,8 @@ core), `rendering-views.md` (a game's image views), `rendering-light.md` (the ma
 ### The stages
 
 - `Compute`: after the mesh pass's light clusters and skinning, before the shadow maps, outside any rendering. No
-  barrier follows it: a pass whose results a later stage reads records its own.
+  barrier follows it: a pass whose results a later stage reads records its own. It may read the mesh heap: the heap's
+  upload barriers name the compute stage. The camera's blocks are `WorldMeshes.CameraCommands` (`rendering-world.md`).
 - `Opaque`: inside the world's multisampled rendering (`MeshPass`'s colour format and samples; its depth is reversed
   and compared Greater), after the engine's opaque draws and before the sky. These surfaces write depth.
 - `Transparent`: inside that rendering, after the sky and the engine's blended mesh assets. These surfaces blend and
