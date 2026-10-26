@@ -23,12 +23,13 @@ layout(location = 2) flat out uint outMaterial;
 void main()
 {
     MeshAssetDraw draw = assetDraws[gl_InstanceIndex];
-    MeshAssetVertex vertex = assetVertices[gl_VertexIndex + draw.vertexDelta];
-    vec3 world = (draw.transform * vec4(vertex.position, 1.0)).xyz;
+    // The position alone, a posed draw's from its skinned stream (12 bytes a vertex).
+    vec3 world = (draw.transform * vec4(assetPositionOf(draw, uint(gl_VertexIndex)), 1.0)).xyz;
     MeshLighting cascades = lighting[push.slot];
     mat4 cascade = push.cascade == 0u ? cascades.nearCascade : cascades.farCascade;
     gl_Position = cascade * vec4(world, 1.0);
 #ifdef MESH_ASSET_MASK
+    MeshAssetVertex vertex = assetVertices[gl_VertexIndex];
     outUv = vec4(vertex.uv, unpackHalf2x16(vertex.uv1));
     outAlpha = unpackUnorm4x8(vertex.colour).a * (draw.tint == MESH_ASSET_NO_TINT ? 1.0 : unpackUnorm4x8(draw.tint).a);
     outMaterial = draw.material;

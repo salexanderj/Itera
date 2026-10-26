@@ -1,11 +1,14 @@
 #version 460
 
-// Skins the frame's posed mesh assets (MeshAssetPass.RecordSkinning), before the shadow cascades: each workgroup row is
-// one instance (MeshSkinGroup), each invocation one of its vertices. The vertex (its asset's, unchanged since the
-// upload) is moved by its four joints' skinning matrices (Rig.WritePalette: the inverse bind matrix, then the joint's
-// posed place, uploaded unchanged and used as M * v) blended by its weights, its normal and tangent turned with it and
-// packed again; the rest is copied. Written into the instance's output, in the frame slot's region of the same vertex
-// buffer, which the draws read through their vertexDelta. A vertex whose weights are all zero is copied as it is.
+// Skins the frame's posed mesh assets (MeshAssetPass.RecordSkinning), before the shadow cascades: one invocation per
+// vertex of the frame's skin groups (MeshSkinGroup), in one run over all of them, so no group of invocations waits on
+// another instance's larger count. An invocation finds its group by its place among the groups' outputs (a binary
+// search: they lie one after another). The vertex (its asset's, unchanged since the upload) is moved by its four
+// joints' skinning matrices (Rig.WritePalette: the inverse bind matrix, then the joint's posed place, uploaded
+// unchanged and used as M * v) blended by its weights, its normal and tangent turned with it and packed again. Written
+// into the frame slot's two skinned streams (its position, its normal and tangent), which the draws read through their
+// vertexDelta; the rest of the vertex they read from the asset's own. A vertex whose weights are all zero is written as
+// it is.
 #extension GL_EXT_scalar_block_layout : require
 #define MESH_ASSET_SKINNING
 #include "mesh-asset-data.glsl"
@@ -54,17 +57,38 @@ layout(push_constant, scalar) uniform MeshSkinConstants
 {
     uint firstGroup;
     uint groups;
+    // The slot's first skinned vertex (its groups' outputs start there, one after another) and how many it skins.
+    uint firstVertex;
+    uint vertices;
 } skin;
 
 void main()
 {
-    if (gl_WorkGroupID.y >= skin.groups)
+    uint place = gl_GlobalInvocationID.x;
+    if (place >= skin.vertices || skin.groups == 0u)
     {
         return;
     }
 
-    MeshSkinGroup group = skinGroups[skin.firstGroup + gl_WorkGroupID.y];
-    uint index = gl_GlobalInvocationID.x;
+    // The last group whose output starts at or before this vertex.
+    place += skin.firstVertex;
+    uint low = 0u;
+    uint high = skin.groups - 1u;
+    while (low < high)
+    {
+        uint middle = (low + high + 1u) >> 1u;
+        if (skinGroups[skin.firstGroup + middle].outputFirst <= place)
+        {
+            low = middle;
+        }
+        else
+        {
+            high = middle - 1u;
+        }
+    }
+
+    MeshSkinGroup group = skinGroups[skin.firstGroup + low];
+    uint index = place - group.outputFirst;
     if (index >= group.vertexCount)
     {
         return;
@@ -94,5 +118,6 @@ void main()
         vertex.tangent = assetPackTangent(turn * tangent.xyz, tangent.w);
     }
 
-    assetVertices[group.outputFirst + index] = vertex;
+    skinPositions[place] = vertex.position;
+    skinFrames[place] = uvec2(vertex.normal, vertex.tangent);
 }

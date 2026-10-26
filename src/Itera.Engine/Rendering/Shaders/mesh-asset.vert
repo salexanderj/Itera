@@ -3,8 +3,9 @@
 // The mesh assets (MeshAssetPass), drawn in MeshPass's rendering after the world and the models: one indexed draw per
 // primitive drawn, each instance a MeshAssetDraw (assetDraws[gl_InstanceIndex]: its transform, material, and tint). The
 // vertex is read from every asset's vertices at gl_VertexIndex (the command's vertex offset is its asset's first
-// vertex) plus the draw's vertexDelta (a posed instance's skinned copy, mesh-skin.comp), placed by the draw's transform (M * v), its normal turned by the transform's cofactor (right under any
-// scale), and projected as the world is (viewClip). Outputs: the offset from the camera, the normal, the tangent with
+// vertex), a posed instance's position, normal, and tangent from its skinned streams (assetVertexOf, mesh-skin.comp),
+// placed by the draw's transform (M * v), its normal turned by the transform's cofactor (right under any scale), and
+// projected as the world is (viewClip). Outputs: the offset from the camera, the normal, the tangent with
 // its bitangent's sign, both texture coordinates, the vertex colour, the material and tint, and (compiled with
 // MESH_ASSET_BLEND, for the blended pipeline) the faces a blended draw shows.
 #include "view.glsl"
@@ -23,7 +24,7 @@ layout(location = 6) flat out uint outSides;
 void main()
 {
     MeshAssetDraw draw = assetDraws[gl_InstanceIndex];
-    MeshAssetVertex vertex = assetVertices[gl_VertexIndex + draw.vertexDelta];
+    MeshAssetVertex vertex = assetVertexOf(draw, uint(gl_VertexIndex));
     vec3 world = (draw.transform * vec4(vertex.position, 1.0)).xyz;
     vec3 offset = world - view.position;
     mat3 turn = mat3(draw.transform);

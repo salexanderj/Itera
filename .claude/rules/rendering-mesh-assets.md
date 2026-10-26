@@ -63,7 +63,7 @@ their import, and their rigs are in `mesh-assets.md`. Related files: `rendering.
 - There are three lists: the camera's and the two cascades'. Each has four ranges of pipeline (`MeshAssetRange`:
   opaque or masked, one-sided or two-sided).
 - A list is limited to `MeshAssetPass.MaxDraws` draws and `MaxCommands` commands. A full list warns once.
-- The counts travel in `RenderFrame.MeshAssets` (`MeshAssetFrame`, with the skin groups, their most vertices, and
+- The counts travel in `RenderFrame.MeshAssets` (`MeshAssetFrame`, with the skin groups, their vertices in all, and
   their matrices).
 
 ### Skinning
@@ -72,14 +72,17 @@ their import, and their rigs are in `mesh-assets.md`. Related files: `rendering.
   level's first vertex and skin entry, its output's first vertex, its first skinning matrix, and its vertex count). Its
   matrices go in the slot's regions once, shared by its groups.
 - Each list's draws read the skinned copy of the level it draws (`MeshAssetDraw.VertexDelta`, added to
-  `gl_VertexIndex`). An instance is skinned whole or not at all.
+  `gl_VertexIndex`; `MeshAssetDraw.NotPosed` for the asset's own). An instance is skinned whole or not at all.
+- The skinned copy is two streams, positions and packed normals and tangents (`MeshAssetPass.SkinnedVertexBytes` a
+  vertex). The camera's draws take the rest of the vertex from the asset's own; the cascades read the positions alone.
 - When the slot's room cannot take every instance, those marked `DrawnMesh.SkinFirst` (`MeshInstance.SkinFirst`: a
   game's players, say) are skinned first, then the rest, each nearest the camera first. Those left over are not drawn
   that frame, and those with matrices that do not match their rig are drawn unposed, each with one Warning a run.
-- When the run read a skinned asset, the vertex buffer also holds a region for each frame slot
-  (`Engine:Renderer:SkinMegabytes`, lowered to fit the device's range).
+- When the run read a skinned asset, the streams hold a region for each frame slot (`Engine:Renderer:SkinMegabytes`,
+  lowered to fit the device's range and one dispatch, `MostSkinnedVertices`).
 - `RecordSkinning` runs before the cascades, outside rendering, and only on a fresh frame (a frame presented again
-  reuses its slot's). It dispatches `mesh-skin.comp`: a row of 64-vertex groups an instance. Each vertex moves by its
+  reuses its slot's). It dispatches `mesh-skin.comp` once, an invocation for each vertex of every group; each finds its
+  group by a binary search of the groups' outputs, which lie one after another. Each vertex moves by its
   four joints' matrices blended by its weights. Its normal and tangent turn by the blended matrix, right for turns and
   uniform scales; a joint scaled unevenly skews them. They are packed again in `Octahedral`'s encoding. An unweighted
   vertex is copied.
@@ -110,7 +113,8 @@ the render thread.
   - the textures, `MESH_TEXTURE_COUNT` of them: a white stand-in first, each of the assets' once, then a slot for each image view,
     indexed with `nonuniformEXT`;
   - the vertices, the materials, and the draws;
-  - for the skinning, the skins, every slot's skin groups, and every slot's skinning matrices.
+  - for the skinning, the skins, every slot's skin groups, and every slot's skinning matrices;
+  - the skinned streams, every slot's region of positions and of normals and tangents.
 - The device's room caps the textures: the lower of its per-stage and per-set sampled images less the mesh pass's, and
   its per-stage resources less the other descriptors and attachments a stage holds. Both are less one slot for each
   image view. Textures past the cap are left out with one Warning, and their materials are drawn with their factors.

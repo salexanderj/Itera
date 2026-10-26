@@ -223,7 +223,7 @@ public sealed class MeshAssetDrawsTests
         Assert.Equal(palettes, targets.PalettesOf(1)[..2].ToArray());
         // The static asset's draw reads its own vertices, the posed one's its copy.
         var written = targets.Draws(1, 0);
-        Assert.Equal(0, written[0].VertexDelta);
+        Assert.Equal(MeshAssetDraw.NotPosed, written[0].VertexDelta);
         Assert.Equal(targets.SkinVertexBase(1) - place.FirstVertex, written[1].VertexDelta);
     }
 
@@ -254,7 +254,7 @@ public sealed class MeshAssetDrawsTests
     }
 
     [Fact]
-    public void Posed_instances_past_the_slots_room_are_drawn_unposed()
+    public void Posed_instances_past_the_slots_room_are_not_drawn()
     {
         var (targets, view, draws) = Skinned(capacity: 4);
         view.Begin(0, LookingAlongMinusZ(shadows: false));
@@ -270,10 +270,8 @@ public sealed class MeshAssetDrawsTests
 
         var frame = draws.Write(0, view, [posed, posed], palettes);
 
-        Assert.Equal(1, frame.SkinGroups);
-        var written = targets.Draws(0, 0);
-        Assert.NotEqual(0, written[0].VertexDelta);
-        Assert.Equal(0, written[1].VertexDelta);
+        Assert.Equal((1, 1), (frame.SkinGroups, frame.Camera.Draws));
+        Assert.NotEqual(MeshAssetDraw.NotPosed, targets.Draws(0, 0)[0].VertexDelta);
     }
 
     /// <summary>
@@ -323,7 +321,7 @@ public sealed class MeshAssetDrawsTests
         var frame = draws.Write(0, view, [posed], [Matrix4x4.Identity]);
 
         Assert.Equal((0, 1), (frame.SkinGroups, frame.Camera.Draws));
-        Assert.Equal(0, targets.Draws(0, 0)[0].VertexDelta);
+        Assert.Equal(MeshAssetDraw.NotPosed, targets.Draws(0, 0)[0].VertexDelta);
     }
 
     /// <summary>A frame of posed instances allocates nothing, with room for them all (1,000) and short of it (100).</summary>
@@ -767,7 +765,8 @@ public sealed class MeshAssetDrawsTests
 
         var frame = draws.Write(0, view, [posed], [Matrix4x4.Identity, Matrix4x4.Identity]);
 
-        Assert.Equal((2, 2, 3), (frame.SkinGroups, frame.SkinJoints, frame.SkinVertices));
+        // The vertices skinned are both levels' together.
+        Assert.Equal((2, 2, 6), (frame.SkinGroups, frame.SkinJoints, frame.SkinVertices));
         var groups = targets.SkinGroupsOf(0)[..2].ToArray();
         var (body, low) = (targets.Layout.Assets[0], targets.Layout.Assets[1]);
         var bodyGroup = Assert.Single(groups, group => group.SourceFirst == (uint)body.FirstVertex);
@@ -955,7 +954,7 @@ public sealed class MeshAssetDrawsTests
 
         public int SkinVertexCapacity => skinCapacity;
 
-        public int SkinVertexBase(int slot) => Layout.VertexCount + slot * skinCapacity;
+        public int SkinVertexBase(int slot) => slot * skinCapacity;
 
         public Span<MeshSkinGroup> SkinGroupsOf(int slot) =>
             _groups.AsSpan(MeshAssetPass.GroupBase(slot), MeshAssetPass.MaxSkinGroups);

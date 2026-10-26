@@ -23,8 +23,9 @@ namespace Itera.Engine.Rendering.Meshes;
 /// (<see cref="MeshAssetRange"/>); blended materials' draws come in a fourth list of the slot (<see cref="BlendedList"/>),
 /// sorted back to front, drawn after the sky (<see cref="RecordTransparent"/>) with one pipeline that culls nothing,
 /// tests depth without writing it, and blends by alpha, each draw showing the faces it names. Skinned assets also have their joints and weights (<see cref="MeshSkinVertex"/>), and
-/// each frame slot a region of the vertex buffer (<c>Engine:Renderer:SkinMegabytes</c>) that <c>mesh-skin.comp</c> fills
-/// with the frame's posed instances (<see cref="RecordSkinning"/>, before the cascades), from the slot's skin groups
+/// each frame slot a region of two skinned streams, positions and packed normals and tangents
+/// (<c>Engine:Renderer:SkinMegabytes</c>), that <c>mesh-skin.comp</c> fills with the frame's posed instances
+/// (<see cref="RecordSkinning"/>, before the cascades), from the slot's skin groups
 /// (<see cref="MeshSkinGroup"/>) and skinning matrices. Created before the render thread starts; recorded by the render
 /// thread.
 /// </summary>
@@ -46,10 +47,13 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     private const int SkinGroupSize = 64;
 
     /// <summary>
-    /// The most vertices one posed asset may have: a dispatch row of invocation groups every device takes
-    /// (<c>maxComputeWorkGroupCount</c>'s least, 65,535). Larger assets are drawn unposed.
+    /// The most vertices a frame slot skins, and so one posed asset may have: one dispatch of invocation groups every
+    /// device takes (<c>maxComputeWorkGroupCount</c>'s least, 65,535). Larger assets are drawn unposed.
     /// </summary>
     public const int MostSkinnedVertices = 65_535 * SkinGroupSize;
+
+    /// <summary>A skinned vertex's bytes in the two streams: its position (12) and its packed normal and tangent (8).</summary>
+    public const int SkinnedVertexBytes = 20;
 
     /// <summary>The slot's list of blended draws, after the mesh pass's three (the camera's and the two cascades').</summary>
     public const int BlendedList = MeshPass.Lists;
@@ -57,7 +61,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     /// <summary>The lists of draws and commands a frame slot holds: the mesh pass's three and the blended.</summary>
     private const int SlotLists = MeshPass.Lists + 1;
 
-    private const int Bindings = 8;
+    private const int Bindings = 10;
     private const string MaskDefine = "MESH_ASSET_MASK";
     private const string BlendDefine = "MESH_ASSET_BLEND";
 
@@ -88,8 +92,9 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     private GpuBuffer? _skins;
     private GpuBuffer? _skinGroups;
     private GpuBuffer? _palettes;
+    private GpuBuffer? _skinPositions;
+    private GpuBuffer? _skinFrames;
     private BufferCopy _skinCopy;
-    private int _skinBase;
     private int _skinCapacity;
     private PipelineLayout _skinLayout;
     private Pipeline _skinPipeline;
@@ -173,7 +178,7 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         );
         if (_skinCapacity > 0)
         {
-            var skinMegabytes = (double)_skinCapacity * sizeof(MeshAssetVertex) / (1024.0 * 1024.0);
+            var skinMegabytes = (double)_skinCapacity * SkinnedVertexBytes / (1024.0 * 1024.0);
             LogSkinning(layout.SkinVertexCount, _skinCapacity, skinMegabytes);
         }
 
@@ -228,7 +233,11 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     /// <summary>The skinned vertices a frame slot's region holds; 0 when the run read no skinned asset.</summary>
     public int SkinVertexCapacity => _skinCapacity;
 
-    public int SkinVertexBase(int slot) => _skinBase + slot * _skinCapacity;
+    /// <summary>
+    /// The index in the skinned streams of <paramref name="slot"/>'s first skinned vertex; a posed draw's
+    /// <see cref="MeshAssetDraw.VertexDelta"/> maps its asset's vertices there.
+    /// </summary>
+    public int SkinVertexBase(int slot) => slot * _skinCapacity;
 
     /// <summary>
     /// The frame's counts (<see cref="MeshAssetFrame"/>), kept for this frame's recording, and what the main thread wrote
@@ -359,9 +368,9 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     }
 
     /// <summary>
-    /// Skins the frame's posed instances (<see cref="MeshSkinGroup"/>) into the slot's region of the vertex buffer, before
-    /// the cascades and the camera read them: one row of invocation groups an instance. Only on a fresh frame. Outside
-    /// rendering. Timed as <see cref="GpuPass.Skinning"/>.
+    /// Skins the frame's posed instances (<see cref="MeshSkinGroup"/>) into the slot's region of the skinned streams,
+    /// before the cascades and the camera read them: one invocation a vertex of every group, in one dispatch. Only on a
+    /// fresh frame. Outside rendering. Timed as <see cref="GpuPass.Skinning"/>.
     /// </summary>
     public void RecordSkinning(CommandBuffer commandBuffer, int slot, int timerSlot)
     {
@@ -376,7 +385,14 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         vk.CmdBindPipeline(commandBuffer, PipelineBindPoint.Compute, _skinPipeline);
         var set = _set;
         vk.CmdBindDescriptorSets(commandBuffer, PipelineBindPoint.Compute, _skinLayout, 1, 1, &set, 0, null);
-        var constants = new MeshSkinConstants { FirstGroup = (uint)GroupBase(slot), Groups = (uint)groups };
+        var vertices = Math.Min(_frame.SkinVertices, _skinCapacity);
+        var constants = new MeshSkinConstants
+        {
+            FirstGroup = (uint)GroupBase(slot),
+            Groups = (uint)groups,
+            FirstVertex = (uint)SkinVertexBase(slot),
+            Vertices = (uint)vertices,
+        };
         vk.CmdPushConstants(
             commandBuffer,
             _skinLayout,
@@ -385,12 +401,8 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
             (uint)sizeof(MeshSkinConstants),
             &constants
         );
-        vk.CmdDispatch(
-            commandBuffer,
-            (uint)((_frame.SkinVertices + SkinGroupSize - 1) / SkinGroupSize),
-            (uint)groups,
-            1
-        );
+        // One invocation a vertex of every group, one after another.
+        vk.CmdDispatch(commandBuffer, (uint)((vertices + SkinGroupSize - 1) / SkinGroupSize), 1, 1);
 
         // The skinned vertices before the cascades' and the camera's vertex shaders read them. Their last readers, this
         // slot's frame before, finished before its fence.
@@ -602,9 +614,13 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
         _skins?.Dispose();
         _skinGroups?.Dispose();
         _palettes?.Dispose();
+        _skinPositions?.Dispose();
+        _skinFrames?.Dispose();
         _skins = null;
         _skinGroups = null;
         _palettes = null;
+        _skinPositions = null;
+        _skinFrames = null;
         _upload = null;
         _vertices = null;
         _indices = null;
@@ -747,6 +763,10 @@ public sealed unsafe partial class MeshAssetPass : IDisposable, IReloadsShaders,
     private GpuBuffer SkinGroups => _skinGroups ?? throw NotInitialised();
 
     private GpuBuffer Palettes => _palettes ?? throw NotInitialised();
+
+    private GpuBuffer SkinPositions => _skinPositions ?? throw NotInitialised();
+
+    private GpuBuffer SkinFrames => _skinFrames ?? throw NotInitialised();
 
     private static InvalidOperationException NotInitialised() => new("The mesh asset pass has not been initialised.");
 

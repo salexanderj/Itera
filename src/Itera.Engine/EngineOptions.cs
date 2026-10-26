@@ -242,9 +242,9 @@ public sealed class RendererSettings
 
     /// <summary>
     /// Megabytes of GPU memory a frame slot takes for the posed mesh assets' skinned vertices, 1 to 512, taken once at
-    /// start and only when a skinned asset was read: 16 by default (about 466,000 vertices, 270 of the starter's fox). It is
-    /// lowered to fit the device's storage buffer range beside every asset's own vertices. Posed instances past it are
-    /// not drawn (warned once a run).
+    /// start and only when a skinned asset was read: 16 by default (about 838,000 vertices, 20 bytes each: about 480 of
+    /// the starter's fox). It is lowered to fit the device's storage buffer range and one skinning dispatch (about 4.2
+    /// million vertices). Posed instances past it are not drawn (warned once a run).
     /// </summary>
     public int SkinMegabytes { get; set; } = 16;
 

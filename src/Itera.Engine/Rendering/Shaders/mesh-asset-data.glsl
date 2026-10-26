@@ -2,10 +2,11 @@
 // samplers, the texture slots (MESH_TEXTURE_COUNT of them: the white stand-in first, every asset's textures, then one
 // for each image view, RenderViews), every asset's vertices (MeshAssetVertex), every asset's materials
 // (MeshAssetMaterial), and the frame's draws of every slot and list (MeshAssetDraw, read at gl_InstanceIndex: a
-// command's first instance names its first draw). The vertex buffer also
-// holds each frame slot's skinned vertices, which mesh-skin.comp writes (compiled with MESH_ASSET_SKINNING, where the
-// buffer is writable): a draw adds its vertexDelta to gl_VertexIndex to read them. Mirrors GpuData's MeshAssetVertex,
-// MeshAssetMaterial, and MeshAssetDraw member for member; GpuLayout tests check them.
+// command's first instance names its first draw); and each frame slot's skinned vertices, which mesh-skin.comp writes
+// (compiled with MESH_ASSET_SKINNING, where they are writable) as two streams, their positions and their turned normals
+// and tangents. A posed draw adds its vertexDelta to gl_VertexIndex to read them, and takes the rest from the asset's
+// own vertex (assetVertexOf). Mirrors GpuData's MeshAssetVertex, MeshAssetMaterial, and MeshAssetDraw member for member;
+// GpuLayout tests check them.
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_nonuniform_qualifier : require
 
@@ -61,17 +62,33 @@ struct MeshAssetDraw
 #define MESH_ASSET_TWO_SIDED 2u
 // MeshAssetDraw.tint that leaves the colours as they are.
 #define MESH_ASSET_NO_TINT 0xFFFFFFFFu
+// MeshAssetDraw.vertexDelta of a draw of the asset's own vertices (MeshAssetDraw.NotPosed).
+#define MESH_ASSET_NOT_POSED int(0x80000000u)
 
 layout(set = 1, binding = 0) uniform sampler assetSamplers[6];
 layout(set = 1, binding = 1) uniform texture2D assetTextures[MESH_TEXTURE_COUNT];
 
-#ifdef MESH_ASSET_SKINNING
-layout(scalar, set = 1, binding = 2) restrict buffer MeshAssetVertices
-#else
 layout(scalar, set = 1, binding = 2) restrict readonly buffer MeshAssetVertices
-#endif
 {
     MeshAssetVertex assetVertices[];
+};
+
+#ifdef MESH_ASSET_SKINNING
+#define MESH_SKIN_ACCESS writeonly
+#else
+#define MESH_SKIN_ACCESS readonly
+#endif
+
+// Each frame slot's skinned vertices (MeshAssetPass.SkinVertexBase): their positions, and their normals and tangents
+// packed as MeshAssetVertex packs them.
+layout(scalar, set = 1, binding = 8) restrict MESH_SKIN_ACCESS buffer MeshSkinPositions
+{
+    vec3 skinPositions[];
+};
+
+layout(scalar, set = 1, binding = 9) restrict MESH_SKIN_ACCESS buffer MeshSkinFrames
+{
+    uvec2 skinFrames[];
 };
 
 layout(scalar, set = 1, binding = 3) restrict readonly buffer MeshAssetMaterials
@@ -83,6 +100,33 @@ layout(scalar, set = 1, binding = 4) restrict readonly buffer MeshAssetDraws
 {
     MeshAssetDraw assetDraws[];
 };
+
+#ifndef MESH_ASSET_SKINNING
+// Vertex index of draw's asset as it is drawn: a posed draw's skinned position, normal, and tangent; the rest the
+// asset's own.
+MeshAssetVertex assetVertexOf(MeshAssetDraw draw, uint index)
+{
+    MeshAssetVertex vertex = assetVertices[index];
+    if (draw.vertexDelta != MESH_ASSET_NOT_POSED)
+    {
+        uint skinned = uint(int(index) + draw.vertexDelta);
+        uvec2 frame = skinFrames[skinned];
+        vertex.position = skinPositions[skinned];
+        vertex.normal = frame.x;
+        vertex.tangent = frame.y;
+    }
+
+    return vertex;
+}
+
+// The world position of vertex index of draw's asset as it is drawn, read alone: a posed draw's skinned one.
+vec3 assetPositionOf(MeshAssetDraw draw, uint index)
+{
+    return draw.vertexDelta != MESH_ASSET_NOT_POSED
+        ? skinPositions[uint(int(index) + draw.vertexDelta)]
+        : assetVertices[index].position;
+}
+#endif
 
 vec2 assetSignNotZero(vec2 value)
 {

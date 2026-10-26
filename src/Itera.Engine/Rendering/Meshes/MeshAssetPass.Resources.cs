@@ -62,18 +62,20 @@ public sealed unsafe partial class MeshAssetPass
             );
         }
 
-        // Each frame slot's region of skinned vertices follows every asset's own, within the same range.
+        // Each frame slot's skinned vertices, in two streams of their own: their positions and their normals and tangents
+        // (SkinnedVertexBytes a vertex), as many as one skinning dispatch reaches.
         var slots = (ulong)FrameSync.FramesInFlight;
         var vertexSize = (ulong)sizeof(MeshAssetVertex);
-        _skinBase = layout.VertexCount;
         _skinCapacity =
             layout.SkinVertexCount == 0
                 ? 0
                 : (int)
                     Math.Min(
-                        Math.Min((ulong)_options.Value.Renderer.SkinMegabytes << 20, (range - vertexBytes) / slots)
-                            / vertexSize,
-                        int.MaxValue / slots
+                        Math.Min(
+                            ((ulong)_options.Value.Renderer.SkinMegabytes << 20) / SkinnedVertexBytes,
+                            range / (slots * (ulong)sizeof(System.Numerics.Vector3))
+                        ),
+                        MostSkinnedVertices
                     );
         var skinned = _skinCapacity > 0;
         var skinBytes = (ulong)layout.SkinVertexCount * (ulong)sizeof(MeshSkinVertex);
@@ -102,7 +104,7 @@ public sealed unsafe partial class MeshAssetPass
             "mesh asset upload"
         );
         _vertices = _allocator.CreateBuffer(
-            Math.Max(vertexBytes + slots * (ulong)_skinCapacity * vertexSize, vertexSize),
+            Math.Max(vertexBytes, vertexSize),
             BufferUsageFlags.StorageBufferBit | BufferUsageFlags.TransferDstBit,
             MemoryUsage.DeviceLocal,
             "mesh asset vertices"
@@ -126,6 +128,19 @@ public sealed unsafe partial class MeshAssetPass
             "mesh asset skins"
         );
         // Without skinned assets, one entry each, which nothing reads.
+        var skinVertices = Math.Max(slots * (ulong)_skinCapacity, 1);
+        _skinPositions = _allocator.CreateBuffer(
+            skinVertices * (ulong)sizeof(System.Numerics.Vector3),
+            BufferUsageFlags.StorageBufferBit,
+            MemoryUsage.DeviceLocal,
+            "mesh asset skinned positions"
+        );
+        _skinFrames = _allocator.CreateBuffer(
+            skinVertices * 2 * sizeof(uint),
+            BufferUsageFlags.StorageBufferBit,
+            MemoryUsage.DeviceLocal,
+            "mesh asset skinned normals"
+        );
         _skinGroups = _allocator.CreateBuffer(
             (skinned ? slots * MaxSkinGroups : 1) * (ulong)sizeof(MeshSkinGroup),
             BufferUsageFlags.StorageBufferBit,
@@ -427,6 +442,20 @@ public sealed unsafe partial class MeshAssetPass
                 DescriptorCount = 1,
                 StageFlags = ShaderStageFlags.ComputeBit,
             },
+            new()
+            {
+                Binding = 8,
+                DescriptorType = DescriptorType.StorageBuffer,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.VertexBit | ShaderStageFlags.ComputeBit,
+            },
+            new()
+            {
+                Binding = 9,
+                DescriptorType = DescriptorType.StorageBuffer,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.VertexBit | ShaderStageFlags.ComputeBit,
+            },
         };
         var layoutInfo = new DescriptorSetLayoutCreateInfo
         {
@@ -606,7 +635,7 @@ public sealed unsafe partial class MeshAssetPass
         {
             new(DescriptorType.Sampler, Samplers),
             new(DescriptorType.SampledImage, textureCount),
-            new(DescriptorType.StorageBuffer, 6),
+            new(DescriptorType.StorageBuffer, 8),
         };
         var poolInfo = new DescriptorPoolCreateInfo
         {
@@ -649,7 +678,7 @@ public sealed unsafe partial class MeshAssetPass
             images[i] = new DescriptorImageInfo(default, view, ImageLayout.ShaderReadOnlyOptimal);
         }
 
-        const int bufferCount = 6;
+        const int bufferCount = 8;
         var infos = stackalloc DescriptorBufferInfo[bufferCount]
         {
             new(Vertices.Buffer, 0, Vk.WholeSize),
@@ -658,6 +687,8 @@ public sealed unsafe partial class MeshAssetPass
             new(Skins.Buffer, 0, Vk.WholeSize),
             new(SkinGroups.Buffer, 0, Vk.WholeSize),
             new(Palettes.Buffer, 0, Vk.WholeSize),
+            new(SkinPositions.Buffer, 0, Vk.WholeSize),
+            new(SkinFrames.Buffer, 0, Vk.WholeSize),
         };
         fixed (DescriptorImageInfo* imageInfos = images)
         {

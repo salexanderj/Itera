@@ -156,7 +156,7 @@ public sealed partial class MeshAssetDraws
             _lists[i] = ListsOf(in instances[i], layout, view, palettes, i, out _distances[i]);
         }
 
-        var groups = WriteSkins(slot, instances[..count], layout, palettes, out var mostVertices, out var joints);
+        var groups = WriteSkins(slot, instances[..count], layout, palettes, out var skinnedVertices, out var joints);
         for (var v = 0; v < _viewCount; v++)
         {
             var target = _views[v];
@@ -190,7 +190,7 @@ public sealed partial class MeshAssetDraws
             WriteList(slot, 1, instances[..count], layout),
             WriteList(slot, 2, instances[..count], layout),
             groups,
-            mostVertices,
+            skinnedVertices,
             joints,
             WriteBlended(slot, instances[..count], layout)
         );
@@ -208,13 +208,13 @@ public sealed partial class MeshAssetDraws
         ReadOnlySpan<MeshInstance> instances,
         MeshAssetLayout layout,
         ReadOnlySpan<Matrix4x4> palettes,
-        out int mostVertices,
+        out int skinnedVertices,
         out int joints
     )
     {
-        mostVertices = 0;
+        skinnedVertices = 0;
         joints = 0;
-        Array.Clear(_deltas, 0, instances.Length * ListBits);
+        Array.Fill(_deltas, MeshAssetDraw.NotPosed, 0, instances.Length * ListBits);
         var capacity = _target.SkinVertexCapacity;
         if (capacity == 0)
         {
@@ -303,7 +303,6 @@ public sealed partial class MeshAssetDraws
                 };
                 SetDeltas(i, in instance, layout, skinned[s], outputBase + vertices - place.FirstVertex);
                 vertices += place.VertexCount;
-                mostVertices = Math.Max(mostVertices, place.VertexCount);
             }
 
             joints += instance.Joints;
@@ -316,6 +315,7 @@ public sealed partial class MeshAssetDraws
             LogSkinFull(capacity, instancesSkinned, candidates + (tooLarge ? 1 : 0));
         }
 
+        skinnedVertices = vertices;
         return written;
     }
 
