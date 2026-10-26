@@ -104,8 +104,9 @@ every few.
   air is one fill. An edit made meanwhile may show in part of the field until the next build.
 - Air under open sky is full. A worker spreads light through air, losing a share a cell, brightest first. Solid cells
   take their brightest air neighbour's.
-- The field is built again when the view has moved far from its middle, or a while after an edit or after a column of
-  the read level loaded. A failed build is tried again after a while.
+- The field is built again when the view has moved far from its middle, or a while after an edit or a loaded column of
+  the read level inside its box (`SkyField.Overlaps`, in absolute centimetres). A failed build is tried again after a
+  while.
 - It is staged whole in one frame and copied by `MeshPass.RecordSkyField` into an R8 3D texture (binding 8, linear,
   white border for open sky) with the frame's other copies, under the loading screen too.
 - `mesh.frag` scales sky and ground light by it, half a cell in front of the surface, never to nothing.

@@ -629,13 +629,8 @@ public sealed unsafe partial class WorldMeshes : IWorldOnGpu, IDisposable
             for (var i = 0; i < read; i++)
             {
                 ref readonly var change = ref _changes[i];
-                // Edits, and coarse columns loaded, change what the sky field would see.
-                _skyChanged |=
-                    change.Kind is VoxelChangeKind.BrickChanged or VoxelChangeKind.ChunkChanged
-                    || (
-                        change.Kind == VoxelChangeKind.ColumnLoaded
-                        && change.Column.Level == Math.Min(SkyField.LevelFor(_grid), _coarsestLevel)
-                    );
+                // Edits, and coarse columns loaded, inside the sky field's box change what it would see.
+                _skyChanged |= ChangesSky(in change);
                 var level = change.Column.Level;
                 if (level < _finestLevel || level > _coarsestLevel)
                 {

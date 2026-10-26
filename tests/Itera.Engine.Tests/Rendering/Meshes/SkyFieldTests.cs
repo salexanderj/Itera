@@ -214,6 +214,36 @@ public sealed class SkyFieldTests
         Assert.True(x0 % VoxelWorld.BlockEdge != 0 || y0 % VoxelWorld.BlockEdge != 0);
     }
 
+    /// <summary>
+    /// The box a read sets, in absolute centimetres: a range that ends at its low side or starts at its high side misses
+    /// it, one a centimetre further in meets it, and a column's range, every height, meets it only across x and z.
+    /// </summary>
+    [Fact]
+    public void The_box_meets_only_ranges_that_reach_inside_it()
+    {
+        using var world = TestWorlds.Load(new SlopeGenerator(), new Vector3(0, 2.5f, 0), radiusMetres: 4, levels: 2);
+        var field = new SkyField();
+        field.Read(world, new WorldPoint(0, 2.5, 0), coarsestLevel: 1);
+        var cell = VoxelGrid.Unit.Edge(field.CellLevel);
+        var minX = (long)Math.Round(field.Corner.X * VoxelConstants.CentimetresPerMetre);
+        var minY = (long)Math.Round(field.Corner.Y * VoxelConstants.CentimetresPerMetre);
+        var minZ = (long)Math.Round(field.Corner.Z * VoxelConstants.CentimetresPerMetre);
+        var endX = minX + (long)SkyField.SizeXZ * cell;
+        var endY = minY + (long)SkyField.SizeY * cell;
+        const long inY = 0;
+        const long inZ = 0;
+
+        Assert.False(field.Overlaps(minX - 10, inY, inZ, minX, inY + 1, inZ + 1));
+        Assert.True(field.Overlaps(minX - 10, inY, inZ, minX + 1, inY + 1, inZ + 1));
+        Assert.False(field.Overlaps(endX, inY, inZ, endX + 10, inY + 1, inZ + 1));
+        Assert.True(field.Overlaps(endX - 1, inY, inZ, endX + 10, inY + 1, inZ + 1));
+        Assert.False(field.Overlaps(0, endY, inZ, 1, endY + 10, inZ + 1));
+        Assert.False(field.Overlaps(0, minY - 10, inZ, 1, minY, inZ + 1));
+        Assert.True(field.Overlaps(0, long.MinValue, inZ, 1, long.MaxValue, inZ + 1));
+        Assert.False(field.Overlaps(endX, long.MinValue, inZ, endX + 10, long.MaxValue, inZ + 1));
+        Assert.False(field.Overlaps(0, long.MinValue, minZ - 10, 1, long.MaxValue, minZ));
+    }
+
     [Fact]
     public void A_read_allocates_nothing_once_its_lists_have_grown()
     {

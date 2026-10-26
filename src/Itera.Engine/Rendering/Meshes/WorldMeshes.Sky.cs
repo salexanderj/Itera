@@ -9,7 +9,7 @@ namespace Itera.Engine.Rendering.Meshes;
 /// <summary>
 /// The sky field on the GPU (<see cref="SkyField"/>): a 3D texture that <see cref="MeshPass"/> owns. A build starts when
 /// there is none, when the view is 32 m from its middle or 16 m above or below it, or 2 s after an edit or a coarse
-/// column loaded; its voxels are
+/// column loaded inside its box; its voxels are
 /// read on the main thread, at most <see cref="SkyReadMilliseconds"/> a frame over as many frames as that takes, its
 /// flood runs on a worker, and once done it is staged whole in one frame (when the staging region has room), copied into
 /// the texture before that frame's draws (the copy waits for the frames before to stop reading it), and drawn from that
@@ -64,17 +64,24 @@ public sealed unsafe partial class WorldMeshes
     private WorldPoint _skyCorner;
     private WorldPoint _skyCentre;
     private bool _skyChanged;
+
+    // True once a read has started this match: until then any edit or coarse column loaded counts as a change.
+    private bool _skyBoxKnown;
     private double _skyBuiltAt = double.NegativeInfinity;
     private bool _skyFaultReported;
 
     /// <summary>True once a field is drawn from. For tests.</summary>
     internal bool HasSkyField => _skyDrawn;
 
+    /// <summary>True when a change to the world waits for the next build. For tests.</summary>
+    internal bool SkyChangePending => _skyChanged;
+
     /// <summary>Starts a match with no field.</summary>
     private void BeginSky()
     {
         EndSky();
         _skyChanged = false;
+        _skyBoxKnown = false;
         _skyBuiltAt = double.NegativeInfinity;
     }
 
@@ -160,6 +167,7 @@ public sealed unsafe partial class WorldMeshes
         _skyReadFrames = 0;
         var start = Stopwatch.GetTimestamp();
         _skyField.BeginRead(world, viewPosition, _coarsestLevel);
+        _skyBoxKnown = true;
         _skyReading = true;
         ReadSky(world, start);
     }
@@ -180,6 +188,48 @@ public sealed unsafe partial class WorldMeshes
             _skyReading = false;
             _skyBuild = Task.Run(_skyField.Flood);
         }
+    }
+
+    /// <summary>
+    /// True when <paramref name="change"/> can change what the sky field sees: an edit, or a column of the field's read
+    /// level loaded, whose column, chunk, or brick meets the box of the last read begun. Before the match's first read
+    /// begins, any of them counts. Allocates nothing.
+    /// </summary>
+    private bool ChangesSky(in VoxelChange change)
+    {
+        var column = change.Column;
+        var loaded =
+            change.Kind == VoxelChangeKind.ColumnLoaded
+            && column.Level == Math.Min(SkyField.LevelFor(_grid), _coarsestLevel);
+        if (!loaded && change.Kind is not (VoxelChangeKind.BrickChanged or VoxelChangeKind.ChunkChanged))
+        {
+            return false;
+        }
+
+        if (!_skyBoxKnown)
+        {
+            return true;
+        }
+
+        // The change's column, chunk, or brick, in absolute centimetres.
+        var size = _grid.ColumnCentimetres(column.Level);
+        var x = column.X * size;
+        var z = column.Z * size;
+        if (loaded)
+        {
+            return _skyField.Overlaps(x, long.MinValue, z, x + size, long.MaxValue, z + size);
+        }
+
+        var y = column.Chunk(change.Layer, _grid).Y * size;
+        if (change.Kind == VoxelChangeKind.BrickChanged)
+        {
+            size /= VoxelConstants.BricksPerChunkEdge;
+            x += (change.Brick & 15) * size;
+            y += ((change.Brick >> 4) & 15) * size;
+            z += (change.Brick >> 8) * size;
+        }
+
+        return _skyField.Overlaps(x, y, z, x + size, y + size, z + size);
     }
 
     /// <summary>The sky field's part of the frame's lighting record.</summary>

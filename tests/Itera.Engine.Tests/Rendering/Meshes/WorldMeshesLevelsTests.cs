@@ -373,6 +373,116 @@ public sealed class WorldMeshesLevelsTests(ITestOutputHelper output) : WorldMesh
         );
     }
 
+    /// <summary>
+    /// Once the field is built, an edit 50 m up, above its box (which reaches about 33 m up), does not build it again,
+    /// though the world reports it at the field's read level; an edit at the ground under the view does.
+    /// </summary>
+    [Fact]
+    public void Only_an_edit_inside_the_sky_fields_box_builds_it_again()
+    {
+        using var world = TestWorlds.Load(new SlopeGenerator(), Centre, radiusMetres: 2, levels: SkyLevels);
+        using var targets = new FakeWorldTargets();
+        using var meshes = NewSkyMeshes(world, targets);
+        var view = LookingDown(Centre);
+        var frame = 0;
+        Assert.True(SkyBuiltWithin(meshes, targets, view, ref frame, 3000), "No first field.");
+        Assert.False(meshes.SkyChangePending);
+
+        var cursor = world.CreateChangeCursor();
+        world.Apply(VoxelEdit.Sphere(new VoxelCoord(0, 5000, 0), 50, VoxelEditOperation.Set, SlopeGenerator.Stone));
+        world.Update(0);
+        Assert.True(EditReachedLevel(world, cursor, SkyLevels - 1), "The edit above the box changed no voxel.");
+        Assert.False(SkyBuiltWithin(meshes, targets, view, ref frame, 400), "A field after an edit above its box.");
+        Assert.False(meshes.SkyChangePending);
+
+        var ground = SlopeGenerator.Height(0, 0, 17);
+        world.Apply(VoxelEdit.Sphere(new VoxelCoord(0, ground, 0), 50, VoxelEditOperation.Clear));
+        world.Update(0);
+        Assert.True(SkyBuiltWithin(meshes, targets, view, ref frame, 3000), "No field after an edit inside its box.");
+    }
+
+    /// <summary>
+    /// Once the field is built, columns of its read level that load round a second streaming centre 200 m away, past
+    /// its box, leave no change waiting for a build.
+    /// </summary>
+    [Fact]
+    public void A_column_loaded_outside_the_sky_fields_box_does_not_build_it_again()
+    {
+        using var world = TestWorlds.Load(new SlopeGenerator(), Centre, radiusMetres: 2, levels: SkyLevels);
+        using var targets = new FakeWorldTargets();
+        using var meshes = NewSkyMeshes(world, targets);
+        var view = LookingDown(Centre);
+        var frame = 0;
+        Assert.True(SkyBuiltWithin(meshes, targets, view, ref frame, 3000), "No first field.");
+
+        var cursor = world.CreateChangeCursor();
+        world.SetCenters([Centre, Centre + new Vector3(200, 0, 0)]);
+        TestWorlds.WaitUntilLoaded(world);
+        var changes = new VoxelChange[256];
+        var loaded = 0;
+        int read;
+        while ((read = world.ReadChanges(cursor, changes)) > 0)
+        {
+            foreach (var change in changes.AsSpan(0, read))
+            {
+                // The box reaches about 61 m on x; these columns start past 100 m.
+                var far =
+                    change.Column.X * world.Grid.ColumnCentimetres(change.Column.Level)
+                    >= 100 * VoxelConstants.CentimetresPerMetre;
+                var counts = change.Kind == VoxelChangeKind.ColumnLoaded && change.Column.Level == SkyLevels - 1 && far;
+                loaded += counts ? 1 : 0;
+            }
+        }
+
+        Assert.True(loaded > 0, "No column of the read level loaded past the box.");
+        var slot = frame++ % FrameSync.FramesInFlight;
+        targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
+        Assert.False(meshes.SkyChangePending);
+    }
+
+    /// <summary>Levels of the sky field's change tests: the field reads level 5, every other voxel a cell.</summary>
+    private const int SkyLevels = 6;
+
+    /// <summary>The meshes of the sky field's change tests, begun over <paramref name="world"/>.</summary>
+    private WorldMeshes NewSkyMeshes(VoxelWorld world, FakeWorldTargets targets)
+    {
+        var options = new EngineOptions
+        {
+            Voxels = new VoxelSettings { StreamingRadiusMetres = 2, Levels = SkyLevels },
+            Renderer = new RendererSettings { MeshFinestLevel = 3 },
+        };
+        var meshes = new WorldMeshes(
+            Palette,
+            targets,
+            new MeshView(targets, Options.Create(options)),
+            targets,
+            Options.Create(options),
+            NullLogger<WorldMeshes>.Instance
+        );
+        meshes.Initialize();
+        meshes.BeginMatch(world, new VoxelModels(world), new NoVoxelTintMap());
+        return meshes;
+    }
+
+    /// <summary>True when the changes since <paramref name="cursor"/> hold an edit of a chunk at <paramref name="level"/>.</summary>
+    private static bool EditReachedLevel(VoxelWorld world, VoxelChangeCursor cursor, int level)
+    {
+        var changes = new VoxelChange[256];
+        var found = false;
+        int read;
+        while ((read = world.ReadChanges(cursor, changes)) > 0)
+        {
+            foreach (var change in changes.AsSpan(0, read))
+            {
+                found |=
+                    change.Kind is VoxelChangeKind.BrickChanged or VoxelChangeKind.ChunkChanged
+                    && change.Column.Level == level;
+            }
+        }
+
+        return found;
+    }
+
     /// <summary>Uploads frames from <paramref name="view"/> until one stages a new sky field, at most <paramref name="frames"/>.</summary>
     private static bool SkyBuiltWithin(
         WorldMeshes meshes,

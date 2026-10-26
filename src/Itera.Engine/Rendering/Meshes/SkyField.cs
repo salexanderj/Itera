@@ -62,6 +62,14 @@ internal sealed class SkyField
     private int _y0;
     private int _z0;
 
+    // The box of the last read, absolute centimetres: its low corner and the first centimetre past it on each axis.
+    private long _minX;
+    private long _minY;
+    private long _minZ;
+    private long _endX;
+    private long _endY;
+    private long _endZ;
+
     public SkyField()
     {
         for (var i = 0; i < _buckets.Length; i++)
@@ -105,10 +113,10 @@ internal sealed class SkyField
     }
 
     /// <summary>
-    /// Starts a read of the box round <paramref name="centre"/>: sets <see cref="Corner"/> and <see cref="Centre"/>,
-    /// clears the cells, and lists the blocks of <paramref name="world"/>'s level <see cref="CellLevel"/> (or its coarsest
-    /// level if that is finer, every few voxels a cell) in the resident columns that cover the box. Blocks of columns
-    /// that load later are not read (the box's cells there stay air); a column that unloads before its blocks are read
+    /// Starts a read of the box round <paramref name="centre"/>: sets <see cref="Corner"/>, <see cref="Centre"/>, and the
+    /// box <see cref="Overlaps"/> tests, clears the cells, and lists the blocks of <paramref name="world"/>'s level
+    /// <see cref="CellLevel"/> (or its coarsest level if that is finer, every few voxels a cell) in the resident columns
+    /// that cover the box. Blocks of columns that load later are not read (the box's cells there stay air); a column that unloads before its blocks are read
     /// leaves them air too. Main thread; allocates nothing once the lists have grown.
     /// </summary>
     public void BeginRead(VoxelWorld world, in WorldPoint centre, int coarsestLevel)
@@ -129,6 +137,9 @@ internal sealed class SkyField
         var metres = cellCentimetres / VoxelConstants.CentimetresPerMetre;
         Corner = new WorldPoint(cx * metres, cy * metres, cz * metres);
         Centre = Corner.Plus(SizeXZ * 0.5 * metres, SizeY * 0.5 * metres, SizeXZ * 0.5 * metres);
+        long cell = _grid.Edge(CellLevel);
+        (_minX, _minY, _minZ) = (cx * cell, cy * cell, cz * cell);
+        (_endX, _endY, _endZ) = (_minX + SizeXZ * cell, _minY + SizeY * cell, _minZ + SizeXZ * cell);
         Array.Clear(_solid);
         UniformBlocks = 0;
         StoredBlocks = 0;
@@ -172,6 +183,14 @@ internal sealed class SkyField
             }
         }
     }
+
+    /// <summary>
+    /// True when the box of the last <see cref="BeginRead"/> overlaps the box from (<paramref name="x0"/>,
+    /// <paramref name="y0"/>, <paramref name="z0"/>) up to (<paramref name="x1"/>, <paramref name="y1"/>,
+    /// <paramref name="z1"/>), exclusive, in absolute centimetres. Allocates nothing.
+    /// </summary>
+    public bool Overlaps(long x0, long y0, long z0, long x1, long y1, long z1) =>
+        x0 < _endX && x1 > _minX && y0 < _endY && y1 > _minY && z0 < _endZ && z1 > _minZ;
 
     /// <summary>
     /// Reads the listed blocks of <see cref="BeginRead"/>'s box into its cells, one after another, until all are read
