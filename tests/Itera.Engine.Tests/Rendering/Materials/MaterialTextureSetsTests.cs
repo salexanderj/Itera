@@ -103,7 +103,7 @@ public sealed class MaterialTextureSetsTests : IDisposable
         Assert.Equal(["a-ground"], sets.Large.Select(s => s.Name));
         Assert.Equal(["b-ground", "c-rock"], sets.Small.Select(s => s.Name));
         Assert.True(sets.TryFind("c-rock", out var rock));
-        Assert.Equal(new MaterialTextureSlot(false, 1, 2f, new Vector3(0.1f, 0.2f, 0.3f)), rock);
+        Assert.Equal(new MaterialTextureSlot(false, 1, 2f, new Vector3(0.1f, 0.2f, 0.3f), sets.Small[1].Heights), rock);
         Assert.True(sets.TryFind("a-ground", out var ground));
         Assert.True(ground.Large);
         Assert.Equal(0, ground.Layer);

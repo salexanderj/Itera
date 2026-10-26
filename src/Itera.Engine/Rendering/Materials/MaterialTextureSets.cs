@@ -7,9 +7,21 @@ namespace Itera.Engine.Rendering.Materials;
 /// <summary>
 /// A material's texture set as the GPU holds it: in the large arrays (<see cref="MaterialTextureSets.LargeTexels"/>) or
 /// the small ones, at <paramref name="Layer"/>; a tile <paramref name="Metres"/> wide; its colour's mean in linear RGB
-/// (<paramref name="Mean"/>), which the shader matches to the material's own colour.
+/// (<paramref name="Mean"/>), which the shader matches to the material's own colour; and the range its heights lie in
+/// (<paramref name="Heights"/>).
 /// </summary>
-public readonly record struct MaterialTextureSlot(bool Large, int Layer, float Metres, Vector3 Mean);
+public readonly record struct MaterialTextureSlot(
+    bool Large,
+    int Layer,
+    float Metres,
+    Vector3 Mean,
+    HeightRange Heights
+)
+{
+    /// <summary>A slot whose heights may be anywhere from 0 to 1.</summary>
+    public MaterialTextureSlot(bool large, int layer, float metres, Vector3 mean)
+        : this(large, layer, metres, mean, HeightRange.Full) { }
+}
 
 /// <summary>
 /// The world materials' texture sets (docs/rendering-redesign.md, the materials plan): each a folder of
@@ -71,7 +83,7 @@ public sealed class MaterialTextureSets
             {
                 var set = Read(Path.Combine(folder, name), name);
                 var group = set.Texels == LargeTexels ? _large : _small;
-                _slots[name] = new MaterialTextureSlot(group == _large, group.Count, set.Metres, set.Mean);
+                _slots[name] = new MaterialTextureSlot(group == _large, group.Count, set.Metres, set.Mean, set.Heights);
                 group.Add(set);
             }
             catch (Exception e) when (e is IOException or InvalidDataException or JsonException)
@@ -109,6 +121,7 @@ public sealed class MaterialTextureSets
         }
 
         var files = new byte[LayerFiles.Length][];
+        var heights = HeightRange.Full;
         for (var i = 0; i < files.Length; i++)
         {
             var bytes = File.ReadAllBytes(Path.Combine(folder, LayerFiles[i]));
@@ -120,16 +133,26 @@ public sealed class MaterialTextureSets
                 );
             }
 
+            if (dds.Format == DdsFormat.Bc4)
+            {
+                // The smaller levels are filtered from the largest, so they lie within its range.
+                heights = HeightRange.FromBc4(bytes.AsSpan(dds.Offsets[0], dds.Lengths[0]));
+            }
+
             files[i] = bytes;
         }
 
         return new LoadedSet(name, info.Texels, info.Metres, new Vector3(info.Mean[0], info.Mean[1], info.Mean[2]))
         {
             Files = files,
+            Heights = heights,
         };
     }
 
-    /// <summary>A set read from its folder: its name, size, width, colour's mean, and its three files' bytes.</summary>
+    /// <summary>
+    /// A set read from its folder: its name, size, width, colour's mean, the range of its heights, and its three files'
+    /// bytes.
+    /// </summary>
     public sealed class LoadedSet(string name, int texels, float metres, Vector3 mean)
     {
         public string Name { get; } = name;
@@ -139,6 +162,9 @@ public sealed class MaterialTextureSets
         public float Metres { get; } = metres;
 
         public Vector3 Mean { get; } = mean;
+
+        /// <summary>The lowest and highest height the set's height layer holds (<see cref="HeightRange.Full"/> without one).</summary>
+        public HeightRange Heights { get; init; } = HeightRange.Full;
 
         /// <summary>The DDS files of <see cref="LayerFiles"/>, until <see cref="ReleaseFiles"/>.</summary>
         public byte[][] Files { get; internal set; } = [];

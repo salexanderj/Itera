@@ -57,6 +57,8 @@ Every set's heights have a mean of a half.
   Any other size is refused and the set is left out. Bindings 11 to 13 are the
   large group's colour, normals, and heights, and 14 to 16 the small group's. A group with no sets gets a stand-in
   that is never written.
+- Each set's height range (`HeightRange`, on `MaterialTextureSlot.Heights`) is found from the BC4 blocks of its largest
+  level when it is read.
 - The first frame copies every level from an upload buffer that goes `FrameSync.FramesInFlight` frames later.
 - `WorldMeshes` packs each material's set into `MeshMaterial`: `Texture` (layer plus 1, the large bit, the colour
   match), `TextureMetres`, and `TextureMean`. It warns for a name not loaded.
