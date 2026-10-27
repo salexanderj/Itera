@@ -150,7 +150,8 @@ public struct LookConstants
 
     /// <summary>
     /// The lower clouds' lattice point at the origin, moved back by their drift so far: along their heading (stretched)
-    /// and across it, each wrapped to the noise tables' period (<see cref="Meshes.NoiseTables.Cells"/>).
+    /// and across it, each wrapped to four times the noise tables' period (<see cref="Meshes.NoiseTables.Cells"/>), where
+    /// the clouds' noise repeats.
     /// </summary>
     public Vector2 CloudNear;
 
@@ -180,6 +181,15 @@ public struct LookConstants
 
     /// <summary>The look's halo radius in metres, at least 0.1.</summary>
     public float HaloRadius;
+
+    /// <summary>The look's share of the clouds drawn as lobes, 0 to 1.</summary>
+    public float CloudBillow;
+
+    /// <summary>The look's erosion of the clouds' edges, 0 to 1.</summary>
+    public float CloudErosion;
+
+    /// <summary>The look's shading of the clouds by their thickness towards the sun, at least 0.</summary>
+    public float CloudShadow;
 
     private static readonly Vector3 s_luma = new(0.2126f, 0.7152f, 0.0722f);
 
@@ -303,14 +313,18 @@ public struct LookConstants
             Halo = MathF.Max(look.LightHalo, 0),
             HaloLights = (uint)Math.Clamp(MathF.Round(look.LightHaloLights), 0, MostHaloLights),
             HaloRadius = MathF.Max(look.LightHaloRadiusMetres, 0.1f),
+            CloudBillow = Math.Clamp(look.CloudBillow, 0, 1),
+            CloudErosion = Math.Clamp(look.CloudErosion, 0, 1),
+            CloudShadow = MathF.Max(look.CloudShadow, 0),
         };
     }
 
-    // The lattice point of metres along and across the clouds' frame at scale cells a metre, each wrapped to the noise
-    // tables' period, which the clouds' noise repeats at, so the point keeps its precision over any time or place.
+    // The lattice point of metres along and across the clouds' frame at scale cells a metre, each wrapped to the period
+    // the clouds' noise repeats at, so the point keeps its precision over any time or place.
     private static Vector2 CloudLattice(double along, double across, float scale)
     {
-        const double Period = Meshes.NoiseTables.Cells;
+        // The warp's noise runs at a quarter of the lattice's scale, so the clouds repeat at four times the tables' period.
+        const double Period = 4 * Meshes.NoiseTables.Cells;
         var x = along * scale;
         var y = across * scale;
         return new Vector2((float)(x - Period * Math.Floor(x / Period)), (float)(y - Period * Math.Floor(y / Period)));

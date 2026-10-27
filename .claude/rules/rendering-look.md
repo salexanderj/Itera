@@ -38,8 +38,8 @@ absolute place.
   from the sun, and a band of light along the horizon (its strength and height).
 - The point lights' halos in the air: their strength, how many of the frame's brightest lights have one, and their
   radius.
-- The clouds: their cover, colour, opacity, scale, stretch, heading, height, drift, warp, light, ridge share, and
-  edge softness, and how much a second layer shows.
+- The clouds: their cover, colour, opacity, scale, stretch, heading, height, drift, warp, light, ridge and billow
+  shares, edge softness and erosion, shading by their thickness towards the sun, and how much a second layer shows.
 - The exposure, the grade's desaturation and darkening, and the split tone's tints and bounds.
 
 The edge light, the glow, the clouds, the ground haze, the hue's wandering, the lobe, the darkening away from the sun,
@@ -55,11 +55,15 @@ the horizon band, the haze's start and cap, and the lights' halos are off in `Re
 - The clouds are drawn by the sky's own pass alone (`skyClouds` in `clouds.glsl`, which only `world-sky.frag`
   includes): value noise from the noise tables (binding 18, `rendering-materials.md`) on a plane at the look's cloud
   height in the world. So they stay over the land as the eye moves, and drift along their heading by the run's clock.
-- The CPU works out the clouds' lattice point at the origin, less the drift, wrapped to the tables' period
-  (`LookConstants`' `CloudNear` and `CloudFar`), so the point keeps its precision at any place or time. The noise's
-  octaves double exactly, so it repeats at that period too.
-- The look's warp bends the streaks, its ridge share thins them to wisps, and its softness sets their edges. Edges
-  facing the sun take the cloud light. A second layer twice as high, larger to the eye, may show behind.
+- The CPU works out the clouds' lattice point at the origin, less the drift, wrapped to four times the tables' period
+  (`LookConstants`' `CloudNear` and `CloudFar`), so the point keeps its precision at any place or time. Each octave
+  turns 45 degrees and grows by the square root of two, which keeps whole lattice points whole, and the warp runs at a
+  quarter scale, so the noise repeats at that period too.
+- The look's warp bends the clouds, its billow share rounds them into lobes, its ridge share thins them to wisps, its
+  softness sets their edges, and its erosion makes the edges ragged.
+- With the look's cloud shadow, two samples of the coarse shape towards the sun shade each point: the cloud light
+  where little lies sunwards, dark cores and far sides. Without it, edges facing the sun take the cloud light.
+- A second layer twice as high, larger to the eye, may show behind.
 - The clouds thin to none at the horizon, so the fogged far ground still meets the sky.
 - The haze's density along a ray is `hazeDensity` in `lighting.glsl`, with the ground haze averaged between the eye's
   height and the surface's. `hazeOver` applies the haze's start and cap.

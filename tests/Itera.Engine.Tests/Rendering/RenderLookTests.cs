@@ -347,7 +347,8 @@ public sealed class RenderLookTests
 
     /// <summary>
     /// The clouds' lattice point of a place in the world is the same whatever the origin, they drift along their heading
-    /// with the clock, every lattice point stays within the noise tables' period, and their light fades with the sun.
+    /// with the clock, every lattice point stays within the clouds' period, their light fades with the sun, and their
+    /// shape's values are off by default and clamped.
     /// </summary>
     [Fact]
     public void The_clouds_stay_over_the_land_whatever_the_origin_and_drift_along_their_heading()
@@ -394,10 +395,15 @@ public sealed class RenderLookTests
         AssertSameLattice(Lattice(atNear, new Vector2(-1000, 0)), Lattice(later, Vector2.Zero));
         // After a long run the point still lies within the tables' period, where a float keeps its precision.
         var afterLongRun = LookConstants.From(in look, in far, default, 1e9);
-        Assert.InRange(afterLongRun.CloudNear.X, 0, 1024);
-        Assert.InRange(afterLongRun.CloudNear.Y, 0, 1024);
+        Assert.InRange(afterLongRun.CloudNear.X, 0, 4096);
+        Assert.InRange(afterLongRun.CloudNear.Y, 0, 4096);
 
         AssertNear(atmosphere.SunColour * 0.5f, atNear.CloudLight);
+        // The shape's values are off by default and reach the record clamped.
+        var plain = LookConstants.From(RenderLook.Default, in near);
+        Assert.Equal((0f, 0f, 0f), (plain.CloudBillow, plain.CloudErosion, plain.CloudShadow));
+        var shaped = LookConstants.From(look with { CloudBillow = 2, CloudErosion = -1, CloudShadow = -3 }, in near);
+        Assert.Equal((1f, 0f, 0f), (shaped.CloudBillow, shaped.CloudErosion, shaped.CloudShadow));
         var night = ViewConstants.Create(
             in camera,
             640,
@@ -423,12 +429,12 @@ public sealed class RenderLookTests
         return constants.CloudNear + frame * constants.CloudNearScale;
     }
 
-    // Two lattice points the noise tables read alike: the same within their period of 1,024 cells.
+    // Two lattice points the clouds read alike: the same within their period of 4,096 cells.
     private static void AssertSameLattice(Vector2 expected, Vector2 actual)
     {
         var difference = expected - actual;
-        var x = difference.X - 1024 * MathF.Round(difference.X / 1024);
-        var y = difference.Y - 1024 * MathF.Round(difference.Y / 1024);
+        var x = difference.X - 4096 * MathF.Round(difference.X / 4096);
+        var y = difference.Y - 4096 * MathF.Round(difference.Y / 4096);
         Assert.True(MathF.Abs(x) < 1e-2f && MathF.Abs(y) < 1e-2f, $"expected {expected}, got {actual}");
     }
 

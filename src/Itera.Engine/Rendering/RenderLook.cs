@@ -259,6 +259,25 @@ public readonly record struct RenderLook
     /// <summary>How soft the clouds' edges are, as a share of their noise's range: smaller is crisper.</summary>
     public float CloudSoftness { get; init; } = 0.3f;
 
+    /// <summary>
+    /// 0 to 1: how much the clouds are drawn as rounded lobes, puffs with creases between, rather than soft blobs; 0, the
+    /// default, soft.
+    /// </summary>
+    public float CloudBillow { get; init; }
+
+    /// <summary>
+    /// 0 to 1: how much a finer noise eats into the clouds' thin edges, so they end ragged and wispy rather than smooth;
+    /// 0, the default, none.
+    /// </summary>
+    public float CloudErosion { get; init; }
+
+    /// <summary>
+    /// How much a cloud's own thickness towards the sun shades it: lit on its sunward side and thin rims, dark in its
+    /// core and on its far side, as a cloud with volume is. 0, the default, none: the cloud light then lights the edges
+    /// facing the sun alone.
+    /// </summary>
+    public float CloudShadow { get; init; }
+
     /// <summary>The light's multiple before the tone curve: higher is brighter.</summary>
     public float Exposure { get; init; } = 0.8f;
 

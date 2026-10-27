@@ -93,6 +93,9 @@ struct Look
     float halo;
     uint haloLights;
     float haloRadius;
+    float cloudBillow;
+    float cloudErosion;
+    float cloudShadow;
 };
 
 layout(scalar, set = LOOK_SET, binding = LOOK_BINDING) restrict readonly buffer Looks
