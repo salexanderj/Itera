@@ -65,7 +65,8 @@ the horizon band, the haze's start and cap, and the lights' halos are off in `Re
   to wisps, its softness sets the edges, and its erosion eats them with a five times finer read. The warp is a read at
   a quarter scale.
 - Each read takes the pixel's footprint from derivatives found before any pixel leaves the shader (`textureGrad`), so
-  the reads pick their mip levels aright at the horizon.
+  the reads pick their mip levels aright at the horizon. A footprint's long side is drawn in to the sampler's
+  anisotropy (`CloudMostSlant`), so a slanted read stays sharp across the screen.
 - The CPU works out the clouds' lattice point at the origin, less the drift, wrapped to 4,096 cells (`LookConstants`'
   `CloudNear` and `CloudFar`), a whole number of every read's tiles, so the point keeps its precision at any place or
   time.
@@ -81,7 +82,8 @@ the horizon band, the haze's start and cap, and the lights' halos are off in `Re
   (`CloudLowerNear`).
 - The clouds thin to none at the horizon, so the fogged far ground still meets the sky. Without a reach, their size
   changes more slowly near the horizon and they thin by their angle. With the look's reach, the ray meets the plane
-  where it truly does, and they thin over the farther half of the reach.
+  about where it does (`CloudHorizonLift`), and they thin over the farther half of the reach. Their light fades with
+  distance (`CloudFarLightStart`, `CloudFarLightEnd`), since far edges seen at a slant are thin lines.
 - The haze's density along a ray is `hazeDensity` in `lighting.glsl`, with the ground haze averaged between the eye's
   height and the surface's. `hazeOver` applies the haze's start and cap.
 - `fogAt(vec3, float)` gives the share of a surface lost as one colour, for what fades with the fog (the particles'

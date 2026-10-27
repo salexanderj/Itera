@@ -24,6 +24,19 @@ const float CloudCreaseLeastLevel = 4.0;
 // How many times the shape's dip under its blurred read darkens a crease fully (or its rise over it lightens a crown).
 const float CloudCreaseGain = 4.0;
 
+// With the look's reach, how much is added to the ray's rise a unit when finding where it meets the plane: the far
+// clouds shrink in rows, but less flat than a plane seen edge-on.
+const float CloudHorizonLift = 0.04;
+
+// The most times one side of a read's footprint may be the other's: the cloud sampler's anisotropy, so a read at a
+// slant picks its level by the footprint's short side and stays sharp across the screen.
+const float CloudMostSlant = 8.0;
+
+// With the look's reach, the shares of it over which the clouds' light fades to a fifth: far edges seen at a slant are
+// thin lines, and a line of light reads as a scratch.
+const float CloudFarLightStart = 0.25;
+const float CloudFarLightEnd = 0.5;
+
 // The share of the look's reach where the clouds start to thin.
 const float CloudReachFadeShare = 0.5;
 
@@ -120,14 +133,14 @@ vec2 cloudLowerFrame(vec2 place)
 }
 
 // How far along a ray whose direction rises upward a unit it meets a plane rise metres over the eye: with the look's
-// reach, where it does, no farther than the reach; without, softened near the horizon, as the plane would reach the
-// view's end.
+// reach, about where it does (CloudHorizonLift), no farther than the reach; without, softened near the horizon more, as
+// the plane would reach the view's end.
 float cloudDistance(float rise, float upward)
 {
     rise = max(rise, 10.0);
     if (LOOK.cloudReach > 0.0)
     {
-        return min(rise / max(upward, 1e-4), LOOK.cloudReach);
+        return min(rise / max(upward + CloudHorizonLift, 1e-4), LOOK.cloudReach);
     }
 
     return rise / (max(upward, 0.0) + 0.1);
@@ -146,6 +159,16 @@ float cloudFade(float t, float upward)
     return smoothstep(0.0, 0.3, upward);
 }
 
+// A read's footprint (dx and dy) with its longer side drawn in to CloudMostSlant times its shorter.
+void cloudFootprint(inout vec2 dx, inout vec2 dy)
+{
+    float lx = length(dx);
+    float ly = length(dy);
+    float most = max(min(lx, ly) * CloudMostSlant, 1e-8);
+    dx *= min(1.0, most / max(lx, 1e-8));
+    dy *= min(1.0, most / max(ly, 1e-8));
+}
+
 // The sky colour of direction with the look's clouds over it. None while the cover is 0.
 vec3 skyClouds(vec3 direction, vec3 colour)
 {
@@ -161,6 +184,9 @@ vec3 skyClouds(vec3 direction, vec3 colour)
     vec2 highY = dFdy(high);
     vec2 wispX = dFdx(wisp);
     vec2 wispY = dFdy(wisp);
+    cloudFootprint(lowX, lowY);
+    cloudFootprint(highX, highY);
+    cloudFootprint(wispX, wispY);
     if (LOOK.cloudCover <= 0.0 || direction.y <= 0.0)
     {
         return colour;
@@ -191,6 +217,12 @@ vec3 skyClouds(vec3 direction, vec3 colour)
 
     vec3 cloud = LOOK.cloudColour * mix(1.0, 0.55, dark) + glow;
     vec2 sunward = cloudFrame(view.sunDirection.xz);
+    float lightNear = 1.0;
+    if (LOOK.cloudReach > 0.0)
+    {
+        lightNear -= 0.8 * smoothstep(CloudFarLightStart * LOOK.cloudReach, CloudFarLightEnd * LOOK.cloudReach, t);
+    }
+
     if (dot(LOOK.cloudLight, vec3(1.0)) > 0.0 && dot(sunward, sunward) > 1e-6)
     {
         vec2 toward = normalize(sunward);
@@ -204,13 +236,13 @@ vec3 skyClouds(vec3 direction, vec3 colour)
                 depth += cloudDensity(low + toward * (0.15 * float(step)), lowX, lowY, false);
             }
 
-            cloud += LOOK.cloudLight * exp2(-depth * LOOK.cloudShadow);
+            cloud += LOOK.cloudLight * lightNear * exp2(-depth * LOOK.cloudShadow);
         }
         else
         {
             // An edge whose cloud thins towards the sun faces it: the drop in thickness a quarter of a cell sunwards.
             float towards = cloudDensity(low + toward * 0.25, lowX, lowY, false);
-            cloud += LOOK.cloudLight * (clamp((density - towards) * 3.0, 0.0, 1.0) * (1.0 - 0.5 * density));
+            cloud += LOOK.cloudLight * (lightNear * clamp((density - towards) * 3.0, 0.0, 1.0) * (1.0 - 0.5 * density));
         }
 
         if (LOOK.cloudPuffLight > 0.0)
@@ -218,8 +250,8 @@ vec3 skyClouds(vec3 direction, vec3 colour)
             // A puff faces the sun where its shape falls sunwards, and turns from it where its shape rises.
             float ahead = cloudShapeAt(low + toward * CloudPuffStep, lowX, lowY, true);
             float facing = clamp((shape - ahead) * CloudPuffGain, -1.0, 1.0);
-            cloud *= 1.0 + 0.5 * LOOK.cloudPuffLight * facing;
-            cloud += LOOK.cloudLight * (0.4 * LOOK.cloudPuffLight * max(facing, 0.0));
+            cloud *= 1.0 + 0.5 * LOOK.cloudPuffLight * lightNear * facing;
+            cloud += LOOK.cloudLight * (0.4 * LOOK.cloudPuffLight * lightNear * max(facing, 0.0));
         }
     }
 
