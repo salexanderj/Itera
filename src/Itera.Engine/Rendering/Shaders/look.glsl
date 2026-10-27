@@ -96,8 +96,8 @@ struct Look
     float cloudBillow;
     float cloudErosion;
     float cloudShadow;
-    float cloudPuffLight;
-    float cloudCreases;
+    float cloudHazePerMetre;
+    float cloudPhase;
     float cloudReach;
     float cloudLower;
     vec2 cloudLowerNear;
@@ -105,6 +105,8 @@ struct Look
     float cloudLowerLocalHeight;
     float cloudLowerStretch;
     float cloudThickness;
+    float cloudGroundShadow;
+    float cloudBrightest;
 };
 
 layout(scalar, set = LOOK_SET, binding = LOOK_BINDING) restrict readonly buffer Looks

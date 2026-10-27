@@ -424,7 +424,7 @@ public sealed class RenderLookTests
     /// wisps', and thickness's values are off by default and clamped.
     /// </summary>
     [Fact]
-    public void The_lower_wisps_lie_lower_and_drift_faster_and_the_depth_values_are_off_by_default()
+    public void The_lower_wisps_lie_lower_and_drift_faster_and_the_depth_haze_light_and_shadow_values_are_off_by_default()
     {
         var atmosphere = new Atmosphere(new Vector3(0.5f), new Vector3(1, 0.9f, 0.7f), 0, 0, 0);
         var camera = CameraView.Default;
@@ -466,30 +466,92 @@ public sealed class RenderLookTests
 
         var plain = LookConstants.From(RenderLook.Default, in near);
         Assert.Equal(
-            (0f, 0f, 0f, 0f, 0f),
-            (plain.CloudPuffLight, plain.CloudCreases, plain.CloudReach, plain.CloudLower, plain.CloudThickness)
+            (0f, 0f, 0f, 0f, 0f, 0f),
+            (
+                plain.CloudHazePerMetre,
+                plain.CloudPhase,
+                plain.CloudReach,
+                plain.CloudLower,
+                plain.CloudThickness,
+                plain.CloudGroundShadow
+            )
         );
         var clamped = LookConstants.From(
             look with
             {
-                CloudPuffLight = -1,
-                CloudCreases = -2,
+                CloudHaze = -1,
+                CloudPhase = 2,
                 CloudReachMetres = -5,
                 CloudLower = 3,
                 CloudThicknessMetres = -100,
+                CloudGroundShadow = 4,
             },
             in near
         );
         Assert.Equal(
-            (0f, 0f, 0f, 1f, 0f),
+            (0f, 1f, 0f, 1f, 0f, 1f),
             (
-                clamped.CloudPuffLight,
-                clamped.CloudCreases,
+                clamped.CloudHazePerMetre,
+                clamped.CloudPhase,
                 clamped.CloudReach,
                 clamped.CloudLower,
-                clamped.CloudThickness
+                clamped.CloudThickness,
+                clamped.CloudGroundShadow
             )
         );
+        // The clouds take the look's share of the atmosphere's haze.
+        var hazy = ViewConstants.Create(
+            in camera,
+            640,
+            480,
+            1,
+            sun,
+            new Atmosphere(new Vector3(0.5f), new Vector3(1, 0.9f, 0.7f), 0.4f, 0, 0),
+            256,
+            true,
+            default
+        );
+        var hazed = LookConstants.From(look with { CloudHaze = 0.25f }, in hazy);
+        Assert.True(hazed.HazePerMetre > 0);
+        Assert.Equal(hazed.HazePerMetre * 0.25f, hazed.CloudHazePerMetre, 6);
+    }
+
+    [Fact]
+    public void No_cloud_is_brighter_than_a_share_of_the_sky_towards_the_sun_and_none_is_dimmed_at_night()
+    {
+        var atmosphere = new Atmosphere(new Vector3(0.5f), new Vector3(1, 0.9f, 0.7f), 0, 0, 0);
+        var camera = CameraView.Default;
+        var luma = new Vector3(0.2126f, 0.7152f, 0.0722f);
+        var look = RenderLook.Default with { CloudCover = 0.5f };
+
+        var day = ViewConstants.Create(
+            in camera,
+            640,
+            480,
+            1,
+            Vector3.Normalize(new Vector3(0.3f, 0.6f, 0.2f)),
+            in atmosphere,
+            256,
+            true,
+            default
+        );
+        var atDay = LookConstants.From(in look, in day);
+        // At least its share of the sun's disc, over the sky's own colour there.
+        Assert.True(atDay.CloudBrightest > LookConstants.CloudSunShare * Vector3.Dot(atDay.SunDisc, luma));
+        Assert.True(float.IsFinite(atDay.CloudBrightest));
+
+        var night = ViewConstants.Create(
+            in camera,
+            640,
+            480,
+            1,
+            Vector3.Normalize(new Vector3(0.3f, -0.6f, 0.2f)),
+            in atmosphere,
+            256,
+            true,
+            default
+        );
+        Assert.Equal(float.MaxValue, LookConstants.From(in look, in night).CloudBrightest);
     }
 
     // The lower clouds' lattice point of the local place on their plane, as clouds.glsl finds it.

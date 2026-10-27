@@ -109,8 +109,8 @@ public sealed class LookTuning
         Number("CloudBillow", static l => l.CloudBillow, static (l, v) => l with { CloudBillow = v }),
         Number("CloudErosion", static l => l.CloudErosion, static (l, v) => l with { CloudErosion = v }),
         Number("CloudShadow", static l => l.CloudShadow, static (l, v) => l with { CloudShadow = v }),
-        Number("CloudPuffLight", static l => l.CloudPuffLight, static (l, v) => l with { CloudPuffLight = v }),
-        Number("CloudCreases", static l => l.CloudCreases, static (l, v) => l with { CloudCreases = v }),
+        Number("CloudHaze", static l => l.CloudHaze, static (l, v) => l with { CloudHaze = v }),
+        Number("CloudPhase", static l => l.CloudPhase, static (l, v) => l with { CloudPhase = v }),
         Number("CloudReachMetres", static l => l.CloudReachMetres, static (l, v) => l with { CloudReachMetres = v }),
         Number("CloudLower", static l => l.CloudLower, static (l, v) => l with { CloudLower = v }),
         Number(
@@ -118,6 +118,7 @@ public sealed class LookTuning
             static l => l.CloudThicknessMetres,
             static (l, v) => l with { CloudThicknessMetres = v }
         ),
+        Number("CloudGroundShadow", static l => l.CloudGroundShadow, static (l, v) => l with { CloudGroundShadow = v }),
         Number("Exposure", static l => l.Exposure, static (l, v) => l with { Exposure = v }),
         Number("GradeDesaturate", static l => l.GradeDesaturate, static (l, v) => l with { GradeDesaturate = v }),
         Number("GradeDarken", static l => l.GradeDarken, static (l, v) => l with { GradeDarken = v }),

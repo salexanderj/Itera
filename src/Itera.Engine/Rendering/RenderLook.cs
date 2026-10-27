@@ -272,23 +272,23 @@ public readonly record struct RenderLook
     public float CloudErosion { get; init; }
 
     /// <summary>
-    /// How much a cloud's own thickness towards the sun shades it: lit on its sunward side and thin rims, dark in its
-    /// core and on its far side, as a cloud with volume is. 0, the default, none: the cloud light then lights the edges
-    /// facing the sun alone.
+    /// How much a cloud's own thickness towards the sun, read blurred over about a cloud's width, shades it: each mass lit
+    /// on its side towards the sun and fading softly to dark in its thick middle and on its far side, as a cloud with
+    /// volume is. 0, the default, none: the cloud light then lights the edges facing the sun alone.
     /// </summary>
     public float CloudShadow { get; init; }
 
     /// <summary>
-    /// How much each puff of a cloud is lit on its side towards the sun and shaded on its far side, by the cloud's own
-    /// shape a short way sunwards, so a mass shows its lumps; 0, the default, none.
+    /// 0 to 1: the share of the atmosphere's haze the clouds take by their distance, so the far clouds fade into the sky
+    /// as the far land does (all of it would hide them); 0, the default, none.
     /// </summary>
-    public float CloudPuffLight { get; init; }
+    public float CloudHaze { get; init; }
 
     /// <summary>
-    /// How much the creases between a cloud's puffs darken and the puffs' crowns lighten, by the shape against a blurred
-    /// read of it, so a mass is not one even shade; 0, the default, none.
+    /// 0 to 1: how much the clouds' sunlight depends on where the eye looks from: towards the sun their thin parts glow
+    /// and their thick parts darken, away from it their thin parts dim. 0, the default: the same from every side.
     /// </summary>
-    public float CloudCreases { get; init; }
+    public float CloudPhase { get; init; }
 
     /// <summary>
     /// How far away the clouds still show, in metres: they shrink towards the horizon about as a real layer does, thin
@@ -309,6 +309,12 @@ public readonly record struct RenderLook
     /// darker low down and lit near their tops. Overhead they keep their flat look. 0, the default: a flat layer.
     /// </summary>
     public float CloudThicknessMetres { get; init; }
+
+    /// <summary>
+    /// 0 to 1: how much of the sunlight a thick cloud takes from the world, the models, and the grass under it along the
+    /// sun's rays, so its shadow drifts over the land with it; 0, the default, none. The particles take none.
+    /// </summary>
+    public float CloudGroundShadow { get; init; }
 
     /// <summary>The light's multiple before the tone curve: higher is brighter.</summary>
     public float Exposure { get; init; } = 0.8f;

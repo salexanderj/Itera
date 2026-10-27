@@ -14,6 +14,7 @@
 #include "mesh-data.glsl"
 #include "mesh-light.glsl"
 #include "light-halos.glsl"
+#include "cloud-shape.glsl"
 #include "mesh-shade.glsl"
 #include "mesh-asset-data.glsl"
 

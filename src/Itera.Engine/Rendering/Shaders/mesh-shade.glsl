@@ -1,11 +1,12 @@
 // The light a surface drawn in MeshPass's rendering takes and the colour it ends as (shadeSurface), shared by the
-// world's meshes and the models' (mesh.frag): the sun (Lambert) through the two shadow cascades (sunShadow), sky and
+// world's meshes and the models' (mesh.frag): the sun (Lambert) through the two shadow cascades (sunShadow) and the
+// look's clouds' shadow (cloudGroundShadow), sky and
 // ground light dimmed by the vertex's openness and scaled by how much of the sky the air in front sees (the sky field),
 // the glowing surfaces' point lights, the air into the sky (air.glsl) and the lights' halos in it (light-halos.glsl), the
 // tone curve, the grade, the glow after it, and a
 // dither against bands. The light and the grade take the frame's look (look.glsl; the art direction's,
-// docs/rendering-redesign.md). Include after view.glsl, sky.glsl, lighting.glsl, air.glsl, mesh-data.glsl, and
-// mesh-light.glsl.
+// docs/rendering-redesign.md). Include after view.glsl, sky.glsl, lighting.glsl, air.glsl, mesh-data.glsl,
+// mesh-light.glsl, and cloud-shape.glsl.
 
 // Openness (the share of air round a vertex: each of its cell's corners' mean over the 3x3x3 voxels round it, blended
 // to the vertex's place; SurfaceNets) is a half on flat ground, a quarter along an inner edge, and an eighth in an inner
@@ -70,7 +71,8 @@ vec3 shadeSurface(vec3 colour, vec3 normal, vec3 lit, vec3 offset, float opennes
     if (dot(normal, view.sunDirection) > 0.0)
     {
         sunlight = max(dot(lit, view.sunDirection), 0.0)
-            * sunShadow(view.slot, world, normal, viewCascadeDepth(depth));
+            * sunShadow(view.slot, world, normal, viewCascadeDepth(depth))
+            * cloudGroundShadow(world);
     }
 
     float open = clamp((openness - OpennessCorner) / (OpennessFlat - OpennessCorner), 0.0, 1.0);

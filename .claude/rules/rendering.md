@@ -18,6 +18,7 @@ This file is the core. The sub-areas have their own files, each loaded with its 
 - `rendering-world.md`: `WorldMeshes`, the mesher, the heap, the levels, the stitched seams, and the voxel models.
 - `rendering-light.md`: the frame's view, the shadow cascades, the main pass, the sky field, and the point lights.
 - `rendering-look.md`: the look, the sun, and the atmosphere.
+- `rendering-clouds.md`: the look's clouds, their light, haze, and shadow on the ground.
 - `rendering-materials.md`: the world's materials, the texture sets, the tint map, and baking.
 - `rendering-mesh-assets.md`: drawing the mesh assets, their skinning, and blended materials. The assets themselves are
   in `mesh-assets.md`.
