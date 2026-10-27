@@ -172,7 +172,19 @@ public struct LookConstants
     /// <summary>The look's softness of the clouds' edges, at least 0.01.</summary>
     public float CloudSoftness;
 
+    /// <summary>The look's halo strength round the point lights, at least 0.</summary>
+    public float Halo;
+
+    /// <summary>How many of the frame's brightest lights have a halo, 0 to <see cref="MostHaloLights"/>.</summary>
+    public uint HaloLights;
+
+    /// <summary>The look's halo radius in metres, at least 0.1.</summary>
+    public float HaloRadius;
+
     private static readonly Vector3 s_luma = new(0.2126f, 0.7152f, 0.0722f);
+
+    /// <summary>The most of the frame's brightest point lights that have a halo in the air.</summary>
+    public const int MostHaloLights = 8;
 
     /// <summary>The upper clouds' lattice scale against the lower's, so their streaks look larger.</summary>
     private const float UpperCloudScale = 0.7f;
@@ -288,6 +300,9 @@ public struct LookConstants
             CloudUpper = Math.Clamp(look.CloudUpper, 0, 1),
             CloudRidge = Math.Clamp(look.CloudRidge, 0, 1),
             CloudSoftness = MathF.Max(look.CloudSoftness, 0.01f),
+            Halo = MathF.Max(look.LightHalo, 0),
+            HaloLights = (uint)Math.Clamp(MathF.Round(look.LightHaloLights), 0, MostHaloLights),
+            HaloRadius = MathF.Max(look.LightHaloRadiusMetres, 0.1f),
         };
     }
 

@@ -64,6 +64,13 @@ public sealed class LookTuning
         Colour("ZenithOvercast", static l => l.ZenithOvercast, static (l, v) => l with { ZenithOvercast = v }),
         Number("ZenithPower", static l => l.ZenithPower, static (l, v) => l with { ZenithPower = v }),
         Number("BelowHorizon", static l => l.BelowHorizon, static (l, v) => l with { BelowHorizon = v }),
+        Number("LightHalo", static l => l.LightHalo, static (l, v) => l with { LightHalo = v }),
+        Number("LightHaloLights", static l => l.LightHaloLights, static (l, v) => l with { LightHaloLights = v }),
+        Number(
+            "LightHaloRadiusMetres",
+            static l => l.LightHaloRadiusMetres,
+            static (l, v) => l with { LightHaloRadiusMetres = v }
+        ),
         Number("SunDiscSharpness", static l => l.SunDiscSharpness, static (l, v) => l with { SunDiscSharpness = v }),
         Number("SunDiscStrength", static l => l.SunDiscStrength, static (l, v) => l with { SunDiscStrength = v }),
         Number("SunDiscOvercast", static l => l.SunDiscOvercast, static (l, v) => l with { SunDiscOvercast = v }),

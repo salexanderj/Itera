@@ -241,8 +241,9 @@ public sealed class RenderLookTests
     }
 
     /// <summary>
-    /// The light towards the sun, the darker sky away from it, the horizon band, and the haze's start, cap, and colour
-    /// fade leave the engine's look as it was, and a game's values reach the record clamped, the light faded with the sun.
+    /// The light towards the sun, the darker sky away from it, the horizon band, the haze's start, cap, and colour fade,
+    /// and the lights' halos leave the engine's look as it was, and a game's values reach the record clamped, the light
+    /// faded with the sun.
     /// </summary>
     [Fact]
     public void The_sky_lobe_horizon_band_and_haze_shape_are_off_by_default_and_worked_out_from_a_games_look()
@@ -263,6 +264,7 @@ public sealed class RenderLookTests
         Assert.Equal(Vector3.One, plain.HazeFade);
         Assert.Equal(1, plain.HazeFadeMean, 5);
         Assert.Equal(0u, plain.GlowCount);
+        Assert.Equal(0, plain.Halo);
 
         var look = RenderLook.Default with
         {
@@ -275,8 +277,15 @@ public sealed class RenderLookTests
             HazeStartMetres = -5,
             HazeMost = 0.9f,
             HazeColourFade = new Vector3(0.5f, 1, -1),
+            LightHalo = -1,
+            LightHaloLights = 20,
+            LightHaloRadiusMetres = 0,
         };
         var constants = LookConstants.From(in look, in view);
+        // No light gives less than none, at most the record's most have halos, and a halo keeps a middle.
+        Assert.Equal(0, constants.Halo);
+        Assert.Equal((uint)LookConstants.MostHaloLights, constants.HaloLights);
+        Assert.Equal(0.1f, constants.HaloRadius);
 
         AssertNear(atmosphere.SunColour * 0.3f, constants.SkyLobe);
         // A power of 0 would light the whole sky evenly, and the zenith's would turn the sky at once.

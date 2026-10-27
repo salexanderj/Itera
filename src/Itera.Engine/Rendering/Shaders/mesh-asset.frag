@@ -13,6 +13,7 @@
 #include "air.glsl"
 #include "mesh-data.glsl"
 #include "mesh-light.glsl"
+#include "light-halos.glsl"
 #include "mesh-shade.glsl"
 #include "mesh-asset-data.glsl"
 

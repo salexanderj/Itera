@@ -3,7 +3,7 @@ paths:
   - "src/Itera.Engine/Rendering/{ShadowCascades,PointLights}.cs"
   - "src/Itera.Engine/Rendering/Meshes/{MeshPass,MeshView,ViewVolume,CascadeBounds,SkyField,WorldMeshes.Sky,WorldMeshes.Lights}.cs"
   - "src/Itera.Engine/Rendering/GpuData/MeshLighting.cs"
-  - "src/Itera.Engine/Rendering/Shaders/{lighting.glsl,sky.glsl,air.glsl,mesh.frag,mesh-light.glsl,mesh-shade.glsl,mesh-clusters.comp,mesh-shadow.vert,depth-only.frag,world-sky.frag}"
+  - "src/Itera.Engine/Rendering/Shaders/{lighting.glsl,sky.glsl,air.glsl,light-halos.glsl,mesh.frag,mesh-light.glsl,mesh-shade.glsl,mesh-clusters.comp,mesh-shadow.vert,depth-only.frag,world-sky.frag}"
   - "tests/Itera.Engine.Tests/Rendering/{ShadowCascadesTests,PointLightsTests}.cs"
   - "tests/Itera.Engine.Tests/Rendering/Meshes/{MeshPassTests,MeshViewTests,SkyFieldTests}.cs"
 ---
@@ -81,7 +81,8 @@ through `view.glsl`'s `viewClip`, as every pass that draws into the view's depth
 - `shadeSurface` in `mesh-shade.glsl`, shared by every surface the pass draws: the sun through the cascade that covers
   the point by view depth, with a normal offset (`sunShadow` in `mesh-light.glsl`).
 - Sky and ground light, dimmed by openness and scaled by the sky field.
-- The point lights, the air (`air.glsl`, `rendering-look.md`), the tone curve, the grade, and the glow.
+- The point lights, the air (`air.glsl`, `rendering-look.md`) and the lights' halos in it (`light-halos.glsl`), the tone
+  curve, the grade, and the glow.
 - A dither of up to one step of the 8-bit image (`ditherColour` in `lighting.glsl`), so smooth fog and sky show no
   bands. The sky, the grass, and the particle cubes dither their colour too.
 

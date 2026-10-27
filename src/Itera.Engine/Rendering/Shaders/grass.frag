@@ -11,6 +11,7 @@
 #include "air.glsl"
 #include "mesh-data.glsl"
 #include "mesh-light.glsl"
+#include "light-halos.glsl"
 
 layout(location = 0) in vec3 inOffset;
 layout(location = 1) in vec3 inColour;
@@ -34,7 +35,7 @@ void main()
 
     // As shadeSurface finishes a surface.
     float fog;
-    shaded = throughAir(shaded, inOffset, view.maxDistance, fog);
+    shaded = throughAir(shaded, inOffset, view.maxDistance, fog) + lightHalos(viewRayTo(inOffset), length(inOffset));
     vec3 graded = gradeColour(toneMap(shaded * LOOK.exposure));
     vec3 split = mix(
         LOOK.gradeShadows,

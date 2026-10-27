@@ -1,7 +1,8 @@
 // The light a surface drawn in MeshPass's rendering takes and the colour it ends as (shadeSurface), shared by the
 // world's meshes and the models' (mesh.frag): the sun (Lambert) through the two shadow cascades (sunShadow), sky and
 // ground light dimmed by the vertex's openness and scaled by how much of the sky the air in front sees (the sky field),
-// the glowing surfaces' point lights, the air into the sky (air.glsl), the tone curve, the grade, the glow after it, and a
+// the glowing surfaces' point lights, the air into the sky (air.glsl) and the lights' halos in it (light-halos.glsl), the
+// tone curve, the grade, the glow after it, and a
 // dither against bands. The light and the grade take the frame's look (look.glsl; the art direction's,
 // docs/rendering-redesign.md). Include after view.glsl, sky.glsl, lighting.glsl, air.glsl, mesh-data.glsl, and
 // mesh-light.glsl.
@@ -86,7 +87,7 @@ vec3 shadeSurface(vec3 colour, vec3 normal, vec3 lit, vec3 offset, float opennes
     vec3 shaded = colour * light;
 
     float fog;
-    shaded = throughAir(shaded, offset, view.maxDistance, fog);
+    shaded = throughAir(shaded, offset, view.maxDistance, fog) + lightHalos(viewRayTo(offset), length(offset));
     vec3 toned = toneMap(shaded * LOOK.exposure);
     vec3 graded = gradeColour(toned);
     // Faded out with the fog: the sky (world-sky.frag) takes no split tone, so the fogged far ground must not either, or

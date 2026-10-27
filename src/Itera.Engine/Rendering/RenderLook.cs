@@ -150,6 +150,18 @@ public readonly record struct RenderLook
     /// <summary>The sky's colour straight down (below the horizon), as a share of its horizon colour.</summary>
     public float BelowHorizon { get; init; } = 0.45f;
 
+    /// <summary>
+    /// How strongly the haze lights up round the frame's brightest point lights (lamps, fires, flashes), as a share of a
+    /// light's power scattered a metre of air: the halos' strength. 0, the default, none.
+    /// </summary>
+    public float LightHalo { get; init; }
+
+    /// <summary>How many of the frame's brightest point lights have a halo, 0 to 8.</summary>
+    public float LightHaloLights { get; init; } = 4f;
+
+    /// <summary>How wide a halo's bright middle is round its light, in metres.</summary>
+    public float LightHaloRadiusMetres { get; init; } = 1f;
+
     /// <summary>How sharp the sun's disc is: the power of the cosine to the sun; higher is smaller.</summary>
     public float SunDiscSharpness { get; init; } = 400f;
 

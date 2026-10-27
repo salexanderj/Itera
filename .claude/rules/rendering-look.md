@@ -36,12 +36,14 @@ absolute place.
 - The glow round the sun: its strength and sharpness.
 - The sky's light over the half of the sky towards the sun (the lobe: its strength and sharpness), its darkening away
   from the sun, and a band of light along the horizon (its strength and height).
+- The point lights' halos in the air: their strength, how many of the frame's brightest lights have one, and their
+  radius.
 - The clouds: their cover, colour, opacity, scale, stretch, heading, height, drift, warp, light, ridge share, and
   edge softness, and how much a second layer shows.
 - The exposure, the grade's desaturation and darkening, and the split tone's tints and bounds.
 
 The edge light, the glow, the clouds, the ground haze, the hue's wandering, the lobe, the darkening away from the sun,
-the horizon band, and the haze's start and cap are off in `RenderLook.Default`.
+the horizon band, the haze's start and cap, and the lights' halos are off in `RenderLook.Default`.
 
 - The edge light is in `shadeSurface` in `mesh-shade.glsl`, by its `rim` argument: `mesh-asset.frag` gives 1 and
   `mesh.frag` 0, so only the mesh assets take it. It is the sky's light where a surface turns from the eye, as much as
@@ -105,6 +107,15 @@ an absolute place, a colour, and a radius).
   radius, integrated along the ray, and dimmed by the haze between the glow and the eye.
 - `throughAir` adds it in front of every surface, and `world-sky.frag` along the sky's rays. An orthographic view draws
   none, since its rays do not start at the eye.
+
+### Light halos
+
+- `lightHalos` in `light-halos.glsl` adds the light the haze scatters from the frame's brightest point lights along a
+  ray: the look's halo count of the slot's list, which comes brightest first (`rendering-light.md`). Each is one over
+  the squared distance softened by the halo radius, integrated along the ray, faded past the light's reach.
+- `mesh-shade.glsl`, `grass.frag`, and `world-sky.frag` add it after the air. An orthographic view draws none.
+- Each light costs every pixel two arctangents, so halos are dear while lights are near the eye. Off, they cost
+  nothing: the shader returns before its loop.
 
 ### The sun
 
