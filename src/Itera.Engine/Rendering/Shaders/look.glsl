@@ -96,6 +96,14 @@ struct Look
     float cloudBillow;
     float cloudErosion;
     float cloudShadow;
+    float cloudPuffLight;
+    float cloudCreases;
+    float cloudReach;
+    float cloudLower;
+    vec2 cloudLowerNear;
+    float cloudLowerScale;
+    float cloudLowerLocalHeight;
+    float cloudLowerStretch;
 };
 
 layout(scalar, set = LOOK_SET, binding = LOOK_BINDING) restrict readonly buffer Looks

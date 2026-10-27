@@ -418,6 +418,70 @@ public sealed class RenderLookTests
         Assert.Equal(Vector3.Zero, LookConstants.From(in look, in night).CloudLight);
     }
 
+    /// <summary>
+    /// The lower wisps lie at their share of the clouds' height, drawn out more along the clouds' heading, and drift
+    /// faster; their lattice point of a place in the world is the same whatever the origin. The puffs', creases', reach's,
+    /// and wisps' values are off by default and clamped.
+    /// </summary>
+    [Fact]
+    public void The_lower_wisps_lie_lower_and_drift_faster_and_the_depth_values_are_off_by_default()
+    {
+        var atmosphere = new Atmosphere(new Vector3(0.5f), new Vector3(1, 0.9f, 0.7f), 0, 0, 0);
+        var camera = CameraView.Default;
+        var sun = Vector3.Normalize(new Vector3(0.3f, 0.6f, 0.2f));
+        var look = RenderLook.Default with
+        {
+            CloudCover = 0.5f,
+            CloudStretch = 2,
+            CloudHeadingDegrees = 90,
+            CloudHeightMetres = 1000,
+            CloudDriftMetresPerSecond = 10,
+            CloudLower = 0.5f,
+        };
+        var near = ViewConstants.Create(in camera, 640, 480, 1, sun, in atmosphere, 256, true, default);
+        var far = ViewConstants.Create(
+            in camera,
+            640,
+            480,
+            1,
+            sun,
+            in atmosphere,
+            256,
+            true,
+            new VoxelCoord(3_000_000_00, 20_00, -7_000_000_00)
+        );
+
+        var atNear = LookConstants.From(in look, in near, default, 0);
+        var atFar = LookConstants.From(in look, in far, default, 0);
+        AssertSameLattice(LowerLattice(atNear, new Vector2(3_000_000, -7_000_000)), LowerLattice(atFar, Vector2.Zero));
+        Assert.Equal(1000 * LookConstants.LowerCloudHeightShare, atNear.CloudLowerLocalHeight, 3);
+        Assert.Equal(1000 * LookConstants.LowerCloudHeightShare - 20, atFar.CloudLowerLocalHeight, 3);
+        Assert.Equal(2 * LookConstants.LowerCloudStretch, atNear.CloudLowerStretch);
+        // 100 s at 10 m a second, half as fast again: the wisps over a place came from 1,500 m west of it.
+        var later = LookConstants.From(in look, in near, default, 100);
+        AssertSameLattice(
+            LowerLattice(atNear, new Vector2(-1000 * LookConstants.LowerCloudDrift, 0)),
+            LowerLattice(later, Vector2.Zero)
+        );
+
+        var plain = LookConstants.From(RenderLook.Default, in near);
+        Assert.Equal((0f, 0f, 0f, 0f), (plain.CloudPuffLight, plain.CloudCreases, plain.CloudReach, plain.CloudLower));
+        var clamped = LookConstants.From(
+            look with
+            {
+                CloudPuffLight = -1,
+                CloudCreases = -2,
+                CloudReachMetres = -5,
+                CloudLower = 3,
+            },
+            in near
+        );
+        Assert.Equal(
+            (0f, 0f, 0f, 1f),
+            (clamped.CloudPuffLight, clamped.CloudCreases, clamped.CloudReach, clamped.CloudLower)
+        );
+    }
+
     // The lower clouds' lattice point of the local place on their plane, as clouds.glsl finds it.
     private static Vector2 Lattice(in LookConstants constants, Vector2 place)
     {
@@ -427,6 +491,17 @@ public sealed class RenderLookTests
             Vector2.Dot(place, new Vector2(-along.Y, along.X))
         );
         return constants.CloudNear + frame * constants.CloudNearScale;
+    }
+
+    // The lower wisps' lattice point of the local place on their plane, as clouds.glsl finds it.
+    private static Vector2 LowerLattice(in LookConstants constants, Vector2 place)
+    {
+        var along = new Vector2(constants.CloudAlongX, constants.CloudAlongZ);
+        var frame = new Vector2(
+            Vector2.Dot(place, along) / constants.CloudLowerStretch,
+            Vector2.Dot(place, new Vector2(-along.Y, along.X))
+        );
+        return constants.CloudLowerNear + frame * constants.CloudLowerScale;
     }
 
     // Two lattice points the clouds read alike: the same within their period of 4,096 cells.

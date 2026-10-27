@@ -190,6 +190,30 @@ public struct LookConstants
     /// <summary>The look's shading of the clouds by their thickness towards the sun, at least 0.</summary>
     public float CloudShadow;
 
+    /// <summary>The look's light of each puff by the shape sunwards, at least 0.</summary>
+    public float CloudPuffLight;
+
+    /// <summary>The look's darkening of the creases between puffs, at least 0.</summary>
+    public float CloudCreases;
+
+    /// <summary>The look's reach of the clouds in metres, at least 0: 0 thins them by their angle over the horizon.</summary>
+    public float CloudReach;
+
+    /// <summary>How much the lower wisps show, 0 to 1.</summary>
+    public float CloudLower;
+
+    /// <summary>The lower wisps' lattice point at the origin, moved back by their drift so far, as <see cref="CloudNear"/>.</summary>
+    public Vector2 CloudLowerNear;
+
+    /// <summary>The lower wisps' lattice cells a metre across their plane.</summary>
+    public float CloudLowerScale;
+
+    /// <summary>The lower wisps' height, local: <see cref="LowerCloudHeightShare"/> of the clouds' absolute height, less the origin's.</summary>
+    public float CloudLowerLocalHeight;
+
+    /// <summary>The lower wisps' stretch along the clouds' heading: the clouds' times <see cref="LowerCloudStretch"/>.</summary>
+    public float CloudLowerStretch;
+
     private static readonly Vector3 s_luma = new(0.2126f, 0.7152f, 0.0722f);
 
     /// <summary>The most of the frame's brightest point lights that have a halo in the air.</summary>
@@ -197,6 +221,18 @@ public struct LookConstants
 
     /// <summary>The upper clouds' lattice scale against the lower's, so their streaks look larger.</summary>
     private const float UpperCloudScale = 0.7f;
+
+    /// <summary>The lower wisps' height as a share of the clouds'.</summary>
+    public const float LowerCloudHeightShare = 0.6f;
+
+    /// <summary>The lower wisps' drift as a multiple of the clouds'.</summary>
+    public const float LowerCloudDrift = 1.5f;
+
+    /// <summary>How many times more the lower wisps are drawn out along the clouds' heading than the clouds are.</summary>
+    public const float LowerCloudStretch = 2.5f;
+
+    /// <summary>The lower wisps' lattice scale against the clouds' at their own height, so they look finer.</summary>
+    private const float LowerCloudScale = 1.6f;
 
     /// <summary>
     /// The shaders' record of <paramref name="look"/> with the frame's atmosphere as <paramref name="view"/> carries it
@@ -239,6 +275,12 @@ public struct LookConstants
         var originZ = view.OriginZ / perMetre;
         var along = (originX * alongX + originZ * alongZ - look.CloudDriftMetresPerSecond * seconds) / stretch;
         var across = originZ * alongX - originX * alongZ;
+        var lowerHeight = cloudHeight * LowerCloudHeightShare;
+        var lowerScale = look.CloudScale * LowerCloudScale / lowerHeight;
+        var lowerStretch = stretch * LowerCloudStretch;
+        var lowerAlong =
+            (originX * alongX + originZ * alongZ - look.CloudDriftMetresPerSecond * LowerCloudDrift * seconds)
+            / lowerStretch;
         return new LookConstants
         {
             SunLight = view.SunColour * look.SunWarmth * daylight,
@@ -315,6 +357,14 @@ public struct LookConstants
             CloudBillow = Math.Clamp(look.CloudBillow, 0, 1),
             CloudErosion = Math.Clamp(look.CloudErosion, 0, 1),
             CloudShadow = MathF.Max(look.CloudShadow, 0),
+            CloudPuffLight = MathF.Max(look.CloudPuffLight, 0),
+            CloudCreases = MathF.Max(look.CloudCreases, 0),
+            CloudReach = MathF.Max(look.CloudReachMetres, 0),
+            CloudLower = Math.Clamp(look.CloudLower, 0, 1),
+            CloudLowerNear = CloudLattice(lowerAlong, across, lowerScale),
+            CloudLowerScale = lowerScale,
+            CloudLowerLocalHeight = lowerHeight - (float)(view.OriginY / perMetre),
+            CloudLowerStretch = lowerStretch,
         };
     }
 

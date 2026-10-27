@@ -41,7 +41,8 @@ absolute place.
 - The point lights' halos in the air: their strength, how many of the frame's brightest lights have one, and their
   radius.
 - The clouds: their cover, colour, opacity, scale, stretch, heading, height, drift, warp, light, ridge and billow
-  shares, edge softness and erosion, shading by their thickness towards the sun, and how much a second layer shows.
+  shares, edge softness and erosion, shading by their thickness towards the sun, their puffs' light, their creases,
+  their reach, and how much a second layer and the lower wisps show.
 - The exposure, the grade's desaturation and darkening, and the split tone's tints and bounds.
 
 The edge light, the glow, the clouds, the ground haze, the hue's wandering, the lobe, the darkening away from the sun,
@@ -70,8 +71,17 @@ the horizon band, the haze's start and cap, and the lights' halos are off in `Re
   time.
 - With the look's cloud shadow, three samples of the shape towards the sun shade each point: the cloud light where
   little lies sunwards, dark cores and far sides. Without it, edges facing the sun take the cloud light.
+- The look's puff light lights each puff on its sunward side and shades its far side: one more read of the eroded
+  shape a short step sunwards (`CloudPuffStep`).
+- The look's creases darken where the shape before its erosion dips under a blurred read of it, a coarser mip level,
+  and lighten the puffs' crowns.
 - A second layer twice as high, larger to the eye, may show behind.
-- The clouds thin to none at the horizon, so the fogged far ground still meets the sky.
+- Thin wisps may show in front, at `LookConstants.LowerCloudHeightShare` of the height. They are drawn out more along
+  the heading (`LowerCloudStretch`) and drift faster (`LowerCloudDrift`), from a lattice point of their own
+  (`CloudLowerNear`).
+- The clouds thin to none at the horizon, so the fogged far ground still meets the sky. Without a reach, their size
+  changes more slowly near the horizon and they thin by their angle. With the look's reach, the ray meets the plane
+  where it truly does, and they thin over the farther half of the reach.
 - The haze's density along a ray is `hazeDensity` in `lighting.glsl`, with the ground haze averaged between the eye's
   height and the surface's. `hazeOver` applies the haze's start and cap.
 - `fogAt(vec3, float)` gives the share of a surface lost as one colour, for what fades with the fog (the particles'

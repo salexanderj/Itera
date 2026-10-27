@@ -278,6 +278,31 @@ public readonly record struct RenderLook
     /// </summary>
     public float CloudShadow { get; init; }
 
+    /// <summary>
+    /// How much each puff of a cloud is lit on its side towards the sun and shaded on its far side, by the cloud's own
+    /// shape a short way sunwards, so a mass shows its lumps; 0, the default, none.
+    /// </summary>
+    public float CloudPuffLight { get; init; }
+
+    /// <summary>
+    /// How much the creases between a cloud's puffs darken and the puffs' crowns lighten, by the shape against a blurred
+    /// read of it, so a mass is not one even shade; 0, the default, none.
+    /// </summary>
+    public float CloudCreases { get; init; }
+
+    /// <summary>
+    /// How far away the clouds still show, in metres: they shrink towards the horizon as a real layer does and thin out
+    /// over the farther half of this distance. 0, the default: their size changes more slowly towards the horizon, and
+    /// they thin by their angle over it, gone below about 17 degrees.
+    /// </summary>
+    public float CloudReachMetres { get; init; }
+
+    /// <summary>
+    /// 0 to 1: how much a layer of thin wisps shows in front of the clouds, at 0.6 of their height and drifting half as
+    /// fast again; 0, the default, none.
+    /// </summary>
+    public float CloudLower { get; init; }
+
     /// <summary>The light's multiple before the tone curve: higher is brighter.</summary>
     public float Exposure { get; init; } = 0.8f;
 
