@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Reflection;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Voxels;
@@ -239,6 +240,102 @@ public sealed class RenderLookTests
         Assert.Equal(1, constants.RimSharpness);
     }
 
+    /// <summary>
+    /// The light towards the sun, the darker sky away from it, the horizon band, and the haze's start, cap, and colour
+    /// fade leave the engine's look as it was, and a game's values reach the record clamped, the light faded with the sun.
+    /// </summary>
+    [Fact]
+    public void The_sky_lobe_horizon_band_and_haze_shape_are_off_by_default_and_worked_out_from_a_games_look()
+    {
+        var atmosphere = new Atmosphere(new Vector3(0.5f, 0.6f, 0.8f), new Vector3(1, 0.9f, 0.7f), 0.4f, 0.6f, 0.2f);
+        var camera = CameraView.Default;
+        var sun = Vector3.Normalize(new Vector3(0.3f, 0.6f, 0.2f));
+        var view = ViewConstants.Create(in camera, 640, 480, 1, sun, in atmosphere, 256, true, default);
+
+        var plain = LookConstants.From(RenderLook.Default, in view);
+        Assert.Equal(Vector3.Zero, plain.SkyLobe);
+        Assert.Equal(0, plain.SkyAwayDarken);
+        Assert.Equal(Vector3.Zero, plain.HorizonBand);
+        // A power of a half is the square root the sky had.
+        Assert.Equal(0.5f, plain.ZenithPower);
+        Assert.Equal(0, plain.HazeStart);
+        Assert.Equal(1, plain.HazeMost);
+        Assert.Equal(Vector3.One, plain.HazeFade);
+        Assert.Equal(1, plain.HazeFadeMean, 5);
+        Assert.Equal(0u, plain.GlowCount);
+
+        var look = RenderLook.Default with
+        {
+            SkyLobeStrength = 0.3f,
+            SkyLobeSharpness = 0,
+            SkyAwayDarken = 2,
+            ZenithPower = 0,
+            HorizonBand = 0.4f,
+            HorizonBandDegrees = 30,
+            HazeStartMetres = -5,
+            HazeMost = 0.9f,
+            HazeColourFade = new Vector3(0.5f, 1, -1),
+        };
+        var constants = LookConstants.From(in look, in view);
+
+        AssertNear(atmosphere.SunColour * 0.3f, constants.SkyLobe);
+        // A power of 0 would light the whole sky evenly, and the zenith's would turn the sky at once.
+        Assert.Equal(0.1f, constants.SkyLobeSharpness);
+        Assert.Equal(1, constants.SkyAwayDarken);
+        Assert.Equal(0.05f, constants.ZenithPower);
+        // Half as bright 30 degrees up: the view's height there is a half.
+        Assert.Equal(2, constants.HorizonBandFalloff, 4);
+        AssertNear(atmosphere.SkyHorizon * 0.4f, constants.HorizonBand);
+        Assert.Equal(0, constants.HazeStart);
+        Assert.Equal(0.9f, constants.HazeMost);
+        Assert.Equal(new Vector3(0.5f, 1, 0), constants.HazeFade);
+        Assert.Equal(0.2126f * 0.5f + 0.7152f, constants.HazeFadeMean, 5);
+
+        var night = ViewConstants.Create(
+            in camera,
+            640,
+            480,
+            1,
+            new Vector3(0, -1, 0),
+            in atmosphere,
+            256,
+            true,
+            default
+        );
+        Assert.Equal(Vector3.Zero, LookConstants.From(in look, in night).SkyLobe);
+    }
+
+    /// <summary>
+    /// The frame's haze glows reach the record up to the most it holds, their places local to the view's origin, their
+    /// radius at least a metre and their colour never negative.
+    /// </summary>
+    [Fact]
+    public void Haze_glows_reach_the_record_local_to_the_origin_up_to_the_most()
+    {
+        var atmosphere = Atmosphere.Clear(new Vector3(0.5f));
+        var camera = CameraView.Default;
+        var origin = new VoxelCoord(100_000, -300, 2_000);
+        var view = ViewConstants.Create(in camera, 640, 480, 1, Vector3.UnitY, in atmosphere, 256, true, origin);
+        HazeGlow[] glows =
+        [
+            new(new WorldPoint(1_010.5, 20, -30), new Vector3(0.5f, -0.1f, 0.2f), 0.2f),
+            new(new WorldPoint(0, 0, 0), Vector3.One, 40),
+            new(new WorldPoint(0, 0, 0), Vector3.One, 41),
+            new(new WorldPoint(0, 0, 0), Vector3.One, 42),
+            new(new WorldPoint(0, 0, 0), Vector3.One, 43),
+        ];
+
+        var constants = LookConstants.From(RenderLook.Default, in view, glows);
+
+        Assert.Equal((uint)HazeGlow.Most, constants.GlowCount);
+        // 1,010.5 m less an origin 1,000 m along x; 20 m over one 3 m under; -30 m less one 20 m along z.
+        AssertNear(new Vector3(10.5f, 23, -50), constants.Glow0.Place);
+        Assert.Equal(1, constants.Glow0.Radius);
+        Assert.Equal(new Vector3(0.5f, 0, 0.2f), constants.Glow0.Colour);
+        Assert.Equal(42, constants.Glow3.Radius);
+        Assert.Equal(0u, LookConstants.From(RenderLook.Default, in view, glows.AsSpan(0, 0)).GlowCount);
+    }
+
     [Fact]
     public void Two_looks_blend_value_by_value_without_allocating()
     {
@@ -314,11 +411,13 @@ public sealed class RenderLookTests
     {
         var view = new RenderView(Options.Create(new EngineOptions()));
         view.SetLook(RenderLook.Default with { Exposure = 2 });
+        view.SetGlows([new HazeGlow(new WorldPoint(1, 2, 3), Vector3.One, 50)]);
         view.LookTuning.Set(LookTuning.Find("SkyFloor"), new Vector3(0.1f, 0, 0));
 
         view.ResetAfterMatch();
 
         Assert.Equal(RenderLook.Default, view.Look);
+        Assert.Equal(0, view.Glows.Length);
         Assert.Equal(RenderLook.Default with { SkyFloor = 0.1f }, view.DrawnLook);
     }
 

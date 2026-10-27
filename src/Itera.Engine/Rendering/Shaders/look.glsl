@@ -13,6 +13,14 @@
 #define LOOK_BINDING 17
 #endif
 
+// One haze glow (Itera.Engine.Rendering.GpuData.HazeGlowConstants): its middle local to the origin, its radius, its colour.
+struct HazeGlow
+{
+    vec3 place;
+    float radius;
+    vec3 colour;
+};
+
 struct Look
 {
     vec3 sunLight;
@@ -58,6 +66,21 @@ struct Look
     vec3 rimLight;
     float rimSharpness;
     vec3 worldHueDrift;
+    vec3 skyLobe;
+    float skyLobeSharpness;
+    float skyAwayDarken;
+    float zenithPower;
+    float horizonBandFalloff;
+    vec3 horizonBand;
+    float hazeStart;
+    float hazeMost;
+    vec3 hazeFade;
+    float hazeFadeMean;
+    uint glowCount;
+    HazeGlow glow0;
+    HazeGlow glow1;
+    HazeGlow glow2;
+    HazeGlow glow3;
 };
 
 layout(scalar, set = LOOK_SET, binding = LOOK_BINDING) restrict readonly buffer Looks

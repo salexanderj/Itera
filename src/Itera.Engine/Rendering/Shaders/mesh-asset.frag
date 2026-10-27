@@ -10,6 +10,7 @@
 #include "view.glsl"
 #include "sky.glsl"
 #include "lighting.glsl"
+#include "air.glsl"
 #include "mesh-data.glsl"
 #include "mesh-light.glsl"
 #include "mesh-shade.glsl"

@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/Itera.Engine/Rendering/{RenderLook,LookTuning,Atmosphere,SunPath}.cs"
+  - "src/Itera.Engine/Rendering/{RenderLook,LookTuning,Atmosphere,SunPath,HazeGlow}.cs"
   - "src/Itera.Engine/Rendering/GpuData/LookConstants.cs"
   - "src/Itera.Engine/Rendering/Shaders/look.glsl"
   - "tests/Itera.Engine.Tests/Rendering/{RenderLookTests,SunPathTests,RenderViewTests}.cs"
@@ -14,7 +14,8 @@ The look and the sun are data a game sets. The shaders read them from a per-slot
 
 ### Where they come from
 
-A game's `IAtmosphereSource` gives the sky, the sunlight, the haze, and the colour grade at the camera's absolute place.
+A game's `IAtmosphereSource` gives the sky, the sunlight, the haze, the colour grade, and the haze glows at the camera's
+absolute place.
 `AtmosphereSystem` reads it each frame. Without a source, the `Engine:Renderer` sky options give them.
 
 ### The look
@@ -27,15 +28,19 @@ A game's `IAtmosphereSource` gives the sky, the sunlight, the haze, and the colo
 - The sky light's share of the horizon colour, the ground's light and bounce, the occlusion and sky floors, and full
   glow's strength.
 - The mesh assets' edge light: its strength, a share of the sky's light, and its sharpness.
-- Where the view's fog starts and the haze's half distance.
+- Where the view's fog starts, the haze's half distance, where the haze starts, the most of a surface it hides, and how
+  fast each colour fades in it.
 - The ground haze: its thickness, half distance, floor height in the world, and falloff with height.
-- The sky's zenith (clear and overcast) and below-horizon shares, and the sun disc's sharpness, strength, and overcast
-  hiding.
+- The sky's zenith (clear and overcast), the power by which the sky turns to it, the below-horizon share, and the sun
+  disc's sharpness, strength, and overcast hiding.
 - The glow round the sun: its strength and sharpness.
+- The sky's light over the half of the sky towards the sun (the lobe: its strength and sharpness), its darkening away
+  from the sun, and a band of light along the horizon (its strength and height).
 - The clouds: their cover, colour, opacity, scale, stretch, and heading.
 - The exposure, the grade's desaturation and darkening, and the split tone's tints and bounds.
 
-The edge light, the glow, the clouds, the ground haze, and the hue's wandering are off in `RenderLook.Default`.
+The edge light, the glow, the clouds, the ground haze, the hue's wandering, the lobe, the darkening away from the sun,
+the horizon band, and the haze's start and cap are off in `RenderLook.Default`.
 
 - The edge light is in `shadeSurface` in `mesh-shade.glsl`, by its `rim` argument: `mesh-asset.frag` gives 1 and
   `mesh.frag` 0, so only the mesh assets take it. It is the sky's light where a surface turns from the eye, as much as
@@ -43,11 +48,17 @@ The edge light, the glow, the clouds, the ground haze, and the hue's wandering a
 
 - The glow is part of `skyColour` in `sky.glsl`. The fog takes the sky's colour behind a surface, so the haze glows
   towards the sun too.
+- The lobe, the darkening, and the horizon band are part of `skyColour` too, so the haze takes them.
 - The clouds are drawn by the sky's own pass alone (`skyClouds`, from `world-sky.frag`): value noise on a plane over
   the eye. They thin to none at the horizon, so the fogged far ground still meets the sky. They stand still.
-- The ground haze is in `fogAt(vec3, float)` in `lighting.glsl`: its density is averaged along the ray between the eye's
-  height and the surface's. `mesh-shade.glsl` and the particles call it. `fogAt(float, float)` stays for shaders that
-  know only a distance, without the ground haze.
+- The haze's density along a ray is `hazeDensity` in `lighting.glsl`, with the ground haze averaged between the eye's
+  height and the surface's. `hazeOver` applies the haze's start and cap.
+- `fogAt(vec3, float)` gives the share of a surface lost as one colour, for what fades with the fog (the particles'
+  sprites, a game's passes). `fogAmounts` gives it for each colour by the look's fade.
+- `air.glsl`'s `throughAir` mixes a surface's colour into the sky's colour by `fogAmounts` and adds the haze glows.
+  `mesh-shade.glsl`, `grass.frag`, and `particle-cubes.frag` call it. At the view's end every colour is the sky's, so a
+  new term of the air keeps that.
+- `fogAt(float, float)` stays for shaders that know only a distance, without the ground haze.
 
 How it reaches the shaders:
 
@@ -55,7 +66,8 @@ How it reaches the shaders:
   engine's). `AtmosphereSystem` sets `RenderView.Look`. `RenderLook.Lerp` blends two.
 - The console's run-only `look` lays values over it (`LookTuning`, a table of every value without reflection;
   `RenderView.DrawnLook`).
-- `GameLoop` writes the drawn look into the frame slot's record (`MeshPass.LookOf`, `LookConstants.From`). The record
+- `GameLoop` writes the drawn look and the frame's haze glows into the frame slot's record (`MeshPass.LookOf`,
+  `LookConstants.From`). The record
   holds the values and the light and colours worked out once a frame: the sunlight, the sky and ground light, the
   zenith and below-horizon colours, the sun's disc and glow, the grade's hue and amounts, the clouds' colour and
   heading, and the haze's and the ground haze's densities. The ground haze's floor is written local to the origin.
@@ -72,6 +84,19 @@ A new look value takes:
 
 Work out in `LookConstants.From`, once a frame, whatever a shader would work out at every pixel from the value and the
 frame's atmosphere.
+
+### Haze glows
+
+A haze glow is a place where the air glows: a large source's light that the haze scatters towards the eye (`HazeGlow`:
+an absolute place, a colour, and a radius).
+
+- A game's source gives them (`IAtmosphereSource.GlowsAt`; none by default). `AtmosphereSystem` copies the first
+  `HazeGlow.Most` into `RenderView` (`SetGlows`, `Glows`). A match's end clears them.
+- `LookConstants.From` writes them into the record, their places local to the origin (`HazeGlowConstants`).
+- `hazeGlows` in `sky.glsl` adds their light along a ray: one over the squared distance to the glow softened by its
+  radius, integrated along the ray, and dimmed by the haze between the glow and the eye.
+- `throughAir` adds it in front of every surface, and `world-sky.frag` along the sky's rays. An orthographic view draws
+  none, since its rays do not start at the eye.
 
 ### The sun
 

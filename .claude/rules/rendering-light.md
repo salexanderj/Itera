@@ -3,7 +3,7 @@ paths:
   - "src/Itera.Engine/Rendering/{ShadowCascades,PointLights}.cs"
   - "src/Itera.Engine/Rendering/Meshes/{MeshPass,MeshView,ViewVolume,CascadeBounds,SkyField,WorldMeshes.Sky,WorldMeshes.Lights}.cs"
   - "src/Itera.Engine/Rendering/GpuData/MeshLighting.cs"
-  - "src/Itera.Engine/Rendering/Shaders/{lighting.glsl,sky.glsl,mesh.frag,mesh-light.glsl,mesh-shade.glsl,mesh-clusters.comp,mesh-shadow.vert,depth-only.frag,world-sky.frag}"
+  - "src/Itera.Engine/Rendering/Shaders/{lighting.glsl,sky.glsl,air.glsl,mesh.frag,mesh-light.glsl,mesh-shade.glsl,mesh-clusters.comp,mesh-shadow.vert,depth-only.frag,world-sky.frag}"
   - "tests/Itera.Engine.Tests/Rendering/{ShadowCascadesTests,PointLightsTests}.cs"
   - "tests/Itera.Engine.Tests/Rendering/Meshes/{MeshPassTests,MeshViewTests,SkyFieldTests}.cs"
 ---
@@ -81,7 +81,9 @@ through `view.glsl`'s `viewClip`, as every pass that draws into the view's depth
 - `shadeSurface` in `mesh-shade.glsl`, shared by every surface the pass draws: the sun through the cascade that covers
   the point by view depth, with a normal offset (`sunShadow` in `mesh-light.glsl`).
 - Sky and ground light, dimmed by openness and scaled by the sky field.
-- The point lights, the glow, the fog, the tone curve, and the grade.
+- The point lights, the air (`air.glsl`, `rendering-look.md`), the tone curve, the grade, and the glow.
+- A dither of up to one step of the 8-bit image (`ditherColour` in `lighting.glsl`), so smooth fog and sky show no
+  bands. The sky, the grass, and the particle cubes dither their colour too.
 
 The near cascade has contact-hardening shadows: a blocker search over the maps read as depths (binding 9, no
 comparison), then comparison taps of a Poisson disc. The far and distant cascades use a 3x3 filter of comparisons, read as 4 bilinear comparisons with the same weights
@@ -92,7 +94,7 @@ their end (`FarFadeStart`) or blend there into the distant cascade's, which fade
 
 `mesh.frag` sets the world's own saturation, value, and side and top shade. `mesh-shade.glsl` sets the sunlight's
 warmth and the sky light's coolness. The split tone fades as the fog thickens, so the far ground meets the sky, which
-takes no grade or split tone.
+takes the grade but no split tone.
 
 A glowing surface keeps its colour, takes no grade or split tone, and adds its glow's own brightness through the tone
 curve after them.

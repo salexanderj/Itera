@@ -22,10 +22,16 @@ public interface IAtmosphereSource
     /// the game gives its own.
     /// </summary>
     RenderLook LookAt(in WorldPoint position) => RenderLook.Default;
+
+    /// <summary>
+    /// The places where the air glows, seen from the absolute point <paramref name="position"/>: none unless the game
+    /// gives its own. Up to <see cref="HazeGlow.Most"/> are drawn.
+    /// </summary>
+    ReadOnlySpan<HazeGlow> GlowsAt(in WorldPoint position) => default;
 }
 
 /// <summary>
-/// Sets the frame's sky, sunlight, and air, and its look, from an <see cref="IAtmosphereSource"/> at the camera (frame
+/// Sets the frame's sky, sunlight, and air, its look, and its haze glows, from an <see cref="IAtmosphereSource"/> at the camera (frame
 /// group, after <see cref="CameraExtractSystem"/>, whose camera it reads from <see cref="RenderView"/>). The source
 /// decides both, blending included, at the camera's absolute place (its local position plus the match's origin). Reads
 /// and writes no components.
@@ -57,5 +63,6 @@ public sealed class AtmosphereSystem : BaseSystem<World, FrameTime>, IFrameUpdat
         _view.SetAtmosphere(in atmosphere);
         var look = _source.LookAt(in position);
         _view.SetLook(in look);
+        _view.SetGlows(_source.GlowsAt(in position));
     }
 }

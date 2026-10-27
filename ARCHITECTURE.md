@@ -931,8 +931,10 @@ The rules are in `.claude/rules/rendering.md`.
   stored as block-compressed DDS files (BC7, BC5, BC4) and read three ways by the surface's facing. No recipe is worked
   out per pixel.
 - `mesh.frag` lights each pixel with the sun through the cascades, sky and ground light dimmed by the vertex's openness
-  and scaled by a sky-visibility field, point lights, fog, the tone curve (a filmic fit of ACES after an exposure), and the grade (`lighting.glsl`, shared with
-  the particles). A glowing surface keeps its colour, leaves the grade, and adds its glow after it. `world-sky.frag`
+  and scaled by a sky-visibility field, and point lights. Then come the air, the tone curve (a filmic fit of ACES after
+  an exposure), the grade, and a dither against bands in the 8-bit image (`lighting.glsl`, shared with the particles).
+  The air fades the surface into the sky's colour, each colour at its own rate, and adds the light of haze glows
+  (`air.glsl`). A glowing surface keeps its colour, leaves the grade, and adds its glow after it. `world-sky.frag`
   draws the sky where the depth is still 0. The depth is the reverse form of `view.glsl`: the lens's near plane divided
   by the distance along the view direction, so 0 is the sky and nearer is greater.
 - The engine's own look (`RenderLook.Default`) is stylized: less saturated and darker, darker on the sides, warm

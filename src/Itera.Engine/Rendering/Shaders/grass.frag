@@ -2,12 +2,13 @@
 
 // The grass's blades (GrassDrawPass), lit as the ground is but cheaply: the sun through one filtered lookup
 // of the shadow cascade that holds the pixel (the ground takes 24 in the near one), the sky and ground light scaled by
-// how much of the sky the air there sees (the sky field), no point lights, then the fog, the tone curve, the grade, and
-// the split tone as mesh-shade.glsl's shadeSurface gives every surface of the world, so the blades sit in the ground's
-// light. Opaque: it writes depth and discards nothing, so the depth test runs before it shades.
+// how much of the sky the air there sees (the sky field), no point lights, then the air, the tone curve, the grade, the
+// split tone, and the dither as mesh-shade.glsl's shadeSurface gives every surface of the world, so the blades sit in the
+// ground's light. Opaque: it writes depth and discards nothing, so the depth test runs before it shades.
 #include "view.glsl"
 #include "sky.glsl"
 #include "lighting.glsl"
+#include "air.glsl"
 #include "mesh-data.glsl"
 #include "mesh-light.glsl"
 
@@ -32,13 +33,13 @@ void main()
     vec3 shaded = inColour * light;
 
     // As shadeSurface finishes a surface.
-    float fog = fogAt(inOffset, view.maxDistance);
-    shaded = mix(shaded, skyColour(viewRayTo(inOffset)), fog);
+    float fog;
+    shaded = throughAir(shaded, inOffset, view.maxDistance, fog);
     vec3 graded = gradeColour(toneMap(shaded * LOOK.exposure));
     vec3 split = mix(
         LOOK.gradeShadows,
         LOOK.gradeLights,
         smoothstep(LOOK.shadowsBelow, LOOK.lightsAbove, dot(graded, LumaWeights)));
     graded *= mix(split, vec3(1.0), fog);
-    outColor = vec4(min(graded, vec3(1.0)), 1.0);
+    outColor = vec4(ditherColour(min(graded, vec3(1.0)), gl_FragCoord.xy), 1.0);
 }

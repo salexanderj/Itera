@@ -6,9 +6,10 @@ namespace Itera.Engine.Rendering.GpuData;
 /// <summary>
 /// The frame's look (<see cref="RenderLook"/>) as the shaders read it (<c>look.glsl</c>'s <c>Look</c>, one per frame
 /// slot in <c>MeshPass</c>'s set at binding 17 and in the particles' draw set): the look's values, and the light and
-/// colours it gives with the frame's atmosphere (the view's sun and sky colours, haze, overcast, and grade), worked out
-/// once a frame here rather than at every pixel (<see cref="From"/>). Written by the main thread each frame. Field order
-/// and types match the GLSL struct; <c>GpuLayout</c> tests check them.
+/// colours it gives with the frame's atmosphere (the view's sun and sky colours, haze, overcast, and grade), and the
+/// frame's haze glows, worked out once a frame here rather than at every pixel
+/// (<see cref="From(in RenderLook, in ViewConstants, ReadOnlySpan{HazeGlow})"/>). Written by the main thread each frame.
+/// Field order and types match the GLSL struct; <c>GpuLayout</c> tests check them.
 /// </summary>
 public struct LookConstants
 {
@@ -101,13 +102,58 @@ public struct LookConstants
     /// <summary>How far the world's colour wanders over about 20 m, each channel (<see cref="RenderLook.WorldHueDrift"/>).</summary>
     public Vector3 WorldHueDrift;
 
+    /// <summary>The sky's light towards the sun: the sun's colour times the look's lobe strength, faded out as it sets.</summary>
+    public Vector3 SkyLobe;
+
+    /// <summary>The lobe's power of half of one plus the cosine to the sun, at least 0.1.</summary>
+    public float SkyLobeSharpness;
+
+    /// <summary>The look's darkening of the sky away from the sun, 0 to 1.</summary>
+    public float SkyAwayDarken;
+
+    /// <summary>The power of the view's height that turns the horizon colour to the zenith's, at least 0.05.</summary>
+    public float ZenithPower;
+
+    /// <summary>How many times the horizon band halves over a unit of the view's height: 1 over the sine of its degrees.</summary>
+    public float HorizonBandFalloff;
+
+    /// <summary>The horizon band's light: the horizon colour times the look's band.</summary>
+    public Vector3 HorizonBand;
+
+    /// <summary>The look's haze start in metres, at least 0.</summary>
+    public float HazeStart;
+
+    /// <summary>The look's haze cap, 0 to 1.</summary>
+    public float HazeMost;
+
+    /// <summary>The look's fade of each colour in the haze, each at least 0.</summary>
+    public Vector3 HazeFade;
+
+    /// <summary>The fade's luma-weighted mean: the haze's thickness for what fades as one (fogAt).</summary>
+    public float HazeFadeMean;
+
+    /// <summary>How many of the glows below the frame draws, up to <see cref="HazeGlow.Most"/>.</summary>
+    public uint GlowCount;
+
+    public HazeGlowConstants Glow0;
+    public HazeGlowConstants Glow1;
+    public HazeGlowConstants Glow2;
+    public HazeGlowConstants Glow3;
+
     private static readonly Vector3 s_luma = new(0.2126f, 0.7152f, 0.0722f);
 
     /// <summary>
     /// The shaders' record of <paramref name="look"/> with the frame's atmosphere as <paramref name="view"/> carries it
     /// (its haze, overcast, and grade as the shaders unpack them, a byte each). Allocates nothing.
     /// </summary>
-    public static LookConstants From(in RenderLook look, in ViewConstants view)
+    public static LookConstants From(in RenderLook look, in ViewConstants view) => From(in look, in view, default);
+
+    /// <summary>
+    /// The shaders' record of <paramref name="look"/> with the frame's atmosphere as <paramref name="view"/> carries it,
+    /// and the first <see cref="HazeGlow.Most"/> of <paramref name="glows"/>, their places made local to the view's
+    /// origin. Allocates nothing.
+    /// </summary>
+    public static LookConstants From(in RenderLook look, in ViewConstants view, ReadOnlySpan<HazeGlow> glows)
     {
         var haze = (view.Air & 0xFF) / 255f;
         var overcast = ((view.Air >> 8) & 0xFF) / 255f;
@@ -117,6 +163,8 @@ public struct LookConstants
         // A compass heading: from north (-z) round towards east (+x).
         var heading = look.CloudHeadingDegrees * MathF.PI / 180;
         var skyLight = view.SkyHorizon * look.SkyLightShare * (1 + overcast);
+        var fade = Vector3.Max(look.HazeColourFade, Vector3.Zero);
+        var count = Math.Min(glows.Length, HazeGlow.Most);
         return new LookConstants
         {
             SunLight = view.SunColour * look.SunWarmth * daylight,
@@ -163,6 +211,53 @@ public struct LookConstants
             RimLight = skyLight * MathF.Max(look.RimStrength, 0),
             RimSharpness = MathF.Max(look.RimSharpness, 1),
             WorldHueDrift = look.WorldHueDrift,
+            SkyLobe = view.SunColour * MathF.Max(look.SkyLobeStrength, 0) * daylight,
+            SkyLobeSharpness = MathF.Max(look.SkyLobeSharpness, 0.1f),
+            SkyAwayDarken = Math.Clamp(look.SkyAwayDarken, 0, 1),
+            ZenithPower = MathF.Max(look.ZenithPower, 0.05f),
+            HorizonBandFalloff = 1 / MathF.Sin(Math.Clamp(look.HorizonBandDegrees, 0.1f, 90) * MathF.PI / 180),
+            HorizonBand = view.SkyHorizon * MathF.Max(look.HorizonBand, 0),
+            HazeStart = MathF.Max(look.HazeStartMetres, 0),
+            HazeMost = Math.Clamp(look.HazeMost, 0, 1),
+            HazeFade = fade,
+            HazeFadeMean = Vector3.Dot(fade, s_luma),
+            GlowCount = (uint)count,
+            Glow0 = count > 0 ? HazeGlowConstants.From(glows[0], in view) : default,
+            Glow1 = count > 1 ? HazeGlowConstants.From(glows[1], in view) : default,
+            Glow2 = count > 2 ? HazeGlowConstants.From(glows[2], in view) : default,
+            Glow3 = count > 3 ? HazeGlowConstants.From(glows[3], in view) : default,
+        };
+    }
+}
+
+/// <summary>
+/// One haze glow as the shaders read it (<c>look.glsl</c>'s <c>HazeGlow</c>, in <see cref="LookConstants"/>): its place
+/// local to the view's origin, its radius, and its colour.
+/// </summary>
+public struct HazeGlowConstants
+{
+    /// <summary>The glow's middle, local: its absolute place less the origin's.</summary>
+    public Vector3 Place;
+
+    /// <summary>The glow's radius in metres, at least 1.</summary>
+    public float Radius;
+
+    /// <summary>The glow's linear colour, each channel at least 0.</summary>
+    public Vector3 Colour;
+
+    /// <summary>The shaders' record of <paramref name="glow"/> in <paramref name="view"/>'s origin. Allocates nothing.</summary>
+    public static HazeGlowConstants From(in HazeGlow glow, in ViewConstants view)
+    {
+        const double perMetre = VoxelConstants.CentimetresPerMetre;
+        return new HazeGlowConstants
+        {
+            Place = new Vector3(
+                (float)(glow.Place.X - view.OriginX / perMetre),
+                (float)(glow.Place.Y - view.OriginY / perMetre),
+                (float)(glow.Place.Z - view.OriginZ / perMetre)
+            ),
+            Radius = MathF.Max(glow.RadiusMetres, 1),
+            Colour = Vector3.Max(glow.Colour, Vector3.Zero),
         };
     }
 }

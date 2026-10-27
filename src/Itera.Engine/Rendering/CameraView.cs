@@ -99,6 +99,7 @@ public sealed class RenderView
     private float _fixedRenderScale = 1;
     private float _screenDim;
     private readonly Atmosphere _clearSky;
+    private readonly HazeGlow[] _glows = new HazeGlow[HazeGlow.Most];
 
     // The frame being built: the screen's size (0 for none: no picture is drawn), the view's distance, and the origin.
     private uint _frameWidth;
@@ -129,6 +130,7 @@ public sealed class RenderView
         CameraOverride = null;
         Atmosphere = _clearSky;
         Look = RenderLook.Default;
+        GlowCount = 0;
         ScreenDim = 0;
     }
 
@@ -201,6 +203,12 @@ public sealed class RenderView
 
     /// <summary>The direction towards the sun the next frame is drawn with: <see cref="SunOverride"/>, else the atmosphere's.</summary>
     public Vector3 DrawnSun => SunOverride ?? Atmosphere.TowardsSun;
+
+    /// <summary>How many of <see cref="Glows"/> the next frame draws, up to <see cref="HazeGlow.Most"/>.</summary>
+    public int GlowCount { get; private set; }
+
+    /// <summary>The places where the air glows in the next frame, as a frame system set them; none until one does.</summary>
+    public ReadOnlySpan<HazeGlow> Glows => _glows.AsSpan(0, GlowCount);
 
     /// <summary>The console's <c>look</c>: values set for the run over every frame's look.</summary>
     public LookTuning LookTuning { get; } = new();
@@ -386,4 +394,15 @@ public sealed class RenderView
 
     /// <summary>Sets the look for the frame being built; it stays until set again.</summary>
     public void SetLook(in RenderLook look) => Look = look;
+
+    /// <summary>
+    /// Sets the haze glows for the frame being built, the first <see cref="HazeGlow.Most"/> of
+    /// <paramref name="glows"/>; they stay until set again. Allocates nothing.
+    /// </summary>
+    public void SetGlows(ReadOnlySpan<HazeGlow> glows)
+    {
+        var count = Math.Min(glows.Length, HazeGlow.Most);
+        glows[..count].CopyTo(_glows);
+        GlowCount = count;
+    }
 }

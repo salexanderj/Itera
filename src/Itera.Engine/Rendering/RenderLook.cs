@@ -103,6 +103,24 @@ public readonly record struct RenderLook
     public float HazeHalfMetres { get; init; } = 60f;
 
     /// <summary>
+    /// How many metres from the eye the haze (the atmosphere's and the ground haze) begins, so the near ground stays
+    /// clear; 0, the default, from the eye. The fog that hides the view's end is not moved.
+    /// </summary>
+    public float HazeStartMetres { get; init; }
+
+    /// <summary>
+    /// 0 to 1: the most of a surface the haze hides before the view's end, so far shapes stay faintly seen; 1, the
+    /// default, all of it. The fog that hides the view's end still hides all.
+    /// </summary>
+    public float HazeMost { get; init; } = 1f;
+
+    /// <summary>
+    /// How fast each colour of a surface fades in the haze, as a multiple of the haze's thickness: (0.8, 1, 1.2) loses blue
+    /// first, so far ground turns towards red before it meets the sky. (1, 1, 1), the default, fades every colour alike.
+    /// </summary>
+    public Vector3 HazeColourFade { get; init; } = Vector3.One;
+
+    /// <summary>
     /// 0 to 1: how thick the haze that lies in low ground is, on top of the atmosphere's haze; 0, the default, none. At 1,
     /// half of a surface <see cref="GroundHazeHalfMetres"/> away is lost in it at <see cref="GroundHazeFloor"/>.
     /// </summary>
@@ -122,6 +140,12 @@ public readonly record struct RenderLook
 
     /// <summary>The sky's colour straight up under full overcast, as a share of its horizon colour.</summary>
     public Vector3 ZenithOvercast { get; init; } = new(0.8f, 0.8f, 0.8f);
+
+    /// <summary>
+    /// How the sky turns from its horizon colour to its zenith colour with the height of the view: the power of the
+    /// direction's height. 0.5, the default, reaches most of the zenith colour soon over the horizon; 1 turns evenly.
+    /// </summary>
+    public float ZenithPower { get; init; } = 0.5f;
 
     /// <summary>The sky's colour straight down (below the horizon), as a share of its horizon colour.</summary>
     public float BelowHorizon { get; init; } = 0.45f;
@@ -143,6 +167,28 @@ public readonly record struct RenderLook
 
     /// <summary>How tight the glow round the sun is: the power of the cosine to the sun; higher is smaller.</summary>
     public float SunGlowSharpness { get; init; } = 8f;
+
+    /// <summary>
+    /// How bright the sky and the haze are towards the sun over half the sky, as a multiple of the sun's colour: the
+    /// light the air scatters broadly, wider than the glow, so the light's direction shows whether or not the sun is in
+    /// view. 0, the default, none. Faded out as the sun sets.
+    /// </summary>
+    public float SkyLobeStrength { get; init; }
+
+    /// <summary>How wide that light is: the power of half of one plus the cosine to the sun; higher is narrower.</summary>
+    public float SkyLobeSharpness { get; init; } = 4f;
+
+    /// <summary>0 to 1: how much darker the sky and the haze are straight away from the sun; 0, the default, none.</summary>
+    public float SkyAwayDarken { get; init; }
+
+    /// <summary>
+    /// How bright a band of light along the horizon is, as a share of the horizon colour, so the far land stands against
+    /// a lighter sky; 0, the default, none. The haze takes it too.
+    /// </summary>
+    public float HorizonBand { get; init; }
+
+    /// <summary>How many degrees over (and under) the horizon the band is half as bright.</summary>
+    public float HorizonBandDegrees { get; init; } = 6f;
 
     /// <summary>
     /// 0 to 1: how much of the sky streaks of ash cloud cover, drawn on the sky alone and thinning to none at the horizon;

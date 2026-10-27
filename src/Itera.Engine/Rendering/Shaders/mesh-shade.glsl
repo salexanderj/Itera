@@ -1,9 +1,10 @@
 // The light a surface drawn in MeshPass's rendering takes and the colour it ends as (shadeSurface), shared by the
 // world's meshes and the models' (mesh.frag): the sun (Lambert) through the two shadow cascades (sunShadow), sky and
 // ground light dimmed by the vertex's openness and scaled by how much of the sky the air in front sees (the sky field),
-// the glowing surfaces' point lights, fog into the sky, the tone curve, the grade, and the glow after it. The light and
-// the grade take the frame's look (look.glsl; the art direction's, docs/rendering-redesign.md). Include after view.glsl,
-// sky.glsl, lighting.glsl, mesh-data.glsl, and mesh-light.glsl.
+// the glowing surfaces' point lights, the air into the sky (air.glsl), the tone curve, the grade, the glow after it, and a
+// dither against bands. The light and the grade take the frame's look (look.glsl; the art direction's,
+// docs/rendering-redesign.md). Include after view.glsl, sky.glsl, lighting.glsl, air.glsl, mesh-data.glsl, and
+// mesh-light.glsl.
 
 // Openness (the share of air round a vertex: each of its cell's corners' mean over the 3x3x3 voxels round it, blended
 // to the vertex's place; SurfaceNets) is a half on flat ground, a quarter along an inner edge, and an eighth in an inner
@@ -84,8 +85,8 @@ vec3 shadeSurface(vec3 colour, vec3 normal, vec3 lit, vec3 offset, float opennes
 
     vec3 shaded = colour * light;
 
-    float fog = fogAt(offset, view.maxDistance);
-    shaded = mix(shaded, skyColour(viewRayTo(offset)), fog);
+    float fog;
+    shaded = throughAir(shaded, offset, view.maxDistance, fog);
     vec3 toned = toneMap(shaded * LOOK.exposure);
     vec3 graded = gradeColour(toned);
     // Faded out with the fog: the sky (world-sky.frag) takes no split tone, so the fogged far ground must not either, or
@@ -105,5 +106,5 @@ vec3 shadeSurface(vec3 colour, vec3 normal, vec3 lit, vec3 offset, float opennes
         graded = mix(graded, toned, 1.0 - fog) + toneMap((shaded + glowing) * LOOK.exposure) - toned;
     }
 
-    return min(graded, vec3(1.0));
+    return ditherColour(min(graded, vec3(1.0)), gl_FragCoord.xy);
 }

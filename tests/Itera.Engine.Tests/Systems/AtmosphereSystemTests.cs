@@ -79,6 +79,20 @@ public sealed class AtmosphereSystemTests
     }
 
     [Fact]
+    public void The_frame_gets_the_sources_haze_glows_up_to_the_most_or_none()
+    {
+        using var world = World.Create();
+        using var glowing = new AtmosphereSystem(world, _view, new ByHeight());
+
+        glowing.Update(in Time);
+        Assert.Equal(ByHeight.Glows.AsSpan(0, HazeGlow.Most).ToArray(), _view.Glows.ToArray());
+
+        using var plain = new AtmosphereSystem(world, _view, new Plain());
+        plain.Update(in Time);
+        Assert.Equal(0, _view.Glows.Length);
+    }
+
+    [Fact]
     public void Update_allocates_nothing()
     {
         using var world = World.Create();
@@ -110,9 +124,19 @@ public sealed class AtmosphereSystemTests
         /// <summary>A brighter look above 50 m.</summary>
         public static readonly RenderLook HighLook = RenderLook.Default with { Exposure = 1.1f };
 
+        /// <summary>More glows than a frame draws.</summary>
+        public static readonly HazeGlow[] Glows =
+        [
+            .. Enumerable
+                .Range(0, HazeGlow.Most + 2)
+                .Select(i => new HazeGlow(new WorldPoint(i, 2, 3), Vector3.One, 10 + i)),
+        ];
+
         public WorldPoint LastAsked { get; private set; }
 
         public RenderLook LookAt(in WorldPoint position) => position.Y < 50 ? RenderLook.Default : HighLook;
+
+        public ReadOnlySpan<HazeGlow> GlowsAt(in WorldPoint position) => Glows;
 
         public Atmosphere At(in WorldPoint position)
         {
