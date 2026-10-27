@@ -67,8 +67,8 @@ public sealed class PlayerMovementSystemTests : IDisposable
         PlayerMovementSystem.Sanitize(ref bad);
         var nowhere = new PlayerCommand
         {
-            Buttons = PlayerButtons.Fly | PlayerButtons.Crouch,
-            FlyEye = new Vector3(0, float.NaN, 0),
+            Buttons = PlayerButtons.Fly | PlayerButtons.Viewpoint | PlayerButtons.Crouch,
+            Viewpoint = new Vector3(0, float.NaN, 0),
         };
         PlayerMovementSystem.Sanitize(ref nowhere);
 
@@ -79,7 +79,7 @@ public sealed class PlayerMovementSystemTests : IDisposable
         Assert.Equal(0xF0F0u, command.Actions);
         Assert.Equal(Vector2.Zero, bad.Move);
         Assert.InRange(bad.Yaw, -MathF.PI, MathF.PI);
-        // A fly camera at no place flies nowhere.
+        // A camera at no place flies nowhere, and is carried nowhere.
         Assert.Equal(PlayerButtons.Crouch, nowhere.Buttons);
         Assert.Equal(0, bad.Pitch);
     }
@@ -372,7 +372,7 @@ public sealed class PlayerMovementSystemTests : IDisposable
         var far = new Vector3(1e5f, 20, 0);
         var remote = world.Create(
             new RemotePlayer(),
-            new PlayerCommand { Buttons = PlayerButtons.Fly, FlyEye = far },
+            new PlayerCommand { Buttons = PlayerButtons.Fly, Viewpoint = far },
             new PlayerMode { Flying = true },
             size,
             new CharacterPosition(),
@@ -382,7 +382,7 @@ public sealed class PlayerMovementSystemTests : IDisposable
             MovementStats.Default
         );
 
-        Run(world, system, 1, new PlayerCommand { Buttons = PlayerButtons.Fly, FlyEye = new Vector3(5, 20, -3) });
+        Run(world, system, 1, new PlayerCommand { Buttons = PlayerButtons.Fly, Viewpoint = new Vector3(5, 20, -3) });
 
         var (position, velocity, _) = Read(world);
         var eye = new Vector3(0, size.EyeMetres, 0);

@@ -52,13 +52,23 @@ public enum PlayerButtons
     Crouch = 4,
 
     /// <summary>
-    /// The player flies the debug camera, which is at <see cref="PlayerCommand.FlyEye"/>: its feet follow it. A client's
-    /// command carries it to the host, so the host's copy of that player flies there too.
+    /// The player flies the debug camera, which is at <see cref="PlayerCommand.Viewpoint"/>: its feet follow it. A
+    /// client's command carries it to the host, so the host's copy of that player flies there too.
     /// </summary>
     Fly = 8,
 
+    /// <summary>
+    /// The player's camera is away from its body, at <see cref="PlayerCommand.Viewpoint"/> (a game's free camera), and
+    /// its feet stay where they are. A game's input system sets it; the engine carries the place to the host and does
+    /// nothing else with it.
+    /// </summary>
+    Viewpoint = 16,
+
     /// <summary>Every button there is; other bits in a command (from a peer) are dropped.</summary>
-    AllKnown = Jump | Sprint | Crouch | Fly,
+    AllKnown = Jump | Sprint | Crouch | Fly | Viewpoint,
+
+    /// <summary>The buttons whose command carries <see cref="PlayerCommand.Viewpoint"/>.</summary>
+    CarriesViewpoint = Fly | Viewpoint,
 }
 
 /// <summary>
@@ -85,10 +95,11 @@ public struct PlayerCommand
     public uint Actions;
 
     /// <summary>
-    /// While <see cref="PlayerButtons.Fly"/> is set, where the debug camera is (local to the match's origin, which moves
-    /// it as it moves): the feet follow it, the eye's height below (<c>PlayerMovementSystem</c>).
+    /// While <see cref="PlayerButtons.Fly"/> or <see cref="PlayerButtons.Viewpoint"/> is set, where the player's camera
+    /// is (local to the match's origin, which moves it as it moves). Flying, the feet follow it, the eye's height below
+    /// (<c>PlayerMovementSystem</c>).
     /// </summary>
-    public Vector3 FlyEye;
+    public Vector3 Viewpoint;
 }
 
 /// <summary>How the player moves now: walking, or flying the debug camera (the console's <c>fly</c>), and crouched.</summary>

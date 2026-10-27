@@ -106,7 +106,7 @@ running game (its README has every verb). Through it a tool:
 Use it instead of restarts. It reads lines of at most 1 MiB and takes 16 tools at once.
 
 `game.py shots VIEW... --out DIR [--compare DIR] [--size WxH] [--release]` starts the game offscreen. It takes a
-screenshot of each view once its world has loaded and its light settled (`fly on`, `tp VIEW`, `wait view`), stops the
+screenshot of each view once its world has loaded and its light settled (`Engine:Camera:StartFlying`, `tp VIEW`, `wait view`), stops the
 game, and compares the set with an earlier one (`tools/benchmark/imgdiff.py`). A view is one of the game's `tp` places
 or `x,y,z,yaw,pitch`.
 

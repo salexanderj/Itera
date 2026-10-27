@@ -244,6 +244,7 @@ def in_world(
             f"--Engine:Window:Height={size}",
             "--Engine:Renderer:DynamicRenderScaling=false",
             "--Engine:Ui:Stats=false",
+            "--Engine:Camera:StartFlying=true",
             f"--Engine:Assets:Extra:0:Name={name}",
             f"--Engine:Assets:Extra:0:Path={glb.resolve()}",
             f"--Engine:Assets:Extra:0:MetresPerUnit={unit:g}",
@@ -255,7 +256,7 @@ def in_world(
     try:
         # meshes place puts it on the ground in front of the player, facing the player. The views turn with it, and the
         # perspective view is drawn from the player's eye, the one place known to be clear.
-        placed = _game(f"fly on; wait ticks 2; tp {place}; wait view; {SUN}; pos; meshes place {name}")
+        placed = _game(f"wait ticks 2; tp {place}; wait view; {SUN}; pos; meshes place {name}")
         match = re.search(rf"{re.escape(name)} placed at (\S+) (\S+) (\S+) in the world", placed)
         pose = re.search(r"(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)", placed)
         if not match or not pose:

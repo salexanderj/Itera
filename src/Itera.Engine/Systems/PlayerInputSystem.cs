@@ -19,11 +19,12 @@ namespace Itera.Engine.Systems;
 /// Back, Left, and Right to move (W, S, A, D), Sprint (Shift) and Crouch (Ctrl) while held, Jump (Space, once a press),
 /// and while the pointer is captured the mouse's movement since the last step added to the look. A <see cref="Bodiless"/>
 /// player only looks about: its move and buttons are cleared. <see cref="PlayerCommand.Actions"/> is a game's: this
-/// never writes it. The console's <c>fly</c> switches between walking and the debug fly camera, unless flying is forced
-/// (the benchmark and the automatic path). While flying, the command holds no movement, jump, or sprint and takes its
-/// look and place from the <see cref="ActiveCamera"/> (<see cref="PlayerButtons.Fly"/> and
-/// <see cref="PlayerCommand.FlyEye"/>, which a client sends its host), so walking resumes looking where the camera
-/// looked; reading a pose a frame system wrote is a debug case. Third person (Tab) switches the local player's camera between its eye and
+/// never writes it. The console's <c>fly</c> (left out when a game names its own, <c>flyCommand</c>) and a game's
+/// <see cref="RequestFlying"/> switch between walking and the debug fly camera, unless flying is forced (the benchmark
+/// and the automatic path); <c>Engine:Camera:StartFlying</c> starts the first local player flying. While flying, the
+/// command holds no movement, jump, or sprint and takes its look and place from the <see cref="ActiveCamera"/>
+/// (<see cref="PlayerButtons.Fly"/> and <see cref="PlayerCommand.Viewpoint"/>, which a client sends its host), so
+/// walking resumes looking where the camera looked; reading a pose a frame system wrote is a debug case. Third person (Tab) switches the local player's camera between its eye and
 /// behind its right shoulder (<see cref="ThirdPersonView"/>; not while flying; a game may leave the key out,
 /// <see cref="MovementKeys.ThirdPerson"/>), and the wheel moves the shoulder camera in and out
 /// (<see cref="ThirdPersonCamera.Wheel"/>); the console's <c>camera</c> does what Third person does. While
@@ -66,9 +67,13 @@ public sealed partial class PlayerInputSystem : BaseSystem<World, FixedStepTime>
     private readonly ILogger<PlayerInputSystem> _logger;
     private readonly ConsoleCommands? _commands;
     private readonly PlayerInputBlock? _block;
+    private readonly bool _flyCommand;
 
-    /// <summary>What the <c>fly</c> command asked for: -1 nothing, 0 walk, 1 fly. Applied at the next step.</summary>
-    private int _flyRequest = -1;
+    /// <summary>
+    /// What the <c>fly</c> command or <see cref="RequestFlying"/> asked for: -1 nothing, 0 walk, 1 fly. Applied at the
+    /// next step with a local player.
+    /// </summary>
+    private int _flyRequest;
 
     /// <summary>What the <c>camera</c> command asked for: -1 nothing, 0 first person, 1 third. Applied at the next step.</summary>
     private int _cameraRequest = -1;
@@ -82,6 +87,7 @@ public sealed partial class PlayerInputSystem : BaseSystem<World, FixedStepTime>
     /// <param name="block">Whether the player's input acts; none in tests that do not block it.</param>
     /// <param name="settings">The player's settings, whose mouse sensitivity is read each step; the options' without them.</param>
     /// <param name="keys">The movement keybindings; the defaults without them.</param>
+    /// <param name="flyCommand">False when the game names its own command for flying, through <see cref="RequestFlying"/>.</param>
     public PlayerInputSystem(
         World world,
         ITickInput input,
@@ -91,11 +97,14 @@ public sealed partial class PlayerInputSystem : BaseSystem<World, FixedStepTime>
         ConsoleCommands? commands = null,
         PlayerInputBlock? block = null,
         PlayerSettings? settings = null,
-        MovementKeys? keys = null
+        MovementKeys? keys = null,
+        bool flyCommand = true
     )
         : base(world)
     {
         ArgumentNullException.ThrowIfNull(options);
+        _flyCommand = flyCommand;
+        _flyRequest = options.Value.Camera.StartFlying ? 1 : -1;
         _keys = keys ?? MovementKeys.Defaults();
         _block = block;
         _settings = settings;
@@ -112,13 +121,17 @@ public sealed partial class PlayerInputSystem : BaseSystem<World, FixedStepTime>
         EcsChecks.RequireAll<CameraPose>(in s_camera);
         EcsChecks.RequireAll<PlayerCommand, Bodiless>(in s_bodiless);
         EcsChecks.RequireAll<PlayerMode, ThirdPersonView, LocalPlayer>(in s_views);
-        _commands?.Register(
-            "fly",
-            "[on|off]",
-            "Flies the debug camera, or walks again where it is.",
-            CommandScope.Local,
-            Fly
-        );
+        if (_flyCommand)
+        {
+            _commands?.Register(
+                "fly",
+                "[on|off]",
+                "Flies the debug camera, or walks again where it is.",
+                CommandScope.Local,
+                Fly
+            );
+        }
+
         _commands?.Register(
             "camera",
             "[first|third]",
@@ -182,7 +195,11 @@ public sealed partial class PlayerInputSystem : BaseSystem<World, FixedStepTime>
                 command.Buttons = PlayerButtons.None;
             }
         );
-        _flyRequest = -1;
+        // A request waits for a local player: the first one may come after the first step (a client's).
+        if (job.Found)
+        {
+            _flyRequest = -1;
+        }
 
         // Tab and the wheel, after the fly switch, so neither does anything while flying.
         var view = new View
@@ -203,6 +220,21 @@ public sealed partial class PlayerInputSystem : BaseSystem<World, FixedStepTime>
             var flying = job.FlyingNow;
             LogToggled(flying, step.Tick);
         }
+    }
+
+    /// <summary>
+    /// Asks for the local player to fly the debug camera, or to walk again where it is, at the next step with a local
+    /// player: a game's own command or key. False, and nothing asked, while flying is forced.
+    /// </summary>
+    public bool RequestFlying(bool on)
+    {
+        if (_forceFlying)
+        {
+            return false;
+        }
+
+        _flyRequest = on ? 1 : 0;
+        return true;
     }
 
     private float Axis(in InputSnapshot input, KeyAction positive, KeyAction negative) =>
@@ -350,9 +382,11 @@ public sealed partial class PlayerInputSystem : BaseSystem<World, FixedStepTime>
         public CameraPose Camera;
         public bool Toggled;
         public bool FlyingNow;
+        public bool Found;
 
         public void Update(ref PlayerCommand command, ref PlayerMode mode)
         {
+            Found = true;
             if (ForceFlying)
             {
                 mode.Flying = true;
@@ -373,7 +407,7 @@ public sealed partial class PlayerInputSystem : BaseSystem<World, FixedStepTime>
                     command.Yaw = Camera.Yaw;
                     command.Pitch = Camera.Pitch;
                     command.Buttons |= PlayerButtons.Fly;
-                    command.FlyEye = Camera.Position;
+                    command.Viewpoint = Camera.Position;
                 }
 
                 return;

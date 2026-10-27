@@ -361,7 +361,7 @@ public sealed class PlayerInputSystemTests
         Assert.Equal(-0.5f, flying.Command.Pitch);
         // The command carries where the camera is, which a client sends its host.
         Assert.Equal(PlayerButtons.Fly, flying.Command.Buttons & PlayerButtons.Fly);
-        Assert.Equal(new Vector3(3, 12, -7), flying.Command.FlyEye);
+        Assert.Equal(new Vector3(3, 12, -7), flying.Command.Viewpoint);
         Assert.False(walking.Mode.Flying);
         Assert.Equal(PlayerButtons.None, walking.Command.Buttons & PlayerButtons.Fly);
         Assert.Equal(new Vector2(0, 1), walking.Command.Move);
@@ -381,6 +381,53 @@ public sealed class PlayerInputSystemTests
 
         Assert.Single(output.Errors);
         Assert.True(Read(world).Mode.Flying);
+    }
+
+    [Fact]
+    public void A_games_request_flies_and_walks_without_the_fly_command_and_forced_flying_refuses_it()
+    {
+        using var world = World.Create();
+        var commands = NewCommands();
+        using var system = Create(world, commands: commands, flyCommand: false);
+        world.Create(new CameraPose { Position = new Vector3(1, 5, 2) }, new ActiveCamera());
+        using var forcedWorld = World.Create();
+        using var forced = Create(forcedWorld, forceFlying: true);
+
+        var asked = system.RequestFlying(true);
+        Tick(system);
+        var flying = Read(world);
+        system.RequestFlying(false);
+        Tick(system);
+        var walking = Read(world).Mode.Flying;
+
+        Assert.False(commands.TryGet("fly", out _));
+        Assert.True(commands.TryGet("camera", out _));
+        Assert.True(asked);
+        Assert.True(flying.Mode.Flying);
+        Assert.Equal(new Vector3(1, 5, 2), flying.Command.Viewpoint);
+        Assert.False(walking);
+        Assert.False(forced.RequestFlying(false));
+    }
+
+    [Fact]
+    public void Starting_flying_waits_for_the_first_local_player()
+    {
+        using var world = World.Create();
+        using var system = new PlayerInputSystem(
+            world,
+            _input,
+            Options.Create(new EngineOptions { Camera = { StartFlying = true } }),
+            false,
+            NullLogger<PlayerInputSystem>.Instance
+        );
+        system.Initialize();
+
+        Tick(system);
+        world.Create(new PlayerCommand(), new PlayerMode(), new LocalPlayer());
+        Tick(system);
+        var started = Read(world).Mode.Flying;
+
+        Assert.True(started);
     }
 
     [Fact]
@@ -409,7 +456,8 @@ public sealed class PlayerInputSystemTests
         bool forceFlying = false,
         PlayerInputBlock? block = null,
         ConsoleCommands? commands = null,
-        MovementKeys? keys = null
+        MovementKeys? keys = null,
+        bool flyCommand = true
     )
     {
         var system = new PlayerInputSystem(
@@ -420,7 +468,8 @@ public sealed class PlayerInputSystemTests
             NullLogger<PlayerInputSystem>.Instance,
             commands,
             block: block,
-            keys: keys
+            keys: keys,
+            flyCommand: flyCommand
         );
         system.Initialize();
         world.Create(new PlayerCommand(), new PlayerMode(), new LocalPlayer());

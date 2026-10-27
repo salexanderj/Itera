@@ -18,7 +18,7 @@ namespace Itera.Engine.Systems;
 /// player flies it (the console's <c>fly</c>) or there is no player, moves every <see cref="FlyCamera"/> once per frame:
 /// mouse look while the pointer is captured (a left click; Escape opens the menu, which frees it), and by the movement
 /// keybindings (<see cref="MovementKeys"/>, the defaults in brackets) Forward, Back, Left, and Right along the view (W, S,
-/// A, D), Jump and Fly down straight up and down (Space, C), Sprint four times faster (Shift), and the wheel (or the
+/// A, D), Jump and Move down straight up and down (Space, C), Sprint four times faster (Shift), and the wheel (or the
 /// console's <c>flyspeed</c>) changes the speed. When <c>Engine:Voxels:DebugWalkSpeed</c> is above
 /// zero it ignores input and flies a circle of 100 m radius around the origin, <c>Engine:Camera:CircleHeightMetres</c> up, looking along the path, for
 /// unattended runs. Reads <see cref="IFrameInput"/> and <see cref="PlayerMode"/>; writes <see cref="CameraPose"/> and
@@ -196,7 +196,7 @@ public sealed partial class DebugFlyCameraSystem : BaseSystem<World, FrameTime>,
             Boost = _keys.IsDown(in input, _keys.Sprint) ? FastFactor : 1,
             Move = new Vector3(
                 Axis(in input, _keys.Right, _keys.Left),
-                Axis(in input, _keys.Jump, _keys.FlyDown),
+                Axis(in input, _keys.Jump, _keys.MoveDown),
                 Axis(in input, _keys.Forward, _keys.Back)
             ),
         };

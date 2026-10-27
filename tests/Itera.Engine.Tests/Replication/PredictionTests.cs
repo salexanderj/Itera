@@ -133,7 +133,7 @@ public sealed class PredictionTests(ITestOutputHelper output)
                         < walkFrom => new PlayerCommand
                         {
                             Buttons = PlayerButtons.Fly,
-                            FlyEye = new Vector3(0, 4, -0.05f * (Math.Min(tick, holdFrom) - flyFrom)),
+                            Viewpoint = new Vector3(0, 4, -0.05f * (Math.Min(tick, holdFrom) - flyFrom)),
                         },
                         < stopAt => new PlayerCommand { Move = new Vector2(0, 1) },
                         _ => new PlayerCommand(),
@@ -168,6 +168,45 @@ public sealed class PredictionTests(ITestOutputHelper output)
             Text($"The client's player at {client}, the host's copy at {host}.")
         );
         Assert.Equal(startup, harness.ClientReplication.Corrections);
+    }
+
+    /// <summary>
+    /// A client whose camera is away from its body (a game's free camera) sends the camera's place in each command: the
+    /// host's copy gets it, made local, while both bodies stand where they were and neither flies.
+    /// </summary>
+    [Fact]
+    public void A_client_camera_away_from_its_body_reaches_the_host_while_the_body_stands()
+    {
+        const ulong awayFrom = 60;
+        using var harness = ReplicationHarness.Start(
+            new MoverPlan { Count = 0, Characters = true },
+            clientPlan: new MoverPlan
+            {
+                Characters = true,
+                Script = tick =>
+                    tick < awayFrom
+                        ? new PlayerCommand()
+                        : new PlayerCommand { Buttons = PlayerButtons.Viewpoint, Viewpoint = new Vector3(4, 6, -8) },
+            }
+        );
+        StepClientTo(harness, awayFrom);
+        var own = harness.ClientPlan.Own;
+        var copy = harness.HostPlan.Remote[1];
+        var standing = Feet(harness.Client, own);
+        StepClientTo(harness, awayFrom + 30);
+
+        var command = harness.Host.World.Get<PlayerCommand>(copy);
+        var seen = harness.Host.Services.GetRequiredService<WorldOrigin>().ToWorld(command.Viewpoint);
+        Assert.Equal(PlayerButtons.Viewpoint, command.Buttons & PlayerButtons.CarriesViewpoint);
+        Assert.True(
+            seen.DistanceTo(harness.Client.Services.GetRequiredService<WorldOrigin>().ToWorld(new Vector3(4, 6, -8)))
+                < 0.001,
+            Text($"The host saw the camera at {seen}.")
+        );
+        Assert.False(harness.Host.World.Get<PlayerMode>(copy).Flying);
+        Assert.False(harness.Client.World.Get<PlayerMode>(own).Flying);
+        Assert.True(Feet(harness.Client, own).DistanceTo(standing) < 0.01, "The client's body moved.");
+        Assert.True(Feet(harness.Host, copy).DistanceTo(standing) < 0.01, "The host's copy moved.");
     }
 
     /// <summary>Steps the host and the client until the client's tick is <paramref name="tick"/>.</summary>
@@ -332,13 +371,13 @@ public sealed class PredictionTests(ITestOutputHelper output)
                 Buttons = (PlayerButtons)random.Next(256),
                 Actions = (uint)random.NextInt64(uint.MaxValue + 1L),
             };
-            var flyEye = new WorldPoint(
+            var viewpoint = new WorldPoint(
                 (random.NextDouble() - 0.5) * 2e5,
                 (random.NextDouble() - 0.5) * 2e3,
                 (random.NextDouble() - 0.5) * 2e5
             );
             writer.Reset();
-            ReplicationService.WriteCommand(writer, in command, in flyEye);
+            ReplicationService.WriteCommand(writer, in command, in viewpoint);
             var reader = new MessageReader(writer.Written);
             var read = ReplicationService.ReadCommand(ref reader, out var readEye);
             reader.EnsureEnd();
@@ -346,9 +385,11 @@ public sealed class PredictionTests(ITestOutputHelper output)
             ReplicationService.Quantise(ref quantised);
 
             Assert.Equal(read, quantised);
-            // The fly camera's place goes only with a command that flies, in a message's steps.
+            // The camera's place goes only with a command that flies or carries it, in a message's steps.
             Assert.Equal(
-                (command.Buttons & PlayerButtons.Fly) != 0 ? ReplicationService.Quantised(in flyEye) : default,
+                (command.Buttons & PlayerButtons.CarriesViewpoint) != 0
+                    ? ReplicationService.Quantised(in viewpoint)
+                    : default,
                 readEye
             );
             Assert.Equal(ReplicationService.Quantised(in readEye), readEye);
@@ -394,7 +435,11 @@ public sealed class PredictionTests(ITestOutputHelper output)
                 Characters = true,
                 Script = tick =>
                     flying
-                        ? new PlayerCommand { Buttons = PlayerButtons.Fly, FlyEye = new Vector3(0, 3, tick * -0.01f) }
+                        ? new PlayerCommand
+                        {
+                            Buttons = PlayerButtons.Fly,
+                            Viewpoint = new Vector3(0, 3, tick * -0.01f),
+                        }
                         : Walk(tick, ulong.MaxValue),
             }
         );

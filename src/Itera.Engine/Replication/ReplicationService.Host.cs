@@ -703,10 +703,10 @@ public sealed partial class ReplicationService
         public readonly int[] CommandTicks = new int[CommandRing];
 
         /// <summary>
-        /// Where each command's fly camera is, absolute, by its tick (a command flying the debug camera: its
-        /// <see cref="PlayerCommand.FlyEye"/> is made local from it as it is applied, since the origin may move first).
+        /// Where each command's camera is, absolute, by its tick (a command that carries one: its
+        /// <see cref="PlayerCommand.Viewpoint"/> is made local from it as it is applied, since the origin may move first).
         /// </summary>
-        public readonly WorldPoint[] FlyEyes = new WorldPoint[CommandRing];
+        public readonly WorldPoint[] Viewpoints = new WorldPoint[CommandRing];
 
         // The host's tick each command was made at the sight of, by the client's tick; and the applied one's.
         public readonly double[] ShownTicks = new double[CommandRing];
@@ -717,7 +717,7 @@ public sealed partial class ReplicationService
         public int NextCommand = -1;
         public int NewestApplied = -1;
         public PlayerCommand LastCommand;
-        public WorldPoint LastFlyEye;
+        public WorldPoint LastViewpoint;
 
         /// <summary>The first command's tick it sent; -1 before.</summary>
         public int FirstCommand = -1;

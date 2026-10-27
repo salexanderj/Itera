@@ -21,9 +21,6 @@ public sealed class PlayerOptions
     /// <summary>Height from the feet to the top of the head, in metres.</summary>
     public double HeightMetres { get; set; } = 1.7;
 
-    /// <summary>When true, the game starts with the debug fly camera instead of walking (the console's <c>fly</c> switches).</summary>
-    public bool StartFlying { get; set; }
-
     /// <summary>
     /// When true, the game starts with the camera behind the player's right shoulder (third person; its key and the
     /// console's <c>camera</c> switch it for the rest of the run).

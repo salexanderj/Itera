@@ -101,7 +101,7 @@ internal static class SessionProtocol
     /// in the handshake instead of failing later. A game versions its own messages in its
     /// <c>ISessionMatchData.Fingerprint</c>, which the hello carries.
     /// </summary>
-    public const int Version = 48;
+    public const int Version = 49;
 
     /// <summary>Lobby data: the players in the session now, the host's included (<c>SessionService</c> writes it).</summary>
     public const string LobbyPlayersKey = "itera_players";

@@ -119,7 +119,7 @@ public sealed class DebugFlyCameraSystemTests
         using var world = World.Create();
         var keys = MovementKeys.Defaults();
         keys.Bindings.Set(keys.Forward, InputBinding.Of(Key.Up));
-        keys.Bindings.Set(keys.FlyDown, InputBinding.Of(Key.Q));
+        keys.Bindings.Set(keys.MoveDown, InputBinding.Of(Key.Q));
         using var system = CreateSystem(world, keys: keys);
         system.Initialize();
 

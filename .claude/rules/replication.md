@@ -76,7 +76,7 @@ The console's `replication` prints what is sent or shown. `replication delay MS`
 
 `Predict` and `ReplicationService.Prediction.cs` (with `PredictedState`) do this.
 
-- Each step the reply system quantises the command in place, to what the host reads, bit for bit: the move, the yaw, the pitch, and a flying command's camera place (in a message's 1/64 cm steps). It keeps the command.
+- Each step the reply system quantises the command in place, to what the host reads, bit for bit: the move, the yaw, the pitch, and the camera place a command carries (in a message's 1/64 cm steps). It keeps the command.
 - The reply carries the last few commands, newest first, with the newest's tick. It then carries the host's tick each command was made at the sight of. The ticks are in 1/16 steps: the newest command's first, then each later one's as a step back.
 - The player moves at once by the engine's movement.
 - The host keeps each client's commands by their tick, also those it has passed. At each step's start it writes the next into the client's player.
@@ -94,8 +94,10 @@ The console's `replication` prints what is sent or shown. `replication delay MS`
 - The states differ when the feet are more than a tolerance apart, when one is on the ground or crouched and the other is not, or when a part says so, such as a climb in another state.
 - What is drawn eases from where it was (`EyeSmoothing.Correction`, which the camera adds).
 - While the player flies the debug camera, each command carries the camera's place (`PlayerButtons.Fly`,
-  `PlayerCommand.FlyEye`), absolute in the reply and in both peers' rings of commands. The host's copy flies there: its
-  `PlayerMode.Flying` follows the commands, and with none coming it stays flying where it was.
+  `PlayerCommand.Viewpoint`), absolute in the reply and in both peers' rings of commands. The host's copy flies there:
+  its `PlayerMode.Flying` follows the commands, and with none coming it stays flying where it was.
+- A command with `PlayerButtons.Viewpoint` (a game's free camera away from the body) carries the place the same way.
+  The body stays, `Flying` stays false, and corrections go on. With no commands coming, the place stays where it was.
 - The client takes no correction while it flies. A later one runs each command again flying or walking as it did, and
   leaves the client's own `Flying` as it was.
 - The host and the client start a few steps apart, because the host's copy moves before the first command. The first owner's state therefore corrects once.

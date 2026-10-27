@@ -20,7 +20,8 @@ namespace Itera.Engine.Replication;
 /// <see cref="Replaying"/> while it does); the jump this makes in what is drawn eases out (<c>EyeSmoothing.Correction</c>,
 /// <see cref="CorrectionEase"/> of it kept a step; past <see cref="SnapMetres"/>, at once). While the client's player
 /// flies the debug camera, its commands carry the camera's place (<see cref="PlayerButtons.Fly"/>), and the host's copy
-/// flies there, its <see cref="PlayerMode.Flying"/> set from them.
+/// flies there, its <see cref="PlayerMode.Flying"/> set from them. While a game's free camera is away from the body
+/// (<see cref="PlayerButtons.Viewpoint"/>), they carry its place too, and the body stays where it is.
 /// </summary>
 public sealed partial class ReplicationService
 {
@@ -131,9 +132,10 @@ public sealed partial class ReplicationService
 
     /// <summary>
     /// A command as a reply carries it: the move in 1/127ths, the look in 65,536ths of a turn and of half a turn up and
-    /// down, and while it flies the debug camera, where the camera is (<paramref name="flyEye"/>, absolute).
+    /// down, and while it flies the debug camera or its camera is away from its body, where the camera is
+    /// (<paramref name="viewpoint"/>, absolute).
     /// </summary>
-    internal static void WriteCommand(MessageWriter writer, in PlayerCommand command, in WorldPoint flyEye)
+    internal static void WriteCommand(MessageWriter writer, in PlayerCommand command, in WorldPoint viewpoint)
     {
         writer.WriteByte((byte)MoveSteps(command.Move.X));
         writer.WriteByte((byte)MoveSteps(command.Move.Y));
@@ -145,17 +147,17 @@ public sealed partial class ReplicationService
         writer.WriteByte((byte)(pitch >> 8));
         writer.WriteByte((byte)(command.Buttons & PlayerButtons.AllKnown));
         writer.WriteVarLong(command.Actions);
-        if ((command.Buttons & PlayerButtons.Fly) != 0)
+        if ((command.Buttons & PlayerButtons.CarriesViewpoint) != 0)
         {
-            writer.WritePosition(in flyEye);
+            writer.WritePosition(in viewpoint);
         }
     }
 
     /// <summary>
-    /// A command <see cref="WriteCommand"/> wrote, with its fly camera's place (<paramref name="flyEye"/>, absolute; the
+    /// A command <see cref="WriteCommand"/> wrote, with its camera's place (<paramref name="viewpoint"/>, absolute; the
     /// map's middle when it does not fly); any bytes read as a command whose numbers are finite.
     /// </summary>
-    internal static PlayerCommand ReadCommand(ref MessageReader reader, out WorldPoint flyEye)
+    internal static PlayerCommand ReadCommand(ref MessageReader reader, out WorldPoint viewpoint)
     {
         var x = (sbyte)reader.ReadByte();
         var y = (sbyte)reader.ReadByte();
@@ -168,7 +170,7 @@ public sealed partial class ReplicationService
             throw new InvalidDataException("A command's actions are out of range.");
         }
 
-        flyEye = (buttons & PlayerButtons.Fly) != 0 ? reader.ReadPosition() : default;
+        viewpoint = (buttons & PlayerButtons.CarriesViewpoint) != 0 ? reader.ReadPosition() : default;
         return new PlayerCommand
         {
             Move = new Vector2(MoveOf(x), MoveOf(y)),
@@ -228,20 +230,20 @@ public sealed partial class ReplicationService
         ref var command = ref world.Get<PlayerCommand>(_predicted);
         Quantise(ref command);
         ref var entry = ref _history[(int)(tick % PredictionHistory)];
-        entry.FlyEye = default;
-        if ((command.Buttons & PlayerButtons.Fly) != 0)
+        entry.Viewpoint = default;
+        if ((command.Buttons & PlayerButtons.CarriesViewpoint) != 0)
         {
             // The place as the host reads it, so the client flies by the same numbers. One no message can carry (not
             // finite: the camera keeps to the play area) flies nowhere.
-            var eye = _origin.ToWorld(command.FlyEye);
+            var eye = _origin.ToWorld(command.Viewpoint);
             if (PredictedState.Within(in eye))
             {
-                entry.FlyEye = Quantised(in eye);
-                command.FlyEye = _origin.ToLocal(entry.FlyEye);
+                entry.Viewpoint = Quantised(in eye);
+                command.Viewpoint = _origin.ToLocal(entry.Viewpoint);
             }
             else
             {
-                command.Buttons &= ~PlayerButtons.Fly;
+                command.Buttons &= ~PlayerButtons.CarriesViewpoint;
             }
         }
 
@@ -280,7 +282,7 @@ public sealed partial class ReplicationService
         for (var i = 0; i < count; i++)
         {
             ref readonly var entry = ref _history[(_lastCommandTick - i) % PredictionHistory];
-            WriteCommand(_reply, in entry.Command, in entry.FlyEye);
+            WriteCommand(_reply, in entry.Command, in entry.Viewpoint);
         }
 
         // The host's tick each was made at the sight of, in 1/16 steps: the newest's, then each one's step back from the
@@ -322,10 +324,10 @@ public sealed partial class ReplicationService
         }
 
         Span<PlayerCommand> commands = stackalloc PlayerCommand[CommandsPerReply];
-        Span<WorldPoint> flyEyes = stackalloc WorldPoint[CommandsPerReply];
+        Span<WorldPoint> viewpoints = stackalloc WorldPoint[CommandsPerReply];
         for (var i = 0; i < count; i++)
         {
-            commands[i] = ReadCommand(ref reader, out flyEyes[i]);
+            commands[i] = ReadCommand(ref reader, out viewpoints[i]);
         }
 
         var shown = 0L;
@@ -351,7 +353,7 @@ public sealed partial class ReplicationService
             if (client is not null && client.CommandTicks[tick % CommandRing] < tick + 1)
             {
                 client.Commands[tick % CommandRing] = commands[i];
-                client.FlyEyes[tick % CommandRing] = flyEyes[i];
+                client.Viewpoints[tick % CommandRing] = viewpoints[i];
                 client.ShownTicks[tick % CommandRing] = shown < 0 ? -1 : shown / (double)ShownSteps;
                 client.CommandTicks[tick % CommandRing] = tick + 1;
                 if (tick > client.NewestCommand)
@@ -373,7 +375,8 @@ public sealed partial class ReplicationService
     /// none has waited for <see cref="MostStarvedSteps"/> steps while the client's still arrive, the host has got ahead
     /// of them for good (the client stalled, or the delay grew), and it starts again from the newest less the buffer,
     /// taking those steps' commands again: the client is corrected once. The player flies the debug camera as its command
-    /// does (<see cref="PlayerMode.Flying"/>), its camera's place made local as it is applied; a still one stays flying.
+    /// does (<see cref="PlayerMode.Flying"/>), its camera's place made local as it is applied; a still one stays flying,
+    /// and keeps a camera away from its body where it was.
     /// </summary>
     private void ApplyCommands()
     {
@@ -413,11 +416,11 @@ public sealed partial class ReplicationService
             client.Arrived = false;
             var tick = client.NextCommand;
             PlayerCommand command;
-            WorldPoint flyEye;
+            WorldPoint viewpoint;
             if (client.CommandTicks[tick % CommandRing] == tick + 1)
             {
                 command = client.Commands[tick % CommandRing];
-                flyEye = client.FlyEyes[tick % CommandRing];
+                viewpoint = client.Viewpoints[tick % CommandRing];
                 client.Shown = client.ShownTicks[tick % CommandRing];
                 client.Missed = 0;
                 client.Starved = 0;
@@ -427,15 +430,16 @@ public sealed partial class ReplicationService
                 // The client's view went on a step while its command did not come.
                 client.Shown = client.Shown < 0 ? -1 : client.Shown + 1;
                 command = client.LastCommand;
-                flyEye = client.LastFlyEye;
+                viewpoint = client.LastViewpoint;
                 command.Buttons &= ~PlayerButtons.Jump;
                 // A game's actions may be one-shot: only those that hold a level are repeated.
                 command.Actions &= _kinds.HeldActions;
                 if (++client.Missed > MostMissedCommands)
                 {
-                    // A player flying the debug camera stays where the camera last was, rather than fall.
+                    // A player flying the debug camera stays where the camera last was, rather than fall, and a camera
+                    // away from the body stays where it was.
                     command.Move = Vector2.Zero;
-                    command.Buttons &= PlayerButtons.Fly;
+                    command.Buttons &= PlayerButtons.CarriesViewpoint;
                 }
 
                 client.Starved++;
@@ -445,7 +449,8 @@ public sealed partial class ReplicationService
             var player = _entities[index].Entity;
             var flying = (command.Buttons & PlayerButtons.Fly) != 0;
             // Local now: the origin may have moved since the command came.
-            command.FlyEye = flying ? _origin.ToLocal(flyEye) : default;
+            command.Viewpoint =
+                (command.Buttons & PlayerButtons.CarriesViewpoint) != 0 ? _origin.ToLocal(viewpoint) : default;
             world.Get<PlayerCommand>(player) = command;
             if (world.Has<PlayerMode>(player))
             {
@@ -453,7 +458,7 @@ public sealed partial class ReplicationService
             }
 
             client.LastCommand = command;
-            client.LastFlyEye = flyEye;
+            client.LastViewpoint = viewpoint;
             client.NewestApplied = tick;
             client.NextCommand = tick + 1;
         }
@@ -575,7 +580,8 @@ public sealed partial class ReplicationService
             // Each step again flies or walks as its command did, the camera's place made local now.
             var command = next.Command;
             var flies = (command.Buttons & PlayerButtons.Fly) != 0;
-            command.FlyEye = flies ? _origin.ToLocal(next.FlyEye) : default;
+            command.Viewpoint =
+                (command.Buttons & PlayerButtons.CarriesViewpoint) != 0 ? _origin.ToLocal(next.Viewpoint) : default;
             world.Get<PlayerCommand>(_predicted) = command;
             world.Get<PlayerMode>(_predicted).Flying = flies;
             _stepper.Step(_predicted, seconds);
@@ -644,8 +650,11 @@ public sealed partial class ReplicationService
         public int Stored;
         public PlayerCommand Command;
 
-        /// <summary>While its command flies the debug camera, the camera's place, absolute (it outlives a move of the origin).</summary>
-        public WorldPoint FlyEye;
+        /// <summary>
+        /// While its command flies the debug camera or its camera is away from its body, the camera's place, absolute (it
+        /// outlives a move of the origin).
+        /// </summary>
+        public WorldPoint Viewpoint;
         public double ShownTick;
         public bool HasState;
         public PredictedState State;

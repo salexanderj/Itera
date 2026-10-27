@@ -56,9 +56,13 @@ registers what they share: `PlayArea` (round the match's grid, or `PlayArea.With
   from the mouse while the pointer is captured. A game that keeps its camera over the shoulder registers
   `new MovementKeys(bindings, thirdPersonKey: false)` after the engine's. A game's own buttons go in
   `PlayerCommand.Actions`, set by the game's input system after it. While `PlayerInputBlock.Blocked`, the input reads as
-  nothing pressed, and a `Bodiless` player only looks about. `fly` and `camera` are its commands. The Fly down key (C)
+  nothing pressed, and a `Bodiless` player only looks about. `fly` and `camera` are its commands. The Move down key (C)
   and the Third person key (Tab) are `MovementKeys` too, and the wheel moves the shoulder camera. While flying, the
-  command takes the active camera's look and place (`PlayerButtons.Fly`, `PlayerCommand.FlyEye`).
+  command takes the active camera's look and place (`PlayerButtons.Fly`, `PlayerCommand.Viewpoint`).
+- A game that names its own command for flying registers the system with `flyCommand: false`, and asks through
+  `PlayerInputSystem.RequestFlying`. `Engine:Camera:StartFlying` starts the first local player flying.
+- A game's free camera away from the body sets `PlayerButtons.Viewpoint` and the camera's place in the command, in its
+  input system. The engine carries the place to the host, and the feet stay where they are.
 - `PlayerMovementSystem` moves every entity with a command and `MovementStats` through `VoxelCharacterMover`: the local
   player, a remote player the host moves from its commands, and a game's characters alike. Ground friction
   (`CharacterContact.GroundMaterial`, `PhysicsWorld.FrictionOf`) and the match's gravity share (`PhysicsWorld`) change

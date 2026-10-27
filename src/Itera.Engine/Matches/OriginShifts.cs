@@ -33,7 +33,7 @@ public sealed partial class OriginShifts
         "CharacterPosition.Feet",
         "CharacterPosition.PreviousFeet",
         "Climber.Target",
-        "PlayerCommand.FlyEye",
+        "PlayerCommand.Viewpoint",
         "MeshPlacement.Position",
         "MeshPlacement.PreviousPosition",
         "BodyPose.Position",
@@ -264,7 +264,7 @@ public sealed partial class OriginShifts
 
         public readonly void Update(ref Climber climber) => climber.Target -= Metres;
 
-        public readonly void Update(ref PlayerCommand command) => command.FlyEye -= Metres;
+        public readonly void Update(ref PlayerCommand command) => command.Viewpoint -= Metres;
 
         public readonly void Update(ref MeshPlacement placement)
         {

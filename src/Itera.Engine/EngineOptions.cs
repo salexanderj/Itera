@@ -612,6 +612,12 @@ public sealed class CameraSettings
     /// <summary>Starting speed of the debug fly camera in metres per second. The mouse wheel changes it.</summary>
     public double FlySpeed { get; set; } = 10;
 
+    /// <summary>
+    /// When true, the local player starts flying the debug camera instead of walking (<c>PlayerInputSystem</c>; its
+    /// <c>fly</c>, or a game's own command, switches it). False by default; tools that take pictures set it.
+    /// </summary>
+    public bool StartFlying { get; set; }
+
     /// <summary>Mouse look: degrees the camera turns per pixel of mouse movement.</summary>
     public double MouseSensitivity { get; set; } = 0.1;
 

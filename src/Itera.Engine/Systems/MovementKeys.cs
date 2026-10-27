@@ -6,7 +6,7 @@ namespace Itera.Engine.Systems;
 /// <summary>
 /// The movement keybindings the engine's player and camera systems read, registered with the engine's
 /// <see cref="KeyBindings"/> as this is made, in the order the Keybindings tab lists them: walking (the fly camera moves
-/// by the same keys, Jump up and Sprint faster, and has its own Fly down), crouching, and the third-person camera (the
+/// by the same keys, Jump up and Sprint faster, and has its own Move down, as a game's free camera may), crouching, and the third-person camera (the
 /// wheel moves it, fixed). A game makes this once a run, before its own keys (an <c>IRunStartup</c>), so its own keys
 /// list after these. A game whose camera is always over the shoulder leaves the third-person key out (its own
 /// registration after the engine's: <c>new MovementKeys(bindings, thirdPersonKey: false)</c>). Main thread.
@@ -34,7 +34,12 @@ public sealed class MovementKeys
             InputBinding.Of(Key.ShiftLeft)
         );
         Crouch = bindings.Register("crouch", "Crouch", "Crouches while held.", InputBinding.Of(Key.ControlLeft));
-        FlyDown = bindings.Register("fly-down", "Fly down", "Flies down (the fly camera).", InputBinding.Of(Key.C));
+        MoveDown = bindings.Register(
+            "fly-down",
+            "Move down",
+            "Moves a free camera down: the fly camera, or a game's own.",
+            InputBinding.Of(Key.C)
+        );
         ThirdPerson = thirdPersonKey
             ? bindings.Register(
                 "third-person",
@@ -56,7 +61,7 @@ public sealed class MovementKeys
     public KeyAction Jump { get; }
     public KeyAction Sprint { get; }
     public KeyAction Crouch { get; }
-    public KeyAction FlyDown { get; }
+    public KeyAction MoveDown { get; }
 
     /// <summary>The key that switches the camera between the eye and the shoulder; null when the game left it out.</summary>
     public KeyAction? ThirdPerson { get; }

@@ -7,7 +7,6 @@ The game's own options under `Game`, each with its default, the least and most i
 | Option | Default | Least to most | What it does |
 | --- | --- | --- | --- |
 | `Game:Player:HeightMetres` | `1.7` | `1.2` to `2.5` | Height from the feet to the top of the head, in metres. |
-| `Game:Player:StartFlying` | `false` |  | When true, the game starts with the debug fly camera instead of walking (the console's `fly` switches). |
 | `Game:Player:ThirdPerson` | `false` |  | When true, the game starts with the camera behind the player's right shoulder (third person; its key and the console's `camera` switch it for the rest of the run). |
 
 ## `Game:World`

@@ -457,9 +457,11 @@ def cmd_shots(args):
         return 2
     out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    # The same size every set: no dynamic render scaling, no stats line.
+    # The same size every set: no dynamic render scaling, no stats line. The fly camera holds a view in the air; tp moves
+    # it while it flies.
     game = [f"--Engine:Window:Width={width}", f"--Engine:Window:Height={height}",
-            "--Engine:Renderer:DynamicRenderScaling=false", "--Engine:Ui:Stats=false"] + args.game
+            "--Engine:Renderer:DynamicRenderScaling=false", "--Engine:Ui:Stats=false",
+            "--Engine:Camera:StartFlying=true"] + args.game
     start = argparse.Namespace(port=args.port, release=args.release, window=False, fullscreen=False, no_wait=False,
                                menu=False, offscreen=True, headless=False, game=game)
     code = cmd_start(start)
@@ -467,8 +469,6 @@ def cmd_shots(args):
         return code
     failed = False
     try:
-        # The fly camera holds a view in the air; tp moves it while it flies.
-        show(ask(args, {"op": "run", "line": "fly on; wait ticks 2", "script": True, "timeout": 30}), quiet_log=True)
         for number, view in enumerate(args.views, 1):
             name = view if "," not in view else f"view-{number}"
             path = out / f"{name}.png"

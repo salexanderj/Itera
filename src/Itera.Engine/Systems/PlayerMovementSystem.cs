@@ -35,7 +35,7 @@ namespace Itera.Engine.Systems;
 /// step. A <see cref="Bodiless"/> entity is not moved. The velocity before the move
 /// is kept as <see cref="CharacterVelocity.Wanted"/> for a stand-in, and the push loose bodies gave the stand-in
 /// (<see cref="CharacterVelocity.Push"/>) is added after steering. While a player flies the debug camera, its feet
-/// follow the camera its command carries (<see cref="PlayerButtons.Fly"/>, <see cref="PlayerCommand.FlyEye"/>, kept to
+/// follow the camera its command carries (<see cref="PlayerButtons.Fly"/>, <see cref="PlayerCommand.Viewpoint"/>, kept to
 /// the play area), so walking resumes under it, and a host moves a flying client's player where that client's camera
 /// is. It creates no entity: a game makes its player with these components. Reads <see cref="PlayerCommand"/>,
 /// <see cref="PlayerMode"/>, <see cref="CharacterSize"/>, <see cref="MovementStats"/>, and the camera for <c>pos</c>; writes
@@ -275,8 +275,8 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     /// <summary>
     /// Makes a command safe to act on, whatever wrote it (local input, or a peer): non-finite numbers become 0, the
     /// move is at most length 1, the pitch stays within <see cref="CameraRules.MaxPitch"/>, the yaw within one turn,
-    /// unknown button bits are dropped, and so is <see cref="PlayerButtons.Fly"/> with a fly camera's place that is not
-    /// finite. Runs where commands enter movement, once per step. The game's
+    /// unknown button bits are dropped, and so are <see cref="PlayerButtons.Fly"/> and
+    /// <see cref="PlayerButtons.Viewpoint"/> with a camera's place that is not finite. Runs where commands enter movement, once per step. The game's
     /// <see cref="PlayerCommand.Actions"/> are left as they are.
     /// </summary>
     public static void Sanitize(ref PlayerCommand command)
@@ -295,9 +295,9 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             ? Math.Clamp(command.Pitch, -CameraRules.MaxPitch, CameraRules.MaxPitch)
             : 0;
         command.Buttons &= PlayerButtons.AllKnown;
-        if (!IsFinite(command.FlyEye))
+        if (!IsFinite(command.Viewpoint))
         {
-            command.Buttons &= ~PlayerButtons.Fly;
+            command.Buttons &= ~PlayerButtons.CarriesViewpoint;
         }
     }
 
@@ -706,8 +706,8 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
                 if ((command.Buttons & PlayerButtons.Fly) != 0)
                 {
                     var flyEye = Area is null
-                        ? command.FlyEye
-                        : Mover.Origin.ToLocal(Area.ClampEye(Mover.Origin.ToWorld(command.FlyEye)));
+                        ? command.Viewpoint
+                        : Mover.Origin.ToLocal(Area.ClampEye(Mover.Origin.ToWorld(command.Viewpoint)));
                     position.Feet = flyEye - new Vector3(0, size.EyeMetres, 0);
                     position.PreviousFeet = position.Feet;
                 }

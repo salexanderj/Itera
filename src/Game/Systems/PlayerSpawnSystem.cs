@@ -32,7 +32,7 @@ public sealed partial class PlayerSpawnSystem(
         World.Create(
             new LocalPlayer(),
             new PlayerCommand { Yaw = start.Yaw, Pitch = start.Pitch },
-            new PlayerMode { Flying = options.StartFlying },
+            new PlayerMode(),
             size,
             new CharacterPosition { Feet = feet, PreviousFeet = feet },
             new CharacterVelocity(),
@@ -43,14 +43,14 @@ public sealed partial class PlayerSpawnSystem(
             new ThirdPersonView { On = options.ThirdPerson, Metres = ThirdPersonCamera.StartMetres },
             new Climber()
         );
-        LogCreated(size.HeightMetres, feet.X, feet.Y, feet.Z, options.StartFlying);
+        LogCreated(size.HeightMetres, feet.X, feet.Y, feet.Z);
     }
 
     public override void Update(in FixedStepTime step) { }
 
     [LoggerMessage(
         Level = LogLevel.Information,
-        Message = "Player: {Height:F2} m tall, feet at ({X:F2}, {Y:F2}, {Z:F2}) m, flying the debug camera: {Flying}; the console's fly switches"
+        Message = "Player: {Height:F2} m tall, feet at ({X:F2}, {Y:F2}, {Z:F2}) m"
     )]
-    private partial void LogCreated(float height, float x, float y, float z, bool flying);
+    private partial void LogCreated(float height, float x, float y, float z);
 }
