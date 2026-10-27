@@ -3,10 +3,10 @@
 // The particle sprites (ParticlePass): six vertices, two triangles, for the particle the frame's sprite list names at
 // gl_InstanceIndex. The quad lies across the view: round sprites face the camera, and stretched ones run along an axis
 // (their velocity on screen, trailing behind them, or the segment from their start to their end) with round ends, as
-// long as the axis plus a radius at each end and a radius wide. The colour is the recipe's blended over its life times
-// the burst's tint, lit by the sun and sky or its own light with glow, faded in and out, faded where the fog is thick
-// and right in front of the camera, and put through the tone curve and the grade here, once per vertex;
-// particle-sprites.frag only shapes it.
+// long as the axis plus a radius at each end and a radius wide. A flake's quad lies in its own plane and tumbles. The
+// colour is the recipe's blended over its life times the burst's tint, lit by the sun and sky or its own light with
+// glow, faded in and out, faded where the fog is thick and right in front of the camera, and put through the tone curve
+// and the grade here, once per vertex; particle-sprites.frag only shapes and shades it.
 #include "view.glsl"
 #include "sky.glsl"
 #include "lighting.glsl"
@@ -16,6 +16,8 @@ layout(location = 0) out vec2 outLocal;
 layout(location = 1) flat out float outHalfLength;
 layout(location = 2) flat out vec4 outColour;
 layout(location = 3) flat out float outCover;
+// 0 for a round or stretched sprite; a flake's seed with its top bit set (particle-sprites.frag draws its outline).
+layout(location = 4) flat out uint outFlake;
 
 const vec2 QuadCorners[6] = vec2[](
     vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(1.0, 1.0),
@@ -30,8 +32,29 @@ void main()
 
     vec3 centre = particle.position;
     vec3 axis = normalize(view.right);
+    vec3 side = normalize(view.up);
     float halfLength = 0.0;
-    if (recipe.stretch == PARTICLE_STRETCH_SEGMENT)
+    // How squarely a flake faces the sun, 0 to 1 (its mean over every way it can turn is 0.5).
+    float sunFacing = 0.5;
+    bool flake = (recipe.flags & PARTICLE_FLAG_FLAKE) != 0u;
+    if (flake)
+    {
+        // A flake's quad lies in its own plane, which turns about an axis from its seed at its spin, so the flake
+        // flips edge-on and back as it falls. Its own random values, apart from the ones its spawn drew from the seed.
+        // Its outline lies about 0.62 of the quad's half width out (particle-sprites.frag), so the quad reaches past the
+        // size by as much, and the outline, not the quad, is the size across.
+        radius /= 0.62;
+        uint seed = particle.seed ^ 0x5BD1E995u;
+        vec3 turnAxis = normalize(vec3(particleRandom(seed), particleRandom(seed), particleRandom(seed)) - 0.5 + 1e-4);
+        vec3 normal = normalize(vec3(particleRandom(seed), particleRandom(seed), particleRandom(seed)) - 0.5 + 1e-4);
+        float angle = particle.spin * particle.age + 6.2831853 * particleRandom(seed);
+        vec4 turn = vec4(turnAxis * sin(0.5 * angle), cos(0.5 * angle));
+        vec3 across = particlePerpendicular(normal);
+        axis = turnBy(turn, across);
+        side = turnBy(turn, cross(normal, across));
+        sunFacing = abs(dot(turnBy(turn, normal), view.sunDirection));
+    }
+    else if (recipe.stretch == PARTICLE_STRETCH_SEGMENT)
     {
         vec3 span = particle.end - particle.position;
         float length2 = dot(span, span);
@@ -53,9 +76,12 @@ void main()
         }
     }
 
-    vec3 side = cross(axis, viewOrthographic() ? view.forward : centre - view.position);
-    float sideLength = length(side);
-    side = sideLength > 1e-6 ? side / sideLength : normalize(view.up);
+    if (!flake)
+    {
+        vec3 across = cross(axis, viewOrthographic() ? view.forward : centre - view.position);
+        float acrossLength = length(across);
+        side = acrossLength > 1e-6 ? across / acrossLength : side;
+    }
 
     vec2 corner = QuadCorners[gl_VertexIndex];
     vec3 point = centre + axis * (corner.x * (halfLength + radius)) + side * (corner.y * radius);
@@ -86,8 +112,9 @@ void main()
     {
         float sunlight = float(particle.packed >> PARTICLE_SUN_SHIFT) / 255.0;
         float sky = float((particle.packed >> PARTICLE_SKY_SHIFT) & 255u) / 255.0;
-        light = view.sunColour * (0.6 * sunlight * LOOK.daylight) + ambientLight(vec3(0.0, 1.0, 0.0), 1.0) * sky
-            + recipe.glow;
+        // A flake takes more sun face-on to it and less edge-on, the same on the mean as any other sprite.
+        light = view.sunColour * (0.6 * sunlight * LOOK.daylight * (0.3 + 1.4 * sunFacing))
+            + ambientLight(vec3(0.0, 1.0, 0.0), 1.0) * sky + recipe.glow;
     }
 
     float opacity = colour.a;
@@ -106,6 +133,7 @@ void main()
     opacity *= (1.0 - fog) * smoothstep(0.1, 0.5, depth + radius);
     outColour = vec4(gradeColour(toneMap(colour.rgb * light * LOOK.exposure)), opacity);
     outCover = recipe.cover;
+    outFlake = flake ? particle.seed | 0x80000000u : 0u;
     // A sprite so faint (its axis, its most opaque, under a level of 255; graded colours are at most 1) changes no
     // pixel: its quad goes outside the view, so it shades none (a smoke's long faded tail, a sprite deep in the fog).
     if (opacity < 1.0 / 255.0)

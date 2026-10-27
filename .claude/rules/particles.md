@@ -64,6 +64,11 @@ Particles meet the world through the camera's depth image (`DepthTarget`, handed
   of the view in `particle-sprites.vert`, so it shades no pixel.
 - Lit cubes and soft sprites are drawn after the world, each by one indirect draw, tested against its depth. A blended
   mesh asset writes none, so a particle behind one draws over it, untinted.
+- A sprite with `ParticleTraits.Flake` is a flake. Its quad lies in its own plane, which turns at the particle's spin
+  about an axis from its seed (`particle-sprites.vert`). Its sunlight follows how squarely it faces the sun.
+- `particle-sprites.frag` draws a flake's torn outline from value noise over its seed, with a sharp edge, a pale rim,
+  and a dark, blotched middle. The vertex shader widens its quad so the outline, not the quad, matches the size.
+- The flag values in `particle-data.glsl` match `ParticleTraits`, so a new trait gets its value there too.
 - The sprites are drawn back to front (`particle-sort.glsl`). The simulate pass lists each with its bin of depth
   (`ParticlePass.SortBins`, even steps of the distance's logarithm), and `particle-sort-scan.comp` and
   `particle-sort-scatter.comp` order the list by bin. Within a bin the order may change from frame to frame.

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 using Itera.Engine.Rendering;
 using Itera.Engine.Rendering.GpuData;
@@ -120,6 +121,29 @@ public sealed class ParticlePassTests : IDisposable
             GpuLayout.ArrayElementDifferences<LookConstants>(_compiler.Compile("particle-sprites.vert", [Look]), 0, 8)
         );
         Assert.NotEmpty(_compiler.Compile("particle-sprites.frag", [Look]));
+    }
+
+    [Fact]
+    public void The_shaders_name_the_same_trait_bits()
+    {
+        var source = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Shaders", "particle-data.glsl"));
+        var named = System
+            .Text.RegularExpressions.Regex.Matches(source, @"#define PARTICLE_FLAG_(\w+) (\d+)u")
+            .ToDictionary(
+                match => match.Groups[1].Value.Replace("_", "", StringComparison.Ordinal),
+                match => uint.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture),
+                StringComparer.OrdinalIgnoreCase
+            );
+
+        foreach (
+            var value in Enum.GetValues<Itera.Engine.Particles.ParticleTraits>()
+                .Where(value => value != Itera.Engine.Particles.ParticleTraits.None)
+        )
+        {
+            Assert.Equal((uint)value, named[value.ToString()]);
+        }
+
+        Assert.Equal(Enum.GetValues<Itera.Engine.Particles.ParticleTraits>().Length - 1, named.Count);
     }
 
     /// <summary>

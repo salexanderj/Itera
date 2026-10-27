@@ -55,6 +55,13 @@ public enum ParticleTraits : uint
 
     /// <summary>Fades out over the last part of its life (a sprite's opacity, a cube's size).</summary>
     FadeOut = 2,
+
+    /// <summary>
+    /// A sprite drawn as a flat, ragged flake with a sharp edge, darker in its middle, that tumbles at its
+    /// <see cref="ParticleRecipe.Spin"/> and, when lit, catches the sun as it turns: ash, snow, leaves, scraps. A flake
+    /// is never stretched; cubes ignore it.
+    /// </summary>
+    Flake = 4,
 }
 
 /// <summary>
@@ -139,7 +146,10 @@ public struct ParticleRecipe
     /// <summary>The share of its speed along a face it loses in a bounce, 0 to 1.</summary>
     public float Friction = 0.4f;
 
-    /// <summary>A cube's fastest turn, radians per second; each cube's turn slows to a stop over about a second.</summary>
+    /// <summary>
+    /// A cube's or a flake's fastest turn, radians per second, each particle's drawn between minus and plus this. A
+    /// cube's turn slows to a stop over about a second; a flake keeps turning.
+    /// </summary>
     public float Spin;
 
     /// <summary>With <see cref="ParticleStretch.Velocity"/>: seconds of its movement the sprite covers behind it.</summary>

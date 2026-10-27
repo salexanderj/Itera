@@ -40,6 +40,6 @@ public struct GpuParticle
     /// <summary>The second end of a segment sprite, world metres.</summary>
     public Vector3 End;
 
-    /// <summary>A cube's first turn rate, radians per second.</summary>
+    /// <summary>A cube's first turn rate, or a flake's steady one, radians per second.</summary>
     public float Spin;
 }
