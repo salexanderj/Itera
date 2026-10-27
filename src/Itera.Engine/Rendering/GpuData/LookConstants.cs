@@ -7,9 +7,9 @@ namespace Itera.Engine.Rendering.GpuData;
 /// The frame's look (<see cref="RenderLook"/>) as the shaders read it (<c>look.glsl</c>'s <c>Look</c>, one per frame
 /// slot in <c>MeshPass</c>'s set at binding 17 and in the particles' draw set): the look's values, and the light and
 /// colours it gives with the frame's atmosphere (the view's sun and sky colours, haze, overcast, and grade), and the
-/// frame's haze glows, worked out once a frame here rather than at every pixel
-/// (<see cref="From(in RenderLook, in ViewConstants, ReadOnlySpan{HazeGlow})"/>). Written by the main thread each frame.
-/// Field order and types match the GLSL struct; <c>GpuLayout</c> tests check them.
+/// frame's haze glows and clouds' drift, worked out once a frame here rather than at every pixel
+/// (<see cref="From(in RenderLook, in ViewConstants, ReadOnlySpan{HazeGlow}, double)"/>). Written by the main thread
+/// each frame. Field order and types match the GLSL struct; <c>GpuLayout</c> tests check them.
 /// </summary>
 public struct LookConstants
 {
@@ -75,7 +75,9 @@ public struct LookConstants
     /// <summary>The look's cloud cover, 0 to 1: 0 draws no clouds.</summary>
     public float CloudCover;
     public float CloudOpacity;
-    public float CloudScale;
+
+    /// <summary>The lower clouds' lattice cells a metre across their plane: the look's cloud scale over their height.</summary>
+    public float CloudNearScale;
 
     /// <summary>The look's cloud stretch, at least 0.01.</summary>
     public float CloudStretch;
@@ -140,20 +142,58 @@ public struct LookConstants
     public HazeGlowConstants Glow2;
     public HazeGlowConstants Glow3;
 
+    /// <summary>The light on the clouds' edges facing the sun: the sun's colour times the look's cloud light, faded out as it sets.</summary>
+    public Vector3 CloudLight;
+
+    /// <summary>The lower clouds' height, local: the look's absolute height, at least 10 m, less the origin's.</summary>
+    public float CloudLocalHeight;
+
+    /// <summary>
+    /// The lower clouds' lattice point at the origin, moved back by their drift so far: along their heading (stretched)
+    /// and across it, each wrapped to the noise tables' period (<see cref="Meshes.NoiseTables.Cells"/>).
+    /// </summary>
+    public Vector2 CloudNear;
+
+    /// <summary>The same for the upper clouds, twice as high.</summary>
+    public Vector2 CloudFar;
+
+    /// <summary>The upper clouds' lattice cells a metre across their plane.</summary>
+    public float CloudFarScale;
+
+    /// <summary>The look's bend of the streaks across their heading, at least 0.</summary>
+    public float CloudWarp;
+
+    /// <summary>How much the upper clouds show, 0 to 1.</summary>
+    public float CloudUpper;
+
+    /// <summary>The look's share of the clouds drawn as ridges, 0 to 1.</summary>
+    public float CloudRidge;
+
+    /// <summary>The look's softness of the clouds' edges, at least 0.01.</summary>
+    public float CloudSoftness;
+
     private static readonly Vector3 s_luma = new(0.2126f, 0.7152f, 0.0722f);
+
+    /// <summary>The upper clouds' lattice scale against the lower's, so their streaks look larger.</summary>
+    private const float UpperCloudScale = 0.7f;
 
     /// <summary>
     /// The shaders' record of <paramref name="look"/> with the frame's atmosphere as <paramref name="view"/> carries it
     /// (its haze, overcast, and grade as the shaders unpack them, a byte each). Allocates nothing.
     /// </summary>
-    public static LookConstants From(in RenderLook look, in ViewConstants view) => From(in look, in view, default);
+    public static LookConstants From(in RenderLook look, in ViewConstants view) => From(in look, in view, default, 0);
 
     /// <summary>
     /// The shaders' record of <paramref name="look"/> with the frame's atmosphere as <paramref name="view"/> carries it,
-    /// and the first <see cref="HazeGlow.Most"/> of <paramref name="glows"/>, their places made local to the view's
-    /// origin. Allocates nothing.
+    /// the first <see cref="HazeGlow.Most"/> of <paramref name="glows"/>, their places made local to the view's
+    /// origin, and the clouds drifted for <paramref name="seconds"/> (the run's clock). Allocates nothing.
     /// </summary>
-    public static LookConstants From(in RenderLook look, in ViewConstants view, ReadOnlySpan<HazeGlow> glows)
+    public static LookConstants From(
+        in RenderLook look,
+        in ViewConstants view,
+        ReadOnlySpan<HazeGlow> glows,
+        double seconds
+    )
     {
         var haze = (view.Air & 0xFF) / 255f;
         var overcast = ((view.Air >> 8) & 0xFF) / 255f;
@@ -165,6 +205,19 @@ public struct LookConstants
         var skyLight = view.SkyHorizon * look.SkyLightShare * (1 + overcast);
         var fade = Vector3.Max(look.HazeColourFade, Vector3.Zero);
         var count = Math.Min(glows.Length, HazeGlow.Most);
+        var alongX = MathF.Sin(heading);
+        var alongZ = -MathF.Cos(heading);
+        var stretch = MathF.Max(look.CloudStretch, 0.01f);
+        var cloudHeight = MathF.Max(look.CloudHeightMetres, 10);
+        var nearScale = look.CloudScale / cloudHeight;
+        var farScale = look.CloudScale * UpperCloudScale / (2 * cloudHeight);
+        // The origin in the clouds' frame, in metres: along their heading (less the drift, which moves the clouds
+        // along it) over their stretch, and across it.
+        const double perMetre = VoxelConstants.CentimetresPerMetre;
+        var originX = view.OriginX / perMetre;
+        var originZ = view.OriginZ / perMetre;
+        var along = (originX * alongX + originZ * alongZ - look.CloudDriftMetresPerSecond * seconds) / stretch;
+        var across = originZ * alongX - originX * alongZ;
         return new LookConstants
         {
             SunLight = view.SunColour * look.SunWarmth * daylight,
@@ -201,10 +254,10 @@ public struct LookConstants
             CloudColour = view.SkyHorizon * look.CloudColour,
             CloudCover = Math.Clamp(look.CloudCover, 0, 1),
             CloudOpacity = Math.Clamp(look.CloudOpacity, 0, 1),
-            CloudScale = look.CloudScale,
-            CloudStretch = MathF.Max(look.CloudStretch, 0.01f),
-            CloudAlongX = MathF.Sin(heading),
-            CloudAlongZ = -MathF.Cos(heading),
+            CloudNearScale = nearScale,
+            CloudStretch = stretch,
+            CloudAlongX = alongX,
+            CloudAlongZ = alongZ,
             GroundHazePerMetre = MathF.Max(look.GroundHaze, 0) / MathF.Max(look.GroundHazeHalfMetres, 0.01f),
             GroundHazeFloor = look.GroundHazeFloor - (float)(view.OriginY / (double)VoxelConstants.CentimetresPerMetre),
             GroundHazeFalloff = 1 / MathF.Max(look.GroundHazeFalloffMetres, 0.01f),
@@ -226,7 +279,26 @@ public struct LookConstants
             Glow1 = count > 1 ? HazeGlowConstants.From(glows[1], in view) : default,
             Glow2 = count > 2 ? HazeGlowConstants.From(glows[2], in view) : default,
             Glow3 = count > 3 ? HazeGlowConstants.From(glows[3], in view) : default,
+            CloudLight = view.SunColour * MathF.Max(look.CloudLight, 0) * daylight,
+            CloudLocalHeight = cloudHeight - (float)(view.OriginY / perMetre),
+            CloudNear = CloudLattice(along, across, nearScale),
+            CloudFar = CloudLattice(along, across, farScale),
+            CloudFarScale = farScale,
+            CloudWarp = MathF.Max(look.CloudWarp, 0),
+            CloudUpper = Math.Clamp(look.CloudUpper, 0, 1),
+            CloudRidge = Math.Clamp(look.CloudRidge, 0, 1),
+            CloudSoftness = MathF.Max(look.CloudSoftness, 0.01f),
         };
+    }
+
+    // The lattice point of metres along and across the clouds' frame at scale cells a metre, each wrapped to the noise
+    // tables' period, which the clouds' noise repeats at, so the point keeps its precision over any time or place.
+    private static Vector2 CloudLattice(double along, double across, float scale)
+    {
+        const double Period = Meshes.NoiseTables.Cells;
+        var x = along * scale;
+        var y = across * scale;
+        return new Vector2((float)(x - Period * Math.Floor(x / Period)), (float)(y - Period * Math.Floor(y / Period)));
     }
 }
 

@@ -211,6 +211,42 @@ public readonly record struct RenderLook
     /// <summary>The compass direction the clouds' streaks run, in degrees from north (-z) round towards east (+x).</summary>
     public float CloudHeadingDegrees { get; init; }
 
+    /// <summary>
+    /// How high the clouds lie over the world's height 0, in metres: they stay over the land as the eye moves, so they
+    /// shift against it.
+    /// </summary>
+    public float CloudHeightMetres { get; init; } = 1500f;
+
+    /// <summary>How fast the clouds drift along their heading, in metres a second; 0, the default, they stand still.</summary>
+    public float CloudDriftMetresPerSecond { get; init; }
+
+    /// <summary>
+    /// How far the clouds' streaks bend and braid across their heading, as a share of a streak's width; 0, the default,
+    /// straight.
+    /// </summary>
+    public float CloudWarp { get; init; }
+
+    /// <summary>
+    /// How bright the clouds' edges facing the sun are, as a multiple of the sun's colour; 0, the default, unlit. Faded
+    /// out as the sun sets.
+    /// </summary>
+    public float CloudLight { get; init; }
+
+    /// <summary>
+    /// 0 to 1: how much a second layer of cloud twice as high shows behind the first, its streaks larger and slower to
+    /// the eye; 0, the default, none.
+    /// </summary>
+    public float CloudUpper { get; init; }
+
+    /// <summary>
+    /// 0 to 1: how much the clouds are drawn as thin ridges (wisps and filaments) rather than soft blobs; 0, the default,
+    /// soft.
+    /// </summary>
+    public float CloudRidge { get; init; }
+
+    /// <summary>How soft the clouds' edges are, as a share of their noise's range: smaller is crisper.</summary>
+    public float CloudSoftness { get; init; } = 0.3f;
+
     /// <summary>The light's multiple before the tone curve: higher is brighter.</summary>
     public float Exposure { get; init; } = 0.8f;
 

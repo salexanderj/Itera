@@ -2,7 +2,7 @@
 paths:
   - "src/Itera.Engine/Rendering/{RenderLook,LookTuning,Atmosphere,SunPath,HazeGlow}.cs"
   - "src/Itera.Engine/Rendering/GpuData/LookConstants.cs"
-  - "src/Itera.Engine/Rendering/Shaders/look.glsl"
+  - "src/Itera.Engine/Rendering/Shaders/{look.glsl,clouds.glsl}"
   - "tests/Itera.Engine.Tests/Rendering/{RenderLookTests,SunPathTests,RenderViewTests}.cs"
 ---
 
@@ -36,7 +36,8 @@ absolute place.
 - The glow round the sun: its strength and sharpness.
 - The sky's light over the half of the sky towards the sun (the lobe: its strength and sharpness), its darkening away
   from the sun, and a band of light along the horizon (its strength and height).
-- The clouds: their cover, colour, opacity, scale, stretch, and heading.
+- The clouds: their cover, colour, opacity, scale, stretch, heading, height, drift, warp, light, ridge share, and
+  edge softness, and how much a second layer shows.
 - The exposure, the grade's desaturation and darkening, and the split tone's tints and bounds.
 
 The edge light, the glow, the clouds, the ground haze, the hue's wandering, the lobe, the darkening away from the sun,
@@ -49,8 +50,15 @@ the horizon band, and the haze's start and cap are off in `RenderLook.Default`.
 - The glow is part of `skyColour` in `sky.glsl`. The fog takes the sky's colour behind a surface, so the haze glows
   towards the sun too.
 - The lobe, the darkening, and the horizon band are part of `skyColour` too, so the haze takes them.
-- The clouds are drawn by the sky's own pass alone (`skyClouds`, from `world-sky.frag`): value noise on a plane over
-  the eye. They thin to none at the horizon, so the fogged far ground still meets the sky. They stand still.
+- The clouds are drawn by the sky's own pass alone (`skyClouds` in `clouds.glsl`, which only `world-sky.frag`
+  includes): value noise from the noise tables (binding 18, `rendering-materials.md`) on a plane at the look's cloud
+  height in the world. So they stay over the land as the eye moves, and drift along their heading by the run's clock.
+- The CPU works out the clouds' lattice point at the origin, less the drift, wrapped to the tables' period
+  (`LookConstants`' `CloudNear` and `CloudFar`), so the point keeps its precision at any place or time. The noise's
+  octaves double exactly, so it repeats at that period too.
+- The look's warp bends the streaks, its ridge share thins them to wisps, and its softness sets their edges. Edges
+  facing the sun take the cloud light. A second layer twice as high, larger to the eye, may show behind.
+- The clouds thin to none at the horizon, so the fogged far ground still meets the sky.
 - The haze's density along a ray is `hazeDensity` in `lighting.glsl`, with the ground haze averaged between the eye's
   height and the surface's. `hazeOver` applies the haze's start and cap.
 - `fogAt(vec3, float)` gives the share of a surface lost as one colour, for what fades with the fog (the particles'

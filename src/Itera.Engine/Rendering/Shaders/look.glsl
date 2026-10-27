@@ -56,7 +56,7 @@ struct Look
     vec3 cloudColour;
     float cloudCover;
     float cloudOpacity;
-    float cloudScale;
+    float cloudNearScale;
     float cloudStretch;
     float cloudAlongX;
     float cloudAlongZ;
@@ -81,6 +81,15 @@ struct Look
     HazeGlow glow1;
     HazeGlow glow2;
     HazeGlow glow3;
+    vec3 cloudLight;
+    float cloudLocalHeight;
+    vec2 cloudNear;
+    vec2 cloudFar;
+    float cloudFarScale;
+    float cloudWarp;
+    float cloudUpper;
+    float cloudRidge;
+    float cloudSoftness;
 };
 
 layout(scalar, set = LOOK_SET, binding = LOOK_BINDING) restrict readonly buffer Looks

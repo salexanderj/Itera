@@ -88,6 +88,17 @@ public sealed class LookTuning
             static l => l.CloudHeadingDegrees,
             static (l, v) => l with { CloudHeadingDegrees = v }
         ),
+        Number("CloudHeightMetres", static l => l.CloudHeightMetres, static (l, v) => l with { CloudHeightMetres = v }),
+        Number(
+            "CloudDriftMetresPerSecond",
+            static l => l.CloudDriftMetresPerSecond,
+            static (l, v) => l with { CloudDriftMetresPerSecond = v }
+        ),
+        Number("CloudWarp", static l => l.CloudWarp, static (l, v) => l with { CloudWarp = v }),
+        Number("CloudLight", static l => l.CloudLight, static (l, v) => l with { CloudLight = v }),
+        Number("CloudUpper", static l => l.CloudUpper, static (l, v) => l with { CloudUpper = v }),
+        Number("CloudRidge", static l => l.CloudRidge, static (l, v) => l with { CloudRidge = v }),
+        Number("CloudSoftness", static l => l.CloudSoftness, static (l, v) => l with { CloudSoftness = v }),
         Number("Exposure", static l => l.Exposure, static (l, v) => l with { Exposure = v }),
         Number("GradeDesaturate", static l => l.GradeDesaturate, static (l, v) => l with { GradeDesaturate = v }),
         Number("GradeDarken", static l => l.GradeDarken, static (l, v) => l with { GradeDarken = v }),

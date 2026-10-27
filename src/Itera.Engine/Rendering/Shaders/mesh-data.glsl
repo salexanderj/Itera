@@ -172,7 +172,7 @@ layout(set = MESH_SET, binding = 18) uniform sampler2DArray noiseTables;
 const int NoiseTableCells = 1024;
 
 // The layers: the surfaces' patches (2^10 cm cells, salt 1), the strata's wander (2^11, salt 4), the hue drift (2^11,
-// salt 41).
+// salt 41). The sky's clouds read all three at their own scale (clouds.glsl).
 const float NoisePatches = 0.0;
 const float NoiseStrata = 1.0;
 const float NoiseHueDrift = 2.0;

@@ -876,7 +876,7 @@ public sealed partial class GameLoop
         _dynamicScale.Update(now);
         var view = CreateView(in request);
         var look = _renderView.DrawnLook;
-        _meshPass.LookOf(request.Slot) = LookConstants.From(in look, in view, _renderView.Glows);
+        _meshPass.LookOf(request.Slot) = LookConstants.From(in look, in view, _renderView.Glows, now);
         var loading = _loading.Drawn ? new LoadingDraw(_loading.Alpha, _loading.Seconds) : default;
         // The models are drawn with the world, in the frame's view, whose point lights the world's glowing blocks and the
         // events give; and the image views due this frame, in theirs.

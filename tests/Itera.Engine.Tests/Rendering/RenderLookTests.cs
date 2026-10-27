@@ -325,7 +325,7 @@ public sealed class RenderLookTests
             new(new WorldPoint(0, 0, 0), Vector3.One, 43),
         ];
 
-        var constants = LookConstants.From(RenderLook.Default, in view, glows);
+        var constants = LookConstants.From(RenderLook.Default, in view, glows, 0);
 
         Assert.Equal((uint)HazeGlow.Most, constants.GlowCount);
         // 1,010.5 m less an origin 1,000 m along x; 20 m over one 3 m under; -30 m less one 20 m along z.
@@ -333,7 +333,94 @@ public sealed class RenderLookTests
         Assert.Equal(1, constants.Glow0.Radius);
         Assert.Equal(new Vector3(0.5f, 0, 0.2f), constants.Glow0.Colour);
         Assert.Equal(42, constants.Glow3.Radius);
-        Assert.Equal(0u, LookConstants.From(RenderLook.Default, in view, glows.AsSpan(0, 0)).GlowCount);
+        Assert.Equal(0u, LookConstants.From(RenderLook.Default, in view, glows.AsSpan(0, 0), 0).GlowCount);
+    }
+
+    /// <summary>
+    /// The clouds' lattice point of a place in the world is the same whatever the origin, they drift along their heading
+    /// with the clock, every lattice point stays within the noise tables' period, and their light fades with the sun.
+    /// </summary>
+    [Fact]
+    public void The_clouds_stay_over_the_land_whatever_the_origin_and_drift_along_their_heading()
+    {
+        var atmosphere = new Atmosphere(new Vector3(0.5f), new Vector3(1, 0.9f, 0.7f), 0, 0, 0);
+        var camera = CameraView.Default;
+        var sun = Vector3.Normalize(new Vector3(0.3f, 0.6f, 0.2f));
+        var look = RenderLook.Default with
+        {
+            CloudCover = 0.5f,
+            CloudScale = 2,
+            CloudStretch = 4,
+            CloudHeadingDegrees = 90,
+            CloudHeightMetres = 1000,
+            CloudDriftMetresPerSecond = 10,
+            CloudLight = 0.5f,
+        };
+        var near = ViewConstants.Create(in camera, 640, 480, 1, sun, in atmosphere, 256, true, default);
+        var far = ViewConstants.Create(
+            in camera,
+            640,
+            480,
+            1,
+            sun,
+            in atmosphere,
+            256,
+            true,
+            new VoxelCoord(3_000_000_00, 20_00, -7_000_000_00)
+        );
+
+        var atNear = LookConstants.From(in look, in near, default, 0);
+        var atFar = LookConstants.From(in look, in far, default, 0);
+        // A place 3,000 km east and 7,000 km south: local to the far origin it is at its middle.
+        var place = new Vector2(3_000_000, -7_000_000);
+        AssertSameLattice(Lattice(atNear, place), Lattice(atFar, Vector2.Zero));
+        // The upper clouds' lattice is a scale of the lower's: 0.7 times, twice as high.
+        Assert.Equal(atNear.CloudNearScale * 0.35f, atNear.CloudFarScale, 6);
+        // 20 m higher, the plane is 20 m nearer.
+        Assert.Equal(1000, atNear.CloudLocalHeight);
+        Assert.Equal(980, atFar.CloudLocalHeight);
+
+        // Heading east (+x), 10 m a second for 100 s: the clouds over a place came from 1,000 m west of it.
+        var later = LookConstants.From(in look, in near, default, 100);
+        AssertSameLattice(Lattice(atNear, new Vector2(-1000, 0)), Lattice(later, Vector2.Zero));
+        // After a long run the point still lies within the tables' period, where a float keeps its precision.
+        var afterLongRun = LookConstants.From(in look, in far, default, 1e9);
+        Assert.InRange(afterLongRun.CloudNear.X, 0, 1024);
+        Assert.InRange(afterLongRun.CloudNear.Y, 0, 1024);
+
+        AssertNear(atmosphere.SunColour * 0.5f, atNear.CloudLight);
+        var night = ViewConstants.Create(
+            in camera,
+            640,
+            480,
+            1,
+            new Vector3(0, -1, 0),
+            in atmosphere,
+            256,
+            true,
+            default
+        );
+        Assert.Equal(Vector3.Zero, LookConstants.From(in look, in night).CloudLight);
+    }
+
+    // The lower clouds' lattice point of the local place on their plane, as clouds.glsl finds it.
+    private static Vector2 Lattice(in LookConstants constants, Vector2 place)
+    {
+        var along = new Vector2(constants.CloudAlongX, constants.CloudAlongZ);
+        var frame = new Vector2(
+            Vector2.Dot(place, along) / constants.CloudStretch,
+            Vector2.Dot(place, new Vector2(-along.Y, along.X))
+        );
+        return constants.CloudNear + frame * constants.CloudNearScale;
+    }
+
+    // Two lattice points the noise tables read alike: the same within their period of 1,024 cells.
+    private static void AssertSameLattice(Vector2 expected, Vector2 actual)
+    {
+        var difference = expected - actual;
+        var x = difference.X - 1024 * MathF.Round(difference.X / 1024);
+        var y = difference.Y - 1024 * MathF.Round(difference.Y / 1024);
+        Assert.True(MathF.Abs(x) < 1e-2f && MathF.Abs(y) < 1e-2f, $"expected {expected}, got {actual}");
     }
 
     [Fact]

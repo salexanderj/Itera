@@ -68,7 +68,7 @@ Every set's heights have a mean of a half.
   `textureCompressionBC` is required. Take derivatives before the branches.
 - The plane noise of every world pixel (the patches, the strata's wander, the hue drift) comes from tables
   (`NoiseTables`, binding 18): one gather a lattice cell in place of four hashes (`planeNoise` in `mesh-surface.glsl`).
-  The bake hashes, its lattices wrapped at its tile.
+  The bake hashes, its lattices wrapped at its tile. The sky's clouds read the same tables (`rendering-look.md`).
 - The colour is kept round the set's mean by `VoxelLook.TextureDetail` and read `TextureBlur` mip levels softer
   (`MeshMaterial.TextureStyle`). `TextureRelief` sets the normal map's and the occlusion's strength.
 - The colour moves to the material's own colour by `VoxelLook.TextureColourMatch` (0 keeps the photograph's) and by
