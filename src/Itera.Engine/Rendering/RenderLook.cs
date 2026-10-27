@@ -291,9 +291,9 @@ public readonly record struct RenderLook
     public float CloudCreases { get; init; }
 
     /// <summary>
-    /// How far away the clouds still show, in metres: they shrink towards the horizon as a real layer does and thin out
-    /// over the farther half of this distance. 0, the default: their size changes more slowly towards the horizon, and
-    /// they thin by their angle over it, gone below about 17 degrees.
+    /// How far away the clouds still show, in metres: they shrink towards the horizon about as a real layer does, thin
+    /// out over the farther 70 % of this distance, and take a simpler look low over the horizon. 0, the default: their
+    /// size changes more slowly towards the horizon, and they thin by their angle over it, gone below about 17 degrees.
     /// </summary>
     public float CloudReachMetres { get; init; }
 

@@ -82,8 +82,10 @@ the horizon band, the haze's start and cap, and the lights' halos are off in `Re
   (`CloudLowerNear`).
 - The clouds thin to none at the horizon, so the fogged far ground still meets the sky. Without a reach, their size
   changes more slowly near the horizon and they thin by their angle. With the look's reach, the ray meets the plane
-  about where it does (`CloudHorizonLift`), and they thin over the farther half of the reach. Their light fades with
-  distance (`CloudFarLightStart`, `CloudFarLightEnd`), since far edges seen at a slant are thin lines.
+  about where it does (`CloudHorizonLift`), and they thin over the farther 70 % of the reach.
+- With a reach, clouds low over the horizon take a far look by the ray's angle (`CloudFarFrom`, `CloudFarTo`): less
+  light, erosion, and upper layer, no creases, and crisper edges. Seen at a slant, those details are only streaks,
+  smudges, and lines of light.
 - The haze's density along a ray is `hazeDensity` in `lighting.glsl`, with the ground haze averaged between the eye's
   height and the surface's. `hazeOver` applies the haze's start and cap.
 - `fogAt(vec3, float)` gives the share of a surface lost as one colour, for what fades with the fog (the particles'

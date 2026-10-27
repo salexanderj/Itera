@@ -32,13 +32,23 @@ const float CloudHorizonLift = 0.04;
 // slant picks its level by the footprint's short side and stays sharp across the screen.
 const float CloudMostSlant = 8.0;
 
-// With the look's reach, the shares of it over which the clouds' light fades to a fifth: far edges seen at a slant are
-// thin lines, and a line of light reads as a scratch.
-const float CloudFarLightStart = 0.25;
-const float CloudFarLightEnd = 0.5;
+// With the look's reach, the rises a unit of a ray (the sines of its angle over the horizon) over which the clouds
+// turn to their far look: seen at a slant, their creases are only streaks, their ragged and soft edges smudges, and
+// their lit edges lines that read as scratches.
+const float CloudFarFrom = 0.2;
+const float CloudFarTo = 0.06;
+
+// The far look: how much of the clouds' light it takes away, of their edges' softness, and of the upper layer.
+const float CloudFarLightCut = 0.5;
+const float CloudFarSharpen = 0.45;
+const float CloudFarUpperCut = 0.7;
+
+// The far look: how much of the look's erosion it keeps, so the far clouds keep some ragged detail and do not turn to
+// blobs.
+const float CloudFarErosion = 0.4;
 
 // The share of the look's reach where the clouds start to thin.
-const float CloudReachFadeShare = 0.5;
+const float CloudReachFadeShare = 0.3;
 
 // The clouds' noise at the lattice point p, scale times finer, read over the pixel's footprint (dx and dy, the point's
 // change across the pixel, worked out before any pixel left the sky's shader, so every read picks its level aright).
@@ -73,38 +83,37 @@ vec2 cloudWarp(vec2 p, vec2 dx, vec2 dy)
 }
 
 // The clouds' shape at the bent lattice point p, eaten at its thin edges by a five times finer read of the cellular
-// noise as the look's erosion says.
-float cloudEroded(float shape, vec2 p, vec2 dx, vec2 dy)
+// noise, by erosion (the look's, less with distance).
+float cloudEroded(float shape, vec2 p, vec2 dx, vec2 dy, float erosion)
 {
-    if (LOOK.cloudErosion > 0.0)
+    if (erosion > 0.0)
     {
         vec4 detail = cloudRead(p + vec2(3.1, 7.7), dx, dy, 5.0);
-        shape -= LOOK.cloudErosion * dot(detail.gba, vec3(0.625, 0.25, 0.125)) * (1.0 - shape);
+        shape -= erosion * dot(detail.gba, vec3(0.625, 0.25, 0.125)) * (1.0 - shape);
     }
 
     return shape;
 }
 
-// The clouds' shape at the bent lattice point p (along their heading, drawn out, and across it), 0 to 1, eroded when
-// asked.
-float cloudShapeAt(vec2 p, vec2 dx, vec2 dy, bool eroded)
+// The clouds' shape at the bent lattice point p (along their heading, drawn out, and across it), 0 to 1, eroded by
+// erosion (none at 0).
+float cloudShapeAt(vec2 p, vec2 dx, vec2 dy, float erosion)
 {
-    float shape = cloudShape(cloudRead(p, dx, dy, 1.0));
-    return eroded ? cloudEroded(shape, p, dx, dy) : shape;
+    return cloudEroded(cloudShape(cloudRead(p, dx, dy, 1.0)), p, dx, dy, erosion);
 }
 
-// How thick the clouds are where their shape is shape, 0 to 1: covering the look's share of the sky, with the look's
-// soft edges.
-float cloudCovering(float shape)
+// How thick the clouds are where their shape is shape, 0 to 1: covering the look's share of the sky, with edges
+// softness wide (the look's, less with distance).
+float cloudCovering(float shape, float softness)
 {
     float edge = 1.0 - LOOK.cloudCover;
-    return smoothstep(edge, edge + LOOK.cloudSoftness, shape);
+    return smoothstep(edge, edge + softness, shape);
 }
 
-// How thick the clouds are at the bent lattice point p, 0 to 1.
-float cloudDensity(vec2 p, vec2 dx, vec2 dy, bool eroded)
+// How thick the clouds are at the bent lattice point p, 0 to 1, uneroded.
+float cloudDensity(vec2 p, vec2 dx, vec2 dy, float softness)
 {
-    return cloudCovering(cloudShapeAt(p, dx, dy, eroded));
+    return cloudCovering(cloudShapeAt(p, dx, dy, 0.0), softness);
 }
 
 // The clouds' shape at the bent lattice point p, blurred over about a puff's width: read at a coarser mip level than
@@ -124,8 +133,8 @@ vec2 cloudFrame(vec2 place)
     return vec2(dot(place, along) / LOOK.cloudStretch, dot(place, vec2(-along.y, along.x)));
 }
 
-// A point of the lower wisps' plane, local, in their frame in metres: along the clouds' heading over the wisps' stretch,
-// and across it.
+// A point of the lower wisps' plane, local, in their frame in metres: along the clouds' heading over the wisps'
+// stretch, and across it.
 vec2 cloudLowerFrame(vec2 place)
 {
     vec2 along = vec2(LOOK.cloudAlongX, LOOK.cloudAlongZ);
@@ -133,8 +142,8 @@ vec2 cloudLowerFrame(vec2 place)
 }
 
 // How far along a ray whose direction rises upward a unit it meets a plane rise metres over the eye: with the look's
-// reach, about where it does (CloudHorizonLift), no farther than the reach; without, softened near the horizon more, as
-// the plane would reach the view's end.
+// reach, about where it does (CloudHorizonLift), no farther than the reach; without, softened near the horizon more,
+// as the plane would reach the view's end.
 float cloudDistance(float rise, float upward)
 {
     rise = max(rise, 10.0);
@@ -196,32 +205,38 @@ vec3 skyClouds(vec3 direction, vec3 colour)
     float sun = max(dot(direction, view.sunDirection), 0.0);
     vec3 glow = 0.5 * LOOK.sunGlow * pow(sun, LOOK.sunGlowSharpness);
 
-    if (LOOK.cloudUpper > 0.0)
+    // How far into their far look the clouds here are, 0 to 1: none without a reach.
+    float far = 0.0;
+    if (LOOK.cloudReach > 0.0)
     {
-        float thin = cloudDensity(cloudWarp(high, highX, highY), highX, highY, false) * fade * LOOK.cloudUpper;
-        colour = mix(colour, LOOK.cloudColour * 1.2 + glow, thin);
+        far = 1.0 - smoothstep(CloudFarTo, CloudFarFrom, direction.y);
     }
 
+    if (LOOK.cloudUpper > 0.0)
+    {
+        float thin = cloudDensity(cloudWarp(high, highX, highY), highX, highY, LOOK.cloudSoftness) * fade;
+        colour = mix(colour, LOOK.cloudColour * 1.2 + glow, thin * LOOK.cloudUpper * (1.0 - CloudFarUpperCut * far));
+    }
+
+    float erosion = LOOK.cloudErosion * mix(1.0, CloudFarErosion, far);
+    float softness = LOOK.cloudSoftness * (1.0 - CloudFarSharpen * far);
+    float lightNear = 1.0 - CloudFarLightCut * far;
     low = cloudWarp(low, lowX, lowY);
     float body = cloudShape(cloudRead(low, lowX, lowY, 1.0));
-    float shape = cloudEroded(body, low, lowX, lowY);
-    float density = cloudCovering(shape);
+    float shape = cloudEroded(body, low, lowX, lowY, erosion);
+    float density = cloudCovering(shape, softness);
     float dark = density;
-    if (LOOK.cloudCreases > 0.0)
+    float creases = LOOK.cloudCreases * (1.0 - far);
+    if (creases > 0.0)
     {
         // A crease lies under its surroundings' shape, a puff's crown over it (the shape before its erosion, so the
         // eaten edges do not darken).
         float crease = clamp((cloudBlurredShape(low, lowX, lowY) - body) * CloudCreaseGain, -1.0, 1.0);
-        dark = clamp(density * (1.0 + LOOK.cloudCreases * crease), 0.0, 1.5);
+        dark = clamp(density * (1.0 + creases * crease), 0.0, 1.5);
     }
 
     vec3 cloud = LOOK.cloudColour * mix(1.0, 0.55, dark) + glow;
     vec2 sunward = cloudFrame(view.sunDirection.xz);
-    float lightNear = 1.0;
-    if (LOOK.cloudReach > 0.0)
-    {
-        lightNear -= 0.8 * smoothstep(CloudFarLightStart * LOOK.cloudReach, CloudFarLightEnd * LOOK.cloudReach, t);
-    }
 
     if (dot(LOOK.cloudLight, vec3(1.0)) > 0.0 && dot(sunward, sunward) > 1e-6)
     {
@@ -233,7 +248,7 @@ vec3 skyClouds(vec3 direction, vec3 colour)
             float depth = 0.0;
             for (int step = 1; step <= 3; step++)
             {
-                depth += cloudDensity(low + toward * (0.15 * float(step)), lowX, lowY, false);
+                depth += cloudDensity(low + toward * (0.15 * float(step)), lowX, lowY, softness);
             }
 
             cloud += LOOK.cloudLight * lightNear * exp2(-depth * LOOK.cloudShadow);
@@ -241,14 +256,14 @@ vec3 skyClouds(vec3 direction, vec3 colour)
         else
         {
             // An edge whose cloud thins towards the sun faces it: the drop in thickness a quarter of a cell sunwards.
-            float towards = cloudDensity(low + toward * 0.25, lowX, lowY, false);
+            float towards = cloudDensity(low + toward * 0.25, lowX, lowY, softness);
             cloud += LOOK.cloudLight * (lightNear * clamp((density - towards) * 3.0, 0.0, 1.0) * (1.0 - 0.5 * density));
         }
 
         if (LOOK.cloudPuffLight > 0.0)
         {
             // A puff faces the sun where its shape falls sunwards, and turns from it where its shape rises.
-            float ahead = cloudShapeAt(low + toward * CloudPuffStep, lowX, lowY, true);
+            float ahead = cloudShapeAt(low + toward * CloudPuffStep, lowX, lowY, erosion);
             float facing = clamp((shape - ahead) * CloudPuffGain, -1.0, 1.0);
             cloud *= 1.0 + 0.5 * LOOK.cloudPuffLight * lightNear * facing;
             cloud += LOOK.cloudLight * (0.4 * LOOK.cloudPuffLight * lightNear * max(facing, 0.0));
