@@ -101,8 +101,12 @@ judges (a host's hits on posed bodies). The deterministic skeletons for bodies, 
 - A whole file leaves out every mesh not skinned that hangs under a joint of its rig: those are its parts.
 - `Declare(..., rigOf: NAME)` binds a file's skin on the rig of a model declared before it (`MeshAssets.Bound`), so a
   body made on a game's rig plays that rig's clips. Its joints are matched by name and taken in the source's order, so
-  one index is one joint in both. Its parents and rest pose must be the source's (`MeshAssets.BoundRestMetres`,
-  `BoundRestTurn`), and it has no clips of its own, or the step stops naming the first difference.
+  one index is one joint in both. Its parents and rest turns must be the source's (`MeshAssets.BoundRestTurn`), and it
+  has no clips of its own, or the step stops naming the first difference.
+- A bound body keeps its own rest, so its joints may stand at other places: a body of other proportions. Past
+  `MeshAssets.BoundRestMetres`, its rig gets the source's clips rebased (`MeshAssets.Rebased`), in the same order, with
+  the same names and lengths. A translation track that only holds the source's rest is left out. Another moves by the
+  difference of the two rests. Otherwise the rig shares the source's clips array.
 - `Files` lists each file once, under its first declaration's name.
 - `Add(name, MeshAsset)` adds a mesh built in code.
 - `DeclareVariant(name, of, baseColours)` declares a variant of an asset declared or added before it. It shares the

@@ -12,8 +12,9 @@ namespace Itera.Engine.Tests.Assets;
 /// its joint's space, the nodes between applied, so posed at rest it lands where the file puts it, with only its own
 /// material and no rig; a node named nowhere or twice cannot be read; a body bound on another model's rig takes that
 /// rig's joint order and clips, its vertices following their joints, and the file is listed once; a body whose joints
-/// rest elsewhere, or that has clips of its own, stops the step naming the difference; a file's whole and its parts read
-/// it once and hold the same texture where their materials use one image.
+/// rest at other places plays those clips from its own; a body whose joints rest turned otherwise, or that has clips of
+/// its own, stops the step naming the difference; a file's whole and its parts read it once and hold the same texture
+/// where their materials use one image.
 /// </summary>
 public sealed class MeshPartsTests : IDisposable
 {
@@ -116,11 +117,67 @@ public sealed class MeshPartsTests : IDisposable
     }
 
     [Fact]
-    public void A_body_whose_joints_rest_elsewhere_or_with_clips_of_its_own_stops_the_step_naming_why()
+    public void A_body_whose_joints_rest_elsewhere_plays_the_sources_clips_from_its_own_places()
+    {
+        var assets = new MeshAssets(NullLogger<MeshAssets>.Instance);
+        assets.Declare("source", WriteBody("source", aFirst: true, clip: true));
+        var moved = assets.Declare(
+            "moved",
+            WriteBody("moved", aFirst: false, clip: false, aAt: 0.3f, hipY: 1.2f),
+            rigOf: "source"
+        );
+
+        assets.LoadAll(textures: false);
+
+        var source = assets[assets.Find("source")].Rig!;
+        var rig = assets[moved].Rig!;
+        Assert.NotSame(source.Clips, rig.Clips);
+        var clip = Assert.Single(rig.Clips);
+        // Its name and length are the source's, though the track that ran longest is left out.
+        Assert.Equal(("Wave", 2f), (clip.Name, clip.Duration));
+        Assert.DoesNotContain(
+            clip.Tracks,
+            track => track.Joint == rig.FindJoint("a") && track.Path == RigPath.Translation
+        );
+        var locals = new JointTransform[rig.JointCount];
+        var sourceLocals = new JointTransform[source.JointCount];
+        rig.Pose(0, 0.5f, locals);
+        source.Pose(0, 0.5f, sourceLocals);
+        // a stays at its own rest and turns as in the source; the hip rises from its own rest as the source's does.
+        AssertNear(new Vector3(0.3f, 0, 0), locals[rig.FindJoint("a")].Translation);
+        Assert.Equal(sourceLocals[source.FindJoint("a")].Rotation, locals[rig.FindJoint("a")].Rotation);
+        AssertNear(new Vector3(0, 1.25f, 0), sourceLocals[source.FindJoint("hip")].Translation);
+        AssertNear(new Vector3(0, 1.45f, 0), locals[rig.FindJoint("hip")].Translation);
+    }
+
+    [Fact]
+    public void A_cubic_track_rebased_moves_its_values_and_keeps_its_tangents()
+    {
+        var tangent = new Vector4(0.1f, 0, 0, 0);
+        var track = new RigTrack(
+            0,
+            RigPath.Translation,
+            RigInterpolation.CubicSpline,
+            [0f, 1f],
+            [tangent, new(0, 1, 0, 0), tangent, tangent, new(0, 1.5f, 0, 0), tangent]
+        );
+        JointTransform[] rest = [new(new Vector3(0, 1, 0), Quaternion.Identity, Vector3.One)];
+        JointTransform[] own = [new(new Vector3(0, 1.2f, 0), Quaternion.Identity, Vector3.One)];
+
+        var rebased = MeshAssets.Rebased([new RigClip("Rise", [track])], rest, own);
+
+        Assert.Equal(
+            [tangent, new(0, 1.2f, 0, 0), tangent, tangent, new(0, 1.7f, 0, 0), tangent],
+            Assert.Single(Assert.Single(rebased).Tracks).Values
+        );
+    }
+
+    [Fact]
+    public void A_body_whose_joints_turn_otherwise_or_with_clips_of_its_own_stops_the_step_naming_why()
     {
         var elsewhere = new MeshAssets(NullLogger<MeshAssets>.Instance);
         elsewhere.Declare("source", WriteBody("source", aFirst: true, clip: false));
-        elsewhere.Declare("moved", WriteBody("moved", aFirst: false, clip: false, aAt: 0.3f), rigOf: "source");
+        elsewhere.Declare("turned", WriteBody("turned", aFirst: false, clip: false, aTurned: true), rigOf: "source");
         var clipped = new MeshAssets(NullLogger<MeshAssets>.Instance);
         clipped.Declare("source", WriteBody("source2", aFirst: true, clip: false));
         clipped.Declare("clipped", WriteBody("clipped", aFirst: true, clip: true), rigOf: "source");
@@ -128,7 +185,7 @@ public sealed class MeshPartsTests : IDisposable
         var moved = Assert.Throws<InvalidOperationException>(() => elsewhere.LoadAll(textures: false));
         var own = Assert.Throws<InvalidOperationException>(() => clipped.LoadAll(textures: false));
 
-        Assert.Contains("joint 'a' rests otherwise", moved.Message, StringComparison.Ordinal);
+        Assert.Contains("joint 'a' rests turned otherwise", moved.Message, StringComparison.Ordinal);
         Assert.Contains("clip(s) of its own", own.Message, StringComparison.Ordinal);
         Assert.Throws<InvalidOperationException>(() =>
             new MeshAssets(NullLogger<MeshAssets>.Instance).Declare("x", "x.glb", rigOf: "nothing")
@@ -157,10 +214,12 @@ public sealed class MeshPartsTests : IDisposable
     }
 
     /// <summary>
-    /// A body in metres: the hip joint 1 up, its children a (<paramref name="aAt"/> along x) and b (0.2 along -x), the
-    /// skin listing a before b or after it; a triangle skinned on the hip, a, and b in the material flesh; and under a,
-    /// through a holder 0.1 up and turned a quarter about z, the guard, a triangle in the material iron not skinned (and a
-    /// second guard under b when <paramref name="twice"/>). With <paramref name="clip"/>, a clip Wave turning a.
+    /// A body in metres: the hip joint <paramref name="hipY"/> up, its children a (<paramref name="aAt"/> along x, turned
+    /// a quarter about z when <paramref name="aTurned"/>) and b (0.2 along -x), the skin listing a before b or after it;
+    /// a triangle skinned on the hip, a, and b in the material flesh; and under a, through a holder 0.1 up and turned a
+    /// quarter about z, the guard, a triangle in the material iron not skinned (and a second guard under b when
+    /// <paramref name="twice"/>). With <paramref name="clip"/>, a clip Wave turning a over 1 s, raising the hip 0.5 over
+    /// 1 s, and holding a at its rest over 2 s.
     /// </summary>
     private string WriteBody(
         string name,
@@ -168,7 +227,9 @@ public sealed class MeshPartsTests : IDisposable
         bool clip,
         bool twice = false,
         float aAt = 0.2f,
-        bool textured = false
+        bool textured = false,
+        float hipY = 1f,
+        bool aTurned = false
     )
     {
         var gltf = new GltfBuilder();
@@ -190,8 +251,9 @@ public sealed class MeshPartsTests : IDisposable
 
         var flesh = gltf.Material(Material("flesh"));
         var iron = gltf.Material(Material("iron"));
-        var hipWorld = Matrix4x4.CreateTranslation(0, 1, 0);
-        var aWorld = Matrix4x4.CreateTranslation(aAt, 0, 0) * hipWorld;
+        var hipWorld = Matrix4x4.CreateTranslation(0, hipY, 0);
+        var aTurn = aTurned ? s_quarterZ : Quaternion.Identity;
+        var aWorld = Matrix4x4.CreateFromQuaternion(aTurn) * Matrix4x4.CreateTranslation(aAt, 0, 0) * hipWorld;
         var bWorld = Matrix4x4.CreateTranslation(-0.2f, 0, 0) * hipWorld;
         var guard = gltf.Mesh(
             GltfBuilder.Primitive(
@@ -204,7 +266,7 @@ public sealed class MeshPartsTests : IDisposable
             new JsonObject
             {
                 ["name"] = "hip",
-                ["translation"] = new JsonArray(0f, 1f, 0f),
+                ["translation"] = new JsonArray(0f, hipY, 0f),
                 ["children"] = new JsonArray(1, 2),
             }
         );
@@ -213,6 +275,7 @@ public sealed class MeshPartsTests : IDisposable
             {
                 ["name"] = "a",
                 ["translation"] = new JsonArray(aAt, 0f, 0f),
+                ["rotation"] = new JsonArray(aTurn.X, aTurn.Y, aTurn.Z, aTurn.W),
                 ["children"] = new JsonArray(3),
             },
             root: false
@@ -246,7 +309,7 @@ public sealed class MeshPartsTests : IDisposable
 
         var body = gltf.Mesh(
             GltfBuilder.Primitive(
-                gltf.Accessor(new Vector3[] { new(0, 1, 0), new(aAt, 1, 0), new(-0.2f, 1, 0) }),
+                gltf.Accessor(new Vector3[] { new(0, hipY, 0), new(aAt, hipY, 0), new(-0.2f, hipY, 0) }),
                 joints: aFirst
                     ? gltf.Joints(0, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0)
                     : gltf.Joints(0, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0),
@@ -271,7 +334,15 @@ public sealed class MeshPartsTests : IDisposable
         {
             var times = gltf.Accessor([0f, 1f]);
             var turns = gltf.Accessor([Quaternion.Identity, s_quarterZ]);
-            gltf.Animation("Wave", (1, "rotation", times, turns, "LINEAR"));
+            var rises = gltf.Accessor([new Vector3(0, hipY, 0), new Vector3(0, hipY + 0.5f, 0)]);
+            var held = gltf.Accessor([0f, 2f]);
+            var holds = gltf.Accessor([new Vector3(aAt, 0, 0), new Vector3(aAt, 0, 0)]);
+            gltf.Animation(
+                "Wave",
+                (1, "rotation", times, turns, "LINEAR"),
+                (0, "translation", times, rises, "LINEAR"),
+                (1, "translation", held, holds, "LINEAR")
+            );
         }
 
         return gltf.WriteGltf(_folder, name);

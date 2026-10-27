@@ -427,8 +427,9 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
     /// <summary>
     /// <paramref name="asset"/> bound on <paramref name="source"/>'s rig (named <paramref name="of"/>): its joints taken
     /// in the source's order, its vertices' joints and its points' joints moved with them, keeping its own rest, offsets,
-    /// inverse binds, and reaches, and the source's clips. Throws, naming the first difference, when the joints, their
-    /// parents, or their rest pose are not the source's (within <see cref="BoundRestMetres"/> and
+    /// inverse binds, and reaches, and the source's clips. A joint may rest at another place than the source's (a body
+    /// of other proportions): the clips are then rebased onto its own (<see cref="Rebased"/>). Throws, naming the first
+    /// difference, when the joints, their parents, or their rest turns are not the source's (within
     /// <see cref="BoundRestTurn"/>), or when it has clips of its own.
     /// </summary>
     internal static MeshAsset Bound(MeshAsset asset, MeshAsset source, string of)
@@ -475,6 +476,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             (ownOf[j], sourceOf[at]) = (at, j);
         }
 
+        var moved = false;
         for (var j = 0; j < count; j++)
         {
             var parent = rig.Parents[j];
@@ -487,26 +489,26 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             }
 
             var (rest, ownRest) = (rig.Rest[j], own.Rest[ownOf[j]]);
-            if (
-                Vector3.Distance(rest.Translation, ownRest.Translation) > BoundRestMetres
-                || MathF.Abs(Quaternion.Dot(rest.Rotation, ownRest.Rotation)) < MathF.Cos(BoundRestTurn / 2)
-            )
+            if (MathF.Abs(Quaternion.Dot(rest.Rotation, ownRest.Rotation)) < MathF.Cos(BoundRestTurn / 2))
             {
                 throw new InvalidOperationException(
-                    $"The mesh asset '{name}''s joint '{rig.Names[j]}' rests otherwise than in '{of}''s rig: its clips "
-                        + "would not fit it."
+                    $"The mesh asset '{name}''s joint '{rig.Names[j]}' rests turned otherwise than in '{of}''s rig: its "
+                        + "clips would not fit it."
                 );
             }
+
+            moved |= Vector3.Distance(rest.Translation, ownRest.Translation) > BoundRestMetres;
         }
 
+        JointTransform[] ownRests = [.. ownOf.Select(at => own.Rest[at])];
         var bound = new Rig(
             rig.Names,
             rig.Parents,
             [.. ownOf.Select(at => own.Offsets[at])],
-            [.. ownOf.Select(at => own.Rest[at])],
+            ownRests,
             [.. ownOf.Select(at => own.InverseBinds[at])],
             [.. ownOf.Select(at => own.Reaches[at])],
-            rig.Clips
+            moved ? Rebased(rig.Clips, rig.Rest, ownRests) : rig.Clips
         );
         var skins = new MeshSkinVertex[skin.Length];
         for (var v = 0; v < skin.Length; v++)
@@ -538,7 +540,75 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
         );
     }
 
-    /// <summary>How far a bound asset's joint may rest from the source rig's, in metres.</summary>
+    /// <summary>
+    /// The source's <paramref name="clips"/> for a bound asset whose joints rest at <paramref name="own"/> rather than
+    /// the source's <paramref name="rest"/> (one a joint, in the source's order): each clip keeps its name, length, and
+    /// turning and scaling tracks. A translation track that only holds the source's rest is left out, so its joint stays
+    /// at its own rest. Another, such as the hips' sway, moves by the difference of the two rests.
+    /// </summary>
+    internal static RigClip[] Rebased(RigClip[] clips, JointTransform[] rest, JointTransform[] own)
+    {
+        var rebased = new RigClip[clips.Length];
+        var tracks = new List<RigTrack>();
+        for (var c = 0; c < clips.Length; c++)
+        {
+            tracks.Clear();
+            foreach (var track in clips[c].Tracks)
+            {
+                var shift = own[track.Joint].Translation - rest[track.Joint].Translation;
+                if (track.Path != RigPath.Translation || shift.Length() <= BoundRestMetres)
+                {
+                    tracks.Add(track);
+                }
+                else if (!Holds(track, rest[track.Joint].Translation))
+                {
+                    tracks.Add(Shifted(track, shift));
+                }
+            }
+
+            rebased[c] = new RigClip(clips[c].Name, [.. tracks], clips[c].Duration);
+        }
+
+        return rebased;
+    }
+
+    /// <summary>
+    /// True when every key of <paramref name="track"/> lies within <see cref="BoundRestMetres"/> of
+    /// <paramref name="at"/>, a cubic spline's tangents within it of none.
+    /// </summary>
+    private static bool Holds(RigTrack track, Vector3 at)
+    {
+        var cubic = track.Interpolation == RigInterpolation.CubicSpline;
+        for (var i = 0; i < track.Values.Length; i++)
+        {
+            var value = track.Values[i];
+            var expected = !cubic || i % 3 == 1 ? at : Vector3.Zero;
+            if (Vector3.Distance(new Vector3(value.X, value.Y, value.Z), expected) > BoundRestMetres)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary><paramref name="track"/> with each key moved by <paramref name="shift"/>, a cubic spline's tangents kept.</summary>
+    private static RigTrack Shifted(RigTrack track, Vector3 shift)
+    {
+        var cubic = track.Interpolation == RigInterpolation.CubicSpline;
+        var values = new Vector4[track.Values.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            values[i] = !cubic || i % 3 == 1 ? track.Values[i] + new Vector4(shift, 0) : track.Values[i];
+        }
+
+        return new RigTrack(track.Joint, track.Path, track.Interpolation, track.Times, values);
+    }
+
+    /// <summary>
+    /// How far a bound asset's joint may rest from the source rig's, in metres, with the source's clips kept as they are;
+    /// and how near a translation key must lie to the source's rest to be left out (<see cref="Rebased"/>).
+    /// </summary>
     public const float BoundRestMetres = 0.002f;
 
     /// <summary>How far a bound asset's joint may rest turned from the source rig's, in radians.</summary>

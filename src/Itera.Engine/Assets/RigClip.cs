@@ -20,12 +20,21 @@ public sealed class RigClip
         }
     }
 
+    /// <summary>
+    /// A clip of <paramref name="tracks"/> that lasts <paramref name="duration"/> however far its tracks run: one made
+    /// from another clip keeps that clip's length.
+    /// </summary>
+    public RigClip(string name, RigTrack[] tracks, float duration)
+        : this(name, tracks) => Duration = duration;
+
     /// <summary>The clip's name in its file (<see cref="Rig.FindClip"/>).</summary>
     public string Name { get; }
 
     public RigTrack[] Tracks { get; }
 
-    /// <summary>The time of the last key of any track, in seconds: the clip's length when it loops.</summary>
+    /// <summary>
+    /// The time of the last key of any track, in seconds, or the length it was made with: the clip's length when it loops.
+    /// </summary>
     public float Duration { get; }
 
     /// <summary>

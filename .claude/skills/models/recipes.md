@@ -50,8 +50,8 @@ points.add_point("grip", (0.0, 0.0, 0.0), parent=armature, bone="body")
 
 ## A humanoid variant on the game's rig (armour, clothing, a new body)
 
-The game's skeleton must stay exactly as it is: the same joints, in the same order, in the same rest pose, or its clips
-stop fitting.
+The game's skeleton keeps its joints, their order, their parents, and their turns at rest, or its clips stop fitting.
+A new body may move the joints to its own places: the engine rebases the clips onto them (`mesh-assets.md`).
 
 ```python
 from itera_models import rig
@@ -71,6 +71,9 @@ ctx.export(objects=[armature, plate])          # no clips: the game's clips come
 - To add clips from another file on the same rig, the toolkit's `tools/models/merge_clips.py` merges them.
 - A new body on the game's rig needs none of its clips: the game declares it bound on the rig's model
   (`Declare(..., rigOf: NAME)`, `mesh-assets.md`), which takes that model's joint order and clips. Export no clips.
+- A body of other proportions moves the joints in edit mode to its own places, keeping each bone's turn and roll: set
+  every bone's use_connect to false first, then move its head and tail by the same amount. The clips still turn each
+  joint as they do on the rig's model, so hands and feet land a little elsewhere.
 
 ## Parts on a body's bones (plates that break off, a helm, a lamp)
 
