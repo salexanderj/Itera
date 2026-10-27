@@ -98,7 +98,8 @@ warmth and the sky light's coolness. The split tone fades as the fog thickens, s
 takes the grade but no split tone.
 
 A glowing surface keeps its colour, takes no grade or split tone, and adds its glow's own brightness through the tone
-curve after them.
+curve after them. Where a texture set's emission mask says only a share of it glows (`rendering-materials.md`), that
+share keeps its colour and the rest is shaded as a surface that does not glow.
 
 - SMAA does not run on a multisampled world.
 - The pass's GPU time is `Voxels` (`GpuPass`).

@@ -94,7 +94,10 @@ public enum VoxelPattern : byte
 /// <param name="Contrast">0 to 1: how strongly the recipe's shades differ.</param>
 /// <param name="Relief">0 to 1: how far the recipe's relief tilts the normal sunlight and sky light use, and how dark its hollows get.</param>
 /// <param name="Patches">0 to 1: strength of the variation over about 0.6 m and 10 m, which never fades.</param>
-/// <param name="Glow">0 to 1: light the material gives off, as a share of four times its colour; 0 for most.</param>
+/// <param name="Glow">
+/// 0 to 1: light the material gives off, as a share of four times its colour; 0 for most. A material drawn from a texture
+/// set with an emission mask glows only where the mask does.
+/// </param>
 /// <param name="Texture">
 /// The name of the texture set the world draws the material from instead of its recipe (a folder of
 /// <c>MaterialTextureSets.Folder</c>; docs/rendering-redesign.md, the materials plan), or null for its recipe.

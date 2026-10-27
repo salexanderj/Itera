@@ -45,10 +45,10 @@ The data is in `VoxelLook` and the game's `IVoxelPalette`, packed into the look 
 A set is a folder `Textures/<set>/` of a game, made by `tools/Textures` from a recipe's bake, from a texture recipe in
 Python (`tools/Textures/RecipeTools`), or from CC0 photographs, and copied next to the executable. It holds:
 
-- `colour.dds`: BC7 sRGB, with occlusion in alpha.
+- `colour.dds`: BC7 sRGB, with occlusion in alpha, or an emission mask where `set.json`'s `alpha` is `emission`.
 - `normal.dds`: BC5, x and y.
 - `height.dds`: BC4.
-- `set.json`: the texels, the tile's width in metres, the colour's mean in linear RGB, and the source.
+- `set.json`: the texels, the tile's width in metres, the colour's mean in linear RGB, what alpha holds, and the source.
 
 Every set's heights have a mean of a half.
 
@@ -75,6 +75,10 @@ Every set's heights have a mean of a half.
 - The colour moves to the material's own colour by `VoxelLook.TextureColourMatch` (0 keeps the photograph's) and by
   the tint as the material's colour moves.
 - The normal map (OpenGL's convention) bends the lit normal. The occlusion is the cavity. The patches go on top.
+- A set with an emission mask (`MaterialTextureSlot.Emission`, `MeshMaterial.EmissionTextureBit`) has no occlusion. A
+  glowing material drawn from it glows only where the mask does, by its value (`Surface.emission` in
+  `mesh-surface.glsl`). The rest takes the world's look and the grade as a surface that does not glow
+  (`rendering-light.md`).
 
 ### Baking a recipe
 

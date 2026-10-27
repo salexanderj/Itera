@@ -38,6 +38,8 @@ struct Surface
     float cavity;
     // The material's share of full glow, 0 to 1; mesh.frag scales it by the look's glow strength.
     float glow;
+    // The share of the surface that glows where the material does, 0 to 1: its texture set's emission mask, or 1.
+    float emission;
 };
 
 #include "surface-noise.glsl"
@@ -164,6 +166,7 @@ Surface surfaceFinish(vec3 colour, vec3 slope, float cavity, ivec3 whole, vec3 p
     surface.slope = slope - dot(slope, normal) * normal;
     surface.cavity = cavity;
     surface.glow = amount.w;
+    surface.emission = 1.0;
     return surface;
 }
 
@@ -696,9 +699,10 @@ float textureHeight(uint index, uint texture, float metres, vec3 offset, vec3 no
 // Material index drawn from the texture set texture (MeshMaterial.texture's word) whose tile is metres wide and whose
 // colour's mean is mean: the photograph's colour, matched to the material's own colour by the colour match (the mean
 // scaled to it) and moved by the tint as the material's colour moves; its normal map bending the lit normal (OpenGL's
-// convention: green along the image's upward direction, the texture's -v); its occlusion as the cavity; the material's
-// style (MeshMaterial.textureStyle) keeping part of the colour's variation and of the relief, and softening it by mip
-// levels. dOffsetX and dOffsetY are the offset's derivatives, taken where every pixel of a 2x2 group runs.
+// convention: green along the image's upward direction, the texture's -v); its occlusion as the cavity, or, in a set with
+// an emission mask (MESH_TEXTURE_EMISSION), the mask as the share that glows and no cavity; the material's style
+// (MeshMaterial.textureStyle) keeping part of the colour's variation and of the relief, and softening it by mip levels.
+// dOffsetX and dOffsetY are the offset's derivatives, taken where every pixel of a 2x2 group runs.
 Surface surfaceTextured(uint index, uint texture, float metres, vec3 mean, float tint, ivec3 whole, vec3 part, vec3 offset,
     vec3 normal, vec3 dOffsetX, vec3 dOffsetY)
 {
@@ -739,7 +743,9 @@ Surface surfaceTextured(uint index, uint texture, float metres, vec3 mean, float
     // The material's style: the detail kept round the set's mean colour, and how strongly its relief shades it.
     vec4 style = unpackUnorm4x8(materials[index].textureStyle);
     colour.rgb = mean + (colour.rgb - mean) * style.x;
-    colour.a = mix(1.0, colour.a, style.y);
+    bool emissive = (texture & MESH_TEXTURE_EMISSION) != 0u;
+    float emission = emissive ? colour.a : 1.0;
+    colour.a = emissive ? 1.0 : mix(1.0, colour.a, style.y);
     bend *= style.y;
     vec3 own = materials[index].colour;
     vec3 matched = colour.rgb * mix(vec3(1.0), own / max(mean, vec3(1e-3)), match);
@@ -749,7 +755,9 @@ Surface surfaceTextured(uint index, uint texture, float metres, vec3 mean, float
     }
 
     vec3 tinted = matched * baseColour(index, tint) / max(own, vec3(1e-3));
-    return surfaceFinish(tinted, -bend, colour.a, whole, part, normal, amount);
+    Surface surface = surfaceFinish(tinted, -bend, colour.a, whole, part, normal, amount);
+    surface.emission = emission;
+    return surface;
 }
 
 #endif
@@ -770,5 +778,6 @@ Surface surfaceFlat(uint index, float tint)
     surface.slope = vec3(0.0);
     surface.cavity = 1.0;
     surface.glow = unpackUnorm4x8(materials[index].amounts).w;
+    surface.emission = 1.0;
     return surface;
 }

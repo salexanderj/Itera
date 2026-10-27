@@ -57,11 +57,12 @@ vec3 pointLight(vec3 world, vec3 normal, float depth)
 
 // The colour a surface of colour ends as at offset from the camera: lit along lit (its normal as its relief tilts it)
 // with the shadow maps and the sky field read along its own normal, its sky and ground light kept by its openness and
-// cavity (its hollows hide it from the sky), and glowColour glowing by glow (0 for none) after the grade. rim scales
+// cavity (its hollows hide it from the sky), and glowColour glowing by glow (0 for none) after the grade over glowShare of
+// the surface (0 to 1: its emission mask, else 1 where it glows), which keeps its own colour. rim scales
 // the look's edge light (1 for the mesh assets, 0 for the world's surfaces and the voxel models): the sky's light round
 // the surface's outline, where it turns from the eye, as much as the sky reaches it.
 vec3 shadeSurface(vec3 colour, vec3 normal, vec3 lit, vec3 offset, float openness, float cavity, vec3 glowColour,
-    float glow, float rim)
+    float glow, float glowShare, float rim)
 {
     vec3 world = view.position + offset;
     float depth = dot(offset, view.forward);
@@ -98,13 +99,15 @@ vec3 shadeSurface(vec3 colour, vec3 normal, vec3 lit, vec3 offset, float opennes
         smoothstep(LOOK.shadowsBelow, LOOK.lightsAbove, dot(graded, LumaWeights))
     );
     graded *= mix(split, vec3(1.0), fog);
-    if (glow > 0.0)
+    if (glow > 0.0 && glowShare > 0.0)
     {
         // A glowing surface (embers, lava, glow caps) keeps its own colour: no grade or split tone where the fog leaves
         // it, and its glow's own brightness, what the glow adds through the tone curve, added after them, so embers and
-        // lava stay a vivid red where the grade greys the picture (in a dark place). The glow fades with the fog.
-        vec3 glowing = glowColour * glow * (1.0 - fog);
-        graded = mix(graded, toned, 1.0 - fog) + toneMap((shaded + glowing) * LOOK.exposure) - toned;
+        // lava stay a vivid red where the grade greys the picture (in a dark place). The glow fades with the fog. Where
+        // only a share of the surface glows (an emission mask), the rest is graded as a surface that does not.
+        float own = glowShare * (1.0 - fog);
+        vec3 glowing = glowColour * glow * own;
+        graded = mix(graded, toned, own) + toneMap((shaded + glowing) * LOOK.exposure) - toned;
     }
 
     return ditherColour(min(graded, vec3(1.0)), gl_FragCoord.xy);

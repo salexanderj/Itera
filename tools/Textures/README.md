@@ -38,11 +38,13 @@ once, then from there), makes every mip level
 (colour and occlusion averaged in linear light, normals averaged and made unit length again), compresses them with
 BCnEncoder.NET, and writes the set's folder in `src/Game/Textures/`:
 
-- `colour.dds`: BC7 sRGB, the colour with the occlusion in alpha (white where the photograph has no occlusion map);
+- `colour.dds`: BC7 sRGB, the colour with the occlusion in alpha (white where the photograph has no occlusion map), or a
+  recipe's emission mask in its place;
 - `normal.dds`: BC5, the normal map's x and y (the shader leaves z out);
 - `height.dds`: BC4, the height map (mid grey where there is none);
 - `set.json`: the size in texels, the photographed width in metres (Poly Haven's dimensions, ambientCG's `dimensionX`, or
-  2 m with a warning), the colour's mean in linear RGB, and the source.
+  2 m with a warning), the colour's mean in linear RGB, what the colour's alpha holds (`alpha`: `occlusion` or
+  `emission`), and the source.
 
 It also writes `SOURCES.md` there (every set's site, asset, link, and licence). The game copies the set folders to
 `Textures/` next to the executable, and `MaterialTextureSets` loads them; a material names its set in its `VoxelLook`
@@ -80,6 +82,9 @@ each time, then makes the set from those maps as from a bake.
   `make(tile)`, which takes a `tiles.Tile` and returns a `tiles.Maps`: the colour in linear RGB, the height in metres,
   and optionally the occlusion (made from the height if left out). A recipe may import modules beside it, such as a
   palette its game's recipes share.
+- A glowing material's recipe may return an emission mask (`Maps.emission`, 0 to 1), which the set's colour holds in
+  alpha in place of the occlusion. The material then glows only where the mask does, in the colour's own colour, and
+  the rest of it is lit as any surface is. Give the glowing parts the light's colour, and keep colour match 0.
 - `tiles.py`: the tile, whose every operation wraps at its edges, so the set repeats without a seam. Noise by
   wavelength in metres, stretched along any direction, blurs, slopes, hollows and edges of a height, Voronoi cells on a jittered grid (some merged,
   their borders made to wander by a warp),

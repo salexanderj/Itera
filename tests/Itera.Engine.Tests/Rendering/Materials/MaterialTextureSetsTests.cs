@@ -8,7 +8,8 @@ namespace Itera.Engine.Tests.Rendering.Materials;
 
 /// <summary>
 /// The material texture sets' files (<see cref="DdsFile"/>) read back as written, sets loaded into the large and small
-/// groups in name order with broken ones left out, and a material packed with its set (<see cref="MeshMaterial.From"/>).
+/// groups in name order with broken ones left out, a set's emission mask, and a material packed with its set
+/// (<see cref="MeshMaterial.From"/>).
 /// </summary>
 public sealed class MaterialTextureSetsTests : IDisposable
 {
@@ -116,6 +117,30 @@ public sealed class MaterialTextureSetsTests : IDisposable
     }
 
     [Fact]
+    public void A_set_whose_colour_holds_an_emission_mask_says_so_and_an_unknown_alpha_is_left_out()
+    {
+        WriteSet("a-glow", MaterialTextureSets.SmallTexels, 2.56f, MaterialTextureSets.EmissionAlpha);
+        WriteSet("b-stone", MaterialTextureSets.SmallTexels, 2.56f, MaterialTextureSets.OcclusionAlpha);
+        WriteSet("c-stone", MaterialTextureSets.SmallTexels, 2.56f);
+        WriteSet("d-odd", MaterialTextureSets.SmallTexels, 2.56f, "roughness");
+        var skipped = new List<string>();
+        var sets = new MaterialTextureSets();
+
+        sets.Load(_folder, (name, _) => skipped.Add(name));
+
+        Assert.Equal(["d-odd"], skipped);
+        Assert.Equal([true, false, false], sets.Small.Select(s => s.Emission));
+        Assert.True(sets.TryFind("a-glow", out var glow));
+        Assert.True(glow.Emission);
+        Assert.True(sets.TryFind("c-stone", out var stone));
+        Assert.False(stone.Emission);
+
+        var look = new VoxelLook(Vector3.One, Vector3.One, Glow: 0.5f, Texture: "a-glow");
+        Assert.NotEqual(0u, MeshMaterial.From(in look, glow).Texture & MeshMaterial.EmissionTextureBit);
+        Assert.Equal(0u, MeshMaterial.From(in look, stone).Texture & MeshMaterial.EmissionTextureBit);
+    }
+
+    [Fact]
     public void A_material_carries_its_sets_place_width_mean_and_colour_match()
     {
         var look = new VoxelLook(Vector3.One, Vector3.One, Texture: "a-ground", TextureColourMatch: 0.5f);
@@ -174,7 +199,7 @@ public sealed class MaterialTextureSetsTests : IDisposable
         return levels;
     }
 
-    private void WriteSet(string name, int texels, float metres)
+    private void WriteSet(string name, int texels, float metres, string? alpha = null)
     {
         var folder = Path.Combine(_folder, name);
         Directory.CreateDirectory(folder);
@@ -185,9 +210,10 @@ public sealed class MaterialTextureSetsTests : IDisposable
             DdsFile.Write(file, format, texels, texels, Levels(format, texels, seed: i));
         }
 
+        var alphaEntry = alpha is null ? "" : $", \"alpha\": \"{alpha}\"";
         File.WriteAllText(
             Path.Combine(folder, "set.json"),
-            $$"""{ "texels": {{texels}}, "metres": {{metres.ToString(System.Globalization.CultureInfo.InvariantCulture)}}, "mean": [0.1, 0.2, 0.3], "site": "test" }"""
+            $$"""{ "texels": {{texels}}, "metres": {{metres.ToString(System.Globalization.CultureInfo.InvariantCulture)}}, "mean": [0.1, 0.2, 0.3], "site": "test"{{alphaEntry}} }"""
         );
     }
 }

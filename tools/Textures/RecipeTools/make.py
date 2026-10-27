@@ -4,8 +4,9 @@
     python3 make.py RECIPE.py OUT [--texels N] [--preview SHEET.png]
 
 A recipe is a Python file with METRES (the tile's width), optionally TEXELS (2048 by default) and SEED (1), and a
-function make(tile) that takes a tiles.Tile and returns a tiles.Maps. It may import modules from its own folder. --texels makes it smaller to try it quickly;
-the recipe's sizes are in metres, so it looks the same. --preview also writes a lit preview sheet (preview.py).
+function make(tile) that takes a tiles.Tile and returns a tiles.Maps (with an emission mask for a glowing material's
+set). It may import modules from its own folder. --texels makes it smaller to try it quickly; the recipe's sizes are in
+metres, so it looks the same. --preview also writes a lit preview sheet (preview.py).
 """
 
 import argparse
@@ -44,6 +45,8 @@ def main():
     maps = recipe.make(tile)
     if maps.colour.shape != (tile.texels, tile.texels, 3) or maps.height.shape != (tile.texels, tile.texels):
         sys.exit(f"{args.recipe}: make gave a colour of {maps.colour.shape} and a height of {maps.height.shape}")
+    if maps.emission is not None and maps.emission.shape != (tile.texels, tile.texels):
+        sys.exit(f"{args.recipe}: make gave an emission mask of {maps.emission.shape}")
     tiles.write(args.out, tile, maps)
     mean = maps.colour.reshape(-1, 3).mean(0)
     print(

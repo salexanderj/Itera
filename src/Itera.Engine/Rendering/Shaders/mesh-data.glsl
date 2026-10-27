@@ -48,6 +48,8 @@ struct MeshMaterial
 #define MESH_TEXTURE_LARGE (1u << 16u)
 // MeshMaterial.texture's bit for strata's bands by height (strataBands), which a set's 2D tile cannot hold.
 #define MESH_TEXTURE_BANDS (1u << 17u)
+// MeshMaterial.texture's bit for a set whose colour's alpha is an emission mask in place of the occlusion.
+#define MESH_TEXTURE_EMISSION (1u << 18u)
 
 layout(scalar, set = MESH_SET, binding = 0) restrict readonly buffer MeshHeap
 {

@@ -19,12 +19,15 @@ F32 = np.float32
 
 @dataclass
 class Maps:
-    """What a recipe makes: the colour in linear RGB (rows, columns, 3), the height in metres, and the occlusion from 0
-    (shut in) to 1 (open), or None to make it from the height."""
+    """What a recipe makes: the colour in linear RGB (rows, columns, 3), the height in metres, the occlusion from 0
+    (shut in) to 1 (open), or None to make it from the height, and an emission mask from 0 to 1, or None. A set made with
+    an emission mask holds it in its colour's alpha in place of the occlusion: a glowing material glows only where the
+    mask does, in the colour's own colour, and the rest of it is lit as any surface is."""
 
     colour: np.ndarray
     height: np.ndarray
     occlusion: np.ndarray | None = None
+    emission: np.ndarray | None = None
 
 
 @dataclass
@@ -334,8 +337,9 @@ def normal_map(tile, h):
 
 
 def write(folder, tile, maps):
-    """Writes colour.png, normal.png, occlusion.png, height.png, and metres.txt, as tools/Textures reads a bake. The
-    height is written about its mean, its span stretched to the 8 bits (a few extreme texels clipped)."""
+    """Writes colour.png, normal.png, occlusion.png, height.png, emission.png (with an emission mask; removed without),
+    and metres.txt, as tools/Textures reads a bake. The height is written about its mean, its span stretched to the 8
+    bits (a few extreme texels clipped)."""
     os.makedirs(folder, exist_ok=True)
     h = maps.height.astype(F32)
     occlusion = tile.occlusion(h) if maps.occlusion is None else maps.occlusion
@@ -348,6 +352,11 @@ def write(folder, tile, maps):
     n = normal_map(tile, h)
     Image.fromarray(np.clip(n * 127.5 + 127.5 + 0.5, 0, 255).astype(np.uint8)).save(os.path.join(folder, "normal.png"))
     Image.fromarray(grey(occlusion)).save(os.path.join(folder, "occlusion.png"))
+    emission = os.path.join(folder, "emission.png")
+    if maps.emission is not None:
+        Image.fromarray(grey(maps.emission)).save(emission)
+    elif os.path.exists(emission):
+        os.remove(emission)
     centred = h - h.mean()
     span = max(float(np.percentile(np.abs(centred), 99.5)), 1e-6)
     Image.fromarray(grey(0.5 + centred / (2 * span))).save(os.path.join(folder, "height.png"))

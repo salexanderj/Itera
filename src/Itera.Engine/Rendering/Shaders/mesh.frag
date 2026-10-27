@@ -152,6 +152,7 @@ void main()
         surface.slope = vec3(0.0);
         surface.cavity = 1.0;
         surface.glow = materials[index].glow;
+        surface.emission = 1.0;
     }
     else
     {
@@ -232,15 +233,19 @@ void main()
         }
     }
 
+    // The share of the surface that glows keeps its own colour; the rest takes the world's look. A material that glows
+    // glows all over, unless its texture set's emission mask says where.
+    float glowShare = surface.glow > 0.0 ? surface.emission : 0.0;
     vec3 colour = surface.colour;
-    if (tint < 0.0 && surface.glow <= 0.0)
+    if (tint < 0.0 && glowShare < 1.0)
     {
-        colour = mix(vec3(dot(colour, LumaWeights)), colour * hue, LOOK.worldSaturation) * LOOK.worldValue;
-        colour *= mix(
+        vec3 looked = mix(vec3(dot(colour, LumaWeights)), colour * hue, LOOK.worldSaturation) * LOOK.worldValue;
+        looked *= mix(
             LOOK.worldSideShade,
             LOOK.worldTopShade,
             smoothstep(LOOK.sideShadeBelow, LOOK.topShadeAbove, normal.y)
         );
+        colour = mix(looked, colour, glowShare);
     }
 
     if (viewSwitch(ViewLevels))
@@ -253,7 +258,8 @@ void main()
     vec3 lit = normalize(normal - surface.slope);
     // A material's glow is its share of full glow; the look says how bright full glow is.
     float glow = surface.glow * LOOK.glowStrength;
-    vec3 shaded = shadeSurface(colour, normal, lit, offset, openness, surface.cavity, surface.colour, glow, 0.0);
+    vec3 shaded = shadeSurface(colour, normal, lit, offset, openness, surface.cavity, surface.colour, glow, glowShare,
+        0.0);
     outColor = vec4(shaded, 1.0);
 #ifdef MESH_FADE
     // Last, so every pixel of a 2x2 group took its derivatives and texture reads above.

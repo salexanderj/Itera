@@ -38,7 +38,8 @@ public struct MeshMaterial
 
     /// <summary>
     /// The texture set: its layer plus 1 in bits 0 to 15 (0 for none: plain), <see cref="LargeTextureBit"/> when it is in
-    /// the large arrays, <see cref="BandsTextureBit"/>, and the colour match (0 to 255) in bits 24 to 31.
+    /// the large arrays, <see cref="BandsTextureBit"/>, <see cref="EmissionTextureBit"/>, and the colour match (0 to 255) in
+    /// bits 24 to 31.
     /// </summary>
     public uint Texture;
 
@@ -100,6 +101,12 @@ public struct MeshMaterial
     public const uint BandsTextureBit = 1 << 17;
 
     /// <summary>
+    /// The <see cref="Texture"/> bit of a set whose colour's alpha is an emission mask in place of the occlusion
+    /// (<see cref="MaterialTextureSlot.Emission"/>): a glowing material glows only where the mask does, by its value.
+    /// </summary>
+    public const uint EmissionTextureBit = 1 << 18;
+
+    /// <summary>
     /// The material as <paramref name="look"/> describes it, drawn from the texture set <paramref name="texture"/> when
     /// there is one.
     /// </summary>
@@ -117,6 +124,7 @@ public struct MeshMaterial
                             ? BandsTextureBit
                             : 0
                     )
+                    | (slot.Emission ? EmissionTextureBit : 0)
                     | (uint)MathF.Round(Math.Clamp(look.TextureColourMatch, 0f, 1f) * 255f) << 24
                 : 0,
             Colour = look.Colour,

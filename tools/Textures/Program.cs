@@ -15,10 +15,11 @@ namespace Itera.Tools.Textures;
 /// <summary>
 /// Makes the world materials' texture sets (README.md), or with <c>model PATH.gltf ...</c> a model's compressed textures
 /// (<see cref="ModelTextures"/>): for each set in <c>src/Game/Textures/sources.json</c> (or those
-/// named on the command line), takes its colour, normal, occlusion, and height maps from the game's bake, from a texture
-/// recipe it runs (<c>RecipeTools/make.py</c>), or from a CC0 photograph downloaded from Poly Haven or ambientCG into a
-/// cache, makes every mip level (colour and occlusion averaged in linear light, normals averaged and
-/// made unit length again), compresses them (BC7 sRGB with occlusion in alpha, BC5, BC4), and writes the set's folder
+/// named on the command line), takes its colour, normal, occlusion, and height maps (and a recipe's emission mask) from
+/// the game's bake, from a texture recipe it runs (<c>RecipeTools/make.py</c>), or from a CC0 photograph downloaded from
+/// Poly Haven or ambientCG into a cache, makes every mip level (colour and occlusion averaged in linear light, normals
+/// averaged and made unit length again), compresses them (BC7 sRGB with occlusion, or the emission mask, in alpha, BC5,
+/// BC4), and writes the set's folder
 /// (<c>colour.dds</c>, <c>normal.dds</c>, <c>height.dds</c>, <c>set.json</c>) and <c>SOURCES.md</c>.
 /// </summary>
 internal static class Program
@@ -202,7 +203,10 @@ internal static class Program
                 Baked("occlusion.png"),
                 Baked("height.png"),
                 float.Parse(File.ReadAllText(Path.Combine(baked, "metres.txt")), CultureInfo.InvariantCulture)
-            );
+            )
+            {
+                Emission = Baked("emission.png"),
+            };
         }
 
         var resolution = source.Texels == MaterialTextureSets.LargeTexels ? "2k" : "1k";
@@ -337,7 +341,10 @@ internal static class Program
         response.Content.CopyToAsync(file).GetAwaiter().GetResult();
     }
 
-    /// <summary>Makes the set's three files and its <c>set.json</c> in <paramref name="output"/>.</summary>
+    /// <summary>
+    /// Makes the set's three files and its <c>set.json</c> in <paramref name="output"/>: the colour's alpha holds the
+    /// emission mask where the maps have one, and the occlusion where they do not.
+    /// </summary>
     private static void Make(Source source, Maps maps, string output)
     {
         var texels = source.Texels;
@@ -361,9 +368,12 @@ internal static class Program
         }
 
         var height = maps.Height is null ? null : Decode(maps.Height, texels);
+        var emission = maps.Emission is null ? null : Decode(maps.Emission, texels);
+        var alpha = emission ?? occlusion;
         var count = texels * texels;
 
-        // Linear colour with occlusion, the normal's x, y, z, and the height, as floats, for the mip levels.
+        // Linear colour with occlusion or the emission mask, the normal's x, y, z, and the height, as floats, for the mip
+        // levels.
         var linear = new Vector4[count];
         var normals = new Vector3[count];
         var heights = new float[count];
@@ -372,7 +382,7 @@ internal static class Program
         {
             var c = new Vector3(ToLinear(colour[i * 4]), ToLinear(colour[i * 4 + 1]), ToLinear(colour[i * 4 + 2]));
             mean += c;
-            linear[i] = new Vector4(c, occlusion is null ? 1f : occlusion[i * 4] / 255f);
+            linear[i] = new Vector4(c, alpha is null ? 1f : alpha[i * 4] / 255f);
             normals[i] = Vector3.Normalize(
                 new Vector3(
                     normal[i * 4] / 255f * 2 - 1,
@@ -434,8 +444,13 @@ internal static class Program
                 "recipe" => "the game's own (made by its recipe)",
                 _ => "CC0 1.0",
             },
+            ["alpha"] = emission is null ? MaterialTextureSets.OcclusionAlpha : MaterialTextureSets.EmissionAlpha,
             ["maps"] =
-                (maps.Occlusion is null ? "no occlusion; " : "") + (maps.Height is null ? "no height" : "all four"),
+                (
+                    emission is not null ? "an emission mask in place of the occlusion; "
+                    : maps.Occlusion is null ? "no occlusion; "
+                    : ""
+                ) + (maps.Height is null ? "no height" : "all four"),
             ["kuwahara"] = source.Kuwahara is { } k
                 ? FormattableString.Invariant(
                     $"radius {k.Radius}, sharpness {k.Sharpness}, hardness {k.Hardness}, alpha {k.Alpha}, all maps {k.AllMaps}"
@@ -619,5 +634,9 @@ internal static class Program
         bool AllMaps = false
     );
 
-    private sealed record Maps(string Colour, string Normal, string? Occlusion, string? Height, float Metres);
+    private sealed record Maps(string Colour, string Normal, string? Occlusion, string? Height, float Metres)
+    {
+        /// <summary>A recipe's emission mask, which the colour's alpha holds in place of the occlusion.</summary>
+        public string? Emission { get; init; }
+    }
 }

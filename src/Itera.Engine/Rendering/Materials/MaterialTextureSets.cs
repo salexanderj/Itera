@@ -7,15 +7,17 @@ namespace Itera.Engine.Rendering.Materials;
 /// <summary>
 /// A material's texture set as the GPU holds it: in the large arrays (<see cref="MaterialTextureSets.LargeTexels"/>) or
 /// the small ones, at <paramref name="Layer"/>; a tile <paramref name="Metres"/> wide; its colour's mean in linear RGB
-/// (<paramref name="Mean"/>), which the shader matches to the material's own colour; and the range its heights lie in
-/// (<paramref name="Heights"/>).
+/// (<paramref name="Mean"/>), which the shader matches to the material's own colour; the range its heights lie in
+/// (<paramref name="Heights"/>); and whether its colour's alpha is an emission mask in place of the occlusion
+/// (<paramref name="Emission"/>).
 /// </summary>
 public readonly record struct MaterialTextureSlot(
     bool Large,
     int Layer,
     float Metres,
     Vector3 Mean,
-    HeightRange Heights
+    HeightRange Heights,
+    bool Emission = false
 )
 {
     /// <summary>A slot whose heights may be anywhere from 0 to 1.</summary>
@@ -26,8 +28,9 @@ public readonly record struct MaterialTextureSlot(
 /// <summary>
 /// The world materials' texture sets (docs/rendering-redesign.md, the materials plan): each a folder of
 /// <see cref="Folder"/> (copied from the game's <c>Textures/</c>, made by <c>tools/Textures</c>) holding
-/// <c>set.json</c> (its size in texels, its width in metres, its colour's mean) and three DDS files: <c>colour.dds</c>
-/// (BC7 sRGB, occlusion in alpha), <c>normal.dds</c> (BC5, the normal map's x and y), <c>height.dds</c> (BC4). Sets of
+/// <c>set.json</c> (its size in texels, its width in metres, its colour's mean, and what its colour's alpha holds) and
+/// three DDS files: <c>colour.dds</c> (BC7 sRGB, occlusion in alpha, or an emission mask where <c>set.json</c>'s
+/// <c>alpha</c> is <c>emission</c>), <c>normal.dds</c> (BC5, the normal map's x and y), <c>height.dds</c> (BC4). Sets of
 /// <see cref="LargeTexels"/> go in one group of arrays, of <see cref="SmallTexels"/> in the other. <c>MeshPass</c> loads
 /// them at start and uploads them; <c>WorldMeshes</c> finds each material's set by the name its look gives.
 /// </summary>
@@ -41,6 +44,12 @@ public sealed class MaterialTextureSets
 
     /// <summary>The file names of a set's three layers, in the arrays' order.</summary>
     public static readonly string[] LayerFiles = ["colour.dds", "normal.dds", "height.dds"];
+
+    /// <summary><c>set.json</c>'s <c>alpha</c> for a colour whose alpha holds the occlusion (also when it names none).</summary>
+    public const string OcclusionAlpha = "occlusion";
+
+    /// <summary><c>set.json</c>'s <c>alpha</c> for a colour whose alpha holds an emission mask.</summary>
+    public const string EmissionAlpha = "emission";
 
     /// <summary>The formats of a set's three layers.</summary>
     public static readonly DdsFormat[] LayerFormats = [DdsFormat.Bc7Srgb, DdsFormat.Bc5, DdsFormat.Bc4];
@@ -83,7 +92,14 @@ public sealed class MaterialTextureSets
             {
                 var set = Read(Path.Combine(folder, name), name);
                 var group = set.Texels == LargeTexels ? _large : _small;
-                _slots[name] = new MaterialTextureSlot(group == _large, group.Count, set.Metres, set.Mean, set.Heights);
+                _slots[name] = new MaterialTextureSlot(
+                    group == _large,
+                    group.Count,
+                    set.Metres,
+                    set.Mean,
+                    set.Heights,
+                    set.Emission
+                );
                 group.Add(set);
             }
             catch (Exception e) when (e is IOException or InvalidDataException or JsonException)
@@ -120,6 +136,13 @@ public sealed class MaterialTextureSets
             throw new InvalidDataException("set.json needs a width in metres (0 to 100) and a mean of three values.");
         }
 
+        if (info.Alpha is not (null or OcclusionAlpha or EmissionAlpha))
+        {
+            throw new InvalidDataException(
+                $"set.json's alpha is {info.Alpha}, not {OcclusionAlpha} or {EmissionAlpha}."
+            );
+        }
+
         var files = new byte[LayerFiles.Length][];
         var heights = HeightRange.Full;
         for (var i = 0; i < files.Length; i++)
@@ -146,12 +169,13 @@ public sealed class MaterialTextureSets
         {
             Files = files,
             Heights = heights,
+            Emission = info.Alpha == EmissionAlpha,
         };
     }
 
     /// <summary>
-    /// A set read from its folder: its name, size, width, colour's mean, the range of its heights, and its three files'
-    /// bytes.
+    /// A set read from its folder: its name, size, width, colour's mean, the range of its heights, whether its colour's
+    /// alpha is an emission mask, and its three files' bytes.
     /// </summary>
     public sealed class LoadedSet(string name, int texels, float metres, Vector3 mean)
     {
@@ -165,6 +189,12 @@ public sealed class MaterialTextureSets
 
         /// <summary>The lowest and highest height the set's height layer holds (<see cref="HeightRange.Full"/> without one).</summary>
         public HeightRange Heights { get; init; } = HeightRange.Full;
+
+        /// <summary>
+        /// Whether the colour's alpha is an emission mask (where a glowing material glows, 0 to 1) in place of the
+        /// occlusion, which the set then does without.
+        /// </summary>
+        public bool Emission { get; init; }
 
         /// <summary>The DDS files of <see cref="LayerFiles"/>, until <see cref="ReleaseFiles"/>.</summary>
         public byte[][] Files { get; internal set; } = [];
@@ -180,5 +210,8 @@ public sealed class MaterialTextureSets
 
         [JsonPropertyName("mean")]
         public float[]? Mean { get; set; }
+
+        [JsonPropertyName("alpha")]
+        public string? Alpha { get; set; }
     }
 }
