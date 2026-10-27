@@ -4,9 +4,10 @@
 // cloudNoise): its gradient noise, carved into puffs by its cellular noise as the look's billow says, its edges eaten by
 // a finer read as the look's erosion says. They take the look's cloud light where little of them lies towards the sun,
 // their thick middles are darker, each puff may be lit on its sunward side and its creases darkened, a second layer
-// twice as high may show behind, and thin wisps lower down in front. They thin to none at the horizon, or past the
-// look's reach, so the fogged far ground still meets the sky. Include after view.glsl, sky.glsl, lighting.glsl, and
-// mesh-data.glsl.
+// twice as high may show behind, and thin wisps lower down in front. With the look's thickness, each cloud's column
+// rises over the plane, and the clouds low over the horizon stand as a bank of their sides. They thin to none at the
+// horizon, or past the look's reach, so the fogged far ground still meets the sky. Include after view.glsl, sky.glsl,
+// lighting.glsl, and mesh-data.glsl.
 
 // Lattice cells a tile of the clouds' noise spans: its coarsest octaves have about one feature a cell.
 const float CloudCellsPerTile = 4.0;
@@ -49,6 +50,35 @@ const float CloudFarErosion = 0.4;
 
 // The share of the look's reach where the clouds start to thin.
 const float CloudReachFadeShare = 0.3;
+
+// With the look's thickness: the steps through the slab, each at the middle of its share. Each side grows over more
+// than three steps' heights (CloudSideSoftness), so the steps show as no lines.
+const int CloudSlabSteps = 12;
+
+// With the look's thickness: the rises a unit of a ray over which the sides come in, none overhead, so the clouds
+// overhead keep their flat look and those low over the horizon stand as a bank.
+const float CloudSideFrom = 0.45;
+const float CloudSideTo = 0.25;
+
+// With the look's thickness: the power of a column's height by its share over the cover's edge, under 1 for domed tops.
+const float CloudColumnPower = 0.5;
+
+// With the look's thickness: the share of the slab's height over which a column's side grows opaque, how much of what
+// lies behind a step's side hides, how much less dark a side is at the slab's top than at its base, and how fast the
+// cloud above a side darkens it (halving its light each this share of the slab).
+const float CloudSideSoftness = 0.3;
+const float CloudSideOpacity = 0.8;
+const float CloudTopBrighten = 0.3;
+const float CloudSideShadow = 6.0;
+
+// With the look's thickness and reach: the rises a unit of a ray over which the bank of sides fades into the haze, by
+// its angle, as a fade by distance would end in an edge a degree high where the bank is dense.
+const float CloudBankFadeFrom = 0.14;
+const float CloudBankFadeTo = 0.035;
+
+// With the look's thickness: the share of the cloud light a side takes when it faces the sun, and when it faces away.
+const float CloudSideLitFacing = 0.6;
+const float CloudSideLitAway = 0.15;
 
 // The clouds' noise at the lattice point p, scale times finer, read over the pixel's footprint (dx and dy, the point's
 // change across the pixel, worked out before any pixel left the sky's shader, so every read picks its level aright).
@@ -116,6 +146,14 @@ float cloudDensity(vec2 p, vec2 dx, vec2 dy, float softness)
     return cloudCovering(cloudShapeAt(p, dx, dy, 0.0), softness);
 }
 
+// How high a cloud's column rises where its shape is shape, as a share of the slab: none at the cover's edge, all at
+// the shape's top.
+float cloudColumn(float shape)
+{
+    float edge = 1.0 - LOOK.cloudCover;
+    return pow(clamp((shape - edge) / max(1.0 - edge, 0.01), 0.0, 1.0), CloudColumnPower);
+}
+
 // The clouds' shape at the bent lattice point p, blurred over about a puff's width: read at a coarser mip level than
 // its footprint (dx and dy) picks.
 float cloudBlurredShape(vec2 p, vec2 dx, vec2 dy)
@@ -142,17 +180,19 @@ vec2 cloudLowerFrame(vec2 place)
 }
 
 // How far along a ray whose direction rises upward a unit it meets a plane rise metres over the eye: with the look's
-// reach, about where it does (CloudHorizonLift), no farther than the reach; without, softened near the horizon more,
-// as the plane would reach the view's end.
-float cloudDistance(float rise, float upward)
+// reach, about where it does (CloudHorizonLift); without, softened near the horizon more, as the plane would reach the
+// view's end.
+float cloudPlane(float rise, float upward)
 {
     rise = max(rise, 10.0);
-    if (LOOK.cloudReach > 0.0)
-    {
-        return min(rise / max(upward + CloudHorizonLift, 1e-4), LOOK.cloudReach);
-    }
+    return LOOK.cloudReach > 0.0 ? rise / max(upward + CloudHorizonLift, 1e-4) : rise / (max(upward, 0.0) + 0.1);
+}
 
-    return rise / (max(upward, 0.0) + 0.1);
+// The same, no farther than the look's reach.
+float cloudDistance(float rise, float upward)
+{
+    float t = cloudPlane(rise, upward);
+    return LOOK.cloudReach > 0.0 ? min(t, LOOK.cloudReach) : t;
 }
 
 // How much of a cloud t metres away along a ray whose direction rises upward a unit shows, before the look's opacity:
@@ -166,6 +206,51 @@ float cloudFade(float t, float upward)
     }
 
     return smoothstep(0.0, 0.3, upward);
+}
+
+// The clouds' sides a ray passes in the slab, from its warped lattice point at the base plane (entry, t0 metres along
+// it) to the one at the top plane (exit), each with its footprint: at each step, front to back until little shows
+// behind, the column rising over the ray's height hides what lies behind, darker low down and lit where little of the
+// column lies over it. Returns the colour (times its share) and the share of the sky it hides.
+vec4 cloudSides(
+    vec2 entry,
+    vec2 entryX,
+    vec2 entryY,
+    vec2 exit,
+    vec2 exitX,
+    vec2 exitY,
+    float t0,
+    float upward,
+    vec3 lit,
+    vec3 glow
+)
+{
+    vec4 sum = vec4(0.0);
+    for (int i = 0; i < CloudSlabSteps; i++)
+    {
+        float share = (float(i) + 0.5) / float(CloudSlabSteps);
+        vec2 dx = mix(entryX, exitX, share);
+        vec2 dy = mix(entryY, exitY, share);
+        float shape = cloudShape(cloudRead(mix(entry, exit, share), dx, dy, 1.0));
+        // How far the column rises over the ray here, as a share of the slab.
+        float over = cloudColumn(shape) - share;
+        float hides = smoothstep(0.0, CloudSideSoftness, over) * CloudSideOpacity;
+        if (hides > 0.0)
+        {
+            vec3 side = LOOK.cloudColour * mix(1.0, 0.55, 1.0 - CloudTopBrighten * share) + glow;
+            side += lit * exp2(-over * CloudSideShadow);
+            sum += (1.0 - sum.a) * hides * vec4(side, 1.0);
+            if (sum.a > 0.98)
+            {
+                break;
+            }
+        }
+    }
+
+    // The bank fades by its angle over the horizon with a reach, so its far edge thins smoothly into the haze, and by
+    // where the ray enters it without one.
+    float fade = LOOK.cloudReach > 0.0 ? smoothstep(CloudBankFadeTo, CloudBankFadeFrom, upward) : cloudFade(t0, upward);
+    return sum * fade * LOOK.cloudOpacity;
 }
 
 // A read's footprint (dx and dy) with its longer side drawn in to CloudMostSlant times its shorter.
@@ -184,7 +269,10 @@ vec3 skyClouds(vec3 direction, vec3 colour)
     // Where the ray meets each plane. Worked out for every pixel, with the reads' footprints, before any pixel leaves.
     float t = cloudDistance(LOOK.cloudLocalHeight - view.position.y, direction.y);
     float lowerT = cloudDistance(LOOK.cloudLowerLocalHeight - view.position.y, direction.y);
+    // The slab's top past the reach too, so a ray low over the horizon finds its heights in the slab aright.
+    float topT = cloudPlane(LOOK.cloudLocalHeight + LOOK.cloudThickness - view.position.y, direction.y);
     vec2 low = LOOK.cloudNear + cloudFrame(view.position.xz + direction.xz * t) * LOOK.cloudNearScale;
+    vec2 top = LOOK.cloudNear + cloudFrame(view.position.xz + direction.xz * topT) * LOOK.cloudNearScale;
     vec2 high = LOOK.cloudFar + cloudFrame(view.position.xz + direction.xz * (2.0 * t)) * LOOK.cloudFarScale;
     vec2 wisp = LOOK.cloudLowerNear + cloudLowerFrame(view.position.xz + direction.xz * lowerT) * LOOK.cloudLowerScale;
     vec2 lowX = dFdx(low);
@@ -193,7 +281,10 @@ vec3 skyClouds(vec3 direction, vec3 colour)
     vec2 highY = dFdy(high);
     vec2 wispX = dFdx(wisp);
     vec2 wispY = dFdy(wisp);
+    vec2 topX = dFdx(top);
+    vec2 topY = dFdy(top);
     cloudFootprint(lowX, lowY);
+    cloudFootprint(topX, topY);
     cloudFootprint(highX, highY);
     cloudFootprint(wispX, wispY);
     if (LOOK.cloudCover <= 0.0 || direction.y <= 0.0)
@@ -232,7 +323,7 @@ vec3 skyClouds(vec3 direction, vec3 colour)
         // A crease lies under its surroundings' shape, a puff's crown over it (the shape before its erosion, so the
         // eaten edges do not darken).
         float crease = clamp((cloudBlurredShape(low, lowX, lowY) - body) * CloudCreaseGain, -1.0, 1.0);
-        dark = clamp(density * (1.0 + creases * crease), 0.0, 1.5);
+        dark = clamp(dark * (1.0 + creases * crease), 0.0, 1.5);
     }
 
     vec3 cloud = LOOK.cloudColour * mix(1.0, 0.55, dark) + glow;
@@ -268,6 +359,18 @@ vec3 skyClouds(vec3 direction, vec3 colour)
             cloud *= 1.0 + 0.5 * LOOK.cloudPuffLight * lightNear * facing;
             cloud += LOOK.cloudLight * (0.4 * LOOK.cloudPuffLight * lightNear * max(facing, 0.0));
         }
+    }
+
+    // With the look's thickness, the sides beyond the base lie behind it, where the base does not hide them.
+    float sideShare = LOOK.cloudThickness > 0.0 ? 1.0 - smoothstep(CloudSideTo, CloudSideFrom, direction.y) : 0.0;
+    if (sideShare > 0.0 && density * fade < 0.99)
+    {
+        // The sides seen face the eye: lit when the sun is behind it, in their own shade when it looks towards the sun.
+        float facing = 0.5 - 0.5 * dot(normalize(direction.xz), normalize(view.sunDirection.xz + vec2(1e-5)));
+        vec3 lit = LOOK.cloudLight * lightNear * mix(CloudSideLitAway, CloudSideLitFacing, facing);
+        vec2 exit = cloudWarp(top, topX, topY);
+        vec4 sides = cloudSides(low, lowX, lowY, exit, topX, topY, t, direction.y, lit, glow) * sideShare;
+        colour = colour * (1.0 - sides.a) + sides.rgb;
     }
 
     colour = mix(colour, cloud, density * fade);

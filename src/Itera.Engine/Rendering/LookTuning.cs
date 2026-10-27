@@ -113,6 +113,11 @@ public sealed class LookTuning
         Number("CloudCreases", static l => l.CloudCreases, static (l, v) => l with { CloudCreases = v }),
         Number("CloudReachMetres", static l => l.CloudReachMetres, static (l, v) => l with { CloudReachMetres = v }),
         Number("CloudLower", static l => l.CloudLower, static (l, v) => l with { CloudLower = v }),
+        Number(
+            "CloudThicknessMetres",
+            static l => l.CloudThicknessMetres,
+            static (l, v) => l with { CloudThicknessMetres = v }
+        ),
         Number("Exposure", static l => l.Exposure, static (l, v) => l with { Exposure = v }),
         Number("GradeDesaturate", static l => l.GradeDesaturate, static (l, v) => l with { GradeDesaturate = v }),
         Number("GradeDarken", static l => l.GradeDarken, static (l, v) => l with { GradeDarken = v }),

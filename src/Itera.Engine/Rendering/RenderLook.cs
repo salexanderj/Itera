@@ -303,6 +303,13 @@ public readonly record struct RenderLook
     /// </summary>
     public float CloudLower { get; init; }
 
+    /// <summary>
+    /// How thick the clouds are, in metres over their height: each cloud's column rises with its shape, flat at its base
+    /// and domed on top, so the clouds low over the horizon stand as a bank of their sides instead of flat slivers,
+    /// darker low down and lit near their tops. Overhead they keep their flat look. 0, the default: a flat layer.
+    /// </summary>
+    public float CloudThicknessMetres { get; init; }
+
     /// <summary>The light's multiple before the tone curve: higher is brighter.</summary>
     public float Exposure { get; init; } = 0.8f;
 

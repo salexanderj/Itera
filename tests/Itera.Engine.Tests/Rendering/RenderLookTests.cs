@@ -421,7 +421,7 @@ public sealed class RenderLookTests
     /// <summary>
     /// The lower wisps lie at their share of the clouds' height, drawn out more along the clouds' heading, and drift
     /// faster; their lattice point of a place in the world is the same whatever the origin. The puffs', creases', reach's,
-    /// and wisps' values are off by default and clamped.
+    /// wisps', and thickness's values are off by default and clamped.
     /// </summary>
     [Fact]
     public void The_lower_wisps_lie_lower_and_drift_faster_and_the_depth_values_are_off_by_default()
@@ -465,7 +465,10 @@ public sealed class RenderLookTests
         );
 
         var plain = LookConstants.From(RenderLook.Default, in near);
-        Assert.Equal((0f, 0f, 0f, 0f), (plain.CloudPuffLight, plain.CloudCreases, plain.CloudReach, plain.CloudLower));
+        Assert.Equal(
+            (0f, 0f, 0f, 0f, 0f),
+            (plain.CloudPuffLight, plain.CloudCreases, plain.CloudReach, plain.CloudLower, plain.CloudThickness)
+        );
         var clamped = LookConstants.From(
             look with
             {
@@ -473,12 +476,19 @@ public sealed class RenderLookTests
                 CloudCreases = -2,
                 CloudReachMetres = -5,
                 CloudLower = 3,
+                CloudThicknessMetres = -100,
             },
             in near
         );
         Assert.Equal(
-            (0f, 0f, 0f, 1f),
-            (clamped.CloudPuffLight, clamped.CloudCreases, clamped.CloudReach, clamped.CloudLower)
+            (0f, 0f, 0f, 1f, 0f),
+            (
+                clamped.CloudPuffLight,
+                clamped.CloudCreases,
+                clamped.CloudReach,
+                clamped.CloudLower,
+                clamped.CloudThickness
+            )
         );
     }
 

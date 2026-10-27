@@ -42,7 +42,7 @@ absolute place.
   radius.
 - The clouds: their cover, colour, opacity, scale, stretch, heading, height, drift, warp, light, ridge and billow
   shares, edge softness and erosion, shading by their thickness towards the sun, their puffs' light, their creases,
-  their reach, and how much a second layer and the lower wisps show.
+  their reach, their thickness in metres, and how much a second layer and the lower wisps show.
 - The exposure, the grade's desaturation and darkening, and the split tone's tints and bounds.
 
 The edge light, the glow, the clouds, the ground haze, the hue's wandering, the lobe, the darkening away from the sun,
@@ -86,6 +86,13 @@ the horizon band, the haze's start and cap, and the lights' halos are off in `Re
 - With a reach, clouds low over the horizon take a far look by the ray's angle (`CloudFarFrom`, `CloudFarTo`): less
   light, erosion, and upper layer, no creases, and crisper edges. Seen at a slant, those details are only streaks,
   smudges, and lines of light.
+- With the look's thickness, each cloud is a column over the plane, as high as its shape is over the cover's edge
+  (`cloudColumn`), domed on top. Where the flat base does not hide the sky, `cloudSides` steps through the slab
+  (`CloudSlabSteps`) to the top plane, found past the reach (`cloudPlane`). Each column rising over the ray hides
+  what lies behind, front to back.
+- A side is darker low down, lit where little of its column lies over it, and lit more when the sun is behind the
+  eye. The sides come in only low over the horizon (`CloudSideFrom`, `CloudSideTo`), so the clouds overhead keep
+  their flat look. The bank fades by its angle (`CloudBankFadeFrom`, `CloudBankFadeTo`).
 - The haze's density along a ray is `hazeDensity` in `lighting.glsl`, with the ground haze averaged between the eye's
   height and the surface's. `hazeOver` applies the haze's start and cap.
 - `fogAt(vec3, float)` gives the share of a surface lost as one colour, for what fades with the fog (the particles'

@@ -214,6 +214,9 @@ public struct LookConstants
     /// <summary>The lower wisps' stretch along the clouds' heading: the clouds' times <see cref="LowerCloudStretch"/>.</summary>
     public float CloudLowerStretch;
 
+    /// <summary>The look's cloud thickness in metres, at least 0: 0 draws a flat layer.</summary>
+    public float CloudThickness;
+
     private static readonly Vector3 s_luma = new(0.2126f, 0.7152f, 0.0722f);
 
     /// <summary>The most of the frame's brightest point lights that have a halo in the air.</summary>
@@ -365,6 +368,7 @@ public struct LookConstants
             CloudLowerScale = lowerScale,
             CloudLowerLocalHeight = lowerHeight - (float)(view.OriginY / perMetre),
             CloudLowerStretch = lowerStretch,
+            CloudThickness = MathF.Max(look.CloudThicknessMetres, 0),
         };
     }
 
