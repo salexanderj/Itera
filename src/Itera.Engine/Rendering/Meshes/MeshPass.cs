@@ -90,7 +90,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
 
     /// <summary>The wireframe's depth bias as a share of the face's depth slope: more for faces seen edge-on.</summary>
     private const float WireBiasSlope = 1.5f;
-    private const int Bindings = 19;
+    private const int Bindings = 20;
     private const int ShadowMapBinding = 5;
     private const int SkyFieldBinding = 8;
 
@@ -103,8 +103,14 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     /// <summary>The plane noise's tables (<see cref="NoiseTables"/>), after the look.</summary>
     private const int NoiseTablesBinding = 18;
 
-    /// <summary>Bindings of images: the maps, the sky field, the maps as depths, the texture arrays, the noise tables.</summary>
-    private const int ImageBindings = 3 + TextureArrays + 1;
+    /// <summary>The clouds' noise (<see cref="CloudNoise"/>), after the tables.</summary>
+    private const int CloudNoiseBinding = 19;
+
+    /// <summary>
+    /// Bindings of images: the maps, the sky field, the maps as depths, the texture arrays, the noise tables, the clouds'
+    /// noise.
+    /// </summary>
+    private const int ImageBindings = 3 + TextureArrays + 2;
 
     /// <summary>
     /// The view's clusters of lights (<c>mesh-data.glsl</c>'s MESH_CLUSTER_*): 16 x 9 tiles by 24 slices, each a count and
@@ -1609,7 +1615,8 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         // tint map at their fixed places (multiples of 256 bytes, and so of any storage buffer alignment), the cascades'
         // records of every slot, the cascades' maps (an image), the model draws of every slot, the point lights of every
         // slot, the sky field (an image), the cascades' maps again, read as depths, the light clusters of every slot, the
-        // six arrays of the materials' texture sets (images), the looks of every slot, and the noise tables (an image).
+        // six arrays of the materials' texture sets (images), the looks of every slot, the noise tables (an image), and the
+        // clouds' noise (an image).
         var infos = stackalloc DescriptorBufferInfo[FirstTextureBinding]
         {
             new(Heap.Buffer, 0, Vk.WholeSize),
@@ -1635,6 +1642,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
         }
 
         images[3 + TextureArrays] = new(_noiseSampler, NoiseImage.View, ImageLayout.ShaderReadOnlyOptimal);
+        images[4 + TextureArrays] = new(_cloudSampler, CloudImage.View, ImageLayout.ShaderReadOnlyOptimal);
 
         var writes = stackalloc WriteDescriptorSet[Bindings];
         for (var i = 0; i < Bindings; i++)
@@ -1655,6 +1663,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
                     : i == SkyFieldBinding ? &images[1]
                     : i == ShadowDepthBinding ? &images[2]
                     : i == NoiseTablesBinding ? &images[3 + TextureArrays]
+                    : i == CloudNoiseBinding ? &images[4 + TextureArrays]
                     : TypeOf(i) == DescriptorType.CombinedImageSampler ? &images[3 + i - FirstTextureBinding]
                     : null,
             };
@@ -1666,7 +1675,7 @@ public sealed unsafe partial class MeshPass : IDisposable, IReloadsShaders, IMes
     }
 
     private static DescriptorType TypeOf(int binding) =>
-        binding is ShadowMapBinding or SkyFieldBinding or ShadowDepthBinding or NoiseTablesBinding
+        binding is ShadowMapBinding or SkyFieldBinding or ShadowDepthBinding or NoiseTablesBinding or CloudNoiseBinding
         || (binding >= FirstTextureBinding && binding < FirstTextureBinding + TextureArrays)
             ? DescriptorType.CombinedImageSampler
             : DescriptorType.StorageBuffer;

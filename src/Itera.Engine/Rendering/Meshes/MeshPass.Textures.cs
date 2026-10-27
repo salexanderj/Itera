@@ -12,7 +12,8 @@ namespace Itera.Engine.Rendering.Meshes;
 /// no set has a 4-texel stand-in. <see cref="Initialize"/> reads the sets and copies their levels into an upload buffer;
 /// the first frame the pass records copies them into the arrays, and the buffer goes once no frame in flight can read it.
 /// Linear between texels and levels, repeating; anisotropic up to 16 times for the colours and 8 for the normals and
-/// heights where the device can. The plane noise's tables (<see cref="NoiseTables"/>, binding 18) go up with them.
+/// heights where the device can. The plane noise's tables (<see cref="NoiseTables"/>, binding 18) and the clouds' noise
+/// (<see cref="CloudNoise"/>, binding 19) go up with them.
 /// </summary>
 public sealed unsafe partial class MeshPass
 {
@@ -32,6 +33,9 @@ public sealed unsafe partial class MeshPass
     private Sampler _noiseSampler;
     private GpuImage? _noiseTables;
     private BufferImageCopy[] _noiseCopies = [];
+    private Sampler _cloudSampler;
+    private GpuImage? _cloudNoise;
+    private BufferImageCopy[] _cloudCopies = [];
     private bool _texturesRecorded;
     private int _uploadFramesLeft;
 
@@ -60,7 +64,7 @@ public sealed unsafe partial class MeshPass
         }
 
         _textureUpload = _allocator.CreateBuffer(
-            bytes + NoiseTables.Bytes,
+            bytes + NoiseTables.Bytes + (ulong)CloudNoise.Bytes,
             BufferUsageFlags.TransferSrcBit,
             MemoryUsage.Upload,
             "material texture upload"
@@ -119,6 +123,7 @@ public sealed unsafe partial class MeshPass
         }
 
         CreateNoiseTables(offset);
+        CreateCloudNoise(offset + NoiseTables.Bytes);
         _textureUpload.Flush(0, _textureUpload.Size);
         LogTextureSets(sets.Large.Count, sets.Small.Count, bytes / (1024.0 * 1024.0));
         sets.ReleaseFiles();
@@ -154,6 +159,32 @@ public sealed unsafe partial class MeshPass
         }
     }
 
+    /// <summary>The clouds' noise: made into the upload buffer at <paramref name="offset"/>, a copy a level.</summary>
+    private void CreateCloudNoise(ulong offset)
+    {
+        const uint Texels = CloudNoise.Texels;
+        _cloudNoise = _allocator.CreateImage(
+            Format.R8G8B8A8Unorm,
+            new Extent2D(Texels, Texels),
+            ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
+            ImageAspectFlags.ColorBit,
+            "cloud noise",
+            mips: CloudNoise.Mips
+        );
+        CloudNoise.Write(new Span<byte>(TextureUpload.Mapped + offset, CloudNoise.Bytes));
+        _cloudCopies = new BufferImageCopy[CloudNoise.Mips];
+        for (var mip = 0; mip < CloudNoise.Mips; mip++)
+        {
+            var side = (uint)CloudNoise.SideOf(mip);
+            _cloudCopies[mip] = new BufferImageCopy
+            {
+                BufferOffset = offset + (ulong)CloudNoise.OffsetOf(mip),
+                ImageSubresource = new ImageSubresourceLayers(ImageAspectFlags.ColorBit, (uint)mip, 0, 1),
+                ImageExtent = new Extent3D(side, side, 1),
+            };
+        }
+    }
+
     private static Format VulkanFormat(DdsFormat format) =>
         format switch
         {
@@ -166,12 +197,14 @@ public sealed unsafe partial class MeshPass
     /// The sets' samplers: linear between texels and mip levels, repeating, anisotropic where the device can, up to 16
     /// times for the colours and 8 for the normals and heights (8 is up to 0.25 ms quicker looking along the ground;
     /// docs/rendering-redesign.md; the relief takes the difference least). And the noise tables' sampler, which only
-    /// gathers: nearest, repeating.
+    /// gathers: nearest, repeating. The clouds' noise takes a set's sampler, anisotropic up to 8 times, as the sky near the
+    /// horizon reads it at a slant.
     /// </summary>
     private void CreateTextureSampler()
     {
         _textureSampler = CreateSetSampler(16f, "material textures");
         _reliefSampler = CreateSetSampler(8f, "material normals and heights");
+        _cloudSampler = CreateSetSampler(8f, "cloud noise");
         var info = new SamplerCreateInfo
         {
             SType = StructureType.SamplerCreateInfo,
@@ -272,6 +305,23 @@ public sealed unsafe partial class MeshPass
 
         TextureBarrier(commandBuffer, noise, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
         _noiseCopies = [];
+
+        var clouds = CloudImage;
+        TextureBarrier(commandBuffer, clouds, ImageLayout.Undefined, ImageLayout.TransferDstOptimal);
+        fixed (BufferImageCopy* regions = _cloudCopies)
+        {
+            _context.Vk.CmdCopyBufferToImage(
+                commandBuffer,
+                TextureUpload.Buffer,
+                clouds.Image,
+                ImageLayout.TransferDstOptimal,
+                (uint)_cloudCopies.Length,
+                regions
+            );
+        }
+
+        TextureBarrier(commandBuffer, clouds, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal);
+        _cloudCopies = [];
     }
 
     /// <summary>Moves every level and layer of <paramref name="image"/> from <paramref name="from"/> to <paramref name="to"/>.</summary>
@@ -302,10 +352,12 @@ public sealed unsafe partial class MeshPass
         _context.Vk.CmdPipelineBarrier2(commandBuffer, &dependency);
     }
 
-    /// <summary>Destroys the samplers, the arrays, the noise tables, and the upload buffer if it is still there.</summary>
+    /// <summary>
+    /// Destroys the samplers, the arrays, the noise tables, the clouds' noise, and the upload buffer if it is still there.
+    /// </summary>
     private void DestroyTextures()
     {
-        foreach (var sampler in (ReadOnlySpan<Sampler>)[_textureSampler, _reliefSampler, _noiseSampler])
+        foreach (var sampler in (ReadOnlySpan<Sampler>)[_textureSampler, _reliefSampler, _noiseSampler, _cloudSampler])
         {
             if (!_context.IsAbandoned && sampler.Handle != 0)
             {
@@ -316,8 +368,11 @@ public sealed unsafe partial class MeshPass
         _textureSampler = default;
         _reliefSampler = default;
         _noiseSampler = default;
+        _cloudSampler = default;
         _noiseTables?.Dispose();
         _noiseTables = null;
+        _cloudNoise?.Dispose();
+        _cloudNoise = null;
         for (var i = 0; i < TextureArrays; i++)
         {
             _textureArrays[i]?.Dispose();
@@ -331,6 +386,8 @@ public sealed unsafe partial class MeshPass
     private GpuImage TextureArray(int array) => _textureArrays[array] ?? throw NotInitialised();
 
     private GpuImage NoiseImage => _noiseTables ?? throw NotInitialised();
+
+    private GpuImage CloudImage => _cloudNoise ?? throw NotInitialised();
 
     private GpuBuffer TextureUpload => _textureUpload ?? throw NotInitialised();
 

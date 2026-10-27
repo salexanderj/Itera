@@ -3,7 +3,9 @@ paths:
   - "src/Itera.Engine/Rendering/{RenderLook,LookTuning,Atmosphere,SunPath,HazeGlow}.cs"
   - "src/Itera.Engine/Rendering/GpuData/LookConstants.cs"
   - "src/Itera.Engine/Rendering/Shaders/{look.glsl,clouds.glsl}"
+  - "src/Itera.Engine/Rendering/Meshes/CloudNoise.cs"
   - "tests/Itera.Engine.Tests/Rendering/{RenderLookTests,SunPathTests,RenderViewTests}.cs"
+  - "tests/Itera.Engine.Tests/Rendering/Meshes/CloudNoiseTests.cs"
 ---
 
 ## The look, the sun, and the atmosphere
@@ -53,16 +55,21 @@ the horizon band, the haze's start and cap, and the lights' halos are off in `Re
   towards the sun too.
 - The lobe, the darkening, and the horizon band are part of `skyColour` too, so the haze takes them.
 - The clouds are drawn by the sky's own pass alone (`skyClouds` in `clouds.glsl`, which only `world-sky.frag`
-  includes): value noise from the noise tables (binding 18, `rendering-materials.md`) on a plane at the look's cloud
-  height in the world. So they stay over the land as the eye moves, and drift along their heading by the run's clock.
-- The CPU works out the clouds' lattice point at the origin, less the drift, wrapped to four times the tables' period
-  (`LookConstants`' `CloudNear` and `CloudFar`), so the point keeps its precision at any place or time. Each octave
-  turns 45 degrees and grows by the square root of two, which keeps whole lattice points whole, and the warp runs at a
-  quarter scale, so the noise repeats at that period too.
-- The look's warp bends the clouds, its billow share rounds them into lobes, its ridge share thins them to wisps, its
-  softness sets their edges, and its erosion makes the edges ragged.
-- With the look's cloud shadow, two samples of the coarse shape towards the sun shade each point: the cloud light
-  where little lies sunwards, dark cores and far sides. Without it, edges facing the sun take the cloud light.
+  includes), on a plane at the look's cloud height in the world. So they stay over the land as the eye moves, and drift
+  along their heading by the run's clock.
+- Their shape is the clouds' noise (`CloudNoise`, binding 19): a tileable RGBA texture made on the CPU when the pass
+  starts, gradient noise in red and cellular noise turned inside out at three scales in the rest. A tile spans four
+  lattice cells (`CloudCellsPerTile`).
+- The look's billow share carves the gradient noise by the cellular noise into rounded puffs, its ridge share thins it
+  to wisps, its softness sets the edges, and its erosion eats them with a five times finer read. The warp is a read at
+  a quarter scale.
+- Each read takes the pixel's footprint from derivatives found before any pixel leaves the shader (`textureGrad`), so
+  the reads pick their mip levels aright at the horizon.
+- The CPU works out the clouds' lattice point at the origin, less the drift, wrapped to 4,096 cells (`LookConstants`'
+  `CloudNear` and `CloudFar`), a whole number of every read's tiles, so the point keeps its precision at any place or
+  time.
+- With the look's cloud shadow, three samples of the shape towards the sun shade each point: the cloud light where
+  little lies sunwards, dark cores and far sides. Without it, edges facing the sun take the cloud light.
 - A second layer twice as high, larger to the eye, may show behind.
 - The clouds thin to none at the horizon, so the fogged far ground still meets the sky.
 - The haze's density along a ray is `hazeDensity` in `lighting.glsl`, with the ground haze averaged between the eye's
@@ -139,4 +146,4 @@ an absolute place, a colour, and a radius).
 
 ### Tests
 
-`RenderLookTests`, `SunPathTests`, and `RenderViewTests`.
+`RenderLookTests`, `SunPathTests`, `RenderViewTests`, and `CloudNoiseTests`.

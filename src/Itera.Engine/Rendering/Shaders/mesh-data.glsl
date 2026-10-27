@@ -172,7 +172,12 @@ layout(set = MESH_SET, binding = 18) uniform sampler2DArray noiseTables;
 const int NoiseTableCells = 1024;
 
 // The layers: the surfaces' patches (2^10 cm cells, salt 1), the strata's wander (2^11, salt 4), the hue drift (2^11,
-// salt 41). The sky's clouds read all three at their own scale (clouds.glsl).
+// salt 41).
+
+// The clouds' noise (MeshPass.Textures.cs, CloudNoise): a tileable RGBA texture with every mip level, read by clouds.glsl.
+// Red: gradient noise at 4, 8, and 16 cells a tile. Green, blue, alpha: cellular noise turned inside out (high at each
+// cell's point), three octaves each from 4, 8, and 16 cells a tile. Linear, repeating.
+layout(set = MESH_SET, binding = 19) uniform sampler2D cloudNoise;
 const float NoisePatches = 0.0;
 const float NoiseStrata = 1.0;
 const float NoiseHueDrift = 2.0;

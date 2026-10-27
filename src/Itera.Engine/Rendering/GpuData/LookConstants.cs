@@ -150,8 +150,7 @@ public struct LookConstants
 
     /// <summary>
     /// The lower clouds' lattice point at the origin, moved back by their drift so far: along their heading (stretched)
-    /// and across it, each wrapped to four times the noise tables' period (<see cref="Meshes.NoiseTables.Cells"/>), where
-    /// the clouds' noise repeats.
+    /// and across it, each wrapped to 4,096 cells, where the clouds' noise repeats.
     /// </summary>
     public Vector2 CloudNear;
 
@@ -323,8 +322,9 @@ public struct LookConstants
     // the clouds' noise repeats at, so the point keeps its precision over any time or place.
     private static Vector2 CloudLattice(double along, double across, float scale)
     {
-        // The warp's noise runs at a quarter of the lattice's scale, so the clouds repeat at four times the tables' period.
-        const double Period = 4 * Meshes.NoiseTables.Cells;
+        // A tile of the clouds' noise spans 4 cells, its slowest read (the warp) 16, its finest (the erosion) 0.8: 4,096
+        // cells is a whole number of each, so the clouds repeat there.
+        const double Period = 4096;
         var x = along * scale;
         var y = across * scale;
         return new Vector2((float)(x - Period * Math.Floor(x / Period)), (float)(y - Period * Math.Floor(y / Period)));
