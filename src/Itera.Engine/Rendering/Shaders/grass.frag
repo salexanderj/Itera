@@ -1,9 +1,8 @@
 #version 460
 
 // The grass's blades (GrassDrawPass), lit as the ground is but cheaply: the sun through one filtered lookup
-// of the shadow cascade that holds the pixel (the ground takes 24 in the near one) and the look's clouds' shadow, near
-// and far blades alike, the sky and ground light scaled by how much of the sky the air there sees (the sky field), no
-// point lights, then the air, the tone curve, the grade, the
+// of the shadow cascade that holds the pixel (the ground takes 24 in the near one), the sky and ground light scaled by
+// how much of the sky the air there sees (the sky field), no point lights, then the air, the tone curve, the grade, the
 // split tone, and the dither as mesh-shade.glsl's shadeSurface gives every surface of the world, so the blades sit in the
 // ground's light. Opaque: it writes depth and discards nothing, so the depth test runs before it shades.
 #include "view.glsl"
@@ -13,7 +12,6 @@
 #include "mesh-data.glsl"
 #include "mesh-light.glsl"
 #include "light-halos.glsl"
-#include "cloud-shape.glsl"
 
 layout(location = 0) in vec3 inOffset;
 layout(location = 1) in vec3 inColour;
@@ -30,7 +28,6 @@ void main()
     vec3 ground = normalize(inGround);
     float depth = dot(inOffset, view.forward);
     float shadow = inLight.x >= 0.0 ? inLight.x : sunShadowOnce(view.slot, world, ground, viewCascadeDepth(depth));
-    shadow *= cloudGroundShadow(world);
     float sunlight = max(dot(normal, view.sunDirection), 0.0) * shadow;
     float sky = max(inLight.y >= 0.0 ? inLight.y : skyVisibility(view.slot, world, ground), LOOK.skyFloor);
     vec3 light = LOOK.sunLight * sunlight + ambientLight(normal, 1.0) * LOOK.shadeCool * sky;

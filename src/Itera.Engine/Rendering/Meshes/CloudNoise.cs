@@ -2,9 +2,8 @@ namespace Itera.Engine.Rendering.Meshes;
 
 /// <summary>
 /// The clouds' noise as a tileable texture (binding 19 of the mesh set, <c>mesh-data.glsl</c>'s <c>cloudNoise</c>; read
-/// by <c>cloud-shape.glsl</c> and <c>clouds.glsl</c>): RGBA8, <see cref="Texels"/> a side, with every mip level, made on
-/// the CPU when the pass starts. Red is gradient noise, five octaves from 4 to 64 cells a tile, for the clouds' shape down
-/// to a sixteenth of a cell. Green, blue, and alpha
+/// by <c>clouds.glsl</c>): RGBA8, <see cref="Texels"/> a side, with every mip level, made on the CPU when the pass starts.
+/// Red is gradient noise, three octaves at 4, 8, and 16 cells a tile, for the clouds' soft shape. Green, blue, and alpha
 /// are cellular (Worley) noise turned inside out, high at each cell's point and low between, each three octaves, from 4,
 /// 8, and 16 cells a tile: puffs that rounded clouds are made of, and the finer ones eat their edges. Every octave's
 /// lattice repeats at the tile, so the texture tiles.
@@ -12,10 +11,10 @@ namespace Itera.Engine.Rendering.Meshes;
 internal static class CloudNoise
 {
     /// <summary>Texels along each side of the largest level.</summary>
-    public const int Texels = 512;
+    public const int Texels = 256;
 
     /// <summary>The mip levels, down to one texel.</summary>
-    public const int Mips = 10;
+    public const int Mips = 9;
 
     /// <summary>Bytes of every level, four a texel, level after level.</summary>
     public static int Bytes { get; } = BytesOf(Mips);
@@ -64,15 +63,10 @@ internal static class CloudNoise
                 cells[octave] = (float)(1 - Worley(u, v, 4 << octave, 101 + (uint)octave));
             }
 
-            var gradient =
-                0.5 * Gradient(u, v, 4, 11)
-                + 0.25 * Gradient(u, v, 8, 12)
-                + 0.125 * Gradient(u, v, 16, 13)
-                + 0.0625 * Gradient(u, v, 32, 14)
-                + 0.03125 * Gradient(u, v, 64, 15);
+            var gradient = 0.5 * Gradient(u, v, 4, 11) + 0.25 * Gradient(u, v, 8, 12) + 0.125 * Gradient(u, v, 16, 13);
             var at = (z * Texels + x) * 4;
-            // Gradient noise peaks near 0.7 either way: five octaves summed to 0.97 at most, stretched to 0 to 1.
-            level[at] = (float)(0.5 + gradient / 0.96875 * 0.75);
+            // Gradient noise peaks near 0.7 either way: three octaves summed to 0.875 at most, stretched to 0 to 1.
+            level[at] = (float)(0.5 + gradient / 0.875 * 0.75);
             level[at + 1] = (float)(0.625 * cells[0] + 0.25 * cells[1] + 0.125 * cells[2]);
             level[at + 2] = (float)(0.625 * cells[1] + 0.25 * cells[2] + 0.125 * cells[3]);
             level[at + 3] = (float)(0.625 * cells[2] + 0.25 * cells[3] + 0.125 * cells[4]);

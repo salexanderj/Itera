@@ -8,7 +8,6 @@
 #include "lighting.glsl"
 #include "mesh-data.glsl"
 #include "light-halos.glsl"
-#include "cloud-shape.glsl"
 #include "clouds.glsl"
 
 layout(location = 0) in vec2 inNdc;

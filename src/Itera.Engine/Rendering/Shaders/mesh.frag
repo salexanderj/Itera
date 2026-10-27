@@ -12,7 +12,6 @@
 #include "mesh-light.glsl"
 #include "light-halos.glsl"
 #include "mesh-surface.glsl"
-#include "cloud-shape.glsl"
 #include "mesh-shade.glsl"
 
 // mesh.vert's outputs: the offset from the camera with the openness, the normal, and the material with the tint's bits

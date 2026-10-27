@@ -190,11 +190,11 @@ public struct LookConstants
     /// <summary>The look's shading of the clouds by their thickness towards the sun, at least 0.</summary>
     public float CloudShadow;
 
-    /// <summary>The clouds' haze a metre: the look's share of the atmosphere's, at least 0.</summary>
-    public float CloudHazePerMetre;
+    /// <summary>The look's light of each puff by the shape sunwards, at least 0.</summary>
+    public float CloudPuffLight;
 
-    /// <summary>How much the clouds' sunlight depends on the view against the sun, 0 to 1.</summary>
-    public float CloudPhase;
+    /// <summary>The look's darkening of the creases between puffs, at least 0.</summary>
+    public float CloudCreases;
 
     /// <summary>The look's reach of the clouds in metres, at least 0: 0 thins them by their angle over the horizon.</summary>
     public float CloudReach;
@@ -217,15 +217,6 @@ public struct LookConstants
     /// <summary>The look's cloud thickness in metres, at least 0: 0 draws a flat layer.</summary>
     public float CloudThickness;
 
-    /// <summary>How much of the sunlight a thick cloud takes from what lies under it, 0 to 1.</summary>
-    public float CloudGroundShadow;
-
-    /// <summary>
-    /// The brightest a cloud may be, as a luma: <see cref="CloudSunShare"/> of the sky's towards the sun, with its disc and
-    /// glow; with no daylight, the largest float, so none is dimmed.
-    /// </summary>
-    public float CloudBrightest;
-
     private static readonly Vector3 s_luma = new(0.2126f, 0.7152f, 0.0722f);
 
     /// <summary>The most of the frame's brightest point lights that have a halo in the air.</summary>
@@ -236,9 +227,6 @@ public struct LookConstants
 
     /// <summary>The lower wisps' height as a share of the clouds'.</summary>
     public const float LowerCloudHeightShare = 0.6f;
-
-    /// <summary>The share of the sky's brightness towards the sun, with its disc, that no cloud passes.</summary>
-    public const float CloudSunShare = 0.8f;
 
     /// <summary>The lower wisps' drift as a multiple of the clouds'.</summary>
     public const float LowerCloudDrift = 1.5f;
@@ -276,7 +264,6 @@ public struct LookConstants
         var heading = look.CloudHeadingDegrees * MathF.PI / 180;
         var skyLight = view.SkyHorizon * look.SkyLightShare * (1 + overcast);
         var fade = Vector3.Max(look.HazeColourFade, Vector3.Zero);
-        var hazePerMetre = haze / look.HazeHalfMetres;
         var count = Math.Min(glows.Length, HazeGlow.Most);
         var alongX = MathF.Sin(heading);
         var alongZ = -MathF.Cos(heading);
@@ -297,7 +284,7 @@ public struct LookConstants
         var lowerAlong =
             (originX * alongX + originZ * alongZ - look.CloudDriftMetresPerSecond * LowerCloudDrift * seconds)
             / lowerStretch;
-        var constants = new LookConstants
+        return new LookConstants
         {
             SunLight = view.SunColour * look.SunWarmth * daylight,
             WorldSaturation = look.WorldSaturation,
@@ -325,7 +312,7 @@ public struct LookConstants
             SkyFloor = look.SkyFloor,
             GlowStrength = look.GlowStrength,
             FogStart = look.FogStart,
-            HazePerMetre = hazePerMetre,
+            HazePerMetre = haze / look.HazeHalfMetres,
             Exposure = look.Exposure,
             Daylight = daylight,
             SunGlow = view.SunColour * look.SunGlowStrength * daylight,
@@ -373,8 +360,8 @@ public struct LookConstants
             CloudBillow = Math.Clamp(look.CloudBillow, 0, 1),
             CloudErosion = Math.Clamp(look.CloudErosion, 0, 1),
             CloudShadow = MathF.Max(look.CloudShadow, 0),
-            CloudHazePerMetre = hazePerMetre * Math.Clamp(look.CloudHaze, 0, 1),
-            CloudPhase = Math.Clamp(look.CloudPhase, 0, 1),
+            CloudPuffLight = MathF.Max(look.CloudPuffLight, 0),
+            CloudCreases = MathF.Max(look.CloudCreases, 0),
             CloudReach = MathF.Max(look.CloudReachMetres, 0),
             CloudLower = Math.Clamp(look.CloudLower, 0, 1),
             CloudLowerNear = CloudLattice(lowerAlong, across, lowerScale),
@@ -382,33 +369,14 @@ public struct LookConstants
             CloudLowerLocalHeight = lowerHeight - (float)(view.OriginY / perMetre),
             CloudLowerStretch = lowerStretch,
             CloudThickness = MathF.Max(look.CloudThicknessMetres, 0),
-            CloudGroundShadow = Math.Clamp(look.CloudGroundShadow, 0, 1),
         };
-        constants.CloudBrightest =
-            daylight > 0 ? CloudSunShare * Vector3.Dot(SkyAtSun(in constants, in view), s_luma) : float.MaxValue;
-        return constants;
-    }
-
-    /// <summary>
-    /// The sky's colour towards the sun, as <c>sky.glsl</c>'s <c>skyColour</c> works it out from the record: the gradient
-    /// from the horizon, the horizon band, the light towards the sun, the sun's disc, and its glow.
-    /// </summary>
-    private static Vector3 SkyAtSun(in LookConstants constants, in ViewConstants view)
-    {
-        var up = view.SunDirection.Y;
-        var sky =
-            up >= 0
-                ? Vector3.Lerp(view.SkyHorizon, constants.Zenith, MathF.Pow(up, constants.ZenithPower))
-                : Vector3.Lerp(view.SkyHorizon, constants.Below, MathF.Sqrt(-up));
-        sky += constants.HorizonBand * MathF.Pow(2, -MathF.Abs(up) * constants.HorizonBandFalloff);
-        return sky + constants.SkyLobe + constants.SunDisc + constants.SunGlow;
     }
 
     // The lattice point of metres along and across the clouds' frame at scale cells a metre, each wrapped to the period
     // the clouds' noise repeats at, so the point keeps its precision over any time or place.
     private static Vector2 CloudLattice(double along, double across, float scale)
     {
-        // A tile of the clouds' noise spans 4 cells, its slowest read (the warp) 16, its finest (the erosion) 4/3: 4,096
+        // A tile of the clouds' noise spans 4 cells, its slowest read (the warp) 16, its finest (the erosion) 0.8: 4,096
         // cells is a whole number of each, so the clouds repeat there.
         const double Period = 4096;
         var x = along * scale;

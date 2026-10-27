@@ -2,16 +2,17 @@
 paths:
   - "src/Itera.Engine/Rendering/{RenderLook,LookTuning,Atmosphere,SunPath,HazeGlow}.cs"
   - "src/Itera.Engine/Rendering/GpuData/LookConstants.cs"
-  - "src/Itera.Engine/Rendering/Shaders/look.glsl"
+  - "src/Itera.Engine/Rendering/Shaders/{look.glsl,clouds.glsl}"
+  - "src/Itera.Engine/Rendering/Meshes/CloudNoise.cs"
   - "tests/Itera.Engine.Tests/Rendering/{RenderLookTests,SunPathTests,RenderViewTests}.cs"
+  - "tests/Itera.Engine.Tests/Rendering/Meshes/CloudNoiseTests.cs"
 ---
 
 ## The look, the sun, and the atmosphere
 
 The look and the sun are data a game sets. The shaders read them from a per-slot record. Related files: `rendering.md`
-(the core), `rendering-light.md` (the passes that use them), `rendering-materials.md` (the surfaces),
-`rendering-clouds.md` (the clouds), and `docs/rendering-extension.md` (what a game can change, and the choices offered
-for each).
+(the core), `rendering-light.md` (the passes that use them), `rendering-materials.md` (the surfaces), and
+`docs/rendering-extension.md` (what a game can change, and the choices offered for each).
 
 ### Where they come from
 
@@ -40,9 +41,8 @@ absolute place.
 - The point lights' halos in the air: their strength, how many of the frame's brightest lights have one, and their
   radius.
 - The clouds: their cover, colour, opacity, scale, stretch, heading, height, drift, warp, light, ridge and billow
-  shares, edge softness and erosion, and shading by their thickness towards the sun. Also their share of the haze, how
-  much their light depends on the view against the sun, their reach, their thickness in metres, their shadow on the
-  ground, and how much a second layer and the lower wisps show.
+  shares, edge softness and erosion, shading by their thickness towards the sun, their puffs' light, their creases,
+  their reach, their thickness in metres, and how much a second layer and the lower wisps show.
 - The exposure, the grade's desaturation and darkening, and the split tone's tints and bounds.
 
 The edge light, the glow, the clouds, the ground haze, the hue's wandering, the lobe, the darkening away from the sun,
@@ -55,7 +55,44 @@ the horizon band, the haze's start and cap, and the lights' halos are off in `Re
 - The glow is part of `skyColour` in `sky.glsl`. The fog takes the sky's colour behind a surface, so the haze glows
   towards the sun too.
 - The lobe, the darkening, and the horizon band are part of `skyColour` too, so the haze takes them.
-- The clouds are `rendering-clouds.md`'s.
+- The clouds are drawn by the sky's own pass alone (`skyClouds` in `clouds.glsl`, which only `world-sky.frag`
+  includes), on a plane at the look's cloud height in the world. So they stay over the land as the eye moves, and drift
+  along their heading by the run's clock.
+- Their shape is the clouds' noise (`CloudNoise`, binding 19): a tileable RGBA texture made on the CPU when the pass
+  starts, gradient noise in red and cellular noise turned inside out at three scales in the rest. A tile spans four
+  lattice cells (`CloudCellsPerTile`).
+- The look's billow share carves the gradient noise by the cellular noise into rounded puffs, its ridge share thins it
+  to wisps, its softness sets the edges, and its erosion eats them with a five times finer read. The warp is a read at
+  a quarter scale.
+- Each read takes the pixel's footprint from derivatives found before any pixel leaves the shader (`textureGrad`), so
+  the reads pick their mip levels aright at the horizon. A footprint's long side is drawn in to the sampler's
+  anisotropy (`CloudMostSlant`), so a slanted read stays sharp across the screen.
+- The CPU works out the clouds' lattice point at the origin, less the drift, wrapped to 4,096 cells (`LookConstants`'
+  `CloudNear` and `CloudFar`), a whole number of every read's tiles, so the point keeps its precision at any place or
+  time.
+- With the look's cloud shadow, three samples of the shape towards the sun shade each point: the cloud light where
+  little lies sunwards, dark cores and far sides. Without it, edges facing the sun take the cloud light.
+- The look's puff light lights each puff on its sunward side and shades its far side: one more read of the eroded
+  shape a short step sunwards (`CloudPuffStep`).
+- The look's creases darken where the shape before its erosion dips under a blurred read of it, a coarser mip level,
+  and lighten the puffs' crowns.
+- A second layer twice as high, larger to the eye, may show behind.
+- Thin wisps may show in front, at `LookConstants.LowerCloudHeightShare` of the height. They are drawn out more along
+  the heading (`LowerCloudStretch`) and drift faster (`LowerCloudDrift`), from a lattice point of their own
+  (`CloudLowerNear`).
+- The clouds thin to none at the horizon, so the fogged far ground still meets the sky. Without a reach, their size
+  changes more slowly near the horizon and they thin by their angle. With the look's reach, the ray meets the plane
+  about where it does (`CloudHorizonLift`), and they thin over the farther 70 % of the reach.
+- With a reach, clouds low over the horizon take a far look by the ray's angle (`CloudFarFrom`, `CloudFarTo`): less
+  light, erosion, and upper layer, no creases, and crisper edges. Seen at a slant, those details are only streaks,
+  smudges, and lines of light.
+- With the look's thickness, each cloud is a column over the plane, as high as its shape is over the cover's edge
+  (`cloudColumn`), domed on top. Where the flat base does not hide the sky, `cloudSides` steps through the slab
+  (`CloudSlabSteps`) to the top plane, found past the reach (`cloudPlane`). Each column rising over the ray hides
+  what lies behind, front to back.
+- A side is darker low down, lit where little of its column lies over it, and lit more when the sun is behind the
+  eye. The sides come in only low over the horizon (`CloudSideFrom`, `CloudSideTo`), so the clouds overhead keep
+  their flat look. The bank fades by its angle (`CloudBankFadeFrom`, `CloudBankFadeTo`).
 - The haze's density along a ray is `hazeDensity` in `lighting.glsl`, with the ground haze averaged between the eye's
   height and the surface's. `hazeOver` applies the haze's start and cap.
 - `fogAt(vec3, float)` gives the share of a surface lost as one colour, for what fades with the fog (the particles'
@@ -130,4 +167,4 @@ an absolute place, a colour, and a radius).
 
 ### Tests
 
-`RenderLookTests`, `SunPathTests`, and `RenderViewTests`.
+`RenderLookTests`, `SunPathTests`, `RenderViewTests`, and `CloudNoiseTests`.
