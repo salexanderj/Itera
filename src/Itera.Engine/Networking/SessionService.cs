@@ -509,7 +509,10 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         }
     }
 
-    /// <summary>Tells the peers this game is leaving and closes the socket. Safe to call again.</summary>
+    /// <summary>
+    /// Puts the match tunables back to their defaults, tells the peers this game is leaving, and closes the socket. Safe
+    /// to call again.
+    /// </summary>
     public void Stop()
     {
         if (_stopped)
@@ -518,15 +521,12 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         }
 
         _stopped = true;
+        // A client's were the host's, and a host's or an offline game's were tuned for this match: the next match starts
+        // from the run's own.
+        _tunables?.Reset(TuningScope.Match);
         if (Role == SessionRole.Offline)
         {
             return;
-        }
-
-        if (Role == SessionRole.Client)
-        {
-            // The host's numbers were this match's: the next match starts from the run's own.
-            _tunables?.Reset(TuningScope.Match);
         }
 
         var text = Role == SessionRole.Host ? "the host quit" : "the player left";

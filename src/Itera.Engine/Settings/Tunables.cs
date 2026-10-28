@@ -61,8 +61,8 @@ public sealed class Tunable
 /// limits, an enemy's), registered once at the run's start (a game's <c>IRunStartup</c>) and sealed by the first match,
 /// each a name of 1 to 64 letters, digits, '.', '-', or '_', a default within a range, a line of help, and a scope. The
 /// console's <c>tune</c> lists and sets them. A host sends its match tunables to its clients when they change and as each
-/// joins, by name, so a client moves by the host's numbers (<c>SessionService</c>); a client's go back to their defaults
-/// when its match ends. Main thread.
+/// joins, by name, so a client moves by the host's numbers (<c>SessionService</c>). Every game's match tunables go back to
+/// their defaults when its match ends, a host's and an offline game's too. Main thread.
 /// </summary>
 public sealed class Tunables
 {

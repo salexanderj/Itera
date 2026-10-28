@@ -9,7 +9,7 @@ namespace Itera.Engine.Tests.Networking;
 /// Tunables through a session (<see cref="Tunables"/>, <see cref="SessionService"/>), a host and a client without a world
 /// over <see cref="FakeTransport"/>: a joining client takes every one of the host's match tunables, those at their
 /// defaults too, and each change after its step; local ones stay each game's; a name the client has not got is passed over and a value past its
-/// range left out; and a client's go back to their defaults when its session ends.
+/// range left out; and every game's match tunables go back to their defaults when its session ends.
 /// </summary>
 public sealed class SessionTuningTests : IDisposable
 {
@@ -48,6 +48,23 @@ public sealed class SessionTuningTests : IDisposable
 
         client.Stop();
         Assert.Equal(4.5f, clientSpeed.Value);
+    }
+
+    [Theory]
+    [InlineData(SessionMode.Host)]
+    [InlineData(SessionMode.Offline)]
+    public void A_hosts_or_an_offline_games_match_tunables_go_back_at_the_end_and_its_local_ones_stay(SessionMode mode)
+    {
+        var (tunables, speed, feel, _) = Make(mostSpeed: 20);
+        var session = Session(new SessionSettings { Mode = mode, PlayerName = "Host" }, () => { }, tunables);
+        session.Initialize();
+        tunables.TrySet(speed, 6);
+        tunables.TrySet(feel, 0.9f);
+
+        session.Stop();
+
+        Assert.Equal(4.5f, speed.Value);
+        Assert.Equal(0.9f, feel.Value);
     }
 
     [Fact]

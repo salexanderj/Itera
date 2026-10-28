@@ -82,7 +82,7 @@ The run-only `look`, `sun`, `time`, and `lens` (`EngineCommands`) set values ove
 - Register each once at the run's start with `Register(name, value, least, most, help, scope)`. A name has 1 to 64 letters, digits, '.', '-', or '_', and the default lies within its range. The first match seals the registry.
 - Read a tunable as `Tunable.Value`, which allocates nothing.
 - The console's `tune` lists them, reads one, sets one within its range, or puts them back (`TuningCommands`).
-- A `Match` tunable is one that a client predicts, so it must move by the host's numbers. It is set only offline or on a host. The host sends its value by name to its clients after the step it changed, and every one as each client joins, at its default too (the session's `Tune` message, `.claude/rules/sessions.md`). A client's tunables go back to their defaults when its session ends.
+- A `Match` tunable is one that a client predicts, so it must move by the host's numbers. It is set only offline or on a host. The host sends its value by name to its clients after the step it changed, and every one as each client joins, at its default too (the session's `Tune` message, `.claude/rules/sessions.md`). Every game's match tunables go back to their defaults when its session ends, a host's and an offline game's too, so the next match starts from the run's own.
 - A `Local` tunable is each game's own.
 
 ### Tests
