@@ -1,4 +1,5 @@
-"""Skinning helpers for recipes: weights from a reference body, automatic weights, and rigid skinning.
+"""Skinning helpers for recipes: weights from a reference body, automatic weights, rigid skinning, and moving a rig's
+joints to a body of other proportions.
 
 The engine reads at most four influences per vertex, one skin, and joints by name. Every function here leaves
 the scene in Object mode and ends with weights that follow those rules.
@@ -10,6 +11,7 @@ import os
 
 import bpy
 import numpy as np
+from mathutils import Vector
 
 #: Weights below this are dropped before limiting, so they do not take one of the influence slots.
 _CLEAN_THRESHOLD = 1e-4
@@ -147,6 +149,42 @@ def limit_and_normalise(obj: bpy.types.Object, max_influences: int = 4) -> None:
         bpy.ops.object.vertex_group_clean(group_select_mode="ALL", limit=_CLEAN_THRESHOLD, keep_single=True)
         bpy.ops.object.vertex_group_limit_total(group_select_mode="ALL", limit=max_influences)
         bpy.ops.object.vertex_group_normalize_all(group_select_mode="ALL", lock_active=False)
+
+
+def bind_weighted(obj: bpy.types.Object, armature: bpy.types.Object, max_influences: int = 4) -> dict[str, int]:
+    """Binds a mesh that already has its weights, one vertex group a bone, to `armature`: groups that name no bone are
+    dropped, and the weights limited to `max_influences` and normalised. Returns `weight_stats`."""
+    _ensure_object_mode()
+    bone_names = {bone.name for bone in armature.data.bones}
+    for group in list(obj.vertex_groups):
+        if group.name not in bone_names:
+            obj.vertex_groups.remove(group)
+    _activate(obj)
+    limit_and_normalise(obj, max_influences)
+    _bind(obj, armature)
+    return weight_stats(obj)
+
+
+def move_joints(armature: bpy.types.Object, places: dict) -> list[str]:
+    """Moves each joint of `armature` named in `places` to its place there (world space), keeping each bone's turn,
+    roll, and length, so the clips made on the rig still turn each joint alike: a body of other proportions. Bones are
+    no longer connected. Returns the names of the joints `places` leaves where they were."""
+    _ensure_object_mode()
+    inverse = armature.matrix_world.inverted()
+    with bpy.context.temp_override(object=armature, active_object=armature, selected_objects=[armature]):
+        bpy.ops.object.mode_set(mode="EDIT")
+        bones = armature.data.edit_bones
+        for bone in bones:
+            bone.use_connect = False
+        for bone in bones:
+            if bone.name in places:
+                head = inverse @ Vector(places[bone.name])
+                along, roll = bone.tail - bone.head, bone.roll
+                bone.head = head
+                bone.tail = head + along
+                bone.roll = roll
+        bpy.ops.object.mode_set(mode="OBJECT")
+    return [bone.name for bone in armature.data.bones if bone.name not in places]
 
 
 def weight_stats(obj: bpy.types.Object) -> dict[str, int]:

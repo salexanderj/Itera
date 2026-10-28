@@ -80,6 +80,8 @@ Open edges only warn, since a leaf card or a banner may need them. Edges shared 
   booleans come out well. Name their points (muzzle, grip) with the points helper.
 - **Organic shapes** (creatures, faces, bodies) come out plain and lumpy from code alone. Build them against reference
   outlines with a `MATCH`, block the form out first, and ask the user to look at the engine's pictures before going on.
+  A human body starts from MakeHuman's, shaped by its own targets (`tools/models/itera_models/makehuman.py`;
+  `recipes.md`).
 - **Weights:** copy them from a body that is already weighted where you can (armour, clothing, a new body on the
   game's rig). Use rigid parts, each on one bone, for mechanical things. Use automatic weights on one closed proxy
   mesh, then copy them to the real mesh, for a creature.
@@ -92,8 +94,8 @@ Open edges only warn, since a leaf card or a banner may need them. Edges shared 
   Natural human motion does not come out well from code: take it from motion capture and retarget it to the game's
   rig (`build.py retarget`; `recipes.md` has the steps). Big, deliberate moves no pack has, a giant's blows, are keyed
   by a few poses with IK in a clip recipe (`build.py clips`; `recipes.md`).
-- **Licences:** use CC0 sources (Poly Haven, ambientCG), CMU motion capture (it may ship inside a game but not be
-  resold), or CC BY ones with credit the player can see (100STYLE).
+- **Licences:** use CC0 sources (Poly Haven, ambientCG, MakeHuman's base mesh, targets, rigs, and weights), CMU motion
+  capture (it may ship inside a game but not be resold), or CC BY ones with credit the player can see (100STYLE).
   Models and clips from SMPL, AMASS, or HumanML3D are non-commercial, and so are the motion models trained on them; do
   not use them. Mixamo's terms bar shipping its raw files. Files bought for a game stay in the game's private
   repository, never in Itera.

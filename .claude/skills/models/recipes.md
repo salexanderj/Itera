@@ -71,9 +71,36 @@ ctx.export(objects=[armature, plate])          # no clips: the game's clips come
 - To add clips from another file on the same rig, the toolkit's `tools/models/merge_clips.py` merges them.
 - A new body on the game's rig needs none of its clips: the game declares it bound on the rig's model
   (`Declare(..., rigOf: NAME)`, `mesh-assets.md`), which takes that model's joint order and clips. Export no clips.
-- A body of other proportions moves the joints in edit mode to its own places, keeping each bone's turn and roll: set
-  every bone's use_connect to false first, then move its head and tail by the same amount. The clips still turn each
-  joint as they do on the rig's model, so hands and feet land a little elsewhere.
+- A body of other proportions moves the joints to its own places with `rig.move_joints`, which keeps each bone's turn
+  and roll. The clips still turn each joint as they do on the rig's model, so hands and feet land a little elsewhere.
+
+## A human body from MakeHuman
+
+MakeHuman's body (CC0) is a far better start for a human than one modelled in code: a real face, hands, and feet, and
+joints that bend cleanly. `tools/models/itera_models/makehuman.py` reads it without MPFB2's code.
+
+```python
+from itera_models import makehuman, rig
+
+body = makehuman.Body(ctx, HASHES)                   # base mesh, rig, and weights; HASHES pins every file fetched
+body.shape(MACROS, TARGETS)                          # macro sliders, then targets: {"cheek/l-cheek-volume-decr": 1.0}
+coords = body.blender_coords()
+coords *= HEIGHT / body.height(coords)
+heads, tails = (rename(joints) for joints in body.joints(coords))   # MakeHuman's joint names as the rig's
+transforms, places = makehuman.fit(heads, tails, parents, rest, AIMS, LEAVES, STILL, TWISTS, SHARES)
+posed = makehuman.posed(coords, body.weights, transforms, RENAME)
+rig.move_joints(armature, places)                    # the rig's joints at the body's own places, their turns kept
+skin = body.mesh("body", posed, ("body", "helper-l-eye", "helper-r-eye"), RENAME, bone_names)
+```
+
+- `rest` is each of the rig's joints' place at rest. It says only which way each bone points. A bone of `AIMS` points
+  at a joint on both, one of `LEAVES` at its own tail and the rig's leaf joint. The trunk (`STILL`) keeps MakeHuman's
+  places.
+- A hand twists about its own line to lay its knuckles as the rig's (`TWISTS`). A thumb turned all the way folds the
+  skin of its web, so it takes half its turn (`SHARES`).
+- The base mesh is about 27,000 triangles. Reduce it with Decimate (Collapse, symmetric on x), then look for faces
+  folded over and smooth them. MakeHuman's UV map has no overlaps; its eyes' UVs may lie on the body's, so move them.
+- Run the build once with an empty `HASHES`: each fetched file's note gives its hash to pin.
 
 ## Parts on a body's bones (plates that break off, a helm, a lamp)
 

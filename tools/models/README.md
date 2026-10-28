@@ -140,7 +140,14 @@ Each module's docstrings say more.
 - `rig`: `import_reference(path)` (a .glb's armature and meshes), `transfer_weights(target, source, armature)` (a new
   body or armour weighted from a reference body, then limited to four bones and normalised), `auto_weights(obj,
   armature)` (bone heat; returns the vertices it left unweighted), `rigid_skin(parts, armature)` (each part on one
-  bone), `limit_and_normalise(obj)`, and `weight_stats(obj)`.
+  bone), `limit_and_normalise(obj)`, `bind_weighted(obj, armature)` (a mesh with its own weights bound, its groups on
+  bones alone), `move_joints(armature, places)` (joints moved to a body of other proportions, each keeping its turn),
+  and `weight_stats(obj)`.
+- `makehuman`: MakeHuman's body (CC0), read from MPFB2's repository at a pinned commit (`fetch(ctx, path, hashes)`).
+  `Body(ctx, hashes)` holds its base mesh, its game-engine rig's joints and weights, and `shape(macros, targets)`
+  adds its targets (`macro_stack` blends the macro sliders as MPFB2 does). `blender_coords()`, `height(coords)`,
+  `joints(coords)`, and `mesh(name, coords, groups, rename, bones, marks)` build the body. `fit(...)` works out the
+  turns that pose it into a game rig's rest, keeping its own joint places, and `posed(...)` moves it by them.
 - `clips`: `new_clip(armature, name, frame_start, frame_end=...)` (an action with its slot, as Blender 5 needs),
   `key_pose(armature, frame, pose)`, `bake(armature, start, end)` (constraints and IK to plain keys),
   `retarget(source, target, joint_map, start, end, hips=None, rest_frame=None, feet=None, aim=None)`,
