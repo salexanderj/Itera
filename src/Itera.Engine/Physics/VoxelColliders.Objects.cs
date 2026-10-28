@@ -164,7 +164,7 @@ public sealed partial class VoxelColliders
         var list = _spareLists.Count > 0 ? _spareLists.Pop() : [];
         cell.Objects = list;
         // The cell's box in absolute centimetres.
-        var edge = (long)CellSize * _voxels.Grid.Edge(key.Level);
+        var edge = (long)_cellVoxels * _voxels.Grid.Edge(key.Level);
         long x0 = key.X * edge,
             y0 = key.Y * edge,
             z0 = key.Z * edge;

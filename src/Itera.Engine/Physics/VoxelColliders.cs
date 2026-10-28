@@ -11,7 +11,9 @@ using Microsoft.Extensions.Logging;
 namespace Itera.Engine.Physics;
 
 /// <summary>
-/// Gives Bepu the level-0 voxels near its dynamic bodies. Each 32x32x32-voxel cell (32 cm on a 1 cm grid, 3.2 m at 10 cm) that a body's bounds reach,
+/// Gives Bepu the level-0 voxels near its dynamic bodies. Each cell of <see cref="CellVoxels"/> voxels on an edge (32: 32 cm
+/// on a 1 cm grid, 3.2 m at 10 cm; on coarser grids fewer, down to a brick, so a cell's edge stays near
+/// <see cref="MostCellCentimetres"/>: 8 voxels, 8 m, at 1 m) that a body's bounds reach,
 /// widened by its movement in one step and a margin, becomes one static for each physics material its voxels have
 /// (<see cref="PhysicsMaterials.MapVoxel"/>; one where no voxel material is mapped): a compound of boxes that cover the
 /// cell's blocking voxels of that material (<see cref="VoxelBoxes"/>, one walk of the cell each; passable foliage gives
@@ -36,8 +38,32 @@ namespace Itera.Engine.Physics;
 /// </summary>
 public sealed partial class VoxelColliders : IDisposable
 {
-    /// <summary>Edge of a collision cell in voxels of its level: 32 cm at level 0 of a 1 cm grid, 3.2 m at 10 cm.</summary>
+    /// <summary>
+    /// The most a collision cell's edge holds, in voxels of its level: every cell's on a grid of 10 cm or finer (32 cm at
+    /// level 0 of a 1 cm grid, 3.2 m at 10 cm). A coarser grid's cells are smaller (<see cref="CellVoxels"/>).
+    /// </summary>
     public const int CellSize = 1 << VoxelConstants.CellShift;
+
+    /// <summary>
+    /// The longest a cell's edge at level 0 grows on a grid coarser than 10 cm, in centimetres, unless a brick is longer: a
+    /// cell is built whole as a body first reaches it, and at 1 m a cell of 32 voxels (32 m) took about 7 ms to build.
+    /// </summary>
+    public const int MostCellCentimetres = 320;
+
+    /// <summary>
+    /// The shift of a collision cell's edge in voxels on <paramref name="grid"/>: <see cref="CellSize"/>'s, or less while the
+    /// edge at level 0 is longer than <see cref="MostCellCentimetres"/>, down to a brick's (the edit log's change).
+    /// </summary>
+    public static int CellShiftFor(VoxelGrid grid)
+    {
+        var shift = VoxelConstants.CellShift;
+        while (shift > VoxelConstants.BrickShift && (1L << shift) * grid.BaseCentimetres > MostCellCentimetres)
+        {
+            shift--;
+        }
+
+        return shift;
+    }
 
     /// <summary>
     /// The world level a giant's body collides with on a grid of 1 cm (<see cref="CoarseLevelOf"/>; tests use it):
@@ -74,7 +100,9 @@ public sealed partial class VoxelColliders : IDisposable
     /// </summary>
     public const float MostReachMetres = 8;
 
-    private const int CellShift = VoxelConstants.CellShift;
+    // The cells' edge in voxels and its shift (CellShiftFor), set at Initialize.
+    private int _cellShift = VoxelConstants.CellShift;
+    private int _cellVoxels = CellSize;
 
     private readonly PhysicsWorld _physics;
     private readonly VoxelWorld _voxels;
@@ -136,6 +164,9 @@ public sealed partial class VoxelColliders : IDisposable
     /// <summary>The physics materials a cell's statics may have: one static for each its voxels have.</summary>
     public int PartCount => _partMaterials.Length;
 
+    /// <summary>A collision cell's edge in voxels of its level on this world's grid (<see cref="CellShiftFor"/>), once initialised.</summary>
+    public int CellVoxels => _cellVoxels;
+
     /// <summary>Statics built for bodies.</summary>
     public int StaticCount { get; private set; }
 
@@ -179,9 +210,11 @@ public sealed partial class VoxelColliders : IDisposable
     public void Initialize()
     {
         _cursor = _voxels.CreateChangeCursor();
+        _cellShift = CellShiftFor(_voxels.Grid);
+        _cellVoxels = 1 << _cellShift;
         ReadParts();
         var coarseLevel = CoarseLevelOf(_voxels.Grid);
-        LogInitialized(CellSize, coarseLevel, _partMaterials.Length);
+        LogInitialized(_cellVoxels, coarseLevel, _partMaterials.Length);
     }
 
     /// <summary>
@@ -329,7 +362,7 @@ public sealed partial class VoxelColliders : IDisposable
         {
             if (cell.HasStatic)
             {
-                var edge = CellSize * _voxels.Grid.Edge(key.Level);
+                var edge = _cellVoxels * _voxels.Grid.Edge(key.Level);
                 var corner = _voxels.Origin.ToLocal(new VoxelCoord(key.X * edge, key.Y * edge, key.Z * edge));
                 var size = edge / (float)VoxelConstants.CentimetresPerMetre;
                 lines.AddBox(corner, Quaternion.Identity, Vector3.Zero, new Vector3(size), colour);
@@ -409,7 +442,7 @@ public sealed partial class VoxelColliders : IDisposable
             x1 = (int)Math.Floor(origin.WorldX(bounds.Max.X + reach.X) * perMetre);
             y1 = (int)Math.Floor(origin.WorldY(bounds.Max.Y + reach.Y) * perMetre);
             z1 = (int)Math.Floor(origin.WorldZ(bounds.Max.Z + reach.Z) * perMetre);
-            var extra = frozen || candidate < now ? CellSize : 0;
+            var extra = frozen || candidate < now ? _cellVoxels : 0;
             if (_voxels.ColumnsResident(candidate, x0 - extra, z0 - extra, x1 + extra, z1 + extra))
             {
                 level = candidate;
@@ -438,11 +471,11 @@ public sealed partial class VoxelColliders : IDisposable
             _physics.Kinds.SetLevel(handle, level);
         }
 
-        for (var cz = z0 >> CellShift; cz <= z1 >> CellShift; cz++)
+        for (var cz = z0 >> _cellShift; cz <= z1 >> _cellShift; cz++)
         {
-            for (var cy = y0 >> CellShift; cy <= y1 >> CellShift; cy++)
+            for (var cy = y0 >> _cellShift; cy <= y1 >> _cellShift; cy++)
             {
-                for (var cx = x0 >> CellShift; cx <= x1 >> CellShift; cx++)
+                for (var cx = x0 >> _cellShift; cx <= x1 >> _cellShift; cx++)
                 {
                     ref var cell = ref CollectionsMarshal.GetValueRefOrAddDefault(
                         _cells,
@@ -601,16 +634,14 @@ public sealed partial class VoxelColliders : IDisposable
                 if (change.Kind == VoxelChangeKind.BrickChanged)
                 {
                     var chunk = change.Column.Chunk(change.Layer, _voxels.Grid);
-                    // Brick coordinates in the chunk are 0 to 15; a cell holds 4 bricks along each axis.
-                    const int BricksPerCellShift = CellShift - VoxelConstants.BrickShift;
+                    // Brick coordinates in the chunk are 0 to 15; a cell holds 1 to 4 bricks along each axis.
+                    var bricksPerCellShift = _cellShift - VoxelConstants.BrickShift;
+                    var cellsPerChunkShift = VoxelConstants.ChunkShift - _cellShift;
                     var key = new CellKey(
                         level,
-                        (chunk.X << (VoxelConstants.ChunkShift - CellShift))
-                            + ((change.Brick & 15) >> BricksPerCellShift),
-                        (chunk.Y << (VoxelConstants.ChunkShift - CellShift))
-                            + (((change.Brick >> 4) & 15) >> BricksPerCellShift),
-                        (chunk.Z << (VoxelConstants.ChunkShift - CellShift))
-                            + ((change.Brick >> 8) >> BricksPerCellShift)
+                        (chunk.X << cellsPerChunkShift) + ((change.Brick & 15) >> bricksPerCellShift),
+                        (chunk.Y << cellsPerChunkShift) + (((change.Brick >> 4) & 15) >> bricksPerCellShift),
+                        (chunk.Z << cellsPerChunkShift) + ((change.Brick >> 8) >> bricksPerCellShift)
                     );
                     ref var cell = ref CollectionsMarshal.GetValueRefOrNullRef(_cells, key);
                     if (!Unsafe.IsNullRef(ref cell))
@@ -620,35 +651,7 @@ public sealed partial class VoxelColliders : IDisposable
                 }
                 else if (change.Kind == VoxelChangeKind.ChunkChanged)
                 {
-                    // The change's blocks of 32 voxels are the cells: 4 along each axis of the chunk.
-                    const int CellsPerChunkShift = VoxelConstants.ChunkShift - CellShift;
-                    const int CellsPerChunk = 1 << CellsPerChunkShift;
-                    var chunk = change.Column.Chunk(change.Layer, _voxels.Grid);
-                    for (var z = 0; z < CellsPerChunk; z++)
-                    {
-                        for (var y = 0; y < CellsPerChunk; y++)
-                        {
-                            for (var x = 0; x < CellsPerChunk; x++)
-                            {
-                                if ((change.Blocks & (1UL << (x + CellsPerChunk * (y + CellsPerChunk * z)))) == 0)
-                                {
-                                    continue;
-                                }
-
-                                var key = new CellKey(
-                                    level,
-                                    (chunk.X << CellsPerChunkShift) + x,
-                                    (chunk.Y << CellsPerChunkShift) + y,
-                                    (chunk.Z << CellsPerChunkShift) + z
-                                );
-                                ref var cell = ref CollectionsMarshal.GetValueRefOrNullRef(_cells, key);
-                                if (!Unsafe.IsNullRef(ref cell))
-                                {
-                                    cell.Dirty = true;
-                                }
-                            }
-                        }
-                    }
+                    MarkBlocks(level, change.Column.Chunk(change.Layer, _voxels.Grid), change.Blocks);
                 }
                 else if (change.Kind == VoxelChangeKind.ColumnUnloaded)
                 {
@@ -672,17 +675,63 @@ public sealed partial class VoxelColliders : IDisposable
         }
     }
 
+    /// <summary>
+    /// Marks the cells of <paramref name="level"/> in <paramref name="chunk"/> that the change's blocks of 32 voxels
+    /// (<paramref name="blocks"/>, 4 along each axis of the chunk) hold: each block a cell, or a cube of smaller ones.
+    /// </summary>
+    private void MarkBlocks(int level, ChunkKey chunk, ulong blocks)
+    {
+        const int BlocksPerChunk = 1 << (VoxelConstants.ChunkShift - VoxelConstants.CellShift);
+        var perBlockShift = VoxelConstants.CellShift - _cellShift;
+        var perBlock = 1 << perBlockShift;
+        var cellsPerChunkShift = VoxelConstants.ChunkShift - _cellShift;
+        for (var z = 0; z < BlocksPerChunk; z++)
+        {
+            for (var y = 0; y < BlocksPerChunk; y++)
+            {
+                for (var x = 0; x < BlocksPerChunk; x++)
+                {
+                    if ((blocks & (1UL << (x + BlocksPerChunk * (y + BlocksPerChunk * z)))) == 0)
+                    {
+                        continue;
+                    }
+
+                    for (var cz = 0; cz < perBlock; cz++)
+                    {
+                        for (var cy = 0; cy < perBlock; cy++)
+                        {
+                            for (var cx = 0; cx < perBlock; cx++)
+                            {
+                                var key = new CellKey(
+                                    level,
+                                    (chunk.X << cellsPerChunkShift) + (x << perBlockShift) + cx,
+                                    (chunk.Y << cellsPerChunkShift) + (y << perBlockShift) + cy,
+                                    (chunk.Z << cellsPerChunkShift) + (z << perBlockShift) + cz
+                                );
+                                ref var cell = ref CollectionsMarshal.GetValueRefOrNullRef(_cells, key);
+                                if (!Unsafe.IsNullRef(ref cell))
+                                {
+                                    cell.Dirty = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// <summary>Removes the statics of a column of their level that unloaded.</summary>
     private void DropColumn(ColumnKey column)
     {
-        const int CellsPerChunkShift = VoxelConstants.ChunkShift - CellShift;
+        var cellsPerChunkShift = VoxelConstants.ChunkShift - _cellShift;
         _keys.Clear();
         foreach (var key in _cells.Keys)
         {
             if (
                 key.Level == column.Level
-                && key.X >> CellsPerChunkShift == column.X
-                && key.Z >> CellsPerChunkShift == column.Z
+                && key.X >> cellsPerChunkShift == column.X
+                && key.Z >> cellsPerChunkShift == column.Z
             )
             {
                 _keys.Add(key);
@@ -722,18 +771,18 @@ public sealed partial class VoxelColliders : IDisposable
     /// </summary>
     private void BuildPart(CellKey key, ref Part cell, int index, ref int surfacesRead)
     {
-        int x0 = key.X << CellShift,
-            y0 = key.Y << CellShift,
-            z0 = key.Z << CellShift;
+        int x0 = key.X << _cellShift,
+            y0 = key.Y << _cellShift,
+            z0 = key.Z << _cellShift;
         _boxes.Build(
             _voxels,
             key.Level,
             x0,
             y0,
             z0,
-            x0 + CellSize - 1,
-            y0 + CellSize - 1,
-            z0 + CellSize - 1,
+            x0 + _cellVoxels - 1,
+            y0 + _cellVoxels - 1,
+            z0 + _cellVoxels - 1,
             in _partExcluded[index]
         );
         if (_boxes.Count == 0)
@@ -770,7 +819,7 @@ public sealed partial class VoxelColliders : IDisposable
                 {
                     for (var x = box.X0; x <= box.X1; x++)
                     {
-                        var column = x - x0 + CellSize * (z - z0);
+                        var column = x - x0 + _cellVoxels * (z - z0);
                         if (_columnTops[column] == box.Y1 + 1 && !double.IsNaN(_surfaces[column]))
                         {
                             AddSurfaceBox(ref count, x, box.Y1, z, _surfaces[column], x0, y0, z0, metres);
@@ -830,18 +879,18 @@ public sealed partial class VoxelColliders : IDisposable
         }
 
         // One voxel over the cell too, so a column's top voxel at the cell's top is seen to be its highest.
-        _voxels.ColumnTops(x0, z0, CellSize, CellSize, y0, y0 + CellSize, in _passable, _columnTops);
+        _voxels.ColumnTops(x0, z0, _cellVoxels, _cellVoxels, y0, y0 + _cellVoxels, in _passable, _columnTops);
         var any = false;
-        for (var i = 0; i < _columnTops.Length; i++)
+        for (var i = 0; i < _cellVoxels * _cellVoxels; i++)
         {
             var top = _columnTops[i];
             _surfaces[i] = double.NaN;
-            if (top <= y0 || top > y0 + CellSize)
+            if (top <= y0 || top > y0 + _cellVoxels)
             {
                 continue;
             }
 
-            var surface = _voxels.SurfaceOver(x0 + i % CellSize, top, z0 + i / CellSize, in _passable);
+            var surface = _voxels.SurfaceOver(x0 + i % _cellVoxels, top, z0 + i / _cellVoxels, in _passable);
             if (Math.Abs(surface - top) > 1e-3)
             {
                 _surfaces[i] = surface;
@@ -859,7 +908,7 @@ public sealed partial class VoxelColliders : IDisposable
         {
             for (var x = box.X0; x <= box.X1; x++)
             {
-                var column = x - x0 + CellSize * (z - z0);
+                var column = x - x0 + _cellVoxels * (z - z0);
                 if (_columnTops[column] == box.Y1 + 1 && !double.IsNaN(_surfaces[column]))
                 {
                     return true;

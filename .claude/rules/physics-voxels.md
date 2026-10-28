@@ -11,10 +11,14 @@ Loose bodies are made, kept, and removed as `.claude/rules/physics.md` says. The
 
 ### What a body collides with
 
-- Statics of voxel boxes built near it (`VoxelColliders`). On voxels coarser than 1 cm a column's top voxel ends where
-  its density puts the ground's surface, as a box to the millimetre (`PhysicsWorld.SurfaceBox`).
+- Statics of voxel boxes built near it (`VoxelColliders`), in cells of `VoxelColliders.CellVoxels` voxels on an edge:
+  `VoxelColliders.CellSize` on a grid of 10 cm or finer, and fewer on a coarser one, down to a brick, so the edge stays
+  near `VoxelColliders.MostCellCentimetres` (`VoxelColliders.CellShiftFor`). Keep a cell small: one is built whole as
+  a body first reaches it, in that step.
+- On voxels coarser than 1 cm a column's top voxel ends where its density puts the ground's surface, as a box to the
+  millimetre (`PhysicsWorld.SurfaceBox`).
 - Bodies whose parts are of coarse voxels collide with the level nearest their voxels (`VoxelColliders.CoarseLevelOf`),
-  in cells of 32 voxels.
+  in cells of the same size in that level's voxels.
 - The voxel objects the world places that reach into a cell near a body (`.claude/rules/objects-meeting.md`).
 - A body with no level loaded round it freezes (made kinematic) until one loads. So does a body round which an area of
   objects is not filled.

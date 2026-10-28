@@ -1056,7 +1056,9 @@ cost up to 137 ms a step.
 
 - **The world near a body.** Bepu sees the voxels near its dynamic bodies only (`VoxelColliders`). Each cell of 32 voxels
   a side that a body's bounds reach, widened by its movement in a step, becomes one static compound of boxes over the
-  cell's blocking voxels (`VoxelBoxes`). The change list rebuilds a cell after an edit, which wakes bodies resting on
+  cell's blocking voxels (`VoxelBoxes`). On a grid coarser than 10 cm a cell has fewer voxels, down to a brick, so its
+  edge stays near 3.2 m (`VoxelColliders.CellShiftFor`): a cell is built whole when a body first reaches it, and a
+  32 m cell of 1 m voxels took about 7 ms. The change list rebuilds a cell after an edit, which wakes bodies resting on
   it. A cell no body has needed for a second is removed. A body whose columns are not resident is frozen (made
   kinematic) and moves on once they are. On voxels coarser than 1 cm a column's top voxel ends where its density puts
   the ground's surface (`PhysicsWorld.SurfaceBox`), so a ball rests on the drawn floor.
