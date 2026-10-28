@@ -134,17 +134,41 @@ public sealed partial class ReplicationService
     /// </summary>
     internal bool AcknowledgementsStopped(int slot) => _clients[slot]?.Silent == true;
 
+    /// <summary>
+    /// On a host, true while the game of slot <paramref name="slot"/>'s client still loads: from its join until its replies
+    /// say its loading screen is done, and again while they say it shows (after its world was reset). Its player then
+    /// plays no input (<c>ApplyCommands</c>), and a game keeps it out of harm's way. False for a slot with no client, for
+    /// the host's own, on a client, and offline.
+    /// </summary>
+    public bool IsLoading(int slot) =>
+        _session.Role == SessionRole.Host
+        && slot is > 0 and < SessionService.MaxSlots
+        && _clients[slot] is { } client
+        && (!client.Replied || client.Loading);
+
     void IReplicationEndpoint.ReceiveReply(int slot, ReadOnlySpan<byte> body)
     {
         var reader = new MessageReader(body);
         var newest = (uint)reader.ReadVarInt();
         var bits = reader.ReadULong();
+        var loading = reader.ReadByte();
+        if (loading > 1)
+        {
+            throw new InvalidDataException($"A reply's loading is {loading}, neither 0 nor 1.");
+        }
+
         ReadCommands(ref reader, _clients[slot]);
         reader.EnsureEnd();
         if (newest != 0 && (_clients[slot] is not { } client || newest >= client.NextPacket))
         {
             // A client cannot have received a packet not sent yet.
             throw new InvalidDataException($"A reply acknowledges packet {newest}, which was not sent.");
+        }
+
+        // As it comes, so the commands it carried are applied knowing it.
+        if (_clients[slot] is { } replying)
+        {
+            replying.Loading = loading == 1;
         }
 
         _replies.Add(new Reply(slot, newest, bits));
@@ -753,6 +777,9 @@ public sealed partial class ReplicationService
 
         /// <summary>True once it has replied: its world is loaded, and it reads what it is sent.</summary>
         public bool Replied;
+
+        /// <summary>True while the last reply that came said its loading screen shows.</summary>
+        public bool Loading;
 
         /// <summary>
         /// The host's ticks of its last reply and of the last reply that acknowledged a new packet (from its first reply),

@@ -61,7 +61,7 @@ The console's `replication` prints what is sent or shown. `replication delay MS`
 - A record whose baseline the client lacks leaves the packet unacknowledged, and the host sends again.
 - The client keeps a number of states of each entity by tick. It ignores a record older than the id's removal, and a removal older than the id's newest record.
 - It limits the entities it shows and the removed ids it remembers. A host that sends more is refused.
-- The client's reply (`MessageKind.Reply`, unreliable, every step) holds its newest packet read and which of the packets before it arrived. An acknowledged packet's states become that client's baselines. A late acknowledgement of a state from before a removal counts for nothing, because each entity has an epoch.
+- The client's reply (`MessageKind.Reply`, unreliable, every step) holds its newest packet read and which of the packets before it arrived, and whether its match still loads: its `MatchControl.Phase` is not yet `Playing`, its loading screen covering it. An acknowledged packet's states become that client's baselines. A late acknowledgement of a state from before a removal counts for nothing, because each entity has an epoch.
 - The client estimates the host's tick. It takes each packet's tick less the client's tick when the packet is read, and keeps the largest such value, which comes from the packet that arrived soonest. The value falls a little each step so a longer delay is followed.
 - It shows each entity at that tick less `InterpolationMilliseconds`, blended between the two states round it.
   - Positions and scalars blend straight, angles the short way, and rotations along the sphere.
@@ -95,6 +95,10 @@ The host sends each client that replies at least a packet each send, so a long g
     (`ReplicatedKinds.HeldActions`, such as a mode it is in) and those set while a key is held
     (`ReplicatedKinds.HeldKeyActions`, such as a trigger). After a limit of misses, the player stands still and its
     keys are let go.
+  - A client loads from its join until its last reply says it plays (`ReplicationService.IsLoading`), and again
+    while one says it loads. Its player then plays none of its input, whatever its commands say: it stands, its look,
+    its flying, and its levels kept. So a client that only claims to load gains nothing. A game keeps such a player
+    out of harm's way.
   - When none has waited for several steps while the client's still arrive, it starts again from the newest less two, taking those steps' commands again. The client stalled and dropped steps, or the delay grew. This corrects the client once.
 - The client keeps a number of steps of its own.
 - Each send's first packet to a client carries the owner's block: the tick of the last command applied, and the player's state after it. The state is the feet (absolute), velocity, contact, mode, size, and the run's predicted parts' bytes, the engine's climber first, then a game's own.

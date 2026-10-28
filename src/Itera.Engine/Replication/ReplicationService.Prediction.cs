@@ -375,7 +375,8 @@ public sealed partial class ReplicationService
     /// which the movement system then moves. The host starts once <see cref="BufferedCommands"/> steps of commands wait
     /// beyond the first, so that many always wait; when more than <see cref="MostWaitingCommands"/> wait it skips ahead,
     /// and when the next is missing the last goes on without its jump and the game's one-shot actions (after a while
-    /// standing still, its held keys let go). When
+    /// standing still, its held keys let go). While the client says its loading screen shows (<see cref="IsLoading"/>),
+    /// its player plays no input at all: it stands, its look and levels kept. When
     /// none has waited for <see cref="MostStarvedSteps"/> steps while the client's still arrive, the host has got ahead
     /// of them for good (the client stalled, or the delay grew), and it starts again from the newest less the buffer,
     /// taking those steps' commands again: the client is corrected once. The player flies the debug camera as its command
@@ -453,6 +454,21 @@ public sealed partial class ReplicationService
             }
 
             var player = _entities[index].Entity;
+            if (client.Loading)
+            {
+                // Its loading screen shows, so whatever its commands say it plays no input: its player stands, looks,
+                // and flies as it did, in the levels it held (a mode). A client cannot claim to load and still act.
+                var current = world.Get<PlayerCommand>(player);
+                command = new PlayerCommand
+                {
+                    Yaw = current.Yaw,
+                    Pitch = current.Pitch,
+                    Buttons = current.Buttons & PlayerButtons.CarriesViewpoint,
+                    Actions = current.Actions & _kinds.HeldActions,
+                };
+                viewpoint = client.LastViewpoint;
+            }
+
             var flying = (command.Buttons & PlayerButtons.Fly) != 0;
             // Local now: the origin may have moved since the command came.
             command.Viewpoint =

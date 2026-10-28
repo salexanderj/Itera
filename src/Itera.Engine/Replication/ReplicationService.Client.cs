@@ -2,6 +2,7 @@ using System.Globalization;
 using Arch.Core;
 using Itera.Engine.Commands;
 using Itera.Engine.Components;
+using Itera.Engine.Matches;
 using Itera.Engine.Networking;
 
 namespace Itera.Engine.Replication;
@@ -273,8 +274,9 @@ public sealed partial class ReplicationService
 
     /// <summary>
     /// A client's reply (<c>ReplicationReplySystem</c>, every step after the input, before the move): the newest snapshot it
-    /// read and which of the 64 before it arrived, so the host knows which states it holds, and its own player's last
-    /// commands, this step's quantised in place and kept first.
+    /// read and which of the 64 before it arrived, so the host knows which states it holds; whether its match still loads
+    /// under its loading screen (1) or plays (0); and its own player's last commands, this step's quantised in place and
+    /// kept first.
     /// </summary>
     internal void SendReply(ulong tick)
     {
@@ -288,6 +290,7 @@ public sealed partial class ReplicationService
         _reply.WriteByte((byte)MessageKind.Reply);
         _reply.WriteVarInt((int)_newestPacket);
         _reply.WriteULong(_receivedBits);
+        _reply.WriteByte(_matches is { Phase: not MatchPhase.Playing } ? (byte)1 : (byte)0);
         WriteCommands(tick);
         _replied |= _session.SendEngineToHost(_reply.Written);
     }

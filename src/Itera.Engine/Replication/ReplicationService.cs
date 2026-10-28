@@ -1,6 +1,7 @@
 using System.Globalization;
 using Itera.Engine.Commands;
 using Itera.Engine.Ecs;
+using Itera.Engine.Matches;
 using Itera.Engine.Maths;
 using Itera.Engine.Networking;
 using Itera.Engine.Systems;
@@ -17,8 +18,9 @@ namespace Itera.Engine.Replication;
 /// <c>PeakBytesPerSecond</c>); new entities and removed ids go in the same packets until acknowledged. A client keeps
 /// about two seconds of states for each entity, estimates the host's tick from the packets, and shows each entity at
 /// that tick less <c>InterpolationMilliseconds</c>, blended between the two states round it (after a gap in which other
-/// snapshots came, the move to the next state takes one send). Its reply each step says which packets arrived and carries
-/// its own player's last commands; until its first reply (its world loaded) it is sent nothing. A client's own player is
+/// snapshots came, the move to the next state takes one send). Its reply each step says which packets arrived and whether
+/// its loading screen still shows, and carries its own player's last commands; until its first reply (its world loaded)
+/// it is sent nothing. A client's own player is
 /// predicted and corrected by the host (<see cref="Predict"/>, <c>ReplicationService.Prediction.cs</c>). The engine's systems call it:
 /// <c>ReplicationSendSystem</c> on a host, <c>ReplicationReceiveSystem</c> and <c>ReplicationReplySystem</c> on a
 /// client. Offline it keeps its table and sends nothing. Main thread; a snapshot is read whole as it arrives (in the
@@ -42,7 +44,12 @@ public sealed partial class ReplicationService : IReplicationEndpoint
     private readonly int _fixedStepHz;
     private readonly CharacterStepper _stepper;
     private readonly ILogger<ReplicationService> _logger;
+    private readonly MatchControl? _matches;
 
+    /// <summary>
+    /// The match's replication. <paramref name="matches"/> is the run's, whose phase a client's replies tell the host of:
+    /// loading until it plays (<see cref="IsLoading"/>); with none, a client plays.
+    /// </summary>
     public ReplicationService(
         SessionService session,
         ReplicatedKinds kinds,
@@ -50,7 +57,8 @@ public sealed partial class ReplicationService : IReplicationEndpoint
         WorldOrigin origin,
         IOptions<EngineOptions> options,
         CharacterStepper stepper,
-        ILogger<ReplicationService> logger
+        ILogger<ReplicationService> logger,
+        MatchControl? matches = null
     )
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -64,6 +72,7 @@ public sealed partial class ReplicationService : IReplicationEndpoint
         _fixedStepHz = options.Value.FixedStepHz;
         _stepper = stepper;
         _logger = logger;
+        _matches = matches;
         SendIntervalTicks = Math.Max(1, (int)Math.Round((double)_fixedStepHz / _settings.SendHz));
         InterpolationMilliseconds = _settings.InterpolationMilliseconds;
         // The first match seals the kinds: a hello carries their fingerprint from now on.

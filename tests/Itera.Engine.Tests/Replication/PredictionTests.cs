@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using Itera.Engine.Components;
 using Itera.Engine.Ecs;
+using Itera.Engine.Matches;
 using Itera.Engine.Maths;
 using Itera.Engine.Networking;
 using Itera.Engine.Replication;
@@ -326,6 +327,47 @@ public sealed class PredictionTests(ITestOutputHelper output)
 
         Assert.Equal(4u | 8, arrived);
         Assert.Equal(held, missing);
+    }
+
+    [Fact]
+    public void A_client_whose_match_loads_is_loading_on_the_host_and_its_player_plays_none_of_its_input()
+    {
+        // The client's every command walks and has a level (4) and a held key (16).
+        using var harness = ReplicationHarness.Start(
+            new MoverPlan
+            {
+                Count = 0,
+                Characters = true,
+                HeldActions = 4,
+                HeldKeyActions = 16,
+            },
+            clientPlan: new MoverPlan
+            {
+                Characters = true,
+                HeldActions = 4,
+                HeldKeyActions = 16,
+                Script = tick => Walk(tick, ulong.MaxValue) with { Actions = 4 | 16 },
+            }
+        );
+        harness.Step(60);
+        var playing = harness.HostReplication.IsLoading(1);
+        var matches = harness.Client.Services.GetRequiredService<MatchControl>();
+
+        // Its loading screen covers it again (after its world was reset): it says so, and its commands go on.
+        matches.Phase = MatchPhase.Loading;
+        harness.Step(10);
+        var loading = harness.HostReplication.IsLoading(1);
+        var still = harness.Host.World.Get<PlayerCommand>(harness.HostPlan.Remote[1]);
+        matches.Phase = MatchPhase.Playing;
+        harness.Step(10);
+        var again = harness.Host.World.Get<PlayerCommand>(harness.HostPlan.Remote[1]);
+
+        Assert.False(playing);
+        Assert.True(loading);
+        Assert.Equal((Vector2.Zero, PlayerButtons.None, 4u), (still.Move, still.Buttons, still.Actions));
+        Assert.False(harness.HostReplication.IsLoading(1));
+        Assert.Equal(4u | 16, again.Actions);
+        Assert.NotEqual(Vector2.Zero, again.Move);
     }
 
     [Fact]
