@@ -24,6 +24,11 @@ passes count as their sum (`game_ms`); those at the `Compute`, `Opaque`, and `Tr
 game's benchmark hides its views unless it asks for them (the starter's minimap hides while
 `Engine:Benchmark:Enabled`), so its numbers stay comparable.
 
+A game that holds a scene to a whole frame's budget reads `frame_gpu_ms`, the whole frame's GPU time, and
+`frame_gpu_p99_ms`, the highest of the measured seconds' 99th percentiles. A host's step is `step_ms`, the sum of its
+parts' averages, with `systems_ms` its systems' part and `step_max_ms` its longest. `compare.py` prints them when both
+groups have them. `parse.py` reads any older `game.log` again: `parse.py game.log > summary.json`.
+
 ## Measuring
 
 ```bash

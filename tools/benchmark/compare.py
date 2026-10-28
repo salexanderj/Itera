@@ -2,7 +2,8 @@
 """Compares two groups of benchmark runs view by view: the mean world pass time ("voxels") of each group, its range over
 the runs, and the change; then the same for the models' draws in the views that drew models, and for the shadow maps
 (both part of the world's time), the anti-aliasing (SMAA) and upscale passes, and the game's own render passes when
-either group ran them.
+either group ran them; and the whole frame's GPU time and its slowest 1 %, and the host's fixed step and its longest,
+when both groups' summaries have them.
 Usage: compare.py <name-a> <run,run,...> <name-b> <run,run,...>   (runs are labels under $BENCH_OUT)
 
 Take the runs of the two builds in turn (a, b, a, b, ...) so that drift in GPU clocks or temperature affects both.
@@ -53,6 +54,16 @@ for title, key in (
     ("game passes", "game_ms"),
 ):
     if max(t for v in views for t in times(a, v, key) + times(b, v, key)) > 0:
+        print()
+        table(title, key, views)
+# The budgets' own figures: summaries made before parse.py read them have none, so a group without them is left out.
+for title, key in (
+    ("frame GPU", "frame_gpu_ms"),
+    ("frame p99", "frame_gpu_p99_ms"),
+    ("step", "step_ms"),
+    ("longest step", "step_max_ms"),
+):
+    if all(min(times(group, v, key)) > 0 for group in (a, b) for v in views):
         print()
         table(title, key, views)
 for name, group in ((name_a, a), (name_b, b)):
