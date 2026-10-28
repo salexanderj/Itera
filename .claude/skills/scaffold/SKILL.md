@@ -103,7 +103,8 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 3. Its default in `src/Game/appsettings.json`, the code's value (null for none). `ShippedSettingsTests` checks both
    ways: every listed value is the code's default, and every option is listed.
 4. A new game options section also goes in `AddOptions` and the `ValidateOptions` list of
-   `GameServiceCollectionExtensions`, in `ShippedSettingsTests`' roots, and in `ChecklistTests`' game pairs.
+   `GameServiceCollectionExtensions`, in `ShippedSettingsTests`' roots, in `ChecklistTests`' game pairs, and in the
+   game's `ReferenceTests`' sections, or the options reference leaves it out with no test failing.
 5. Docs: the generated options reference (write it again: the `docs` skill), and the area's rules file for what it
    changes.
 
