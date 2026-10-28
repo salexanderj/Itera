@@ -46,7 +46,10 @@ public sealed partial class ReplicationService
     /// <summary>The steps of commands a host lets wait before it skips ahead to the newest less the buffer.</summary>
     private const int MostWaitingCommands = 8;
 
-    /// <summary>The steps a host goes on with a client's last command when none arrives, before it stands it still.</summary>
+    /// <summary>
+    /// The steps a host goes on with a client's last command when none arrives, before it stands it still and lets go of
+    /// its held keys (<see cref="ReplicatedKinds.HeldKeyActions"/>).
+    /// </summary>
     private const int MostMissedCommands = 30;
 
     /// <summary>
@@ -371,7 +374,8 @@ public sealed partial class ReplicationService
     /// On a host, at a step's start: each client's next command, in its order, written into its player (its slot's id),
     /// which the movement system then moves. The host starts once <see cref="BufferedCommands"/> steps of commands wait
     /// beyond the first, so that many always wait; when more than <see cref="MostWaitingCommands"/> wait it skips ahead,
-    /// and when the next is missing the last goes on without its jump and the game's actions (still after a while). When
+    /// and when the next is missing the last goes on without its jump and the game's one-shot actions (after a while
+    /// standing still, its held keys let go). When
     /// none has waited for <see cref="MostStarvedSteps"/> steps while the client's still arrive, the host has got ahead
     /// of them for good (the client stalled, or the delay grew), and it starts again from the newest less the buffer,
     /// taking those steps' commands again: the client is corrected once. The player flies the debug camera as its command
@@ -432,14 +436,16 @@ public sealed partial class ReplicationService
                 command = client.LastCommand;
                 viewpoint = client.LastViewpoint;
                 command.Buttons &= ~PlayerButtons.Jump;
-                // A game's actions may be one-shot: only those that hold a level are repeated.
-                command.Actions &= _kinds.HeldActions;
+                // A game's actions may be one-shot: only those that hold a level are repeated, a held key's while the
+                // move is.
+                command.Actions &= _kinds.HeldActions | _kinds.HeldKeyActions;
                 if (++client.Missed > MostMissedCommands)
                 {
                     // A player flying the debug camera stays where the camera last was, rather than fall, and a camera
                     // away from the body stays where it was.
                     command.Move = Vector2.Zero;
                     command.Buttons &= PlayerButtons.CarriesViewpoint;
+                    command.Actions &= _kinds.HeldActions;
                 }
 
                 client.Starved++;

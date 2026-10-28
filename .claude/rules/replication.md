@@ -92,7 +92,9 @@ The host sends each client that replies at least a packet each send, so a long g
   - It starts once two steps of commands wait beyond the first, so two wait against jitter.
   - When more than a limit wait, it skips ahead.
   - A missing command is the last one without its jump and the game's actions, but those the game holds as levels
-    (`ReplicatedKinds.HeldActions`, such as a mode it is in). After a limit of misses, the player stands still.
+    (`ReplicatedKinds.HeldActions`, such as a mode it is in) and those set while a key is held
+    (`ReplicatedKinds.HeldKeyActions`, such as a trigger). After a limit of misses, the player stands still and its
+    keys are let go.
   - When none has waited for several steps while the client's still arrive, it starts again from the newest less two, taking those steps' commands again. The client stalled and dropped steps, or the delay grew. This corrects the client once.
 - The client keeps a number of steps of its own.
 - Each send's first packet to a client carries the owner's block: the tick of the last command applied, and the player's state after it. The state is the feet (absolute), velocity, contact, mode, size, and the run's predicted parts' bytes, the engine's climber first, then a game's own.

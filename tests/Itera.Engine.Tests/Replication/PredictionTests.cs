@@ -329,6 +329,40 @@ public sealed class PredictionTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void A_missing_command_keeps_the_held_keys_while_it_keeps_the_move_then_lets_them_go()
+    {
+        // The client's every command has a level (4), a held key (16), and a one-shot (8) action.
+        using var harness = ReplicationHarness.Start(
+            new MoverPlan
+            {
+                Count = 0,
+                Characters = true,
+                HeldActions = 4,
+                HeldKeyActions = 16,
+            },
+            clientPlan: new MoverPlan
+            {
+                Characters = true,
+                HeldActions = 4,
+                HeldKeyActions = 16,
+                Script = tick => Walk(tick, ulong.MaxValue) with { Actions = 4 | 8 | 16 },
+            }
+        );
+        harness.Step(120);
+
+        // The client stalls: the host goes on from its last command, then stands its player still.
+        harness.StepHost(20);
+        var going = harness.Host.World.Get<PlayerCommand>(harness.HostPlan.Remote[1]);
+        harness.StepHost(20);
+        var still = harness.Host.World.Get<PlayerCommand>(harness.HostPlan.Remote[1]);
+
+        Assert.Equal(4u | 16, going.Actions);
+        Assert.NotEqual(Vector2.Zero, going.Move);
+        Assert.Equal(4u, still.Actions);
+        Assert.Equal(Vector2.Zero, still.Move);
+    }
+
+    [Fact]
     public void The_drawn_jump_of_a_correction_starts_where_the_player_was_drawn()
     {
         using var harness = ReplicationHarness.Start(

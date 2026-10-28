@@ -274,6 +274,9 @@ internal sealed class MoverPlan
     /// <summary>The game actions the kinds hold as levels (<see cref="ReplicatedKinds.HeldActions"/>).</summary>
     public uint HeldActions { get; set; }
 
+    /// <summary>The game actions set while a key is held (<see cref="ReplicatedKinds.HeldKeyActions"/>).</summary>
+    public uint HeldKeyActions { get; set; }
+
     /// <summary>On a client, its own player; on the host, each slot's.</summary>
     public Entity Own { get; set; } = Entity.Null;
 
@@ -339,6 +342,7 @@ internal sealed class TestKinds(ReplicatedKinds kinds, MoverPlan plan) : IRunSta
         }
 
         kinds.HeldActions = plan.HeldActions;
+        kinds.HeldKeyActions = plan.HeldKeyActions;
     }
 
     private sealed class MoverKind(MoverPlan plan) : IReplicatedKind

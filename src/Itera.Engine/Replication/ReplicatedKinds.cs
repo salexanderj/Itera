@@ -79,14 +79,15 @@ public sealed class ReplicatedKinds
     private int _predictedBytes = new ClimberPredictedState().Bytes;
     private bool _sealed;
     private uint _heldActions;
+    private uint _heldKeyActions;
 
     public int Count => _kinds.Count;
 
     /// <summary>
     /// The bits of a player's game actions (<c>PlayerCommand.Actions</c>) that hold a level from step to step, such as a
-    /// mode the player is in: a host that misses a client's command keeps them from its last one, as it keeps its move.
-    /// The other bits may be one-shot, and a missed command has none of them. None by default. Set before the first
-    /// match, which seals it.
+    /// mode the player is in: a host that misses a client's command keeps them from its last one for as long as none
+    /// comes. The other bits may be one-shot, and a missed command has none of them, but <see cref="HeldKeyActions"/> for
+    /// a while. None by default. Set before the first match, which seals it.
     /// </summary>
     public uint HeldActions
     {
@@ -101,6 +102,28 @@ public sealed class ReplicatedKinds
             }
 
             _heldActions = value;
+        }
+    }
+
+    /// <summary>
+    /// The bits of a player's game actions set while a key is held, such as a trigger or a grenade primed: a host that
+    /// misses a client's command keeps them from its last one while it keeps its move, so a late command lets go of no
+    /// key the player still holds. After a longer gap it lets them go, as it stands the player still. None by default.
+    /// Set before the first match, which seals it.
+    /// </summary>
+    public uint HeldKeyActions
+    {
+        get => _heldKeyActions;
+        set
+        {
+            if (_sealed)
+            {
+                throw new InvalidOperationException(
+                    "The replicated kinds are sealed by the first match; set the held keys' actions before it."
+                );
+            }
+
+            _heldKeyActions = value;
         }
     }
 
