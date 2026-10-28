@@ -222,6 +222,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         Range(failures, "Replication:BytesPerSecond", replication.BytesPerSecond, 4096, 1 << 20);
         Range(failures, "Replication:PeakBytesPerSecond", replication.PeakBytesPerSecond, 4096, 4 << 20);
         Range(failures, "Replication:InterpolationMilliseconds", replication.InterpolationMilliseconds, 0, 1000);
+        Range(failures, "Replication:GameShare", replication.GameShare, 0, 1);
         if (replication.PeakBytesPerSecond < replication.BytesPerSecond)
         {
             failures.Add($"{Prefix}Replication:PeakBytesPerSecond must be at least Replication:BytesPerSecond.");

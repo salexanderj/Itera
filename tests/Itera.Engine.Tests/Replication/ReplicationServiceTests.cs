@@ -13,7 +13,8 @@ namespace Itera.Engine.Tests.Replication;
 /// median); a send larger than a packet goes in several; a destroyed entity goes, also through loss, and so does one the
 /// host stops replicating; one out of a client's reach goes and comes back whole; a client gets no more snapshot bytes a
 /// second than its budget, and every entity within two seconds; a client that replaces one that left is sent everything;
-/// a client of other kinds is refused; a damaged snapshot or reply is refused or read, never thrown past; a reply for a
+/// the game's messages to a client count against its bytes, its state taking the rest, and those that may be lost are not
+/// sent past the game's share of them, while a reliable one is; a client of other kinds is refused; a damaged snapshot or reply is refused or read, never thrown past; a reply for a
 /// packet never sent drops the client.
 /// </summary>
 [RunsLong]
@@ -292,6 +293,62 @@ public sealed class ReplicationServiceTests(ITestOutputHelper output)
         Assert.True(perSecond <= 8192 * 1.02, $"{perSecond:F0} bytes a second.");
         // The movers want far more than the budget (400 a send, each a few bytes), so it is spent.
         Assert.True(perSecond > 8192 * 0.9, $"Only {perSecond:F0} bytes a second.");
+    }
+
+    [Fact]
+    public void A_game_message_to_a_client_counts_against_its_bytes_and_its_state_has_the_rest()
+    {
+        var options = new Dictionary<string, string?>
+        {
+            ["Engine:Replication:BytesPerSecond"] = "8192",
+            ["Engine:Replication:PeakBytesPerSecond"] = "8192",
+        };
+        using var harness = ReplicationHarness.Start(new MoverPlan { Count = 400, Speed = 2 }, options: options);
+        harness.Step(120);
+        harness.HostTransport.Recorded = [];
+
+        for (var step = 0; step < 600; step++)
+        {
+            harness.SendGame(40, SessionChannel.Reliable);
+            harness.Step(1);
+        }
+
+        var recorded = harness.HostTransport.Recorded;
+        var game = recorded.Where(message => message[0] == ReplicationHarness.GameKind).Sum(m => m.Length) / 10.0;
+        var all = recorded.Where(message => message[0] is 8 or ReplicationHarness.GameKind).Sum(m => m.Length) / 10.0;
+        var report = string.Create(CultureInfo.InvariantCulture, $"{game:F0} game and {all:F0} in all a second.");
+        output.WriteLine(report);
+        // Reliable, so every one goes; the state takes what is left, so the two stay within the budget.
+        Assert.Equal(40 * 60.0, game);
+        Assert.InRange(all, 8192 * 0.9, 8192 * 1.02);
+    }
+
+    [Fact]
+    public void Game_messages_that_may_be_lost_past_the_games_share_are_not_sent_and_a_reliable_one_is()
+    {
+        var options = new Dictionary<string, string?>
+        {
+            ["Engine:Replication:BytesPerSecond"] = "8192",
+            ["Engine:Replication:PeakBytesPerSecond"] = "8192",
+        };
+        using var harness = ReplicationHarness.Start(new MoverPlan { Count = 4, Speed = 2 }, options: options);
+        harness.Step(120);
+        harness.HostTransport.Recorded = [];
+
+        // 200 bytes that may be lost a step (12,000 a second) against a quarter of 8,192, and 20 reliable ones.
+        for (var step = 0; step < 600; step++)
+        {
+            harness.SendGame(200, SessionChannel.Unreliable);
+            harness.SendGame(20, SessionChannel.Reliable);
+            harness.Step(1);
+        }
+
+        var game = harness.HostTransport.Recorded.Where(message => message[0] == ReplicationHarness.GameKind).ToList();
+        var mayLose = game.Count(message => message.Length == 200) * 200 / 10.0;
+        output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{mayLose:F0} bytes a second that may be lost."));
+        Assert.Equal(600, game.Count(message => message.Length == 20));
+        // A quarter of 8,192 less the reliable 1,200 a second, give or take a message.
+        Assert.InRange(mayLose, 2048 - 1200 - 200, 2048 - 1200 + 200);
     }
 
     [Fact]

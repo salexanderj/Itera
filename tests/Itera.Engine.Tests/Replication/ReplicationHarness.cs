@@ -23,6 +23,9 @@ namespace Itera.Engine.Tests.Replication;
 internal sealed class ReplicationHarness : IDisposable
 {
     private const double StepMilliseconds = 1000.0 / 60;
+
+    /// <summary>The game message kind the client takes and ignores (<see cref="SendGame"/>).</summary>
+    public const byte GameKind = SessionService.FirstGameKind;
     private readonly Stopwatch _wall = Stopwatch.StartNew();
     private double _manual = -1;
     private FakeNetwork _network = null!;
@@ -121,6 +124,18 @@ internal sealed class ReplicationHarness : IDisposable
     /// <summary>Runs <paramref name="ticks"/> steps of the host, then the client, the clock a 60th of a second each.</summary>
     public void Step(int ticks) => Step(ticks, clientToo: true);
 
+    /// <summary>On the host, sends the client a game message of <paramref name="bytes"/>, its kind among them.</summary>
+    public void SendGame(int bytes, SessionChannel channel)
+    {
+        var writer = Host.Match.Session.BeginMessage(GameKind);
+        for (var i = 1; i < bytes; i++)
+        {
+            writer.WriteByte(0);
+        }
+
+        Host.Match.Session.SendTo(Client.Match.Session.Slot, channel);
+    }
+
     /// <summary>Runs <paramref name="ticks"/> steps of the host alone, as while the client stalls and drops its steps.</summary>
     public void StepHost(int ticks) => Step(ticks, clientToo: false);
 
@@ -175,6 +190,12 @@ internal sealed class ReplicationHarness : IDisposable
             {
                 services.AddSingleton<ISessionTransports>(new Transports(transport));
                 services.AddSingleton(plan);
+                // A game message a client takes and does nothing with, for the game's share of a client's bytes.
+                services.AddScoped<ISessionGameHandler>(_ => new GameMessageHandler(
+                    GameKind,
+                    SessionMessageDirection.ToClients,
+                    static (_, _) => { }
+                ));
                 services.AddSingleton<IRunStartup, TestKinds>();
                 if (plan.Boost)
                 {

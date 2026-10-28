@@ -91,6 +91,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
     private long _bytesIn;
     private long _messagesOut;
     private long _bytesOut;
+    private long _gameSkipped;
     private double _statsStart = double.NaN;
 
     public SessionService(
@@ -486,7 +487,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         {
             if (peer.Joined && peer.Slot == slot)
             {
-                SendGame(id, channel);
+                SendGame(id, channel, peer.Slot);
                 return;
             }
         }
@@ -504,7 +505,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         {
             if (peer.Joined && peer.Slot != exceptSlot)
             {
-                SendGame(id, channel);
+                SendGame(id, channel, peer.Slot);
             }
         }
     }
@@ -693,7 +694,12 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         _transport.Send(peer, message, SessionChannel.Unreliable);
     }
 
-    private void SendGame(int peer, SessionChannel channel)
+    /// <summary>
+    /// Sends the begun game message to <paramref name="peer"/>; to a client's <paramref name="slot"/>, counted against its
+    /// bytes (<see cref="IReplicationEndpoint.SpendGame"/>), and not sent when it may be lost and the game's share of them
+    /// is spent.
+    /// </summary>
+    private void SendGame(int peer, SessionChannel channel, int slot = -1)
     {
         // A transport takes a message that may be lost in one packet: LiteNetLib throws past it, Steam splits it.
         if (channel != SessionChannel.Reliable && _gameWriter.Length > _transport.MaxUnreliableBytes)
@@ -703,6 +709,12 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
                     + "of a message that may be lost (MaxUnreliableBytes).",
                 nameof(channel)
             );
+        }
+
+        if (slot >= 0 && _replication?.SpendGame(slot, _gameWriter.Length, channel != SessionChannel.Reliable) == false)
+        {
+            _gameSkipped++;
+            return;
         }
 
         _messagesOut++;
@@ -795,6 +807,10 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         // A word, not the enum: the log templates format values that are not strings as JSON, in quotes.
         var role = Role == SessionRole.Host ? "host" : "client";
         LogStats(role, peers, _messagesIn, kilobytesIn, _messagesOut, kilobytesOut, seconds);
+        if (_gameSkipped > 0)
+        {
+            LogGameSkipped(_gameSkipped, seconds);
+        }
         var sending = _transport.TakeStats();
         if (sending.Any)
         {
@@ -825,7 +841,7 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
             }
         }
 
-        _messagesIn = _bytesIn = _messagesOut = _bytesOut = 0;
+        _messagesIn = _bytesIn = _messagesOut = _bytesOut = _gameSkipped = 0;
         _statsStart = now;
     }
 
@@ -1004,6 +1020,12 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         double kilobytesOut,
         double seconds
     );
+
+    [LoggerMessage(
+        Level = LogLevel.Debug,
+        Message = "Session: {Skipped} game message(s) that may be lost not sent over {Seconds:F1} s, past the game's share of the clients' bytes"
+    )]
+    private partial void LogGameSkipped(long skipped, double seconds);
 
     [LoggerMessage(
         Level = LogLevel.Warning,

@@ -146,6 +146,29 @@ public sealed partial class ReplicationService
         && _clients[slot] is { } client
         && (!client.Replied || client.Loading);
 
+    bool IReplicationEndpoint.SpendGame(int slot, int bytes, bool mayLose)
+    {
+        // A client that has not replied loads its world: it is sent no state, and its bytes are not saved up yet.
+        if (
+            _session.Role != SessionRole.Host
+            || slot is <= 0 or >= SessionService.MaxSlots
+            || _clients[slot] is not { Replied: true } client
+        )
+        {
+            return true;
+        }
+
+        // One that may be lost goes while any of the share is left, and the sends after repay what it took past it.
+        if (mayLose && client.GameTokens <= 0)
+        {
+            return false;
+        }
+
+        client.GameTokens -= bytes;
+        client.Tokens -= bytes;
+        return true;
+    }
+
     void IReplicationEndpoint.ReceiveReply(int slot, ReadOnlySpan<byte> body)
     {
         var reader = new MessageReader(body);
@@ -402,6 +425,7 @@ public sealed partial class ReplicationService
         var perSend = (double)_settings.BytesPerSecond * SendIntervalTicks / _fixedStepHz;
         var most = (double)_settings.PeakBytesPerSecond * SendIntervalTicks / _fixedStepHz;
         client.Tokens = Math.Min(client.Tokens + perSend, most);
+        client.GameTokens = Math.Min(client.GameTokens + perSend * _settings.GameShare, most * _settings.GameShare);
         client.Grow(_entities.Count);
         Choose(client);
 
@@ -771,6 +795,9 @@ public sealed partial class ReplicationService
 
         public uint NextPacket = 1;
         public double Tokens;
+
+        /// <summary>The bytes left of the game's share (<see cref="ReplicationSettings.GameShare"/>), saved up as the rest are.</summary>
+        public double GameTokens;
         public long BytesSent;
         public long PacketsSent;
         public long AcknowledgedPackets;

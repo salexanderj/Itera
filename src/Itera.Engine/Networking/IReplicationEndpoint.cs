@@ -15,4 +15,11 @@ internal interface IReplicationEndpoint
 
     /// <summary>On a host, a reply from the client in <paramref name="slot"/> (after its kind byte).</summary>
     void ReceiveReply(int slot, ReadOnlySpan<byte> body);
+
+    /// <summary>
+    /// On a host, counts a game message of <paramref name="bytes"/> to the client in <paramref name="slot"/> against its
+    /// bytes; false, counting nothing, for one that <paramref name="mayLose"/> once the game's share of them is spent, which
+    /// is not sent. True for a client that has not replied yet, on a client, and offline.
+    /// </summary>
+    bool SpendGame(int slot, int bytes, bool mayLose);
 }

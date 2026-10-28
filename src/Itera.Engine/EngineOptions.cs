@@ -890,6 +890,13 @@ public sealed class ReplicationSettings
     public int PeakBytesPerSecond { get; set; } = 131072;
 
     /// <summary>
+    /// The share of a client's bytes the game's own messages may take (0 to 1). Every game message a host sends a client
+    /// counts against its bytes, and its state has the rest. Past this share, those that may be lost are not sent; a
+    /// reliable one always goes. At 30 sends a second, a quarter of 128 KB/s is about 1.1 KB a send.
+    /// </summary>
+    public double GameShare { get; set; } = 0.25;
+
+    /// <summary>
     /// How far behind the host a client shows what it replicates, in milliseconds (0 to 1,000): three sends at 30 a
     /// second, so a lost send or two leaves states to blend between. The console's <c>replication delay</c> changes it
     /// during a match.

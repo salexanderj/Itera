@@ -9,7 +9,7 @@ paths:
 
 The host sends each client the entities a game marks, and a client shows them a little behind the host. `ReplicationService` does this. It is scoped, and lives in `src/Itera.Engine/Replication/`. The reasons for the design are in `docs/replication.md`.
 
-The options are `Engine:Replication:SendHz`, `BytesPerSecond`, `PeakBytesPerSecond`, and `InterpolationMilliseconds`.
+The options are `Engine:Replication:SendHz`, `BytesPerSecond`, `PeakBytesPerSecond`, `GameShare`, and `InterpolationMilliseconds`.
 
 ### What a game does
 
@@ -49,6 +49,9 @@ The console's `replication` prints what is sent or shown. `replication delay MS`
 - It writes each as a record: the id, the kind, how many ticks back its baseline is, and its changes from the baseline (`ReplicatedStateCodec`). A baseline of 0 means the record is whole, and it is followed by the id's generation.
 - Records go into packets that fit `MaxUnreliableBytes`, up to a limit per send, until the client's bytes are spent (`BytesPerSecond`; what a send leaves is kept, up to a send's share of `PeakBytesPerSecond`).
 - A record too large for what is left is passed over for smaller ones.
+- Every game message the host sends a client counts against the same bytes (`SpendGame`), so its state has the rest.
+  The game's messages take at most `GameShare` of them, saved up as the rest are. Past it, one that may be lost is not
+  sent; a reliable one always goes, and its bytes are counted.
 - Each send has at least one packet, for the client's clock.
 - A client is sent nothing until its first reply, which it makes once its world is loaded.
 - Ids removed (destroyed, or out of the client's reach) go at the front of a send's first packet, each numbered, up to a limit. They go until a packet that carried that removal is acknowledged. An id back in reach, or added again, goes whole, and its removal is dropped.

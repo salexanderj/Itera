@@ -115,6 +115,9 @@ The console commands that work only on the host are listed in the `run-game` ski
 - `Engine:Session:MaxPlayers` counts the host. `SessionService.Players` lists the session's players, and a game sends
   with `SendToHost`, `SendTo` (one slot), and `SendToAll` (every joined client, except the slot given, if any). `SendToHost` works on a
   joined client, and `SendTo` and `SendToAll` on a host.
+- A host's game message to a client counts against that client's bytes (`IReplicationEndpoint.SpendGame`,
+  `replication.md`). One that may be lost is not sent once the game's share of them is spent, counted in the stats at
+  Debug.
 - A player's name is `Engine:Session:PlayerName`, else the Steam name cut to 32 characters, else "Player".
 - When Steam did not start the game (no `SteamAppId` variable), the game writes `steam_appid.txt` beside itself and
   moves the working directory there for the `SteamAPI.InitEx` call alone.
