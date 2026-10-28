@@ -71,6 +71,9 @@ against a capsule, is public for a game's own shapes.
   gives the point straight along the look from the eye, for an aimer with no camera over its shoulder.
 - It keeps `Steps` steps of up to `MostCapsules` capsules for up to `MostEntities` entities. `Steps` is more than
   `ReplicationService.MostShownTicksBehind`.
+- The engine's history keeps `HitHistory.DefaultMostEntities`. A game with more figures at once registers its own,
+  sized from its counts. When full, each recorded within `Steps` steps, a new entity takes the room of the one
+  recorded longest ago, with a warning once. Rays then miss that one at the steps it lost.
 - A step is one absolute anchor (a `WorldPoint`) and float offsets from it. A move of the origin changes nothing, and
   the history is not a component `OriginShifts` moves.
 - An entity is met from a step before its oldest record to a step after its newest. A character the game stopped

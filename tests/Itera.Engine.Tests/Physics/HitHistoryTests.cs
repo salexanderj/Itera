@@ -500,8 +500,9 @@ public sealed class HitHistoryTests : IDisposable
     }
 
     [Fact]
-    public void Bad_records_and_limits_throw()
+    public void Bad_records_and_sizes_throw()
     {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new HitHistory(_origin, mostEntities: 0));
         var entity = _world.Create();
         var tooMany = new HitCapsule[HitHistory.MostCapsules + 1];
         Assert.Throws<ArgumentException>(() => _history.Record(entity, 0, tooMany));
@@ -517,42 +518,51 @@ public sealed class HitHistoryTests : IDisposable
 
         _history.Record(entity, 0, new HitCapsule[HitHistory.MostCapsules]);
         Assert.Equal(1, _history.Count);
-
-        for (var i = 1; i < HitHistory.MostEntities; i++)
-        {
-            _history.Record(_world.Create(), 0, []);
-        }
-
-        Assert.Equal(HitHistory.MostEntities, _history.Count);
-        Assert.Throws<InvalidOperationException>(() => _history.Record(_world.Create(), 0, []));
-        Assert.Equal(HitHistory.MostEntities, _history.Count);
-
-        // One already kept still records.
-        _history.Record(entity, 1, []);
     }
 
     [Fact]
     public void A_new_entity_when_full_takes_the_room_of_those_not_recorded_for_its_steps()
     {
         var kept = _world.Create();
-        for (var i = 1; i < HitHistory.MostEntities; i++)
+        for (var i = 1; i < _history.MostEntities; i++)
         {
             _history.Record(_world.Create(), 0, []);
         }
 
         _history.Record(kept, 0, []);
         _history.Record(kept, HitHistory.Steps - 1, []);
-        Assert.Equal(HitHistory.MostEntities, _history.Count);
+        Assert.Equal(HitHistory.DefaultMostEntities, _history.Count);
 
-        // Within the steps every one may still be met, so there is no room.
-        Assert.Throws<InvalidOperationException>(() => _history.Record(_world.Create(), HitHistory.Steps - 1, []));
+        // Within the steps every one may still be met: one recorded longest ago makes room, and the count holds.
+        var late = _world.Create();
+        _history.Record(late, HitHistory.Steps - 1, []);
+        Assert.Equal(HitHistory.DefaultMostEntities, _history.Count);
 
-        // Past them, those not recorded since go: the new one and the one still recorded are kept.
+        // Past them, those not recorded since go: the new ones and the one still recorded are kept.
         var fresh = _world.Create();
         _history.Record(fresh, HitHistory.Steps, []);
-        Assert.Equal(2, _history.Count);
+        Assert.Equal(3, _history.Count);
         _history.Record(kept, HitHistory.Steps, [new(Vector3.Zero, Vector3.UnitY, 0.5f, 0)]);
         Assert.Equal(1, _history.CapsulesAt(kept, HitHistory.Steps, new HitCapsule[HitHistory.MostCapsules]));
+    }
+
+    [Fact]
+    public void A_history_of_a_games_size_keeps_that_many_and_when_full_drops_the_one_recorded_longest_ago()
+    {
+        var history = new HitHistory(_origin, mostEntities: 3);
+        var entities = new[] { _world.Create(), _world.Create(), _world.Create(), _world.Create() };
+        HitCapsule[] capsule = [new(Vector3.Zero, Vector3.UnitY, 0.5f, 0)];
+        for (var i = 0; i < entities.Length; i++)
+        {
+            history.Record(entities[i], i, capsule);
+        }
+
+        var into = new HitCapsule[HitHistory.MostCapsules];
+        var kept = entities.Select((entity, i) => history.CapsulesAt(entity, i, into)).ToArray();
+
+        Assert.Equal(3, history.MostEntities);
+        Assert.Equal(3, history.Count);
+        Assert.Equal([0, 1, 1, 1], kept);
     }
 
     [Fact]

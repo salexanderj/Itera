@@ -1,6 +1,7 @@
 using System.Numerics;
 using Arch.Core;
 using Itera.Engine.Maths;
+using Microsoft.Extensions.Logging;
 
 namespace Itera.Engine.Physics;
 
@@ -47,10 +48,15 @@ public readonly record struct IgnoreEntity(Entity Entity) : IHitFilter
 /// origin between steps changes nothing. A character with no record near the tick is not there and is not met. Each
 /// entity's storage is made at its first record and reused after <see cref="Forget"/>, or once the entity has gone
 /// <see cref="Steps"/> steps unrecorded and room is needed for a new one, so a game that removes entities without
-/// forgetting them never fills it; once an entity is kept, recording, asking, and forgetting allocate nothing. Scoped to
+/// forgetting them never fills it; once an entity is kept, recording, asking, and forgetting allocate nothing. It keeps
+/// at most <paramref name="mostEntities"/>; a game with more figures at once registers one of its own size. Scoped to
 /// the match; main thread.
 /// </summary>
-public sealed class HitHistory(WorldOrigin origin)
+public sealed partial class HitHistory(
+    WorldOrigin origin,
+    ILogger<HitHistory>? logger = null,
+    int mostEntities = HitHistory.DefaultMostEntities
+)
 {
     /// <summary>How many steps of each entity it keeps: more than the steps a client may be shown behind the host.</summary>
     public const int Steps = 32;
@@ -58,16 +64,23 @@ public sealed class HitHistory(WorldOrigin origin)
     /// <summary>The most capsules one entity records in a step.</summary>
     public const int MostCapsules = 32;
 
-    /// <summary>The most entities it keeps.</summary>
-    public const int MostEntities = 1024;
+    /// <summary>The most entities a history keeps when its game gives no other number.</summary>
+    public const int DefaultMostEntities = 1024;
 
     // A ray this much outside a bounding sphere still tests the capsules: float error must not drop a graze.
     private const float SphereSlack = 1e-3f;
 
     private readonly Dictionary<Entity, int> _slots = [];
     private readonly List<Track> _tracks = [];
-    private readonly int[] _free = new int[MostEntities];
+    private readonly int[] _free = new int[mostEntities > 0 ? mostEntities : 1];
     private int _freeCount;
+    private bool _toldFull;
+
+    /// <summary>The most entities it keeps, 1 or more.</summary>
+    public int MostEntities { get; } =
+        mostEntities > 0
+            ? mostEntities
+            : throw new ArgumentOutOfRangeException(nameof(mostEntities), "A hit history keeps 1 entity or more.");
 
     /// <summary>How many entities it keeps records of.</summary>
     public int Count => _slots.Count;
@@ -76,16 +89,15 @@ public sealed class HitHistory(WorldOrigin origin)
     /// Records <paramref name="entity"/>'s capsules at step <paramref name="tick"/>, in local metres as the origin is now.
     /// Recording a tick again replaces it. A tick 32 or more steps older than a newer one kept is dropped. An empty list
     /// records that the entity is there with no shape. A new entity when <see cref="MostEntities"/> are kept first forgets
-    /// every one not recorded for <see cref="Steps"/> steps before <paramref name="tick"/>.
+    /// every one not recorded for <see cref="Steps"/> steps before <paramref name="tick"/>. When each was recorded since,
+    /// it takes the room of the one recorded longest ago, with a warning the first time: rays at the steps that one lost
+    /// miss it.
     /// </summary>
     /// <exception cref="ArgumentException">
     /// The entity is null, there are more than <see cref="MostCapsules"/> capsules, or a capsule has a radius below 0 or a
     /// number that is not finite.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">The tick is below 0.</exception>
-    /// <exception cref="InvalidOperationException">
-    /// The entity is new and <see cref="MostEntities"/> are kept, each recorded within <see cref="Steps"/> steps.
-    /// </exception>
     public void Record(Entity entity, long tick, ReadOnlySpan<HitCapsule> capsules)
     {
         if (entity == Entity.Null)
@@ -122,7 +134,7 @@ public sealed class HitHistory(WorldOrigin origin)
 
             if (_slots.Count >= MostEntities)
             {
-                throw new InvalidOperationException($"{MostEntities} entities are kept; {entity} is one more.");
+                ForgetOldest();
             }
 
             slot = Take();
@@ -337,6 +349,37 @@ public sealed class HitHistory(WorldOrigin origin)
             }
         }
     }
+
+    /// <summary>
+    /// Forgets the entity whose newest record is the oldest: more entities are recorded within <see cref="Steps"/> than it
+    /// keeps, which a game sized for its figures never sees. Warns the first time.
+    /// </summary>
+    private void ForgetOldest()
+    {
+        var oldest = -1;
+        for (var slot = 0; slot < _tracks.Count; slot++)
+        {
+            var track = _tracks[slot];
+            if (track.InUse && (oldest < 0 || track.Newest < _tracks[oldest].Newest))
+            {
+                oldest = slot;
+            }
+        }
+
+        if (!_toldFull && logger is not null)
+        {
+            _toldFull = true;
+            LogFull(logger, MostEntities);
+        }
+
+        Forget(_tracks[oldest].Entity);
+    }
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Hit history: more than {MostEntities} entities recorded within its steps; each new one takes the room of the one recorded longest ago, which rays then miss at the steps it lost"
+    )]
+    private static partial void LogFull(ILogger logger, int mostEntities);
 
     /// <summary>Drops every record.</summary>
     public void Clear()
