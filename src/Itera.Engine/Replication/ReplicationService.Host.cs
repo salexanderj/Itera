@@ -128,6 +128,12 @@ public sealed partial class ReplicationService
     /// <summary>The entities replicated now, on a host or offline.</summary>
     public int Replicating => _hostIndex.Count;
 
+    /// <summary>
+    /// On a host, true while the client in <paramref name="slot"/> has acknowledged no new packet for
+    /// <see cref="SilenceSeconds"/> or more since its first reply.
+    /// </summary>
+    internal bool AcknowledgementsStopped(int slot) => _clients[slot]?.Silent == true;
+
     void IReplicationEndpoint.ReceiveReply(int slot, ReadOnlySpan<byte> body)
     {
         var reader = new MessageReader(body);
@@ -163,7 +169,8 @@ public sealed partial class ReplicationService
         }
 
         FollowRoster();
-        TakeReplies();
+        TakeReplies((int)tick);
+        WatchAcknowledgements((int)tick);
         if (tick % (ulong)SendIntervalTicks != 0)
         {
             return;
@@ -206,7 +213,7 @@ public sealed partial class ReplicationService
         }
     }
 
-    private void TakeReplies()
+    private void TakeReplies(int tick)
     {
         foreach (var reply in _replies)
         {
@@ -216,12 +223,19 @@ public sealed partial class ReplicationService
             }
 
             // It replies once its world is loaded: from then on it reads what it is sent.
-            client.Replied = true;
+            if (!client.Replied)
+            {
+                client.Replied = true;
+                client.AcknowledgedAt = tick;
+            }
+
+            client.RepliedAt = tick;
             if (reply.Newest == 0)
             {
                 continue;
             }
 
+            var acknowledged = client.AcknowledgedPackets;
             Acknowledge(client, reply.Newest);
             for (var back = 0; back < 64; back++)
             {
@@ -230,9 +244,56 @@ public sealed partial class ReplicationService
                     Acknowledge(client, reply.Newest - (uint)back - 1);
                 }
             }
+
+            if (client.AcknowledgedPackets != acknowledged)
+            {
+                Acknowledged(client, tick);
+            }
         }
 
         _replies.Clear();
+    }
+
+    /// <summary>A reply acknowledged a packet not acknowledged before: the client reads what it is sent.</summary>
+    private void Acknowledged(HostClient client, int tick)
+    {
+        if (client.Silent)
+        {
+            client.Silent = false;
+            LogAcknowledgedAgain(client.Slot, (tick - client.AcknowledgedAt) / (double)_fixedStepHz);
+        }
+
+        client.AcknowledgedAt = tick;
+        client.PacketsAtAcknowledgement = client.PacketsSent;
+    }
+
+    /// <summary>
+    /// Logs once for each client that has replied and acknowledged no new packet for <see cref="SilenceSeconds"/>, with
+    /// how long since its last reply (replies that still come mean the host's packets do not reach it) and the
+    /// connection's state.
+    /// </summary>
+    private void WatchAcknowledgements(int tick)
+    {
+        var silence = SilenceSeconds * _fixedStepHz;
+        foreach (var client in _clients)
+        {
+            if (client is null || !client.Replied || client.Silent || tick - client.AcknowledgedAt < silence)
+            {
+                continue;
+            }
+
+            client.Silent = true;
+            var seconds = (tick - client.AcknowledgedAt) / (double)_fixedStepHz;
+            var replySeconds = (tick - client.RepliedAt) / (double)_fixedStepHz;
+            var connection = Described(_session.DescribeConnection(client.Slot));
+            LogNoAcknowledgements(
+                client.Slot,
+                seconds,
+                client.PacketsSent - client.PacketsAtAcknowledgement,
+                replySeconds,
+                connection
+            );
+        }
     }
 
     /// <summary>What packet <paramref name="sequence"/> carried is now the client's: its states are baselines, its removals done.</summary>
@@ -692,6 +753,15 @@ public sealed partial class ReplicationService
 
         /// <summary>True once it has replied: its world is loaded, and it reads what it is sent.</summary>
         public bool Replied;
+
+        /// <summary>
+        /// The host's ticks of its last reply and of the last reply that acknowledged a new packet (from its first reply),
+        /// the packets sent it by then, and whether the silence since was logged.
+        /// </summary>
+        public int RepliedAt;
+        public int AcknowledgedAt;
+        public long PacketsAtAcknowledgement;
+        public bool Silent;
         public SentPacket? Current;
         public readonly SentPacket[] Packets = CreatePackets();
 

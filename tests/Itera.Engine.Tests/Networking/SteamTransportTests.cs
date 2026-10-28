@@ -241,6 +241,45 @@ public sealed class SteamTransportTests : IDisposable
         Assert.Equal(0, host.JoinedPeers);
     }
 
+    /// <summary>
+    /// A player who joins again while Steam still holds their old connection open (a Steam test of 2026-10-28 got a second
+    /// slot that way) ends the old one: the host hears that player leave, and the new join takes the slot back.
+    /// </summary>
+    [Fact]
+    public void A_player_who_connects_again_ends_their_older_connection_and_takes_their_slot_back()
+    {
+        var (_, host, platform) = StartHost();
+        var (_, first) = Join(host, $"steam:{HostId}");
+        var firstConnection = platform.Connections.Single();
+        Assert.Equal(1, first.Slot);
+
+        // The same Steam player from a new game, while the first is still connected.
+        var (_, second) = Join(host, $"steam:{HostId}");
+        first.Poll();
+
+        Assert.Equal(1, second.Slot);
+        Assert.Equal(1, host.JoinedPeers);
+        Assert.DoesNotContain(firstConnection, platform.Connections);
+        Assert.NotEqual(SessionEnd.None, first.End);
+        Assert.Contains("connected again", first.EndReason, StringComparison.Ordinal);
+    }
+
+    /// <summary>The session reads Steam's status and its detailed account of each connection, on a host and a client.</summary>
+    [Fact]
+    public void Steams_status_and_account_of_a_connection_reach_the_session()
+    {
+        var (host, platform, client, _) = ConnectTransports();
+
+        Assert.True(host.TryGetStatus(1, out var status));
+        Assert.Equal("direct", status.Route);
+        Assert.Equal(30, status.RoundTripMilliseconds);
+        Assert.Equal($"connection {platform.Connections.Single()} to {ClientId}", host.DescribeConnection(1));
+        Assert.False(host.TryGetStatus(9, out _));
+        Assert.Equal("", host.DescribeConnection(9));
+        Assert.True(client.TryGetStatus(1, out _));
+        Assert.Contains($"to {HostId}", client.DescribeConnection(1), StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Hosting_through_steam_without_steam_fails_to_start()
     {

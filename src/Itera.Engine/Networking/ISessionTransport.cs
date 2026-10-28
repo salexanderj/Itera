@@ -55,6 +55,29 @@ public readonly record struct TransportStats(
     public bool Any => SkippedStates > 0 || HeldReliable > 0 || Refused > 0 || EndedPeers > 0;
 }
 
+/// <summary>
+/// A connection as its transport measures it now (<see cref="ISessionTransport.TryGetStatus"/>), for the log: the round
+/// trip; the share of packets that arrive, as this end and the other end measure them (0 to 1, or -1 while not known);
+/// the packets and bytes a second each way; the rate the transport lets itself send at; the bytes queued to send and how
+/// long the next would wait; the reliable bytes sent and not yet acknowledged; and its route ("direct", or the relay it
+/// goes through).
+/// </summary>
+public readonly record struct ConnectionStatus(
+    int RoundTripMilliseconds,
+    float QualityHere,
+    float QualityThere,
+    float OutPacketsPerSecond,
+    float OutBytesPerSecond,
+    float InPacketsPerSecond,
+    float InBytesPerSecond,
+    int SendRateBytesPerSecond,
+    int QueuedReliableBytes,
+    int QueuedUnreliableBytes,
+    int UnacknowledgedReliableBytes,
+    long QueueMicroseconds,
+    string Route
+);
+
 /// <summary>Receives what a transport's <see cref="ISessionTransport.Poll"/> delivers, on the thread that polls.</summary>
 public interface ISessionTransportListener
 {
@@ -115,6 +138,22 @@ public interface ISessionTransport
 
     /// <summary>The round trip to <paramref name="peer"/> in milliseconds, or -1 when unknown.</summary>
     int RoundTripMilliseconds(int peer);
+
+    /// <summary>
+    /// What the transport measures of the connection to <paramref name="peer"/> now, for the session's stats line; false
+    /// when it measures nothing past the round trip (the default), or the peer is gone.
+    /// </summary>
+    bool TryGetStatus(int peer, out ConnectionStatus status)
+    {
+        status = default;
+        return false;
+    }
+
+    /// <summary>
+    /// The transport's own account of the connection to <paramref name="peer"/> (Steam's detailed status), on one line, for
+    /// the log when nothing arrives over it; empty when it has none (the default), or the peer is gone.
+    /// </summary>
+    string DescribeConnection(int peer) => "";
 
     /// <summary>
     /// Bytes of reliable messages <paramref name="peer"/> takes now without the transport holding them back: a host

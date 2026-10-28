@@ -108,6 +108,36 @@ public sealed class ReplicationServiceTests(ITestOutputHelper output)
         Assert.True(nineInTen < DelayTicks + oneWay + 1, $"Nine in ten under {nineInTen:F2}.");
     }
 
+    /// <summary>
+    /// When the host's packets stop reaching a client while its replies still reach the host (a Steam test of 2026-10-28),
+    /// the client counts the time without a snapshot (its notice shows it), and the host marks the client as
+    /// acknowledging nothing, each once the silence passes <see cref="Itera.Engine.Replication.ReplicationService.SilenceSeconds"/>;
+    /// both clear once the packets arrive again.
+    /// </summary>
+    [Fact]
+    public void A_client_and_its_host_notice_when_the_hosts_packets_stop_arriving()
+    {
+        const int silence = Itera.Engine.Replication.ReplicationService.SilenceSeconds;
+        using var harness = ReplicationHarness.Start(new MoverPlan { Count = 2, Speed = 1 });
+        harness.Step(30);
+        // A step between two sends counts once.
+        Assert.InRange(harness.ClientReplication.SecondsWithoutSnapshots, 0, 1.0 / 60);
+
+        harness.HostTransport.CountSendsOnly = true;
+        harness.Step(silence * 60 - 10);
+        Assert.False(harness.HostReplication.AcknowledgementsStopped(1));
+        harness.Step(40);
+
+        Assert.InRange(harness.ClientReplication.SecondsWithoutSnapshots, silence, silence + 1);
+        Assert.True(harness.HostReplication.AcknowledgementsStopped(1));
+
+        harness.HostTransport.CountSendsOnly = false;
+        harness.Step(10);
+
+        Assert.InRange(harness.ClientReplication.SecondsWithoutSnapshots, 0, 1.0 / 60);
+        Assert.False(harness.HostReplication.AcknowledgementsStopped(1));
+    }
+
     [Fact]
     public void A_send_larger_than_a_packet_goes_in_several_each_within_the_limit()
     {

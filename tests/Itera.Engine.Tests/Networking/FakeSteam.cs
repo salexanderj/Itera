@@ -387,6 +387,22 @@ internal sealed class FakeSteamPlatform(FakeSteamNetwork network, ulong steamId)
 
     public int RoundTripMilliseconds(uint connection) => _links.ContainsKey(connection) ? 30 : -1;
 
+    public bool TryGetStatus(uint connection, out ConnectionStatus status)
+    {
+        if (!_links.ContainsKey(connection))
+        {
+            status = default;
+            return false;
+        }
+
+        var queued = _queued.GetValueOrDefault(connection);
+        status = new ConnectionStatus(30, 1, 1, 60, 40_000, 60, 4_000, 256 * 1024, queued, 0, 0, 0, "direct");
+        return true;
+    }
+
+    public string DetailedStatus(uint connection) =>
+        _links.TryGetValue(connection, out var link) ? $"connection {connection} to {link.Remote.LocalSteamId}" : "";
+
     public void CreateLobby(int maxMembers)
     {
         var lobby = network.OpenLobby(LocalSteamId);

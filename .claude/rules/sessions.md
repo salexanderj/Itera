@@ -121,6 +121,20 @@ The console commands that work only on the host are listed in the `run-game` ski
   The Steam library loads through `NativeLibrary.SetDllImportResolver`, since Steamworks.NET names only `steam_api`.
 - `SteamTransport` refuses an oversized reliable message, skips a sequenced one while its queue is full, and ends a peer
   that holds too much: its limits are its constants.
+- A Steam player who connects again ends their older open connection at once. The session hears that peer leave first, so
+  the new hello takes the old slot, and the game's own rule for a returning player applies.
+- Steam's networking writes its reports into the log through `SteamPlatform`: its errors at Error, warnings at Warning,
+  important lines at Information, and the rest at Debug.
+
+### Connection stats
+
+- Each stats line (`Engine:Logging:StatsIntervalSeconds`) logs every connection at Debug: on a host each client, on a
+  client its host.
+- A transport that measures more than the round trip gives it through `ISessionTransport.TryGetStatus` (`ConnectionStatus`).
+  Steam gives its real-time status: quality each way, rates, queues, unacknowledged bytes, and the route or relay.
+- `ISessionTransport.DescribeConnection` gives the transport's own account on one line, Steam's detailed status. The
+  replication's warnings carry it (`replication.md`).
+- `SimulatedNetwork` passes both through from the transport it wraps.
 
 ### Tests
 

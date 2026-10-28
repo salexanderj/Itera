@@ -264,6 +264,9 @@ public static class EngineServiceCollectionExtensions
         // The aim dot, the first of a match's layers (the HUD's lowest; the game's are registered after the engine's).
         services.TryAddScoped<AimDotLayer>();
         services.AddScoped<IMatchUiLayer>(sp => sp.GetRequiredService<AimDotLayer>());
+        // On a client, a notice while no snapshot comes from the host.
+        services.TryAddScoped<HostSilenceLayer>();
+        services.AddScoped<IMatchUiLayer>(sp => sp.GetRequiredService<HostSilenceLayer>());
         services.TryAddSingleton<UISurface>();
         services.TryAddSingleton<ModLoader>();
         services.TryAddSingleton<ControlService>();

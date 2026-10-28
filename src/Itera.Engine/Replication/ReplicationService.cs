@@ -26,6 +26,14 @@ namespace Itera.Engine.Replication;
 /// </summary>
 public sealed partial class ReplicationService : IReplicationEndpoint
 {
+    /// <summary>
+    /// Seconds a client may read no snapshot, and a host may have no packet of a client's acknowledged, before it logs a
+    /// warning with the connection's state (and a client shows a notice): the host sends each client that replies at
+    /// least a packet each send, 30 a second by default. A Steam test of 2026-10-28 had a client read nothing for up to
+    /// 67 s while its connection stayed open and its replies reached the host.
+    /// </summary>
+    public const int SilenceSeconds = 2;
+
     private readonly SessionService _session;
     private readonly ReplicatedKinds _kinds;
     private readonly EcsWorld _ecs;
@@ -132,4 +140,38 @@ public sealed partial class ReplicationService : IReplicationEndpoint
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Replication: client {Slot} left")]
     private partial void LogClientLeft(int slot);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Replication: no snapshot from the host for {Seconds:F1} s, though the session is open; the connection: {Connection}"
+    )]
+    private partial void LogNoSnapshots(double seconds, string connection);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Replication: snapshots from the host arrive again after {Seconds:F1} s without"
+    )]
+    private partial void LogSnapshotsAgain(double seconds);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Replication: client {Slot} has acknowledged no packet for {Seconds:F1} s ({Packets} sent since); its last reply came {ReplySeconds:F1} s ago; the connection: {Connection}"
+    )]
+    private partial void LogNoAcknowledgements(
+        int slot,
+        double seconds,
+        long packets,
+        double replySeconds,
+        string connection
+    );
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Replication: client {Slot} acknowledges packets again after {Seconds:F1} s without"
+    )]
+    private partial void LogAcknowledgedAgain(int slot, double seconds);
+
+    /// <summary>The transport's account of a connection for a warning, or a word that it gave none.</summary>
+    private static string Described(string connection) =>
+        connection.Length > 0 ? connection : "the transport reports nothing more";
 }

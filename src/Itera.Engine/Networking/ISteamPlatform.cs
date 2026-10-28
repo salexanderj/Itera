@@ -162,6 +162,12 @@ internal interface ISteamPlatform
     /// <summary>The round trip on a connection in milliseconds, or -1.</summary>
     int RoundTripMilliseconds(uint connection);
 
+    /// <summary>Steam's real-time status of a connection and its route; false when the connection is gone.</summary>
+    bool TryGetStatus(uint connection, out ConnectionStatus status);
+
+    /// <summary>Steam's detailed status of a connection, its lines joined on one; empty when the connection is gone.</summary>
+    string DetailedStatus(uint connection);
+
     /// <summary>
     /// Asks for a friends-only lobby of <paramref name="maxMembers"/>; <see cref="ISteamPlatformListener.OnLobbyCreated"/>
     /// follows. A lobby made or entered while no <see cref="Listener"/> listens is left at once.

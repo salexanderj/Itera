@@ -106,7 +106,7 @@ public sealed partial class SteamService : IDisposable
 
     private (ISteamPlatform? Platform, string Reason) StartSteam()
     {
-        var platform = SteamPlatform.TryStart(_settings.AppId, out var reason);
+        var platform = SteamPlatform.TryStart(_settings.AppId, _logger, out var reason);
         return (platform, reason);
     }
 

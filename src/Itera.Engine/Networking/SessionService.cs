@@ -663,13 +663,19 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         }
     }
 
-    /// <summary>On a client that has joined, sends an engine message the replication built to the host, unreliable.</summary>
-    internal void SendEngineToHost(ReadOnlySpan<byte> message)
+    /// <summary>
+    /// On a client that has joined, sends an engine message the replication built to the host, unreliable; false when it
+    /// sent nothing (not joined yet, or the host is gone).
+    /// </summary>
+    internal bool SendEngineToHost(ReadOnlySpan<byte> message)
     {
         if (Role == SessionRole.Client && _join == JoinState.Loaded && _host >= 0)
         {
             SendEngine(_host, message);
+            return true;
         }
+
+        return false;
     }
 
     private void SendEngine(int peer, ReadOnlySpan<byte> message)
@@ -806,15 +812,79 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
 
         if (_logger.IsEnabled(LogLevel.Debug))
         {
+            // A client's one connection is to its host, which is not among the host's peers.
+            if (Role == SessionRole.Client && _host >= 0)
+            {
+                var name = _players.Length > 0 ? _players[0].Name : "";
+                LogPeer(_host, name, 0);
+            }
+
             foreach (var (id, peer) in _peers)
             {
-                var roundTrip = _transport.RoundTripMilliseconds(id);
-                LogPeerStats(id, peer.Name, peer.Slot, roundTrip);
+                LogPeer(id, peer.Name, peer.Slot);
             }
         }
 
         _messagesIn = _bytesIn = _messagesOut = _bytesOut = 0;
         _statsStart = now;
+    }
+
+    /// <summary>A connection's stats line: what its transport measures of it, or its round trip alone.</summary>
+    private void LogPeer(int id, string name, int slot)
+    {
+        if (!_transport.TryGetStatus(id, out var status))
+        {
+            var roundTrip = _transport.RoundTripMilliseconds(id);
+            LogPeerStats(id, name, slot, roundTrip);
+            return;
+        }
+
+        var here = Share(status.QualityHere);
+        var there = Share(status.QualityThere);
+        var queuedKilobytes = (status.QueuedReliableBytes + status.QueuedUnreliableBytes) / 1024.0;
+        LogPeerConnection(
+            id,
+            name,
+            slot,
+            status.RoundTripMilliseconds,
+            status.Route,
+            here,
+            there,
+            status.OutPacketsPerSecond,
+            status.OutBytesPerSecond / 1024,
+            status.InPacketsPerSecond,
+            status.InBytesPerSecond / 1024,
+            status.SendRateBytesPerSecond / 1024.0,
+            queuedKilobytes,
+            status.QueueMicroseconds / 1000.0,
+            status.UnacknowledgedReliableBytes / 1024.0
+        );
+    }
+
+    /// <summary>A share from 0 to 1 as a percentage, or "not known" for a negative one.</summary>
+    private static string Share(float share) =>
+        share < 0 ? "not known" : string.Create(CultureInfo.InvariantCulture, $"{share * 100:F0} %");
+
+    /// <summary>
+    /// The transport's account of the connection to the player in <paramref name="slot"/> (on a client, slot 0: the host),
+    /// on one line, for a warning; empty when it has none or no joined player holds the slot.
+    /// </summary>
+    internal string DescribeConnection(int slot)
+    {
+        if (Role == SessionRole.Client)
+        {
+            return slot == 0 && _host >= 0 ? _transport.DescribeConnection(_host) : "";
+        }
+
+        foreach (var (id, peer) in _peers)
+        {
+            if (peer.Joined && peer.Slot == slot)
+            {
+                return _transport.DescribeConnection(id);
+            }
+        }
+
+        return "";
     }
 
     private static Func<double> MonotonicClock()
@@ -954,4 +1024,26 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
         Message = "Session: peer {Peer} ({Name}, slot {Slot}) round trip {Milliseconds} ms"
     )]
     private partial void LogPeerStats(int peer, string name, int slot, int milliseconds);
+
+    [LoggerMessage(
+        Level = LogLevel.Debug,
+        Message = "Session: peer {Peer} ({Name}, slot {Slot}) round trip {Milliseconds} ms, {Route}; {QualityHere} of its packets arrive here in order, {QualityThere} of ours there; out {OutPackets:F0} packets/s ({OutKilobytes:F1} KB/s), in {InPackets:F0} ({InKilobytes:F1} KB/s); sends at up to {RateKilobytes:F0} KB/s; {QueuedKilobytes:F1} KB queued ({QueueMs:F0} ms), {UnackedKilobytes:F1} KB reliable unacknowledged"
+    )]
+    private partial void LogPeerConnection(
+        int peer,
+        string name,
+        int slot,
+        int milliseconds,
+        string route,
+        string qualityHere,
+        string qualityThere,
+        float outPackets,
+        float outKilobytes,
+        float inPackets,
+        float inKilobytes,
+        double rateKilobytes,
+        double queuedKilobytes,
+        double queueMs,
+        double unackedKilobytes
+    );
 }

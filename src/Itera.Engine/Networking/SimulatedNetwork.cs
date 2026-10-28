@@ -68,6 +68,11 @@ public sealed class SimulatedNetwork : ISessionTransport
         return inner < 0 ? inner : inner + 2 * _conditions.DelayMilliseconds;
     }
 
+    /// <summary>The inner transport's status, without the added delay: it measures its own link.</summary>
+    public bool TryGetStatus(int peer, out ConnectionStatus status) => _inner.TryGetStatus(peer, out status);
+
+    public string DescribeConnection(int peer) => _inner.DescribeConnection(peer);
+
     public int ReliableRoom(int peer)
     {
         var room = _inner.ReliableRoom(peer);

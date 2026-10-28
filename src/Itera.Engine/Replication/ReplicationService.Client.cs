@@ -47,8 +47,21 @@ public sealed partial class ReplicationService
     private long _snapshots;
     private long _unusable;
 
+    // The watch on snapshots: the count it last saw, the steps since it rose, whether a reply went out (the host sends
+    // nothing before), and whether the silence was reported.
+    private long _snapshotsSeen;
+    private int _stepsWithoutSnapshot;
+    private bool _replied;
+    private bool _silent;
+
     /// <summary>The entities a client shows (or has states of and will show).</summary>
     public int Shown => _shownIndex.Count;
+
+    /// <summary>
+    /// On a client, the seconds of its steps since it last read a snapshot, counted from its first reply; 0 on a host,
+    /// offline, and while snapshots arrive. Past <see cref="SilenceSeconds"/> the host's packets are not reaching it.
+    /// </summary>
+    public double SecondsWithoutSnapshots => _stepsWithoutSnapshot / (double)_fixedStepHz;
 
     /// <summary>On a client: the host's tick less the client's, as the newest packets say; 0 before the first.</summary>
     public double ClockOffsetTicks => _clockOffset;
@@ -192,6 +205,7 @@ public sealed partial class ReplicationService
             return;
         }
 
+        WatchSnapshots();
         var context = Context;
         foreach (var despawn in _despawns)
         {
@@ -275,7 +289,41 @@ public sealed partial class ReplicationService
         _reply.WriteVarInt((int)_newestPacket);
         _reply.WriteULong(_receivedBits);
         WriteCommands(tick);
-        _session.SendEngineToHost(_reply.Written);
+        _replied |= _session.SendEngineToHost(_reply.Written);
+    }
+
+    /// <summary>
+    /// Counts the steps since a snapshot was read, from the first reply on, and logs once when they pass
+    /// <see cref="SilenceSeconds"/> (with the connection's state, while it is still open) and once when snapshots come
+    /// again. Counted in steps, so a step the client itself was late for counts once.
+    /// </summary>
+    private void WatchSnapshots()
+    {
+        if (_snapshots != _snapshotsSeen)
+        {
+            _snapshotsSeen = _snapshots;
+            if (_silent)
+            {
+                _silent = false;
+                LogSnapshotsAgain(SecondsWithoutSnapshots);
+            }
+
+            _stepsWithoutSnapshot = 0;
+            return;
+        }
+
+        if (!_replied)
+        {
+            return;
+        }
+
+        _stepsWithoutSnapshot++;
+        if (!_silent && _stepsWithoutSnapshot >= SilenceSeconds * _fixedStepHz)
+        {
+            _silent = true;
+            var connection = Described(_session.DescribeConnection(0));
+            LogNoSnapshots(SecondsWithoutSnapshots, connection);
+        }
     }
 
     /// <summary>The estimate of the host's tick: the earliest-arriving packets set it, and it falls slowly between them.</summary>

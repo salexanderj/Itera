@@ -18,7 +18,9 @@ namespace Itera.Engine.Networking;
 /// peer, and a reliable one Steam refuses for a full buffer is held and sent again, in order, at the next
 /// <see cref="Poll"/>; a peer whose held messages pass <see cref="MaxHeldBytes"/> is ended. A join's payload goes out
 /// <see cref="JoinWindowBytes"/> at a time (<see cref="ReliableRoom"/>). A host accepts a connection only from a member of
-/// its lobby or a Steam friend. Main thread only.
+/// its lobby or a Steam friend, and a player's new connection ends the one it had open: a player who left and joined
+/// again while Steam still held the old connection open (a Steam test of 2026-10-28) took a second slot. Main thread
+/// only.
 /// </summary>
 public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformListener
 {
@@ -48,9 +50,10 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
     private readonly ILogger<SteamTransport> _logger;
     private readonly Queue<PendingChange> _changes = new();
 
-    // Open connections: Steam's handle for each peer id, and the peer id for each handle.
+    // Open connections: Steam's handle for each peer id, the peer id for each handle, and each peer's Steam id.
     private readonly Dictionary<int, uint> _handles = [];
     private readonly Dictionary<uint, int> _peers = [];
+    private readonly Dictionary<int, ulong> _steamIds = [];
 
     // What waits to be sent to each open peer.
     private readonly Dictionary<int, Outgoing> _outgoing = [];
@@ -59,6 +62,7 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
     private int _nextPeer = 1;
     private readonly MessageWriter _reasonWriter = new();
     private readonly MessageWriter _refusalWriter = new();
+    private readonly MessageWriter _replacedWriter = new();
     private readonly SteamMessageHandler _onMessage;
     private ISteamPlatform? _platform;
     private ISessionTransportListener? _polling;
@@ -202,7 +206,13 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
         return stats;
     }
 
-    public void Disconnect(int peer, ReadOnlySpan<byte> data)
+    public void Disconnect(int peer, ReadOnlySpan<byte> data) => End(peer, data, linger: true);
+
+    /// <summary>
+    /// Closes a peer's connection with <paramref name="data"/>, sending what is queued first when
+    /// <paramref name="linger"/> is true, and tells the session at the next delivery.
+    /// </summary>
+    private void End(int peer, ReadOnlySpan<byte> data, bool linger)
     {
         if (_platform is null || !_handles.Remove(peer, out var connection))
         {
@@ -212,10 +222,10 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
         _peers.Remove(connection);
         Forget(peer);
         var (reason, text) = EndReason(data);
-        _platform.CloseConnection(connection, reason, text, linger: true);
+        _platform.CloseConnection(connection, reason, text, linger);
         // Steam reports nothing for a connection this side closed; the session still hears of it, as with LiteNetLib.
         var said = data.IsEmpty ? 0 : reason;
-        _changes.Enqueue(new PendingChange(connection, SteamConnectionState.Problem, said, text, LocalPeer: peer));
+        _changes.Enqueue(new PendingChange(connection, SteamConnectionState.Problem, said, text, 0, LocalPeer: peer));
     }
 
     /// <summary>
@@ -228,6 +238,24 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
         _platform is not null && _handles.TryGetValue(peer, out var connection)
             ? _platform.RoundTripMilliseconds(connection)
             : -1;
+
+    /// <summary>Steam's real-time status of the peer's connection, and whether it goes through a relay.</summary>
+    public bool TryGetStatus(int peer, out ConnectionStatus status)
+    {
+        if (_platform is not null && _handles.TryGetValue(peer, out var connection))
+        {
+            return _platform.TryGetStatus(connection, out status);
+        }
+
+        status = default;
+        return false;
+    }
+
+    /// <summary>Steam's detailed status of the peer's connection, on one line.</summary>
+    public string DescribeConnection(int peer) =>
+        _platform is not null && _handles.TryGetValue(peer, out var connection)
+            ? _platform.DetailedStatus(connection)
+            : "";
 
     /// <summary>
     /// What fits under <see cref="JoinWindowBytes"/> of the bytes queued to <paramref name="peer"/>; none while any of its
@@ -273,6 +301,7 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
 
         _handles.Clear();
         _peers.Clear();
+        _steamIds.Clear();
         foreach (var outgoing in _outgoing.Values)
         {
             outgoing.Clear();
@@ -340,6 +369,10 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
             {
                 LogAcceptFailed(remoteSteamId);
             }
+            else
+            {
+                EndOlderConnection(remoteSteamId);
+            }
 
             return;
         }
@@ -353,7 +386,33 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
             LogClosed(remoteSteamId, state, endReason, endDebug);
         }
 
-        _changes.Enqueue(new PendingChange(connection, state, endReason, endDebug, LocalPeer: 0));
+        _changes.Enqueue(new PendingChange(connection, state, endReason, endDebug, remoteSteamId, LocalPeer: 0));
+    }
+
+    /// <summary>
+    /// Ends the open connection a player who connects again still has, at once (nothing queued to it is sent): the session
+    /// hears that peer leave before the new one opens, so the player's hello finds their slot free.
+    /// </summary>
+    private void EndOlderConnection(ulong steamId)
+    {
+        var older = 0;
+        foreach (var (peer, id) in _steamIds)
+        {
+            if (id == steamId)
+            {
+                older = peer;
+                break;
+            }
+        }
+
+        if (older == 0)
+        {
+            return;
+        }
+
+        LogConnectedAgain(steamId, older);
+        SessionProtocol.WriteDisconnect(_replacedWriter, DisconnectKind.Bye, 0, "the player connected again");
+        End(older, _replacedWriter.Written, linger: false);
     }
 
     void ISteamPlatformListener.OnLobbyCreated(ulong lobby, bool succeeded)
@@ -401,7 +460,7 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
         if (!succeeded || owner == 0 || owner == _platform.LocalSteamId)
         {
             LogLobbyEnterFailed(lobby, succeeded ? "it has no other owner" : "Steam refused");
-            _changes.Enqueue(new PendingChange(0, SteamConnectionState.Problem, 0, "", LocalPeer: 0));
+            _changes.Enqueue(new PendingChange(0, SteamConnectionState.Problem, 0, "", 0, LocalPeer: 0));
             return;
         }
 
@@ -450,6 +509,7 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
             var id = _nextPeer++;
             _handles[id] = connection;
             _peers[connection] = id;
+            _steamIds[id] = change.RemoteSteamId;
             _outgoing[id] = new Outgoing();
             _platform!.Watch(connection);
             listener.OnConnected(id);
@@ -600,6 +660,7 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
 
     private void Forget(int peer)
     {
+        _steamIds.Remove(peer);
         if (_outgoing.Remove(peer, out var outgoing))
         {
             outgoing.Clear();
@@ -661,6 +722,7 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
         SteamConnectionState State,
         int EndReason,
         string EndDebug,
+        ulong RemoteSteamId,
         int LocalPeer
     );
 
@@ -699,6 +761,12 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Steam: could not accept a connection from {SteamId}")]
     private partial void LogAcceptFailed(ulong steamId);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "Steam: {SteamId} connected again; ending its older connection (peer {Peer})"
+    )]
+    private partial void LogConnectedAgain(ulong steamId, int peer);
 
     [LoggerMessage(
         Level = LogLevel.Information,

@@ -72,6 +72,15 @@ The console's `replication` prints what is sent or shown. `replication delay MS`
 - Positions in states are absolute, so no buffer moves with the origin.
 - Measured figures (lag, budget) are in `docs/replication.md`.
 
+### When the host's packets stop
+
+The host sends each client that replies at least a packet each send, so a long gap means its packets do not arrive.
+
+- A client counts its steps without a snapshot from its first reply on (`ReplicationService.SecondsWithoutSnapshots`).
+- Past `ReplicationService.SilenceSeconds` it logs a Warning once, with the connection's account (`SessionService.DescribeConnection`). It logs again at Information when snapshots come back. `HostSilenceLayer` shows the count.
+- The host notes each client that has replied but acknowledged no new packet for as long. Its Warning gives the time since that client's last reply: replies that still come mean the host's packets do not reach it.
+- A host hitch or a long host step past the silence shows the notice for a moment, as it should.
+
 ### Prediction of a client's own player
 
 `Predict` and `ReplicationService.Prediction.cs` (with `PredictedState`) do this.

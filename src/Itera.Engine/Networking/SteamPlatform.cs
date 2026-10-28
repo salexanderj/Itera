@@ -1,16 +1,23 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text;
+using Itera.Engine.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Steamworks;
 
 namespace Itera.Engine.Networking;
 
 /// <summary>
 /// <see cref="ISteamPlatform"/> through Steamworks.NET: started by <see cref="TryStart"/>, which starts the Steam API.
-/// Message data is read straight from Steam's message structs, so receiving allocates nothing per message.
+/// Message data is read straight from Steam's message structs, so receiving allocates nothing per message. Steam's
+/// networking writes what it reports of its relays and connections into the log, at its "Msg" level and above.
 /// </summary>
-internal sealed unsafe class SteamPlatform : ISteamPlatform, IDisposable
+internal sealed unsafe partial class SteamPlatform : ISteamPlatform, IDisposable
 {
     private const int MessagesPerBatch = 64;
+
+    /// <summary>Room for a connection's detailed status, which runs to about 2 KB; more is asked for when it needs it.</summary>
+    private const int DetailedStatusBytes = 4096;
 
     // SteamNetworkingMessage_t starts with void* m_pData, int m_cbSize, and HSteamNetConnection m_conn.
     private static readonly int s_sizeOffset = IntPtr.Size;
@@ -29,12 +36,22 @@ internal sealed unsafe class SteamPlatform : ISteamPlatform, IDisposable
     private readonly Callback<PersonaStateChange_t> _personaChanged;
     private readonly Callback<LobbyDataUpdate_t> _lobbyDataUpdated;
     private readonly Callback<AvatarImageLoaded_t> _avatarLoaded;
+
+    // Kept for the life of the platform: Steam calls it from its own threads until Dispose clears it.
+    private readonly FSteamNetworkingSocketsDebugOutput _debugOutput;
+    private readonly ILogger _logger;
     private readonly AppId_t _appId;
     private HSteamNetPollGroup _pollGroup;
     private bool _disposed;
 
-    private SteamPlatform()
+    private SteamPlatform(ILogger logger)
     {
+        _logger = logger;
+        _debugOutput = OnDebugOutput;
+        SteamNetworkingUtils.SetDebugOutputFunction(
+            ESteamNetworkingSocketsDebugOutputType.k_ESteamNetworkingSocketsDebugOutputType_Msg,
+            _debugOutput
+        );
         LocalSteamId = SteamUser.GetSteamID().m_SteamID;
         _connectionChanged = Callback<SteamNetConnectionStatusChangedCallback_t>.Create(OnConnectionChanged);
         _lobbyJoinRequested = Callback<GameLobbyJoinRequested_t>.Create(OnLobbyJoinRequested);
@@ -61,8 +78,9 @@ internal sealed unsafe class SteamPlatform : ISteamPlatform, IDisposable
     /// refuses; throws <see cref="DllNotFoundException"/> (or <see cref="BadImageFormatException"/>) when this platform
     /// has no Steam library. When Steam did not start the game, <c>steam_appid.txt</c> next to the game names the app;
     /// the Steam API looks for it in the working directory, which is changed for the call and put back.
+    /// <paramref name="logger"/> takes what Steam's networking reports.
     /// </summary>
-    public static SteamPlatform? TryStart(uint appId, out string reason)
+    public static SteamPlatform? TryStart(uint appId, ILogger logger, out string reason)
     {
         SetResolver();
         var launchedBySteam = Environment.GetEnvironmentVariable("SteamAppId") is not null;
@@ -99,7 +117,7 @@ internal sealed unsafe class SteamPlatform : ISteamPlatform, IDisposable
         }
 
         reason = "";
-        return new SteamPlatform();
+        return new SteamPlatform(logger);
     }
 
     public string PersonaName => SteamFriends.GetPersonaName();
@@ -270,6 +288,69 @@ internal sealed unsafe class SteamPlatform : ISteamPlatform, IDisposable
         return result == EResult.k_EResultOK ? status.m_nPing : -1;
     }
 
+    public bool TryGetStatus(uint connection, out ConnectionStatus status)
+    {
+        var handle = new HSteamNetConnection(connection);
+        var now = default(SteamNetConnectionRealTimeStatus_t);
+        var lanes = default(SteamNetConnectionRealTimeLaneStatus_t);
+        var info = default(SteamNetConnectionInfo_t);
+        if (
+            SteamNetworkingSockets.GetConnectionRealTimeStatus(handle, ref now, 0, ref lanes) != EResult.k_EResultOK
+            || !SteamNetworkingSockets.GetConnectionInfo(handle, out info)
+        )
+        {
+            status = default;
+            return false;
+        }
+
+        var relayed = (info.m_nFlags & Constants.k_nSteamNetworkConnectionInfoFlags_Relayed) != 0;
+        var relay = PopCode(info.m_idPOPRelay.m_SteamNetworkingPOPID);
+        var route =
+            !relayed ? "direct"
+            : relay.Length > 0 ? "relayed through " + relay
+            : "relayed";
+        status = new ConnectionStatus(
+            now.m_nPing,
+            now.m_flConnectionQualityLocal,
+            now.m_flConnectionQualityRemote,
+            now.m_flOutPacketsPerSec,
+            now.m_flOutBytesPerSec,
+            now.m_flInPacketsPerSec,
+            now.m_flInBytesPerSec,
+            now.m_nSendRateBytesPerSecond,
+            now.m_cbPendingReliable,
+            now.m_cbPendingUnreliable,
+            now.m_cbSentUnackedReliable,
+            now.m_usecQueueTime.m_SteamNetworkingMicroseconds,
+            route
+        );
+        return true;
+    }
+
+    public string DetailedStatus(uint connection)
+    {
+        var handle = new HSteamNetConnection(connection);
+        var size = DetailedStatusBytes;
+        // A positive result is the size the text needs: once more with that.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var result = SteamNetworkingSockets.GetDetailedConnectionStatus(handle, out var text, size);
+            if (result < 0)
+            {
+                return "";
+            }
+
+            if (result == 0)
+            {
+                return OneLine(text ?? "");
+            }
+
+            size = result;
+        }
+
+        return "";
+    }
+
     public int QueuedBytes(uint connection)
     {
         var status = default(SteamNetConnectionRealTimeStatus_t);
@@ -328,7 +409,61 @@ internal sealed unsafe class SteamPlatform : ISteamPlatform, IDisposable
             _pollGroup = HSteamNetPollGroup.Invalid;
         }
 
+        SteamNetworkingUtils.SetDebugOutputFunction(
+            ESteamNetworkingSocketsDebugOutputType.k_ESteamNetworkingSocketsDebugOutputType_None,
+            null
+        );
         SteamAPI.Shutdown();
+    }
+
+    /// <summary>
+    /// What Steam's networking reports, on any thread (Steam may hold its lock): its bugs and errors at Error, its
+    /// warnings at Warning, its important messages at Information, and the rest at Debug. Nothing may throw into Steam.
+    /// </summary>
+    private void OnDebugOutput(ESteamNetworkingSocketsDebugOutputType type, StringBuilder message)
+    {
+        try
+        {
+            var text = OneLine(message.ToString());
+            switch (type)
+            {
+                case ESteamNetworkingSocketsDebugOutputType.k_ESteamNetworkingSocketsDebugOutputType_Bug:
+                case ESteamNetworkingSocketsDebugOutputType.k_ESteamNetworkingSocketsDebugOutputType_Error:
+                    LogSteamError(text);
+                    break;
+                case ESteamNetworkingSocketsDebugOutputType.k_ESteamNetworkingSocketsDebugOutputType_Important:
+                    LogSteamImportant(text);
+                    break;
+                case ESteamNetworkingSocketsDebugOutputType.k_ESteamNetworkingSocketsDebugOutputType_Warning:
+                    LogSteamWarning(text);
+                    break;
+                default:
+                    LogSteamMessage(text);
+                    break;
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Dropped: an exception into Steam's native code would end the process.
+        }
+    }
+
+    /// <summary>Steam's text with its lines trimmed and joined by "; ", so it stays one line of the log.</summary>
+    private static string OneLine(string text) =>
+        LogText.Printable(
+            string.Join("; ", text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        );
+
+    /// <summary>A relay's code ("iad"): Steam packs its letters as bytes 2, 1, and 0 of the id, and any fourth as byte 3.</summary>
+    private static string PopCode(uint id)
+    {
+        if (id == 0)
+        {
+            return "";
+        }
+
+        Span<char> code = [(char)((id >> 16) & 0xFF), (char)((id >> 8) & 0xFF), (char)(id & 0xFF), (char)(id >> 24)];
+        return LogText.Printable(new string(code[..(code[3] == 0 ? 3 : 4)]));
     }
 
     /// <summary>
@@ -480,4 +615,16 @@ internal sealed unsafe class SteamPlatform : ISteamPlatform, IDisposable
 
     private void OnAvatarLoaded(AvatarImageLoaded_t loaded) =>
         FriendsListener?.OnAvatarLoaded(loaded.m_steamID.m_SteamID);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Steam networking: {Text}")]
+    private partial void LogSteamError(string text);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Steam networking: {Text}")]
+    private partial void LogSteamWarning(string text);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Steam networking: {Text}")]
+    private partial void LogSteamImportant(string text);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Steam networking: {Text}")]
+    private partial void LogSteamMessage(string text);
 }

@@ -26,6 +26,7 @@ Layers the engine provides:
 
 - `AimDotLayer`: the first of a match's layers, added before the game's. It draws at the screen's own pixels at any render scale and hides while the loading screen is drawn.
 - `CentredMessageLayer`: shows one of a fixed list of texts, made into `TextBlobs` once, chosen each frame by a callback. It allocates nothing.
+- `HostSilenceLayer`: a match's layer after the aim dot. On a client it shows "No data from the host for N s" while `ReplicationService.SecondsWithoutSnapshots` is at least `ReplicationService.SilenceSeconds`. It hides while the loading screen is drawn.
 - `Amounts`: formats counts for the HUD (500, 12.5K, 30M).
 - `StatsLayer`: the stats line (F1, the `stats` command, `Engine:Ui:Stats`). It shows frames per second, frame and GPU time, the render scale, fixed steps per second, the session, and the living particles.
 - `LoadingLayer`: lists the loading tasks.
@@ -93,11 +94,11 @@ Reading a UI:
 - `UiInputTests` and `UiLayerTests` run through `UISurface` and `LayerPicture`, which draws a layer alone.
 - `ITERA_UI_PICTURES` names a folder where `UiLayerTests` keeps its page's picture and `MenuPicturesTests` keeps every menu page's.
 - A HUD layer's tests draw it at a few screen sizes and expect no ink outside its `Bounds` (`LayerInk`, `EngineLayerBoundsTests`).
-- Other classes: `UISurfaceTests`, `AimDotLayerTests`, `CentredMessageLayerTests`, `AmountsTests`, `TextBlobsTests`, `UiFontsTests`, `WheelStepsTests`, `LoadingScreenTests`, `ModelsLoadingTaskTests`.
+- Other classes: `UISurfaceTests`, `AimDotLayerTests`, `CentredMessageLayerTests`, `HostSilenceLayerTests`, `AmountsTests`, `TextBlobsTests`, `UiFontsTests`, `WheelStepsTests`, `LoadingScreenTests`, `ModelsLoadingTaskTests`.
 
 ### Files in `src/Itera.Engine`
 
-- `UI/`: the surface and its layers (`UISurface`, `IUiLayer`, `IMatchUiLayer`, `AimDotLayer`, `CentredMessageLayer`, `StatsLayer`, `LoadingLayer`, `Amounts`), the font and the sizing rule (`UiFonts`, from `UI/Fonts/`, copied to `Fonts/`; `LayerFont`), `TextBlobs`, and `WheelSteps`.
+- `UI/`: the surface and its layers (`UISurface`, `IUiLayer`, `IMatchUiLayer`, `AimDotLayer`, `CentredMessageLayer`, `HostSilenceLayer`, `StatsLayer`, `LoadingLayer`, `Amounts`), the font and the sizing rule (`UiFonts`, from `UI/Fonts/`, copied to `Fonts/`; `LayerFont`), `TextBlobs`, and `WheelSteps`.
 - `UI/Toolkit/`: `Ui` with its layout, input, and dump, `UiBox`, `UiSize`, `UiText`, `UiState`, `UiElement`, `UiInput`, `UiStyle`, `UiPainter`, `UiTypefaces`, `UiToolkit`, `UiLayer`.
 - `Loading/`: `LoadingScreen`, `ILoadingTask`, the engine's tasks (`EngineLoadingTasks.cs`), `ModelsLoadingTask`.
 
