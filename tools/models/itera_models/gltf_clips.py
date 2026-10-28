@@ -1,7 +1,8 @@
 """A model's clips as glTF data on the model's own nodes, read back from an armature imported from the model.
 
 Run inside Blender. Blender's glTF import gives each bone a rest of its own, which differs from its node's by a fixed
-turn; `corrections` finds that turn, so a posed bone gives its node's transform. `sample` reads a clip that way,
+turn; `corrections` finds that turn, so a posed bone gives its node's transform. `on_body` moves the joints to a body
+of other proportions bound on the model's rig. `sample` reads a clip that way,
 `settle` makes a sampled cycle a loop played in place facing the model's front, and `write` writes clips into a .glb on
 the model's nodes, which merge_clips.py adds to the model. retarget.py puts them together for motion capture.
 
@@ -17,6 +18,8 @@ from pathlib import Path
 
 import bpy
 from mathutils import Matrix, Quaternion, Vector
+
+from . import rig
 
 #: glTF's axes to Blender's, as Blender's glTF import turns them.
 TO_BLENDER = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
@@ -82,6 +85,21 @@ def corrections(armature: bpy.types.Object, nodes: Nodes) -> dict:
         @ (TO_BLENDER @ nodes.rest_world[nodes.index(bone.name)] @ FROM_BLENDER)
         for bone in armature.data.bones
     }
+
+
+def on_body(armature: bpy.types.Object, nodes: Nodes, body: Nodes) -> dict:
+    """Moves the joints of `armature`, imported from the model of `nodes`, to the places `body`'s nodes give them: a body
+    of other proportions bound on the model's rig, its rest turns the model's (`rig.move_joints`). Find `corrections`
+    first. Returns each moved node's rest translation in the body less the model's (node index: glTF axes), which a
+    joint's sampled translation loses to be written on the model's nodes: the engine adds it back as it binds the body."""
+    places, shifts = {}, {}
+    for bone in armature.data.bones:
+        if bone.name in body.names:
+            at, index = body.index(bone.name), nodes.index(bone.name)
+            places[bone.name] = TO_BLENDER @ body.rest_world[at].translation
+            shifts[index] = body.rest[at].translation - nodes.rest[index].translation
+    rig.move_joints(armature, places)
+    return shifts
 
 
 def sample(armature: bpy.types.Object, nodes: Nodes, turns: dict, frames: list, joints: list) -> list:

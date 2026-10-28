@@ -276,5 +276,10 @@ form): each from a few key poses (`itera_models/keyed.py`), written into one `.g
 - reports where its impacts put the joints named, for the game's hit windows, and draws a sheet of its frames from the
   side and from three quarters in front (`itera_models/strips.py`), with `--video` an MP4 too.
 
+A recipe's `BODY` names a model bound on the model's rig whose joints stand at places of their own. The clips are then
+keyed for that body: the rig's joints move to its places, the stand is rebased on them as the engine rebases it, and
+the sheet draws the body. The clips are still written on the model's nodes, the hips' translation less the body's shift
+of its rest, which the engine adds back as it binds the body (`gltf_clips.on_body`).
+
 Each key must fall on a frame. A clip with a problem fails the command (exit 1). The work folder is
 `<agent data folder>/ModelBuilds/clips-<RECIPE>/`, or `--work DIR`.

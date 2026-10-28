@@ -67,6 +67,73 @@ class SampleTests(unittest.TestCase):
         self.assertGreater(checked, 6)
 
 
+class BodyTests(unittest.TestCase):
+    """A rig moved onto a body of other proportions: the same bones, the body and the arm 0.1 m higher and 0.05 m back,
+    the model's own clip played on it."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        folder = Path(self._tmp.name)
+        self.model, self.body = folder / "Rig.glb", folder / "Body.glb"
+        for path, lift, back, wave in ((self.model, 0.0, 0.0, True), (self.body, 0.1, 0.05, False)):
+            utils.reset_scene()
+            bones = [
+                (name, (head[0], head[1] + back * (name != "root"), head[2] + lift * (name != "root")),
+                 (tail[0], tail[1] + back * (name != "root"), tail[2] + lift * (name != "root")), roll, parent)
+                for name, head, tail, roll, parent in BONES
+            ]
+            armature = utils.make_armature("Rig", bones)
+            bpy.ops.mesh.primitive_cube_add(size=0.3, location=(0, back, 0.6 + lift))
+            rig.rigid_skin({bpy.context.object: "body"}, armature)
+            if wave:
+                clips.new_clip(armature, "Wave", 1, frame_end=3)
+                for frame, angle in ((1, 0.0), (2, 0.6), (3, -0.4)):
+                    turn = Quaternion((0, 0, 1), angle)
+                    clips.key_pose(armature, frame, {"body": {"rotation": turn}, "arm": {"rotation": turn.inverted()}})
+                clips.key_pose(armature, 1, {"body": {"location": (0, 0, 0)}})
+                clips.key_pose(armature, 3, {"body": {"location": (0.2, 0.1, 0)}})
+            export.glb(path, clips=["Wave"] if wave else None)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_moved_onto_a_body_the_joints_stand_at_its_places_and_read_back_as_the_model_keys_them(self):
+        document, binary = gltf_clips.read_glb(self.model)
+        nodes = gltf_clips.Nodes(document)
+        body = gltf_clips.Nodes(gltf_clips.read_glb(self.body)[0])
+        utils.reset_scene()
+        armature, _ = rig.import_reference(self.model)
+        turns = gltf_clips.corrections(armature, nodes)
+
+        shifts = gltf_clips.on_body(armature, nodes, body)
+
+        for bone in armature.data.bones:
+            at = gltf_clips.TO_BLENDER @ body.rest_world[body.index(bone.name)].translation
+            self.assertLess((armature.matrix_world @ bone.head_local - at).length, 1e-5, bone.name)
+        self.assertLess((shifts[nodes.index("body")] - Vector((0, 0.1, -0.05))).length, 1e-5)
+        # The model's clip on the moved rig, each joint less its shift, is what the model's file keys.
+        animation = document["animations"][0]
+        fps = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
+        joints = [nodes.index(name) for name in ("root", "body", "arm")]
+        armature.animation_data.action = next(action for action in bpy.data.actions if action.name.startswith("Wave"))
+        checked = 0
+        for channel in animation["channels"]:
+            sampler = animation["samplers"][channel["sampler"]]
+            times = merge_clips.floats(document, binary, sampler["input"])
+            values = merge_clips.floats(document, binary, sampler["output"])
+            node, path = channel["target"]["node"], channel["target"]["path"]
+            sampled = gltf_clips.sample(armature, nodes, turns, [time[0] * fps for time in times], joints)
+            for locals_, keyed in zip(sampled, values):
+                location, rotation, _ = locals_[node].decompose()
+                if path == "rotation":
+                    keyed = Quaternion((keyed[3], keyed[0], keyed[1], keyed[2]))
+                    self.assertGreater(abs(rotation.dot(keyed)), 1 - 1e-6, (node, keyed))
+                elif path == "translation":
+                    self.assertLess((location - shifts.get(node, Vector()) - Vector(keyed)).length, 1e-5, (node, keyed))
+                checked += 1
+        self.assertGreater(checked, 6)
+
+
 class SettleTests(unittest.TestCase):
     """settle on a cycle made by hand: hips 1 m up with hip joints 0.1 m to each side, the body turned to face +x and
     going 0.5 m that way over a second, its hips also turning 0.1 rad about x, which the seam must take back."""

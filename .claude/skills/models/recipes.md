@@ -193,6 +193,8 @@ def build(ctx):
   slide, and in `impacts` the joints and times the game's hit windows come from.
 - A cycle that does not start at the stand (a climb) is a `loop`: its first key names every part, and its last key the
   same pose. A loop the game poses by how far the body has gone, not by time, keeps its parts in step with the world.
+- A body bound on the model's rig with joints of its own places (a body from MakeHuman) plays the model's clips with
+  its hands and feet a few centimetres off. Name it in `BODY`, and the clips are keyed for it.
 
 ## Motion capture onto the game's rig
 

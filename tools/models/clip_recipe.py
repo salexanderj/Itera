@@ -9,6 +9,7 @@ A clip recipe is a Python file with these names; its paths are from its own fold
     OUT = "PATH.glb"        # the clips on the model's nodes, which merge_clips.py adds to the model
     STAND = "Idle_Loop"     # the model's clip whose first pose each clip but a loop starts and ends in
     FPS = 30                # keys a second
+    BODY = "PATH.glb"       # optional: a body bound on MODEL's rig with joints of its own places, the clips keyed for it
     def build(ctx): ...     # makes the clips with ctx.clip
 
 `ctx.clip(name, keys, ground=(), planted=(), impacts=(), mirror=None, loop=False)` makes one clip from `keys`
@@ -19,6 +20,9 @@ joints, and draws its sheet and, with --video, its video. `mirror` names the sam
 `ctx.stand(joint)` gives where a joint stands, in the model's axes, and `ctx.ankle_for(side, toes, turn)` where an ankle
 goes for its toes to rest at a place with the foot turned.
 
+With a BODY, the rig's joints move to the body's places, its stand clip rebased on them as the engine rebases it, and
+the body is drawn. The clips are still written on MODEL's nodes, the hips' translation less the body's shift of its
+rest, which the engine adds back as it binds the body.
 `--out` writes the clips there in place of the recipe's OUT (build.py verify compares the two).
 
 The report lists, for each clip, its length, its lowest joints, its knees' and elbows' most bend, how far its ends lie
@@ -32,6 +36,7 @@ import traceback
 from pathlib import Path
 
 import bpy
+from mathutils import Vector
 
 TOOLS_DIR = Path(__file__).resolve().parent
 if str(TOOLS_DIR) not in sys.path:
@@ -53,11 +58,12 @@ def swapped(name: str) -> str:
 class Context:
     """What a clip recipe's build gets: the clips it makes are kept to be written, with their reports and pictures."""
 
-    def __init__(self, armature, meshes, nodes, turns, keyer, work: Path, video: bool) -> None:
+    def __init__(self, armature, meshes, nodes, turns, keyer, work: Path, video: bool, shifts: dict) -> None:
         self.armature = armature
         self.meshes = meshes
         self.nodes = nodes
         self.turns = turns
+        self.shifts = shifts
         self.keyer = keyer
         self.work = work
         self.video = video
@@ -109,11 +115,26 @@ class Context:
                 "name": name,
                 "times": [frame / keyer.fps for frame in range(last + 1)],
                 "rotations": {joint: [locals_[joint].to_quaternion() for locals_ in sampled] for joint in joints},
-                "translations": {hips: [locals_[hips].translation.copy() for locals_ in sampled]},
+                "translations": {
+                    hips: [locals_[hips].translation - self.shifts.get(hips, Vector()) for locals_ in sampled]
+                },
             }
         )
         self.reports.append(report)
         self.problems.extend(problems)
+
+
+def on_body(armature, meshes: list, nodes, path: Path) -> tuple:
+    """Moves the rig's joints to the body's at `path` (`gltf_clips.on_body`) and draws the body's meshes on the rig in
+    place of the model's: returns them and the joints' shifts."""
+    document, _ = gltf_clips.read_glb(path)
+    shifts = gltf_clips.on_body(armature, nodes, gltf_clips.Nodes(document))
+    body_armature, body_meshes = rig.import_reference(path)
+    for mesh in body_meshes:
+        rig.bind_weighted(mesh, armature)
+    for obj in [body_armature, *meshes]:
+        bpy.data.objects.remove(obj, do_unlink=True)
+    return body_meshes, shifts
 
 
 def load(path: Path):
@@ -147,10 +168,13 @@ def main(arguments: list) -> None:
     nodes = gltf_clips.Nodes(document)
     armature, meshes = rig.import_reference(model)
     turns = gltf_clips.corrections(armature, nodes)
+    shifts = {}
+    if hasattr(module, "BODY"):
+        meshes, shifts = on_body(armature, meshes, nodes, (folder / module.BODY).resolve())
     keyer = keyed.Keyer(armature, module.STAND, getattr(module, "RIG", keyed.MANNEQUIN), getattr(module, "FPS", 30))
     for action in list(bpy.data.actions):
         bpy.data.actions.remove(action)
-    ctx = Context(armature, meshes, nodes, turns, keyer, work, video)
+    ctx = Context(armature, meshes, nodes, turns, keyer, work, video, shifts)
     module.build(ctx)
     out = out_override or (folder / module.OUT).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
