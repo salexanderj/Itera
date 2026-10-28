@@ -46,8 +46,9 @@ tools/benchmark/flight.py long                               # uploads, the mesh
 
 - `run.sh` makes the window full screen on `BENCH_OUTPUT` (default `DP-1`) and runs with VSync off, so the GPU never
   waits for the display and its clocks stay up. It starts the match at once (`Engine:Session:Mode=Offline`, no menu)
-  and gives the render scale (1, with dynamic render scaling off), field of view (90), windowed mode, shadows, and
-  anti-aliasing (on, as shipped) on the command line, so the player's `settings.json` (the menu's Settings) changes no
+  and gives the render scale (1, with dynamic render scaling off), field of view (90), windowed mode, shadows,
+  anti-aliasing (on, as shipped), and the game's own object detail (its `Engine:Renderer:ObjectVoxelPixels`, read by
+  `data_folder.py --option`) on the command line, so the player's `settings.json` (the menu's Settings) changes no
   measurement; the log's `Settings: ...` line shows what applied, and `--Engine:Renderer:RenderScale=0.67` after the
   label measures another fixed scale (`--Engine:Renderer:AntiAliasing=false` the picture without anti-aliasing).
   `parse.py` also gives each view's anti-aliasing (SMAA) and upscale passes per frame, and the game's own render passes

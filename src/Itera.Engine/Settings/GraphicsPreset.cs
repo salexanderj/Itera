@@ -6,13 +6,13 @@ namespace Itera.Engine.Settings;
 /// </summary>
 public enum GraphicsPreset
 {
-    /// <summary>SMAA, shadows, object detail 2, effects 50 %.</summary>
+    /// <summary>SMAA, shadows, object detail 2 or the game's coarser default, effects 50 %.</summary>
     Low,
 
-    /// <summary>MSAA 2x, shadows, object detail 2, effects 75 %.</summary>
+    /// <summary>MSAA 2x, shadows, object detail 2 or the game's coarser default, effects 75 %.</summary>
     Medium,
 
-    /// <summary>MSAA 4x, shadows, object detail 1, effects 100 %.</summary>
+    /// <summary>MSAA 4x, shadows, object detail 1 or the game's coarser default, effects 100 %.</summary>
     High,
 
     /// <summary>The settings match no preset.</summary>

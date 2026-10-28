@@ -120,7 +120,11 @@ public sealed partial class PlayerSettings
         GameKey,
     };
 
-    /// <summary>The engine's part of each preset's table, by <see cref="GraphicsPreset"/> (Low, Medium, High).</summary>
+    /// <summary>
+    /// The engine's part of each preset's table, by <see cref="GraphicsPreset"/> (Low, Medium, High). A preset's object
+    /// detail is its table's or the options' (<c>Engine:Renderer:ObjectVoxelPixels</c>, the game's), whichever is coarser
+    /// (<see cref="PresetObjectDetail"/>).
+    /// </summary>
     private static readonly PresetTable[] s_presets =
     [
         new(AntiAliasMode.Smaa, true, 2, 0.5f),
@@ -138,6 +142,9 @@ public sealed partial class PlayerSettings
     private readonly WorldMeshes? _meshes;
     private readonly EffectsBudget? _effects;
     private readonly float _optionsThreshold;
+
+    // The options' object detail, the coarsest a preset's object detail may be finer than.
+    private readonly float _optionsObjectDetail;
     private readonly List<PresetValue> _presetValues = [];
     private readonly ILogger<PlayerSettings> _logger;
     private readonly HashSet<string> _fromCommandLine = new(StringComparer.Ordinal);
@@ -249,6 +256,7 @@ public sealed partial class PlayerSettings
         AntiAliasing = options.Renderer.AntiAliasing;
         MsaaSamples = AntiAliasModes.SnapSamples(options.Renderer.MsaaSamples);
         ObjectDetail = Math.Clamp(options.Renderer.ObjectVoxelPixels, LeastObjectDetail, MostObjectDetail);
+        _optionsObjectDetail = ObjectDetail;
         EffectsDetail = EffectsBudget.MostShare;
         RenderScale = Math.Clamp(options.Renderer.RenderScale, Rendering.RenderScale.Min, Rendering.RenderScale.Max);
         VSync = options.Window.VSync;
@@ -642,7 +650,7 @@ public sealed partial class PlayerSettings
         var table = s_presets[(int)preset];
         SetAntiAliasMode(table.AntiAlias);
         SetShadows(table.Shadows);
-        SetObjectDetail(table.ObjectDetail);
+        SetObjectDetail(PresetObjectDetail(preset));
         SetEffectsDetail(table.EffectsDetail);
         foreach (var value in _presetValues)
         {
@@ -657,7 +665,7 @@ public sealed partial class PlayerSettings
         if (
             AntiAliasMode != table.AntiAlias
             || Shadows != table.Shadows
-            || !Near(ObjectDetail, table.ObjectDetail)
+            || !Near(ObjectDetail, PresetObjectDetail(preset))
             || !Near(EffectsDetail, table.EffectsDetail)
         )
         {
@@ -674,6 +682,13 @@ public sealed partial class PlayerSettings
 
         return true;
     }
+
+    /// <summary>
+    /// The object detail of <paramref name="preset"/> (Low, Medium, or High): its table's or the options', whichever is
+    /// coarser, so a game whose default is coarser has its presets no finer.
+    /// </summary>
+    private float PresetObjectDetail(GraphicsPreset preset) =>
+        Math.Max(s_presets[(int)preset].ObjectDetail, _optionsObjectDetail);
 
     /// <summary>Equal to the four places the file keeps.</summary>
     private static bool Near(float a, float b) => Math.Abs(a - b) < 1e-4f;

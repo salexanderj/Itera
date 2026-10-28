@@ -862,6 +862,22 @@ public sealed class PlayerSettingsTests : IDisposable
         Assert.Equal(effectsDetail, effects.Ceiling);
     }
 
+    [Theory]
+    [InlineData(GraphicsPreset.Low, 2f)]
+    [InlineData(GraphicsPreset.Medium, 2f)]
+    [InlineData(GraphicsPreset.High, 2f)]
+    public void A_games_coarser_object_detail_is_its_presets_least(GraphicsPreset preset, float objectDetail)
+    {
+        var options = new EngineOptions();
+        options.Renderer.ObjectVoxelPixels = 2;
+        var settings = Create(options);
+        settings.SetObjectDetail(3.5f);
+
+        settings.SetGraphicsPreset(preset);
+
+        Assert.Equal((preset, objectDetail), (settings.GraphicsPreset, settings.ObjectDetail));
+    }
+
     [Fact]
     public void A_row_changed_after_a_preset_makes_custom_and_matching_values_make_the_preset_again()
     {

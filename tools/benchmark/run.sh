@@ -50,6 +50,12 @@ if [[ "${BENCH_AGENT:-}" == 1 ]]; then
 fi
 data="$(python3 "$here/data_folder.py" "${agent[@]}")"
 folder="$(python3 "$here/data_folder.py" --name "${agent[@]}")"
+# The game's own object detail, so a settings.json's (the menu's Object detail) changes no measurement either.
+detail_args=()
+detail="$(python3 "$here/data_folder.py" --option Engine:Renderer:ObjectVoxelPixels)"
+if [[ -n "$detail" ]]; then
+    detail_args=("--Engine:Renderer:ObjectVoxelPixels=$detail")
+fi
 out="${BENCH_OUT:-$data/Benchmarks}/$label"
 bin="${BENCH_BIN:-$repo/src/Game/bin/Release/net10.0}/Game"
 output="${BENCH_OUTPUT:-DP-1}"
@@ -66,16 +72,17 @@ mkdir -p "$out"
 # VSync off: mailbox presentation, so the GPU never waits for the display (and runs while the screen is locked).
 # Stats every second: parse.py averages the seconds inside each measurement.
 # Steam off: the Steam API loads Steam's overlay layer into the Vulkan chain (item 5 part B), which earlier runs lacked.
-# The render scale (fixed: dynamic render scaling off), field of view, windowed mode, shadows, and anti-aliasing (on, as
-# shipped; SMAA runs only when MSAA is off) given here, so the player's settings.json (the menu's Settings) changes no
-# measurement (the game's "Settings: ..." line shows what applied); arguments after them still win, so
-# --Engine:Renderer:RenderScale=0.67 measures that scale and --Engine:Renderer:AntiAliasing=false the picture without
-# anti-aliasing.
+# The render scale (fixed: dynamic render scaling off), field of view, windowed mode, shadows, anti-aliasing (on, as
+# shipped; SMAA runs only when MSAA is off), and the game's object detail given here, so the player's settings.json
+# (the menu's Settings) changes no measurement (the game's "Settings: ..." line shows what applied); arguments after
+# them still win, so --Engine:Renderer:RenderScale=0.67 measures that scale and --Engine:Renderer:AntiAliasing=false the
+# picture without anti-aliasing.
 "$bin" --Engine:Steam:Enabled=false --Engine:Session:Mode=Offline --Engine:Benchmark:Enabled=true --Engine:Window:VSync=false \
     --Engine:Renderer:DynamicRenderScaling=false --Engine:Renderer:RenderScale=1 \
     --Engine:Camera:FieldOfViewDegrees=90 --Engine:Window:Fullscreen=false \
     --Engine:Renderer:Shadows=true --Engine:Renderer:AntiAliasing=true \
-    --Engine:Logging:StatsIntervalSeconds=1 "--Engine:Application:DataFolder=$folder" "${window_args[@]}" "$@" \
+    --Engine:Logging:StatsIntervalSeconds=1 "--Engine:Application:DataFolder=$folder" "${window_args[@]}" \
+    "${detail_args[@]}" "$@" \
     > "$out/console.txt" 2>&1 &
 pid=$!
 # A script stopped early (Ctrl+C, an error) stops the game too, rather than leaving it full screen.
