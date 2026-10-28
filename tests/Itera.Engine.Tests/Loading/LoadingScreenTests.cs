@@ -6,7 +6,8 @@ namespace Itera.Engine.Tests.Loading;
 
 /// <summary>
 /// <see cref="LoadingScreen"/> with tasks the test finishes: it covers the picture until every task is done, then fades
-/// out; at the time limit it stops waiting with a Warning naming what had not finished; turned off it is done at once;
+/// out; as it ends, done or at its time limit, it collects loading's garbage once, before it fades; at the time limit
+/// it stops waiting with a Warning naming what had not finished; turned off it is done at once and collects nothing;
 /// its version changes only when a line would; and an update allocates nothing.
 /// </summary>
 public sealed class LoadingScreenTests
@@ -105,6 +106,28 @@ public sealed class LoadingScreenTests
     }
 
     [Fact]
+    public void As_it_ends_it_collects_loadings_garbage_once_before_it_fades()
+    {
+        var logger = new RecordingLogger();
+        var world = new TestTask("World");
+        var screen = Create(logger, [world]);
+        screen.Begin(0);
+        screen.Update(1);
+        var whileLoading = screen.Collections;
+
+        world.Progress = LoadingProgress.Finished;
+        screen.Update(2);
+        var atTheEnd = screen.Collections;
+        screen.Update(2 + LoadingScreen.FadeSeconds);
+
+        Assert.Equal((0, 1, 1), (whileLoading, atTheEnd, screen.Collections));
+        var messages = logger.Entries.Select(e => e.Message).ToList();
+        var done = messages.FindIndex(m => m.StartsWith("Loading: done", StringComparison.Ordinal));
+        var collected = messages.FindIndex(m => m.StartsWith("Loading: collected", StringComparison.Ordinal));
+        Assert.True(done >= 0 && collected > done, string.Join(" | ", messages));
+    }
+
+    [Fact]
     public void A_matchs_end_leaves_no_tasks_and_the_next_match_waits_for_its_own()
     {
         var logger = new RecordingLogger();
@@ -145,6 +168,7 @@ public sealed class LoadingScreenTests
         var warning = Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
         Assert.Contains("not finished: Navigation", warning.Message);
         Assert.Contains("finished: Sounds 4.9 s", warning.Message);
+        Assert.Equal(1, screen.Collections);
     }
 
     [Fact]
@@ -194,6 +218,7 @@ public sealed class LoadingScreenTests
         Assert.Equal(0, task.Reads);
         screen.BeginAgain(2);
         Assert.Equal(LoadingPhase.Done, screen.Phase);
+        Assert.Equal(0, screen.Collections);
     }
 
     [Fact]

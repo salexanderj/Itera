@@ -81,6 +81,9 @@ Reading a UI:
 
 - The engine's tasks are in `Loading/EngineLoadingTasks.cs`: `SoundsLoadingTask`, `PhysicsWarmUpLoadingTask`, `WorldLoadingTask`, `NavigationLoadingTask`, and `EditWarmUpLoadingTask`. The game's own come after them. `ModelsLoadingTask` waits for a list of models to reach the GPU.
 - `Engine:Loading:MaxSeconds` limits the wait; past it the game logs a Warning and plays.
+- As loading ends, done or at its limit, and before the fade, `LoadingScreen` runs one full compacting collection
+  (`LoadingScreen.Collections`): what loading made and dropped sits in the oldest generation, which only a full
+  collection frees, and in play that collection is one long step.
 - The loop runs as usual meanwhile, but the game's input is blocked. Escape and the console still work.
 - The render thread draws `loading.frag` (`LoadingPass`) instead of the world. `LoadingLayer` lists the tasks.
 - After `reset` the screen covers the picture again (`LoadingScreen.BeginAgain`, called from the loop when `VoxelWorld.LastReset` moves) and frees the pointer.
