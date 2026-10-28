@@ -8,7 +8,7 @@ shadow maps' and the models' part of the world pass, the anti-aliasing (SMAA) an
 own render passes and the image views per frame (0 for a game with none or a log from before them); and from
 the meshes' stats lines, the megabytes uploaded, the triangles drawn in the camera's view and the shadow maps, and the
 mesh heap in use. From the frame summary lines, the whole frame's GPU time, weighted by frames, and its slowest 1 %: the
-highest of the seconds' 99th percentiles. From the fixed steps' lines, the step's time, the sum of its parts' averages
+highest of the seconds' 99th percentiles; and the frames shown a second, with the slowest 1 % of the times between them. From the fixed steps' lines, the step's time, the sum of its parts' averages
 weighted by steps, the systems' part, and the longest step. The same for the flight. Logs from before the raymarcher left
 main (2026-10-06) give the voxel pass and the GPU passes as before, and no mesh figures.
 """
@@ -28,7 +28,7 @@ gpu = []  # (time, frames, voxels avg, voxels max, upload frames, upload avg, sh
 models = {}  # time: (models frames, models avg, models max)
 meshes = []  # (time, uploaded megabytes, heap megabytes used, triangles, shadow triangles)
 post = {}  # time: (anti-aliasing, upscale, game passes, image views: frames and avg each)
-frame = []  # (time, frames, GPU avg, GPU p99)
+frame = []  # (time, frames, GPU avg, GPU p99, frame p99)
 steps = []  # (time, steps, step avg as the sum of its parts', systems avg, longest step)
 windows = {}
 order = []
@@ -73,12 +73,12 @@ for line in lines:
         meshes.append((t, float(m[1]), float(m[2]), int(m[3]), int(m[4])))
         continue
     m = re.search(
-        r"Frame stats over [\d.]+ s: (\d+) frames, .*GPU avg ([\d.]+) ms max [\d.]+ ms; .*GPU p50 [\d.]+ p95 [\d.]+ "
-        r"p99 ([\d.]+) ms",
+        r"Frame stats over [\d.]+ s: (\d+) frames, .*GPU avg ([\d.]+) ms max [\d.]+ ms; frame p50 [\d.]+ p95 [\d.]+ "
+        r"p99 ([\d.]+) ms, GPU p50 [\d.]+ p95 [\d.]+ p99 ([\d.]+) ms",
         line,
     )
     if m:
-        frame.append((t, int(m[1]), float(m[2]), float(m[3])))
+        frame.append((t, int(m[1]), float(m[2]), float(m[4]), float(m[3])))
         continue
     m = re.search(r"Fixed steps over [\d.]+ s \((\d+) steps\): longest ([\d.]+) ms, [^;]*; systems avg ([\d.]+) ms", line)
     if m:
@@ -143,6 +143,9 @@ def summarise(start, end):
         # The whole frame on the GPU, and the host's fixed step: 0 for a log without their lines.
         "frame_gpu_ms": sum(f[1] * f[2] for f in whole) / wholes if wholes else 0.0,
         "frame_gpu_p99_ms": max((f[3] for f in whole), default=0.0),
+        # The frames shown: how many a second, and the highest of the seconds' 99th percentiles of the time between two.
+        "fps": wholes / len(whole) if whole else 0.0,
+        "frame_p99_ms": max((f[4] for f in whole), default=0.0),
         "step_ms": sum(s[1] * s[2] for s in stepped) / counted if counted else 0.0,
         "systems_ms": sum(s[1] * s[3] for s in stepped) / counted if counted else 0.0,
         "step_max_ms": max((s[4] for s in stepped), default=0.0),

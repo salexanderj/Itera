@@ -25,7 +25,8 @@ game's benchmark hides its views unless it asks for them (the starter's minimap 
 `Engine:Benchmark:Enabled`), so its numbers stay comparable.
 
 A game that holds a scene to a whole frame's budget reads `frame_gpu_ms`, the whole frame's GPU time, and
-`frame_gpu_p99_ms`, the highest of the measured seconds' 99th percentiles. A host's step is `step_ms`, the sum of its
+`frame_gpu_p99_ms`, the highest of the measured seconds' 99th percentiles. The frames shown are `fps`, a second, and
+`frame_p99_ms`, the highest of the seconds' 99th percentiles of the time between two, with the main thread's work in it. A host's step is `step_ms`, the sum of its
 parts' averages, with `systems_ms` its systems' part and `step_max_ms` its longest. `compare.py` prints them when both
 groups have them. `parse.py` reads any older `game.log` again: `parse.py game.log > summary.json`.
 
