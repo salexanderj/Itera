@@ -47,7 +47,7 @@ A ball, a lifted piece, or a part cut off a model is a loose body. Bepu moves it
 - A ragdoll of shapes may start turning round a point, as a body toppling about its feet: each body turns at the spin
   and moves as its middle turns round the point.
 - The game reads their poses (`PivotOf`, `OrientationOf`) and poses what it draws with them (the rig's `Place`). `Holds`
-  with `BornOf` tells a reused handle. No engine code calls either one.
+  with `BornOf` tells a reused handle. No engine system reads a shape ragdoll's bodies, which have no entity.
 
 ### Characters and bodies
 

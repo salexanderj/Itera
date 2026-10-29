@@ -11,7 +11,7 @@ namespace Itera.Engine.Spatial;
 /// <see cref="Nearest{TFilter}(Vector3, float, SpatialMatch, in TFilter, Span{SpatialHit})"/>, <see cref="Any"/>) or a line
 /// (<see cref="Along{TVisitor}"/>) without going over every one. Each entry is an upright cylinder at an entity's feet
 /// with the game's tags (<see cref="SpatialEntry"/>): a game sets the things that move afresh each step after
-/// <see cref="Clear"/>, and sets and removes the things that stay as they come and go. An entry no wider than half a cell
+/// <see cref="Clear"/>, and sets and removes the things that stay as they come and go. An entry whose radius is at most half a cell
 /// is kept in the cell its feet are in; a wider one (a building, a giant) on a list every query goes over. A query
 /// passes over entries whose entity is no longer alive, so one removed between the setting and the asking is never
 /// handed out. Entries are kept from a whole-metre point of their own (the match's origin when the grid was made or last

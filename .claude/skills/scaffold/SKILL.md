@@ -74,7 +74,8 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
    }
    ```
 
-   `ChecklistTests.Every_system_has_a_test_class_with_an_allocation_test` (engine and game) fails without them. A
+   `ChecklistTests.Every_system_has_a_test_class_with_an_allocation_test` (engine) and
+   `Every_game_system_has_a_test_class_with_an_allocation_test` (game) fail without them. A
    game system's tests that need the game's registries take them from a `GameRunFixture`, or build the one registry they
    read, never a composition per test.
 5. Docs: an engine system in `.claude/rules/systems.md` (or its area's rules file); a game's in its area's rules file.
@@ -97,7 +98,7 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
 1. The property, with a doc comment that gives its unit, default, and range: an engine option in its settings class in
    `src/Itera.Engine/EngineOptions.cs`; a game's in `src/Game/GameOptions.cs`.
 2. Its check: a numeric engine option gets `Range(failures, "Section:Name", value, least, most)` in
-   `src/Itera.Engine/EngineOptionsValidator.cs`; a game option a check in its validator in `GameOptions.cs` whose
+   `src/Itera.Engine/EngineOptionsValidator.cs`; a game option a check in its section's options validator whose
    failure starts with the key. `ChecklistTests.Every_numeric_option_has_a_range` (engine) and
    `Every_numeric_game_option_has_a_range` (game) fail without it.
 3. Its default in `src/Game/appsettings.json`, the code's value (null for none). `ShippedSettingsTests` checks both
@@ -131,7 +132,10 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
    match's `WorldOrigin` (or `WritePosition` and `ReadPosition` for a `WorldPoint`), never a local `Vector3` as floats.
 3. Tests in `tests/Game.Tests` that send damaged bodies and hostile values in every field, each row under the
    `Watchdog` (`HostileValues`, `Watchdog` in `tests/Shared`).
-4. A change to the engine's own messages raises `SessionProtocol.Version` and pins the new fingerprint in
+4. A new game message, or a change to one's shape or meaning, changes the game's data fingerprint
+   (`ISessionMatchData.Fingerprint`, usually through a version of the game's messages), so a host and a client that
+   differ refuse each other at the hello.
+5. A change to the engine's own messages raises `SessionProtocol.Version` and pins the new fingerprint in
    `WireFingerprintTests`.
 
 ## A change to what the generator makes

@@ -21,7 +21,8 @@ source that Silk.NET 2.23 ships (`notes.md` has the details and line numbers).
 3. For each upload, write down which system or renderer method writes it, when in the frame it runs,
    which frame slot it writes, and what limits the number of entries.
 4. Write the code against the rules below.
-5. Add a layout test for each struct a shader reads, in `tests/Itera.Engine.Tests/Rendering/`. Compile the
+5. Add a layout test for each struct a shader reads, in `tests/Itera.Engine.Tests/Rendering/` for the engine's and in
+   the game's tests for a game's (`GpuLayout` is in `tests/Shared`). Compile the
    real shader file with `ShaderCompiler.Compile` (or inline GLSL with `CompileSource`), then `Assert.Empty(GpuLayout.ArrayElementDifferences<T>(spirv, set, binding))`
    or `Assert.Empty(GpuLayout.PushConstantDifferences<T>(spirv))`. `GpuLayoutTests` shows the pattern.
    Code that writes GPU data every frame gets a zero-allocation test (`SystemAllocation` for systems; see
@@ -44,7 +45,7 @@ source that Silk.NET 2.23 ships (`notes.md` has the details and line numbers).
   way: fixed systems (simulation), then frame systems (presentation), then renderer-owned memory, then the GPU.
 - Fixed systems never write GPU data. They run zero to eight times per frame.
 - Structs that shaders read live in `src/Itera.Engine/Rendering/GpuData/` (namespace
-  `Itera.Engine.Rendering.GpuData`). Create the folder with the first such type. The code that fills
+  `Itera.Engine.Rendering.GpuData`). The code that fills
   renderer-owned memory from entities lives there too, or uses types from there (for example a frame
   system in `src/Itera.Engine/Systems/` or a game's `Systems/`; `design.md`, choice 2). The hook requires this skill for both.
 - All reads of the world for rendering happen in one step per frame, on the main thread, after the ECS

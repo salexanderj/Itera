@@ -37,7 +37,8 @@ General ECS and .NET guidance:
   `ISystem<FrameTime>`, so frame systems see `Alpha`.
 - `EcsWorld.Dispose` is idempotent. It disposes both groups, then destroys the world, after physics shutdown. The DI
   container and `Group<T>.Dispose` both dispose a system, so every system's `Dispose` is idempotent.
-- ECS initialises after physics, network, and UI, and shuts down before them (one ordered step list in `GameLoop`).
+- A match's ECS initialises after its physics, voxels, and UI, and shuts down before them (the match's step list in
+  `MatchServices`).
 - System run order is the registration order in the game's composition (`AddGame`), with a comment on each
   registration saying why it sits there.
 - Frame systems run once per frame the render thread asks for, so they pause while presentation blocks. Fixed systems

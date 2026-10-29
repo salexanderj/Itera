@@ -71,8 +71,9 @@ metres nearest the point, within the edit format's range, and moves everything k
 It moves:
 
 - Bepu's bodies and statics (`PhysicsWorld.Shift`).
-- The engine's components (`OriginShifts.ShiftedComponents`): the camera's, the characters' feet now and before, a
-  climber's target, and the mesh placements and loose bodies' poses now and before.
+- The engine's components (`OriginShifts.ShiftedComponents`): the camera's, the characters' feet now and before, the
+  free camera's place a player's command carries, a climber's target, and the mesh placements and loose bodies' poses
+  now and before.
 - The world's streaming centres, the retired models, the point lights' flashes, the particles' queued bursts,
   attractors, and stress place, and the sounds queued, held, waiting, and playing.
 - The frame view's camera (`RenderView.Camera`).

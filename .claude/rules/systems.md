@@ -17,7 +17,7 @@ for changing them and where their parts are. Test classes: one `<System>Tests` c
 `src/Itera.Engine/Components/` holds the components the engine's systems share (namespace `Itera.Engine.Components`):
 
 - Cameras: `CameraPose`, `CameraLens`, `FlyCamera`, `ActiveCamera`, `LookKick`.
-- Characters: `LocalPlayer`, `RemotePlayer`, `Bodiless`, `PlayerCommand` (with `PlayerButtons` and a game's own
+- Characters: `LocalPlayer`, `RemotePlayer`, `StreamedCharacter`, `Bodiless`, `Climber`, `PlayerCommand` (with `PlayerButtons` and a game's own
   `Actions` bits), `PlayerMode` (`Flying`, `Crouching`), `ThirdPersonView`, `CharacterSize` (`ForHeight`),
   `CharacterPosition`, `CharacterVelocity`, `CharacterContact`, `CharacterRest`, `EyeSmoothing`, `MovementStats`
   (`Default`), `TriggerSensor`.
@@ -25,7 +25,7 @@ for changing them and where their parts are. Test classes: one `<System>Tests` c
   `MeshAttachment`, `ConsoleMesh`.
 - Physics: `LooseBody`, `BodyPose` (a loose body's pose, not `Animation.BodyPose`), `BodyBox`, `CutPiece`,
   `RemoteBody`, `CharacterStandIn`.
-- Networking: `NetEntity`.
+- Networking: `NetEntity`, `Replicated`.
 
 `RemoteBody` marks a loose body that mirrors a body of another peer. `LooseBodySystem`, `PhysicsReadSystem`,
 `LooseBodyRoom`, and `MapResetSystem` skip it, and `LooseBodyModelSystem` draws it. Nothing in the engine or the

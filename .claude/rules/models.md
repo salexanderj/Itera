@@ -49,8 +49,7 @@ their parts are. The engine's side (the import, `ModelInspection`, points, `Engi
 
 ### Tests
 
-- `tools/models/build.py selftest`: the plain-Python tests (a file with the line `PLAIN_PYTHON = True`), every other
-  `tools/models/tests/test_*.py` inside Blender in one process, then the test recipe built, checked, and built again
-  byte for byte. It is not part of `dotnet test`, since it needs Blender.
+- `tools/models/build.py selftest` runs the toolkit's own tests (its README). It needs Blender, so it is not part of
+  `dotnet test`.
 - `ModelInspectionTests` and `MeshPointsTests` (the engine's side), `StageTests` (`tests/Itera.ModelView.Tests`), and a
   game's `GameModelsTests` over `ModelChecks`.

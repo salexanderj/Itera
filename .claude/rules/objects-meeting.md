@@ -64,7 +64,7 @@ into the world's frame, the material, and where the ray enters and leaves that v
   the ground onto a rock begins a new pair.
 - An object's statics stay while a cell reaches it, counted, and go with the last cell. `VoxelColliders.ObjectCount` counts
   them.
-- A change of the objects (`ObjectWorld.Version`) makes every cell find its objects again. The new are taken before the
+- A change of the objects (`ObjectWorld.SetVersion`) makes every cell find its objects again. The new are taken before the
   old let go.
 - A body round which the areas within the map are not filled (`ObjectWorld.IsKnown`) freezes as a body over columns not
   resident does.

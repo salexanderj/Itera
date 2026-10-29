@@ -25,8 +25,9 @@ The data is in `VoxelLook` and the game's `IVoxelPalette`, packed into the look 
 
 - A material whose look names a texture set (`VoxelLook.Texture`) is drawn from it (`surfaceTextured` in `mesh.frag`).
 - A material with a pattern and no set is drawn from `mesh-surface.glsl`'s `surfacePattern`. `VoxelPattern` names the
-  recipes (`Soil`, `Streaks`, `Mottle`, `Clumps`, `Plates`, `Grain`, and others). `Plates` bakes on the plane of x and
-  y. The recipes are baked into a set once; no recipe is worked out per pixel.
+  recipes (`Soil`, `Streaks`, `Mottle`, `Clumps`, `Plates`, `Grain`, and others). A side bake (`materials bake ID
+  side`) is on the plane of x and y, a top bake on x and z. The recipes are baked into a set once; no recipe is worked
+  out per pixel.
 - A material with neither is drawn plain (`surfacePlain`: its colour with the patches).
 - The models keep flat colours.
 - A strata or mottle band by height cannot live in a 2D tile, so it is applied per pixel (`strataBands`,

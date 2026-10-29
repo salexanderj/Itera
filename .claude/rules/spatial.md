@@ -28,7 +28,7 @@ and fills them.
   tags when it is 0). The default finds every entry.
 - Distances are to the cylinder: across past its radius and up or down past its base or top, 0 inside (`DistanceTo`).
   `Across` counts the distance across alone. `Along` finds the line's nearest point by a golden-section search.
-- An entry no wider than half a cell is kept in the cell its feet are in, and a query widens its box by the widest of
+- An entry whose radius is at most half a cell is kept in the cell its feet are in, and a query widens its box by the widest of
   them; a wider entry (a building, a giant) is on a list every query goes over. A query whose box covers more cells
   than there are binned entries goes over every entry instead. Choose a cell about the radius most queries ask, and at least
   twice the radius of most entries.

@@ -15,9 +15,9 @@ The engine keeps a record for each Bepu body and static by handle (`BodyKinds`).
 Bepu's worker threads, and the main thread writes them between steps.
 
 - A body's record holds its `BodyKind`, the voxel level it collides with now and the one it was made for, its ragdoll, a
-  game's `PhysicsMarks`, its physics material, its share of gravity, and `Born`, which tells apart the bodies that took
-  one handle.
-- A static's record holds its voxel level and its physics material.
+  game's `PhysicsMarks`, its physics material, its share of gravity, its layer and group (`physics-contacts.md`), and
+  `Born`, which tells apart the bodies that took one handle.
+- A static's record holds its voxel level, its physics material, its layer and group, its marks, and `Born`.
 - A handle never recorded reads the default: a loose body at level 0 in no ragdoll, or a static at level 0.
 - Every removal resets its record: `PhysicsWorld.RemoveBody` and `RemoveStatic`, which `LooseBodies`, `RemoveStandIn`,
   `VoxelColliders`, and `MeshColliders` use. A body or static that takes a removed one's handle starts afresh.

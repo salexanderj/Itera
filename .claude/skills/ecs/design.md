@@ -99,7 +99,7 @@ iteration (at least once per fixed step):
   next physics step uses.
 - Remove the body from the simulation before destroying the entity. Arch's destroy events do not fire
   in the `Arch` package.
-- Engine init runs physics before ECS, and shutdown runs in reverse (`GameLoop.CreateSteps`), so a
+- A match's steps run physics before ECS, and shutdown runs in reverse (`MatchServices`), so a
   system may use the simulation in `Initialize` and release its bodies in `Dispose`.
 
 ## Networking (host-authoritative)

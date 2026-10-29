@@ -48,7 +48,7 @@ Console and tests:
 
 - `sound files` lists each file as read: channels, rate, length, size, loop, and problem.
 - `sound play NAME` plays a sound at the listener, a sustained one for a few seconds.
-- `sound wav NAME LEVEL` writes a recipe's level as material for files (`AudioService.WriteLevel`). It writes nothing for a recipe read from files. For other recipes it writes each variation as a file, or a stretch of a stream. `tools/sounds/make_sounds.py demo` makes the mesh sample's files from them.
+- `sound wav NAME [LEVEL]` writes a recipe's level as material for files (`AudioService.WriteLevel`), and `sound wav all` every recipe's. It writes nothing for a recipe read from files. For other recipes it writes each variation as a file, or a stretch of a stream. `tools/sounds/make_sounds.py demo` makes the mesh sample's files from them.
 - A game's tests hear its sounds with no device through `AudioService.QueueWithoutThread` (sound on). They read `QueuedEvents` and `QueuedLoops` until the next `Publish`. The mesh sample's `SampleSoundSystemTests` is an example.
 
 ### Reading sound files
@@ -100,7 +100,7 @@ Sound positions are local to the match's origin. When the origin moves, `OriginS
 - `Audio/`: `AudioService`, `AudioMixer`, `AudioExchange`, `AudioStats`, `SoundRecipe(s)`, `SoundEvent`, `SoundLoop`, `EngineSounds`, `WavWriter`, `SoundCache`.
 - Music: `MusicPlayer`, `MusicTrack`, `MusicExchange`, `MusicFeed`, `MusicStreamer`, `MusicDecks`.
 - `Audio/Files/`: `ISoundDecoder`, `SoundDecoders`, `WavReader`, `WavDecoder`, `VorbisDecoder`, `SoundFiles`, `LoopPoints`, `SoundFileException`.
-- `Audio/Synthesis/`: `SoundRandom`, `Dsp`, `OnePole`, `StateVariableFilter`, `NoiseSource`, `ModalBank`.
+- `Audio/Synthesis/`: `SoundRandom`, `Dsp`, `OnePole`, `StateVariableFilter`, `NoiseSource`, `ModalBank`, `GrainCloud`.
 - The device: `IAudioDevice`, `OpenAlAudioDevice`, `NullAudioDevice`.
 
 ### Package notes

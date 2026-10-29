@@ -34,7 +34,9 @@ says "probe" was confirmed by `probe/Program.cs` against the pinned packages.
    first: without it, a collection triggered by another test's allocation makes
    `GC.GetAllocatedBytesForCurrentThread` report up to 8 KB that were never allocated.
 5. `dotnet build` (zero warnings), `dotnet test` (Debug, so `EcsChecks` run), `dotnet csharpier check .`.
-6. Run the game for a few seconds (`timeout --preserve-status -s INT 25 src/Game/bin/Debug/net10.0/Game --Engine:Session:Mode=Offline`)
+6. Run the game for a few seconds, in the agent data folder (the `run-game` skill's "Unattended runs":
+   `timeout --preserve-status -s INT 25 src/Game/bin/Debug/net10.0/Game --Engine:Session:Mode=Offline
+   --Engine:Steam:Enabled=false --Engine:Application:DataFolder=<DataFolder>-agent`)
    and read the newest log: no Critical line, `Shutdown complete ... exit code 0`. A failed `EcsChecks`
    check throws, which the loop logs at Critical. A Debug run stays on the loading screen for about 5 s, with the
    game's input blocked; for a short check of play add `--Engine:Loading:Enabled=false`, or run 15 s or more (or a

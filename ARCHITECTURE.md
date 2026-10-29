@@ -111,10 +111,16 @@ tools/benchmark              scripts that run the GPU benchmark (Engine:Benchmar
 tools/control                game.py: starts a game from a copy of the build and drives it through the control port
 tools/steam                  upload.sh: tests, publishes, and uploads a build to a Steam branch
 tools/Textures               makes the world materials' texture sets (compressed DDS files) and models' compressed textures
+tools/sounds                 make_sounds.py: the sound files the engine's tests and the mesh sample read, made in code
+tools/models                 the model toolkit: Python recipes Blender runs with no window, and build.py
+tools/ModelCheck             checks a model as the engine reads it
+tools/ModelView              draws a model with the engine itself
+tools/tests                  timings.py: runs the tests and lists the slowest classes and tests
 tests/Itera.Modding.Tests    manifest parsing and validation
 tests/Itera.Engine.Tests     the engine, with subfolders that mirror src/Itera.Engine
 tests/Game.Tests             the game's own tests
 tests/Itera.MeshSample.Tests the mesh sample played without a window
+tests/Itera.ModelView.Tests  the model stage played without a window
 tests/Shared                 helpers compiled into the test projects that use them
 ```
 
@@ -148,7 +154,7 @@ and classes. `.claude/rules/engine.md` covers the root files and any folder with
 |---|---|---|
 | `Time/` | The game clock, with its clamped frame delta, and the fixed-step accumulator | `engine.md` |
 | `Windowing/` | The GLFW window: events, framebuffer size, refresh rate, exit request | `rendering.md` |
-| `Input/` | Key, button, movement, and scroll events as one snapshot per frame and one per fixed step; pointer capture; key bindings | `ui.md` |
+| `Input/` | Key, button, movement, and scroll events as one snapshot per frame and one per fixed step; pointer capture; key bindings | `ui-input.md` |
 | `Rendering/` | The Vulkan context, swapchain, frame renderer, render thread, and every pass, with its memory, pipelines, GPU structs, voxel looks, materials, mesh passes, and shaders | `rendering.md` |
 | `Meshing/` | The CPU mesher that turns voxel blocks into triangle meshes | `rendering.md` |
 | `Particles/` | Particle emitters, recipes, and stock effects; the GPU side is in `Rendering/` | `particles.md` |
@@ -170,13 +176,13 @@ and classes. `.claude/rules/engine.md` covers the root files and any folder with
 | `Replication/` | What a host sends each client of the entities a game marks | `replication.md` |
 | `Spatial/` | `SpatialGrid`, where a set of entities stand by cells over the ground | `spatial.md` |
 | `UI/` | The Skia UI surface, its layers, the console, the toolkit, and the menu | `ui.md` |
-| `Commands/` | The console's commands | `ui.md` |
+| `Commands/` | The console's commands | `ui-input.md` |
 | `Control/` | The control port | `engine.md` |
 | `Modding/` | The mod loader and dispatcher | `engine.md` |
 | `Diagnostics/` | Logging, the session header, frame stats, and crash logging | `engine.md` |
 | `Matches/` | A match's start, join, and end, its services and steps, and the run-wide startup | `sessions.md`, `engine.md` |
 | `Saves/` | Saving a match and listing saves | `saves.md` |
-| `Settings/` | The player's settings in `settings.json`, and tunables | `ui.md` |
+| `Settings/` | The player's settings in `settings.json`, and tunables | `ui-menu.md`, `ui-input.md` |
 | root | The options, their validator, the DI registrations, the run's steps, and `GameLoop` | `engine.md` |
 
 ## 4. Runtime model
@@ -335,7 +341,7 @@ The port obeys the render thread's rule: the main thread only queues screenshots
   only when all of them compiled. An error keeps the old pipelines and is reported with its file and line.
 
 **Loading screen (`LoadingScreen`, `Engine:Loading`).** From the loop's first iteration, the loading screen covers the
-picture until every `ILoadingTask` is done. The engine's tasks are Sounds, Physics, World, Navigation, and Warm-up. The
+picture until every `ILoadingTask` is done. The engine's tasks are Sounds, Physics, World, Objects, Navigation, and Warm-up. The
 game's own tasks come after them. Loading is a phase of the loop, not a wait before it. Streaming, uploads, fixed steps,
 the session, and the console run as usual, because most of what loading waits for moves on only while they do. The
 game gets empty input snapshots meanwhile, and Escape and the console still work.
@@ -474,7 +480,8 @@ A game is an executable that registers the engine, then itself, and runs `GameLo
   1. A game may register its own.
 - `AddIteraVoxels()` (`VoxelServiceCollectionExtensions`) adds the voxel terrain: each match's `VoxelWorld` and
   `MatchVoxels` (the match's terrain services together, `MatchServices.Terrain`), its `VoxelColliders`,
-  `NavigationService`, `IBenchmarkHost`, and the World, Navigation, and Warm-up loading tasks. They come after the
+  `NavigationService`, `IBenchmarkHost`, the voxel objects (`VoxelObjects`, `ObjectWorld`, `ObjectRays`,
+  `ObjectDamage`, `FallenParts`), and the World, Objects, Navigation, and Warm-up loading tasks. They come after the
   engine's Sounds task and before the game's own. A game with terrain registers an `IChunkGenerator` and calls it.
 - A game without terrain plays matches with no voxel world. It has no voxels, navigation, or voxel physics steps, and
   nothing of a world on the GPU. Its join payload and its save hold the header alone: its match identity, seed, step
@@ -1223,7 +1230,7 @@ has no navigation. The rules are in `.claude/rules/navigation.md`.
 
 ### The UI is drawn by Skia into a CPU surface and blended over the picture
 
-The rules are in `.claude/rules/ui.md`.
+The rules are in `.claude/rules/ui.md`, with input and the console in `ui-input.md` and the menu in `ui-menu.md`.
 
 - `UISurface` draws its layers (`IUiLayer`) into memory it owns, four bytes a pixel, at the size of each frame's
   request, so the surface and the pass always agree. The order is the run's layers below the match's, then the match's

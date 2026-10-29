@@ -18,7 +18,7 @@ The menu and the settings are in `.claude/rules/ui-menu.md`. Input, text entry, 
 
 Skia draws the UI's layers (`UISurface`, `UiPass`) into a CPU surface the size of the frame. Only the areas of the layers that changed are drawn again, and each layer is clipped to its bounds. Changed areas within 16 pixels of each other merge, and there are at most four; a layer that meets two areas is drawn into each. `IUiLayer.Bounds` must hold all a layer draws; `LayerInk` checks that. Each area's rows form a band (`UiBands`, merged where they overlap or touch). Each band is copied to a storage buffer, and a full-screen pass blends the pixels over the picture.
 
-Under those pixels the pass draws the image views a HUD layer shows this frame (`RenderViews.Show`: one rectangle of screen pixels each, taken from the layer's `Bounds`; `.claude/rules/rendering-views.md`). The layer draws its frame and marks over them and leaves the inside clear. A game's minimap layer is an example, such as the starter's `MinimapLayer`.
+Under those pixels the pass draws the image views a HUD layer shows (`.claude/rules/rendering-views.md`). The layer draws its frame and marks over them and leaves the inside clear, as the starter's `MinimapLayer` does.
 
 The pass blends in linear light, because its target is sRGB. Skia and `LayerPicture` compose in sRGB values. A see-through colour therefore shows more of the world in the game than in a picture. Choose see-through colours from a shot of the running game.
 
@@ -79,7 +79,7 @@ Reading a UI:
 
 `LoadingScreen` (`Engine:Loading`) covers the picture from the main loop's first iteration until every loading task is done. A loading task is an `ILoadingTask`, a DI service.
 
-- The engine's tasks are in `Loading/EngineLoadingTasks.cs`: `SoundsLoadingTask`, `PhysicsWarmUpLoadingTask`, `WorldLoadingTask`, `NavigationLoadingTask`, and `EditWarmUpLoadingTask`. The game's own come after them. `ModelsLoadingTask` waits for a list of models to reach the GPU.
+- The engine's tasks are `SoundsLoadingTask`, `PhysicsWarmUpLoadingTask`, `WorldLoadingTask`, `ObjectsLoadingTask`, `NavigationLoadingTask`, and `EditWarmUpLoadingTask` (in `Loading/EngineLoadingTasks.cs`, the objects' in `Objects/VoxelObjects.cs`). The game's own come after them. `ModelsLoadingTask` waits for a list of models to reach the GPU.
 - `Engine:Loading:MaxSeconds` limits the wait; past it the game logs a Warning and plays.
 - As loading ends, done or at its limit, and before the fade, `LoadingScreen` runs one full compacting collection
   (`LoadingScreen.Collections`): what loading made and dropped sits in the oldest generation, which only a full
@@ -93,11 +93,10 @@ Reading a UI:
 
 ### Tests
 
-- `UiLayoutTests` pins rectangles with `FixedTextMeasurer`.
-- `UiInputTests` and `UiLayerTests` run through `UISurface` and `LayerPicture`, which draws a layer alone.
-- `ITERA_UI_PICTURES` names a folder where `UiLayerTests` keeps its page's picture and `MenuPicturesTests` keeps every menu page's.
-- A HUD layer's tests draw it at a few screen sizes and expect no ink outside its `Bounds` (`LayerInk`, `EngineLayerBoundsTests`).
-- Other classes: `UISurfaceTests`, `AimDotLayerTests`, `CentredMessageLayerTests`, `HostSilenceLayerTests`, `AmountsTests`, `TextBlobsTests`, `UiFontsTests`, `WheelStepsTests`, `LoadingScreenTests`, `ModelsLoadingTaskTests`.
+`UiLayoutTests`, `UiInputTests`, `UiLayerTests`, `MenuPicturesTests`, `EngineLayerBoundsTests`, `UISurfaceTests`,
+`AimDotLayerTests`, `CentredMessageLayerTests`, `HostSilenceLayerTests`, `AmountsTests`, `TextBlobsTests`,
+`UiFontsTests`, `WheelStepsTests`, `LoadingScreenTests`, `ModelsLoadingTaskTests`. `ITERA_UI_PICTURES` names a folder
+for the pictures `UiLayerTests` and `MenuPicturesTests` keep.
 
 ### Files in `src/Itera.Engine`
 

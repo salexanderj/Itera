@@ -91,8 +91,7 @@ Each frame `WorldMeshes` picks a level for each column.
 `WorldMeshes` culls blocks to the frustum and writes a `MeshDraw` and an indexed indirect command per block, with
 `firstInstance` naming the draw. Each list is written for one view: the camera, a shadow cascade, or an image view.
 
-- `GameLoop` starts the frame's view (`MeshView`) before `WorldMeshes.Upload` and ends it after. Every list drawn in
-  `MeshPass` shares the view's frustum, cascades, and lights.
+- Every list drawn in `MeshPass` shares the frame's view (`MeshView`, `rendering-light.md`).
 - The camera's commands are sorted nearest first (`WriteCameraNearestFirst`), so the depth test rejects hidden
   leaves before they are shaded. The shadow lists stay unsorted.
 - `MeshFrame` holds what `WorldMeshes` wrote into a frame slot: the draw records, each list's commands, and whether

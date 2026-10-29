@@ -28,11 +28,7 @@ While a menu is open the game gets no input. With `Engine:Ui:MenuPausesOffline` 
 
 A game that replaces the menu follows the mesh sample's README, which lists what a game's menu must do. The sample's menu is `SampleMenu`: a toolkit layer in a look of its own, with the engine's `SettingsPage` inside. The list covers `AboveMatch`, `Visible` through joins and starts, following `MatchControl`, the text box's typing through `TextFocus`, the Settings page's key capture, and the shade first in the flow.
 
-A game's tests of its menu:
-
-- move a `MatchControl` they made through the loop's states with `MatchControlStates`: a join connecting, a match starting and playing, its end;
-- read what the menu asked for from `MatchControl.PendingStart` and `PendingLeave`;
-- give it `PlayerSettings.WithoutFile()`.
+A game's tests of its menu use the engine's hooks that `.claude/rules/tests.md` lists.
 
 ### The engine's main menu
 
@@ -46,7 +42,7 @@ A run starts at the menu unless `Engine:Session:Mode` names a match.
 - In a match, Escape opens the menu at once over the shaded picture and frees the pointer. It offers Resume, Settings, Leave Match, and Quit. The match goes on behind it.
 - Escape goes back a page, resumes, or cancels a join, and does nothing on the main page.
 - The menu clicks with `menu-hover` as the pointer moves onto a control and `menu-press` as a button acts.
-- It plays the music track `Engine:Audio:MenuMusic` names (`MusicPlayer.MenuTrack`) while there is no match or one is being joined. It fades the track out as a match starts, unless the game has played another. A game's own menu plays its music itself (`.claude/rules/audio.md`).
+- It plays the menu's music (`.claude/rules/audio.md`). A game's own menu plays its music itself.
 
 A game adds to the engine's menu:
 
@@ -103,8 +99,8 @@ Each setting applies at once through `PlayerSettings`:
 - Keys the command line gave keep their own values over the file's preset. While one of them is in the table, the save
   writes the file's `GraphicsPreset` back as it was.
 - `"Version"` is the file's version (`PlayerSettings`' `FileVersion`); a file without it is version 1.
-- A file with no `GraphicsPreset` key whose `DynamicScalingThreshold` is 120, the old default, takes the options'
-  threshold. So does a file of version 1 whose threshold is 60, the engine's default since the presets.
+- A file written before the presets, or of version 1, that holds the threshold's default of its time
+  (`OldDefaultThreshold`, `UnversionedDefaultThreshold`) takes the options' threshold.
 
 ### `settings.json`
 

@@ -32,7 +32,8 @@ This file is the core. The sub-areas have their own files, each loaded with its 
 `CameraLens` is the active camera's component. `CameraExtractSystem` passes it on in `CameraView`.
 
 - A perspective lens has a vertical field of view (the player's setting draws in its place) from its near plane on
-  (`ViewConstants.Near`). It has no far plane: the world reaches the view distance (`Engine:Renderer:ViewDistanceMetres`).
+  (`ViewConstants.Near`). It has no far plane: the world reaches the streamed world's radius, or
+  `Engine:Renderer:ViewDistanceMetres` where that is less.
 - An orthographic lens (`CameraLens.Orthographic`, `ViewSwitches.Orthographic`) is an image `HeightMetres` high, its
   width by the aspect ratio, of parallel rays along the view. It is round the camera's position, which is the middle
   of what it shows. It runs from its near to its far along the view (`ViewConstants.Near` and `Far`; negative is behind
@@ -100,7 +101,8 @@ Everything the renderer draws is local to the match's origin (`WorldOrigin`, CLA
 - `DeviceRequirements` requires `dynamicRendering`, `synchronization2`, `scalarBlockLayout`, and `multiDrawIndirect` with
   `drawIndirectFirstInstance` (the world's indirect draws, whose first instance names each block's draw).
 - It also requires `shaderSampledImageArrayDynamicIndexing` with `shaderSampledImageArrayNonUniformIndexing` (the mesh
-  assets' texture array, indexed per pixel by material), and `D32_SFLOAT` with optimal tiling as a depth attachment.
+  assets' texture array, indexed per pixel by material), `textureCompressionBC` (the materials' compressed sets,
+  `rendering-materials.md`), and `D32_SFLOAT` with optimal tiling as a depth attachment.
 - It enables `fillModeNonSolid` where the device has it (the wireframe debug view, `VulkanContext.SupportsWireframe`)
   and asks it of no device.
 - Rendering uses dynamic rendering, with no render pass or framebuffer objects. Barriers use `CmdPipelineBarrier2` and

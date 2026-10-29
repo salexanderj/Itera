@@ -24,7 +24,8 @@ Loose bodies are made, kept, and removed as `.claude/rules/physics.md` says. The
   objects is not filled.
 - A ragdoll's bodies freeze and thaw together. Bepu drops joints between kinematic bodies, and
   `VoxelColliders.GroupThawed` adds them again at the thaw.
-- Cut bodies (`BodyKind.Cut`, a `CutPiece` entity) touch only the voxels, not other bodies or characters. Where their own
+- Cut bodies (`BodyKind.Cut`, a `CutPiece` entity) touch the voxels, the voxel objects' statics, and the mesh
+  colliders, not other bodies or characters. Where their own
   level is not loaded they collide with the finest coarser level that is, up to the coarse collider level
   (`BodyKinds.BaseLevel`, `Level`).
 - A game's mesh colliders and statics collide with bodies of every level (`.claude/rules/physics-rays.md`).

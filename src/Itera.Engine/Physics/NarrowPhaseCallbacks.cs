@@ -8,7 +8,7 @@ namespace Itera.Engine.Physics;
 
 /// <summary>
 /// Contact rules: a pair collides when one side is dynamic, except that a character's stand-in touches loose bodies of
-/// lifted pieces only (not the voxels, not other stand-ins), a body cut off a character touches the voxels only
+/// lifted pieces only (not the voxels, not other stand-ins), a body cut off a character touches the voxels, objects, and mesh colliders only
 /// (<see cref="BodyKind.Cut"/>), and a body touches only the voxel statics of the level it collides with
 /// (<see cref="BodyKinds"/>); then a pair whose layers do not touch, or that shares a group other than 0, does not
 /// (<see cref="BodyKinds.LayersAllow"/>, <see cref="PhysicsLayers"/>). A trigger zone (<see cref="BodyKind.Trigger"/>)
