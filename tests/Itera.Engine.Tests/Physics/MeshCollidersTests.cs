@@ -10,7 +10,8 @@ namespace Itera.Engine.Tests.Physics;
 
 /// <summary>
 /// <see cref="MeshColliders"/>: rays meet a collider's triangles from either side, nearest first across buckets, placed
-/// by its transform, with the tags of their material; a removed collider is met no more; a ray allocates nothing; a ball
+/// by its transform, with the tags of their material; a ray through a column of many colliders meets what testing every
+/// triangle meets; a removed collider is met no more; a ray allocates nothing; a ball
 /// lands on a collider's Bepu static whatever its voxel level, and falls through once it is removed.
 /// </summary>
 public sealed class MeshCollidersTests : IDisposable
@@ -91,6 +92,84 @@ public sealed class MeshCollidersTests : IDisposable
 
         Assert.False(_colliders.Raycast(new Vector3(103, 9, -97), -Vector3.UnitY, 10, out _));
         Assert.Equal(0, _colliders.Count);
+    }
+
+    [Fact]
+    public void A_ray_through_a_column_of_many_colliders_meets_the_nearest_triangle_of_all()
+    {
+        // Sixty boxes, turned and sized at random, stacked 50 m high over a few buckets: what a tower's plates make.
+        var random = new Random(7);
+        var triangles = new List<(Vector3 A, Vector3 B, Vector3 C, int Collider)>();
+        var middles = new List<Vector3>();
+        var (box, indices) = BoxTriangles();
+        for (var i = 0; i < 60; i++)
+        {
+            var transform =
+                Matrix4x4.CreateScale(
+                    0.3f + 2 * random.NextSingle(),
+                    0.1f + random.NextSingle(),
+                    0.5f + random.NextSingle()
+                )
+                * Matrix4x4.CreateRotationY(MathF.Tau * random.NextSingle())
+                * Matrix4x4.CreateTranslation(
+                    12 * random.NextSingle() - 6,
+                    50 * random.NextSingle(),
+                    12 * random.NextSingle() - 6
+                );
+            var collider = _colliders.Add(box, indices, in transform);
+            middles.Add(transform.Translation);
+            for (var t = 0; t < indices.Length; t += 3)
+            {
+                triangles.Add(
+                    (
+                        Vector3.Transform(box[indices[t]], transform),
+                        Vector3.Transform(box[indices[t + 1]], transform),
+                        Vector3.Transform(box[indices[t + 2]], transform),
+                        collider
+                    )
+                );
+            }
+        }
+
+        var (hits, misses) = (0, 0);
+        for (var i = 0; i < 500; i++)
+        {
+            var angle = MathF.Tau * random.NextSingle();
+            var from = new Vector3(20 * MathF.Cos(angle), 60 * random.NextSingle(), 20 * MathF.Sin(angle));
+            // Half towards a box's middle, half anywhere in the column.
+            var towards =
+                i % 2 == 0
+                    ? middles[random.Next(middles.Count)]
+                    : new Vector3(8 * random.NextSingle() - 4, 55 * random.NextSingle(), 8 * random.NextSingle() - 4);
+            var direction = Vector3.Normalize(towards - from);
+            var (nearest, second, collider) = (float.MaxValue, float.MaxValue, -1);
+            foreach (var (a, b, c, owner) in triangles)
+            {
+                if (Meets(from, direction, a, b, c, out var t) && t < 40)
+                {
+                    (nearest, second, collider) =
+                        t < nearest ? (t, nearest, owner) : (nearest, MathF.Min(second, t), collider);
+                }
+            }
+
+            var met = _colliders.Raycast(from, direction, 40, out var hit);
+            Assert.Equal(collider >= 0, met);
+            if (!met)
+            {
+                misses++;
+                continue;
+            }
+
+            hits++;
+            Assert.Equal(nearest, hit.Distance, 1e-3f);
+            if (second - nearest > 1e-3f)
+            {
+                Assert.Equal(collider, hit.Collider);
+            }
+        }
+
+        // Rays that meet the column and rays that pass it, over and under its boxes.
+        Assert.True(hits > 100 && misses > 100, $"{hits} hits, {misses} misses");
     }
 
     [Fact]
@@ -190,6 +269,42 @@ public sealed class MeshCollidersTests : IDisposable
             [MeshMaterialData.Default with { Name = "rock" }, MeshMaterialData.Default with { Name = "moss" }],
             []
         );
+    }
+
+    /// <summary>A 1 m box round its middle, its twelve triangles.</summary>
+    private static (Vector3[] Positions, uint[] Indices) BoxTriangles() =>
+        (
+            [
+                new(-0.5f, -0.5f, -0.5f),
+                new(0.5f, -0.5f, -0.5f),
+                new(0.5f, 0.5f, -0.5f),
+                new(-0.5f, 0.5f, -0.5f),
+                new(-0.5f, -0.5f, 0.5f),
+                new(0.5f, -0.5f, 0.5f),
+                new(0.5f, 0.5f, 0.5f),
+                new(-0.5f, 0.5f, 0.5f),
+            ],
+            [0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 3, 7, 6, 3, 6, 2, 0, 4, 7, 0, 7, 3, 1, 2, 6, 1, 6, 5]
+        );
+
+    /// <summary>Where a ray meets a triangle from either side (Möller and Trumbore's test), each triangle alone.</summary>
+    private static bool Meets(Vector3 from, Vector3 direction, Vector3 a, Vector3 b, Vector3 c, out float t)
+    {
+        t = 0;
+        var (e1, e2) = (b - a, c - a);
+        var p = Vector3.Cross(direction, e2);
+        var det = Vector3.Dot(e1, p);
+        if (MathF.Abs(det) < 1e-12f)
+        {
+            return false;
+        }
+
+        var s = from - a;
+        var u = Vector3.Dot(s, p) / det;
+        var q = Vector3.Cross(s, e1);
+        var v = Vector3.Dot(direction, q) / det;
+        t = Vector3.Dot(e2, q) / det;
+        return u >= 0 && v >= 0 && u + v <= 1 && t >= 0;
     }
 
     /// <summary>A wall in the plane x = 0, <paramref name="halfWidth"/> metres each side along z, from y = 0 to 1 m.</summary>

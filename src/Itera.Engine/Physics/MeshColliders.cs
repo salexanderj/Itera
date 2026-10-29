@@ -17,7 +17,9 @@ namespace Itera.Engine.Physics;
 /// <item>Each collider has an anchor, an absolute point in whole metres near where it was placed, and keeps its
 /// triangles in metres from it, so they stay precise anywhere on a large map whatever the match's origin
 /// (<see cref="Origin"/>). A grid of 4 m buckets over the absolute x and z holds them, which rays
-/// (<see cref="Raycast"/>, two-sided) and the character mover's queries read. The buckets are made again at the first
+/// (<see cref="Raycast"/>, two-sided) and the character mover's queries read. For rays each bucket's triangles are also
+/// grouped by collider with the group's bounds, so a ray tests a collider's triangles only where it meets their bounds,
+/// whatever stands above or below in the bucket. The buckets are made again at the first
 /// query after a collider was added or removed (that query allocates); every other query allocates nothing.</item>
 /// <item>Each collider is also a Bepu mesh static posed at its anchor's local place (its triangles wound as Bepu asks:
 /// clockwise seen from the front, where glTF's are counter-clockwise), which every loose body touches whatever its voxel
@@ -38,8 +40,22 @@ public sealed partial class MeshColliders(
     /// <summary>The side of a bucket of the triangle grid, in metres.</summary>
     public const float BucketMetres = 4;
 
+    /// <summary>How far a group's bounds for rays reach past its triangles, in metres, so rounding misses none.</summary>
+    private const float BoundsPadMetres = 1e-3f;
+
     private readonly List<Collider?> _colliders = [];
     private readonly Dictionary<long, List<int>> _buckets = [];
+
+    // For rays, each bucket's triangles in groups of one collider, with each group's bounds in its collider's frame: a ray
+    // tests a group's triangles only once it meets the bounds, so a tall column of many colliders costs it a bounds test
+    // each. A bucket's groups are the ones from its First, Count of them.
+    private readonly Dictionary<long, (int First, int Count)> _rayBuckets = [];
+    private int[] _groupTriangles = [];
+    private int[] _groupStart = [];
+    private int[] _groupCount = [];
+    private Vector3[] _groupMin = [];
+    private Vector3[] _groupMax = [];
+    private VoxelCoord[] _groupAnchor = [];
     private Vector3[] _a = [];
     private Vector3[] _b = [];
     private Vector3[] _c = [];
@@ -276,7 +292,8 @@ public sealed partial class MeshColliders(
         var bestTriangle = -1;
 
         // Walk the buckets the ray's path over the absolute x and z crosses, nearest first, until the nearest hit lies
-        // before the next bucket; each triangle is met from the ray's start measured from its collider's anchor.
+        // before the next bucket; each group's bounds and triangles are met from the ray's start measured from its
+        // collider's anchor, the triangles only when the bounds are met before the nearest hit so far.
         double ox = Origin.WorldX(origin.X),
             oy = Origin.WorldY(origin.Y),
             oz = Origin.WorldZ(origin.Z);
@@ -296,26 +313,36 @@ public sealed partial class MeshColliders(
         var deltaZ = Math.Abs(d.Z) > 1e-9f ? BucketMetres / Math.Abs(d.Z) : double.PositiveInfinity;
         while (true)
         {
-            if (_buckets.TryGetValue(Key(bx, bz), out var bucket))
+            if (_rayBuckets.TryGetValue(Key(bx, bz), out var groups))
             {
-                foreach (var triangle in bucket)
+                for (var group = groups.First; group < groups.First + groups.Count; group++)
                 {
-                    if (_stamps[triangle] == stamp)
-                    {
-                        continue;
-                    }
-
-                    _stamps[triangle] = stamp;
-                    var anchor = _anchors[triangle];
+                    var anchor = _groupAnchor[group];
                     var start = new Vector3(
                         (float)(ox - anchor.X / (double)VoxelConstants.CentimetresPerMetre),
                         (float)(oy - anchor.Y / (double)VoxelConstants.CentimetresPerMetre),
                         (float)(oz - anchor.Z / (double)VoxelConstants.CentimetresPerMetre)
                     );
-                    if (Intersect(start, d, _a[triangle], _b[triangle], _c[triangle], out var t) && t < best)
+                    if (!Meets(start, d, _groupMin[group], _groupMax[group], best))
                     {
-                        best = t;
-                        bestTriangle = triangle;
+                        continue;
+                    }
+
+                    var end = _groupStart[group] + _groupCount[group];
+                    for (var i = _groupStart[group]; i < end; i++)
+                    {
+                        var triangle = _groupTriangles[i];
+                        if (_stamps[triangle] == stamp)
+                        {
+                            continue;
+                        }
+
+                        _stamps[triangle] = stamp;
+                        if (Intersect(start, d, _a[triangle], _b[triangle], _c[triangle], out var t) && t < best)
+                        {
+                            best = t;
+                            bestTriangle = triangle;
+                        }
                     }
                 }
             }
@@ -441,6 +468,7 @@ public sealed partial class MeshColliders(
 
         _colliders.Clear();
         _buckets.Clear();
+        _rayBuckets.Clear();
         Count = 0;
     }
 
@@ -595,6 +623,72 @@ public sealed partial class MeshColliders(
         }
 
         _triangles = total;
+        BuildGroups();
+    }
+
+    /// <summary>
+    /// Each bucket's triangles for rays, in groups of one collider (a bucket holds them in the order they are numbered,
+    /// collider by collider), each group's bounds in its collider's frame, widened by <see cref="BoundsPadMetres"/>.
+    /// </summary>
+    private void BuildGroups()
+    {
+        _rayBuckets.Clear();
+        var (entries, groups) = (0, 0);
+        foreach (var bucket in _buckets.Values)
+        {
+            entries += bucket.Count;
+            for (var i = 0; i < bucket.Count; i++)
+            {
+                if (i == 0 || _owner[bucket[i]] != _owner[bucket[i - 1]])
+                {
+                    groups++;
+                }
+            }
+        }
+
+        _groupTriangles = new int[entries];
+        _groupStart = new int[groups];
+        _groupCount = new int[groups];
+        _groupMin = new Vector3[groups];
+        _groupMax = new Vector3[groups];
+        _groupAnchor = new VoxelCoord[groups];
+        var (group, entry) = (-1, 0);
+        foreach (var (key, bucket) in _buckets)
+        {
+            var first = group + 1;
+            for (var i = 0; i < bucket.Count; i++)
+            {
+                var triangle = bucket[i];
+                if (i == 0 || _owner[triangle] != _owner[bucket[i - 1]])
+                {
+                    group++;
+                    _groupStart[group] = entry;
+                    _groupAnchor[group] = _anchors[triangle];
+                    _groupMin[group] = new Vector3(float.MaxValue);
+                    _groupMax[group] = new Vector3(float.MinValue);
+                }
+
+                _groupTriangles[entry++] = triangle;
+                _groupCount[group]++;
+                _groupMin[group] = Vector3.Min(
+                    _groupMin[group],
+                    Vector3.Min(_a[triangle], Vector3.Min(_b[triangle], _c[triangle]))
+                );
+                _groupMax[group] = Vector3.Max(
+                    _groupMax[group],
+                    Vector3.Max(_a[triangle], Vector3.Max(_b[triangle], _c[triangle]))
+                );
+            }
+
+            _rayBuckets[key] = (first, group + 1 - first);
+        }
+
+        var pad = new Vector3(BoundsPadMetres);
+        for (var i = 0; i < groups; i++)
+        {
+            _groupMin[i] -= pad;
+            _groupMax[i] += pad;
+        }
     }
 
     private int NextStamp()
@@ -611,6 +705,38 @@ public sealed partial class MeshColliders(
     private static int Bucket(double metres) => (int)Math.Floor(metres / BucketMetres);
 
     private static long Key(int x, int z) => ((long)x << 32) | (uint)z;
+
+    /// <summary>
+    /// True when a ray from <paramref name="start"/> along the unit <paramref name="d"/> meets the box from
+    /// <paramref name="min"/> to <paramref name="max"/> within <paramref name="best"/> metres (the slabs' test).
+    /// </summary>
+    private static bool Meets(Vector3 start, Vector3 d, Vector3 min, Vector3 max, float best)
+    {
+        var (near, far) = (0f, best);
+        return Slab(start.X, d.X, min.X, max.X, ref near, ref far)
+            && Slab(start.Y, d.Y, min.Y, max.Y, ref near, ref far)
+            && Slab(start.Z, d.Z, min.Z, max.Z, ref near, ref far);
+    }
+
+    /// <summary>Narrows <paramref name="near"/> to <paramref name="far"/> to where the ray lies between one axis' sides.</summary>
+    private static bool Slab(float start, float way, float min, float max, ref float near, ref float far)
+    {
+        if (MathF.Abs(way) < 1e-12f)
+        {
+            return start >= min && start <= max;
+        }
+
+        var inverse = 1 / way;
+        var (enter, leave) = ((min - start) * inverse, (max - start) * inverse);
+        if (enter > leave)
+        {
+            (enter, leave) = (leave, enter);
+        }
+
+        near = MathF.Max(near, enter);
+        far = MathF.Min(far, leave);
+        return near <= far;
+    }
 
     /// <summary>
     /// Where a ray from <paramref name="origin"/> along the unit <paramref name="d"/> meets triangle a, b, c, from either

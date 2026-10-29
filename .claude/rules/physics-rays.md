@@ -23,6 +23,9 @@ Each collider keeps:
 - An anchor, the absolute whole metres nearest its point, and its triangles from it.
 - A grid of 4 m buckets over absolute x and z. The grid is made again at the first query after a change, which allocates.
   Other queries allocate nothing.
+- For rays, each bucket's triangles grouped by collider, each group with its bounds. A ray tests a group's triangles
+  only when it meets the bounds before its nearest hit so far, so a tall stack of colliders in one bucket stays cheap.
+  The character mover's box query (`Triangles`) reads the buckets' plain lists.
 - A Bepu `Mesh` static posed at its anchor's local place, of its settings' physics material. Its triangles are wound
   clockwise seen from the front as Bepu asks, while glTF's are counter-clockwise. The static is one-sided in Bepu and
   at `BodyKinds.AnyLevel`, so every loose body touches it whatever its voxel level (`SetGameStatic`; `ClearStatic` on
