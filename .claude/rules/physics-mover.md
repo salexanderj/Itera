@@ -89,6 +89,20 @@ A grounded move reports what the body stands on in `CharacterMoveResult.GroundMa
 - The mover takes the run's materials and the voxels' tags as `Materials` and `SurfaceTags`. The core sets them. A mover
   made without them reads the default.
 
+### A body at rest
+
+`Stamp` gives a `GroundStamp` of what a move reads that can change while a body stands still. It holds the edits applied
+in every column they reach (`VoxelWorld.AppliedEditCount`), the newest reset, the mesh colliders' version, and the voxel
+objects' version and damage. `StandsUnchanged` says whether the same move would answer the same now. It is false when:
+
+- the columns round the feet are not resident;
+- the reset, the colliders, the objects, or their damage changed;
+- an edit since reaches round the body (any edit of the objects counts, wherever it is);
+- a loose body or solid model reaches round it.
+
+When true, it advances the stamp, so the next ask reads only later edits. `PlayerMovementSystem` uses it to skip the
+move of a character at rest (`.claude/rules/systems.md`).
+
 ### Building blocks for movement modes
 
 For a game's movement modes (`IMovementMode`, `.claude/rules/systems.md`):

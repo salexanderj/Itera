@@ -19,8 +19,8 @@ for changing them and where their parts are. Test classes: one `<System>Tests` c
 - Cameras: `CameraPose`, `CameraLens`, `FlyCamera`, `ActiveCamera`, `LookKick`.
 - Characters: `LocalPlayer`, `RemotePlayer`, `Bodiless`, `PlayerCommand` (with `PlayerButtons` and a game's own
   `Actions` bits), `PlayerMode` (`Flying`, `Crouching`), `ThirdPersonView`, `CharacterSize` (`ForHeight`),
-  `CharacterPosition`, `CharacterVelocity`, `CharacterContact`, `EyeSmoothing`, `MovementStats` (`Default`),
-  `TriggerSensor`.
+  `CharacterPosition`, `CharacterVelocity`, `CharacterContact`, `CharacterRest`, `EyeSmoothing`, `MovementStats`
+  (`Default`), `TriggerSensor`.
 - Mesh assets: `MeshPlacement` (`At`), `DrawnMesh` (`Of`), `MeshAnimator` (`Playing`), `ShapedPose`, `SmoothedPose`,
   `MeshAttachment`, `ConsoleMesh`.
 - Physics: `LooseBody`, `BodyPose` (a loose body's pose, not `Animation.BodyPose`), `BodyBox`, `CutPiece`,
@@ -70,6 +70,10 @@ registers what they share: `PlayArea` (round the match's grid, or `PlayArea.With
   `MovementStats.SideShare` of its speed straight to the side and `BackShare` straight back, and between them by its
   way (`PlayerMovementSystem.DirectionShare`). A move turned further from ahead than `MovementStats.SprintDegrees` (90
   by default), or going back, does not sprint.
+- The system gives each character it moves a `CharacterRest`. A full move that stood still on walkable ground is kept
+  there. While a later step asks that move again (the same feet, no move across, the same fall, shape, and time) and
+  `VoxelCharacterMover.StandsUnchanged` holds, the step keeps the feet and contact without the mover. The answer is the
+  one the mover would give. `CharacterStepper` always moves.
 - A flying player's feet follow the camera its command carries, kept to the play area, so a host flies a client's
   player where that client's camera is (`.claude/rules/replication.md`).
 - `CharacterStepper.Step` (scoped, with the game's movement mode) runs one character's step with the same code, for a

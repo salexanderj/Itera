@@ -87,6 +87,23 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         >()
         .WithNone<Bodiless>();
 
+    // The characters it moves that have no rest yet: each is given one after the step's moves.
+    private static readonly QueryDescription s_unrested = new QueryDescription()
+        .WithAll<
+            PlayerCommand,
+            PlayerMode,
+            CharacterSize,
+            CharacterPosition,
+            CharacterVelocity,
+            CharacterContact,
+            EyeSmoothing,
+            MovementStats
+        >()
+        .WithNone<Bodiless, CharacterRest>();
+
+    /// <summary>The most characters given a rest in one step; the rest at the next.</summary>
+    private const int MostRestsGiven = 64;
+
     private static readonly QueryDescription s_camera = new QueryDescription().WithAll<CameraPose, ActiveCamera>();
 
     // A bodiless character is not moved, but crouches too: with its buttons cleared (PlayerInputSystem), it stands up.
@@ -128,6 +145,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     private readonly ConsoleCommands? _commands;
     private readonly Func<string, (WorldPoint Eye, float Yaw, float Pitch)?>? _places;
     private readonly IMovementMode? _mode;
+    private readonly Entity[] _unrested = new Entity[MostRestsGiven];
 
     /// <summary>The match's physics, whose gravity's share of the Earth's characters fall by; none for all of their own.</summary>
     private readonly PhysicsWorld? _physics;
@@ -183,6 +201,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     {
         EcsChecks.RequireAll<PlayerCommand, PlayerMode, CharacterSize, CharacterPosition>(in s_players);
         EcsChecks.RequireAll<CharacterVelocity, CharacterContact, EyeSmoothing, MovementStats>(in s_players);
+        EcsChecks.RequireAll<PlayerCommand, PlayerMode, CharacterSize, CharacterPosition>(in s_unrested);
         EcsChecks.RequireAll<CameraPose>(in s_camera);
         EcsChecks.RequireAll<CharacterContact, CharacterPosition>(in s_localPlayer);
         EcsChecks.RequireAll<PlayerCommand, PlayerMode, CharacterSize, CharacterPosition>(in s_bodilessCrouchers);
@@ -214,6 +233,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             GravityShare = _physics?.GravityShare ?? 1,
             Physics = _physics,
             Area = _area,
+            Rests = true,
         };
         // A chunk loop, so a movement mode knows each player's entity.
         foreach (ref var chunk in World.Query(in s_players))
@@ -226,8 +246,10 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             var contacts = chunk.GetSpan<CharacterContact>();
             var eyes = chunk.GetSpan<EyeSmoothing>();
             var stats = chunk.GetSpan<MovementStats>();
+            var rests = chunk.Has<CharacterRest>() ? chunk.GetSpan<CharacterRest>() : default;
             foreach (var index in chunk)
             {
+                var none = default(CharacterRest);
                 job.Update(
                     chunk.Entity(index),
                     ref commands[index],
@@ -237,10 +259,13 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
                     ref velocities[index],
                     ref contacts[index],
                     ref eyes[index],
-                    ref stats[index]
+                    ref stats[index],
+                    ref rests.IsEmpty ? ref none : ref rests[index]
                 );
             }
         }
+
+        GiveRests();
 
         // Only the local player's waiting is logged: other bodies move through the same job.
         var local = new FindLocalWaiting();
@@ -250,6 +275,27 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             _localWaiting = local.Waiting;
             var feet = local.Feet;
             LogWaiting(local.Waiting, feet.X, feet.Y, feet.Z, step.Tick);
+        }
+    }
+
+    /// <summary>Gives each character moved without a rest one (<see cref="CharacterRest"/>): a structural change, after the moves.</summary>
+    private void GiveRests()
+    {
+        var count = 0;
+        foreach (ref var chunk in World.Query(in s_unrested))
+        {
+            foreach (var index in chunk)
+            {
+                if (count < _unrested.Length)
+                {
+                    _unrested[count++] = chunk.Entity(index);
+                }
+            }
+        }
+
+        for (var i = 0; i < count; i++)
+        {
+            World.Add<CharacterRest>(_unrested[i]);
         }
     }
 
@@ -673,6 +719,13 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         /// </summary>
         public PlayArea? Area;
 
+        /// <summary>
+        /// True for the system's steps, which skip the mover for a character standing still where nothing round it changed
+        /// (<see cref="CharacterRest"/>); false for a step run again (<see cref="CharacterStepper"/>), which always moves.
+        /// </summary>
+        public bool Rests;
+
+        /// <summary>One character's step with no rest kept: the mover always runs.</summary>
         public readonly void Update(
             Entity entity,
             ref PlayerCommand command,
@@ -683,6 +736,40 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             ref CharacterContact contact,
             ref EyeSmoothing eye,
             ref MovementStats stats
+        )
+        {
+            var none = default(CharacterRest);
+            Update(
+                entity,
+                ref command,
+                ref mode,
+                ref size,
+                ref position,
+                ref velocity,
+                ref contact,
+                ref eye,
+                ref stats,
+                ref none
+            );
+        }
+
+        /// <summary>
+        /// One character's step, keeping its <paramref name="rest"/>: with <see cref="Rests"/>, a character that stands where its
+        /// last full move left it, asks that move again (no move across, the same fall, shape, and time), and finds nothing
+        /// round it changed (<see cref="VoxelCharacterMover.StandsUnchanged"/>) keeps its feet and contact without the mover,
+        /// which would answer the same.
+        /// </summary>
+        public readonly void Update(
+            Entity entity,
+            ref PlayerCommand command,
+            ref PlayerMode mode,
+            ref CharacterSize size,
+            ref CharacterPosition position,
+            ref CharacterVelocity velocity,
+            ref CharacterContact contact,
+            ref EyeSmoothing eye,
+            ref MovementStats stats,
+            ref CharacterRest rest
         )
         {
             Sanitize(ref command);
@@ -715,6 +802,7 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
                 velocity = default;
                 contact = default;
                 eye = default;
+                rest.Resting = false;
                 return;
             }
 
@@ -790,6 +878,27 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
                 stepsInAir
             );
             velocity.Wanted = v;
+            if (
+                Rests
+                && StaysAtRest(in rest, in position, v, in shape)
+                && Mover.StandsUnchanged(ref rest.Stamp, position.Feet, in shape)
+            )
+            {
+                // What the last full move answered, which the mover would answer again: standing still on walkable ground.
+                velocity.MetresPerSecond = Vector3.Zero;
+                contact = new CharacterContact
+                {
+                    Grounded = true,
+                    Jumped = jumped,
+                    GroundMaterial = rest.GroundMaterial,
+                    GroundTags = rest.GroundTags,
+                };
+                var eased = Math.Clamp(eye.Offset, -size.StepMetres, size.StepMetres) * EyeEase;
+                eye.Offset = MathF.Abs(eased) < 0.001f ? 0 : eased;
+                return;
+            }
+
+            var into = v;
             var result = Mover.Move(ref position.Feet, ref v, in shape, Seconds);
             velocity.MetresPerSecond = v;
 
@@ -806,6 +915,67 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             // The eye starts where it was before a step and eases to where the body puts it.
             var offset = Math.Clamp(eye.Offset - result.SteppedMetres, -size.StepMetres, size.StepMetres) * EyeEase;
             eye.Offset = MathF.Abs(offset) < 0.001f ? 0 : offset;
+            if (Rests)
+            {
+                Remember(ref rest, in position, into, v, in shape, in result);
+            }
+        }
+
+        /// <summary>
+        /// True when the step asks the move <paramref name="rest"/> remembers again: the feet where it left them, no move
+        /// across, the same fall, shape, and time.
+        /// </summary>
+        private readonly bool StaysAtRest(
+            in CharacterRest rest,
+            in CharacterPosition position,
+            Vector3 v,
+            in CharacterShape shape
+        ) =>
+            rest.Resting
+            && v.X == 0
+            && v.Z == 0
+            && v.Y == rest.FallMetresPerSecond
+            && Seconds == rest.Seconds
+            && shape == rest.Shape
+            && Mover.Origin.ToWorld(position.Feet) == rest.Feet;
+
+        /// <summary>
+        /// Keeps a full move that stood still as the rest (<paramref name="into"/> the velocity it was given, <paramref name="v"/>
+        /// the one it left): no move across or up, the feet where they were, grounded on walkable ground, no wall, no step.
+        /// Any other move ends the rest. Stepping in the air does not matter to a move with nothing across.
+        /// </summary>
+        private readonly void Remember(
+            ref CharacterRest rest,
+            in CharacterPosition position,
+            Vector3 into,
+            Vector3 v,
+            in CharacterShape shape,
+            in CharacterMoveResult result
+        )
+        {
+            rest.Resting =
+                into.X == 0
+                && into.Z == 0
+                && into.Y <= 0
+                && v == Vector3.Zero
+                && position.Feet == position.PreviousFeet
+                && result.Status == CharacterMoveStatus.Moved
+                && result.Grounded
+                && !result.Steep
+                && !result.HitWall
+                && result.SteppedMetres == 0;
+            if (!rest.Resting)
+            {
+                return;
+            }
+
+            rest.Feet = Mover.Origin.ToWorld(position.Feet);
+            rest.Shape = shape;
+            rest.FallMetresPerSecond = into.Y;
+            rest.Seconds = Seconds;
+            rest.GroundMaterial = result.GroundMaterial;
+            rest.GroundTags = result.GroundTags;
+            rest.Stamp = Mover.Stamp();
         }
 
         /// <summary>

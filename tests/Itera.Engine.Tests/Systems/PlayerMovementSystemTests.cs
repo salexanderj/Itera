@@ -915,6 +915,78 @@ public sealed class PlayerMovementSystemTests : IDisposable
         Assert.Equal(small, eye.EyeMetres, 4);
     }
 
+    [Theory]
+    [InlineData(false)]
+    // A movement mode that takes the step and steps in the air, as a game's running does: still a rest.
+    [InlineData(true)]
+    public void A_character_standing_still_skips_the_mover_and_ends_as_a_full_move_does(bool moded)
+    {
+        using var world = World.Create();
+        var mode = moded ? new Standing() : null;
+        using var system = Create(world, new Vector3(0, 1.6f, 0), mode: mode);
+        Run(world, system, 60, new PlayerCommand());
+        var moves = _mover.Moves;
+        Run(world, system, 30, new PlayerCommand());
+        Assert.Equal(moves, _mover.Moves);
+
+        // The rest's step and the full move's, from one state: the stepper always moves.
+        var player = Player(world);
+        var before = State(world, player);
+        Run(world, system, 1, new PlayerCommand());
+        var rested = State(world, player);
+        (world.Get<CharacterPosition>(player), world.Get<CharacterVelocity>(player)) = (
+            before.Position,
+            before.Velocity
+        );
+        (world.Get<CharacterContact>(player), world.Get<EyeSmoothing>(player)) = (before.Contact, before.Eye);
+        Assert.True(new CharacterStepper(world, _mover, mode).Step(player, Step.StepSeconds));
+
+        Assert.Equal(rested, State(world, player));
+        Assert.Equal(moves + 1, _mover.Moves);
+        Assert.True(rested.Contact.Grounded);
+    }
+
+    [Fact]
+    public void An_edit_near_a_resting_character_moves_it_again_and_one_farther_off_does_not()
+    {
+        using var world = World.Create();
+        using var system = Create(world, new Vector3(0, 1.6f, 0));
+        Run(world, system, 60, new PlayerCommand());
+        var moves = _mover.Moves;
+
+        Assert.True(
+            _voxels.TryApply(VoxelEdit.Sphere(new VoxelCoord(300, -5, 0), 10, VoxelEditOperation.Clear), 0, out _)
+        );
+        Run(world, system, 5, new PlayerCommand());
+        Assert.Equal(moves, _mover.Moves);
+
+        // A dent under its feet: one full move, then it rests there again.
+        Assert.True(
+            _voxels.TryApply(VoxelEdit.Sphere(new VoxelCoord(0, -5, 0), 10, VoxelEditOperation.Clear), 0, out _)
+        );
+        Run(world, system, 5, new PlayerCommand());
+        Assert.Equal(moves + 1, _mover.Moves);
+    }
+
+    [Fact]
+    public void A_collider_added_anywhere_moves_each_resting_character_again()
+    {
+        using var physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance);
+        physics.Initialize();
+        using var colliders = new MeshColliders(physics, NullLogger<MeshColliders>.Instance, _voxels.Origin);
+        var mover = new VoxelCharacterMover(_voxels, new NothingPassable(), meshes: colliders);
+        using var world = World.Create();
+        using var system = Create(world, new Vector3(0, 1.6f, 0), mover: mover);
+        Run(world, system, 60, new PlayerCommand());
+        var moves = mover.Moves;
+
+        Vector3[] wall = [new(0, 0, 0), new(0, 1, 0), new(0, 1, 1), new(0, 0, 1)];
+        colliders.Add(wall, [0, 1, 2, 0, 2, 3], Matrix4x4.CreateTranslation(40, 0, 40));
+        Run(world, system, 5, new PlayerCommand());
+
+        Assert.Equal(moves + 1, mover.Moves);
+    }
+
     [Fact]
     public void Update_with_a_movement_mode_allocates_nothing()
     {
@@ -986,6 +1058,18 @@ public sealed class PlayerMovementSystemTests : IDisposable
             move.Velocity = new Vector3(1, up, 0);
             move.StepMetres = input.Size.StepMetres;
             move.StepsInAir = StepsInAir;
+            return true;
+        }
+    }
+
+    /// <summary>A movement mode that takes every step standing still under gravity, stepping in the air as a game's running does.</summary>
+    private sealed class Standing : IMovementMode
+    {
+        public bool Steer(in MovementModeInput input, ref MovementModeMove move)
+        {
+            move.Velocity = new Vector3(0, input.Velocity.Y - input.Stats.Gravity * input.Seconds, 0);
+            move.StepMetres = input.Size.StepMetres;
+            move.StepsInAir = true;
             return true;
         }
     }
@@ -1114,6 +1198,20 @@ public sealed class PlayerMovementSystemTests : IDisposable
         );
         return result;
     }
+
+    /// <summary>What a step writes of a character: its position, velocity, contact, and eye.</summary>
+    private static (
+        CharacterPosition Position,
+        CharacterVelocity Velocity,
+        CharacterContact Contact,
+        EyeSmoothing Eye
+    ) State(World world, Entity entity) =>
+        (
+            world.Get<CharacterPosition>(entity),
+            world.Get<CharacterVelocity>(entity),
+            world.Get<CharacterContact>(entity),
+            world.Get<EyeSmoothing>(entity)
+        );
 
     private static VoxelWorld LoadWorld(
         IChunkGenerator generator,

@@ -78,6 +78,12 @@ internal sealed class ObjectColumns
     /// <summary>The chunks of columns kept now.</summary>
     internal int ChunkCount => _chunks.Count;
 
+    /// <summary>The objects' version (<see cref="ObjectWorld.Version"/>): it changes whenever one is placed or removed.</summary>
+    internal int ObjectsVersion => _objects.Version;
+
+    /// <summary>The objects' damage's version (<see cref="ObjectDamage.Version"/>), or 0 with none.</summary>
+    internal long DamageVersion => _damage?.Version ?? 0;
+
     /// <summary>The edge of its cells, in centimetres: the mover's.</summary>
     public int CellCentimetres => _cell;
 

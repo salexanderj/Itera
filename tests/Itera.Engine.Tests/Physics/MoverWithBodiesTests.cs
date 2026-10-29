@@ -156,6 +156,24 @@ public sealed class MoverWithBodiesTests : IDisposable
     }
 
     [Fact]
+    public void A_standing_body_stays_unchanged_until_a_loose_body_comes_round_it()
+    {
+        var feet = new Vector3(0, 2, 0);
+        var stamp = _mover.Stamp();
+        Assert.True(_mover.StandsUnchanged(ref stamp, feet, in s_shape));
+
+        // A ball resting 3 m off, lifted 3 m away the other way: neither reaches round it.
+        var far = RestingBall(new Vector3(3, 2.2f, 0));
+        Assert.True(_mover.StandsUnchanged(ref stamp, feet, in s_shape));
+
+        _bodies.Remove(far);
+        Assert.True(_world.TryLift(Ball(new VoxelCoord(-300, 188, -100)), out var piece));
+        Assert.True(_bodies.TryCreate(piece, new Vector3(0.5f, 2.2f, 0), Vector3.Zero, out _));
+        _bodyVoxels.Refresh();
+        Assert.False(_mover.StandsUnchanged(ref stamp, feet, in s_shape));
+    }
+
+    [Fact]
     public void A_character_lands_on_a_body_and_stands_on_it()
     {
         var ball = RestingBall(new Vector3(0.5f, 2.2f, 0.5f));

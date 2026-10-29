@@ -1,4 +1,5 @@
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Physics;
 
 namespace Itera.Engine.Components;
@@ -230,6 +231,40 @@ public struct CharacterContact
 
     /// <summary>Grounded, the surface tags of what it stands on (the game's bits); 0 on a loose body or in the air.</summary>
     public uint GroundTags;
+}
+
+/// <summary>
+/// A character standing still, as its last full move left it (<c>PlayerMovementSystem</c>): where its feet stood
+/// (absolute), the shape, fall, and time of that move, what it stood on, and what its ground was read against
+/// (<see cref="GroundStamp"/>). While its step asks that move again and nothing round it changed
+/// (<see cref="VoxelCharacterMover.StandsUnchanged"/>), the step skips the mover, which would answer the same. The system
+/// adds it to each character it moves. Kept by the host and each game alone: never sent, saved, or predicted.
+/// </summary>
+public struct CharacterRest
+{
+    /// <summary>The last full move stood still: the rest holds only while this is true.</summary>
+    public bool Resting;
+
+    /// <summary>Where the feet stood, absolute.</summary>
+    public WorldPoint Feet;
+
+    /// <summary>The body's shape in that move.</summary>
+    public CharacterShape Shape;
+
+    /// <summary>The velocity it fell by into that move, in metres per second: gravity's one step.</summary>
+    public float FallMetresPerSecond;
+
+    /// <summary>That move's time, in seconds.</summary>
+    public float Seconds;
+
+    /// <summary>What it stood on (<see cref="CharacterContact.GroundMaterial"/>).</summary>
+    public PhysicsMaterialId GroundMaterial;
+
+    /// <summary>The tags of what it stood on (<see cref="CharacterContact.GroundTags"/>).</summary>
+    public uint GroundTags;
+
+    /// <summary>What the move read of the match, advanced at each step it rests (<see cref="VoxelCharacterMover.Stamp"/>).</summary>
+    public GroundStamp Stamp;
 }
 
 /// <summary>

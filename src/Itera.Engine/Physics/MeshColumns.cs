@@ -66,6 +66,9 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     /// <summary>The chunks of columns kept now, at most <see cref="MostChunks"/>.</summary>
     internal int ChunkCount => _chunks.Count;
 
+    /// <summary>The colliders' version (<see cref="MeshColliders.Version"/>): it changes whenever one is added or removed.</summary>
+    internal int Version => colliders.Version;
+
     /// <summary>True when the chunk that holds column (x, z) is kept now.</summary>
     internal bool Keeps(int x, int z) =>
         _version == colliders.Version && _chunks.ContainsKey(((long)(x >> ChunkBits) << 32) | (uint)(z >> ChunkBits));

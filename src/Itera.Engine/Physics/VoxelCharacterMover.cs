@@ -76,6 +76,13 @@ public readonly record struct CharacterMoveResult(
 );
 
 /// <summary>
+/// What a move reads of the match that can change while a body stands still (<see cref="VoxelCharacterMover.Stamp"/>):
+/// the voxel edits in every column they reach (<see cref="VoxelWorld.AppliedEditCount"/>), the newest reset, the mesh
+/// colliders' version, and the voxel objects' version and damage.
+/// </summary>
+public readonly record struct GroundStamp(long Edits, long Reset, int Meshes, int Objects, long Damage);
+
+/// <summary>
 /// Moves upright bodies (vertical cylinders with flat ends) through the level-0 voxels and a game's mesh colliders
 /// (<see cref="MeshColliders"/>, read as columns of the same cells, <c>MeshColumns</c>): slides them along walls, steps
 /// them up onto ledges no higher than their step, keeps them on the ground when walking down steps and slopes, lands
@@ -158,6 +165,13 @@ public sealed class VoxelCharacterMover
 
     /// <summary>The least <see cref="LookAheadCentimetres"/> in cells: what it is in 10 cm cells.</summary>
     private const double LeastLookAheadCells = 0.8;
+
+    /// <summary>
+    /// How far past a standing body's reads <see cref="StandsUnchanged"/> looks for a loose body or an edit, in
+    /// centimetres, and at least two cells; for an edit, two of the world's voxels more, whose surfaces the ground's blend
+    /// reads.
+    /// </summary>
+    private const double RestMarginCentimetres = 50;
 
     /// <summary>The widest circle at the centre of a body that the steepness rule reads first, in centimetres.</summary>
     private const double CentreCentimetres = 16;
@@ -455,6 +469,8 @@ public sealed class VoxelCharacterMover
         {
             throw new ArgumentException("The feet, the velocity, and the time must be finite numbers.");
         }
+
+        Moves++;
 
         // In doubles: a float's length of a huge velocity is infinite, which scaled the velocity to nothing.
         var length =
@@ -1084,6 +1100,134 @@ public sealed class VoxelCharacterMover
         return !double.IsNegativeInfinity(OverlapTop(in footprint, py, h, bodies: true));
     }
 
+    /// <summary>What a move reads that can change while a body stands still, as it is now (<see cref="StandsUnchanged"/>).</summary>
+    public GroundStamp Stamp() =>
+        new(
+            _world?.AppliedEditCount ?? 0,
+            _world?.LastReset ?? 0,
+            _meshes?.Version ?? 0,
+            Objects?.ObjectsVersion ?? 0,
+            Objects?.DamageVersion ?? 0
+        );
+
+    /// <summary>
+    /// True when a move of a body of <paramref name="shape"/> standing at <paramref name="feetMetres"/> reads what it read
+    /// when <paramref name="since"/> was taken (<see cref="Stamp"/>), so the same move then answers the same: the columns
+    /// round it are resident, no reset came, the mesh colliders, the voxel objects, and their damage are as they were, no
+    /// edit since reaches round it (any edit of the objects counts, wherever it is), and no loose body or solid model
+    /// reaches round it. Then <paramref name="since"/> becomes now, so the next ask reads only later edits. Allocates
+    /// nothing.
+    /// </summary>
+    public bool StandsUnchanged(ref GroundStamp since, Vector3 feetMetres, in CharacterShape shape)
+    {
+        var now = Stamp();
+        if (
+            now.Reset != since.Reset
+            || now.Meshes != since.Meshes
+            || now.Objects != since.Objects
+            || now.Damage != since.Damage
+            || now.Edits < since.Edits
+        )
+        {
+            return false;
+        }
+
+        double px = CellX(feetMetres.X),
+            py = CellY(feetMetres.Y),
+            pz = CellZ(feetMetres.Z);
+        var r = shape.RadiusMetres * _cellsPerMetre;
+        var h = shape.HeightMetres * _cellsPerMetre;
+        var step = shape.StepMetres * _cellsPerMetre;
+        // The columns a move standing still checks are resident.
+        var reach = r + 2;
+        if (
+            !Resident(
+                (int)Math.Floor(px - reach),
+                (int)Math.Floor(pz - reach),
+                (int)Math.Floor(px + reach),
+                (int)Math.Floor(pz + reach)
+            )
+        )
+        {
+            return false;
+        }
+
+        var margin = Math.Max(RestMarginCentimetres / CellCentimetres, 2);
+        if (
+            _bodies is { Count: > 0 }
+            && _bodies.Reaches(
+                (int)Math.Floor(px - r - margin),
+                (int)Math.Floor(py - step - margin),
+                (int)Math.Floor(pz - r - margin),
+                (int)Math.Ceiling(px + r + margin),
+                (int)Math.Ceiling(py + h + margin),
+                (int)Math.Ceiling(pz + r + margin)
+            )
+        )
+        {
+            return false;
+        }
+
+        if (
+            now.Edits > since.Edits
+            && EditsReach(since.Edits + 1, now.Edits, px, py, pz, r + margin, step + margin, h + margin)
+        )
+        {
+            return false;
+        }
+
+        since = now;
+        return true;
+    }
+
+    /// <summary>
+    /// True when an edit from <paramref name="first"/> to <paramref name="last"/> may change what a body standing at
+    /// (<paramref name="px"/>, <paramref name="py"/>, <paramref name="pz"/>) reads, all in cells: a reset, an edit of the
+    /// objects, or one whose box comes within <paramref name="across"/> of it across, <paramref name="below"/> under it, or
+    /// <paramref name="above"/> over it, with two of the world's voxels more each way.
+    /// </summary>
+    private bool EditsReach(
+        long first,
+        long last,
+        double px,
+        double py,
+        double pz,
+        double across,
+        double below,
+        double above
+    )
+    {
+        if (_world is null)
+        {
+            return false;
+        }
+
+        double cell = CellCentimetres,
+            voxels = 2.0 * _world.Grid.BaseCentimetres;
+        long x0 = (long)Math.Floor((px - across) * cell - voxels),
+            x1 = (long)Math.Ceiling((px + across) * cell + voxels),
+            y0 = (long)Math.Floor((py - below) * cell - voxels),
+            y1 = (long)Math.Ceiling((py + above) * cell + voxels),
+            z0 = (long)Math.Floor((pz - across) * cell - voxels),
+            z1 = (long)Math.Ceiling((pz + across) * cell + voxels);
+        for (var sequence = first; sequence <= last; sequence++)
+        {
+            ref readonly var edit = ref _world.GetEdit(sequence);
+            if (!edit.ChangesWorld)
+            {
+                return true;
+            }
+
+            edit.GetBounds(out var min, out var end);
+            if (min.X < x1 && end.X > x0 && min.Y < y1 && end.Y > y0 && min.Z < z1 && end.Z > z0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>A local x in metres, in absolute cells: the local float plus the origin's whole metres, in doubles.</summary>
     private double CellX(float metres) => _origin.WorldX(metres) * _cellsPerMetre;
 
@@ -1271,6 +1415,9 @@ public sealed class VoxelCharacterMover
     /// the answers are the same.
     /// </summary>
     internal bool RemembersSurfaces { get; set; } = true;
+
+    /// <summary>How many moves it made (<see cref="Move"/>; for tests).</summary>
+    internal long Moves { get; private set; }
 
     /// <summary>How many times <see cref="Surface"/> answered from what it remembered (for tests).</summary>
     internal long RememberedAnswers { get; private set; }
