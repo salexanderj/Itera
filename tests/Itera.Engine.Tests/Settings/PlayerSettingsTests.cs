@@ -24,7 +24,9 @@ namespace Itera.Engine.Tests.Settings;
 /// not know written back; a byte order mark read; a failed write keeping the old file and tried again; the screen full
 /// screen covers, read, written, and kept to a name; the command line's keys read from its arguments; and the graphics
 /// presets: each sets its table at once, a row changed after makes Custom and matching values the preset again, a game's
-/// value joins them, a file from before them takes the new threshold, and the graphics settings' round trip.
+/// value joins them, a file from before them takes the new threshold, as does a file with no version on the old
+/// default, a file that names a preset takes its values as they are now (but the command line's, while the file keeps
+/// its preset), and the graphics settings' round trip.
 /// </summary>
 public sealed class PlayerSettingsTests : IDisposable
 {
@@ -964,12 +966,115 @@ public sealed class PlayerSettingsTests : IDisposable
     }
 
     [Theory]
+    // A file of version 1 on the engine's default since the presets: the options' threshold.
+    [InlineData("""{ "DynamicScalingThreshold": 60 }""", 120f, 120f)]
+    [InlineData("""{ "GraphicsPreset": "High", "DynamicScalingThreshold": 60 }""", 120f, 120f)]
+    [InlineData("""{ "DynamicScalingThreshold": 60 }""", 60f, 60f)]
+    // Another value, or a file of version 2, which tells a choice from the default: the file's.
+    [InlineData("""{ "GraphicsPreset": "High", "DynamicScalingThreshold": 90 }""", 120f, 90f)]
+    [InlineData("""{ "Version": 2, "GraphicsPreset": "High", "DynamicScalingThreshold": 60 }""", 120f, 60f)]
+    public void A_file_with_no_version_on_the_old_default_threshold_takes_the_options(
+        string file,
+        float optionsThreshold,
+        float threshold
+    )
+    {
+        File.WriteAllText(FilePath, file);
+        var options = new EngineOptions();
+        options.Renderer.DynamicScalingThreshold = optionsThreshold;
+
+        Assert.Equal(threshold, Create(options).ScalingThreshold);
+    }
+
+    [Fact]
+    public void The_file_is_written_with_its_version_so_a_chosen_threshold_stays()
+    {
+        var options = new EngineOptions();
+        options.Renderer.DynamicScalingThreshold = 120;
+        var settings = Create(options);
+        settings.SetScalingThreshold(60);
+        settings.Save();
+
+        using (var written = JsonDocument.Parse(File.ReadAllText(FilePath)))
+        {
+            Assert.Equal(2, written.RootElement.GetProperty("Version").GetInt32());
+        }
+
+        Assert.Equal(60, Create(options).ScalingThreshold);
+    }
+
+    [Fact]
+    public void A_file_that_names_a_preset_takes_its_values_as_they_are_now()
+    {
+        // High as it was written when the game's object detail was 1.
+        File.WriteAllText(
+            FilePath,
+            """{ "GraphicsPreset": "High", "AntiAliasing": true, "MsaaSamples": 4, "Shadows": true, "ObjectDetail": 1, "EffectsDetail": 1, "Game": { "Grass": 1 } }"""
+        );
+        var options = new EngineOptions();
+        options.Renderer.ObjectVoxelPixels = 2;
+
+        var settings = Create(options);
+        Assert.Equal((GraphicsPreset.High, 2f), (settings.GraphicsPreset, settings.ObjectDetail));
+        // A game's value too, once it joins the presets.
+        var grass = settings.RegisterValue("Grass", 1, 0, 1);
+        settings.AddPresetValue(grass, 0.25f, 0.5f, 0.75f);
+        Assert.Equal((GraphicsPreset.High, 0.75f), (settings.GraphicsPreset, settings.ValueOf(grass)));
+
+        settings.Save();
+        using (var written = JsonDocument.Parse(File.ReadAllText(FilePath)))
+        {
+            var root = written.RootElement;
+            Assert.Equal(2, root.GetProperty("ObjectDetail").GetDouble());
+            Assert.Equal(0.75, root.GetProperty("Game").GetProperty("Grass").GetDouble());
+            Assert.Equal("High", root.GetProperty("GraphicsPreset").GetString());
+        }
+
+        // A file on Custom keeps its values.
+        File.WriteAllText(FilePath, """{ "GraphicsPreset": "Custom", "ObjectDetail": 1 }""");
+        var custom = Create(options);
+        Assert.Equal((GraphicsPreset.Custom, 1f), (custom.GraphicsPreset, custom.ObjectDetail));
+    }
+
+    [Fact]
+    public void The_command_line_keeps_its_own_from_the_files_preset_and_the_file_keeps_its_preset()
+    {
+        File.WriteAllText(
+            FilePath,
+            """{ "GraphicsPreset": "High", "Shadows": true, "MsaaSamples": 4, "ObjectDetail": 1, "EffectsDetail": 0.5 }"""
+        );
+        var options = new EngineOptions();
+        options.Renderer.ObjectVoxelPixels = 2;
+        options.Renderer.Shadows = false;
+
+        var given = Create(options, new CommandLineKeys(["--Engine:Renderer:Shadows=false"]));
+        // The command line's shadows for the run, High's object detail and effects detail.
+        Assert.Equal((false, 2f, 1f), (given.Shadows, given.ObjectDetail, given.EffectsDetail));
+        Assert.Equal(GraphicsPreset.Custom, given.GraphicsPreset);
+        given.Save();
+
+        using (var written = JsonDocument.Parse(File.ReadAllText(FilePath)))
+        {
+            var root = written.RootElement;
+            Assert.True(root.GetProperty("Shadows").GetBoolean());
+            Assert.Equal(2, root.GetProperty("ObjectDetail").GetDouble());
+            Assert.Equal("High", root.GetProperty("GraphicsPreset").GetString());
+        }
+
+        options.Renderer.Shadows = true;
+        var next = Create(options);
+        Assert.Equal((GraphicsPreset.High, true), (next.GraphicsPreset, next.Shadows));
+    }
+
+    [Theory]
     [InlineData("""{ "MsaaSamples": 2, "ObjectDetail": 2, "EffectsDetail": 0.75 }""", GraphicsPreset.Medium)]
     [InlineData(
         """{ "MsaaSamples": 1, "AntiAliasing": true, "ObjectDetail": 2, "EffectsDetail": 0.5 }""",
         GraphicsPreset.Low
     )]
-    [InlineData("""{ "GraphicsPreset": "Low", "MsaaSamples": 8 }""", GraphicsPreset.Custom)]
+    // A file that names a preset takes its values.
+    [InlineData("""{ "GraphicsPreset": "Low", "MsaaSamples": 8 }""", GraphicsPreset.Low)]
+    [InlineData("""{ "GraphicsPreset": "Custom", "MsaaSamples": 8 }""", GraphicsPreset.Custom)]
     [InlineData("""{ "Shadows": false }""", GraphicsPreset.Custom)]
     [InlineData("""{ "Volume": 0.3 }""", GraphicsPreset.High)]
     public void A_files_preset_is_the_one_its_values_match(string file, GraphicsPreset preset)

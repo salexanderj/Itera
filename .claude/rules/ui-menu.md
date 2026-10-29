@@ -97,8 +97,14 @@ Each setting applies at once through `PlayerSettings`:
   `RegisterValue`.
 - `settings.json` keeps `GraphicsPreset`, `ObjectDetail`, `EffectsDetail`, and `FixedRenderScale`. The retired
   `RenderScale` key is not read.
+- A file whose `GraphicsPreset` names Low, Medium, or High takes that preset's values as its table is now. The game's
+  values take it at `AddPresetValue`. So a game's changed default reaches a player on a preset, and Custom keeps the
+  file's values.
+- Keys the command line gave keep their own values over the file's preset. While one of them is in the table, the save
+  writes the file's `GraphicsPreset` back as it was.
+- `"Version"` is the file's version (`PlayerSettings`' `FileVersion`); a file without it is version 1.
 - A file with no `GraphicsPreset` key whose `DynamicScalingThreshold` is 120, the old default, takes the options'
-  threshold.
+  threshold. So does a file of version 1 whose threshold is 60, the engine's default since the presets.
 
 ### `settings.json`
 

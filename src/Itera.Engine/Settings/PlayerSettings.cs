@@ -67,10 +67,24 @@ public sealed partial class PlayerSettings
     private const string RenderScaleKey = "FixedRenderScale";
 
     /// <summary>
+    /// The file's version, which <see cref="Save"/> writes as <c>"Version"</c>. A file with none is version 1. Version 2
+    /// came with <see cref="UnversionedDefaultThreshold"/>'s upgrade.
+    /// </summary>
+    private const int FileVersion = 2;
+
+    private const string FileVersionKey = "Version";
+
+    /// <summary>
     /// The dynamic scaling threshold's default before the presets came: a file written before them (no
     /// <c>"GraphicsPreset"</c>) that holds it takes the options' threshold.
     /// </summary>
     private const float OldDefaultThreshold = 120;
+
+    /// <summary>
+    /// The engine's dynamic scaling threshold default from the presets on: a file of version 1 that holds it takes the
+    /// options' threshold, since the file did not tell the default from a choice.
+    /// </summary>
+    private const float UnversionedDefaultThreshold = 60;
 
     /// <summary>
     /// Frame blending's switch, a setting until 2026-10-05; frame blending left with the raymarcher on 2026-10-06.
@@ -94,6 +108,7 @@ public sealed partial class PlayerSettings
     /// <summary>The keys this build writes or has retired; the file's others are kept as they were.</summary>
     private static readonly HashSet<string> s_known = new(StringComparer.Ordinal)
     {
+        FileVersionKey,
         VolumeKey,
         MusicVolumeKey,
         EffectsVolumeKey,
@@ -159,6 +174,9 @@ public sealed partial class PlayerSettings
     private readonly Dictionary<string, int> _valueIndex = new(StringComparer.Ordinal);
     private bool _changed;
     private int _keysSaved;
+
+    // The preset the file names (Custom for none): its values as its table is now replace the file's.
+    private GraphicsPreset _filePreset = GraphicsPreset.Custom;
 
     public PlayerSettings(
         IOptions<EngineOptions> options,
@@ -597,8 +615,9 @@ public sealed partial class PlayerSettings
     /// <summary>
     /// Adds a game's value to the graphics presets' table (such as its grass's density): choosing Low, Medium, or High
     /// sets it to <paramref name="low"/>, <paramref name="medium"/>, or <paramref name="high"/>, each kept within the
-    /// value's bounds, and <see cref="GraphicsPreset"/> matches it too. A game calls it once for each such value at its
-    /// run's <c>game</c> step, after <see cref="RegisterValue"/>.
+    /// value's bounds, and <see cref="GraphicsPreset"/> matches it too. When the file names a preset, the value takes that
+    /// preset's, as the engine's values did at the file's reading. A game calls it once for each such value at its run's
+    /// <c>game</c> step, after <see cref="RegisterValue"/>.
     /// </summary>
     /// <exception cref="ArgumentException">The value was added before, or a number is not finite.</exception>
     public void AddPresetValue(GameValue which, float low, float medium, float high)
@@ -624,14 +643,20 @@ public sealed partial class PlayerSettings
 
         var least = _valueLeast[which.Index];
         var most = _valueMost[which.Index];
-        _presetValues.Add(
-            new PresetValue(
-                which,
-                Math.Clamp(low, least, most),
-                Math.Clamp(medium, least, most),
-                Math.Clamp(high, least, most)
-            )
+        var value = new PresetValue(
+            which,
+            Math.Clamp(low, least, most),
+            Math.Clamp(medium, least, most),
+            Math.Clamp(high, least, most)
         );
+        _presetValues.Add(value);
+
+        // A file that names a preset takes the preset's value, as it took the engine's at its reading.
+        if (_filePreset != GraphicsPreset.Custom && !Near(ValueOf(which), value.Of(_filePreset)))
+        {
+            _valueNumbers[which.Index] = value.Of(_filePreset);
+            _changed = true;
+        }
     }
 
     /// <summary>
@@ -971,8 +996,9 @@ public sealed partial class PlayerSettings
     public void ReadScreens() => _window?.ReadScreens();
 
     /// <summary>
-    /// Writes <c>settings.json</c> when a setting or a keybinding changed since: every setting, but those the command line
-    /// gave keep what the file had, then the keybindings that differ from their defaults, then the game's switches and
+    /// Writes <c>settings.json</c> when a setting or a keybinding changed since: its version, every setting, but those the
+    /// command line gave keep what the file had (and the file keeps its preset while one of them is in the preset's
+    /// table), then the keybindings that differ from their defaults, then the game's switches and
     /// values (<c>"Game"</c>: every registered switch, every registered value, then what the file's object held that
     /// this run did not register), then what the file held that this build does not know. It writes a file beside it and
     /// moves that over the old one, so a failed write leaves the old file whole; a failure is a Warning, the game goes on,
@@ -994,6 +1020,7 @@ public sealed partial class PlayerSettings
             using (var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
             {
                 writer.WriteStartObject();
+                writer.WriteNumber(FileVersionKey, FileVersion);
                 WriteNumber(writer, VolumeKey, Volume);
                 WriteNumber(writer, MusicVolumeKey, MusicVolume);
                 WriteNumber(writer, EffectsVolumeKey, EffectsVolume);
@@ -1004,7 +1031,7 @@ public sealed partial class PlayerSettings
                 WriteBoolean(writer, ShadowsKey, Shadows);
                 WriteBoolean(writer, AntiAliasingKey, AntiAliasing);
                 WriteNumber(writer, MsaaSamplesKey, MsaaSamples);
-                writer.WriteString(GraphicsPresetKey, GraphicsPresets.Label(GraphicsPreset));
+                WritePreset(writer);
                 WriteNumber(writer, ObjectDetailKey, ObjectDetail);
                 WriteNumber(writer, EffectsDetailKey, EffectsDetail);
                 WriteNumber(writer, RenderScaleKey, RenderScale);
@@ -1045,7 +1072,11 @@ public sealed partial class PlayerSettings
         }
     }
 
-    /// <summary>The file's values, for every setting the command line did not give; anything else in it is left alone.</summary>
+    /// <summary>
+    /// The file's values, for every setting the command line did not give; anything else in it is left alone. A preset
+    /// the file names sets its table's values as they are now (<see cref="TakeFilesPreset"/>), and an old file's default
+    /// threshold takes the options'.
+    /// </summary>
     private void Load()
     {
         if (_path is null || !File.Exists(_path))
@@ -1093,16 +1124,18 @@ public sealed partial class PlayerSettings
             DynamicRenderScale.MostThreshold
         );
         if (
-            !_file.ContainsKey(GraphicsPresetKey)
-            && !_fromCommandLine.Contains(ScalingThresholdKey)
+            !_fromCommandLine.Contains(ScalingThresholdKey)
             && _file.TryGetValue(ScalingThresholdKey, out var threshold)
             && threshold.ValueKind == JsonValueKind.Number
             && threshold.TryGetSingle(out var stored)
-            && stored == OldDefaultThreshold
+            && (
+                (stored == OldDefaultThreshold && !_file.ContainsKey(GraphicsPresetKey))
+                || (stored == UnversionedDefaultThreshold && ReadFileVersion() == 1)
+            )
         )
         {
-            // A file from before the presets holds the threshold's old default: it takes the new one, and the next
-            // save writes it with the preset.
+            // A file from before the presets, or from before the file's version, holds the threshold's default of its
+            // time: it takes the options' threshold, and the next save writes it with the version.
             ScalingThreshold = _optionsThreshold;
             _changed = true;
         }
@@ -1112,6 +1145,8 @@ public sealed partial class PlayerSettings
         MsaaSamples = AntiAliasModes.SnapSamples((int)Read(MsaaSamplesKey, MsaaSamples, 1, 8));
         ObjectDetail = Read(ObjectDetailKey, ObjectDetail, LeastObjectDetail, MostObjectDetail);
         EffectsDetail = Read(EffectsDetailKey, EffectsDetail, EffectsBudget.MinimumShare, EffectsBudget.MostShare);
+        _filePreset = ReadPreset();
+        TakeFilesPreset();
         RenderScale = Read(RenderScaleKey, RenderScale, Rendering.RenderScale.Min, Rendering.RenderScale.Max);
         VSync = Read(VSyncKey, VSync);
         Fullscreen = Read(FullscreenKey, Fullscreen);
@@ -1124,6 +1159,70 @@ public sealed partial class PlayerSettings
 
         LogLoaded(_path);
     }
+
+    /// <summary>
+    /// Sets the engine's table values to those of the preset the file names, as its table is now, but for the values the
+    /// command line gave. <see cref="Save"/> writes the preset the values match, so values that no longer match the
+    /// preset named are an earlier table's, such as a game's object detail made coarser since.
+    /// </summary>
+    private void TakeFilesPreset()
+    {
+        if (_filePreset == GraphicsPreset.Custom || Matches(_filePreset))
+        {
+            return;
+        }
+
+        var table = s_presets[(int)_filePreset];
+        if (!_fromCommandLine.Contains(AntiAliasingKey) && !_fromCommandLine.Contains(MsaaSamplesKey))
+        {
+            // As SetAntiAliasMode does: the MSAA modes leave SMAA's switch as it was.
+            if (table.AntiAlias is AntiAliasMode.Off or AntiAliasMode.Smaa)
+            {
+                AntiAliasing = table.AntiAlias == AntiAliasMode.Smaa;
+            }
+
+            MsaaSamples = AntiAliasModes.Samples(table.AntiAlias);
+        }
+
+        if (!_fromCommandLine.Contains(ShadowsKey))
+        {
+            Shadows = table.Shadows;
+        }
+
+        if (!_fromCommandLine.Contains(ObjectDetailKey))
+        {
+            ObjectDetail = PresetObjectDetail(_filePreset);
+        }
+
+        EffectsDetail = table.EffectsDetail;
+        _changed = true;
+    }
+
+    /// <summary>The preset the file's <c>"GraphicsPreset"</c> names, else Custom.</summary>
+    private GraphicsPreset ReadPreset()
+    {
+        if (_file.TryGetValue(GraphicsPresetKey, out var element) && element.ValueKind == JsonValueKind.String)
+        {
+            var label = element.GetString();
+            for (var preset = GraphicsPreset.Low; preset <= GraphicsPreset.High; preset++)
+            {
+                if (string.Equals(label, GraphicsPresets.Label(preset), StringComparison.Ordinal))
+                {
+                    return preset;
+                }
+            }
+        }
+
+        return GraphicsPreset.Custom;
+    }
+
+    /// <summary>The file's <c>"Version"</c>, or 1 when it has none.</summary>
+    private int ReadFileVersion() =>
+        _file.TryGetValue(FileVersionKey, out var element)
+        && element.ValueKind == JsonValueKind.Number
+        && element.TryGetInt32(out var version)
+            ? version
+            : 1;
 
     private float Read(string key, float value, float least, float most) =>
         !_fromCommandLine.Contains(key)
@@ -1207,6 +1306,28 @@ public sealed partial class PlayerSettings
         }
 
         writer.WriteEndObject();
+    }
+
+    /// <summary>
+    /// The preset the values match; while the command line gives one of the table's values, the file's own preset, since
+    /// the file then keeps its own value of that row.
+    /// </summary>
+    private void WritePreset(Utf8JsonWriter writer)
+    {
+        if (
+            !_fromCommandLine.Contains(AntiAliasingKey)
+            && !_fromCommandLine.Contains(MsaaSamplesKey)
+            && !_fromCommandLine.Contains(ShadowsKey)
+            && !_fromCommandLine.Contains(ObjectDetailKey)
+        )
+        {
+            writer.WriteString(GraphicsPresetKey, GraphicsPresets.Label(GraphicsPreset));
+        }
+        else if (_file.TryGetValue(GraphicsPresetKey, out var kept))
+        {
+            writer.WritePropertyName(GraphicsPresetKey);
+            kept.WriteTo(writer);
+        }
     }
 
     private void WriteNumber(Utf8JsonWriter writer, string key, float value)
