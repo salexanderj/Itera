@@ -1115,8 +1115,8 @@ public sealed class VoxelCharacterMover
     /// when <paramref name="since"/> was taken (<see cref="Stamp"/>), so the same move then answers the same: the columns
     /// round it are resident, no reset came, the mesh colliders, the voxel objects, and their damage are as they were, no
     /// edit since reaches round it (any edit of the objects counts, wherever it is), and no loose body or solid model
-    /// reaches round it. Then <paramref name="since"/> becomes now, so the next ask reads only later edits. Allocates
-    /// nothing.
+    /// reaches round it. Then <paramref name="since"/> becomes now, so the next ask reads only later edits (and those
+    /// still waiting to apply in some column). Allocates nothing.
     /// </summary>
     public bool StandsUnchanged(ref GroundStamp since, Vector3 feetMetres, in CharacterShape shape)
     {
@@ -1168,9 +1168,13 @@ public sealed class VoxelCharacterMover
             return false;
         }
 
+        // Every edit logged since, not only those applied everywhere: a small edit near the body applies at once while a
+        // large one elsewhere still waits. The stamp keeps to what every column applied, so an edit still waiting is
+        // read again at each ask until its columns have it.
+        var logged = _world?.EditCount ?? 0;
         if (
-            now.Edits > since.Edits
-            && EditsReach(since.Edits + 1, now.Edits, px, py, pz, r + margin, step + margin, h + margin)
+            logged > since.Edits
+            && EditsReach(since.Edits + 1, logged, px, py, pz, r + margin, step + margin, h + margin)
         )
         {
             return false;

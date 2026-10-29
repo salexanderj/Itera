@@ -969,6 +969,30 @@ public sealed class PlayerMovementSystemTests : IDisposable
     }
 
     [Fact]
+    public void A_dent_under_a_resting_character_moves_it_again_while_a_large_edit_elsewhere_waits()
+    {
+        using var world = World.Create();
+        using var system = Create(world, new Vector3(0, 1.6f, 0));
+        Run(world, system, 60, new PlayerCommand());
+        var moves = _mover.Moves;
+
+        // A large edit 4 m off, applied over later steps (none here): the edits applied in every column stop before it.
+        Assert.True(
+            _voxels.TryApply(VoxelEdit.Sphere(new VoxelCoord(400, -5, 0), 80, VoxelEditOperation.Clear), 0, out _)
+        );
+        Assert.True(_voxels.AppliedEditCount < _voxels.EditCount);
+        Run(world, system, 5, new PlayerCommand());
+        Assert.Equal(moves, _mover.Moves);
+
+        // A dent under its feet, applied at once, after it.
+        Assert.True(
+            _voxels.TryApply(VoxelEdit.Sphere(new VoxelCoord(0, -5, 0), 10, VoxelEditOperation.Clear), 0, out _)
+        );
+        Run(world, system, 1, new PlayerCommand());
+        Assert.Equal(moves + 1, _mover.Moves);
+    }
+
+    [Fact]
     public void A_collider_added_anywhere_moves_each_resting_character_again()
     {
         using var physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance);

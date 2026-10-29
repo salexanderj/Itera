@@ -97,7 +97,8 @@ objects' version and damage. `StandsUnchanged` says whether the same move would 
 
 - the columns round the feet are not resident;
 - the reset, the colliders, the objects, or their damage changed;
-- an edit since reaches round the body (any edit of the objects counts, wherever it is);
+- an edit logged since reaches round the body (any edit of the objects counts, wherever it is). One still waiting in
+  some column (`VoxelWorld.ApplyPendingEdits`) is read again at each ask until it applies;
 - a loose body or solid model reaches round it.
 
 When true, it advances the stamp, so the next ask reads only later edits. `PlayerMovementSystem` uses it to skip the
