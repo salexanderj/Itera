@@ -45,8 +45,9 @@ public readonly record struct ReplicatedKindId(byte Value);
 
 /// <summary>
 /// One replicated kind: its name, schema, handler, and how the host chooses what to send of it: within
-/// <see cref="RelevanceMetres"/> of a client's player (0: to every client wherever it is), and how fast its priority
-/// grows (<see cref="Priority"/>: a player 4, a character 1, a far body 0.25).
+/// <see cref="RelevanceMetres"/> of a client's player (0: to every client wherever it is), how fast its priority
+/// grows (<see cref="Priority"/>: a player 4, a character 1, a far body 0.25), and how far from the client's player it
+/// grows that fast (<see cref="FalloffMetres"/>; 0: everywhere): past it, by that distance over the entity's own.
 /// </summary>
 public sealed record ReplicatedKind(
     ReplicatedKindId Id,
@@ -54,7 +55,8 @@ public sealed record ReplicatedKind(
     ReplicatedSchema Schema,
     IReplicatedKind Handler,
     float RelevanceMetres,
-    float Priority
+    float Priority,
+    float FalloffMetres = 0
 );
 
 /// <summary>
@@ -131,14 +133,17 @@ public sealed class ReplicatedKinds
 
     /// <summary>
     /// Registers a kind, sealing its schema. Names are unique; <paramref name="relevanceMetres"/> 0 sends it to every
-    /// client wherever it is; <paramref name="priority"/> is above 0.
+    /// client wherever it is; <paramref name="priority"/> is above 0; past <paramref name="falloffMetres"/> from a
+    /// client's player its priority grows by that distance over the entity's own, so a far one waits longer when the
+    /// bytes are short but is never dropped (0: as fast everywhere).
     /// </summary>
     public ReplicatedKindId Register(
         string name,
         ReplicatedSchema schema,
         IReplicatedKind handler,
         float relevanceMetres = 0,
-        float priority = 1
+        float priority = 1,
+        float falloffMetres = 0
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -161,6 +166,11 @@ public sealed class ReplicatedKinds
             throw new ArgumentOutOfRangeException(nameof(priority), "Priority is above 0.");
         }
 
+        if (!float.IsFinite(falloffMetres) || falloffMetres < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(falloffMetres), "The falloff is 0 or more metres.");
+        }
+
         if (_kinds.Count == MostKinds)
         {
             throw new InvalidOperationException($"At most {MostKinds} replicated kinds; {name} is one too many.");
@@ -176,7 +186,7 @@ public sealed class ReplicatedKinds
 
         schema.Seal();
         var id = new ReplicatedKindId((byte)_kinds.Count);
-        _kinds.Add(new ReplicatedKind(id, name, schema, handler, relevanceMetres, priority));
+        _kinds.Add(new ReplicatedKind(id, name, schema, handler, relevanceMetres, priority, falloffMetres));
         return id;
     }
 

@@ -19,6 +19,8 @@ The options are `Engine:Replication:SendHz`, `BytesPerSecond`, `PeakBytesPerSeco
   - a handler, `IReplicatedKind`. It is run-wide too, so it keeps no match's state. It is given the match's world and origin (`ReplicationContext`);
   - how far it reaches (`relevanceMetres`; 0 reaches every client wherever it is);
   - its priority, which is how fast it gains. A player's is high, a far body's low.
+  - how far from a client's player it gains that fast (`falloffMetres`; 0 is everywhere). A crowd's kind takes one, so
+    a far creature waits longer when the bytes are short but is never dropped.
 - **Defines the fields.** The fields are `AddPosition` (absolute), `AddAngle`, `AddRotation`, `AddScalar(min, max, bits)`, `AddInteger(min, max)`, and `AddFlags(bits)`. A kind has at most `ReplicatedState.MostLanes` lanes. Each call returns a typed field that sets and reads a `ReplicatedState`. A position goes through the match's origin (`ReplicationContext.Origin`).
 - **Gives the kinds a position.** The first position field is where the entity is for relevance. A kind with a reach is measured from the client's player. The game therefore replicates each client's player under its slot's id with a position field. A client with none is sent no kind with a reach.
 - **Shares a fingerprint.** The kinds' names and fields make a fingerprint that the hello carries. A host refuses a client whose kinds differ (`RejectReason.ReplicatedKinds`). The test kinds in `tests/Itera.Engine.Tests/Replication/ReplicationHarness.cs` are a worked example.
@@ -45,7 +47,7 @@ The console's `replication` prints what is sent or shown. `replication delay MS`
 
 - The host captures each entity's state `Engine:Replication:SendHz` times a second. It keeps the last states, each from the tick it changed.
 - For each joined client it takes the entities within reach that have a state the client has not acknowledged. The client's own player is left out: the client predicts it, and the owner's block carries the host's state of it.
-- It orders them by priority. Each send adds the kind's priority times one plus the entity's nearness, twice for an entity the client has none of. A sent entity goes back to 0.
+- It orders them by priority. Each send adds the kind's priority times one plus the entity's nearness, twice for an entity the client has none of. Past the kind's falloff, it adds that much times the falloff over the entity's distance from the client's player. A sent entity goes back to 0.
 - It writes each as a record: the id, the kind, how many ticks back its baseline is, and its changes from the baseline (`ReplicatedStateCodec`). A baseline of 0 means the record is whole, and it is followed by the id's generation.
 - Records go into packets that fit `MaxUnreliableBytes`, up to a limit per send, until the client's bytes are spent (`BytesPerSecond`; what a send leaves is kept, up to a send's share of `PeakBytesPerSecond`).
 - A record too large for what is left is passed over for smaller ones.

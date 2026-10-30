@@ -473,8 +473,9 @@ public sealed partial class ReplicationService
 
     /// <summary>
     /// The entities a client is sent this time, highest priority first: within its reach and with a state it has not
-    /// acknowledged; one that left its reach is removed from it instead. Its own player is left out: it predicts it, and the
-    /// owner's block carries the host's state of it.
+    /// acknowledged; one that left its reach is removed from it instead. Each gains by its kind's priority, more the
+    /// nearer it is within its reach, and past its kind's falloff by that distance over its own. Its own player is left
+    /// out: it predicts it, and the owner's block carries the host's state of it.
     /// </summary>
     private void Choose(HostClient client)
     {
@@ -491,24 +492,35 @@ public sealed partial class ReplicationService
             }
 
             var reach = entity.Kind.RelevanceMetres;
+            var falloff = entity.Kind.FalloffMetres;
             var nearness = 1.0;
-            if (reach > 0)
+            var share = 1.0;
+            if (reach > 0 || falloff > 0)
             {
                 var distance =
                     focused && entity.Focused ? Distance(in focus, in entity.Focus) : double.PositiveInfinity;
-                if (distance > reach)
+                if (reach > 0)
                 {
-                    if (client.Baselines[index] >= 0 || client.Sent[index])
+                    if (distance > reach)
                     {
-                        // Out of its reach: the client forgets it, and is sent it whole if it comes back.
-                        client.Remove(entity.Id);
-                        client.Forget(index);
+                        if (client.Baselines[index] >= 0 || client.Sent[index])
+                        {
+                            // Out of its reach: the client forgets it, and is sent it whole if it comes back.
+                            client.Remove(entity.Id);
+                            client.Forget(index);
+                        }
+
+                        continue;
                     }
 
-                    continue;
+                    nearness = 1 - distance / reach;
                 }
 
-                nearness = 1 - distance / reach;
+                // Past its falloff it gains by that distance over its own; where the distance is not known, as fast.
+                if (falloff > 0 && distance > falloff && double.IsFinite(distance))
+                {
+                    share = falloff / distance;
+                }
             }
 
             var baselineTick = client.Baselines[index];
@@ -524,7 +536,7 @@ public sealed partial class ReplicationService
             }
 
             // A new entity, or one the client has not seen move, gains faster than one it has a recent state of.
-            var gain = entity.Kind.Priority * (1 + nearness) * (baselineTick < 0 ? 2 : 1);
+            var gain = entity.Kind.Priority * (1 + nearness) * share * (baselineTick < 0 ? 2 : 1);
             client.Priorities[index] += (float)gain;
             // Back in reach (or added again) before its removal was acknowledged: it is sent whole, with its generation,
             // so the removal is not needed.

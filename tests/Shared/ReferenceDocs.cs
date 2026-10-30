@@ -120,7 +120,10 @@ internal static class ReferenceDocs
         return table.ToString();
     }
 
-    /// <summary>Every replicated kind, by its number: whom it reaches, how fast its priority grows, and its fields.</summary>
+    /// <summary>
+    /// Every replicated kind, by its number: whom it reaches, how fast its priority grows, how far from a client's player
+    /// it grows that fast, and its fields.
+    /// </summary>
     public static string KindsTable(ReplicatedKinds kinds)
     {
         ArgumentNullException.ThrowIfNull(kinds);
@@ -130,16 +133,17 @@ internal static class ReferenceDocs
         }
 
         var table = new StringBuilder(
-            "| Number | Kind | Reaches | Priority | Fields | Handler |\n| --- | --- | --- | --- | --- | --- |\n"
+            "| Number | Kind | Reaches | Priority | Falls off past | Fields | Handler |\n| --- | --- | --- | --- | --- | --- | --- |\n"
         );
         for (var id = 0; id < kinds.Count; id++)
         {
             var kind = kinds[new ReplicatedKindId((byte)id)];
             var reach = kind.RelevanceMetres == 0 ? "every client" : $"{Number(kind.RelevanceMetres)} m";
+            var falloff = kind.FalloffMetres == 0 ? "never" : $"{Number(kind.FalloffMetres)} m";
             var fields = string.Join(", ", kind.Schema.Description.Split(';', StringSplitOptions.RemoveEmptyEntries));
             table.Append(
                 CultureInfo.InvariantCulture,
-                $"| {id} | `{kind.Name}` | {reach} | {Number(kind.Priority)} | {Cell(fields)} | `{kind.Handler.GetType().Name}` |\n"
+                $"| {id} | `{kind.Name}` | {reach} | {Number(kind.Priority)} | {falloff} | {Cell(fields)} | `{kind.Handler.GetType().Name}` |\n"
             );
         }
 

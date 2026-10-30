@@ -295,6 +295,60 @@ public sealed class ReplicationServiceTests(ITestOutputHelper output)
         Assert.True(perSecond > 8192 * 0.9, $"Only {perSecond:F0} bytes a second.");
     }
 
+    /// <summary>
+    /// 400 movers in a row from the client's player out to 800 m, wanting far more than the budget: with a falloff of
+    /// 20 m the far ones wait longer for their states, so they are shown further behind the host than the near ones,
+    /// which are shown nearer the host than without one; without one, near and far wait about alike. Every one is still
+    /// shown.
+    /// </summary>
+    [Fact]
+    public void Past_its_kinds_falloff_a_far_entity_waits_longer_when_the_bytes_are_short_but_is_still_sent()
+    {
+        var options = new Dictionary<string, string?>
+        {
+            ["Engine:Replication:BytesPerSecond"] = "8192",
+            ["Engine:Replication:PeakBytesPerSecond"] = "8192",
+        };
+        (double Near, double Far) Behind(float falloff)
+        {
+            using var harness = ReplicationHarness.Start(
+                new MoverPlan
+                {
+                    Count = 400,
+                    Speed = 2,
+                    FalloffMetres = falloff,
+                },
+                options: options
+            );
+            harness.Step(600);
+            var shown = harness.Shown();
+            var origin = harness.Host.Services.GetOrigin();
+            double Mean(int first, int count) =>
+                harness
+                    .HostPlan.Movers.Skip(first)
+                    .Take(count)
+                    .Average(mover =>
+                        Math.Abs(
+                            origin.X + harness.Host.World.Get<TestMover>(mover.Entity).Position.X - shown[mover.Id].At.X
+                        )
+                    );
+            Assert.Equal(400, shown.Count);
+            return (Mean(0, 50), Mean(350, 50));
+        }
+
+        var falling = Behind(20);
+        var even = Behind(0);
+        output.WriteLine(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Behind with a falloff: near {falling.Near:F2} m, far {falling.Far:F2} m; without: near {even.Near:F2} m, far {even.Far:F2} m."
+            )
+        );
+        Assert.True(falling.Far > 3 * falling.Near, "With a falloff, the far movers should wait longer.");
+        Assert.True(even.Far < 2 * even.Near, "Without one, the far movers should wait about as long.");
+        Assert.True(falling.Near < even.Near, "With a falloff, the near movers should have more of the bytes.");
+    }
+
     [Fact]
     public void A_game_message_to_a_client_counts_against_its_bytes_and_its_state_has_the_rest()
     {

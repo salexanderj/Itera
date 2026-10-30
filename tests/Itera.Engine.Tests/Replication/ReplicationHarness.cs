@@ -263,6 +263,9 @@ internal sealed class MoverPlan
     /// <summary>The movers' reach from a client's player; 0 for every client wherever it is.</summary>
     public float RelevanceMetres { get; set; }
 
+    /// <summary>How far from a client's player the movers' priority grows at its full rate; 0 everywhere.</summary>
+    public float FalloffMetres { get; set; }
+
     /// <summary>Where the host puts each client's player.</summary>
     public WorldPoint PlayerAt { get; set; }
 
@@ -349,7 +352,14 @@ internal sealed class TestKinds(ReplicatedKinds kinds, MoverPlan plan) : IRunSta
 
     public void Start()
     {
-        plan.Mover = kinds.Register("test.mover", MoverSchema, new MoverKind(plan), plan.RelevanceMetres, priority: 1);
+        plan.Mover = kinds.Register(
+            "test.mover",
+            MoverSchema,
+            new MoverKind(plan),
+            plan.RelevanceMetres,
+            priority: 1,
+            falloffMetres: plan.FalloffMetres
+        );
         plan.Player = kinds.Register("test.player", PlayerSchema, new PlayerKind(plan), priority: 4);
         plan.Character = kinds.Register("test.character", CharacterSchema, new CharacterKind(plan), priority: 4);
         if (plan.ExtraKind)
