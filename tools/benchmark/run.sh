@@ -45,8 +45,11 @@ if [[ ! "$label" =~ ^[A-Za-z0-9._-]+$ || "$label" == "." || "$label" == ".." ]];
     exit 2
 fi
 agent=()
+quiet=()
 if [[ "${BENCH_AGENT:-}" == 1 ]]; then
     agent=(--agent)
+    # The runs Claude starts play at 1 % of the master volume; an option after the label still wins.
+    quiet=(--Engine:Audio:Volume=0.01)
 fi
 data="$(python3 "$here/data_folder.py" "${agent[@]}")"
 folder="$(python3 "$here/data_folder.py" --name "${agent[@]}")"
@@ -82,7 +85,7 @@ mkdir -p "$out"
     --Engine:Camera:FieldOfViewDegrees=90 --Engine:Window:Fullscreen=false \
     --Engine:Renderer:Shadows=true --Engine:Renderer:AntiAliasing=true \
     --Engine:Logging:StatsIntervalSeconds=1 "--Engine:Application:DataFolder=$folder" "${window_args[@]}" \
-    "${detail_args[@]}" "$@" \
+    "${detail_args[@]}" "${quiet[@]}" "$@" \
     > "$out/console.txt" 2>&1 &
 pid=$!
 # A script stopped early (Ctrl+C, an error) stops the game too, rather than leaving it full screen.

@@ -360,6 +360,8 @@ def cmd_start(args):
         "--Engine:Control:Enabled=true",
         f"--Engine:Control:Port={port}",
         "--Engine:Steam:Enabled=false",
+        # Quiet: a started game plays at 1 % of the master volume (a game argument after -- still wins).
+        "--Engine:Audio:Volume=0.01",
         f"--Engine:Renderer:ShaderSourceDirectory={SHADERS}",
         f"--Engine:Application:DataFolder={data_folder_name()}",
     ]

@@ -62,10 +62,10 @@ before changing anything structural. `docs/` holds the write-ups behind decision
   - Before you run or add tests, read `.claude/rules/tests.md`.
   - `DOTNET_ENVIRONMENT=Development` shows Debug log lines on the console too.
   - `dotnet watch` builds into `bin/Debug` in place, so no other build or test run may share it.
-  - Runs you start use the data folder `<DataFolder>-agent`. `tools/control/game.py` and `validate.sh` pass it,
-    `tools/benchmark/run.sh` takes `BENCH_AGENT=1`, and a run by hand gives
-    `--Engine:Application:DataFolder=<DataFolder>-agent`. The console's `settings`, `shadows`, and `sound volume` write
-    the data folder's `settings.json`, so in any other folder they change the player's.
+  - Runs you start use the data folder `<DataFolder>-agent` and 1 % volume. `tools/control/game.py` and `validate.sh`
+    pass both, `tools/benchmark/run.sh` with `BENCH_AGENT=1` too, and a run by hand gives both (the `run-game` skill).
+    The console's `settings`, `shadows`, and `sound volume` write the data folder's `settings.json`, so in any other
+    folder they change the player's.
   - A run misbehaves: read the newest log in `~/.local/share/<DataFolder>/Logs/` first.
 - Where the details are: `docs/reference/engine-rules.md` lists the engine's rules files and what each covers
   (generated), and `GAME.md`'s table the game's. Arch's package notes are in the `ecs` skill.

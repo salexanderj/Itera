@@ -91,7 +91,8 @@ run_exit=0
 # Steam off: starting the Steam API loads Steam's overlay and fossilize Vulkan layers into the game, and the overlay's
 # own small image draws a best-practices warning (seen 2026-09-26) that is not Itera's.
 timeout --preserve-status -s INT "$seconds" "$binary" --Engine:Steam:Enabled=false --Engine:Session:Mode=Offline \
-    "--Engine:Application:DataFolder=$data_folder_name" "${mode_args[@]}" "$@" > /dev/null 2>&1 || run_exit=$?
+    --Engine:Audio:Volume=0.01 "--Engine:Application:DataFolder=$data_folder_name" "${mode_args[@]}" "$@" \
+    > /dev/null 2>&1 || run_exit=$?
 wait
 
 log="$(ls -t "$logs"/*.log 2>/dev/null | head -1 || true)"

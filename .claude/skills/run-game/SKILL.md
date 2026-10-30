@@ -11,8 +11,9 @@ The build, test, and run commands are in `CLAUDE.md`. The game is `src/Game`, an
 (`python3 tools/benchmark/data_folder.py` prints it).
 
 Runs Claude starts use `<DataFolder>-agent` instead (`data_folder.py --agent` prints it), so the player's
-`settings.json` and logs are never touched. `tools/control/game.py` and `validate.sh` pass it, and so does
-`tools/benchmark/run.sh` with `BENCH_AGENT=1`. A run by hand gives `--Engine:Application:DataFolder=<DataFolder>-agent`.
+`settings.json` and logs are never touched. They play at 1 % of the master volume, so they stay quiet beside the
+user's own sound. `tools/control/game.py` and `validate.sh` pass both, and so does `tools/benchmark/run.sh` with
+`BENCH_AGENT=1`. A run by hand gives `--Engine:Application:DataFolder=<DataFolder>-agent --Engine:Audio:Volume=0.01`.
 
 Files beside this one:
 
@@ -72,7 +73,7 @@ command lines in `Engine:Console:RunFile`), with `wait` between them, `screensho
 ```bash
 timeout --preserve-status -s INT 120 src/Game/bin/Debug/net10.0/Game --Engine:Session:Mode=Offline \
   --Engine:Window:Mode=Offscreen --Engine:Steam:Enabled=false --Engine:Application:DataFolder=<DataFolder>-agent \
-  --Engine:Console:ExitOnFailure=true "--Engine:Console:Run=wait loaded; balls 4; wait seconds 2; pos; screenshot 0.5 /tmp/shot.png; quit"
+  --Engine:Audio:Volume=0.01 --Engine:Console:ExitOnFailure=true "--Engine:Console:Run=wait loaded; balls 4; wait seconds 2; pos; screenshot 0.5 /tmp/shot.png; quit"
 ```
 
 - That run takes about 6 s in Debug: 7 s in a window, 4.7 s with no graphics and no screenshot, and 4.6 s offscreen in
