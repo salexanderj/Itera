@@ -55,8 +55,9 @@ Engine system (any game may register it) in `src/Itera.Engine/Systems/`, or a ga
    A frame system derives from `BaseSystem<World, FrameTime>` and implements `IFrameUpdateSystem`. `Update` allocates
    nothing (the `ecs` skill's rules: no capturing lambdas, no LINQ, no enum `ToString`).
 2. Its registration, in the game's run order with a comment saying why it runs there: `AddFixedSystems` or
-   `AddFrameSystems` in `src/Game/GameServiceCollectionExtensions.cs` (`services.AddScoped<IFixedUpdateSystem>(sp =>
-   new NameSystem(...))`).
+   `AddFrameSystems` in `src/Game/GameServiceCollectionExtensions.cs`, by type (`services.AddFixed<NameSystem>()` or
+   `AddFrame<NameSystem>()`). A system that takes a value the composition works out keeps a factory
+   (`services.AddScoped<IFixedUpdateSystem>(sp => new NameSystem(...))`) and says why.
 3. The order lists: `s_fixedOrder` or `s_frameOrder` in `tests/Game.Tests/SystemOrderTests.cs`. `SystemOrderTests`
    fails when they differ from the registration. The generated `docs/reference/game-systems.md` lists the order too.
 4. Its tests, `<Name>SystemTests` in `tests/Itera.Engine.Tests/Systems/` (engine) or `tests/Game.Tests/` (game), with a

@@ -133,9 +133,11 @@ says "probe" was confirmed by `probe/Program.cs` against the pinned packages.
   `BaseSystem<World, FixedStepTime>`) or `IFrameUpdateSystem` (presentation, once per rendered frame;
   derive from `BaseSystem<World, FrameTime>`). Both time types come from `Itera.Modding`. Frame systems
   never change simulation state. See `design.md`.
-- Register systems with a factory in the game's composition (`AddGame`; engine systems too, which the engine does not
-  register itself). Registration
-  order is run order within a group. Keep a comment there that says why the order is what it is.
+- Register systems in the game's composition (`AddGame`; engine systems too, which the engine does not register
+  itself) by type: `services.AddFixed<T>()` or `AddFrame<T>()` (`Ecs/SystemRegistration.cs`). The match's services fill
+  the constructor, an optional one too, and a `SessionRole` takes the session's role. A system that takes a value the
+  composition works out (a lambda, a constant, a pose, a null on purpose) keeps a factory, with a comment saying why.
+  Registration order is run order within a group. Keep a comment there that says why the order is what it is.
 - The constructor stores dependencies only. `Initialize` creates startup entities and runs the
   `EcsChecks.RequireAll` calls. `Update` does the work.
 - `Dispose` is idempotent and calls `base.Dispose()` (CA2215). Both the DI container and

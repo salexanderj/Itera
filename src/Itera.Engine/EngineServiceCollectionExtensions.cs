@@ -163,6 +163,8 @@ public static class EngineServiceCollectionExtensions
                 : new ApplicationMatchIdentity(sp.GetRequiredService<IOptions<EngineOptions>>())
         );
         services.TryAddScoped<EcsWorld>();
+        // The match's entity world, for the systems registered by type (SystemRegistration).
+        services.TryAddScoped(sp => sp.GetRequiredService<EcsWorld>().World);
         // The match's origin, which every local position of the match (the ECS's, the physics', the renderer's) is measured
         // from: one for the world, the colliders, and the mover.
         // It starts where the game's match starts (its IOriginStart, read at the match's "origin" step, once the session has
