@@ -9,7 +9,8 @@ namespace Itera.Engine.Tests.Settings;
 /// <summary>
 /// The run's tunables (<see cref="Tunables"/>) and the console's <c>tune</c> (<see cref="TuningCommands"/>): names, ranges,
 /// and registering once sealed refused; a value set within its range and refused outside it; each scope put back to its
-/// defaults; and the command listing, reading, setting, refusing, and putting back.
+/// defaults; a default read again (rebased) within its range and refused outside it; and the command listing, listing
+/// those changed, reading with a default's source, setting, refusing, and putting back.
 /// </summary>
 public sealed class TunablesTests
 {
@@ -53,10 +54,27 @@ public sealed class TunablesTests
     }
 
     [Fact]
+    public void A_default_read_again_becomes_the_default_and_the_value_within_its_range()
+    {
+        var tunables = new Tunables();
+        var speed = tunables.Register("move.walk", 4.5f, 0, 20, "", source: "move.json walk");
+        var version = tunables.Version;
+
+        Assert.True(tunables.Rebase(speed, 6));
+        Assert.False(tunables.Rebase(speed, 21));
+        Assert.True(tunables.TrySet(speed, 8));
+        tunables.Reset(TuningScope.Match);
+
+        Assert.Equal((6f, 6f, "move.json walk"), (speed.Value, speed.Default, speed.Source));
+        Assert.True(tunables.Version > version);
+    }
+
+    [Fact]
     public void Tune_lists_reads_sets_refuses_and_puts_back()
     {
         var tunables = new Tunables();
-        var speed = tunables.Register("move.walk", 4.5f, 0, 20, "Walking speed, m/s.");
+        var speed = tunables.Register("move.walk", 4.5f, 0, 20, "Walking speed, m/s.", source: "move.json walk");
+        tunables.Register("move.run", 6, 0, 20, "Running speed, m/s.");
         var commands = new ConsoleCommands(() => SessionRole.Offline, NullLogger<ConsoleCommands>.Instance);
         new TuningCommands(commands, tunables, new MatchControl()).Register();
         var output = new Output();
@@ -64,8 +82,12 @@ public sealed class TunablesTests
         commands.Execute("tune", output);
         commands.Execute("tune move.walk 6", output);
         commands.Execute("tune move.walk 99", output);
-        commands.Execute("tune move.run 1", output);
+        commands.Execute("tune move.crawl 1", output);
         commands.Execute("tune move.walk x", output);
+        var changedFrom = output.Lines.Count;
+        commands.Execute("tune changed", output);
+        var changed = output.Lines.Skip(changedFrom).ToList();
+        commands.Execute("tune move.walk", output);
 
         Assert.Contains(
             output.Lines,
@@ -77,6 +99,10 @@ public sealed class TunablesTests
         );
         Assert.Equal(3, output.Errors.Count);
         Assert.Equal(6f, speed.Value);
+        Assert.Equal(2, changed.Count);
+        Assert.StartsWith("move.walk = 6", changed[0], StringComparison.Ordinal);
+        Assert.Equal("1 tunable(s) not at their defaults", changed[1]);
+        Assert.Equal("  its default from move.json walk", output.Lines[^1]);
 
         commands.Execute("tune default", output);
         Assert.Equal(4.5f, speed.Value);

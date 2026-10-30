@@ -6,9 +6,10 @@ using Itera.Engine.Settings;
 namespace Itera.Engine.Commands;
 
 /// <summary>
-/// The console's <c>tune</c> (<see cref="CommandScope.Local"/>): the run's tunables (<see cref="Tunables"/>) listed, one
-/// read, set, or put back to its default, by name. A match tunable is set only offline or on a host, which sends it to its
-/// clients; a client is told it follows the host.
+/// The console's <c>tune</c> (<see cref="CommandScope.Local"/>): the run's tunables (<see cref="Tunables"/>) listed, those
+/// not at their defaults listed, one read (with where its default comes from), set, or put back to its default, by
+/// name. A match tunable is set only offline or on a host, which sends it to its clients; a client is told it follows
+/// the host.
 /// </summary>
 public sealed class TuningCommands(ConsoleCommands commands, Tunables tunables, MatchControl matches)
 {
@@ -16,8 +17,8 @@ public sealed class TuningCommands(ConsoleCommands commands, Tunables tunables, 
     public void Register() =>
         commands.Register(
             "tune",
-            "[NAME [VALUE|default] | default]",
-            "The tunables, numbers a game reads while it plays: with nothing, each one; NAME prints one; NAME VALUE sets it; NAME default or default (all) puts them back.",
+            "[NAME [VALUE|default] | changed | default]",
+            "The tunables, numbers a game reads while it plays: with nothing, each one; changed, those not at their defaults; NAME prints one and where its default comes from; NAME VALUE sets it; NAME default or default (all) puts them back.",
             CommandScope.Local,
             Run
         );
@@ -32,6 +33,22 @@ public sealed class TuningCommands(ConsoleCommands commands, Tunables tunables, 
             }
 
             context.Print(Text($"{tunables.All.Count} tunable(s)"));
+            return;
+        }
+
+        if (context.Count == 1 && string.Equals(context[0], "changed", StringComparison.Ordinal))
+        {
+            var changed = 0;
+            foreach (var tunable in tunables.All)
+            {
+                if (tunable.Value != tunable.Default)
+                {
+                    context.Print(tunable.ToString());
+                    changed++;
+                }
+            }
+
+            context.Print(Text($"{changed} tunable(s) not at their defaults"));
             return;
         }
 
@@ -61,6 +78,11 @@ public sealed class TuningCommands(ConsoleCommands commands, Tunables tunables, 
         if (context.Count == 1)
         {
             context.Print(found.ToString());
+            if (found.Source is { } source)
+            {
+                context.Print(Text($"  its default from {source}"));
+            }
+
             return;
         }
 

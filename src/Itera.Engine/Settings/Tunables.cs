@@ -17,11 +17,12 @@ public enum TuningScope
 
 /// <summary>
 /// A named number a game reads while it plays and a developer changes live (<c>tune NAME VALUE</c>): its value, its
-/// default, its range, and its scope. Read <see cref="Value"/> anywhere; it allocates nothing.
+/// default, its range, its scope, and where the default came from. Read <see cref="Value"/> anywhere; it allocates
+/// nothing.
 /// </summary>
 public sealed class Tunable
 {
-    internal Tunable(string name, float value, float least, float most, string help, TuningScope scope)
+    internal Tunable(string name, float value, float least, float most, string help, TuningScope scope, string? source)
     {
         Name = name;
         Default = value;
@@ -30,13 +31,15 @@ public sealed class Tunable
         Most = most;
         Help = help;
         Scope = scope;
+        Source = source;
     }
 
     public string Name { get; }
 
     public float Value { get; internal set; }
 
-    public float Default { get; }
+    /// <summary>Its value as registered, or as last read again (<see cref="Tunables.Rebase"/>).</summary>
+    public float Default { get; internal set; }
 
     public float Least { get; }
 
@@ -45,6 +48,12 @@ public sealed class Tunable
     public string Help { get; }
 
     public TuningScope Scope { get; }
+
+    /// <summary>
+    /// Where its default comes from, in the game's own words (a data file and the place of the number in it); null for
+    /// none. The engine only shows it.
+    /// </summary>
+    public string? Source { get; }
 
     /// <summary>Raised each time the value changes, so a host knows which to send.</summary>
     internal long Version { get; set; }
@@ -87,9 +96,10 @@ public sealed class Tunables
     internal long Version => _version;
 
     /// <summary>
-    /// Registers a tunable of <paramref name="value"/>, from <paramref name="least"/> to <paramref name="most"/>. Throws
-    /// <see cref="ArgumentException"/> for a name not allowed or taken, or a range that does not hold the value, and
-    /// <see cref="InvalidOperationException"/> once the first match has sealed them or past <see cref="MostTunables"/>.
+    /// Registers a tunable of <paramref name="value"/>, from <paramref name="least"/> to <paramref name="most"/>, its
+    /// default from <paramref name="source"/> (<see cref="Tunable.Source"/>). Throws <see cref="ArgumentException"/> for a
+    /// name not allowed or taken, or a range that does not hold the value, and <see cref="InvalidOperationException"/>
+    /// once the first match has sealed them or past <see cref="MostTunables"/>.
     /// </summary>
     public Tunable Register(
         string name,
@@ -97,7 +107,8 @@ public sealed class Tunables
         float least,
         float most,
         string help,
-        TuningScope scope = TuningScope.Match
+        TuningScope scope = TuningScope.Match,
+        string? source = null
     )
     {
         ArgumentNullException.ThrowIfNull(name);
@@ -125,7 +136,7 @@ public sealed class Tunables
             throw new InvalidOperationException($"At most {MostTunables} tunables; {name} is one too many.");
         }
 
-        var tunable = new Tunable(name, value, least, most, help, scope);
+        var tunable = new Tunable(name, value, least, most, help, scope, source);
         if (!_byName.TryAdd(name, tunable))
         {
             throw new ArgumentException($"The tunable {name} is registered already.", nameof(name));
@@ -156,6 +167,22 @@ public sealed class Tunables
             tunable.Version = ++_version;
         }
 
+        return true;
+    }
+
+    /// <summary>
+    /// Makes <paramref name="value"/> <paramref name="tunable"/>'s default and its value: a game read its default again (a
+    /// data file changed while it runs). False, nothing changed, for a number that is not finite or out of its range.
+    /// </summary>
+    public bool Rebase(Tunable tunable, float value)
+    {
+        ArgumentNullException.ThrowIfNull(tunable);
+        if (!TrySet(tunable, value))
+        {
+            return false;
+        }
+
+        tunable.Default = value;
         return true;
     }
 

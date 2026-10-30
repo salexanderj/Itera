@@ -79,9 +79,11 @@ The run-only `look`, `sun`, `time`, and `lens` (`EngineCommands`) set values ove
 
 `Tunables` (run-wide) holds the numbers a game tunes while it plays: movement, recoil, sway, part limits, an enemy's.
 
-- Register each once at the run's start with `Register(name, value, least, most, help, scope)`. A name has 1 to 64 letters, digits, '.', '-', or '_', and the default lies within its range. The first match seals the registry.
+- Register each once at the run's start with `Register(name, value, least, most, help, scope, source)`. A name has 1 to 64 letters, digits, '.', '-', or '_', and the default lies within its range. The first match seals the registry.
+- A tunable's `Source` says, in the game's own words, where its default comes from (a data file and the number's place in it). The engine only shows it.
+- `Rebase` makes a value a tunable's default and its value, for a game that read its default again while it runs.
 - Read a tunable as `Tunable.Value`, which allocates nothing.
-- The console's `tune` lists them, reads one, sets one within its range, or puts them back (`TuningCommands`).
+- The console's `tune` lists them, lists those not at their defaults (`tune changed`), reads one with its source, sets one within its range, or puts them back (`TuningCommands`).
 - A `Match` tunable is one that a client predicts, so it must move by the host's numbers. It is set only offline or on a host. The host sends its value by name to its clients after the step it changed, and every one as each client joins, at its default too (the session's `Tune` message, `.claude/rules/sessions.md`). Every game's match tunables go back to their defaults when its session ends, a host's and an offline game's too, so the next match starts from the run's own.
 - A `Local` tunable is each game's own.
 
