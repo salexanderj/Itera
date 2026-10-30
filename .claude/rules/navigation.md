@@ -36,7 +36,9 @@ Each fixed step reads new edits into the grid, up to a limit of cells a step. Th
 - A read takes the floor from the surface the voxels' density gives (`VoxelWorld.SurfaceOver`), which stays near the source's ground.
 - A read or a stamp judges solid from the source's ground there (`INavGridSource.GroundAt`).
 - A far removal of some materials stamps a pit only when it removes ground (`INavGridSource.IsGround`).
-- The thread builds the fields again, while their users keep the old ones.
+- The thread builds the fields again, while their users keep the old ones. It builds them at once, each by its own
+  builder on the next free thread, up to a quarter of the processors (`FlowFieldWorkers`), so a build takes about as
+  long as its longest field.
 - After `reset` the thread fills the grid again first (`NavigationService.Refilling`).
 
 ### Voxel objects
@@ -113,8 +115,8 @@ A walker whose goal changes (a character moving to cover) asks for a path instea
 
 ### Tests
 
-`FlowFieldTests`, `NavGridScannerTests`, `NavPathFinderTests`, `NavigationServiceTests`, `NavigationObjectsTests`, `NavigationPlacedObjectsTests`, `NavigationWindowTests`.
+`FlowFieldTests`, `FlowFieldWorkersTests`, `NavGridScannerTests`, `NavPathFinderTests`, `NavigationServiceTests`, `NavigationObjectsTests`, `NavigationPlacedObjectsTests`, `NavigationWindowTests`.
 
 ### Files in `src/Itera.Engine`
 
-- `Navigation/`: `NavigationService` (with `NavArea`), `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`, `INavGridSource` (the game's part), `FlowFieldBuilder`, `FlowField`, `NavPathFinder` (with `NavPathResult`), `NavGridScanner`, `NavObjects`, `NavigationDebugLines`.
+- `Navigation/`: `NavigationService` (with `NavArea`), `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`, `INavGridSource` (the game's part), `FlowFieldBuilder`, `FlowFieldWorkers`, `FlowField`, `NavPathFinder` (with `NavPathResult`), `NavGridScanner`, `NavObjects`, `NavigationDebugLines`.

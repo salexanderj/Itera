@@ -25,7 +25,8 @@ namespace Itera.Engine.Navigation;
 /// checked in turn, <see cref="StampChecksPerStep"/> a step, and a queued cell whose voxels unloaded before its read
 /// waits among them). An edit that covers no cell's centre column, or lies outside the window, is passed over
 /// (<see cref="NavGridScanner.CoversAnyCentre"/>). Changed rows are copied
-/// to the thread's own grid, and the thread builds every field again from it (all of it: the
+/// to the thread's own grid, and the thread builds every field again from it, the fields at once on up to a quarter of
+/// the processors (<see cref="FlowFieldWorkers"/>; all of each: the
 /// whole build is measured before a partial one; the cells each size can stand in are worked out again only in the changed rows and
 /// as far round them as its circle reaches), at most every <see cref="JobIntervalSeconds"/>, while walkers keep the
 /// fields they have until the new ones are swapped in whole. The main thread's grid follows edits at once.
@@ -107,6 +108,10 @@ public sealed partial class NavigationService : IDisposable
     private NavFieldSpec[] _specs = [];
     private FlowField[] _front = [];
     private FlowField[] _back = [];
+
+    // On the thread: each field's walkable cells (its size's) and how long its last build took.
+    private byte[][] _fieldsWalkable = [];
+    private double[] _fieldMilliseconds = [];
     private VoxelEdit[] _startEdits = [];
     private byte[] _queued = [];
     private int[] _queue = new int[1024];
@@ -1211,13 +1216,24 @@ public sealed partial class NavigationService : IDisposable
         {
             var grid = _grid!;
             _work = new NavGrid(grid.OriginX, grid.OriginZ, grid.Width, grid.Depth);
-            var builder = new FlowFieldBuilder();
             var walkable = new Dictionary<NavSize, byte[]>(ReferenceEqualityComparer.Instance);
             foreach (var spec in _specs)
             {
                 walkable.TryAdd(spec.Size, new byte[grid.Count]);
             }
 
+            // The fields are built at once, each by its own builder (FlowFieldWorkers), reading each spec's size's cells.
+            _fieldsWalkable = new byte[_specs.Length][];
+            _fieldMilliseconds = new double[_specs.Length];
+            for (var i = 0; i < _specs.Length; i++)
+            {
+                _fieldsWalkable[i] = walkable[_specs[i].Size];
+            }
+
+            using var workers = new FlowFieldWorkers(
+                FlowFieldWorkers.HelpersFor(_specs.Length, Environment.ProcessorCount),
+                () => _stopping
+            );
             _front = new FlowField[_specs.Length];
             _back = new FlowField[_specs.Length];
             for (var i = 0; i < _specs.Length; i++)
@@ -1239,7 +1255,7 @@ public sealed partial class NavigationService : IDisposable
             _fillMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
             while (!_stopping)
             {
-                BuildFields(_work, builder, walkable);
+                BuildFields(_work, workers, walkable);
                 _wake.WaitOne();
                 if (_stopping)
                 {
@@ -1304,7 +1320,7 @@ public sealed partial class NavigationService : IDisposable
         _fillMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
     }
 
-    private void BuildFields(NavGrid grid, FlowFieldBuilder builder, Dictionary<NavSize, byte[]> walkable)
+    private void BuildFields(NavGrid grid, FlowFieldWorkers workers, Dictionary<NavSize, byte[]> walkable)
     {
         var start = Stopwatch.GetTimestamp();
         // Only the changed rows and as far round them as each size's circle reaches (working the whole grid out
@@ -1322,17 +1338,16 @@ public sealed partial class NavigationService : IDisposable
             );
         }
 
-        var longest = 0d;
-        for (var i = 0; i < _specs.Length; i++)
+        workers.Build(grid, _specs, _fieldsWalkable, _back, _fieldMilliseconds);
+        if (_stopping)
         {
-            if (_stopping)
-            {
-                return;
-            }
+            return;
+        }
 
-            var fieldStart = Stopwatch.GetTimestamp();
-            builder.Build(grid, _specs[i], walkable[_specs[i].Size], _back[i]);
-            longest = Math.Max(longest, Stopwatch.GetElapsedTime(fieldStart).TotalMilliseconds);
+        var longest = 0d;
+        foreach (var milliseconds in _fieldMilliseconds)
+        {
+            longest = Math.Max(longest, milliseconds);
         }
 
         _timings = new NavigationTimings(_fillMs, Stopwatch.GetElapsedTime(start).TotalMilliseconds, longest);
