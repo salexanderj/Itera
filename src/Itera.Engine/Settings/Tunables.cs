@@ -66,8 +66,11 @@ public sealed class Tunable
 /// </summary>
 public sealed class Tunables
 {
-    /// <summary>The most tunables a run registers.</summary>
-    public const int MostTunables = 1024;
+    /// <summary>
+    /// The most tunables a run registers. Nothing is sized by it: it bounds what a client reads of a tuning message
+    /// (at most about 280 KB of names and values, under every transport's largest reliable message).
+    /// </summary>
+    public const int MostTunables = 4096;
 
     /// <summary>The longest name a tunable may have.</summary>
     public const int MostNameLength = 64;
