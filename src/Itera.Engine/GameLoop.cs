@@ -52,6 +52,7 @@ public sealed partial class GameLoop
     private static readonly ZoneId s_frameMeshesZone = Zones.Name("frame.mesh assets");
     private static readonly ZoneId s_frameParticlesZone = Zones.Name("frame.particles");
     private static readonly ZoneId s_framePassesZone = Zones.Name("frame.passes");
+    private static readonly ZoneId s_terrainZone = Zones.Name("terrain update");
 
     private readonly IServiceProvider _services;
     private readonly ILogger<GameLoop> _logger;
@@ -699,7 +700,11 @@ public sealed partial class GameLoop
         // Matches start and end here, between iterations' work, never during a step or a frame.
         _flow.HandleRequests(_frameIndex);
         var playing = _flow.Playing;
-        playing?.Terrain?.Update(_clock.TotalSeconds);
+        using (Zones.Time(s_terrainZone))
+        {
+            playing?.Terrain?.Update(_clock.TotalSeconds);
+        }
+
         // Console commands run here, between fixed steps and outside any query, also while no frames are drawn. Those
         // given at start wait for the match's world and systems, which most of them need.
         _console.HoldStartup = playing is null;

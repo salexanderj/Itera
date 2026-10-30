@@ -58,8 +58,9 @@ A game composes the engine in its `Program.cs`: `AddIteraEngine`, then its own c
   costs a flag's read while nothing records, and allocates nothing after its thread's first.
 - The console's `zones start` and `zones stop` (`ZoneCommands`) record them and write a trace for ui.perfetto.dev to
   the data folder's `Traces`. Each system's update is a zone of its type's name (`EcsWorld`), as are the fixed step's
-  parts (`MatchServices.RunFixedStep`), the frame build's (`GameLoop`), navigation's fields, and the voxel jobs. Add a
-  zone where a question about time has no answer, rather than a probe that is thrown away.
+  parts (`MatchServices.RunFixedStep`), the frame build's parts and the terrain's update (`GameLoop`), navigation's
+  fields, and the voxel jobs. Add a zone where a question about time has no answer, rather than a probe that is thrown
+  away.
 - `Modding/`: mod loading (`ModLoader`, `ModLoadContext`, `ModDispatcher`).
 - `Control/`: `ControlService`, `ControlRequest`, `InputScript`.
 - `Maths/`: `WorldPoint` (an absolute point in double metres), `WorldOrigin` (the match's origin on whole metres, a
