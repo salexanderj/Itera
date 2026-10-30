@@ -225,6 +225,7 @@ public static class EngineServiceCollectionExtensions
         services.TryAddSingleton<DevConsole>();
         services.TryAddSingleton<EngineCommands>();
         services.TryAddSingleton<TimeCommands>();
+        services.TryAddSingleton<ZoneCommands>();
         services.TryAddSingleton<PhysicsCommands>();
         // The run's physics materials, registered by the game's startup and sealed as the first match begins.
         services.TryAddSingleton<PhysicsMaterials>();

@@ -44,15 +44,22 @@ A game composes the engine in its `Program.cs`: `AddIteraEngine`, then its own c
 
 ### Folders
 
-- `Ecs/`: `EcsWorld` (times each system), `IFixedUpdateSystem` and `IFrameUpdateSystem` (`SystemInterfaces.cs`),
-  `EcsChecks`, `CheckedWorldExtensions`, and `EcsInspector`. The inspector reads archetypes, entities, and components by
-  reflection for the console's `ecs` and the control port's `query`; it allocates, so commands only.
+- `Ecs/`: `EcsWorld` (times each system, and makes each update a zone), `IFixedUpdateSystem` and
+  `IFrameUpdateSystem` (`SystemInterfaces.cs`), `EcsChecks`, `CheckedWorldExtensions`, and `EcsInspector`. The
+  inspector reads archetypes, entities, and components by reflection for the console's `ecs` and the control port's
+  `query`; it allocates, so commands only.
 - `Components/` and `Systems/`: `.claude/rules/systems.md`.
 - `Time/`: `GameClock`, `FixedStepAccumulator`.
 - `Loading/`: `LoadingScreen`, `ILoadingTask`, `LoadingProgress`, `EngineLoadingTasks.cs` (`.claude/rules/ui.md`).
 - `Diagnostics/`: Serilog setup (`LoggingServiceCollectionExtensions`), the session header (`SessionInfo`), loop stats
   (`FrameStats`), GPU pass times (`GpuTimings`), the frame's CPU times (`FrameCpuTimings`), `ConsoleLogBuffer`, crash
-  logging, and `ControlLog`.
+  logging, `ControlLog`, and the timed zones (`Zones`).
+- A zone is a span of code named once in a static field (`Zones.Name`) and timed with `using (Zones.Time(zone))`. It
+  costs a flag's read while nothing records, and allocates nothing after its thread's first.
+- The console's `zones start` and `zones stop` (`ZoneCommands`) record them and write a trace for ui.perfetto.dev to
+  the data folder's `Traces`. Each system's update is a zone of its type's name (`EcsWorld`), as are the fixed step's
+  parts (`MatchServices.RunFixedStep`), the frame build's (`GameLoop`), navigation's fields, and the voxel jobs. Add a
+  zone where a question about time has no answer, rather than a probe that is thrown away.
 - `Modding/`: mod loading (`ModLoader`, `ModLoadContext`, `ModDispatcher`).
 - `Control/`: `ControlService`, `ControlRequest`, `InputScript`.
 - `Maths/`: `WorldPoint` (an absolute point in double metres), `WorldOrigin` (the match's origin on whole metres, a

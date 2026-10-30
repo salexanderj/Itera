@@ -44,6 +44,15 @@ public sealed partial class GameLoop
     /// <summary>How long shutdown waits for the render thread before leaving the graphics objects to the OS.</summary>
     private static readonly TimeSpan RenderThreadStopTimeout = TimeSpan.FromSeconds(2);
 
+    // The main thread's frame build and its parts as zones of a trace (Zones).
+    private static readonly ZoneId s_frameZone = Zones.Name("frame");
+    private static readonly ZoneId s_frameSystemsZone = Zones.Name("frame.systems");
+    private static readonly ZoneId s_frameUiZone = Zones.Name("frame.ui");
+    private static readonly ZoneId s_frameWorldZone = Zones.Name("frame.world upload");
+    private static readonly ZoneId s_frameMeshesZone = Zones.Name("frame.mesh assets");
+    private static readonly ZoneId s_frameParticlesZone = Zones.Name("frame.particles");
+    private static readonly ZoneId s_framePassesZone = Zones.Name("frame.passes");
+
     private readonly IServiceProvider _services;
     private readonly ILogger<GameLoop> _logger;
     private readonly EngineOptions _options;
@@ -313,6 +322,8 @@ public sealed partial class GameLoop
     {
         var uptime = Stopwatch.StartNew();
         var exitCode = 0;
+        // Named, as the other threads are, for a trace's tracks (Zones).
+        Thread.CurrentThread.Name ??= "Itera main";
         // SIGHUP is the terminal closing on Linux and macOS: the run ends cleanly, as for the others. On Windows the game is
         // a windowed program with no console (WinExe), so it ends through its window; there SIGINT is Ctrl+C
         // and SIGHUP closing a console, which reach only a console build, and SIGTERM a shutdown event only services get.
@@ -555,6 +566,7 @@ public sealed partial class GameLoop
         // The match's layers and systems add their commands when a match starts, owned by it (MatchServices).
         _engineCommands.Register();
         _services.GetRequiredService<TimeCommands>().Register();
+        _services.GetRequiredService<ZoneCommands>().Register();
         _services.GetRequiredService<PhysicsCommands>().Register();
         _matchCommands.Register();
         _settingsCommands.Register();
@@ -842,10 +854,12 @@ public sealed partial class GameLoop
     /// <summary>
     /// Builds the frame <paramref name="request"/> asks for, right after the render thread's fence wait and acquire: the
     /// frame group, the mods, the UI, the view, the uploads and the passes' slot memory, then publishes it. Until
-    /// Publish, this thread may write the memory of the request's slot.
+    /// Publish, this thread may write the memory of the request's slot. The build and its parts are zones of a trace
+    /// (<see cref="Zones"/>).
     /// </summary>
     private void BuildFrame(in RenderFrameRequest request, MatchServices match)
     {
+        using var zone = Zones.Time(s_frameZone);
         var now = _clock.TotalSeconds;
         var frameSeconds = now - _lastFrameSeconds;
         _lastFrameSeconds = now;
@@ -859,8 +873,12 @@ public sealed partial class GameLoop
         _renderViews.BeginFrame();
         // The frame systems know the picture's size, so the meshes are posed only where a list may draw them.
         _renderView.BeginFrame(request.Width, request.Height, _maxViewDistance, Origin);
-        match.Ecs.Update(in frame);
-        _mods.Update(in frame);
+        using (Zones.Time(s_frameSystemsZone))
+        {
+            match.Ecs.Update(in frame);
+            _mods.Update(in frame);
+        }
+
         if (_modelInstances.Dropped > 0 && !_modelsDroppedReported)
         {
             _modelsDroppedReported = true;
@@ -872,7 +890,13 @@ public sealed partial class GameLoop
             _meshesDroppedReported = true;
             LogMeshesDropped(_meshInstances.Dropped, MeshInstances.MaxInstances);
         }
-        var ui = DrawUi(in frame, in request);
+
+        UiDraw ui;
+        using (Zones.Time(s_frameUiZone))
+        {
+            ui = DrawUi(in frame, in request);
+        }
+
         _dynamicScale.Update(now);
         var view = CreateView(in request);
         var look = _renderView.DrawnLook;
@@ -884,14 +908,24 @@ public sealed partial class GameLoop
         var views = _renderViewPass.BeginViews(request.Slot, _renderView, _maxViewDistance, Origin);
         _poseCulling.Check(request.Slot, in view, views);
         // Without terrain no world is followed: nothing to upload or draw of it.
-        var copies = _worldOnGpu ? _worldMeshes.Upload(request.Slot, now, in view, _modelInstances.Draws, views) : 0;
-        var meshAssets = _meshAssetDraws.Write(
-            request.Slot,
-            _meshView,
-            _meshInstances.Instances,
-            _meshInstances.Palettes,
-            views
-        );
+        int copies;
+        using (Zones.Time(s_frameWorldZone))
+        {
+            copies = _worldOnGpu ? _worldMeshes.Upload(request.Slot, now, in view, _modelInstances.Draws, views) : 0;
+        }
+
+        MeshAssetFrame meshAssets;
+        using (Zones.Time(s_frameMeshesZone))
+        {
+            meshAssets = _meshAssetDraws.Write(
+                request.Slot,
+                _meshView,
+                _meshInstances.Instances,
+                _meshInstances.Palettes,
+                views
+            );
+        }
+
         var lights = _pointLights.Frame(now);
         _meshView.End(request.Slot, lights);
         _renderViewPass.EndViews(request.Slot, views, lights);
@@ -902,8 +936,17 @@ public sealed partial class GameLoop
 
         var lines = _linePass.Write(request.Slot, _debugLines.Vertices);
         _particleCommands.UpdateStress();
-        var particles = _particlePass.Write(request.Slot, in frame, in view, match.Physics.Gravity, !loading.Covers);
-        _renderPasses.Write(request.Slot, in frame, in view);
+        ParticleWrite particles;
+        using (Zones.Time(s_frameParticlesZone))
+        {
+            particles = _particlePass.Write(request.Slot, in frame, in view, match.Physics.Gravity, !loading.Covers);
+        }
+
+        using (Zones.Time(s_framePassesZone))
+        {
+            _renderPasses.Write(request.Slot, in frame, in view);
+        }
+
         var uiBands = WriteUi(in request, in ui);
         _exchange.Publish(
             new RenderFrame(
@@ -937,6 +980,7 @@ public sealed partial class GameLoop
     /// </summary>
     private void BuildFrameWithoutGraphics(MatchServices match)
     {
+        using var zone = Zones.Time(s_frameZone);
         var now = _clock.TotalSeconds;
         var frameSeconds = now - _lastFrameSeconds;
         _lastFrameSeconds = now;

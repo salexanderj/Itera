@@ -8,8 +8,9 @@ using Microsoft.Extensions.Logging;
 namespace Itera.Engine.Ecs;
 
 /// <summary>
-/// Owns the Arch world and the two system groups that drive it. The fixed systems are run here phase by phase, as
-/// <see cref="Group{T}"/> runs them, so each one's update is timed (<see cref="SystemTimes"/>).
+/// Owns the Arch world and the two system groups that drive it. The systems are run here phase by phase, as
+/// <see cref="Group{T}"/> runs them, so each fixed one's update is timed (<see cref="SystemTimes"/>), and each one's
+/// update is a zone of its type's name (<see cref="Zones"/>).
 /// </summary>
 public sealed partial class EcsWorld : IDisposable
 {
@@ -17,7 +18,8 @@ public sealed partial class EcsWorld : IDisposable
     private readonly SystemTimes _times;
     private readonly Group<FixedStepTime> _fixedSystems = new("Fixed");
     private readonly Group<FrameTime> _frameSystems = new("Frame");
-    private readonly List<(IFixedUpdateSystem System, int Timing)> _fixed = [];
+    private readonly List<(IFixedUpdateSystem System, int Timing, ZoneId Zone)> _fixed = [];
+    private readonly List<(IFrameUpdateSystem System, ZoneId Zone)> _frame = [];
     private bool _originMayMove = true;
     private bool _disposed;
 
@@ -45,7 +47,8 @@ public sealed partial class EcsWorld : IDisposable
         foreach (var system in fixedSystems)
         {
             _fixedSystems.Add(system);
-            _fixed.Add((system, _times.Add(system.GetType().Name)));
+            var name = system.GetType().Name;
+            _fixed.Add((system, _times.Add(name), Zones.Name(name)));
             fixedCount++;
         }
 
@@ -53,6 +56,7 @@ public sealed partial class EcsWorld : IDisposable
         foreach (var system in frameSystems)
         {
             _frameSystems.Add(system);
+            _frame.Add((system, Zones.Name(system.GetType().Name)));
             frameCount++;
         }
 
@@ -67,22 +71,26 @@ public sealed partial class EcsWorld : IDisposable
         _originMayMove = false;
         try
         {
-            foreach (var (system, _) in _fixed)
+            foreach (var (system, _, _) in _fixed)
             {
                 system.BeforeUpdate(in step);
             }
 
             for (var i = 0; i < _fixed.Count; i++)
             {
-                var (system, timing) = _fixed[i];
+                var (system, timing, zone) = _fixed[i];
                 var start = Stopwatch.GetTimestamp();
                 _originMayMove = i == 0;
-                system.Update(in step);
+                using (Zones.Time(zone))
+                {
+                    system.Update(in step);
+                }
+
                 _originMayMove = false;
                 _times.Record(timing, Stopwatch.GetTimestamp() - start);
             }
 
-            foreach (var (system, _) in _fixed)
+            foreach (var (system, _, _) in _fixed)
             {
                 system.AfterUpdate(in step);
             }
@@ -93,14 +101,21 @@ public sealed partial class EcsWorld : IDisposable
         }
     }
 
-    /// <summary>Runs the frame group once.</summary>
+    /// <summary>Runs the frame group once: every system's before-update, update (each a zone), and after-update, in order.</summary>
     public void Update(in FrameTime frame)
     {
         _originMayMove = false;
         try
         {
             _frameSystems.BeforeUpdate(in frame);
-            _frameSystems.Update(in frame);
+            foreach (var (system, zone) in _frame)
+            {
+                using (Zones.Time(zone))
+                {
+                    system.Update(in frame);
+                }
+            }
+
             _frameSystems.AfterUpdate(in frame);
         }
         finally

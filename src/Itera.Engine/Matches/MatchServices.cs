@@ -37,6 +37,18 @@ public sealed record MatchGpu(Action<MatchServices> Begin, Action End);
 /// </summary>
 public sealed partial class MatchServices
 {
+    // The fixed step's parts as zones of a trace (Zones).
+    private static readonly ZoneId s_stepZone = Zones.Name("step");
+    private static readonly ZoneId s_fallenZone = Zones.Name("step.fallen bodies");
+    private static readonly ZoneId s_editsZone = Zones.Name("step.large edits");
+    private static readonly ZoneId s_collidersZone = Zones.Name("step.voxel colliders");
+    private static readonly ZoneId s_physicsZone = Zones.Name("step.physics");
+    private static readonly ZoneId s_bodyVoxelsZone = Zones.Name("step.bodies as voxels");
+    private static readonly ZoneId s_modsZone = Zones.Name("step.mods");
+    private static readonly ZoneId s_navigationZone = Zones.Name("step.navigation");
+    private static readonly ZoneId s_sessionZone = Zones.Name("step.session");
+    private static readonly ZoneId s_savesZone = Zones.Name("step.saves");
+
     private readonly IServiceProvider _scope;
     private readonly MatchContext _context;
     private readonly UISurface _ui;
@@ -139,34 +151,71 @@ public sealed partial class MatchServices
     /// what the game runs): the fixed group, the bodies of the parts it cut off objects, the large edits' share (<paramref name="editColumns"/> columns), the voxel
     /// colliders, Bepu, the bodies as voxels, the mods (<paramref name="mods"/>), navigation's finished fields, the
     /// session's step, and the autosave's; the terrain's parts only with terrain. <paramref name="stats"/>, when given, takes the parts'
-    /// timestamps.
+    /// timestamps. The step and each part are zones of a trace (<see cref="Zones"/>).
     /// </summary>
     public void RunFixedStep(in FixedStepTime step, int editColumns, FrameStats? stats = null, ModLoader? mods = null)
     {
         var terrain = Terrain;
+        using var zone = Zones.Time(s_stepZone);
         var stepStart = Stopwatch.GetTimestamp();
         Ecs.FixedUpdate(in step);
         // The parts the step's edits cut off objects fall as bodies from this step on.
-        terrain?.Fallen.Make();
+        using (Zones.Time(s_fallenZone))
+        {
+            terrain?.Fallen.Make();
+        }
+
         var editsStart = Stopwatch.GetTimestamp();
         // Large edits apply over steps, a share each step, before Bepu and the renderer read the change list.
-        terrain?.Voxels.ApplyPendingEdits(editColumns);
+        using (Zones.Time(s_editsZone))
+        {
+            terrain?.Voxels.ApplyPendingEdits(editColumns);
+        }
+
         var collidersStart = Stopwatch.GetTimestamp();
         // The fixed group's edits and the bodies' positions decide which voxels Bepu sees in this step.
-        terrain?.Colliders.Update(step.StepSeconds);
+        using (Zones.Time(s_collidersZone))
+        {
+            terrain?.Colliders.Update(step.StepSeconds);
+        }
+
         var physicsStart = Stopwatch.GetTimestamp();
-        Physics.Step(step.StepSeconds);
+        using (Zones.Time(s_physicsZone))
+        {
+            Physics.Step(step.StepSeconds);
+        }
+
         var bodyVoxelsStart = Stopwatch.GetTimestamp();
         // The character mover reads loose bodies where this step left them.
-        BodyVoxels.Refresh();
+        using (Zones.Time(s_bodyVoxelsZone))
+        {
+            BodyVoxels.Refresh();
+        }
+
         var tailStart = Stopwatch.GetTimestamp();
-        mods?.FixedUpdate(in step);
+        using (Zones.Time(s_modsZone))
+        {
+            mods?.FixedUpdate(in step);
+        }
+
         // Fields the navigation thread finished are taken in between steps, never while a system reads them.
-        terrain?.Navigation.AfterFixedStep();
+        using (Zones.Time(s_navigationZone))
+        {
+            terrain?.Navigation.AfterFixedStep();
+        }
+
         // The step's edits, the tools' and the mods', go to the clients in the order they were made.
-        Session.AfterFixedStep();
+        using (Zones.Time(s_sessionZone))
+        {
+            Session.AfterFixedStep();
+        }
+
         // An autosave captures the match as the step left it, and writes it on a background thread.
-        Saves.AfterFixedStep();
+        using (Zones.Time(s_savesZone))
+        {
+            Saves.AfterFixedStep();
+        }
+
         stats?.RecordStepParts(
             stepStart,
             editsStart,

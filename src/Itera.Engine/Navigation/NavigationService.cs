@@ -80,6 +80,9 @@ public sealed partial class NavigationService : IDisposable
 
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(5);
 
+    // The thread's build of every field, a zone of a trace (Diagnostics.Zones).
+    private static readonly Diagnostics.ZoneId s_fieldsZone = Diagnostics.Zones.Name("navigation.fields");
+
     private readonly INavGridSource? _source;
     private readonly Func<bool> _isAuthority;
     private readonly VoxelWorld? _voxels;
@@ -1322,6 +1325,7 @@ public sealed partial class NavigationService : IDisposable
 
     private void BuildFields(NavGrid grid, FlowFieldWorkers workers, Dictionary<NavSize, byte[]> walkable)
     {
+        using var zone = Diagnostics.Zones.Time(s_fieldsZone);
         var start = Stopwatch.GetTimestamp();
         // Only the changed rows and as far round them as each size's circle reaches (working the whole grid out
         // again for every size took about 175 ms of a 1.3 s build in Release); every row after a

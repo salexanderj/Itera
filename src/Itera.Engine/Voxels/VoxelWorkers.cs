@@ -11,6 +11,9 @@ namespace Itera.Engine.Voxels;
 /// </summary>
 internal sealed class VoxelWorkers : IDisposable
 {
+    // Each job, a zone of a trace on the worker that runs it.
+    private static readonly Diagnostics.ZoneId s_jobZone = Diagnostics.Zones.Name("voxels.column job");
+
     private readonly IChunkGenerator _generator;
     private readonly VoxelMemory _memory;
     private readonly Thread[] _threads;
@@ -177,7 +180,11 @@ internal sealed class VoxelWorkers : IDisposable
                     job = _frees.Count > 0 ? _frees.Dequeue() : _queued.Dequeue();
                 }
 
-                job.Run(_generator, _memory, scratch, densities, _copies, placements);
+                using (Diagnostics.Zones.Time(s_jobZone))
+                {
+                    job.Run(_generator, _memory, scratch, densities, _copies, placements);
+                }
+
                 lock (_finishedLock)
                 {
                     _finished.Enqueue(job);

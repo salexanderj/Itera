@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
+using Itera.Engine.Diagnostics;
 
 namespace Itera.Engine.Navigation;
 
@@ -13,6 +14,9 @@ namespace Itera.Engine.Navigation;
 internal sealed class FlowFieldWorkers : IDisposable
 {
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(5);
+
+    // Each field's build, a zone of a trace on the thread that builds it.
+    private static readonly ZoneId s_fieldZone = Zones.Name("navigation.field");
 
     private readonly object _lock = new();
     private readonly Thread[] _threads;
@@ -168,6 +172,7 @@ internal sealed class FlowFieldWorkers : IDisposable
             }
 
             var start = Stopwatch.GetTimestamp();
+            using var zone = Zones.Time(s_fieldZone);
             _builders[builder].Build(_grid!, _specs[field], _walkable[field], _fields[field]);
             _milliseconds[field] = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
         }
