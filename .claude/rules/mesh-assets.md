@@ -114,6 +114,13 @@ judges (a host's hits on posed bodies). The deterministic skeletons for bodies, 
   source's). It replaces the base colour of each material named, in linear RGBA: a team's colours, where a tint, which
   multiplies every colour, cannot turn one hue into another. It is made at the step after the files are read. A
   material its source lacks stops the step, naming it.
+- `DeclareJoined(name, pieces, origin)` joins rigid assets declared or added before it into one: each piece's
+  vertices, indices, materials, and points (`MeshJoinPiece`). The first stands at the origin, and each other at a point
+  of a piece before it, moved and turned as that point stands.
+- With `origin`, the joined asset moves so that point lies at the origin. A later piece's point replaces an earlier
+  one's of the same name. It shares its pieces' textures, which the mesh pass holds once.
+- A joined asset is made at the step after the files are read, in the order declared with the variants, so either may
+  be made from the other. A skinned piece, a missing point, or a missing origin stops the step, naming it.
 - `DeclareLevel(asset, level, belowPixels)` draws `level` in place of `asset` where an instance's sphere is less than
   `belowPixels` pixels tall (`rendering-mesh-assets.md`). Both are declared or added before it. An asset has at most
   `MeshAssets.MostLevels` levels, largest height first, no two heights alike. A level has no levels.

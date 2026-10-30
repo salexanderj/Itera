@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text.Json.Nodes;
 using Itera.Engine.Assets;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering.GpuData;
 using Itera.Engine.Tests.Matches;
 using Itera.Engine.Tests.Rendering.Meshes;
@@ -10,7 +11,10 @@ using Microsoft.Extensions.Options;
 
 namespace Itera.Engine.Tests.Assets;
 
-/// <summary><see cref="MeshAssets"/>: declaring and adding by name, reading at the run's step, and what it refuses.</summary>
+/// <summary>
+/// <see cref="MeshAssets"/>: declaring and adding by name, reading at the run's step, variants and joined assets made
+/// there, and what it refuses.
+/// </summary>
 public sealed class MeshAssetsTests : IDisposable
 {
     private readonly string _folder = Directory.CreateTempSubdirectory("itera-assets-").FullName;
@@ -190,6 +194,136 @@ public sealed class MeshAssetsTests : IDisposable
         Assert.Contains("'plane' lacks", error.Message, StringComparison.Ordinal);
         Assert.False(_assets.Loaded);
     }
+
+    [Fact]
+    public void A_joined_asset_seats_each_piece_at_its_parents_point_shares_its_textures_and_moves_to_its_origin()
+    {
+        var (bodyTexture, armTexture) = (Texture("body"), Texture("arm"));
+        // The body: a vertex at its origin, a socket 1 m along x turned a quarter about z, and a muzzle.
+        var body = new MeshAsset(
+            "body",
+            [
+                MeshAssetVertex.Pack(
+                    Vector3.Zero,
+                    Vector3.UnitY,
+                    new Vector4(1, 0, 0, 1),
+                    Vector2.Zero,
+                    Vector2.Zero,
+                    Vector4.One
+                ),
+            ],
+            [0, 0, 0],
+            [new(0, 3, 0)],
+            [MeshMaterialData.Default with { Name = "body", BaseColourTexture = new(0, MeshSampler.LinearRepeat, 0) }],
+            [bodyTexture],
+            points:
+            [
+                new MeshPoint(
+                    "socket-arm",
+                    -1,
+                    Vector3.UnitX,
+                    Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2)
+                ),
+                new MeshPoint("muzzle", -1, new Vector3(5, 0, 0), Quaternion.Identity),
+            ]
+        );
+        // The arm: a vertex 1 m along its x, its normal along x and its tangent along y, a grip, a tip, and a muzzle.
+        var arm = new MeshAsset(
+            "arm",
+            [
+                MeshAssetVertex.Pack(
+                    Vector3.UnitX,
+                    Vector3.UnitX,
+                    new Vector4(0, 1, 0, -1),
+                    Vector2.One,
+                    Vector2.Zero,
+                    Vector4.One
+                ),
+            ],
+            [0, 0, 0],
+            [new(0, 3, 0)],
+            [MeshMaterialData.Default with { Name = "arm", BaseColourTexture = new(0, MeshSampler.LinearRepeat, 0) }],
+            [armTexture],
+            points:
+            [
+                new MeshPoint("grip", -1, new Vector3(0.5f, 0, 0), Quaternion.Identity),
+                new MeshPoint("muzzle", -1, new Vector3(2, 0, 0), Quaternion.Identity),
+            ]
+        );
+        _assets.Add("body", body);
+        _assets.Add("arm", arm);
+
+        var index = _assets.DeclareJoined("gun", [new("body"), new("arm", 0, "socket-arm")], origin: "grip");
+        _assets.LoadAll(textures: false);
+        var gun = _assets[index];
+
+        // The arm turned a quarter about z and moved 1 m along x; the whole moved so its grip, at (1, 0.5, 0), is the
+        // origin.
+        Assert.Equal(
+            (2, 6, 2, 2),
+            (gun.Vertices.Length, gun.Indices.Length, gun.Materials.Length, gun.Textures.Length)
+        );
+        AssertNear(new Vector3(-1, -0.5f, 0), gun.Vertices[0].Position);
+        AssertNear(new Vector3(0, 0.5f, 0), gun.Vertices[1].Position);
+        AssertNear(Vector3.UnitY, Octahedral.UnpackSnorm16(gun.Vertices[1].Normal));
+        AssertNear(-Vector3.UnitX, Octahedral.UnpackTangent(gun.Vertices[1].Tangent, out var handedness));
+        Assert.Equal(-1, handedness);
+        Assert.Equal(new uint[] { 0, 0, 0, 1, 1, 1 }, gun.Indices);
+        Assert.Equal(new MeshPrimitive(3, 3, 1), gun.Primitives[1]);
+        Assert.Equal(1, gun.Materials[1].BaseColourTexture.Texture);
+        Assert.Same(bodyTexture, gun.Textures[0]);
+        Assert.Same(armTexture, gun.Textures[1]);
+        // The arm's muzzle replaced the body's.
+        Assert.Equal(["socket-arm", "grip", "muzzle"], gun.Points.Select(point => point.Name));
+        AssertNear(Vector3.Zero, gun.Points[1].Position);
+        AssertNear(new Vector3(0, 1.5f, 0), gun.Points[2].Position);
+        Assert.Equal(index, _assets.Find("gun"));
+    }
+
+    [Fact]
+    public void A_joined_asset_of_nothing_a_skinned_piece_or_a_missing_point_or_origin_is_refused()
+    {
+        var plain = new MeshAsset(
+            "plain",
+            [new MeshAssetVertex()],
+            [],
+            [],
+            [MeshMaterialData.Default],
+            [],
+            points: [new MeshPoint("seat", -1, Vector3.Zero, Quaternion.Identity)]
+        );
+        _assets.Add("plain", plain);
+        _assets.Add("skinned", MeshAssetPassTests.SkinnedAsset("skinned"));
+
+        Assert.Throws<ArgumentException>(() => _assets.DeclareJoined("none", []));
+        Assert.Throws<InvalidOperationException>(() => _assets.DeclareJoined("ghost", [new("nothing")]));
+        Assert.Throws<ArgumentException>(() => _assets.DeclareJoined("floating", [new("plain", 0, "seat")]));
+        Assert.Throws<ArgumentException>(() => _assets.DeclareJoined("unseated", [new("plain"), new("plain")]));
+        Assert.Throws<ArgumentException>(() => _assets.DeclareJoined("ahead", [new("plain"), new("plain", 1, "seat")]));
+
+        foreach (
+            var (pieces, origin, named) in new (MeshJoinPiece[], string?, string)[]
+            {
+                ([new("plain"), new("plain", 0, "socket")], null, "point 'socket'"),
+                ([new("skinned")], null, "'skinned' is skinned"),
+                ([new("plain")], "grip", "point 'grip'"),
+            }
+        )
+        {
+            var assets = new MeshAssets(NullLogger<MeshAssets>.Instance);
+            assets.Add("plain", plain);
+            assets.Add("skinned", MeshAssetPassTests.SkinnedAsset("skinned"));
+            assets.DeclareJoined("joined", pieces, origin);
+            var error = Assert.Throws<InvalidOperationException>(() => assets.LoadAll(textures: false));
+            Assert.Contains(named, error.Message, StringComparison.Ordinal);
+        }
+    }
+
+    private static MeshTextureData Texture(string name) =>
+        MeshTextureData.FromRgba(name, 1, 1, MeshTextureRole.Colour, [128, 128, 128, 255]);
+
+    private static void AssertNear(Vector3 expected, Vector3 actual) =>
+        Assert.True(Vector3.Distance(expected, actual) < 1e-3f, $"Expected {expected}, was {actual}.");
 
     [Fact]
     public void Levels_are_kept_largest_height_first_and_a_skinned_ones_on_its_rig_are_read()

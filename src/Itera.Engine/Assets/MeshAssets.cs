@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using Itera.Engine.Maths;
 using Itera.Engine.Rendering.GpuData;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -10,7 +11,8 @@ namespace Itera.Engine.Assets;
 /// The run's mesh assets (<see cref="MeshAsset"/>): models a game declares from glTF files (<see cref="Declare"/>: a whole
 /// file, a part of one by its node, or a model bound to another's rig), meshes it builds in code (<see cref="Add"/>), and
 /// variants of either with some materials' base colours replaced
-/// (<see cref="DeclareVariant"/>: a team's colours), each known by its name and its index (<see cref="Find"/>), and
+/// (<see cref="DeclareVariant"/>: a team's colours), assets joined from others' pieces seated at their points
+/// (<see cref="DeclareJoined"/>: a gun of parts), each known by its name and its index (<see cref="Find"/>), and
 /// which assets are drawn in another's place where it is small on the image (<see cref="DeclareLevel"/>). A game
 /// declares them at its run startup (<c>IRunStartup</c>, the run's "game" step), mods at theirs; the run's "mesh assets"
 /// step, after the mods', declares the extra models of <c>Engine:Assets:Extra</c> and reads every declared file on
@@ -118,6 +120,56 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
                 Colours = new Dictionary<string, Vector4>(baseColours, StringComparer.Ordinal),
             }
         );
+    }
+
+    /// <summary>
+    /// Declares the asset <paramref name="name"/> joined from <paramref name="pieces"/>, rigid assets declared or added
+    /// before it: each piece's vertices, indices, materials, and points, seated as its piece says
+    /// (<see cref="MeshJoinPiece"/>). The first stands at the joined asset's origin, and each other at a point of a piece
+    /// before it, moved and turned as that point stands there. With <paramref name="origin"/>, the whole then moves so
+    /// that point lies at the origin. A point of a later piece replaces an earlier piece's of the same name. The joined
+    /// asset shares its pieces' textures, which the GPU holds once.
+    /// <para>
+    /// Made at the run's "mesh assets" step after the files are read, in the order declared with the variants, so the
+    /// points that seat each piece are its file's. A skinned piece, a point a piece lacks, or an origin the joined asset
+    /// lacks stops the step, naming it. Returns its index. Before that step only.
+    /// </para>
+    /// </summary>
+    public int DeclareJoined(string name, IReadOnlyList<MeshJoinPiece> pieces, string? origin = null)
+    {
+        ArgumentNullException.ThrowIfNull(pieces);
+        if (pieces.Count == 0)
+        {
+            throw new ArgumentException($"The joined mesh asset '{name}' has no pieces.", nameof(pieces));
+        }
+
+        for (var i = 0; i < pieces.Count; i++)
+        {
+            var piece = pieces[i];
+            if (!_byName.ContainsKey(piece.Asset ?? ""))
+            {
+                throw new InvalidOperationException(
+                    $"The joined mesh asset '{name}' has a piece '{piece.Asset}', which is not declared or added before it."
+                );
+            }
+
+            var seated = i == 0 ? piece.Parent < 0 && piece.Point is null : piece.Parent >= 0 && piece.Parent < i;
+            if (!seated || (i > 0 && string.IsNullOrEmpty(piece.Point)))
+            {
+                throw new ArgumentException(
+                    $"The joined mesh asset '{name}''s piece {i} ('{piece.Asset}') must be seated "
+                        + (i == 0 ? "at the origin, on no piece." : "at a named point of a piece before it."),
+                    nameof(pieces)
+                );
+            }
+        }
+
+        if (origin is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(origin);
+        }
+
+        return AddEntry(name, new Entry(name, null, 1f, null) { Pieces = [.. pieces], Origin = origin });
     }
 
     /// <summary>The most levels one asset may have (<see cref="DeclareLevel"/>).</summary>
@@ -352,7 +404,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
         }
 
         BindRigs();
-        MakeVariants();
+        MakeDerived();
         CheckLevels();
         Loaded = true;
         long triangles = 0;
@@ -614,12 +666,30 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
     /// <summary>How far a bound asset's joint may rest turned from the source rig's, in radians.</summary>
     public const float BoundRestTurn = 0.005f;
 
-    /// <summary>Makes each variant from its source, in the order declared, so a variant of a variant follows it.</summary>
-    private void MakeVariants()
+    /// <summary>
+    /// Makes each variant from its source and each joined asset from its pieces, in the order declared, so one made from
+    /// another follows it.
+    /// </summary>
+    private void MakeDerived()
     {
         foreach (var entry in _entries)
         {
-            if (entry.Of is null || entry.Asset is not null)
+            if (entry.Asset is not null)
+            {
+                continue;
+            }
+
+            if (entry.Pieces is { } pieces)
+            {
+                entry.Asset = Joined(
+                    entry.Name,
+                    Array.ConvertAll(pieces, piece => (piece, _entries[_byName[piece.Asset]].Asset!)),
+                    entry.Origin
+                );
+                continue;
+            }
+
+            if (entry.Of is null)
             {
                 continue;
             }
@@ -657,6 +727,158 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             );
         }
     }
+
+    /// <summary>
+    /// The asset <paramref name="name"/> joined from <paramref name="pieces"/> (<see cref="DeclareJoined"/>): each piece's
+    /// asset seated at the origin, or at its parent piece's point, the whole moved so <paramref name="origin"/> lies at
+    /// the origin. Throws, naming it, for a skinned piece, a point a piece lacks, a point on a joint, or an origin the
+    /// joined asset lacks.
+    /// </summary>
+    internal static MeshAsset Joined(string name, (MeshJoinPiece Piece, MeshAsset Asset)[] pieces, string? origin)
+    {
+        var places = new Matrix4x4[pieces.Length];
+        var points = new List<MeshPoint>();
+        int vertexCount = 0,
+            indexCount = 0;
+        for (var i = 0; i < pieces.Length; i++)
+        {
+            var (piece, asset) = pieces[i];
+            if (asset.Rig is not null)
+            {
+                throw new InvalidOperationException(
+                    $"The joined mesh asset '{name}''s piece '{piece.Asset}' is skinned: only rigid pieces are joined."
+                );
+            }
+
+            places[i] = Matrix4x4.Identity;
+            if (i > 0)
+            {
+                var parent = pieces[piece.Parent].Asset;
+                var at = parent.FindPoint(piece.Point!);
+                if (at < 0 || parent.Points[at].Joint >= 0)
+                {
+                    throw new InvalidOperationException(
+                        $"The joined mesh asset '{name}''s piece '{piece.Asset}' is seated at point '{piece.Point}' of "
+                            + $"'{pieces[piece.Parent].Piece.Asset}', which "
+                            + (at < 0 ? "has no such point." : "hangs it on a joint.")
+                    );
+                }
+
+                var seat = parent.Points[at];
+                places[i] =
+                    Matrix4x4.CreateFromQuaternion(seat.Rotation)
+                    * Matrix4x4.CreateTranslation(seat.Position)
+                    * places[piece.Parent];
+            }
+
+            foreach (var point in asset.Points)
+            {
+                points.RemoveAll(kept => kept.Name == point.Name);
+                points.Add(
+                    point with
+                    {
+                        Position = Vector3.Transform(point.Position, places[i]),
+                        Rotation = Quaternion.Normalize(
+                            point.Rotation * Quaternion.CreateFromRotationMatrix(places[i])
+                        ),
+                    }
+                );
+            }
+
+            vertexCount += asset.Vertices.Length;
+            indexCount += asset.Indices.Length;
+        }
+
+        var shift = Vector3.Zero;
+        if (origin is not null)
+        {
+            var at = points.FindIndex(point => point.Name == origin);
+            if (at < 0)
+            {
+                throw new InvalidOperationException(
+                    $"The joined mesh asset '{name}' is moved to its point '{origin}', which none of its pieces has."
+                );
+            }
+
+            shift = -points[at].Position;
+        }
+
+        var vertices = new MeshAssetVertex[vertexCount];
+        var indices = new uint[indexCount];
+        var primitives = new List<MeshPrimitive>();
+        var materials = new List<MeshMaterialData>();
+        var textures = new List<MeshTextureData>();
+        int vertexBase = 0,
+            indexBase = 0;
+        for (var i = 0; i < pieces.Length; i++)
+        {
+            var asset = pieces[i].Asset;
+            var place = places[i];
+            for (var v = 0; v < asset.Vertices.Length; v++)
+            {
+                var vertex = asset.Vertices[v];
+                var normal = Vector3.TransformNormal(Octahedral.UnpackSnorm16(vertex.Normal), place);
+                var tangent = Vector3.TransformNormal(
+                    Octahedral.UnpackTangent(vertex.Tangent, out var handedness),
+                    place
+                );
+                vertex.Position = Vector3.Transform(vertex.Position, place) + shift;
+                vertex.Normal = Octahedral.PackSnorm16(normal);
+                vertex.Tangent = Octahedral.PackTangent(tangent, handedness);
+                vertices[vertexBase + v] = vertex;
+            }
+
+            for (var k = 0; k < asset.Indices.Length; k++)
+            {
+                indices[indexBase + k] = asset.Indices[k] + (uint)vertexBase;
+            }
+
+            foreach (var primitive in asset.Primitives)
+            {
+                primitives.Add(
+                    new MeshPrimitive(
+                        primitive.FirstIndex + indexBase,
+                        primitive.IndexCount,
+                        primitive.Material + materials.Count
+                    )
+                );
+            }
+
+            var textureBase = textures.Count;
+            foreach (var material in asset.Materials)
+            {
+                materials.Add(
+                    material with
+                    {
+                        BaseColourTexture = Moved(material.BaseColourTexture, textureBase),
+                        EmissionTexture = Moved(material.EmissionTexture, textureBase),
+                        NormalTexture = Moved(material.NormalTexture, textureBase),
+                        OcclusionTexture = Moved(material.OcclusionTexture, textureBase),
+                        MetalRoughTexture = Moved(material.MetalRoughTexture, textureBase),
+                    }
+                );
+            }
+
+            textures.AddRange(asset.Textures);
+            vertexBase += asset.Vertices.Length;
+            indexBase += asset.Indices.Length;
+        }
+
+        var placed = points.ConvertAll(point => point with { Position = point.Position + shift });
+        return new MeshAsset(
+            name,
+            vertices,
+            indices,
+            [.. primitives],
+            [.. materials],
+            [.. textures],
+            points: [.. placed]
+        );
+    }
+
+    /// <summary>A texture reference of a joined piece's material, moved past the textures of the pieces before it.</summary>
+    private static MeshTextureRef Moved(MeshTextureRef texture, int textureBase) =>
+        texture.IsNone ? texture : texture with { Texture = texture.Texture + textureBase };
 
     /// <summary>
     /// Checks each level against its asset, the assets read (<see cref="DeclareLevel"/>): a rigid asset's level is rigid,
@@ -751,6 +973,12 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
         /// <summary>A variant's base colours by material name.</summary>
         public Dictionary<string, Vector4>? Colours { get; init; }
 
+        /// <summary>A joined asset's pieces, or null for any other (<see cref="DeclareJoined"/>).</summary>
+        public MeshJoinPiece[]? Pieces { get; init; }
+
+        /// <summary>The point a joined asset is moved to put at its origin, or null.</summary>
+        public string? Origin { get; init; }
+
         /// <summary>The asset's levels, largest height first, or null for none.</summary>
         public List<MeshAssetLevel>? Levels { get; set; }
 
@@ -784,6 +1012,14 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
     [LoggerMessage(Level = LogLevel.Error, Message = "Mesh assets: {Name} ({Path}) could not be read")]
     private partial void LogFailed(Exception exception, string name, string path);
 }
+
+/// <summary>
+/// A piece of a joined mesh asset (<see cref="MeshAssets.DeclareJoined"/>): the rigid asset <paramref name="Asset"/>,
+/// seated at the joined asset's origin (the first piece: no parent and no point), or at the point
+/// <paramref name="Point"/> of the piece <paramref name="Parent"/> before it (its index in the pieces), moved and turned
+/// as that point stands.
+/// </summary>
+public readonly record struct MeshJoinPiece(string Asset, int Parent = -1, string? Point = null);
 
 /// <summary>
 /// A level of detail of a mesh asset (<see cref="MeshAssets.DeclareLevel"/>): the asset drawn in its place (its index in
