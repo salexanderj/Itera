@@ -255,8 +255,10 @@ def in_world(
         raise RuntimeError(f"the game did not start:\n{started.stdout}{started.stderr}")
     try:
         # meshes place puts it on the ground in front of the player, facing the player. The views turn with it, and the
-        # perspective view is drawn from the player's eye, the one place known to be clear.
-        placed = _game(f"wait ticks 2; tp {place}; wait view; {SUN}; pos; meshes place {name}")
+        # perspective view is drawn from the player's eye, the one place known to be clear. tp moves the camera at the
+        # next step, so steps run before the view's world is waited for: else wait view finds the old place loaded and
+        # the model is put there.
+        placed = _game(f"wait ticks 2; tp {place}; wait ticks 2; wait view; {SUN}; pos; meshes place {name}")
         match = re.search(rf"{re.escape(name)} placed at (\S+) (\S+) (\S+) in the world", placed)
         pose = re.search(r"(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)", placed)
         if not match or not pose:
