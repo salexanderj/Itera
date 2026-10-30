@@ -43,9 +43,10 @@ camera's view, a cascade it casts into as its `ModelShadow` allows, or an image 
 
 - It tests a sphere round every pose of the asset (`MeshBounds.EveryPose`), grown by `MeshDrawSystem.BoundShare`, scaled
   by the placement, and `CullMarginMetres` wider. Without a `MeshPoseCulling` it makes no such spheres.
-- A mesh with a `ShapedPose` is always posed. A game's shaper may move its joints anywhere: a ragdoll or a toppling body
-  posed from its physics bodies while its `MeshPlacement` stays where it died. Unshaped meshes, such as a swarm's, are
-  culled.
+- Unshaped meshes, such as a swarm's, are culled. A mesh with a `ShapedPose` is always posed, unless the game's shaper
+  says it keeps that entity near its clips (`IMeshPoseShaper.KeepsNearClips`, false by default). A shaper may move the
+  joints anywhere: a ragdoll or a toppling body posed from its physics bodies while its `MeshPlacement` stays where it
+  died. A game's shaper says true for a living figure whose shaping stays within `BoundShare` of its clips.
 - A mesh left out is neither sampled nor added to `MeshInstances`. `LastPosed` and `LastCulled` count them.
 - An attached mesh follows its holder: it is left out only when its holder is. A holder that may be culled is posed while
   a mesh attached to it may be drawn: the holder's sphere grown by the attachment's offset and the mesh's own reach.

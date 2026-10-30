@@ -30,6 +30,14 @@ public interface IMeshPoseShaper
         float alpha,
         MeshPosePurpose purpose
     );
+
+    /// <summary>
+    /// True when this shaping keeps <paramref name="entity"/>'s joints near its clips' poses, within the sphere round them
+    /// grown by <see cref="MeshDrawSystem.BoundShare"/>, so <see cref="MeshDrawSystem"/>'s culling may leave it out when no
+    /// list would draw it. False unless a game says so: a shaping may move the joints anywhere (a ragdoll, a body toppling
+    /// where it died).
+    /// </summary>
+    bool KeepsNearClips(World world, Entity entity) => false;
 }
 
 /// <summary>Why a pose is shaped (<see cref="IMeshPoseShaper"/>): to be drawn, or for the hit shapes a game records of it.</summary>

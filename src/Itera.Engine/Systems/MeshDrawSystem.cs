@@ -28,12 +28,12 @@ namespace Itera.Engine.Systems;
 /// starts from the pose drawn the frame before, moving as it was). An entity with a <see cref="MeshAttachment"/> is drawn
 /// at its holder's joint as the holder is posed this frame (<see cref="MeshPoses"/>; a smoothed holder as it was
 /// drawn). A hidden mesh (<see cref="ModelShadow.Hidden"/>) is not posed or drawn, nor is one attached to a hidden
-/// holder. With a <see cref="MeshPoseCulling"/>, an animated mesh without a <see cref="ShapedPose"/> is posed only when
-/// some list of the frame may draw it (the camera's view, a shadow cascade it casts into, an image view due), tested by a
-/// sphere round its every pose (<see cref="MeshBounds.EveryPose"/>), or when what it holds may be drawn; one left out
-/// keeps its smoothing (<see cref="PoseSmoothing.Hold"/>), and what it holds is left out too. A shaped one is always
-/// posed: a game's shaper may move its joints anywhere. Without a camera set this frame, or a picture, every one is
-/// posed. Reads those; writes only the
+/// holder. With a <see cref="MeshPoseCulling"/>, an animated mesh is posed only when some list of the frame may draw it
+/// (the camera's view, a shadow cascade it casts into, an image view due), tested by a sphere round its every pose
+/// (<see cref="MeshBounds.EveryPose"/>), or when what it holds may be drawn; one left out keeps its smoothing
+/// (<see cref="PoseSmoothing.Hold"/>), and what it holds is left out too. A shaped one is posed always, unless the game's
+/// shaper says it keeps that one near its clips (<see cref="IMeshPoseShaper.KeepsNearClips"/>): a shaper may move its
+/// joints anywhere. Without a camera set this frame, or a picture, every one is posed. Reads those; writes only the
 /// slot a <see cref="SmoothedPose"/> keeps. Registers the console's <c>meshes</c> (the run's assets and their clips; placing one or many in
 /// front of the camera, on the ground where a voxel world is, playing a clip or held at a time of it, tagged
 /// <see cref="ConsoleMesh"/>; removing those).
@@ -214,7 +214,7 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     /// <see cref="SmoothedPose"/>, and its rig's skinning matrices written where <see cref="MeshInstances.AddPosed"/> keeps
     /// them; a static asset, or a rig larger than the room made at the start, is drawn as its asset stores it. One no list
     /// would draw (<see cref="MayDraw"/>) and holding nothing drawn is left out, a smoothed one's slot held; a shaped one
-    /// never is, as a game's shaper may move its joints anywhere.
+    /// only where the shaper keeps it near its clips (<see cref="KeepsNear"/>), as a shaper may move its joints anywhere.
     /// </summary>
     private void Pose(ref Chunk chunk, in FrameTime time)
     {
@@ -234,7 +234,12 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
 
             var entity = chunk.Entity(index);
             var transform = MeshPoses.Placed(in placements[index], time.Alpha);
-            if (_culls && !shaped && !MayDraw(mesh.Asset, in transform, mesh.Shadow) && !Holds(entity))
+            if (
+                _culls
+                && (!shaped || KeepsNear(entity))
+                && !MayDraw(mesh.Asset, in transform, mesh.Shadow)
+                && !Holds(entity)
+            )
             {
                 _culled++;
                 if (smoothed)
@@ -378,7 +383,7 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
     }
 
     /// <summary>
-    /// The holders that may be culled (animated, not shaped) and that a mesh attached to them may be drawn with this frame
+    /// The holders that may be culled (<see cref="MayCull"/>) and that a mesh attached to them may be drawn with this frame
     /// (<see cref="AttachedMayDraw"/>), sorted by their ids: each is posed whatever its own test says, so what it holds is
     /// drawn at its posed joint.
     /// </summary>
@@ -428,8 +433,18 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
         return found >= 0 && _holders[found] == entity;
     }
 
-    /// <summary>True when the culling may leave out <paramref name="holder"/>: it is animated, and not shaped.</summary>
-    private bool MayCull(Entity holder) => World.Has<MeshAnimator>(holder) && !World.Has<ShapedPose>(holder);
+    /// <summary>
+    /// True when the culling may leave out <paramref name="holder"/>: it is animated, and not shaped or shaped near its
+    /// clips (<see cref="KeepsNear"/>).
+    /// </summary>
+    private bool MayCull(Entity holder) =>
+        World.Has<MeshAnimator>(holder) && (!World.Has<ShapedPose>(holder) || KeepsNear(holder));
+
+    /// <summary>
+    /// True when the shaping keeps <paramref name="entity"/>'s joints near its clips' poses
+    /// (<see cref="IMeshPoseShaper.KeepsNearClips"/>); with no shaper it is left as sampled.
+    /// </summary>
+    private bool KeepsNear(Entity entity) => _shaper?.KeepsNearClips(World, entity) ?? true;
 
     /// <summary>
     /// The holder of an attached mesh that is drawn: the mesh and its holder not hidden, and the holder alive and placed.

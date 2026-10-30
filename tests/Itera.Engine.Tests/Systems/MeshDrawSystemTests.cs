@@ -735,6 +735,30 @@ public sealed class MeshDrawSystemTests
         );
     }
 
+    [Fact]
+    public void With_culling_a_shaped_mesh_its_shaper_keeps_near_its_clips_is_culled_and_what_it_holds_with_it()
+    {
+        using var world = World.Create();
+        var harness = new PoseCullingHarness(shadows: false);
+        var shaper = new TurningShaper();
+        using var system = Create(world, shaper: shaper, culling: harness.Culling);
+        var near = world.Create(Placed(0, 0, 60), DrawnMesh.Of(2), MeshAnimator.Playing(0, 0.4f), new ShapedPose());
+        world.Create(DrawnMesh.Of(0), MeshAttachment.To(near, 1, Vector3.Zero, Quaternion.Identity));
+        var loose = world.Create(Placed(5, 0, 60), DrawnMesh.Of(2), MeshAnimator.Playing(0, 0.4f), new ShapedPose());
+        var ahead = world.Create(Placed(0, 0, -10), DrawnMesh.Of(2), MeshAnimator.Playing(0, 0.4f), new ShapedPose());
+        shaper.Near.Add(near);
+        shaper.Near.Add(ahead);
+
+        CullingFrame(system, harness, 1, PoseCullingHarness.Ahead);
+
+        // Behind the camera, the one kept near is left out with its box; the one that may move anywhere is posed.
+        Assert.Equal((2, 1), (system.LastPosed, system.LastCulled));
+        Assert.Equal([loose, ahead], shaper.Shaped.Distinct().OrderBy(entity => entity.Id));
+        var instances = _instances.Instances.ToArray();
+        Assert.Equal(2, instances.Length);
+        Assert.All(instances, instance => Assert.Equal(2, instance.Asset));
+    }
+
     /// <summary>
     /// A smoothed mesh changes clip in view, is culled for eight frames with the camera turned away, and comes back: its
     /// slot is kept, and it is drawn as its twin, posed every frame without culling, is.
@@ -896,6 +920,11 @@ public sealed class MeshDrawSystemTests
 
         /// <summary>False: the pose is left as sampled.</summary>
         public bool Turning { get; set; } = true;
+
+        /// <summary>The entities it keeps near their clips (<see cref="IMeshPoseShaper.KeepsNearClips"/>).</summary>
+        public HashSet<Entity> Near { get; } = [];
+
+        public bool KeepsNearClips(World world, Entity entity) => Near.Contains(entity);
 
         public void Shape(
             World world,
