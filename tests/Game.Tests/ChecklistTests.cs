@@ -31,6 +31,7 @@ public sealed class ChecklistTests
         // The run's commands, as GameLoop registers them at its UI step.
         provider.GetRequiredService<EngineCommands>().Register();
         provider.GetRequiredService<TimeCommands>().Register();
+        provider.GetRequiredService<ZoneCommands>().Register();
         provider.GetRequiredService<MatchCommands>().Register();
         provider.GetRequiredService<SettingsCommands>().Register();
         provider.GetRequiredService<ParticleCommands>().Register();
