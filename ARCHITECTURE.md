@@ -1444,10 +1444,10 @@ Targets: Linux, Windows, macOS, x64 and arm64. `Game` declares the runtime ident
 
 Verified so far: Linux only (Ubuntu, Wayland, AMD RX 5700 XT on Mesa RADV, .NET SDK 10.0.112). Steam runs on Linux x64
 and Windows x64: a game's playtest joined a Linux host over Steam from Windows. macOS has its libraries, arm64 through
-the package's x64 managed build (`.claude/rules/sessions.md`), but no Mac has started Steam yet. Linux and Windows on
-arm64 play without Steam. CI builds and runs the
-tests on Windows x64 and macOS arm64 each night (`.claude/rules/ci.md`), with no GPU, window, or sound device. The game
-itself has not run on either. What is in place for them, and what is not:
+the package's x64 managed build marked for arm64 (`.claude/rules/sessions.md`), but no Mac has started Steam yet. Linux
+and Windows on arm64 play without Steam. CI builds and runs the tests on Windows x64 and macOS arm64 each night
+(`.claude/rules/ci.md`), with no GPU, window, or sound device. The game itself has not run on either. What is in place
+for them, and what is not:
 
 - Every native package ships binaries for all three platforms, including MoltenVK for macOS. But no package ships a
   Vulkan loader for macOS. GLFW for macOS looks only for `libvulkan.1.dylib`, Silk.NET.GLFW 2.23 has no binding for

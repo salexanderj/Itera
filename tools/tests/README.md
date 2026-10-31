@@ -10,7 +10,7 @@ python3 tools/tests/timings.py --build -- -c Release    # build first; the argum
 python3 tools/tests/timings.py -- tests/Game.Tests --filter "FullyQualifiedName~ScenarioTests"
 python3 tools/tests/timings.py --read DIR --top 40      # the report of an earlier run's .trx files
 python3 tools/tests/timings.py --max-wall 600           # fails when the run takes longer than 600 s
-python3 tools/tests/timings.py --threads 0              # each project runs one test class a processor at once
+python3 tools/tests/timings.py --threads 0              # one test class a processor at once, one project at a time
 ```
 
 - After the report it prints each failed test's message and the top of its stack trace. When `dotnet test` fails

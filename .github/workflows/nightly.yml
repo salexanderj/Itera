@@ -78,7 +78,7 @@ jobs:
     env:
       # A slower runner than Linux's: every test's wait limit is stretched (tests/Shared/TestTime.cs).
       ITERA_TEST_TIME_SCALE: ${{ vars.CI_PLATFORM_TEST_TIME_SCALE || '4' }}
-      # One test class a processor at once (xunit's MaxParallelThreads), not the 8 of tests/Shared/xunit.runner.json.
+      # One test class a processor at once, one project at a time, not 8 a project (tests/Shared/xunit.runner.json).
       CI_TEST_THREADS: ${{ vars.CI_PLATFORM_TEST_THREADS || '0' }}
     needs: changed
     if: >-
@@ -102,7 +102,7 @@ jobs:
     env:
       # A slower runner than Linux's: every test's wait limit is stretched (tests/Shared/TestTime.cs).
       ITERA_TEST_TIME_SCALE: ${{ vars.CI_PLATFORM_TEST_TIME_SCALE || '4' }}
-      # One test class a processor at once (xunit's MaxParallelThreads), not the 8 of tests/Shared/xunit.runner.json.
+      # One test class a processor at once, one project at a time, not 8 a project (tests/Shared/xunit.runner.json).
       CI_TEST_THREADS: ${{ vars.CI_PLATFORM_TEST_THREADS || '0' }}
     needs: changed
     if: >-

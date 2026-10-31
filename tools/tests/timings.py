@@ -9,7 +9,7 @@ count, and when each started and ended in the run), and the slowest tests.
     python3 tools/tests/timings.py --build -- -c Release   # builds first; arguments after -- go to dotnet test
     python3 tools/tests/timings.py --read DIR           # the report of an earlier run's .trx files
     python3 tools/tests/timings.py --max-wall 600       # fails when the run takes longer than 600 s (CI)
-    python3 tools/tests/timings.py --threads 0          # each project runs one test class a processor at once
+    python3 tools/tests/timings.py --threads 0          # one test class a processor at once, one project at a time
 
 After the report it prints each failed test's message and the top of its stack trace.
 """
@@ -125,7 +125,7 @@ def main():
         "--threads",
         type=int,
         metavar="N",
-        help="test classes each project runs at once (xunit's MaxParallelThreads; 0: one a processor)",
+        help="test classes run at once (0: one a processor): one project at a time, each with xunit's MaxParallelThreads",
     )
     parser.add_argument("test_args", nargs="*", help="after --: arguments for dotnet test (a project, a --filter, -c)")
     arguments = parser.parse_args()
@@ -142,7 +142,8 @@ def main():
         command.append("--no-build")
     command += arguments.test_args
     if arguments.threads is not None:
-        command += ["--", f"xUnit.MaxParallelThreads={arguments.threads}"]
+        # -m:1 tests the projects one after another, so N is the classes at once in the whole run.
+        command += ["-m:1", "--", f"xUnit.MaxParallelThreads={arguments.threads}"]
     print("Running: " + " ".join(command), flush=True)
     began = time.monotonic()
     log = os.path.join(folder, "dotnet-test.log")
