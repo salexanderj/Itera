@@ -1443,9 +1443,9 @@ Targets: Linux, Windows, macOS, x64 and arm64. `Game` declares the runtime ident
 `dotnet publish -r <rid>` works without edits.
 
 Verified so far: Linux only (Ubuntu, Wayland, AMD RX 5700 XT on Mesa RADV, .NET SDK 10.0.112). Steam runs on Linux x64.
-macOS x64 and Windows x64 have its libraries but are unverified, and arm64 plays without Steam. Windows and macOS are
-unverified until a CI matrix or a physical machine runs the build and the game. What is in place for them, and what is
-not:
+macOS x64 and Windows x64 have its libraries but are unverified, and arm64 plays without Steam. CI builds and runs the
+tests on Windows x64 and macOS arm64 each night (`.claude/rules/ci.md`), with no GPU, window, or sound device. The game
+itself has not run on either. What is in place for them, and what is not:
 
 - Every native package ships binaries for all three platforms, including MoltenVK for macOS. But no package ships a
   Vulkan loader for macOS. GLFW for macOS looks only for `libvulkan.1.dylib`, Silk.NET.GLFW 2.23 has no binding for

@@ -197,9 +197,10 @@ public sealed class HeadlessMatch : IDisposable
     /// is taken, as the loading screen waits for both: the worker threads and the navigation thread work in real time, so
     /// it waits on the clock, at most <paramref name="mostSeconds"/>, taking finished columns and the finished grid as the
     /// main loop does, with no more steps. True once loaded; the match then counts as playing. Without the grid's wait a
-    /// game's brains that need it started at a step that hung on how busy the machine was.
+    /// game's brains that need it started at a step that hung on how busy the machine was. The default limit only stops a
+    /// load that never ends: on a CI runner of 3 or 4 cores running the whole suite, a load took over 70 s.
     /// </summary>
-    public bool WaitUntilLoaded(double mostSeconds = 60)
+    public bool WaitUntilLoaded(double mostSeconds = 300)
     {
         Step(2);
         var deadline = Stopwatch.GetTimestamp() + (long)(mostSeconds * Stopwatch.Frequency);

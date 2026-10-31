@@ -29,6 +29,8 @@ paths:
 - A session takes its transports through `ISessionTransports`.
 - `Matches/HeadlessMatch.cs` (`HeadlessRun`, `HeadlessMatch`, over `MatchFlow`) plays a match without a window or GPU,
   offline, hosting, or joining a host in the same process.
+- `NativeLibraries.AddPackageFolders` lets Silk.NET find its packages' native libraries in a build's `runtimes`
+  folders. Call it before each Silk.NET `GetApi` of a library a package ships (GLFW, OpenAL Soft, Shaderc).
 
 A game composes the engine in its `Program.cs`: `AddIteraEngine`, then its own composition, then the host with
 `ValidateScopes` and `ValidateOnBuild`, then `GameLoop.Run()`.
@@ -116,4 +118,5 @@ Rules for a move:
 - `Ecs/` (`EcsWorldTests`, `CheckedWorldExtensionsTests`, `EcsInspectorTests`), `Time/`, `Diagnostics/`, `Modding/`
   (`ModLoaderIntegrationTests`, `ModDispatcherTests`), `Control/` (`ControlServiceTests`), and `Configuration/`
   (`EngineOptionsValidatorTests`, `UnknownOptionKeysTests`).
-- `EngineStepsTests`, `ExitSignalPolicyTests`, `GameLoopSaveTests`, and `ChecklistTests` are in the project's root.
+- `EngineStepsTests`, `ExitSignalPolicyTests`, `GameLoopSaveTests`, `NativeLibrariesTests`, and `ChecklistTests` are in
+  the project's root.

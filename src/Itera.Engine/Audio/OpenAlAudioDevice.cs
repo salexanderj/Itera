@@ -265,6 +265,7 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
     /// <summary>Opens the default device. Throws when the native library or a device is missing.</summary>
     public static OpenAlAudioDevice OpenDefault()
     {
+        NativeLibraries.AddPackageFolders();
         var alc = ALContext.GetApi(soft: true);
         var device = alc.OpenDevice(string.Empty);
         if (device is null)
@@ -287,6 +288,7 @@ public sealed unsafe class OpenAlAudioDevice : IAudioDevice
     /// </summary>
     internal static OpenAlAudioDevice? OpenLoopback(int sampleRate, int channels = 1)
     {
+        NativeLibraries.AddPackageFolders();
         var alc = ALContext.GetApi(soft: true);
         var open = (delegate* unmanaged<byte*, Device*>)alc.GetProcAddress(null, "alcLoopbackOpenDeviceSOFT");
         var render = (delegate* unmanaged<Device*, void*, int, void>)alc.GetProcAddress(null, "alcRenderSamplesSOFT");

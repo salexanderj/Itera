@@ -94,6 +94,7 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
     /// <summary>Loads the native library and creates the compiler.</summary>
     public void Initialize()
     {
+        NativeLibraries.AddPackageFolders();
         _shaderc = Shaderc.GetApi();
         _compiler = _shaderc.CompilerInitialize();
         _options = _shaderc.CompileOptionsInitialize();

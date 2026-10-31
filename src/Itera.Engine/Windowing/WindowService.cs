@@ -180,6 +180,7 @@ public sealed partial class WindowService : IDisposable
             WindowState = fullscreen ? WindowState.Fullscreen : WindowState.Normal,
         };
 
+        NativeLibraries.AddPackageFolders();
         _window = Silk.NET.Windowing.Window.Create(options);
         _window.FramebufferResize += OnFramebufferResize;
         _window.FocusChanged += OnFocusChanged;
