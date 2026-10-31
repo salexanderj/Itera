@@ -47,8 +47,10 @@ public sealed class RenderThreadTests
         var renderer = new FakeRenderer();
         var exchange = new FrameExchange(() => { });
         var thread = new RenderThread(renderer, exchange, () => { }, NullLogger<RenderThread>.Instance, 0.05);
-        thread.Start(new Vector2D<int>(640, 480));
+        // Started before the thread, which may ask for its first frame at once: a clock started after it missed up to
+        // 12 ms of the first gap on a busy CI runner.
         var clock = System.Diagnostics.Stopwatch.StartNew();
+        thread.Start(new Vector2D<int>(640, 480));
 
         for (var i = 0; i < 5; i++)
         {
