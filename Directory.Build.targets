@@ -61,4 +61,28 @@
       </AssemblyAttribute>
     </ItemGroup>
   </Target>
+
+  <!--
+    Steamworks.NET 2024.8.0 has managed builds for x64 and x86 only, and its file for any other platform is a reference
+    assembly, which .NET does not run. A build published for osx-arm64 would take that file, so it takes the package's
+    osx-x64 build in its place: the code depends on the system, not the architecture, and Steam's macOS library is
+    universal (src/Itera.Engine/Native/Steam/README.md). A build not published for a platform loads that build when it
+    runs (NativeLibraries.AddSteamworksFallback).
+  -->
+  <Target
+    Name="UseSteamworksMacBuildOnArm64"
+    AfterTargets="ResolvePackageAssets"
+    Condition="'$(RuntimeIdentifier)' == 'osx-arm64'"
+  >
+    <ItemGroup>
+      <_SteamworksStub
+        Include="@(RuntimeCopyLocalItems)"
+        Condition="'%(RuntimeCopyLocalItems.NuGetPackageId)' == 'Steamworks.NET'"
+      />
+      <RuntimeCopyLocalItems Remove="@(_SteamworksStub)" />
+      <RuntimeCopyLocalItems
+        Include="@(_SteamworksStub->'$(NuGetPackageRoot)steamworks.net/%(NuGetPackageVersion)/runtimes/osx-x64/lib/netstandard2.1/%(Filename)%(Extension)')"
+      />
+    </ItemGroup>
+  </Target>
 </Project>

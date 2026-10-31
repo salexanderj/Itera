@@ -73,7 +73,13 @@ public sealed partial class SteamService : IDisposable
 
             Platform = platform;
         }
-        catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
+        catch (Exception ex)
+            when (ex
+                    is DllNotFoundException
+                        or BadImageFormatException
+                        or EntryPointNotFoundException
+                        or FileNotFoundException
+            )
         {
             UnavailableReason = "this platform has no Steam library";
             LogNoLibrary(ex.GetType().Name, ex.Message);

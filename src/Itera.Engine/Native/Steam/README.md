@@ -10,4 +10,5 @@ package's version in `Directory.Packages.props`.
 - `steam_api64.dll`: Windows x64.
 
 All three are copied next to the game; each platform's loader finds its own. There is no Steam library for Linux or
-Windows on arm64: there the game runs without Steam.
+Windows on arm64: there the game runs without Steam. On an arm64 Mac the universal library runs with the package's
+osx-x64 managed build (`NativeLibraries.AddSteamworksFallback`, and a target in `Directory.Build.targets`).

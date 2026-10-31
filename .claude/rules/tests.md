@@ -30,8 +30,7 @@ needs.
 - `FakeTransport`: an in-memory session transport with no sockets and no clocks.
 - `HostileValues` and `Watchdog`: hostile field values and damaged message bodies, and rows run on a worker thread that
   fail past a wall-time limit.
-- `TestTime`: the wall-time limit of every wait on another thread (`TestTime.Limit`, `TestTime.Deadline`), times the
-  number `ITERA_TEST_TIME_SCALE` gives on a slower machine. The `Watchdog` takes the same number.
+- `TestTime`: every wait's wall-time limit (`Limit`, `Deadline`), and the `Watchdog`'s, times `ITERA_TEST_TIME_SCALE`.
 - `GpuLayout`: compares a C# struct with a compiled shader's block, so a game's tests check its own passes' structs.
 - `LayerPicture`: draws a UI layer alone into a bitmap or PNG.
 - `LayerInk`: finds what a UI layer draws outside its `Bounds`. A HUD layer's tests draw it at a few screen sizes and
@@ -85,8 +84,8 @@ and tests.
   condition and call `Assert.Fail` with its message only on a mismatch.
 - A random or exhaustive check runs the trials its branches need, and each theory row takes a branch of its own.
 - No wall-clock assert, no `Thread.Sleep` to order threads, and no test that only prints timings: measurements go in
-  `tools/benchmark`. Wait on an event or on the state itself, with a cap from `TestTime` as a safety net. A test that
-  steps a match while another thread works (navigation, the voxel workers) waits for that thread before it steps on.
+  `tools/benchmark`. Wait on an event or on the state itself, with a `TestTime` cap. A stepped match waits for its
+  threads (navigation, the voxel workers) before it steps on.
 - Every test asserts what its name says, and no more than one behaviour fails it.
 
 ### The checklist tests
@@ -117,7 +116,6 @@ They fail when a place that must change with a feature is missed (`.claude/skill
 - A host and a client in one process: each from its own services, with an `ISessionTransports` that hands out a
   `FakeTransport` on one `FakeNetwork`, `Host(seed)` on one run and `Join(host)` on the other. Poll both sessions until
   the download ends, then step both in turn.
-- `tests/Itera.Engine.Tests/Matches/EngineComposition.cs` builds the engine's real services with the least a game adds.
 - Engine system tests use `PhysicsTestHarness`, `MeshGroundHarness`, `FlatGenerator`, `FlatTestGenerator`,
   `RampGenerator`, `FakeTickInput`, and `FakeFrameInput` (`tests/Itera.Engine.Tests/Systems/`).
 - Voxel tests use small generators (`SlopeGenerator`, `DomeGenerator`, `BoxesGenerator`, `GridShapesGenerator`,
@@ -127,10 +125,9 @@ They fail when a place that must change with a feature is missed (`.claude/skill
   `WavBuilder`, and `MusicHarness`. Animation tests use `HumanoidTestSkeleton`. Render-view tests use `FakeViewLists`.
   UI toolkit tests use `FixedTextMeasurer` and `UISurface`.
 - GPU code is tested without a device: `WorldMeshesTests`, `WorldMeshesLevelsTests`, and `WorldMeshesModelsTests`
-  run the world's meshes over a draw target and staging in memory (`WorldMeshesTestBase`), and `GpuLayout` compares
-  structs with the compiled SPIR-V.
+  run the world's meshes over a draw target and staging in memory (`WorldMeshesTestBase`).
 
 ### Package notes
 
-- `dotnet new xunit` on the pinned SDK emits xunit 2.9.3 with `Microsoft.NET.Test.Sdk` 17.14.1. Those versions are
-  pinned as emitted, in `Directory.Packages.props`.
+- xunit 2.9.3 and `Microsoft.NET.Test.Sdk` 17.14.1 are pinned (`Directory.Packages.props`) as `dotnet new xunit`
+  emits them on the pinned SDK.

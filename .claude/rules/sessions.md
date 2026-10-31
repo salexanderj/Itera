@@ -141,7 +141,7 @@ The console commands that work only on the host are listed in the `run-game` ski
 
 ### Tests
 
-`SessionServiceTests`, `SessionGameMessageTests`, `SessionTuningTests`, `LoopbackTests`, `SteamTransportTests`, `SimulatedNetworkTests`, `SteamFriendListTests`, `JoinRequestsTests`, `MatchFlowTests`, `WireFingerprintTests`.
+`SessionServiceTests`, `SessionGameMessageTests`, `SessionTuningTests`, `LoopbackTests`, `SteamTransportTests`, `SimulatedNetworkTests`, `SteamFriendListTests`, `SteamLibraryTests`, `JoinRequestsTests`, `MatchFlowTests`, `WireFingerprintTests`.
 
 ### Files in `src/Itera.Engine`
 
@@ -152,5 +152,8 @@ The console commands that work only on the host are listed in the `run-game` ski
 ### Package notes
 
 - `Steamworks.NET` has no native libraries. Valve's `steam_api` from its Standalone release sits in `src/Itera.Engine/Native/Steam/` (see the README there) and must change with the package.
-- Its managed wrapper differs by platform. The package has no osx-arm64 or linux-arm64 build, so Steam does not start there.
+- Its managed wrapper differs by system, not by architecture. The package has no arm64 build, and its file for other
+  platforms is a reference assembly. `NativeLibraries.AddSteamworksFallback` (at run time) and a target in
+  `Directory.Build.targets` (published for osx-arm64) give an arm64 process its system's x64 build. With the universal
+  macOS library, Steam starts on an arm64 Mac. Linux and Windows on arm64 have no Steam library, and play without Steam.
 - `SteamPlatform` loads the native library from next to the game with a DllImport resolver. The default search on Linux does not look there for `steam_api`.

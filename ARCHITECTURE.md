@@ -1442,8 +1442,10 @@ and close them.
 Targets: Linux, Windows, macOS, x64 and arm64. `Game` declares the runtime identifiers (`IteraSupportedRids`) so
 `dotnet publish -r <rid>` works without edits.
 
-Verified so far: Linux only (Ubuntu, Wayland, AMD RX 5700 XT on Mesa RADV, .NET SDK 10.0.112). Steam runs on Linux x64.
-macOS x64 and Windows x64 have its libraries but are unverified, and arm64 plays without Steam. CI builds and runs the
+Verified so far: Linux only (Ubuntu, Wayland, AMD RX 5700 XT on Mesa RADV, .NET SDK 10.0.112). Steam runs on Linux x64
+and Windows x64: a game's playtest joined a Linux host over Steam from Windows. macOS has its libraries, arm64 through
+the package's x64 managed build (`.claude/rules/sessions.md`), but no Mac has started Steam yet. Linux and Windows on
+arm64 play without Steam. CI builds and runs the
 tests on Windows x64 and macOS arm64 each night (`.claude/rules/ci.md`), with no GPU, window, or sound device. The game
 itself has not run on either. What is in place for them, and what is not:
 
