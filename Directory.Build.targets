@@ -80,9 +80,7 @@
         Condition="'%(RuntimeCopyLocalItems.NuGetPackageId)' == 'Steamworks.NET'"
       />
       <RuntimeCopyLocalItems Remove="@(_SteamworksStub)" />
-      <RuntimeCopyLocalItems
-        Include="@(_SteamworksStub->'$(NuGetPackageRoot)steamworks.net/%(NuGetPackageVersion)/runtimes/osx-x64/lib/netstandard2.1/%(Filename)%(Extension)')"
-      />
+      <RuntimeCopyLocalItems Include="@(_SteamworksStub->'$(NuGetPackageRoot)steamworks.net/%(NuGetPackageVersion)/runtimes/osx-x64/lib/netstandard2.1/%(Filename)%(Extension)')" />
     </ItemGroup>
   </Target>
 </Project>
