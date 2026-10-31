@@ -363,10 +363,10 @@ public sealed class WorldMeshesLevelsTests(ITestOutputHelper output) : WorldMesh
         meshes.Initialize();
         meshes.BeginMatch(world, new VoxelModels(world), new NoVoxelTintMap());
         var frame = 0;
-        Assert.True(SkyBuiltWithin(meshes, targets, LookingDown(Centre), ref frame, 3000), "No first field.");
+        Assert.True(SkyBuilt(meshes, targets, LookingDown(Centre), ref frame), "No first field.");
         var raised = Centre + new Vector3(0, 20, 0);
 
-        Assert.True(SkyBuiltWithin(meshes, targets, LookingDown(raised), ref frame, 3000), "No field after the climb.");
+        Assert.True(SkyBuilt(meshes, targets, LookingDown(raised), ref frame), "No field after the climb.");
         Assert.False(
             SkyBuiltWithin(meshes, targets, LookingDown(raised + new Vector3(20, 0, 0)), ref frame, 400),
             "A field after 20 m across."
@@ -385,7 +385,7 @@ public sealed class WorldMeshesLevelsTests(ITestOutputHelper output) : WorldMesh
         using var meshes = NewSkyMeshes(world, targets);
         var view = LookingDown(Centre);
         var frame = 0;
-        Assert.True(SkyBuiltWithin(meshes, targets, view, ref frame, 3000), "No first field.");
+        Assert.True(SkyBuilt(meshes, targets, view, ref frame), "No first field.");
         Assert.False(meshes.SkyChangePending);
 
         var cursor = world.CreateChangeCursor();
@@ -398,7 +398,7 @@ public sealed class WorldMeshesLevelsTests(ITestOutputHelper output) : WorldMesh
         var ground = SlopeGenerator.Height(0, 0, 17);
         world.Apply(VoxelEdit.Sphere(new VoxelCoord(0, ground, 0), 50, VoxelEditOperation.Clear));
         world.Update(0);
-        Assert.True(SkyBuiltWithin(meshes, targets, view, ref frame, 3000), "No field after an edit inside its box.");
+        Assert.True(SkyBuilt(meshes, targets, view, ref frame), "No field after an edit inside its box.");
     }
 
     /// <summary>
@@ -413,7 +413,7 @@ public sealed class WorldMeshesLevelsTests(ITestOutputHelper output) : WorldMesh
         using var meshes = NewSkyMeshes(world, targets);
         var view = LookingDown(Centre);
         var frame = 0;
-        Assert.True(SkyBuiltWithin(meshes, targets, view, ref frame, 3000), "No first field.");
+        Assert.True(SkyBuilt(meshes, targets, view, ref frame), "No first field.");
 
         var cursor = world.CreateChangeCursor();
         world.SetCenters([Centre, Centre + new Vector3(200, 0, 0)]);
@@ -490,9 +490,25 @@ public sealed class WorldMeshesLevelsTests(ITestOutputHelper output) : WorldMesh
         ViewConstants view,
         ref int frame,
         int frames
+    ) => SkyBuiltBefore(meshes, targets, view, ref frame, frames, DateTime.MaxValue);
+
+    /// <summary>
+    /// Uploads frames from <paramref name="view"/> until one stages a new sky field, for at most 30 s (<see cref="TestTime"/>):
+    /// the flood's worker keeps the real time.
+    /// </summary>
+    private static bool SkyBuilt(WorldMeshes meshes, FakeWorldTargets targets, ViewConstants view, ref int frame) =>
+        SkyBuiltBefore(meshes, targets, view, ref frame, int.MaxValue, TestTime.Deadline(30));
+
+    private static bool SkyBuiltBefore(
+        WorldMeshes meshes,
+        FakeWorldTargets targets,
+        ViewConstants view,
+        ref int frame,
+        int frames,
+        DateTime deadline
     )
     {
-        for (var i = 0; i < frames; i++)
+        for (var i = 0; i < frames && DateTime.UtcNow < deadline; i++)
         {
             var slot = frame++ % FrameSync.FramesInFlight;
             targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));

@@ -52,8 +52,6 @@ public static class EngineServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddIteraEngine(this IServiceCollection services, IConfiguration configuration)
     {
-        // Before any Steamworks.NET type loads: an arm64 Mac takes the package's osx-x64 build.
-        NativeLibraries.AddSteamworksFallback();
         services.Configure<EngineOptions>(configuration.GetSection(EngineOptions.SectionName));
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<EngineOptions>, EngineOptionsValidator>()

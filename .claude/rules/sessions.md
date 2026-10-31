@@ -153,7 +153,7 @@ The console commands that work only on the host are listed in the `run-game` ski
 
 - `Steamworks.NET` has no native libraries. Valve's `steam_api` from its Standalone release sits in `src/Itera.Engine/Native/Steam/` (see the README there) and must change with the package.
 - Its managed wrapper differs by system, not by architecture. The package has no arm64 build, and its file for other
-  platforms is a reference assembly. `NativeLibraries.AddSteamworksFallback` (at run time) and a target in
-  `Directory.Build.targets` (published for osx-arm64) give an arm64 process its system's x64 build. With the universal
-  macOS library, Steam starts on an arm64 Mac. Linux and Windows on arm64 have no Steam library, and play without Steam.
+  platforms is a reference assembly, which .NET does not run. A target in `Directory.Build.targets` copies the package's
+  Unix x64 build in its place. With the universal macOS library, Steam starts on an arm64 Mac. Linux and Windows on
+  arm64 have no Steam library, and play without Steam.
 - `SteamPlatform` loads the native library from next to the game with a DllImport resolver. The default search on Linux does not look there for `steam_api`.

@@ -27,8 +27,6 @@ internal static class ArchStartup
     [ModuleInitializer]
     internal static void Start()
     {
-        // Before the engine's types load below: on an arm64 Mac, Steamworks.NET comes from the package's osx-x64 build.
-        Itera.Engine.NativeLibraries.AddSteamworksFallback();
         RoomForWorlds();
         var test = typeof(ArchStartup).Assembly;
         var assemblies = test.GetReferencedAssemblies()

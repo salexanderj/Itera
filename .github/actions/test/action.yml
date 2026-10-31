@@ -1,7 +1,8 @@
 name: Build and test
 description: >-
   Builds the solution, runs every test project through tools/tests/timings.py, writes its report to the run's summary,
-  and uploads the results. CI_TEST_WALL_LIMIT in the environment, when set, fails a suite that takes longer.
+  and uploads the results. CI_TEST_WALL_LIMIT in the environment, when set, fails a suite that takes longer, and
+  CI_TEST_THREADS sets how many test classes each project runs at once.
 inputs:
   configuration:
     description: Debug or Release.
@@ -20,6 +21,7 @@ runs:
         if [ "$RUNNER_OS" = Windows ]; then python=python; fi
         "$python" tools/tests/timings.py --out "$RUNNER_TEMP/tests" \
           ${CI_TEST_WALL_LIMIT:+--max-wall "$CI_TEST_WALL_LIMIT"} \
+          ${CI_TEST_THREADS:+--threads "$CI_TEST_THREADS"} \
           -- -c "${{ inputs.configuration }}" | tee "$RUNNER_TEMP/tests-report.txt"
 
     - name: Write the report to the summary

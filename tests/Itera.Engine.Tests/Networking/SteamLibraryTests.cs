@@ -5,8 +5,8 @@ namespace Itera.Engine.Tests.Networking;
 
 /// <summary>
 /// Steam's libraries on the platform the tests run on, as CI runs them on Linux, Windows, and an arm64 Mac: the managed
-/// wrapper always loads (an arm64 Mac through <see cref="NativeLibraries.AddSteamworksFallback"/>, which the tests'
-/// start-up adds as <c>AddIteraEngine</c> does), and the native library where the engine ships one.
+/// wrapper always loads, the build gives platforms the package has no build for its Unix x64 build
+/// (<c>Directory.Build.targets</c>), and the native library loads where the engine ships one.
 /// </summary>
 public sealed class SteamLibraryTests
 {
@@ -19,19 +19,14 @@ public sealed class SteamLibraryTests
     }
 
     [Fact]
-    public void The_fallback_is_the_packages_build_for_this_systems_x64()
+    public void The_build_gives_platforms_without_a_build_of_their_own_the_packages_unix_x64_build()
     {
-        var path = NativeLibraries.SteamworksFallback(AppContext.BaseDirectory);
-
-        Assert.NotNull(path);
-        var system =
-            OperatingSystem.IsWindows() ? "win"
-            : OperatingSystem.IsMacOS() ? "osx"
-            : "linux";
-        Assert.Equal(
-            system + "-x64",
-            Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(path))))
+        var shared = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Steamworks.NET.dll"));
+        var unix = File.ReadAllBytes(
+            Path.Combine(AppContext.BaseDirectory, "runtimes", "osx-x64", "lib", "netstandard2.1", "Steamworks.NET.dll")
         );
+
+        Assert.True(unix.AsSpan().SequenceEqual(shared), "Steamworks.NET.dll is not the package's Unix x64 build.");
     }
 
     [Fact]
