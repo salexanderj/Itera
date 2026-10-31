@@ -131,6 +131,7 @@ fi
 # warm). Mods are still compiled by the JIT. Single file: the game, its packages, and .NET are one Game file, so the
 # install folder holds that, the native libraries, the .pdb files, appsettings.json, Fonts/, Shaders/, and Textures/
 # instead of about 270 files. Each update downloads most of the single file, which composite ReadyToRun costs anyway.
+# CI's nightly publish check (.github/actions/publish-check) publishes with these flags: change both together.
 for rid in win-x64 linux-x64; do
     echo "Publishing $rid..."
     rm -rf "$root/content/$rid"

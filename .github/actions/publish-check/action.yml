@@ -1,0 +1,35 @@
+name: Publish check
+description: >-
+  Publishes the game for this runner's platform as tools/steam/upload.sh does (Release, self-contained, composite
+  ReadyToRun, one file), starts it with no graphics for a short offline match (tools/tests/published.py), and uploads
+  the run's log.
+inputs:
+  rid:
+    description: The runner's own runtime identifier (linux-x64, win-x64, osx-arm64), so the published game can start.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Publish as shipped
+      shell: bash
+      run: >-
+        dotnet publish src/Game -c Release -r "${{ inputs.rid }}" --self-contained
+        -o "$RUNNER_TEMP/published/${{ inputs.rid }}"
+        -p:PublishReadyToRun=true -p:PublishReadyToRunComposite=true -p:PublishSingleFile=true
+
+    - name: Start the published game
+      shell: bash
+      run: |
+        python=python3
+        if [ "$RUNNER_OS" = Windows ]; then python=python; fi
+        "$python" tools/tests/published.py "$RUNNER_TEMP/published/${{ inputs.rid }}" \
+          --data "$RUNNER_TEMP/published-data" --steam-library
+
+    - name: Upload the published run's log
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: published-${{ inputs.rid }}-log
+        path: ${{ runner.temp }}/published-data/Logs
+        retention-days: 14
+        if-no-files-found: ignore

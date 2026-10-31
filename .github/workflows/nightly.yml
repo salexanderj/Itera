@@ -1,6 +1,7 @@
 name: Nightly
 
 # Each night that main changed, and by hand: the whole suite in Release on Linux, and in Debug on Windows and macOS.
+# Each job then publishes the game for its platform as it ships and starts it with no graphics (the publish check).
 # CI_WINDOWS_SCHEDULE and CI_MACOS_SCHEDULE (nightly, weekly, or off) set when the Windows and macOS jobs run: weekly is
 # Sunday's run when main changed that week, and off is only when started by hand.
 # .claude/rules/ci.md describes the workflows and their variables.
@@ -73,6 +74,11 @@ jobs:
         with:
           configuration: Release
 
+      - uses: ./.github/actions/publish-check
+        if: ${{ !cancelled() }}
+        with:
+          rid: linux-x64
+
   windows:
     name: Windows, Debug
     env:
@@ -97,6 +103,11 @@ jobs:
         with:
           configuration: Debug
 
+      - uses: ./.github/actions/publish-check
+        if: ${{ !cancelled() }}
+        with:
+          rid: win-x64
+
   macos:
     name: macOS, Debug
     env:
@@ -120,3 +131,8 @@ jobs:
       - uses: ./.github/actions/test
         with:
           configuration: Debug
+
+      - uses: ./.github/actions/publish-check
+        if: ${{ !cancelled() }}
+        with:
+          rid: osx-arm64

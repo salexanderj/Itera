@@ -20,6 +20,9 @@ unchanged, and sets what differs through repository variables. The `issues` skil
   GitHub limits a month's LFS downloads.
 - `.github/actions/test` builds, runs the suite through `tools/tests/timings.py`, writes its report to the run's
   summary, and uploads the results and the `dotnet test` output.
+- `.github/actions/publish-check` ends each nightly job: it publishes the game for the runner's platform as it ships,
+  and `tools/tests/published.py` starts it with no graphics for a short offline match. It fails on an exit code other
+  than 0, an Error or Fatal line in the log, or Steam's library failing to load. The run's log is uploaded.
 
 ### Repository variables
 
@@ -42,3 +45,4 @@ Set one with `gh variable set NAME --body VALUE`. Unset, each has the effect in 
   development machine.
 - Shell steps that run on Windows use `shell: bash`, and Python there is `python`, not `python3`.
 - Use each action at its newest major version, and change every use of an action together.
+- The publish check publishes with the flags of `tools/steam/upload.sh`. Change both together.

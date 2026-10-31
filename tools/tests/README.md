@@ -23,3 +23,12 @@ python3 tools/tests/timings.py --threads 0              # one test class a proce
 - The results and the `dotnet test` output stay in the folder named at the end (`--out DIR` to choose it).
 - Times from a busy machine run long: build nothing else while a run measures.
 - `.claude/rules/tests.md` holds the rules that keep tests light.
+
+`published.py` starts a published build with no graphics, plays a short offline match, and checks that it ended with
+exit code 0 and no Error or Fatal line in its log. With `--steam-library` it also fails when Steam's library did not
+load. CI's nightly runs it on each platform (`.github/actions/publish-check`).
+
+```bash
+dotnet publish src/Game -c Release -r linux-x64 --self-contained -o publish/linux-x64
+python3 tools/tests/published.py publish/linux-x64 --data /tmp/published-data --steam-library
+```
