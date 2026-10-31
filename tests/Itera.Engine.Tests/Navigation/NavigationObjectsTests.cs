@@ -27,7 +27,7 @@ public sealed class NavigationObjectsTests
     private const byte Leaves = 31;
     private const byte Rock = 40;
     private const int Low = 40;
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan Timeout = TestTime.Limit(30);
 
     /// <summary>The 64 by 64 cells round the middle the tests' grid covers: navigation's whole area, so it never moves.</summary>
     private static readonly NavArea Area = new(-1600, -1600, 64);

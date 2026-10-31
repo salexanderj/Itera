@@ -19,7 +19,7 @@ public sealed class NavigationPlacedObjectsTests : IDisposable
 {
     private const byte Stone = 40;
     private const int Low = 40;
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan Timeout = TestTime.Limit(30);
 
     private readonly VoxelWorld _world;
     private readonly VoxelModels _models;

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 
 namespace Itera.TestSupport;
 
@@ -15,7 +14,7 @@ namespace Itera.TestSupport;
 internal static class Watchdog
 {
     /// <summary>The environment variable whose number above 0 multiplies both limits, for a slower machine.</summary>
-    public const string ScaleVariable = "ITERA_TEST_TIME_SCALE";
+    public const string ScaleVariable = TestTime.ScaleVariable;
 
     /// <summary>
     /// How long one row may take: 1 s, times <see cref="Scale"/>. It also stands for the host: a client's request that
@@ -29,17 +28,7 @@ internal static class Watchdog
     public static TimeSpan HangLimit => TimeSpan.FromSeconds(60 * Scale);
 
     /// <summary>The number <see cref="ScaleVariable"/> gives, or 1 when it is unset or not a number above 0.</summary>
-    public static double Scale =>
-        double.TryParse(
-            Environment.GetEnvironmentVariable(ScaleVariable),
-            NumberStyles.Float,
-            CultureInfo.InvariantCulture,
-            out var scale
-        )
-        && double.IsFinite(scale)
-        && scale > 0
-            ? scale
-            : 1;
+    public static double Scale => TestTime.Scale;
 
     /// <summary>
     /// Runs <paramref name="row"/> for each index below <paramref name="rows"/> in order on a worker thread, failing when

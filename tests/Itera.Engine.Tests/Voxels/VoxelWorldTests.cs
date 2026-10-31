@@ -412,7 +412,7 @@ public sealed class VoxelWorldTests : IDisposable
         var world = CreateWorld(radius: 20, budgetMegabytes: 8, logger: logger);
 
         world.SetCenters(Origin);
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         while (!(world.IsMemoryFull && world.PendingColumns == 0))
         {
             Assert.True(DateTime.UtcNow < deadline, "Memory never filled.");
@@ -810,7 +810,7 @@ public sealed class VoxelWorldTests : IDisposable
         _worlds.Add(first);
         first.Initialize();
         first.StartEditWarmUp();
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         while (!first.EditWarmUpDone && DateTime.UtcNow < deadline)
         {
             Thread.Sleep(10);
@@ -885,7 +885,7 @@ public sealed class VoxelWorldTests : IDisposable
     private static void Settle(VoxelWorld world, ColumnKey resident, ColumnKey gone = default)
     {
         var checkGone = gone != default;
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         while (
             world.PendingColumns > 0
             || world.PendingFrees > 0
@@ -909,7 +909,7 @@ public sealed class VoxelWorldTests : IDisposable
     /// <summary>Updates until nothing is pending or waiting to be freed, twice in a row.</summary>
     private static void SettleAll(VoxelWorld world)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(60);
+        var deadline = TestTime.Deadline(60);
         var quiet = 0;
         while (quiet < 2)
         {
@@ -940,7 +940,7 @@ public sealed class VoxelWorldTests : IDisposable
 
     private static void UpdateUntil(VoxelWorld world, double now, Func<bool> done)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         while (!done())
         {
             if (DateTime.UtcNow > deadline)

@@ -14,7 +14,7 @@ namespace Itera.Engine.Tests.Rendering;
 /// </summary>
 public sealed class RenderThreadTests
 {
-    private static readonly TimeSpan s_timeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan s_timeout = TestTime.Limit(30);
 
     [Fact]
     public void Published_frames_are_presented_fresh_and_a_stop_presents_the_last_one_again()

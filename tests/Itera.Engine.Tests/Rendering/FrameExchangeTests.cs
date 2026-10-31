@@ -7,7 +7,7 @@ namespace Itera.Engine.Tests.Rendering;
 
 public sealed class FrameExchangeTests
 {
-    private static readonly TimeSpan s_timeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan s_timeout = TestTime.Limit(30);
 
     [Fact]
     public void No_request_means_nothing_to_take()

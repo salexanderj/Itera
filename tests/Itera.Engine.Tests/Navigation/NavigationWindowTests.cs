@@ -21,7 +21,7 @@ namespace Itera.Engine.Tests.Navigation;
 public sealed class NavigationWindowTests(ITestOutputHelper output)
 {
     private const int Floor = 200;
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan Timeout = TestTime.Limit(60);
 
     /// <summary>4 km across: 8,000 cells each way round the middle.</summary>
     private static readonly NavArea FourKilometres = new(-200_000, -200_000, 8_000);

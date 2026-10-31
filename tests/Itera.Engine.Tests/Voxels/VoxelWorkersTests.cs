@@ -135,7 +135,7 @@ public sealed class VoxelWorkersTests : IDisposable
         job.Reset(new ColumnKey(0, 0, 0), VoxelGrid.Unit, Seed, 0);
 
         workers.Enqueue(job);
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = TestTime.Deadline(10);
         while (!workers.IsFaulted && DateTime.UtcNow < deadline)
         {
             Thread.Sleep(1);
@@ -163,8 +163,8 @@ public sealed class VoxelWorkersTests : IDisposable
         var workers = new VoxelWorkers(_generator, _memory, 2);
         workers.Start();
 
-        Assert.True(workers.Stop(TimeSpan.FromSeconds(5)));
-        Assert.True(workers.Stop(TimeSpan.FromSeconds(5)));
+        Assert.True(workers.Stop(TestTime.Limit(5)));
+        Assert.True(workers.Stop(TestTime.Limit(5)));
         workers.Dispose();
     }
 

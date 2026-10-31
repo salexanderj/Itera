@@ -65,6 +65,9 @@ jobs:
 
   windows:
     name: Windows, Debug
+    env:
+      # A slower runner than Linux's: every test's wait limit is stretched (tests/Shared/TestTime.cs).
+      ITERA_TEST_TIME_SCALE: ${{ vars.CI_PLATFORM_TEST_TIME_SCALE || '4' }}
     needs: changed
     if: >-
       needs.changed.outputs.run == 'true' && (
@@ -83,6 +86,9 @@ jobs:
 
   macos:
     name: macOS, Debug
+    env:
+      # A slower runner than Linux's: every test's wait limit is stretched (tests/Shared/TestTime.cs).
+      ITERA_TEST_TIME_SCALE: ${{ vars.CI_PLATFORM_TEST_TIME_SCALE || '4' }}
     needs: changed
     if: >-
       needs.changed.outputs.run == 'true' && (

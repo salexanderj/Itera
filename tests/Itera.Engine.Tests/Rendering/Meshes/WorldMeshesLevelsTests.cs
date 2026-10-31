@@ -36,7 +36,7 @@ public sealed class WorldMeshesLevelsTests(ITestOutputHelper output) : WorldMesh
         var view = LookingDown(at, AboveSpread);
         view.SunDirection = ViewConstants.DefaultSunDirection;
         view.Switches = ViewSwitches.Shadows;
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         var frame = 0;
         do
         {
@@ -123,7 +123,7 @@ public sealed class WorldMeshesLevelsTests(ITestOutputHelper output) : WorldMesh
         (int Fine, int All) Settled(Vector3 at)
         {
             var view = LookingDown(at);
-            var deadline = DateTime.UtcNow.AddSeconds(30);
+            var deadline = TestTime.Deadline(30);
             var frame = 0;
             int slot;
             do
@@ -173,7 +173,7 @@ public sealed class WorldMeshesLevelsTests(ITestOutputHelper output) : WorldMesh
 
         Assert.True(world.TryGetStoredLayers(key, out first, out end));
         Assert.InRange(ballLayer, first, end - 1);
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         var frame = 0;
         var drawn = false;
         while (!drawn)
@@ -244,7 +244,7 @@ public sealed class WorldMeshesLevelsTests(ITestOutputHelper output) : WorldMesh
         meshes.BeginMatch(world, new VoxelModels(world), new NoVoxelTintMap());
         var view = LookingDown(at);
         view.MaxDistance = maxDistance;
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         var frame = 0;
         int slot;
         var level0 = 0;
@@ -312,7 +312,7 @@ public sealed class WorldMeshesLevelsTests(ITestOutputHelper output) : WorldMesh
         meshes.Initialize();
         meshes.BeginMatch(world, new VoxelModels(world), new NoVoxelTintMap());
         var view = LookingDown(Centre);
-        var deadline = DateTime.UtcNow.AddSeconds(60);
+        var deadline = TestTime.Deadline(60);
         var frame = 0;
         while (!meshes.HasSkyField)
         {
@@ -539,7 +539,7 @@ public sealed class WorldMeshesLevelsTests(ITestOutputHelper output) : WorldMesh
 
         void Settle(WorldMeshes meshes, FakeWorldTargets targets, Vector3 at)
         {
-            var deadline = DateTime.UtcNow.AddSeconds(60);
+            var deadline = TestTime.Deadline(60);
             do
             {
                 Assert.True(DateTime.UtcNow < deadline, "The meshes did not come up to date.");

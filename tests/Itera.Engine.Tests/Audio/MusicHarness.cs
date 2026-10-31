@@ -191,7 +191,12 @@ internal sealed class MusicHarness : IDisposable
     /// <summary>The source of the deck playing <paramref name="track"/>.</summary>
     public FakeAudioDevice.Source SourceOf(int track) => Device.Get((uint)DeckOf(track) + 1);
 
-    public void Dispose() => _decks?.Dispose();
+    /// <summary>Closes the streamer's files, as the music thread does when it ends, and the decks.</summary>
+    public void Dispose()
+    {
+        _streamer?.CloseFiles();
+        _decks?.Dispose();
+    }
 
     /// <summary>A file in memory, or else on disk. Allocates nothing but the decoder.</summary>
     private ISoundDecoder Open(string path)

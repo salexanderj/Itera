@@ -137,7 +137,7 @@ public abstract class WorldMeshesTestBase(ITestOutputHelper output) : IDisposabl
     /// <summary>Frames, with the world updated, until <paramref name="done"/> holds.</summary>
     internal void RunUntil(Func<bool> done, ModelDraw[]? draws = null, Vector3? at = null)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         while (!done())
         {
             Assert.True(DateTime.UtcNow < deadline, "The meshes did not catch up.");
@@ -149,7 +149,7 @@ public abstract class WorldMeshesTestBase(ITestOutputHelper output) : IDisposabl
 
     internal void RunUntilUpToDate(Vector3? at = null)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         do
         {
             Assert.True(DateTime.UtcNow < deadline, "The meshes did not catch up.");

@@ -334,7 +334,7 @@ public sealed partial class WorldMeshesModelsTests
         /// </summary>
         public void Settle(Vector3 at, bool shadows)
         {
-            var deadline = DateTime.UtcNow.AddSeconds(60);
+            var deadline = TestTime.Deadline(60);
             var parts = _objectModels.PartsOf(default).ToArray();
             while (!Meshes.IsUpToDate || !Meshes.StitchesSettled || !parts.All(part => _models.IsUploaded(part.Model)))
             {

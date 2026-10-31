@@ -115,7 +115,7 @@ internal static class VoxelTestHelpers
     public static List<ColumnJob> WaitForJobs(VoxelWorkers workers, int count)
     {
         var done = new List<ColumnJob>();
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         while (done.Count < count)
         {
             workers.ThrowIfFaulted();

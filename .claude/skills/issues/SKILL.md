@@ -71,4 +71,5 @@ gh workflow run nightly.yml -f macos=true                 # the nightly by hand,
   enough.
 - Fix a failed run in the next commit. A failure that cannot be fixed now gets an issue that links to the run.
 - A test that fails only in CI points at a slower machine, another platform, or state shared across tests
-  (`.claude/rules/tests.md`). A `Watchdog` limit that a slow runner breaks takes a larger `CI_TEST_TIME_SCALE`.
+  (`.claude/rules/tests.md`). A wait limit (`TestTime`) that a slow runner breaks takes a larger
+  `CI_TEST_TIME_SCALE`, or `CI_PLATFORM_TEST_TIME_SCALE` on Windows and macOS.

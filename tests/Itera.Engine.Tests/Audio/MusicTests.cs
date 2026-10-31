@@ -232,6 +232,8 @@ public sealed class MusicTests : IDisposable
         }
         finally
         {
+            // The streamer holds the file open until it is closed, and Windows deletes no open file.
+            _music.Dispose();
             Directory.Delete(folder, recursive: true);
         }
     }

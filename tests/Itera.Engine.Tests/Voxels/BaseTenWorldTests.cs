@@ -644,7 +644,7 @@ public sealed class BaseTenWorldTests
     /// <summary>Updates <paramref name="world"/> until <paramref name="done"/> holds, sleeping 1 ms between updates. Fails after 60 s.</summary>
     private static void UpdateUntil(VoxelWorld world, Func<bool> done)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(60);
+        var deadline = TestTime.Deadline(60);
         while (!done())
         {
             Assert.True(DateTime.UtcNow < deadline, "The world did not reach the state.");

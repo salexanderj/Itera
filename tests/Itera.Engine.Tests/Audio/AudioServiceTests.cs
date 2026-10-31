@@ -108,14 +108,14 @@ public sealed class AudioServiceTests
         // Sounds asked for while their recipe renders are late and dropped, and those asked for in several rounds before
         // it is ready all play once it is: so wait for every recipe, then ask once.
         var wait = Stopwatch.StartNew();
-        while (!audio.AllRendered && wait.Elapsed < TimeSpan.FromSeconds(20))
+        while (!audio.AllRendered && wait.Elapsed < TestTime.Limit(20))
         {
             audio.Publish(ListenerPose.Default, 0);
             Thread.Sleep(50);
         }
 
         audio.Play(Bar(audio));
-        while (audio.Stats.Played == 0 && wait.Elapsed < TimeSpan.FromSeconds(20))
+        while (audio.Stats.Played == 0 && wait.Elapsed < TestTime.Limit(20))
         {
             audio.Publish(ListenerPose.Default, 0);
             Thread.Sleep(50);
@@ -143,7 +143,7 @@ public sealed class AudioServiceTests
         audio.Music.Play(theme, fadeSeconds: 0);
 
         var wait = Stopwatch.StartNew();
-        while (!Heard(audio.Stats, theme) && wait.Elapsed < TimeSpan.FromSeconds(20))
+        while (!Heard(audio.Stats, theme) && wait.Elapsed < TestTime.Limit(20))
         {
             audio.Publish(ListenerPose.Default, 0);
             Thread.Sleep(20);
@@ -173,7 +173,7 @@ public sealed class AudioServiceTests
         audio.StopTimeout = TimeSpan.FromMilliseconds(50);
         audio.Initialize(device);
         audio.Start();
-        Assert.True(device.Holding.Wait(TimeSpan.FromSeconds(20)), "The audio thread never made a buffer.");
+        Assert.True(device.Holding.Wait(TestTime.Limit(20)), "The audio thread never made a buffer.");
 
         var stopped = audio.Stop();
         hold.Set();
@@ -220,7 +220,7 @@ public sealed class AudioServiceTests
         audio.Initialize(new FakeAudioDevice { FailSources = true });
         audio.Start();
         var wait = Stopwatch.StartNew();
-        while (audio.IsRunning && wait.Elapsed < TimeSpan.FromSeconds(10))
+        while (audio.IsRunning && wait.Elapsed < TestTime.Limit(10))
         {
             Thread.Sleep(5);
         }

@@ -460,7 +460,7 @@ public sealed class ObjectDamageTests : IDisposable
         var cut = VoxelEdit.Box(new VoxelCoord(110, 200, -40), new VoxelCoord(80, 20, 80), VoxelEditOperation.Clear);
 
         host.World.Apply(cut);
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = TestTime.Deadline(10);
         while (host.World.EditCount == 1)
         {
             Assert.True(DateTime.UtcNow < deadline, "No removal was logged.");
@@ -551,7 +551,7 @@ public sealed class ObjectDamageTests : IDisposable
         host.World.Apply(
             VoxelEdit.Box(new VoxelCoord(110, 100, -40), new VoxelCoord(80, 20, 80), VoxelEditOperation.Clear)
         );
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = TestTime.Deadline(10);
         while (host.World.EditCount == 1)
         {
             Assert.True(DateTime.UtcNow < deadline, "No removal was logged.");

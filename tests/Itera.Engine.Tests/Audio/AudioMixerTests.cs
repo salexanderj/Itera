@@ -466,7 +466,7 @@ public sealed class AudioMixerTests
             gate.Set();
         }
 
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = TestTime.Deadline(10);
         while (mixer.Stats.RenderedRecipes < 2)
         {
             Assert.True(DateTime.UtcNow < deadline, "the slow recipe never arrived");
@@ -475,7 +475,7 @@ public sealed class AudioMixerTests
         }
 
         mixer.Engine.Renderer.Stop();
-        Assert.True(thread.Join(TimeSpan.FromSeconds(5)));
+        Assert.True(thread.Join(TestTime.Limit(5)));
         mixer.Pump([Click(new Vector3(9, 0, 0)) with { Recipe = slow }]);
         Assert.Equal(6, mixer.Device.Playing());
     }

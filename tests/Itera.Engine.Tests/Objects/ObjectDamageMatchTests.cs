@@ -152,7 +152,7 @@ public sealed class ObjectDamageMatchTests
         match.Match.Voxels.Apply(
             VoxelEdit.Box(new VoxelCoord(-40, 150, -40), new VoxelCoord(80, 20, 80), VoxelEditOperation.Clear)
         );
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = TestTime.Deadline(10);
         while (terrain.Fallen.Made == 0)
         {
             Assert.True(DateTime.UtcNow < deadline, "Nothing fell.");

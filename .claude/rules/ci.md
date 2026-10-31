@@ -30,7 +30,8 @@ Set one with `gh variable set NAME --body VALUE`. Unset, each has the effect in 
 | `CI_LINUX_RUNNER` | The runner label of the Linux jobs | `ubuntu-latest` |
 | `CI_WINDOWS_NIGHTLY` | `false` stops the nightly Windows job | It runs |
 | `CI_MACOS_NIGHTLY` | `false` runs the macOS job only when started by hand | It runs |
-| `CI_TEST_TIME_SCALE` | `ITERA_TEST_TIME_SCALE`, which stretches the `Watchdog` limits on a slower runner | 1 |
+| `CI_TEST_TIME_SCALE` | `ITERA_TEST_TIME_SCALE` for the Linux jobs: it stretches every test's wait limit (`TestTime`) | 1 |
+| `CI_PLATFORM_TEST_TIME_SCALE` | `ITERA_TEST_TIME_SCALE` for the Windows and macOS jobs, whose runners are slower | 4 |
 | `CI_TEST_WALL_LIMIT` | The seconds the suite may take before the job fails | No limit |
 
 ### Rules

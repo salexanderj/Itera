@@ -83,16 +83,26 @@ internal sealed partial class MusicStreamer
         }
         finally
         {
-            foreach (var deck in _decks)
+            CloseFiles();
+        }
+    }
+
+    /// <summary>
+    /// Closes every deck's files, logging any that fails to close. <see cref="Run"/> does it as it ends; a caller that
+    /// pumps the streamer itself (<see cref="Pump"/>) does it when done, so no file stays open: Windows keeps an open
+    /// file from being deleted. A later round opens them again.
+    /// </summary>
+    public void CloseFiles()
+    {
+        foreach (var deck in _decks)
+        {
+            try
             {
-                try
-                {
-                    Close(deck);
-                }
-                catch (Exception exception)
-                {
-                    LogFaulted(exception);
-                }
+                Close(deck);
+            }
+            catch (Exception exception)
+            {
+                LogFaulted(exception);
             }
         }
     }

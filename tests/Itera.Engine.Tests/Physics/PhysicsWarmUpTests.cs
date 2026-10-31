@@ -14,7 +14,7 @@ namespace Itera.Engine.Tests.Physics;
 /// </summary>
 public sealed class PhysicsWarmUpTests
 {
-    private static readonly TimeSpan MostWait = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan MostWait = TestTime.Limit(60);
 
     [Fact]
     public void The_warm_up_runs_its_steps_in_a_world_of_its_own_and_marks_the_run()
@@ -62,7 +62,7 @@ public sealed class PhysicsWarmUpTests
         physics.Dispose();
 
         Assert.True(physics.WarmUpDone);
-        Assert.True(Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(2));
+        Assert.True(Stopwatch.GetElapsedTime(start) < TestTime.Limit(2));
     }
 
     private static IOptions<EngineOptions> OneThread()

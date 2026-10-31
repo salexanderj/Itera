@@ -68,7 +68,7 @@ public sealed partial class WorldMeshesModelsTests(ITestOutputHelper output) : W
             targets.Apply(meshes.Regions(slot, count));
         }
 
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         do
         {
             Assert.True(DateTime.UtcNow < deadline, "The models were not meshed.");

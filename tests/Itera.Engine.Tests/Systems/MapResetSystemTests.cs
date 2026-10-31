@@ -88,7 +88,7 @@ public sealed class MapResetSystemTests : IDisposable
         // The reset is the log's newest edit: nothing settled into the grid after it.
         Assert.Equal(_physics.Voxels.EditCount, _physics.Voxels.LastReset);
         Assert.Equal(0, _physics.Voxels.ResidentColumns);
-        var deadline = DateTime.UtcNow.AddSeconds(60);
+        var deadline = TestTime.Deadline(60);
         do
         {
             Assert.True(DateTime.UtcNow < deadline, "The world did not load again.");

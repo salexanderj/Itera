@@ -512,7 +512,7 @@ public sealed class WorldMeshesTests(ITestOutputHelper output) : WorldMeshesTest
             SunDirection = SunPath.FromAngles(270, 10),
             Switches = ViewSwitches.Shadows,
         };
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         var frame = 0;
         int slot;
         do
@@ -578,7 +578,7 @@ public sealed class WorldMeshesTests(ITestOutputHelper output) : WorldMeshesTest
         meshes.Initialize();
         meshes.BeginMatch(World, Models, new NoVoxelTintMap());
         var view = LookingDown(Centre);
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         var frame = 0;
         int slot;
         do
@@ -740,7 +740,7 @@ public sealed class WorldMeshesTests(ITestOutputHelper output) : WorldMeshesTest
             targets.Apply(meshes.Regions(slot, Frame(meshes, slot, frame / 60.0, in view)));
         }
 
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         do
         {
             Assert.True(DateTime.UtcNow < deadline, "The meshes did not come up to date with the heap full.");

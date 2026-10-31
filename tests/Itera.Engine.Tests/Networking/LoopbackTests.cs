@@ -51,7 +51,12 @@ public sealed class LoopbackTests
             NullLoggerFactory.Instance,
             disconnectTimeoutSeconds: 5
         );
-        var settings = new SessionSettings { Mode = SessionMode.Join, Address = $"127.0.0.1:{port}" };
+        var settings = new SessionSettings
+        {
+            Mode = SessionMode.Join,
+            Address = $"127.0.0.1:{port}",
+            ConnectTimeoutSeconds = TestTime.Limit(10).TotalSeconds,
+        };
         using var client = Session(settings, clientWorld, clientTransport, host.Poll);
 
         client.Initialize();
@@ -60,7 +65,7 @@ public sealed class LoopbackTests
         hostWorld.Apply(VoxelEdit.Sphere(new VoxelCoord(40, 200, 0), 20, VoxelEditOperation.Clear));
         host.AfterFixedStep();
         var deadline = Stopwatch.StartNew();
-        while (clientWorld.EditCount < 2 && deadline.Elapsed.TotalSeconds < 5)
+        while (clientWorld.EditCount < 2 && deadline.Elapsed < TestTime.Limit(5))
         {
             host.Poll();
             client.Poll();
@@ -76,7 +81,7 @@ public sealed class LoopbackTests
 
         host.Stop();
         deadline.Restart();
-        while (client.End == SessionEnd.None && deadline.Elapsed.TotalSeconds < 5)
+        while (client.End == SessionEnd.None && deadline.Elapsed < TestTime.Limit(5))
         {
             client.Poll();
             Thread.Yield();
@@ -133,7 +138,12 @@ public sealed class LoopbackTests
             NullLoggerFactory.Instance,
             disconnectTimeoutSeconds: 5
         );
-        var settings = new SessionSettings { Mode = SessionMode.Join, Address = $"127.0.0.1:{port}" };
+        var settings = new SessionSettings
+        {
+            Mode = SessionMode.Join,
+            Address = $"127.0.0.1:{port}",
+            ConnectTimeoutSeconds = TestTime.Limit(10).TotalSeconds,
+        };
         var sent = 0;
         // The game's handler of that kind: those that arrive after the download wait for the world, then reach it.
         var received = new CountingHandler();
@@ -203,7 +213,12 @@ public sealed class LoopbackTests
             NullLoggerFactory.Instance,
             disconnectTimeoutSeconds: 5
         );
-        var settings = new SessionSettings { Mode = SessionMode.Join, Address = $"localhost:{port}" };
+        var settings = new SessionSettings
+        {
+            Mode = SessionMode.Join,
+            Address = $"localhost:{port}",
+            ConnectTimeoutSeconds = TestTime.Limit(10).TotalSeconds,
+        };
         using var client = Session(settings, clientWorld, clientTransport, host.Poll);
 
         client.Initialize();
@@ -329,7 +344,7 @@ public sealed class LoopbackTests
         var hostHeard = new Heard();
         var clientHeard = new Heard();
         var deadline = Stopwatch.StartNew();
-        while (clientHeard.Connected.Count == 0 && deadline.Elapsed.TotalSeconds < 5)
+        while (clientHeard.Connected.Count == 0 && deadline.Elapsed < TestTime.Limit(5))
         {
             host.Poll(hostHeard);
             client.Poll(clientHeard);

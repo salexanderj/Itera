@@ -19,7 +19,7 @@ namespace Itera.Engine.Tests.Navigation;
 /// </summary>
 public sealed class NavigationServiceTests
 {
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan Timeout = TestTime.Limit(30);
 
     [Fact]
     public void The_grid_and_fields_are_handed_over_at_a_fixed_step()

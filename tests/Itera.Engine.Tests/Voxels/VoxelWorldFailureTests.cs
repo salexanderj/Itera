@@ -30,7 +30,7 @@ public sealed class VoxelWorldFailureTests : IDisposable
         var world = Create(generator);
         world.SetCenters([Vector3.Zero]);
 
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         InvalidOperationException? failure = null;
         while (failure is null)
         {
@@ -52,7 +52,7 @@ public sealed class VoxelWorldFailureTests : IDisposable
         Assert.Equal("a layer that fails", failure.InnerException?.Message);
         var disposing = new Thread(world.Dispose);
         disposing.Start();
-        Assert.True(disposing.Join(TimeSpan.FromSeconds(10)), "The world did not dispose after the fault.");
+        Assert.True(disposing.Join(TestTime.Limit(10)), "The world did not dispose after the fault.");
         Assert.Equal(0, world.UsedBytes);
     }
 
@@ -65,7 +65,7 @@ public sealed class VoxelWorldFailureTests : IDisposable
         world.SetCenters([Vector3.Zero]);
         try
         {
-            var deadline = DateTime.UtcNow.AddSeconds(30);
+            var deadline = TestTime.Deadline(30);
             while (Volatile.Read(ref generator.Waiting) == 0)
             {
                 Assert.True(DateTime.UtcNow < deadline, "No job reached the gate.");
@@ -93,7 +93,7 @@ public sealed class VoxelWorldFailureTests : IDisposable
         var generator = new LayeredGenerator { Noisy = true };
         var world = Create(generator, budgetMegabytes: 8, radius: 4);
         world.SetCenters([Vector3.Zero]);
-        var deadline = DateTime.UtcNow.AddSeconds(60);
+        var deadline = TestTime.Deadline(60);
         // Memory falls back as each failed job frees its layers, so the column is tried again: wait for failures only.
         while (world.FailedJobCount < 3)
         {
@@ -154,7 +154,7 @@ public sealed class VoxelWorldFailureTests : IDisposable
     /// </summary>
     private static void Settle(VoxelWorld world, bool empty = false)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(60);
+        var deadline = TestTime.Deadline(60);
         var quiet = 0;
         while (quiet < 2)
         {

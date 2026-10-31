@@ -84,7 +84,7 @@ public sealed class LooseBodySystemTests : IDisposable
 
         // The player walks away: the columns under the body unload, and the colliders freeze it.
         _physics.Voxels.SetCenters([new Vector3(40, 0, 0)]);
-        var deadline = DateTime.UtcNow.AddSeconds(60);
+        var deadline = TestTime.Deadline(60);
         do
         {
             Assert.True(DateTime.UtcNow < deadline, "The world did not load.");

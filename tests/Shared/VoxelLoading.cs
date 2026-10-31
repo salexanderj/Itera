@@ -11,7 +11,7 @@ internal static class VoxelLoading
     /// </summary>
     public static void WaitUntilLoaded(VoxelWorld world, int seconds = 60)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(seconds);
+        var deadline = TestTime.Deadline(seconds);
         world.Update(0);
         while (world.PendingColumns > 0 || world.ResidentColumns == 0)
         {

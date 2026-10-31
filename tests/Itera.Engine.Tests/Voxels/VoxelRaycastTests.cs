@@ -22,7 +22,7 @@ public sealed class VoxelRaycastTests : IDisposable
         _world = new VoxelWorld(settings, 0, new SlopeGenerator(), NullLogger<VoxelWorld>.Instance);
         _world.Initialize();
         _world.SetCenters([Vector3.Zero]);
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         while (_world.PendingColumns > 0 || _world.ResidentColumns == 0)
         {
             Assert.True(DateTime.UtcNow < deadline, "The world did not load.");

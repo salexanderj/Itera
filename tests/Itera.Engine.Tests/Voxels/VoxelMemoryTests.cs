@@ -121,7 +121,7 @@ public sealed unsafe class VoxelMemoryTests
 
         // Each reader reads its blocks once before the pool grows, so all of them read while it grows, however the
         // threads are scheduled (optimised, the growth below ended before a reader on a busy machine had started).
-        Assert.True(SpinWait.SpinUntil(EveryReaderRead, TimeSpan.FromSeconds(10)));
+        Assert.True(SpinWait.SpinUntil(EveryReaderRead, TestTime.Limit(10)));
 
         // 512-byte blocks, 2,048 a 1 MB slab: 70 slabs' worth.
         var last = 0;
@@ -133,7 +133,7 @@ public sealed unsafe class VoxelMemoryTests
         Volatile.Write(ref stop, 1);
         foreach (var thread in threads)
         {
-            Assert.True(thread.Join(TimeSpan.FromSeconds(10)));
+            Assert.True(thread.Join(TestTime.Limit(10)));
         }
 
         memory.Pointer(VoxelPool.Index8, last)[511] = 7;

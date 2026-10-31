@@ -433,7 +433,7 @@ public sealed class ScenarioTests
             )
         );
         var fallen = match.Match.Terrain!.Fallen;
-        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var deadline = TestTime.Deadline(30);
         while (fallen.Made == 0)
         {
             Assert.True(DateTime.UtcNow < deadline, "Nothing fell.");

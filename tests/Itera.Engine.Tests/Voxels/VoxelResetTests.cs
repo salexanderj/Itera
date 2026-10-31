@@ -206,7 +206,7 @@ public sealed class VoxelResetTests : IDisposable
 
     private static void Settle(VoxelWorld world)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(60);
+        var deadline = TestTime.Deadline(60);
         var quiet = 0;
         while (quiet < 2)
         {

@@ -275,7 +275,7 @@ public sealed class ControlServiceTests : IDisposable
 
             clients[0].Dispose();
             clients.RemoveAt(0);
-            var deadline = DateTime.UtcNow.AddSeconds(10);
+            var deadline = TestTime.Deadline(10);
             while (true)
             {
                 // The closed one's thread leaves the list a moment after it closes.
@@ -436,7 +436,7 @@ public sealed class ControlServiceTests : IDisposable
         Pump(service, () => service.WaitingCount > 0);
         service.Dispose();
 
-        Assert.True(Finished(wait, TimeSpan.FromSeconds(5)));
+        Assert.True(Finished(wait, TestTime.Limit(5)));
         Assert.Equal("the game is shutting down", Reply(wait).GetProperty("error").GetString());
     }
 
@@ -657,10 +657,10 @@ public sealed class ControlServiceTests : IDisposable
         int stepsPerPump = 0
     )
     {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = TestTime.Deadline(10);
         while (!done())
         {
-            Assert.True(DateTime.UtcNow < deadline, "no reply within 10 s");
+            Assert.True(DateTime.UtcNow < deadline, "no reply within its time limit");
             // As the main loop does: input first, then the console, then the control port's requests.
             _input.Update();
             _console.RunPending(new ConsoleMoment(_steps, _frames, _now, true));

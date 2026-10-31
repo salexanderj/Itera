@@ -284,7 +284,7 @@ public sealed class ShaderCompilerTests : IDisposable
 
         _compiler.StartPruning();
 
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        var deadline = TestTime.Deadline(10);
         while (File.Exists(path) && DateTime.UtcNow < deadline)
         {
             Thread.Sleep(10);
