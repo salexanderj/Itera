@@ -1453,10 +1453,8 @@ what is not:
 - Every native package ships binaries for all three platforms, including MoltenVK for macOS. But no package ships a
   Vulkan loader for macOS. GLFW for macOS looks only for `libvulkan.1.dylib`, Silk.NET.GLFW 2.23 has no binding for
   `glfwInitVulkanLoader`, and Silk.NET.MoltenVK.Native ships the driver and its ICD file but no loader. So on a Mac
-  without a system loader the window step ends the run (exit code 1).
-- The fix, to be made and checked on a Mac: load `libMoltenVK.dylib`, create `Vk` on it, and pass its
-  `vkGetInstanceProcAddr` to `glfwInitVulkanLoader` (a P/Invoke into the same `libglfw.3.dylib`) before any windowing
-  call. The other way is to ship the Khronos loader in an app bundle.
+  without a system loader the window step ends the run (exit code 1). The ways to fix it are in Itera's
+  [issue 48](https://github.com/salexanderj/Itera/issues/48).
 - On macOS the Vulkan context enables `VK_KHR_portability_enumeration` and, when the device exposes it,
   `VK_KHR_portability_subset`. The context requires Vulkan 1.3, which the bundled MoltenVK 1.4 provides. Presentation
   runs on the render thread, not the main thread. MoltenVK allows that, but it has not been run on a Mac yet.
