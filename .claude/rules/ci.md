@@ -14,7 +14,7 @@ unchanged, and sets what differs through repository variables. The `issues` skil
   format (`dotnet csharpier check .`), builds in Debug, and runs every test project. A newer push cancels a run still
   going, so a burst of pushes runs the suite once.
 - `.github/workflows/nightly.yml` runs each night that `main` changed, and by hand. It builds and tests in Release on
-  Linux, and in Debug on Windows and on macOS (`macos-latest`, an arm64 Mac).
+  Linux, and in Debug on Windows and on macOS (`macos-latest`, an arm64 Mac), each on its own schedule (below).
 - `.github/actions/prepare` installs the SDK that `global.json` pins and restores the NuGet cache. It fetches the Git
   LFS files through a cache keyed by the list of LFS objects, so a run downloads only the files the cache lacks.
   GitHub limits a month's LFS downloads.
@@ -28,8 +28,8 @@ Set one with `gh variable set NAME --body VALUE`. Unset, each has the effect in 
 | Variable | What it sets | Unset |
 | --- | --- | --- |
 | `CI_LINUX_RUNNER` | The runner label of the Linux jobs | `ubuntu-latest` |
-| `CI_WINDOWS_NIGHTLY` | `false` stops the nightly Windows job | It runs |
-| `CI_MACOS_NIGHTLY` | `false` runs the macOS job only when started by hand | It runs |
+| `CI_WINDOWS_SCHEDULE` | When the Windows job runs: `nightly`, `weekly` (Sunday's run, if `main` changed that week), or `off` (only by hand) | `nightly` |
+| `CI_MACOS_SCHEDULE` | When the macOS job runs, as for Windows | `nightly` |
 | `CI_TEST_TIME_SCALE` | `ITERA_TEST_TIME_SCALE` for the Linux jobs: it stretches every test's wait limit (`TestTime`) | 1 |
 | `CI_PLATFORM_TEST_TIME_SCALE` | `ITERA_TEST_TIME_SCALE` for the Windows and macOS jobs, whose runners are slower | 4 |
 | `CI_PLATFORM_TEST_THREADS` | The test classes each project runs at once on Windows and macOS (`--threads`) | 0, one a processor |
