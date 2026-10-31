@@ -1,0 +1,45 @@
+name: Build and test
+description: >-
+  Builds the solution, runs every test project through tools/tests/timings.py, writes its report to the run's summary,
+  and uploads the results. CI_TEST_WALL_LIMIT in the environment, when set, fails a suite that takes longer.
+inputs:
+  configuration:
+    description: Debug or Release.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Build
+      shell: bash
+      run: dotnet build -c "${{ inputs.configuration }}"
+
+    - name: Test
+      shell: bash
+      run: |
+        python=python3
+        if [ "$RUNNER_OS" = Windows ]; then python=python; fi
+        "$python" tools/tests/timings.py --out "$RUNNER_TEMP/tests" \
+          ${CI_TEST_WALL_LIMIT:+--max-wall "$CI_TEST_WALL_LIMIT"} \
+          -- -c "${{ inputs.configuration }}" | tee "$RUNNER_TEMP/tests-report.txt"
+
+    - name: Write the report to the summary
+      if: always()
+      shell: bash
+      run: |
+        if [ -f "$RUNNER_TEMP/tests-report.txt" ]; then
+          {
+            echo "### Tests: ${{ runner.os }}, ${{ inputs.configuration }}"
+            echo '```'
+            cat "$RUNNER_TEMP/tests-report.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload the results
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: tests-${{ runner.os }}-${{ inputs.configuration }}
+        path: ${{ runner.temp }}/tests
+        retention-days: 14
+        if-no-files-found: ignore

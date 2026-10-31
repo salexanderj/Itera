@@ -22,16 +22,18 @@ Itera with a pull from its remote, so:
   `Engine:Application` (`Name`, `DataFolder`) and `Engine:Window:Title`.
 
 Voxel terrain is optional: a game that registers no generator and does not call `AddIteraVoxels` plays matches without
-it. `ARCHITECTURE.md` holds the full description, the dependencies, the design decisions, and the open work. Read it
-before changing anything structural. `docs/` holds the write-ups behind decisions.
+it. `ARCHITECTURE.md` holds the full description, the dependencies, and the design decisions. Read it before changing
+anything structural. `docs/` holds the write-ups behind decisions.
 
 # How to work
 
-- Area details are in `.claude/rules/`, one file per area (listed below). Claude Code loads a rules file when a file it
-  covers is opened with the Read, Write, or Edit tool. `cat`, `grep`, `sed`, and the Grep tool do not load it. Open the
-  files you will change with the Read tool. Before you plan, discuss, or review work in an area, read its rules file.
+- Area details are in `.claude/rules/`, one file per area (listed below). Claude Code loads one when a file it covers
+  is opened with Read, Write, or Edit, not with `cat`, `grep`, `sed`, or Grep. Open the files you will change with
+  Read. Before you plan, discuss, or review work in an area, read its rules file.
 - Before you write or change a doc (this file, `GAME.md`, a rules file, a skill, `ARCHITECTURE.md`, or `docs/`), load
   the `docs` skill: it says where each fact goes, and what the documentation tests check.
+- Bugs, suggestions, and changes left for later are GitHub issues, never lists in the docs. The `issues` skill says
+  how to file, find, and close them.
 - When you add or change one of these, also do what follows. The `scaffold` skill has the steps. The checklist tests
   (`ChecklistTests`, `ShippedSettingsTests`, `SystemOrderTests`, `WorldTests`) fail when one is missed.
   - Anything the engine sends between games: raise `SessionProtocol.Version` and pin the new fingerprint in the
@@ -55,12 +57,13 @@ before changing anything structural. `docs/` holds the write-ups behind decision
     missed one).
   - A model: built by a recipe with the `models` skill, and checked by the game's `GameModelsTests`.
 - Builds, tests, and game runs:
-  - Load the `run-game` skill before you start, drive, or check the game. Check a change the cheapest way that can see
-    it. The skill holds the options, logs, console commands, and control port.
-  - `dotnet build` must end with zero warnings, and `dotnet test` runs every test project (some checks run only in
-    Debug). Debug builds are optimised but run Debug-only checks, so take timings from a Release build.
+  - Load the `run-game` skill before you start, drive, or check the game (options, logs, console, control port). Check
+    a change the cheapest way that can see it.
+  - `dotnet build` must end with zero warnings. Before a commit, run the test classes of the changed areas
+    (`dotnet test --filter`; each rules file names its classes). CI runs every test project after a push: check the
+    run, and fix a failure in the next commit (the `issues` skill). Debug builds are optimised but run Debug-only
+    checks, so take timings from a Release build.
   - Before you run or add tests, read `.claude/rules/tests.md`.
-  - `DOTNET_ENVIRONMENT=Development` shows Debug log lines on the console too.
   - `dotnet watch` builds into `bin/Debug` in place, so no other build or test run may share it.
   - Runs you start use the data folder `<DataFolder>-agent` and 1 % volume. `tools/control/game.py` and `validate.sh`
     pass both, `tools/benchmark/run.sh` with `BENCH_AGENT=1` too, and a run by hand gives both (the `run-game` skill).
@@ -68,7 +71,7 @@ before changing anything structural. `docs/` holds the write-ups behind decision
     folder they change the player's.
   - A run misbehaves: read the newest log in `~/.local/share/<DataFolder>/Logs/` first.
 - Where the details are: `docs/reference/engine-rules.md` lists the engine's rules files and what each covers
-  (generated), and `GAME.md`'s table the game's. Arch's package notes are in the `ecs` skill.
+  (generated), and `GAME.md`'s table the game's.
 
 ```bash
 dotnet run --project src/Game [-- OPTIONS]    # opens at the menu without --Engine:Session:Mode
@@ -76,7 +79,6 @@ dotnet build -c Release && src/Game/bin/Release/net10.0/Game   # voxel numbers n
 tools/control/game.py start [--release] [--window|--headless] [-- ARGS]   # a copy of the build, offscreen by default
 tools/control/game.py shots VIEW... --out DIR [--compare DIR]   # screenshots of views, compared with a set
 tools/control/game.py run "balls 8; pos"   # console commands in the running game (-s: as a script)
-DOTNET_WATCH_SUPPRESS_EMOJIS=1 dotnet watch --non-interactive --project src/Game run -- --Engine:Control:Enabled=true
 BENCH_AGENT=1 tools/benchmark/run.sh LABEL --offscreen [ARGS]   # GPU benchmark (ask the user first)
 ITERA_WRITE_REFERENCE=1 dotnet test --filter ReferenceTests   # write docs/reference/ again
 python3 tools/tests/timings.py   # dotnet test, then its slowest classes and tests

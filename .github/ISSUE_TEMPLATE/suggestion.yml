@@ -1,0 +1,27 @@
+name: Suggestion
+description: An idea, or a change to how something works.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Search the open issues first, and add to one that matches. One idea to an issue.
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What should change, or what should be added.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What it would make better, and for whom.
+
+  - type: textarea
+    id: more
+    attributes:
+      label: More
+      description: Pictures, examples, or links.

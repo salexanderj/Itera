@@ -118,6 +118,12 @@ Under `dotnet watch` (Debug), a changed method body or a new method applies to t
 from the method's next call. Constructors and static initialisers do not run again, and an edit watch cannot apply
 restarts the game. Watch builds into `bin/Debug` in place, so no other build or test run may share it.
 
+```bash
+DOTNET_WATCH_SUPPRESS_EMOJIS=1 dotnet watch --non-interactive --project src/Game run -- --Engine:Control:Enabled=true
+```
+
+`DOTNET_ENVIRONMENT=Development` shows Debug log lines on the console too.
+
 ## The console
 
 The console (`DevConsole`, `ConsoleLayer`) opens and closes with the backquote key; Escape also closes it. While it is

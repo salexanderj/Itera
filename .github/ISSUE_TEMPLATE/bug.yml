@@ -1,0 +1,61 @@
+name: Bug
+description: Something does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Search the open issues first, and add to one that matches. One bug to an issue.
+
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What you saw, and when. Name the place, the wave, or what you were doing.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen
+      description: Numbered steps, and how often it happens (every time, sometimes, or once).
+      placeholder: |
+        1. Host a match.
+        2. ...
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where you played
+      description: The host runs the match, so some bugs show only in a joined game.
+      options:
+        - Alone
+        - Hosting
+        - Joined another player's game
+        - Not in a match (a menu or loading)
+
+  - type: input
+    id: build
+    attributes:
+      label: Build
+      description: The first line of the run's log names it, with its version, configuration, and commit.
+
+  - type: input
+    id: computer
+    attributes:
+      label: Computer
+      description: The operating system and the graphics card.
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >-
+        Drag the run's log file here. Each run writes one log to the Logs folder in the game's data folder:
+        %LOCALAPPDATA%\<data folder> on Windows, ~/.local/share/<data folder> on Linux. A log names the computer and
+        its folders, so check it before you attach it to an issue anyone can read.

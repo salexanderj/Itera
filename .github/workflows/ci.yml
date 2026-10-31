@@ -1,0 +1,44 @@
+name: CI
+
+# Every push to main, every pull request, and by hand: the format check, a Debug build (warnings are errors), and the
+# whole suite, with the Debug-only checks, on Linux. .claude/rules/ci.md describes the workflows and their variables.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push cancels a run still going, so a burst of pushes runs the suite once, on the newest commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  PYTHONUTF8: 1
+  ITERA_TEST_TIME_SCALE: ${{ vars.CI_TEST_TIME_SCALE }}
+  CI_TEST_WALL_LIMIT: ${{ vars.CI_TEST_WALL_LIMIT }}
+
+jobs:
+  linux:
+    name: Linux, Debug
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/prepare
+
+      - name: Restore the tools
+        run: dotnet tool restore
+
+      - name: Check the format
+        run: dotnet csharpier check .
+
+      - uses: ./.github/actions/test
+        with:
+          configuration: Debug

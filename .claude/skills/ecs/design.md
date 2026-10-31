@@ -146,7 +146,7 @@ entity is destroyed.
 ## Mods
 
 - Mods reference only `Itera.Modding`, so they cannot use Arch types. Do not expose Arch types
-  through `Itera.Modding`; a narrower mod API is open work (ARCHITECTURE.md section 9).
+  through `Itera.Modding`; a narrower mod API is open work (an Itera issue).
 - Component types defined in a mod assembly stay in Arch's static registry and keep the mod loaded
   after unload (ARCHITECTURE.md section 6).
 

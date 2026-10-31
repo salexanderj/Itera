@@ -1244,8 +1244,9 @@ The rules are in `.claude/rules/ui.md`, with input and the console in `ui-input.
   fragment shader (`ui.frag`) reads the pixel at `gl_FragCoord`, so no layout change or sampler is needed. The main
   thread writes the changed bands into the slot's region of an upload buffer of its own, and the render thread copies
   them, a region each in one copy, before the draw. Skia premultiplied in sRGB, so the shader divides by alpha, turns the colour linear, and
-  multiplies again before the premultiplied blend into the sRGB image. A screen larger than the device's largest
-  storage buffer gets no UI and a Warning.
+  multiplies again before the premultiplied blend into the sRGB image. The blend is in linear light, so see-through UI
+  shows more of the world than its colours say; it is left as it is. A screen larger than the device's largest storage
+  buffer gets no UI and a Warning.
 - **One sizing rule** sizes the UI: a unit is a pixel of a 1080-pixel-high screen, scaled with the screen's height and
   the player's UI scale. So the menu, the console, the stats line, and the loading list keep their share of the screen
   at every size. The font is JetBrains Mono Regular (SIL Open Font License 1.1, its licence beside it in
@@ -1432,61 +1433,9 @@ be read is logged at Error and plays nothing.
 
 ## 9. Open work
 
-Engine work that is known and not done. Each item lists what is not built.
-
-- **The mesh path.** Moving colliders (doors, platforms) for the mover, hands and feet placed on walls (IK on mesh
-  rigs), walking on walls and ceilings, loading models during play, MikkTSpace tangents, clips from other files by
-  joint name, a bridge from a mesh rig to `Skeleton` for foot IK and aim, `KHR_texture_transform`, morph targets, and
-  GPU culling.
-- **Rendering a game can extend.** Image views with shadows and particles, split screen, HDR rendering,
-  order-independent transparency, transparent voxel materials, a physically based sky, spot lights, and shadowed point
-  lights (each with the choices offered in `docs/rendering-extension.md`). A low sun's shadow maps cost more than a high
-  sun's (the figures are in `docs/records/architecture-directions.md`).
-- **The UI toolkit** (`docs/ui-toolkit.md`). Gamepads (the research is in that file), IME composition (GLFW 3.4 has
-  none), nine-slice images, a safe-area margin, rich text, right-to-left text, and drawing again only the elements that
-  changed. The UI pass blends in linear light, so see-through UI shows more of the world than its colours say (left as
-  it is).
-- **Sound files and music** (`docs/sound-files.md`). EFX filters and reverb, Doppler, playlists, a track's own volume,
-  ducking, sounds from files past 120 s that are not music, more than two channels, and Opus, FLAC, or MP3.
-- **Physics a game sets** (`docs/physics-materials-and-groups.md`). Materials per mesh triangle and per lifted piece, a
-  mover filtered by layer, impacts while a pair touches, mesh and swept triggers, rays by layer, gravity on the wire,
-  and down other than -Y for characters.
-- **Large maps.** Separate physics simulations for far peers, a tint map that moves with the view, atmospheres by
-  region, and navigation windows per group of players, for a game that needs them.
-- **What replication does not do yet** (`docs/replication.md`). Loose bodies as replicated kinds (a client moving its
-  copy of each to the host's poses), a group far from every player sent as one record, and edits stamped with the
-  host's tick.
-- **An exact method for the joins between levels of detail**, closing the holes of a voxel or two where the levels
-  disagree on which cells the surface crosses.
-- **Voxel objects finer than the terrain.** Lifts that take objects' voxels into the piece, a support check when the
-  ground is dug from under an object, felled parts that stay, objects that move, kinds read from files, far forests
-  past a kind's highest copied level, and a hand-over level per kind. Performance to win back: the world pass looking
-  down over a forest from a height is over its 4 ms budget. GPU culling of the models, fewer far copies' triangles, or
-  a shorter hand-over fade would each help.
-- **Underground play**: lighting without the sky, connectivity or occlusion culling for caves, layered navigation, and
-  the levels chosen by three-dimensional distance. The sky field's rebuild after edits could be local with summaries
-  kept with the columns.
-- **Low-end hardware.** The Graphics quality presets (`GraphicsPreset`) set anti-aliasing, shadows on or off, object
-  detail, and effects detail. A preset for weak GPUs (one cheap shadow cascade, coarser world meshes) was measured on an
-  integrated GPU and not built. Shadow and material quality rows for the Graphics tab wait for it.
-- **Mod API hardening.** A stable, versioned service surface for mods instead of the raw service provider, dependency
-  ordering between mods, and a mod project template.
-- **Continuous integration** that builds and tests on Linux, Windows, and macOS.
-- **Edit log**: snapshots of edited chunks, so old edits and put-back pieces leave memory.
-- **Particles**: trails as ribbons, soft particles (fading where a sprite meets a surface), sprites at half resolution
-  for heavy smoke, and blood-style decals. The cubes draw after the world's resolve with one sample a pixel, so small
-  casings and grit have hard edges; drawing them with the world's samples needs a second rendering and resolve, or a
-  frame's lag.
-- **Grass**: candidates kept per block between frames, so a frame only thins and culls them. A rendering audit put it
-  at about 0.1 ms of the place pass's 0.15 ms at a valley's start; edits, new meshes, origin moves, and level changes
-  would each have to clear a block's.
-- **Sound**: filters by distance and occlusion (OpenAL's EFX), reverb by place, Doppler, and voices.
-- **Skia's Vulkan backend** for the UI, and dirty rectangles narrower than whole rows.
-- **Steam on macOS arm64** (the package has no osx-arm64 build of the managed wrapper) and the two-account join test.
-- **A Debug run's validation with Steam signed in.** It logs one best-practices warning at the start: a 256-byte image
-  bound to memory of its own (`vkBindImageMemory`). The image is the Steam overlay layer's, made before the engine makes
-  any: the engine's images go through its allocator, and a run with Steam off logs none. Not built: keeping that one
-  message out of a game's log.
+Engine work that is known and not done is in Itera's [GitHub issues](https://github.com/salexanderj/Itera/issues).
+Features not built carry the label `enhancement`, and bugs the label `bug`. The `issues` skill says how to file, find,
+and close them.
 
 ## 10. Platform support
 

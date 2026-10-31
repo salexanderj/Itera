@@ -8,6 +8,9 @@ count, and when each started and ended in the run), and the slowest tests.
     python3 tools/tests/timings.py                      # dotnet test --no-build, then the report
     python3 tools/tests/timings.py --build -- -c Release   # builds first; arguments after -- go to dotnet test
     python3 tools/tests/timings.py --read DIR           # the report of an earlier run's .trx files
+    python3 tools/tests/timings.py --max-wall 600       # fails when the run takes longer than 600 s (CI)
+
+After the report it prints each failed test's message and the top of its stack trace.
 """
 
 import argparse
@@ -51,9 +54,33 @@ def read_results(folder):
                     moment(result.get("startTime")),
                     moment(result.get("endTime")),
                     result.get("outcome"),
+                    error(result),
                 )
             )
     return rows
+
+
+def error(result):
+    """A failed result's message and the first lines of its stack trace, or None."""
+    info = result.find("t:Output/t:ErrorInfo", NAMESPACE)
+    if info is None:
+        return None
+    message = (info.findtext("t:Message", "", NAMESPACE) or "").strip()
+    stack = (info.findtext("t:StackTrace", "", NAMESPACE) or "").strip().splitlines()[:STACK_LINES]
+    return "\n".join([message, *stack])
+
+
+STACK_LINES = 8
+
+
+def failures(rows):
+    failed = [row for row in rows if row[5] == "Failed"]
+    if not failed:
+        return
+    print(f"\nFailed tests ({len(failed)})")
+    for name, test, _, _, _, _, text in sorted(failed, key=lambda row: row[1]):
+        print(f"\n--- {test}")
+        print(text or "(no message)")
 
 
 def report(rows, top, wall):
@@ -67,7 +94,7 @@ def report(rows, top, wall):
     print(f"; {wall:.0f} s wall" if wall else f"; {(end - start).total_seconds():.0f} s from first to last")
 
     by_class = collections.defaultdict(lambda: [0.0, 0, None, None])
-    for name, _, duration, began, ended, _ in rows:
+    for name, _, duration, began, ended, *_ in rows:
         entry = by_class[name]
         entry[0] += duration
         entry[1] += 1
@@ -92,11 +119,14 @@ def main():
     parser.add_argument("--out", metavar="DIR", help="where the run's .trx files go (default: a new temporary folder)")
     parser.add_argument("--build", action="store_true", help="build first (default: dotnet test --no-build)")
     parser.add_argument("--top", type=int, default=25, help="classes and tests to list (default 25)")
+    parser.add_argument("--max-wall", type=float, metavar="SECONDS", help="fail when the run takes longer than this")
     parser.add_argument("test_args", nargs="*", help="after --: arguments for dotnet test (a project, a --filter, -c)")
     arguments = parser.parse_args()
 
     if arguments.read:
-        report(read_results(arguments.read), arguments.top, None)
+        rows = read_results(arguments.read)
+        report(rows, arguments.top, None)
+        failures(rows)
         return 0
 
     folder = arguments.out or tempfile.mkdtemp(prefix="test-timings-")
@@ -111,18 +141,26 @@ def main():
     with open(log, "w", encoding="utf-8") as output:
         code = subprocess.call(command, stdout=output, stderr=subprocess.STDOUT)
     wall = time.monotonic() - began
-    with open(log, encoding="utf-8") as output:
-        for line in output:
-            if "Passed!" in line or "Failed!" in line or "[FAIL]" in line:
-                print(line.rstrip())
+    with open(log, encoding="utf-8", errors="replace") as output:
+        lines = output.readlines()
+    for line in lines:
+        if "Passed!" in line or "Failed!" in line or "[FAIL]" in line:
+            print(line.rstrip())
     print(f"Results and log: {folder}\n")
     rows = read_results(folder)
     if not rows:
-        with open(log, encoding="utf-8") as output:
-            print("".join(output.readlines()[-10:]))
+        print("".join(lines[-10:]))
         print("No results. On an 'Internal CLR error', run `dotnet build-server shutdown` and run again.")
         return code or 1
     report(rows, arguments.top, wall)
+    failures(rows)
+    if code != 0 and not any(row[5] == "Failed" for row in rows):
+        # No test failed, so the test host ended early or a project did not run: the log's end says why.
+        print("\ndotnet test failed with no failed test. The end of its log:")
+        print("".join(lines[-30:]))
+    if arguments.max_wall and wall > arguments.max_wall:
+        print(f"\nThe run took {wall:.0f} s, over the limit of {arguments.max_wall:.0f} s.")
+        return code or 1
     return code
 
 

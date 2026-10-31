@@ -1,0 +1,45 @@
+name: Prepare
+description: >-
+  Installs the .NET SDK that global.json pins, restores the NuGet packages from the cache, and fetches the Git LFS
+  files. A run downloads only the LFS files the cache lacks, since GitHub limits LFS downloads each month.
+runs:
+  using: composite
+  steps:
+    - name: Install the .NET SDK
+      uses: actions/setup-dotnet@v6
+      with:
+        global-json-file: global.json
+
+    - name: Restore the NuGet cache
+      uses: actions/cache@v6
+      with:
+        path: ~/.nuget/packages
+        key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj', 'dotnet-tools.json') }}
+        restore-keys: nuget-${{ runner.os }}-
+
+    # The checkout leaves LFS files as pointers. The cache's key is the list of the objects the commit needs.
+    - name: List the Git LFS objects
+      id: lfs
+      shell: bash
+      run: |
+        list="$RUNNER_TEMP/lfs-objects"
+        git lfs ls-files --long | cut -d ' ' -f 1 | sort > "$list"
+        echo "count=$(wc -l < "$list" | tr -d ' ')" >> "$GITHUB_OUTPUT"
+        echo "hash=$(git hash-object "$list")" >> "$GITHUB_OUTPUT"
+
+    - name: Restore the Git LFS cache
+      if: steps.lfs.outputs.count != '0'
+      uses: actions/cache@v6
+      with:
+        path: .git/lfs/objects
+        key: lfs-${{ steps.lfs.outputs.hash }}
+        restore-keys: lfs-
+
+    # Prune drops the objects this commit no longer needs, so the saved cache does not grow with every model change.
+    - name: Fetch the Git LFS files
+      if: steps.lfs.outputs.count != '0'
+      shell: bash
+      run: |
+        git lfs pull
+        git lfs prune
+        du -sh .git/lfs/objects

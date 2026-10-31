@@ -6,6 +6,7 @@ Every rules file of the framework (`.claude/rules/`), what it covers, and the pa
 | --- | --- | --- |
 | `.claude/rules/animation.md` | Poses, clips, and foot IK | `src/Itera.Engine/Animation/**`, `src/Itera.Engine/Maths/**`, `tests/Itera.Engine.Tests/Animation/**`, `tests/Itera.Engine.Tests/Maths/**` |
 | `.claude/rules/audio.md` | Sound | `src/Itera.Engine/Audio/**`, `tests/Itera.Engine.Tests/Audio/**` |
+| `.claude/rules/ci.md` | CI | `.github/**` |
 | `.claude/rules/engine.md` | The engine | `src/Itera.Engine/*.cs`, `src/Itera.Engine/{Ecs,Time,Diagnostics,Modding,Control}/**`, `src/Itera.Engine/Matches/{HeadlessMatch,IRunStartup,MatchContext,MatchControl,MatchControlStates,MatchFlow,MatchIdentity,MatchServices,MatchStart,OriginShifts}.cs`, `tests/Itera.Engine.Tests/*.cs`, `tests/Itera.Engine.Tests/{Ecs,Time,Diagnostics,Modding,Control,Configuration}/**`, `tests/Itera.Engine.Tests/Matches/{EngineComposition,CompositionTests,MatchFlowTests,MatchLifetimeTests,HeadlessMatchTests,OriginShiftsTests}.cs` |
 | `.claude/rules/mesh-assets.md` | Mesh assets: models from glTF files | `src/Itera.Engine/Assets/**`, `src/Itera.Engine/Maths/Octahedral.cs`, `src/Itera.Engine/Rendering/GpuData/MeshAssetVertex.cs`, `tests/Itera.Engine.Tests/Assets/**`, `tests/Itera.Engine.Tests/Maths/OctahedralTests.cs` |
 | `.claude/rules/models.md` | The model tools: recipes, the checker, and the stage | `tools/models/**`, `tools/ModelCheck/**`, `tools/ModelView/**`, `tests/Itera.ModelView.Tests/**`, `src/Game/ModelRecipes/**` |

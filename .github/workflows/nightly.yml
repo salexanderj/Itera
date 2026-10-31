@@ -1,0 +1,100 @@
+name: Nightly
+
+# Each night that main changed, and by hand: the whole suite in Release on Linux, and in Debug on Windows and macOS.
+# .claude/rules/ci.md describes the workflows and their variables.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      windows:
+        description: Run the Windows job
+        type: boolean
+        default: true
+      macos:
+        description: Run the macOS job (paid by the minute in a private repository)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  PYTHONUTF8: 1
+  ITERA_TEST_TIME_SCALE: ${{ vars.CI_TEST_TIME_SCALE }}
+
+jobs:
+  # A scheduled run goes on only when main's newest commit is from the last 26 hours. Scheduled runs can start late,
+  # so the window is longer than a day: a commit may be tested on two nights, and none is missed.
+  changed:
+    name: Changed since the last night
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.age.outputs.run }}
+    steps:
+      - id: age
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != schedule ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          committed=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq .commit.committer.date)
+          age=$(( $(date +%s) - $(date -d "$committed" +%s) ))
+          echo "The newest commit is $(( age / 3600 )) hours old."
+          if [ "$age" -lt $(( 26 * 3600 )) ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; fi
+
+  release:
+    name: Linux, Release
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/prepare
+
+      - uses: ./.github/actions/test
+        with:
+          configuration: Release
+
+  windows:
+    name: Windows, Debug
+    needs: changed
+    if: >-
+      needs.changed.outputs.run == 'true' && (
+        (github.event_name == 'workflow_dispatch' && inputs.windows) ||
+        (github.event_name == 'schedule' && vars.CI_WINDOWS_NIGHTLY != 'false'))
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/prepare
+
+      - uses: ./.github/actions/test
+        with:
+          configuration: Debug
+
+  macos:
+    name: macOS, Debug
+    needs: changed
+    if: >-
+      needs.changed.outputs.run == 'true' && (
+        (github.event_name == 'workflow_dispatch' && inputs.macos) ||
+        (github.event_name == 'schedule' && vars.CI_MACOS_NIGHTLY != 'false'))
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/prepare
+
+      - uses: ./.github/actions/test
+        with:
+          configuration: Debug
