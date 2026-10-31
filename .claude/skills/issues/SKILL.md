@@ -1,6 +1,6 @@
 ---
 name: issues
-description: How the repository tracks bugs, suggestions, and changes in GitHub issues, and how to read its CI runs. Use before filing, searching, updating, or closing an issue; when work turns up a bug or a change to leave for later; before a commit message that fixes an issue; and after a push, to check its CI run.
+description: How the repository tracks bugs, suggestions, and changes in GitHub issues, their sub-issues, and a game's GitHub Project, and how to read its CI runs. Use before filing, searching, updating, or closing an issue; when work turns up a bug or a change to leave for later; before a commit message that fixes an issue; and after a push, to check its CI run.
 ---
 
 # Issues and CI runs
@@ -19,7 +19,9 @@ work. CI (`.claude/rules/ci.md`) runs the whole suite after each push.
 
 - Search open and closed issues first: `gh issue list --state all --search "WORDS"`. When one matches, add a comment
   to it instead of filing again.
-- One bug or one change to an issue. A tracking issue lists related ones as a task list (`- [ ] OWNER/REPO#N TITLE`).
+- One bug or one change to an issue. A checklist in its body lists the parts of that one change.
+- Related issues go under a tracking issue as its sub-issues, from either repository: `gh issue create --parent N`,
+  or `gh issue edit N -R OWNER/REPO --parent PARENT_URL`. The parent shows how many have closed.
 
 ## Filing
 
@@ -37,7 +39,8 @@ gh label list    # the labels there are
 - A change's or suggestion's body: what to change, why, where in the code, and what shows it is done.
 - Write it in the plain style of `CLAUDE.md`. Say what was checked and what is only suspected.
 - Labels: one kind (`bug`, `enhancement`, `documentation`, `tests`, `tools`). Add `severity: high` for a likely bug in
-  normal play, a crash, or a broken rule, and a `stage:` label when the work belongs to a time.
+  normal play, a crash, or a broken rule.
+- When the game's `GAME.md` names a GitHub Project, file the issue into it (`--project "NAME"`; "Projects" below).
 - Write `@name` only for a real login you mean to notify.
 - The forms in `.github/ISSUE_TEMPLATE/` are for people on the web. People's reports come in through them.
 
@@ -53,7 +56,24 @@ gh label list    # the labels there are
   the game's own issue 12, and close it. A game's own commit may write `Fixes #12`.
 - Work done over several commits: close it by hand, naming them: `gh issue close N --comment "Fixed in COMMITS."`.
 - Not to be done: `gh issue close N --reason "not planned" --comment "WHY"`.
-- Tick the issue's box in its tracking issue (`gh issue edit N --body-file BODY.md`).
+- A closed sub-issue counts in its parent's progress by itself. Close a tracking issue when its last sub-issue closes.
+
+## Projects
+
+A game may keep a GitHub Project that holds its open issues and the engine's, with fields of its own, such as the
+milestone an issue is planned for. Its `GAME.md` names the project and its fields. `gh` needs the `project` scope for
+it: the user runs `gh auth refresh -h github.com -s project` in a terminal.
+
+```bash
+gh issue edit N -R OWNER/REPO --add-project "NAME"                     # adds an issue filed without --project
+gh project item-list NUMBER --owner OWNER --limit 500 --format json    # the items, each with its fields' values
+gh project field-list NUMBER --owner OWNER --format json               # the fields' ids and their options' ids
+gh project view NUMBER --owner OWNER --format json --jq .id            # the project's id
+gh project item-edit --id ITEM --project-id PROJECT --field-id FIELD --single-select-option-id OPTION
+```
+
+- `item-list` gives each item's id (`ITEM`). `item-edit` sets one field of one item.
+- Issues filed on the web or by another tool may be missing from the project. Add them when you find them.
 
 ## CI runs
 

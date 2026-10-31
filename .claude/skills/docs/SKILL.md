@@ -28,6 +28,7 @@ beside it.
 | When and why something was decided | One line in the game's decision log | Searched |
 | What was built, changed, and measured | The game's milestone record, and the commit message | Searched |
 | A bug, suggestion, or change not done yet | A GitHub issue in the repository it belongs to (the `issues` skill) | Searched |
+| How far a milestone or a list of work has come, and when work is planned | A tracking issue's sub-issues, and the game's GitHub Project if its `GAME.md` names one | Searched |
 
 The records (the decision log, the milestone records, and the write-ups in `docs/`) are written once and only added to.
 No session loads them whole.
