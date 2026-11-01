@@ -24,6 +24,10 @@ engine system follows are in `systems.md`. Test classes: `MeshDrawSystemTests` a
   shaper makes no structural change and no allocation, and is told why it poses (`MeshPosePurpose`: `Drawing`, or
   `HitShapes` where a game poses a body for its hit shapes). What a game keeps of its own recent frames is for drawing
   alone, so a body is never hit where it is not drawn.
+- A game's system that poses its bodies on the step's workers (`StepWorkers`) gives each worker a copy of the shaper
+  (`IMeshPoseShaper.ForWorker`, null by default). A copy is made on the main thread, and on its thread writes only its
+  own fields and the spans it is given. Its poses are the shaper's, bit for bit. `MeshPoses.Sample` and the rig's tools
+  write only the caller's spans.
 - An entity with a `SmoothedPose` has its changes smoothed as it is drawn, after the shaping (`PoseSmoothing`). A change
   is each `FadeTo`, each `SetBlend` of another clip, and each `MeshAnimator.MarkChange` of a game. The smoothing is for
   drawing only.

@@ -12,7 +12,8 @@ namespace Itera.Engine.Systems;
 /// playing its own clip, <see cref="Rig.Turn"/> for a spine bent to an aim, <see cref="Rig.ReachTwoBone"/> for a hand on a
 /// rifle), reading the entity's own components. The same code serves a host posing a body to judge a hit
 /// (<see cref="MeshPoses"/>), told so by its <see cref="MeshPosePurpose"/>. A scoped service the game registers; called
-/// inside the draw system's query, so it makes no structural change, and it allocates nothing.
+/// inside the draw system's query, so it makes no structural change, and it allocates nothing. Main thread, or a worker's
+/// copy on its thread (<see cref="ForWorker"/>).
 /// </summary>
 public interface IMeshPoseShaper
 {
@@ -38,6 +39,15 @@ public interface IMeshPoseShaper
     /// where it died).
     /// </summary>
     bool KeepsNearClips(World world, Entity entity) => false;
+
+    /// <summary>
+    /// A copy of this shaper for one of the step's worker threads (<c>StepWorkers</c>), which shapes poses there at the
+    /// same time as other copies, for a game's system that poses its bodies on them: null (the default) keeps the
+    /// shaping on the main thread. A copy reads the entity's components and the services it was made with, writes only
+    /// the spans it is given and its own fields, and writes nothing it shares with another copy or the shaper. Its poses
+    /// are the shaper's, bit for bit, whatever it shaped before. Made on the main thread, once for each worker.
+    /// </summary>
+    IMeshPoseShaper? ForWorker() => null;
 }
 
 /// <summary>Why a pose is shaped (<see cref="IMeshPoseShaper"/>): to be drawn, or for the hit shapes a game records of it.</summary>
