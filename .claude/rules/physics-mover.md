@@ -1,7 +1,7 @@
 ---
 paths:
   - "src/Itera.Engine/Physics/{VoxelCharacterMover,FineGround,MeshColumns,MovementProbes}.cs"
-  - "tests/Itera.Engine.Tests/Physics/{CoarseCeilingMoverTests,CoarseVoxelTests,DensityMoverTests,FarFromTheMiddleTests,FineGroundTests,FineMoverTests,GroundMaterialTests,MapEdgeMoverTests,MeshColumnsTests,MeshMoverTests,MixedGroundMoverTests,MovementProbesTests,MoverWithBodiesTests,VoxelCharacterMoverShapeTests,VoxelCharacterMoverTests,WideBodyMoverTests}.cs"
+  - "tests/Itera.Engine.Tests/Physics/{CoarseCeilingMoverTests,CoarseVoxelTests,DensityMoverTests,FarFromTheMiddleTests,FineGroundTests,FineMoverTests,GroundMaterialTests,MapEdgeMoverTests,MeshColumnsTests,MeshMoverTests,MixedGroundMoverTests,MovementProbesTests,MoverRestTests,MoverWithBodiesTests,VoxelCharacterMoverShapeTests,VoxelCharacterMoverTests,WideBodyMoverTests}.cs"
 ---
 
 ## The character mover
@@ -95,13 +95,20 @@ A grounded move reports what the body stands on in `CharacterMoveResult.GroundMa
 in every column they reach (`VoxelWorld.AppliedEditCount`), the newest reset, the mesh colliders' version, and the voxel
 objects' version and damage. `StandsUnchanged` says whether the same move would answer the same now. It is false when:
 
-- the columns round the feet are not resident;
-- the reset, the colliders, the objects, or their damage changed;
-- an edit logged since reaches round the body (any edit of the objects counts, wherever it is). One still waiting in
-  some column (`VoxelWorld.ApplyPendingEdits`) is read again at each ask until it applies;
+- the columns round the feet are not resident, or the objects' areas there are not filled;
+- a reset came;
+- a change since reaches round the body: an edit logged, a collider added or removed (`MeshColliders.ChangesMeet`), or
+  a change the objects' damage names (`ObjectDamage.ChangesMeet`). An edit still waiting in some column
+  (`VoxelWorld.ApplyPendingEdits`) is read again at each ask until it applies;
+- more colliders or damage changed than their rings keep;
 - a loose body or solid model reaches round it.
 
-When true, it advances the stamp, so the next ask reads only later edits. `PlayerMovementSystem` uses it to skip the
+Round the body means within its radius and a margin across, its step under it, and its height over it, with two of the
+world's voxels more each way. An edit of the objects counts only through the damage's change. An area of objects
+filled or dropped elsewhere changes nothing: a filled area holds what the log gives it. A mover whose `ObjectColumns`
+has no damage takes any change of the objects, wherever it is.
+
+When true, it advances the stamp, so the next ask reads only later changes. `PlayerMovementSystem` uses it to skip the
 move of a character at rest (`.claude/rules/systems.md`).
 
 ### Building blocks for movement modes

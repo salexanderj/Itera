@@ -160,6 +160,30 @@ public sealed partial class ObjectDamage : IObjectEdits, IObjectWorldListener, I
     }
 
     /// <summary>
+    /// True when a change after <paramref name="after"/> reaches the columns from (<paramref name="minX"/>,
+    /// <paramref name="minZ"/>) to (<paramref name="maxX"/>, <paramref name="maxZ"/>) (absolute centimetres, both
+    /// included), or when such changes are no longer all kept (<see cref="KeptChanges"/>). Allocates nothing.
+    /// </summary>
+    internal bool ChangesMeet(long after, long minX, long maxX, long minZ, long maxZ)
+    {
+        if (after > Version || Version - after > KeptChanges)
+        {
+            return true;
+        }
+
+        for (var version = after; version < Version; version++)
+        {
+            ref readonly var change = ref _changes[version % KeptChanges];
+            if (change.MinX <= maxX && change.MaxX >= minX && change.MinZ <= maxZ && change.MaxZ >= minZ)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// The models of the object's parts to draw, each with its box's corner from the anchor: its damaged parts' own once
     /// on the GPU, its kind's for the others (and until then).
     /// </summary>

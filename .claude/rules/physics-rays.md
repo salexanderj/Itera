@@ -1,7 +1,7 @@
 ---
 paths:
   - "src/Itera.Engine/Physics/{MeshColliders,CollisionSources,SurfaceHit,HitHistory,HitShapes}.cs"
-  - "tests/Itera.Engine.Tests/Physics/{CollisionSourcesTests,HitHistoryTests,MeshCollidersTests,TestTriangles}.cs"
+  - "tests/Itera.Engine.Tests/Physics/{CollisionSourcesTests,HitHistoryGridTests,HitHistoryTests,MeshCollidersTests,TestTriangles}.cs"
 ---
 
 ## Mesh colliders, the shared ray, and the hit history
@@ -26,6 +26,9 @@ Each collider keeps:
 - For rays, each bucket's triangles grouped by collider, each group with its bounds. A ray tests a group's triangles
   only when it meets the bounds before its nearest hit so far, so a tall stack of colliders in one bucket stays cheap.
   The character mover's box query (`Triangles`) reads the buckets' plain lists.
+- A box round its triangles in absolute centimetres. Each add and remove raises `MeshColliders.Version` and keeps the
+  collider's box in a ring of `MeshColliders.KeptChanges`. `ChangesMeet` says whether a change after a version may reach
+  a box. Past the ring, every box counts as changed.
 - A Bepu `Mesh` static posed at its anchor's local place, of its settings' physics material. Its triangles are wound
   clockwise seen from the front as Bepu asks, while glTF's are counter-clockwise. The static is one-sided in Bepu and
   at `BodyKinds.AnyLevel`, so every loose body touches it whatever its voxel level (`SetGameStatic`; `ClearStatic` on
@@ -83,6 +86,15 @@ against a capsule, is public for a game's own shapes.
   recording is met only at ticks it was there. `Forget` drops one.
 - Storage is made at an entity's first record and reused after `Forget`. Recording a known entity, asking, and forgetting
   allocate nothing.
+- A grid of `HitHistory.CellMetres` cells over absolute x and z holds each entity in the cells its kept steps' bounding
+  spheres reach. An entity reaching more than three cells along x or z is among the wide ones instead. Cells that hold
+  more than the steps only add candidates, so `Record` works an entity's cells out again only when a step leaves them,
+  and every eighth step.
+- A ray tests the wide entities, then those in the cells within its sphere's radius of its way, column by column along
+  it. It stops at a column that starts past its nearest hit. When its way crosses more cells than the history keeps
+  entities, it tests every entity instead.
+- At the same distance, the entity in the lower storage slot wins, so the order of the tests never changes the answer.
+  `SphereCastTestingAll`, for tests, gives the answer of testing every entity.
 - The game decides what the tick and the capsules are. The engine keeps no character's shape.
 - `HitShapes.FromPose(globals, placed, bones, into)` gives a posed rig's capsules from its joints' places (`Rig.Globals`),
   through the mesh's placement (`MeshPoses.Placed`). Each `HitBone` is a part from one joint towards another, or a

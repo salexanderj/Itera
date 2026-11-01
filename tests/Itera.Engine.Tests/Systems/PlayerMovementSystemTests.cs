@@ -993,7 +993,7 @@ public sealed class PlayerMovementSystemTests : IDisposable
     }
 
     [Fact]
-    public void A_collider_added_anywhere_moves_each_resting_character_again()
+    public void A_collider_added_away_from_a_resting_character_keeps_its_rest_and_one_beside_it_moves_it_again()
     {
         using var physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance);
         physics.Initialize();
@@ -1007,7 +1007,10 @@ public sealed class PlayerMovementSystemTests : IDisposable
         Vector3[] wall = [new(0, 0, 0), new(0, 1, 0), new(0, 1, 1), new(0, 0, 1)];
         colliders.Add(wall, [0, 1, 2, 0, 2, 3], Matrix4x4.CreateTranslation(40, 0, 40));
         Run(world, system, 5, new PlayerCommand());
+        Assert.Equal(moves, mover.Moves);
 
+        colliders.Add(wall, [0, 1, 2, 0, 2, 3], Matrix4x4.CreateTranslation(0.6f, 1, -0.5f));
+        Run(world, system, 5, new PlayerCommand());
         Assert.Equal(moves + 1, mover.Moves);
     }
 

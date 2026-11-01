@@ -84,6 +84,21 @@ internal sealed class ObjectColumns
     /// <summary>The objects' damage's version (<see cref="ObjectDamage.Version"/>), or 0 with none.</summary>
     internal long DamageVersion => _damage?.Version ?? 0;
 
+    /// <summary>
+    /// True when it reads the objects' damage, which names each change of an object in play with its box: placed,
+    /// removed, or its voxels changed (<see cref="ObjectDamage.ReadChanges"/>). Without it, objects placed or removed in
+    /// play are read only when their area fills again.
+    /// </summary>
+    internal bool FollowsDamage => _damage is not null;
+
+    /// <summary>
+    /// True when a change of the objects' damage after <paramref name="after"/> reaches the columns from
+    /// (<paramref name="minX"/>, <paramref name="minZ"/>) to (<paramref name="maxX"/>, <paramref name="maxZ"/>) (absolute
+    /// centimetres), or when it no longer keeps them all; false with no damage.
+    /// </summary>
+    internal bool DamageMeets(long after, long minX, long maxX, long minZ, long maxZ) =>
+        _damage?.ChangesMeet(after, minX, maxX, minZ, maxZ) ?? false;
+
     /// <summary>The edge of its cells, in centimetres: the mover's.</summary>
     public int CellCentimetres => _cell;
 

@@ -40,9 +40,16 @@ public sealed partial class MeshColliders(
     /// <summary>The side of a bucket of the triangle grid, in metres.</summary>
     public const float BucketMetres = 4;
 
+    /// <summary>
+    /// How many changes' boxes it keeps (<see cref="ChangesMeet"/>): a reader further behind takes every place as
+    /// changed.
+    /// </summary>
+    public const int KeptChanges = 256;
+
     /// <summary>How far a group's bounds for rays reach past its triangles, in metres, so rounding misses none.</summary>
     private const float BoundsPadMetres = 1e-3f;
 
+    private readonly ColliderChange[] _changes = new ColliderChange[KeptChanges];
     private readonly List<Collider?> _colliders = [];
     private readonly Dictionary<long, List<int>> _buckets = [];
 
@@ -78,8 +85,67 @@ public sealed partial class MeshColliders(
     /// </summary>
     public WorldOrigin Origin { get; } = origin ?? new WorldOrigin();
 
-    /// <summary>Counts the changes to the colliders, so what is built from their triangles knows when to build again.</summary>
+    /// <summary>
+    /// Counts the changes to the colliders, so what is built from their triangles knows when to build again. Each add or
+    /// remove raises it by one, and its box is kept for <see cref="ChangesMeet"/>.
+    /// </summary>
     internal int Version { get; private set; }
+
+    /// <summary>
+    /// True when a collider added or removed after version <paramref name="after"/> may have triangles in the box from
+    /// <paramref name="low"/> to <paramref name="high"/> (absolute centimetres, both included), or when such changes are
+    /// no longer all kept (<see cref="KeptChanges"/>): what a reader of that box built before may be out of date. A
+    /// collider with no triangles meets nothing. Allocates nothing.
+    /// </summary>
+    internal bool ChangesMeet(int after, VoxelCoord low, VoxelCoord high)
+    {
+        if (after > Version || Version - after > KeptChanges)
+        {
+            return true;
+        }
+
+        for (var version = after; version < Version; version++)
+        {
+            ref readonly var change = ref _changes[version % KeptChanges];
+            if (
+                change.Low.X <= high.X
+                && change.High.X >= low.X
+                && change.Low.Y <= high.Y
+                && change.High.Y >= low.Y
+                && change.Low.Z <= high.Z
+                && change.High.Z >= low.Z
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Notes a change of <paramref name="collider"/>: the version rises, and its box is kept at the old one's place.</summary>
+    private void RecordChange(Collider collider)
+    {
+        _changes[Version % KeptChanges] = new ColliderChange(collider.Low, collider.High);
+        Version++;
+    }
+
+    /// <summary>A point in metres in whole centimetres, each axis rounded down, or up when <paramref name="up"/>.</summary>
+    private static VoxelCoord Centimetres(Vector3 metres, bool up)
+    {
+        const double PerMetre = VoxelConstants.CentimetresPerMetre;
+        return up
+            ? new(
+                (int)Math.Ceiling(metres.X * PerMetre),
+                (int)Math.Ceiling(metres.Y * PerMetre),
+                (int)Math.Ceiling(metres.Z * PerMetre)
+            )
+            : new(
+                (int)Math.Floor(metres.X * PerMetre),
+                (int)Math.Floor(metres.Y * PerMetre),
+                (int)Math.Floor(metres.Z * PerMetre)
+            );
+    }
 
     /// <summary>The triangles of every collider.</summary>
     public int TriangleCount
@@ -262,7 +328,7 @@ public sealed partial class MeshColliders(
         RemoveStatic(removed);
         _colliders[collider] = null;
         Count--;
-        Version++;
+        RecordChange(removed);
         _dirty = true;
     }
 
@@ -493,17 +559,27 @@ public sealed partial class MeshColliders(
         {
             Settings = settings,
         };
+        var low = new Vector3(float.PositiveInfinity);
+        var high = new Vector3(float.NegativeInfinity);
         for (var t = 0; t < count; t++)
         {
             collider.A[t] = Vector3.Transform(positions[(int)indices[t * 3]], transform) + offset;
             collider.B[t] = Vector3.Transform(positions[(int)indices[t * 3 + 1]], transform) + offset;
             collider.C[t] = Vector3.Transform(positions[(int)indices[t * 3 + 2]], transform) + offset;
+            low = Vector3.Min(low, Vector3.Min(collider.A[t], Vector3.Min(collider.B[t], collider.C[t])));
+            high = Vector3.Max(high, Vector3.Max(collider.A[t], Vector3.Max(collider.B[t], collider.C[t])));
+        }
+
+        if (count > 0)
+        {
+            collider.Low = anchor + Centimetres(low, up: false);
+            collider.High = anchor + Centimetres(high, up: true);
         }
 
         AddStatic(collider);
         _colliders.Add(collider);
         Count++;
-        Version++;
+        RecordChange(collider);
         _dirty = true;
         LogAdded(_colliders.Count - 1, count);
         return _colliders.Count - 1;
@@ -794,7 +870,19 @@ public sealed partial class MeshColliders(
 
         /// <summary>A game's settings for it (its physics material).</summary>
         public PhysicsBodySettings Settings { get; set; }
+
+        /// <summary>
+        /// The low corner of the box round its triangles, in absolute centimetres; with none, above
+        /// <see cref="High"/>, so the box meets nothing.
+        /// </summary>
+        public VoxelCoord Low { get; set; } = new(int.MaxValue, int.MaxValue, int.MaxValue);
+
+        /// <summary>The high corner of the box round its triangles, in absolute centimetres (included).</summary>
+        public VoxelCoord High { get; set; } = new(int.MinValue, int.MinValue, int.MinValue);
     }
+
+    /// <summary>The box a change of a collider reaches, in absolute centimetres (both corners included).</summary>
+    private readonly record struct ColliderChange(VoxelCoord Low, VoxelCoord High);
 
     [LoggerMessage(
         Level = LogLevel.Debug,

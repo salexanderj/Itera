@@ -49,8 +49,9 @@ public readonly record struct IgnoreEntity(Entity Entity) : IHitFilter
 /// entity's storage is made at its first record and reused after <see cref="Forget"/>, or once the entity has gone
 /// <see cref="Steps"/> steps unrecorded and room is needed for a new one, so a game that removes entities without
 /// forgetting them never fills it; once an entity is kept, recording, asking, and forgetting allocate nothing. It keeps
-/// at most <paramref name="mostEntities"/>; a game with more figures at once registers one of its own size. Scoped to
-/// the match; main thread.
+/// at most <paramref name="mostEntities"/>; a game with more figures at once registers one of its own size. A grid of
+/// cells over absolute x and z (<see cref="CellMetres"/>) finds the entities near a ray, so a ray tests those, not every
+/// one. Scoped to the match; main thread.
 /// </summary>
 public sealed partial class HitHistory(
     WorldOrigin origin,
@@ -67,12 +68,34 @@ public sealed partial class HitHistory(
     /// <summary>The most entities a history keeps when its game gives no other number.</summary>
     public const int DefaultMostEntities = 1024;
 
+    /// <summary>The side of a cell of the grid over absolute x and z that finds the entities near a ray, in metres.</summary>
+    public const float CellMetres = 8;
+
     // A ray this much outside a bounding sphere still tests the capsules: float error must not drop a graze.
     private const float SphereSlack = 1e-3f;
+
+    // The most cells along x or z that an entity's kept steps may span in the grid: one wider is among the wide ones,
+    // which every ray tests.
+    private const int CellsAcross = 3;
+    private const int NodesPerTrack = CellsAcross * CellsAcross;
+
+    // The most words of the bit set of entities a walk of the grid has met, on the stack: past it, rays test every entity.
+    private const int MostSeenWords = 1024;
 
     private readonly Dictionary<Entity, int> _slots = [];
     private readonly List<Track> _tracks = [];
     private readonly int[] _free = new int[mostEntities > 0 ? mostEntities : 1];
+
+    // The grid: each cell's bucket (a hash of the cell; cells that share one only add candidates) heads a list of nodes,
+    // node k of the entity in slot s being s * NodesPerTrack + k, one for each cell its kept steps reach.
+    private readonly int[] _heads = EmptyHeads(mostEntities);
+    private readonly int[] _next = new int[Math.Max(mostEntities, 1) * NodesPerTrack];
+    private readonly int[] _previous = new int[Math.Max(mostEntities, 1) * NodesPerTrack];
+    private readonly int[] _bucketOf = new int[Math.Max(mostEntities, 1) * NodesPerTrack];
+
+    // The slots of the entities too wide for the grid.
+    private readonly int[] _wide = new int[Math.Max(mostEntities, 1)];
+    private int _wideCount;
     private int _freeCount;
     private bool _toldFull;
 
@@ -175,6 +198,53 @@ public sealed partial class HitHistory(
                 track.Oldest = kept;
             }
         }
+
+        // Cells that hold more than the kept steps only add candidates, so the grid's stay while they hold this step, and
+        // are worked out again over every kept step when it leaves them, and every eighth step so that they shrink.
+        if (track.Placed && (tick + slot) % 8 != 0 && Holds(track, step))
+        {
+            return;
+        }
+
+        // The box over x and z round every kept step's bounding sphere.
+        double minX = double.PositiveInfinity,
+            maxX = double.NegativeInfinity,
+            minZ = double.PositiveInfinity,
+            maxZ = double.NegativeInfinity;
+        for (var kept = 0; kept < Steps; kept++)
+        {
+            var bounds = track.Bounds[kept];
+            if (track.Ticks[kept] >= 0 && track.Counts[kept] > 0 && bounds.W >= 0)
+            {
+                ref readonly var anchor = ref track.Anchors[kept];
+                double x = anchor.X + bounds.X,
+                    z = anchor.Z + bounds.Z;
+                minX = Math.Min(minX, x - bounds.W);
+                maxX = Math.Max(maxX, x + bounds.W);
+                minZ = Math.Min(minZ, z - bounds.W);
+                maxZ = Math.Max(maxZ, z + bounds.W);
+            }
+        }
+
+        Place(slot, track, minX, maxX, minZ, maxZ);
+    }
+
+    /// <summary>True when the cells the track is placed in hold its <paramref name="step"/> (any, among the wide ones).</summary>
+    private static bool Holds(Track track, int step)
+    {
+        var bounds = track.Bounds[step];
+        if (track.Wide || track.Counts[step] == 0 || bounds.W < 0)
+        {
+            return true;
+        }
+
+        ref readonly var anchor = ref track.Anchors[step];
+        double x = anchor.X + bounds.X,
+            z = anchor.Z + bounds.Z;
+        return CellOf(x - bounds.W) >= track.CellX0
+            && CellOf(x + bounds.W) <= track.CellX1
+            && CellOf(z - bounds.W) >= track.CellZ0
+            && CellOf(z + bounds.W) <= track.CellZ1;
     }
 
     /// <summary>
@@ -219,8 +289,10 @@ public sealed partial class HitHistory(
     /// (its centre) along <paramref name="direction"/>, not a ray: the nearest capsule it touches, each capsule taken
     /// <paramref name="radius"/> fatter (exact for a sphere against a capsule), so a round of a size grazes what a ray
     /// misses. The hit's distance is the centre's along the way, and its point is where the sphere touches the capsule.
-    /// A radius of 0 is the ray. Returns false as the ray does, and for a negative or non-finite radius. Allocates
-    /// nothing for a struct filter.
+    /// A radius of 0 is the ray. Returns false as the ray does, and for a negative or non-finite radius. It tests only
+    /// the entities in the cells of a grid (<see cref="CellMetres"/>) that its way passes, and those too wide for the
+    /// grid; of capsules at the same distance, the entity in the lower storage slot wins, whatever order they are tested
+    /// in. Allocates nothing for a struct filter.
     /// </summary>
     public bool SphereCast<TFilter>(
         Vector3 from,
@@ -229,6 +301,30 @@ public sealed partial class HitHistory(
         float maxMetres,
         double tick,
         in TFilter filter,
+        out HitResult hit
+    )
+        where TFilter : struct, IHitFilter => Cast(from, direction, radius, maxMetres, tick, in filter, false, out hit);
+
+    /// <summary><see cref="SphereCast{TFilter}"/> testing every entity it keeps, not those of the grid's cells. For tests.</summary>
+    internal bool SphereCastTestingAll<TFilter>(
+        Vector3 from,
+        Vector3 direction,
+        float radius,
+        float maxMetres,
+        double tick,
+        in TFilter filter,
+        out HitResult hit
+    )
+        where TFilter : struct, IHitFilter => Cast(from, direction, radius, maxMetres, tick, in filter, true, out hit);
+
+    private bool Cast<TFilter>(
+        Vector3 from,
+        Vector3 direction,
+        float radius,
+        float maxMetres,
+        double tick,
+        in TFilter filter,
+        bool testAll,
         out HitResult hit
     )
         where TFilter : struct, IHitFilter
@@ -253,16 +349,12 @@ public sealed partial class HitHistory(
         var ray = new Ray(from, direction / MathF.Sqrt(lengthSquared), origin.Metres, radius);
         var floor = (long)Math.Floor(tick);
         var fraction = (float)(tick - floor);
-        var best = new Best { Distance = maxMetres };
-        foreach (var track in _tracks)
+        var best = new Best { Distance = maxMetres, Slot = -1 };
+        if (testAll || !WalkGrid(in ray, maxMetres, floor, fraction, in filter, ref best))
         {
-            if (
-                track.InUse
-                && filter.Includes(track.Entity)
-                && StepsOf(track, floor, fraction, out var before, out var after)
-            )
+            for (var slot = 0; slot < _tracks.Count; slot++)
             {
-                TestTrack(track, before, after, fraction, in ray, ref best);
+                Consider(slot, floor, fraction, in filter, in ray, ref best);
             }
         }
 
@@ -329,6 +421,7 @@ public sealed partial class HitHistory(
     {
         if (_slots.Remove(entity, out var slot))
         {
+            Unplace(slot, _tracks[slot]);
             _tracks[slot].InUse = false;
             _free[_freeCount++] = slot;
         }
@@ -386,9 +479,12 @@ public sealed partial class HitHistory(
     {
         _slots.Clear();
         _freeCount = 0;
+        Array.Fill(_heads, -1);
+        _wideCount = 0;
         for (var slot = _tracks.Count - 1; slot >= 0; slot--)
         {
             _tracks[slot].InUse = false;
+            _tracks[slot].Placed = false;
             _free[_freeCount++] = slot;
         }
     }
@@ -443,7 +539,242 @@ public sealed partial class HitHistory(
         return new Vector4(centre, radius);
     }
 
-    private static void TestTrack(Track track, int before, int after, float fraction, in Ray ray, ref Best best)
+    /// <summary>
+    /// Puts the track in <paramref name="slot"/> in the grid's cells its kept steps reach (their bounding spheres' box over
+    /// x and z, absolute metres), or among the wide ones when it spans more than <see cref="CellsAcross"/> cells; nowhere
+    /// when it keeps no shape. Nothing changes when its cells are those it is placed in.
+    /// </summary>
+    private void Place(int slot, Track track, double minX, double maxX, double minZ, double maxZ)
+    {
+        if (double.IsPositiveInfinity(minX))
+        {
+            Unplace(slot, track);
+            return;
+        }
+
+        int x0 = CellOf(minX),
+            x1 = CellOf(maxX),
+            z0 = CellOf(minZ),
+            z1 = CellOf(maxZ);
+        var wide = x1 - x0 >= CellsAcross || z1 - z0 >= CellsAcross;
+        if (
+            track.Placed
+            && track.Wide == wide
+            && (wide || (track.CellX0 == x0 && track.CellX1 == x1 && track.CellZ0 == z0 && track.CellZ1 == z1))
+        )
+        {
+            (track.CellX0, track.CellX1, track.CellZ0, track.CellZ1) = (x0, x1, z0, z1);
+            return;
+        }
+
+        Unplace(slot, track);
+        (track.CellX0, track.CellX1, track.CellZ0, track.CellZ1) = (x0, x1, z0, z1);
+        track.Placed = true;
+        track.Wide = wide;
+        if (wide)
+        {
+            track.WideAt = _wideCount;
+            _wide[_wideCount++] = slot;
+            return;
+        }
+
+        var node = slot * NodesPerTrack;
+        for (var z = z0; z <= z1; z++)
+        {
+            for (var x = x0; x <= x1; x++)
+            {
+                Link(node++, Bucket(x, z));
+            }
+        }
+    }
+
+    /// <summary>Takes the track in <paramref name="slot"/> out of the grid's cells or the wide ones, where it is placed.</summary>
+    private void Unplace(int slot, Track track)
+    {
+        if (!track.Placed)
+        {
+            return;
+        }
+
+        track.Placed = false;
+        if (track.Wide)
+        {
+            var last = _wide[--_wideCount];
+            _wide[track.WideAt] = last;
+            _tracks[last].WideAt = track.WideAt;
+            return;
+        }
+
+        var nodes = (track.CellX1 - track.CellX0 + 1) * (track.CellZ1 - track.CellZ0 + 1);
+        for (var node = slot * NodesPerTrack; node < slot * NodesPerTrack + nodes; node++)
+        {
+            Unlink(node);
+        }
+    }
+
+    private void Link(int node, int bucket)
+    {
+        var first = _heads[bucket];
+        _bucketOf[node] = bucket;
+        _previous[node] = -1;
+        _next[node] = first;
+        if (first >= 0)
+        {
+            _previous[first] = node;
+        }
+
+        _heads[bucket] = node;
+    }
+
+    private void Unlink(int node)
+    {
+        int previous = _previous[node],
+            next = _next[node];
+        if (previous >= 0)
+        {
+            _next[previous] = next;
+        }
+        else
+        {
+            _heads[_bucketOf[node]] = next;
+        }
+
+        if (next >= 0)
+        {
+            _previous[next] = previous;
+        }
+    }
+
+    /// <summary>
+    /// Tests the entities the grid holds near the way: those too wide for it, then those in each cell within the sphere's
+    /// radius of the way across x and z, column by column along it, until a column starts past the nearest hit so far.
+    /// Each entity is tested once. False, with nothing tested, when the way crosses more cells than the history keeps
+    /// entities, or the history keeps more than the stack's bit set holds: testing every one is then cheaper.
+    /// </summary>
+    private bool WalkGrid<TFilter>(
+        in Ray ray,
+        float maxMetres,
+        long floor,
+        float fraction,
+        in TFilter filter,
+        ref Best best
+    )
+        where TFilter : struct, IHitFilter
+    {
+        var words = (_tracks.Count + 63) >> 6;
+        double pad = ray.Radius + SphereSlack,
+            dx = ray.Direction.X,
+            dz = ray.Direction.Z,
+            ox = ray.OriginMetres.X + ray.From.X,
+            oz = ray.OriginMetres.Z + ray.From.Z,
+            length = maxMetres;
+        var cells = ((Math.Abs(dx) + Math.Abs(dz)) * length + 4 * pad) / CellMetres;
+        if (words > MostSeenWords || cells > _tracks.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < _wideCount; i++)
+        {
+            Consider(_wide[i], floor, fraction, in filter, in ray, ref best);
+        }
+
+        Span<ulong> seen = stackalloc ulong[words];
+        seen.Clear();
+        int first = CellOf(Math.Min(ox, ox + dx * length) - pad),
+            last = CellOf(Math.Max(ox, ox + dx * length) + pad),
+            step = 1;
+        if (dx < 0)
+        {
+            (first, last, step) = (last, first, -1);
+        }
+
+        for (var x = first; ; x += step)
+        {
+            // The part of the way within the pad of the column's x.
+            double t0 = 0,
+                t1 = length;
+            if (Math.Abs(dx) > 1e-9)
+            {
+                var a = (x * (double)CellMetres - pad - ox) / dx;
+                var b = ((x + 1) * (double)CellMetres + pad - ox) / dx;
+                t0 = Math.Max(Math.Min(a, b), 0);
+                t1 = Math.Min(Math.Max(a, b), length);
+            }
+
+            if (t0 > best.Distance)
+            {
+                // A capsule this column holds lies within the pad of the way past here, and so does every later one's.
+                break;
+            }
+
+            if (t0 <= t1)
+            {
+                double za = oz + dz * t0,
+                    zb = oz + dz * t1;
+                for (int z = CellOf(Math.Min(za, zb) - pad), z1 = CellOf(Math.Max(za, zb) + pad); z <= z1; z++)
+                {
+                    for (var node = _heads[Bucket(x, z)]; node >= 0; node = _next[node])
+                    {
+                        var slot = node / NodesPerTrack;
+                        ref var word = ref seen[slot >> 6];
+                        var bit = 1UL << (slot & 63);
+                        if ((word & bit) == 0 && _tracks[slot].Covers(x, z))
+                        {
+                            word |= bit;
+                            Consider(slot, floor, fraction, in filter, in ray, ref best);
+                        }
+                    }
+                }
+            }
+
+            if (x == last)
+            {
+                break;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Tests the entity in <paramref name="slot"/> when it is kept, the filter includes it, and it was there.</summary>
+    private void Consider<TFilter>(int slot, long floor, float fraction, in TFilter filter, in Ray ray, ref Best best)
+        where TFilter : struct, IHitFilter
+    {
+        var track = _tracks[slot];
+        if (
+            track.InUse
+            && filter.Includes(track.Entity)
+            && StepsOf(track, floor, fraction, out var before, out var after)
+        )
+        {
+            TestTrack(track, slot, before, after, fraction, in ray, ref best);
+        }
+    }
+
+    /// <summary>The grid's cell of an absolute coordinate in metres, kept within a billion cells either way.</summary>
+    private static int CellOf(double metres) => (int)Math.Clamp(Math.Floor(metres / CellMetres), -1e9, 1e9);
+
+    /// <summary>The bucket of cell (<paramref name="x"/>, <paramref name="z"/>).</summary>
+    private int Bucket(int x, int z) => unchecked((x * 73_856_093) ^ (z * 19_349_663)) & (_heads.Length - 1);
+
+    /// <summary>The grid's empty buckets: a power of two, at least twice the most entities kept.</summary>
+    private static int[] EmptyHeads(int mostEntities)
+    {
+        var heads = new int[(int)BitOperations.RoundUpToPowerOf2((uint)(Math.Clamp(mostEntities, 32, 1 << 24) * 2))];
+        Array.Fill(heads, -1);
+        return heads;
+    }
+
+    private static void TestTrack(
+        Track track,
+        int slot,
+        int before,
+        int after,
+        float fraction,
+        in Ray ray,
+        ref Best best
+    )
     {
         var origin0 = Vector3.Zero;
         var origin1 = Vector3.Zero;
@@ -484,6 +815,7 @@ public sealed partial class HitHistory(
             {
                 Test(
                     track,
+                    slot,
                     in ray,
                     Vector3.Lerp(origin0 + c0.A, origin1 + c1.A, fraction),
                     Vector3.Lerp(origin0 + c0.B, origin1 + c1.B, fraction),
@@ -496,12 +828,12 @@ public sealed partial class HitHistory(
 
             if (i < count0)
             {
-                Test(track, in ray, origin0 + c0.A, origin0 + c0.B, c0.Radius, c0.Part, ref best);
+                Test(track, slot, in ray, origin0 + c0.A, origin0 + c0.B, c0.Radius, c0.Part, ref best);
             }
 
             if (i < count1)
             {
-                Test(track, in ray, origin1 + c1.A, origin1 + c1.B, c1.Radius, c1.Part, ref best);
+                Test(track, slot, in ray, origin1 + c1.A, origin1 + c1.B, c1.Radius, c1.Part, ref best);
             }
         }
     }
@@ -538,7 +870,20 @@ public sealed partial class HitHistory(
     private static Vector4 Sphere(Vector3 anchor, Vector4 bounds) =>
         bounds.W < 0 ? bounds : new Vector4(anchor + new Vector3(bounds.X, bounds.Y, bounds.Z), bounds.W);
 
-    private static void Test(Track track, in Ray ray, Vector3 a, Vector3 b, float radius, int part, ref Best best)
+    /// <summary>
+    /// Tests one capsule of the track in <paramref name="slot"/>: nearer than the best so far wins, and at the same
+    /// distance the lower slot, so the answer is the same whatever order the entities are tested in.
+    /// </summary>
+    private static void Test(
+        Track track,
+        int slot,
+        in Ray ray,
+        Vector3 a,
+        Vector3 b,
+        float radius,
+        int part,
+        ref Best best
+    )
     {
         if (
             HitShapes.RaycastCapsule(
@@ -551,13 +896,14 @@ public sealed partial class HitHistory(
                 out var normal
             )
             && distance <= best.Distance
-            && (!best.Found || distance < best.Distance)
+            && (!best.Found || distance < best.Distance || slot < best.Slot)
         )
         {
             best = new Best
             {
                 Found = true,
                 Distance = distance,
+                Slot = slot,
                 Entity = track.Entity,
                 Part = part,
                 Normal = normal,
@@ -576,6 +922,9 @@ public sealed partial class HitHistory(
         public Vector3 Direction => direction;
 
         public float Radius => radius;
+
+        /// <summary>The match's origin, in absolute metres.</summary>
+        public WorldPoint OriginMetres => originMetres;
 
         /// <summary>The local place of an absolute anchor.</summary>
         public Vector3 Local(in WorldPoint anchor) =>
@@ -610,6 +959,7 @@ public sealed partial class HitHistory(
     {
         public bool Found;
         public float Distance;
+        public int Slot;
         public Entity Entity;
         public int Part;
         public Vector3 Normal;
@@ -628,12 +978,31 @@ public sealed partial class HitHistory(
         public long Newest;
         public long Oldest;
 
+        /// <summary>True while it is in the grid's cells (<see cref="CellX0"/> to <see cref="CellZ1"/>) or among the wide ones.</summary>
+        public bool Placed;
+
+        /// <summary>Placed among the wide ones, at <see cref="WideAt"/>, not in the grid's cells.</summary>
+        public bool Wide;
+
+        public int WideAt;
+
+        /// <summary>The grid's cells its kept steps reach, from the first to the second on each axis.</summary>
+        public int CellX0;
+
+        public int CellX1;
+        public int CellZ0;
+        public int CellZ1;
+
+        /// <summary>True when cell (<paramref name="x"/>, <paramref name="z"/>) is among those it is placed in.</summary>
+        public bool Covers(int x, int z) => x >= CellX0 && x <= CellX1 && z >= CellZ0 && z <= CellZ1;
+
         /// <summary>Empties the ring for an entity.</summary>
         public void Start()
         {
             Array.Fill(Ticks, -1L);
             Array.Clear(Counts);
             InUse = true;
+            Placed = false;
             Newest = -1;
             Oldest = long.MaxValue;
         }

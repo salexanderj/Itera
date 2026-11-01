@@ -78,7 +78,8 @@ public readonly record struct CharacterMoveResult(
 /// <summary>
 /// What a move reads of the match that can change while a body stands still (<see cref="VoxelCharacterMover.Stamp"/>):
 /// the voxel edits in every column they reach (<see cref="VoxelWorld.AppliedEditCount"/>), the newest reset, the mesh
-/// colliders' version, and the voxel objects' version and damage.
+/// colliders' version, and the voxel objects' version and damage. The edits, the colliders, and the damage keep their
+/// changes' boxes, so <see cref="VoxelCharacterMover.StandsUnchanged"/> reads only those near the body.
 /// </summary>
 public readonly record struct GroundStamp(long Edits, long Reset, int Meshes, int Objects, long Damage);
 
@@ -1113,20 +1114,24 @@ public sealed class VoxelCharacterMover
     /// <summary>
     /// True when a move of a body of <paramref name="shape"/> standing at <paramref name="feetMetres"/> reads what it read
     /// when <paramref name="since"/> was taken (<see cref="Stamp"/>), so the same move then answers the same: the columns
-    /// round it are resident, no reset came, the mesh colliders, the voxel objects, and their damage are as they were, no
-    /// edit since reaches round it (any edit of the objects counts, wherever it is), and no loose body or solid model
-    /// reaches round it. Then <paramref name="since"/> becomes now, so the next ask reads only later edits (and those
-    /// still waiting to apply in some column). Allocates nothing.
+    /// round it are resident, no reset came, and no change since reaches round it: a voxel edit, a mesh collider added
+    /// or removed, a voxel object placed, removed, or damaged, or a loose body or solid model. Without the objects'
+    /// damage (<c>ObjectDamage</c>), any change of the objects counts, wherever it is. Then <paramref name="since"/>
+    /// becomes now, so the next ask reads only later changes (and edits still waiting to apply in some column).
+    /// Allocates nothing.
     /// </summary>
     public bool StandsUnchanged(ref GroundStamp since, Vector3 feetMetres, in CharacterShape shape)
     {
         var now = Stamp();
+        // With the objects' damage followed, every change of an object in play is named there with its box, and an area
+        // that fills again holds what it held, so only the residency below (objects known round the feet) counts.
+        var objectsNamed = Objects?.FollowsDamage ?? false;
         if (
             now.Reset != since.Reset
-            || now.Meshes != since.Meshes
-            || now.Objects != since.Objects
-            || now.Damage != since.Damage
             || now.Edits < since.Edits
+            || now.Meshes < since.Meshes
+            || now.Damage < since.Damage
+            || (!objectsNamed && (now.Objects != since.Objects || now.Damage != since.Damage))
         )
         {
             return false;
@@ -1168,14 +1173,37 @@ public sealed class VoxelCharacterMover
             return false;
         }
 
+        // What may change what the body reads: within the margin of it across, under its step, and over its head, with
+        // two of the world's voxels more each way, in absolute centimetres.
+        double cell = CellCentimetres,
+            voxels = _world is null ? 0 : 2.0 * _world.Grid.BaseCentimetres;
+        var box = new RestReach(
+            (long)Math.Floor((px - r - margin) * cell - voxels),
+            (long)Math.Ceiling((px + r + margin) * cell + voxels),
+            (long)Math.Floor((py - step - margin) * cell - voxels),
+            (long)Math.Ceiling((py + h + margin) * cell + voxels),
+            (long)Math.Floor((pz - r - margin) * cell - voxels),
+            (long)Math.Ceiling((pz + r + margin) * cell + voxels)
+        );
+        if (now.Meshes != since.Meshes && _meshes!.ChangesMeet(since.Meshes, box.Low, box.High))
+        {
+            return false;
+        }
+
+        if (
+            objectsNamed
+            && now.Damage != since.Damage
+            && Objects!.DamageMeets(since.Damage, box.X0, box.X1, box.Z0, box.Z1)
+        )
+        {
+            return false;
+        }
+
         // Every edit logged since, not only those applied everywhere: a small edit near the body applies at once while a
         // large one elsewhere still waits. The stamp keeps to what every column applied, so an edit still waiting is
         // read again at each ask until its columns have it.
         var logged = _world?.EditCount ?? 0;
-        if (
-            logged > since.Edits
-            && EditsReach(since.Edits + 1, logged, px, py, pz, r + margin, step + margin, h + margin)
-        )
+        if (logged > since.Edits && EditsReach(since.Edits + 1, logged, in box, objectsNamed))
         {
             return false;
         }
@@ -1185,51 +1213,60 @@ public sealed class VoxelCharacterMover
     }
 
     /// <summary>
-    /// True when an edit from <paramref name="first"/> to <paramref name="last"/> may change what a body standing at
-    /// (<paramref name="px"/>, <paramref name="py"/>, <paramref name="pz"/>) reads, all in cells: a reset, an edit of the
-    /// objects, or one whose box comes within <paramref name="across"/> of it across, <paramref name="below"/> under it, or
-    /// <paramref name="above"/> over it, with two of the world's voxels more each way.
+    /// True when an edit from <paramref name="first"/> to <paramref name="last"/> may change what a body reads within
+    /// <paramref name="reach"/>: a reset, one whose box meets it, or an edit of the objects. An edit of the objects counts
+    /// wherever it is unless <paramref name="objectsNamed"/>: the objects' damage then names its change with its box.
     /// </summary>
-    private bool EditsReach(
-        long first,
-        long last,
-        double px,
-        double py,
-        double pz,
-        double across,
-        double below,
-        double above
-    )
+    private bool EditsReach(long first, long last, in RestReach reach, bool objectsNamed)
     {
         if (_world is null)
         {
             return false;
         }
 
-        double cell = CellCentimetres,
-            voxels = 2.0 * _world.Grid.BaseCentimetres;
-        long x0 = (long)Math.Floor((px - across) * cell - voxels),
-            x1 = (long)Math.Ceiling((px + across) * cell + voxels),
-            y0 = (long)Math.Floor((py - below) * cell - voxels),
-            y1 = (long)Math.Ceiling((py + above) * cell + voxels),
-            z0 = (long)Math.Floor((pz - across) * cell - voxels),
-            z1 = (long)Math.Ceiling((pz + across) * cell + voxels);
         for (var sequence = first; sequence <= last; sequence++)
         {
             ref readonly var edit = ref _world.GetEdit(sequence);
             if (!edit.ChangesWorld)
             {
-                return true;
+                if (edit.Operation == VoxelEditOperation.Reset || !objectsNamed)
+                {
+                    return true;
+                }
+
+                continue;
             }
 
             edit.GetBounds(out var min, out var end);
-            if (min.X < x1 && end.X > x0 && min.Y < y1 && end.Y > y0 && min.Z < z1 && end.Z > z0)
+            if (
+                min.X < reach.X1
+                && end.X > reach.X0
+                && min.Y < reach.Y1
+                && end.Y > reach.Y0
+                && min.Z < reach.Z1
+                && end.Z > reach.Z0
+            )
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// The box round a body at rest that a change must stay out of for its last move to answer the same, in absolute
+    /// centimetres: x, y, and z from the first to the second.
+    /// </summary>
+    private readonly record struct RestReach(long X0, long X1, long Y0, long Y1, long Z0, long Z1)
+    {
+        /// <summary>The low corner, clamped to the centimetres a <see cref="VoxelCoord"/> holds.</summary>
+        public VoxelCoord Low => new(Clamp(X0), Clamp(Y0), Clamp(Z0));
+
+        /// <summary>The high corner, clamped as <see cref="Low"/> is.</summary>
+        public VoxelCoord High => new(Clamp(X1), Clamp(Y1), Clamp(Z1));
+
+        private static int Clamp(long centimetres) => (int)Math.Clamp(centimetres, int.MinValue, int.MaxValue);
     }
 
     /// <summary>A local x in metres, in absolute cells: the local float plus the origin's whole metres, in doubles.</summary>

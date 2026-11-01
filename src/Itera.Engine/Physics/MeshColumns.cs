@@ -69,6 +69,12 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     /// <summary>The colliders' version (<see cref="MeshColliders.Version"/>): it changes whenever one is added or removed.</summary>
     internal int Version => colliders.Version;
 
+    /// <summary>
+    /// True when a collider added or removed after version <paramref name="after"/> may reach the box from
+    /// <paramref name="low"/> to <paramref name="high"/> (absolute centimetres; <see cref="MeshColliders.ChangesMeet"/>).
+    /// </summary>
+    internal bool ChangesMeet(int after, VoxelCoord low, VoxelCoord high) => colliders.ChangesMeet(after, low, high);
+
     /// <summary>True when the chunk that holds column (x, z) is kept now.</summary>
     internal bool Keeps(int x, int z) =>
         _version == colliders.Version && _chunks.ContainsKey(((long)(x >> ChunkBits) << 32) | (uint)(z >> ChunkBits));
