@@ -153,7 +153,8 @@ says "probe" was confirmed by `probe/Program.cs` against the pinned packages.
     `Prepare`).
   - In the pass, each worker takes the next entity from a shared counter. It writes only that entity's
     components and its own scratch: a mover of its own (`VoxelCharacterMover.CreateWorker`), probes and rays of
-    its own, and lists. It reads services only through their forms for other threads.
+    its own, and lists. It reads services only through their forms for other threads. A helper may come late
+    or not at all, so no entity is left to a worker by its index.
   - After the pass, on the main thread: structural changes, writes to other entities, and `CommandBuffer`
     playback. No result depends on which thread takes an entity, so a test compares the pass with the main
     thread's, bit for bit.

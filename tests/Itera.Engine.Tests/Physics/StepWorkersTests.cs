@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Itera.Engine.Physics;
 using Microsoft.Extensions.Options;
 
@@ -6,7 +7,7 @@ namespace Itera.Engine.Tests.Physics;
 public sealed class StepWorkersTests
 {
     [Fact]
-    public void A_pass_runs_on_every_worker_at_once_and_each_item_is_taken_once()
+    public void A_pass_runs_on_every_worker_that_comes_while_the_caller_works_and_each_item_is_taken_once()
     {
         using var workers = new StepWorkers(4);
         var caller = Environment.CurrentManagedThreadId;
@@ -14,7 +15,8 @@ public sealed class StepWorkersTests
         var ran = new int[workers.Count];
         var threads = new int[workers.Count];
         var next = -1;
-        // Each worker waits until all have started, so the pass is on four threads at once.
+        // Each worker waits until all have started, the caller too, so every helper comes and the pass is on four threads
+        // at once.
         using var started = new CountdownEvent(workers.Count);
         for (var pass = 0; pass < 20; pass++)
         {
@@ -47,10 +49,12 @@ public sealed class StepWorkersTests
     {
         using var workers = new StepWorkers(3);
         var ran = new int[workers.Count];
+        var (first, second) = (0, 0);
 
         var thrown = Assert.Throws<InvalidOperationException>(() =>
             workers.Run(worker =>
             {
+                Meet(ref first, workers.Count);
                 Interlocked.Increment(ref ran[worker]);
                 if (worker == thrower)
                 {
@@ -58,7 +62,11 @@ public sealed class StepWorkersTests
                 }
             })
         );
-        workers.Run(worker => Interlocked.Increment(ref ran[worker]));
+        workers.Run(worker =>
+        {
+            Meet(ref second, workers.Count);
+            Interlocked.Increment(ref ran[worker]);
+        });
 
         Assert.Equal("worker " + thrower, thrown.Message);
         Assert.All(ran, count => Assert.Equal(2, count));
@@ -100,8 +108,13 @@ public sealed class StepWorkersTests
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         var helpers = workers.AllocatedBytes - counted;
         var arrays = new byte[workers.Count][];
+        var met = 0;
         counted = workers.AllocatedBytes;
-        workers.Run(worker => arrays[worker] = worker == 2 ? new byte[4096] : []);
+        workers.Run(worker =>
+        {
+            Meet(ref met, workers.Count);
+            arrays[worker] = worker == 2 ? new byte[4096] : [];
+        });
 
         Assert.Equal(0, allocated);
         Assert.Equal(0, helpers);
@@ -130,6 +143,50 @@ public sealed class StepWorkersTests
     }
 
     [Fact]
+    public void A_helper_that_comes_after_the_callers_part_skips_the_pass_so_no_work_runs_once_its_pass_returned()
+    {
+        using var workers = new StepWorkers(4);
+        var current = -1;
+        var late = 0;
+        for (var pass = 0; pass < 2000; pass++)
+        {
+            var mine = pass;
+            Volatile.Write(ref current, pass);
+            workers.Run(worker =>
+            {
+                if (Volatile.Read(ref current) != mine)
+                {
+                    Interlocked.Increment(ref late);
+                }
+            });
+            Volatile.Write(ref current, -1);
+        }
+
+        // The caller's part is short, so many helpers come after it; none runs a pass that has returned.
+        Assert.Equal(0, late);
+        Assert.Equal(2000, workers.Passes);
+    }
+
+    [Fact]
+    public void A_pool_stopped_during_a_pass_ends_the_pass_and_refuses_the_next()
+    {
+        var workers = new StepWorkers(3);
+        var ran = 0;
+
+        workers.Run(worker =>
+        {
+            Interlocked.Increment(ref ran);
+            if (worker == 0)
+            {
+                workers.Dispose();
+            }
+        });
+
+        Assert.InRange(ran, 1, 3);
+        Assert.Throws<ObjectDisposedException>(() => workers.Run(_ => { }));
+    }
+
+    [Fact]
     public void Disposed_twice_it_stops_and_refuses_a_pass()
     {
         var workers = new StepWorkers(2);
@@ -137,5 +194,21 @@ public sealed class StepWorkersTests
         workers.Dispose();
 
         Assert.Throws<ObjectDisposedException>(() => workers.Run(_ => { }));
+    }
+
+    /// <summary>
+    /// Waits in a pass until <paramref name="count"/> workers have come to it, spinning so it allocates nothing: the
+    /// caller's part lasts until every helper has joined.
+    /// </summary>
+    private static void Meet(ref int met, int count)
+    {
+        Interlocked.Increment(ref met);
+        var limit = Stopwatch.GetTimestamp() + (long)(TestTime.Limit(10).TotalSeconds * Stopwatch.Frequency);
+        var spin = default(SpinWait);
+        while (Volatile.Read(ref met) < count)
+        {
+            Assert.True(Stopwatch.GetTimestamp() < limit, $"{Volatile.Read(ref met)} of {count} workers came.");
+            spin.SpinOnce();
+        }
     }
 }

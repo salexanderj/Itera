@@ -153,9 +153,14 @@ A worker and its pass:
 
 `StepWorkers` (run-wide) are the threads a fixed step's parallel passes run on, the calling thread among them.
 
-- `Run` runs a piece of work on every worker at once, each given its index, and returns once all are done. It rethrows
-  the first exception a worker met.
+- `Run` runs a piece of work on the calling thread and on each helper that comes while the caller's own part runs,
+  each given its index. It returns once the caller's part and those helpers' are done, and rethrows the first exception
+  a worker met.
+- A helper that comes after the caller's part skips the pass, so a pass never waits for a helper the busy processors
+  have not run yet. The work leaves nothing to a worker by its index.
 - Each worker takes the next item of the pass from a counter it shares, so each item's result is the same on any thread.
+- Each worker's part is the zone `step workers.part`, and the caller's wait for the helpers in the pass
+  `step workers.wait`.
 - `Engine:Physics:StepThreads` sets their number. At 0 they are `StepWorkers.ThreadCount`: a quarter of the processors,
   2 to 6, or 1 on a machine of one. At 1 every pass runs on the main thread.
 - The helpers wait between passes. Running a pass allocates nothing; the work allocates what it does. `AllocatedBytes`
