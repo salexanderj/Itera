@@ -157,7 +157,7 @@ A worker and its pass:
   the first exception a worker met.
 - Each worker takes the next item of the pass from a counter it shares, so each item's result is the same on any thread.
 - `Engine:Physics:StepThreads` sets their number. At 0 they are `StepWorkers.ThreadCount`: a quarter of the processors,
-  1 to 6. At 1 every pass runs on the main thread.
+  2 to 6, or 1 on a machine of one. At 1 every pass runs on the main thread.
 - The helpers wait between passes. Running a pass allocates nothing; the work allocates what it does. `AllocatedBytes`
   counts what the work allocated on every thread, for tests.
 

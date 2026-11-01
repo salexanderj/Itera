@@ -54,10 +54,11 @@ public sealed class StepWorkers : IDisposable
     public long AllocatedBytes => Interlocked.Read(ref _allocated);
 
     /// <summary>
-    /// A pass's threads for <paramref name="processors"/> logical processors: a quarter of them, 1 to 6, the calling one
-    /// among them, as the physics takes for its own (the voxel workers take half the processors).
+    /// A pass's threads for <paramref name="processors"/> logical processors, the calling one among them: a quarter of
+    /// them, as the physics takes for its own (the voxel workers take half the processors), but at least 2, so a machine
+    /// of six or fewer gains too, and at most 6; 1 on a machine of one.
     /// </summary>
-    public static int ThreadCount(int processors) => Math.Clamp(processors / 4, 1, 6);
+    public static int ThreadCount(int processors) => processors < 2 ? 1 : Math.Clamp(processors / 4, 2, 6);
 
     /// <summary>
     /// Runs <paramref name="work"/> on every worker at once, each given its index (0, the calling thread, to

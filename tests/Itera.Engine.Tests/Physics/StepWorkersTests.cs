@@ -109,14 +109,24 @@ public sealed class StepWorkersTests
     }
 
     [Fact]
-    public void The_option_sets_the_threads_and_0_takes_a_quarter_of_the_processors()
+    public void The_option_sets_the_threads_and_0_takes_a_quarter_of_the_processors_2_to_6()
     {
         using var three = new StepWorkers(Options.Create(new EngineOptions { Physics = { StepThreads = 3 } }));
         using var otherwise = new StepWorkers(Options.Create(new EngineOptions()));
 
         Assert.Equal(3, three.Count);
         Assert.Equal(StepWorkers.ThreadCount(Environment.ProcessorCount), otherwise.Count);
-        Assert.Equal((1, 3, 6), (StepWorkers.ThreadCount(4), StepWorkers.ThreadCount(12), StepWorkers.ThreadCount(64)));
+        Assert.Equal(
+            (1, 2, 2, 2, 3, 6),
+            (
+                StepWorkers.ThreadCount(1),
+                StepWorkers.ThreadCount(2),
+                StepWorkers.ThreadCount(6),
+                StepWorkers.ThreadCount(8),
+                StepWorkers.ThreadCount(12),
+                StepWorkers.ThreadCount(64)
+            )
+        );
     }
 
     [Fact]
