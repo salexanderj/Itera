@@ -161,8 +161,8 @@ A worker and its pass:
 - Each worker takes the next item of the pass from a counter it shares, so each item's result is the same on any thread.
 - Each worker's part is the zone `step workers.part`, and the caller's wait for the helpers in the pass
   `step workers.wait`.
-- `Engine:Physics:StepThreads` sets their number. At 0 they are `StepWorkers.ThreadCount`: a quarter of the processors,
-  2 to 6, or 1 on a machine of one. At 1 every pass runs on the main thread.
+- `Engine:Physics:StepThreads` sets their number. At 0 they are `StepWorkers.ThreadCount`: half the processors, 2 to 6,
+  or 1 on a machine of one. At 1 every pass runs on the main thread.
 - The helpers wait between passes. Running a pass allocates nothing; the work allocates what it does. `AllocatedBytes`
   counts what the work allocated on every thread, for tests.
 

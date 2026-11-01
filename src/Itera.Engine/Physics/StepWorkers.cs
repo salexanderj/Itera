@@ -61,11 +61,12 @@ public sealed class StepWorkers : IDisposable
     public long AllocatedBytes => Interlocked.Read(ref _allocated);
 
     /// <summary>
-    /// A pass's threads for <paramref name="processors"/> logical processors, the calling one among them: a quarter of
-    /// them, as the physics takes for its own (the voxel workers take half the processors), but at least 2, so a machine
-    /// of six or fewer gains too, and at most 6; 1 on a machine of one.
+    /// A pass's threads for <paramref name="processors"/> logical processors, the calling one among them: half of them,
+    /// at least 2 and at most 6 (1 on a machine of one). The background threads that share the processors (navigation,
+    /// the voxel workers) run below normal (<see cref="ThreadPriorities"/>), so a pass's threads come first; a hosted
+    /// full target's step was fastest so on four cores and on six.
     /// </summary>
-    public static int ThreadCount(int processors) => processors < 2 ? 1 : Math.Clamp(processors / 4, 2, 6);
+    public static int ThreadCount(int processors) => processors < 2 ? 1 : Math.Clamp(processors / 2, 2, 6);
 
     /// <summary>
     /// Runs <paramref name="work"/> on the calling thread, given index 0, and on each helper that comes while it runs,
