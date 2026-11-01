@@ -156,6 +156,12 @@ public sealed class StepWorkers : IDisposable
 
                 if (_disposed)
                 {
+                    // A pass begun before the dispose still counts this helper done, so its caller does not wait on it.
+                    if (_pass != seen && --_working == 0)
+                    {
+                        Monitor.PulseAll(_lock);
+                    }
+
                     return;
                 }
 

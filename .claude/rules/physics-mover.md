@@ -117,13 +117,16 @@ move of a character at rest (`.claude/rules/systems.md`).
 `VoxelCharacterMover.CreateWorker` makes a mover for another thread. `PlayerMovementSystem` moves its characters on the
 step's workers with them:
 
-- The system gathers the characters, begins the pass, and makes each one's chunks from its feet, size, and velocity.
-  Each worker then takes the next character with a mover of its own and the movement mode's copy for it.
+- The system gathers the characters, begins the pass, and makes each one's chunks from its feet, size, and velocity
+  before steering. A chunk a mode's faster move reads past them a worker makes itself, which costs time alone. Each
+  worker then takes the next character with a mover of its own and the movement mode's copy for it.
 - A mode's copies are `IMovementMode.ForWorker`, one for each worker, made at the system's `Initialize`. A copy asks
   the world only through the worker's probes it is given (`MovementProbes.Mover` and `Sources`). It reads and writes
   only its character's components, and shares no state it writes. `ClimbingMode` has copies.
 - The characters move on the main thread with one thread, with fewer than `PlayerMovementSystem.LeastForWorkers`, with
   a mode that has no copies, or where the system has no `MovementProbes` for them.
+
+A worker and its pass:
 
 - A worker moves bodies through its owner's world, colliders, objects, and loose bodies, with its own windows, surface
   caches, and `FineGround`. Its answers are its owner's, bit for bit.
@@ -155,8 +158,8 @@ step's workers with them:
 - Each worker takes the next item of the pass from a counter it shares, so each item's result is the same on any thread.
 - `Engine:Physics:StepThreads` sets their number. At 0 they are `StepWorkers.ThreadCount`: a quarter of the processors,
   1 to 6. At 1 every pass runs on the main thread.
-- The helpers wait between passes. A pass allocates nothing. `AllocatedBytes` counts what the work allocated on every
-  thread, for tests.
+- The helpers wait between passes. Running a pass allocates nothing; the work allocates what it does. `AllocatedBytes`
+  counts what the work allocated on every thread, for tests.
 
 ### Building blocks for movement modes
 
