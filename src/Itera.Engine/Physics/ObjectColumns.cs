@@ -35,16 +35,13 @@ internal sealed class ObjectColumns
     private readonly VoxelObjectKinds _kinds;
     private readonly ObjectColumnReader _reader;
     private readonly int _cell;
-    private readonly Dictionary<long, Chunk> _chunks = new(MostChunks);
-    private readonly Stack<Chunk> _free = new();
+    private readonly ObjectDamage? _damage;
+
+    // The chunks made, which every reader of one store shares; and this reader's own: the chunk it read last and what
+    // it makes a chunk with.
+    private readonly Store _store = new();
     private readonly List<ObjectPlacement> _near = [];
     private readonly List<ObjectSpan>[] _columns = NewColumns();
-    private readonly ObjectDamage? _damage;
-    private readonly ObjectDamageChange[] _damageChanges = new ObjectDamageChange[64];
-    private readonly List<long> _stale = [];
-    private long _damageSeen;
-    private int _version = -1;
-    private long _reads;
     private Chunk? _last;
     private long _lastKey;
 
@@ -76,7 +73,7 @@ internal sealed class ObjectColumns
     public bool Empty => _objects.Count == 0;
 
     /// <summary>The chunks of columns kept now.</summary>
-    internal int ChunkCount => _chunks.Count;
+    internal int ChunkCount => _store.Chunks.Count;
 
     /// <summary>The objects' version (<see cref="ObjectWorld.Version"/>): it changes whenever one is placed or removed.</summary>
     internal int ObjectsVersion => _objects.Version;
@@ -274,19 +271,19 @@ internal sealed class ObjectColumns
     /// <summary>The spans of column (x, z), its chunk made first when it is not yet.</summary>
     private ReadOnlySpan<ObjectSpan> Spans(int x, int z)
     {
-        if (_objects.Version != _version)
+        if (_objects.Version != _store.Version)
         {
-            _version = _objects.Version;
-            foreach (var chunk in _chunks.Values)
+            _store.Version = _objects.Version;
+            foreach (var chunk in _store.Chunks.Values)
             {
-                _free.Push(chunk);
+                _store.Free.Push(chunk);
             }
 
-            _chunks.Clear();
+            _store.Chunks.Clear();
             _last = null;
         }
 
-        if (_damage is not null && _damage.Version != _damageSeen)
+        if (_damage is not null && _damage.Version != _store.DamageSeen)
         {
             FollowDamage();
         }
@@ -296,13 +293,13 @@ internal sealed class ObjectColumns
         var key = ((long)cx << 32) | (uint)cz;
         if (_last is null || _lastKey != key)
         {
-            if (!_chunks.TryGetValue(key, out var found))
+            if (!_store.Chunks.TryGetValue(key, out var found))
             {
                 found = Build(cx, cz, Unused());
-                _chunks[key] = found;
+                _store.Chunks[key] = found;
             }
 
-            found.LastRead = ++_reads;
+            found.LastRead = ++_store.Reads;
             _last = found;
             _lastKey = key;
         }
@@ -319,47 +316,47 @@ internal sealed class ObjectColumns
     /// </summary>
     private void FollowDamage()
     {
-        while (_damage!.Version != _damageSeen)
+        while (_damage!.Version != _store.DamageSeen)
         {
-            var read = _damage.ReadChanges(_damageSeen, _damageChanges, out var lost);
+            var read = _damage.ReadChanges(_store.DamageSeen, _store.DamageChanges, out var lost);
             if (lost)
             {
-                _damageSeen = _damage.Version;
-                foreach (var chunk in _chunks.Values)
+                _store.DamageSeen = _damage.Version;
+                foreach (var chunk in _store.Chunks.Values)
                 {
-                    _free.Push(chunk);
+                    _store.Free.Push(chunk);
                 }
 
-                _chunks.Clear();
+                _store.Chunks.Clear();
                 _last = null;
                 return;
             }
 
             for (var i = 0; i < read; i++)
             {
-                ref readonly var change = ref _damageChanges[i];
-                _damageSeen = change.Version;
+                ref readonly var change = ref _store.DamageChanges[i];
+                _store.DamageSeen = change.Version;
                 // The chunks whose columns the change's box meets: what an edit changed, or the object's whole reach.
                 var side = (long)ChunkSide * _cell;
                 long cx0 = DeterministicMath.FloorDivide(change.MinX, side),
                     cx1 = DeterministicMath.FloorDivide(change.MaxX, side),
                     cz0 = DeterministicMath.FloorDivide(change.MinZ, side),
                     cz1 = DeterministicMath.FloorDivide(change.MaxZ, side);
-                _stale.Clear();
-                foreach (var key in _chunks.Keys)
+                _store.Stale.Clear();
+                foreach (var key in _store.Chunks.Keys)
                 {
                     long cx = key >> 32,
                         cz = (int)(uint)key;
                     if (cx >= cx0 && cx <= cx1 && cz >= cz0 && cz <= cz1)
                     {
-                        _stale.Add(key);
+                        _store.Stale.Add(key);
                     }
                 }
 
-                foreach (var key in _stale)
+                foreach (var key in _store.Stale)
                 {
-                    _free.Push(_chunks[key]);
-                    _chunks.Remove(key);
+                    _store.Free.Push(_store.Chunks[key]);
+                    _store.Chunks.Remove(key);
                 }
             }
 
@@ -370,19 +367,19 @@ internal sealed class ObjectColumns
     /// <summary>A chunk to make: a freed one, a new one while fewer than <see cref="MostChunks"/> are kept, else the one read longest ago.</summary>
     private Chunk Unused()
     {
-        if (_free.Count > 0)
+        if (_store.Free.Count > 0)
         {
-            return _free.Pop();
+            return _store.Free.Pop();
         }
 
-        if (_chunks.Count < MostChunks)
+        if (_store.Chunks.Count < MostChunks)
         {
             return new Chunk();
         }
 
         var oldestKey = 0L;
         Chunk? oldest = null;
-        foreach (var (key, chunk) in _chunks)
+        foreach (var (key, chunk) in _store.Chunks)
         {
             if (oldest is null || chunk.LastRead < oldest.LastRead)
             {
@@ -391,7 +388,7 @@ internal sealed class ObjectColumns
             }
         }
 
-        _chunks.Remove(oldestKey);
+        _store.Chunks.Remove(oldestKey);
         return oldest!;
     }
 
@@ -483,6 +480,21 @@ internal sealed class ObjectColumns
         }
 
         return columns;
+    }
+
+    /// <summary>
+    /// The chunks made from the objects and kept, by chunk, with the objects' version and damage they follow and a count
+    /// of the chunk changes read, for the chunk read longest ago.
+    /// </summary>
+    private sealed class Store
+    {
+        public readonly Dictionary<long, Chunk> Chunks = new(MostChunks);
+        public readonly Stack<Chunk> Free = new();
+        public readonly List<long> Stale = [];
+        public readonly ObjectDamageChange[] DamageChanges = new ObjectDamageChange[64];
+        public long DamageSeen;
+        public int Version = -1;
+        public long Reads;
     }
 
     private sealed class Chunk

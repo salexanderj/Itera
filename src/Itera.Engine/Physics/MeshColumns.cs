@@ -48,15 +48,13 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     /// <summary>A triangle steeper than this (its normal's y below it) is a wall: it has no height at a column's centre.</summary>
     private const float WallNormalY = 1e-3f;
 
-    private readonly Dictionary<long, Chunk> _chunks = new(MostChunks);
-    private readonly Stack<Chunk> _free = new();
+    // The chunks made, which every reader of one store shares; and this reader's own: the chunk it read last and what
+    // it makes a chunk with.
+    private readonly Store _store = new();
     private readonly List<int> _triangles = [];
     private readonly List<(int Column, ColumnSpan Span)> _built = [];
-    private readonly List<long> _stale = [];
-    private int _version = -1;
     private Chunk? _last;
     private long _lastKey;
-    private long _reads;
 
     /// <summary>True when there is no collider: every query answers none.</summary>
     public bool Empty => colliders.Count == 0;
@@ -65,7 +63,7 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     public double CellsPerMetre => cellsPerMetre;
 
     /// <summary>The chunks of columns kept now, at most <see cref="MostChunks"/>.</summary>
-    internal int ChunkCount => _chunks.Count;
+    internal int ChunkCount => _store.Chunks.Count;
 
     /// <summary>The colliders' version (<see cref="MeshColliders.Version"/>): it changes whenever one is added or removed.</summary>
     internal int Version => colliders.Version;
@@ -78,7 +76,7 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
 
     /// <summary>True when the chunk that holds column (x, z) is kept now.</summary>
     internal bool Keeps(int x, int z) =>
-        _version == colliders.Version && _chunks.ContainsKey(((long)(x >> ChunkBits) << 32) | (uint)(z >> ChunkBits));
+        _store.Version == colliders.Version && _store.Chunks.ContainsKey(((long)(x >> ChunkBits) << 32) | (uint)(z >> ChunkBits));
 
     /// <summary>
     /// The top (one above the highest cell) of the highest cell a triangle blocks from y0 to y1 (inclusive) under
@@ -253,7 +251,7 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     /// <summary>The spans of column (x, z), its chunk made first when it is not yet.</summary>
     private ReadOnlySpan<ColumnSpan> Spans(int x, int z)
     {
-        if (colliders.Version != _version)
+        if (colliders.Version != _store.Version)
         {
             FollowChanges();
         }
@@ -264,13 +262,13 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
         // A query reads its columns in order: most reads are of the chunk read last.
         if (_last is null || _lastKey != key)
         {
-            if (!_chunks.TryGetValue(key, out var found))
+            if (!_store.Chunks.TryGetValue(key, out var found))
             {
                 found = Build(cx, cz, Unused());
-                _chunks[key] = found;
+                _store.Chunks[key] = found;
             }
 
-            found.LastRead = ++_reads;
+            found.LastRead = ++_store.Reads;
             _last = found;
             _lastKey = key;
         }
@@ -289,21 +287,21 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     /// </summary>
     private void FollowChanges()
     {
-        var after = _version;
-        _version = colliders.Version;
+        var after = _store.Version;
+        _store.Version = colliders.Version;
         _last = null;
         if (!colliders.KeepsChangesAfter(after))
         {
-            foreach (var chunk in _chunks.Values)
+            foreach (var chunk in _store.Chunks.Values)
             {
-                _free.Push(chunk);
+                _store.Free.Push(chunk);
             }
 
-            _chunks.Clear();
+            _store.Chunks.Clear();
             return;
         }
 
-        for (var version = after; version < _version && _chunks.Count > 0; version++)
+        for (var version = after; version < _store.Version && _store.Chunks.Count > 0; version++)
         {
             colliders.ChangeBox(version, out var low, out var high);
             if (low.X > high.X)
@@ -315,21 +313,21 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
                 x1 = (CellOf(high.X) + 1) >> ChunkBits,
                 z0 = (CellOf(low.Z) - 1) >> ChunkBits,
                 z1 = (CellOf(high.Z) + 1) >> ChunkBits;
-            _stale.Clear();
-            foreach (var key in _chunks.Keys)
+            _store.Stale.Clear();
+            foreach (var key in _store.Chunks.Keys)
             {
                 int cx = (int)(key >> 32),
                     cz = (int)key;
                 if (cx >= x0 && cx <= x1 && cz >= z0 && cz <= z1)
                 {
-                    _stale.Add(key);
+                    _store.Stale.Add(key);
                 }
             }
 
-            foreach (var key in _stale)
+            foreach (var key in _store.Stale)
             {
-                _chunks.Remove(key, out var chunk);
-                _free.Push(chunk!);
+                _store.Chunks.Remove(key, out var chunk);
+                _store.Free.Push(chunk!);
             }
         }
     }
@@ -344,19 +342,19 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     /// </summary>
     private Chunk Unused()
     {
-        if (_free.Count > 0)
+        if (_store.Free.Count > 0)
         {
-            return _free.Pop();
+            return _store.Free.Pop();
         }
 
-        if (_chunks.Count < MostChunks)
+        if (_store.Chunks.Count < MostChunks)
         {
             return new Chunk();
         }
 
         var oldestKey = 0L;
         Chunk? oldest = null;
-        foreach (var (key, chunk) in _chunks)
+        foreach (var (key, chunk) in _store.Chunks)
         {
             if (oldest is null || chunk.LastRead < oldest.LastRead)
             {
@@ -365,7 +363,7 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
             }
         }
 
-        _chunks.Remove(oldestKey);
+        _store.Chunks.Remove(oldestKey);
         return oldest!;
     }
 
@@ -579,6 +577,19 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     /// and its tags.
     /// </summary>
     private readonly record struct ColumnSpan(int Lo, int Hi, float Surface, uint Tags, int Collider);
+
+    /// <summary>
+    /// The chunks made from the colliders and kept, by chunk, with the colliders' version they follow and a count of the
+    /// chunk changes read, for the chunk read longest ago.
+    /// </summary>
+    private sealed class Store
+    {
+        public readonly Dictionary<long, Chunk> Chunks = new(MostChunks);
+        public readonly Stack<Chunk> Free = new();
+        public readonly List<long> Stale = [];
+        public int Version = -1;
+        public long Reads;
+    }
 
     /// <summary>The spans of a chunk's columns: column i's from <c>Offsets[i]</c> to <c>Offsets[i + 1]</c>.</summary>
     private sealed class Chunk
