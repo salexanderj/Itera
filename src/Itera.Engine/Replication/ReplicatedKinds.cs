@@ -13,12 +13,20 @@ public readonly record struct ReplicationContext(World World, WorldOrigin Origin
 /// A game's side of one replicated kind: the host reads an entity's state into a <see cref="ReplicatedState"/> by its
 /// schema, and a client makes, shows, and removes the entities the host sends. Run-wide (registered at the run's start),
 /// so it keeps no match's state; it is called on the main thread from the replication systems, outside any query, so
-/// structural changes are safe in it.
+/// structural changes are safe in it, but for the captures of a kind that says they may run on the step's workers
+/// (<see cref="CapturesOnWorkers"/>).
 /// </summary>
 public interface IReplicatedKind
 {
     /// <summary>On the host: writes <paramref name="entity"/>'s state now (absolute positions: the context's origin).</summary>
     void Capture(in ReplicationContext context, Entity entity, ref ReplicatedState state);
+
+    /// <summary>
+    /// True when <see cref="Capture"/> may run on one of the step's worker threads (<c>StepWorkers</c>) at the same time
+    /// as other entities' captures: it reads only the entity's components and the context, and writes only the state it
+    /// is given. False (the default) captures it on the main thread.
+    /// </summary>
+    bool CapturesOnWorkers => false;
 
     /// <summary>
     /// On a client: makes the entity for an id the host sent, first shown at <paramref name="state"/>. The engine adds

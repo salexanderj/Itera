@@ -378,6 +378,8 @@ internal sealed class TestKinds(ReplicatedKinds kinds, MoverPlan plan) : IRunSta
 
     private sealed class MoverKind(MoverPlan plan) : IReplicatedKind
     {
+        public bool CapturesOnWorkers => true;
+
         public void Capture(in ReplicationContext context, Entity entity, ref ReplicatedState state)
         {
             ref var mover = ref context.World.Get<TestMover>(entity);

@@ -12,8 +12,9 @@ namespace Itera.Engine.Tests.Replication;
 
 /// <summary>
 /// A host sending three clients 300 movers on too few bytes for them all, so each send passes most over, as movers leave
-/// the clients' reach and are destroyed and added: every message it sends on the step's workers is the message it sends
-/// on the main thread alone, byte for byte; and a send on the workers allocates nothing on any thread.
+/// the clients' reach and are destroyed and added: every message it sends on the step's workers (the movers captured
+/// there, and the clients' packets written there) is the message it sends on the main thread alone, byte for byte; and
+/// a send on the workers allocates nothing on any thread.
 /// </summary>
 [RunsLong]
 public sealed class ReplicationWorkersTests(ITestOutputHelper output)
@@ -27,9 +28,10 @@ public sealed class ReplicationWorkersTests(ITestOutputHelper output)
         var (here, serial) = Sends(stepThreads: 1);
         var (there, parallel) = Sends(stepThreads: 4);
 
-        // Every send but the first few, to three clients, went to the workers; none with one thread.
+        // Every send but the first few went to the workers twice, its 300 movers' capture and its three clients' packets;
+        // none with one thread.
         Assert.Equal(0, serial);
-        Assert.True(parallel > Steps / 2 - 10, $"{parallel} passes on the workers.");
+        Assert.True(parallel > Steps - 20, $"{parallel} passes on the workers.");
         Assert.Equal(here.Count, there.Count);
         for (var i = 0; i < here.Count; i++)
         {

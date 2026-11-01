@@ -30,7 +30,9 @@ The options are `Engine:Replication:SendHz`, `BytesPerSecond`, `PeakBytesPerSeco
   - `Remove(id)` removes a live entity, whose `Replicated` stays. Remove it before adding the entity again.
   - A player who leaves takes their entity along. The game removes it before the slot's next player is added under the same id.
   - Each add is a new generation of its id, which whole records carry. A client shows an id added again afresh (despawned, then spawned), even under another kind.
-- **Writes the handler.** `Capture` writes the state on the host. On a client, `Spawn` makes the entity (the engine adds `Replicated`; `Entity.Null` leaves it unshown), `Apply` sets it each step, and `Despawn` removes it. A pose kept for drawing copies its last into its previous one first, as any fixed system does. All run on the main thread, outside queries.
+- **Writes the handler.** `Capture` writes the state on the host. A kind whose `Capture` reads only the entity's
+  components and writes only its state says so (`IReplicatedKind.CapturesOnWorkers`), and the host may capture it on the
+  step's workers. On a client, `Spawn` makes the entity (the engine adds `Replicated`; `Entity.Null` leaves it unshown), `Apply` sets it each step, and `Despawn` removes it. A pose kept for drawing copies its last into its previous one first, as any fixed system does. All run on the main thread, outside queries.
 - **Predicts its own player.** On a client, `ReplicationService.Predict(entity)` marks the player, an entity with the components `PlayerMovementSystem` moves by. On the host, the game replicates each client's player under its slot's id with those components (a `RemotePlayer`), and the host moves it from the client's commands.
 - **Registers predicted parts.** Movement state in a component of the game's own (a wall run, a roll) is registered at the run's start (`ReplicatedKinds.RegisterPredicted`). The part is an `IPredictedState`: a name, a fixed number of bytes, `Capture` and `Restore` through the origin, `Differs`, and `IsValid`. All of a run's parts together stay within `ReplicatedKinds.MostPredictedBytes`, and the engine's climber is one of them. A correction puts the parts back with the rest. Their names and sizes go into the kinds' fingerprint.
 - **Judges shots against the past.** On the host, `ReplicationService.ShownTickOf(slot)` gives the host's tick (with its fraction) that a client showed when it made the command its player moves by this step, at most `MostShownTicksBehind` steps back. It gives -1 for the host's own slot, on a client, and offline, where a game judges against now.
@@ -52,10 +54,13 @@ The console's `replication` prints what is sent or shown. `replication delay MS`
 - Records go into packets that fit `MaxUnreliableBytes`, up to a limit per send, until the client's bytes are spent (`BytesPerSecond`; what a send leaves is kept, up to a send's share of `PeakBytesPerSecond`).
 - A record too large for what is left is passed over for smaller ones. Its size is measured before it is written
   (`ReplicatedStateCodec.Measure`), from the entity's kept states in place, so one passed over costs no writing.
-- With two clients or more, each client's entities are chosen and its packets written on the step's workers
-  (`StepWorkers`), each client by one worker with scratch of its own. The main thread captures the states and writes
-  each client's owner's block first, since both read the world. It sends the packets after, client by client in slot
-  order. A client's packets are the same on any thread.
+- The main thread checks each entity is alive, retiring the gone in order, and captures the others. With many of kinds
+  that capture on the workers, those are captured on the step's workers (`StepWorkers`), each worker with a state of its
+  own.
+- With two clients or more, each client's entities are chosen and its packets written on the step's workers, each
+  client by one worker with scratch of its own. The main thread writes each client's owner's block first, since it
+  reads the world. It sends the packets after, client by client in slot order. A client's packets are the same on any
+  thread.
 - A send's parts are the zones `replication.capture`, `replication.choose` (each client's entities by priority), and
   `replication.write` (its packets).
 - Every game message the host sends a client counts against the same bytes (`SpendGame`), so its state has the rest.

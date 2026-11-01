@@ -31,6 +31,14 @@ public sealed partial class ReplicationService
     /// <summary>Room for a packet's header (its kind, number, tick, and an empty removal count), in bytes.</summary>
     private const int HeaderBytes = 16;
 
+    /// <summary>
+    /// The fewest captures of kinds that may capture on the step's workers that go to them; fewer are taken here.
+    /// </summary>
+    private const int LeastCapturesForWorkers = 256;
+
+    /// <summary>The captures a worker takes at a time.</summary>
+    private const int CaptureBatch = 64;
+
     private static readonly ZoneId s_captureZone = Zones.Name("replication.capture");
     private static readonly ZoneId s_chooseZone = Zones.Name("replication.choose");
     private static readonly ZoneId s_writeZone = Zones.Name("replication.write");
@@ -53,6 +61,13 @@ public sealed partial class ReplicationService
     private SendLane? _here;
     private SendLane[]? _lanes;
     private Action<int>? _work;
+
+    // The entities of kinds that capture on the step's workers, gathered this send, and the next for a worker to take.
+    private int[] _onWorkers = [];
+    private int _onWorkersCount;
+    private int _nextCapture;
+    private int _captureTick;
+    private Action<int>? _captureWork;
     private uint _lastId;
     private uint _lastGeneration;
 
@@ -267,7 +282,6 @@ public sealed partial class ReplicationService
         }
 
         _here ??= new SendLane();
-        _lanes ??= Lanes();
         if (_lanes is not null && _sendingCount >= 2)
         {
             _nextSending = -1;
@@ -476,11 +490,18 @@ public sealed partial class ReplicationService
         }
     }
 
-    /// <summary>Each live entity's state now, kept in its history; one destroyed since is removed from the clients.</summary>
+    /// <summary>
+    /// Each live entity's state now, kept in its history; one destroyed since is removed from the clients, in the
+    /// entities' order, here. Those of a kind that may capture on the step's workers
+    /// (<see cref="IReplicatedKind.CapturesOnWorkers"/>) are captured on them, <see cref="CaptureBatch"/> at a time, each
+    /// worker with a state of its own, when there are <see cref="LeastCapturesForWorkers"/> or more; the rest here.
+    /// </summary>
     private void Capture(int tick)
     {
         using var zone = Zones.Time(s_captureZone);
         var context = Context;
+        _lanes ??= Lanes();
+        _onWorkersCount = 0;
         for (var index = 0; index < _entities.Count; index++)
         {
             var entity = _entities[index];
@@ -495,10 +516,65 @@ public sealed partial class ReplicationService
                 continue;
             }
 
-            _captured = default;
-            entity.Kind.Handler.Capture(in context, entity.Entity, ref _captured);
-            entity.Keep(tick, in _captured);
+            if (_lanes is not null && entity.Kind.Handler.CapturesOnWorkers)
+            {
+                if (_onWorkersCount == _onWorkers.Length)
+                {
+                    Array.Resize(ref _onWorkers, Math.Max(256, _onWorkers.Length * 2));
+                }
+
+                _onWorkers[_onWorkersCount++] = index;
+                continue;
+            }
+
+            CaptureOne(in context, entity, tick, ref _captured);
         }
+
+        if (_onWorkersCount >= LeastCapturesForWorkers)
+        {
+            _captureTick = tick;
+            _nextCapture = 0;
+            _captureWork ??= CaptureWork;
+            _workers!.Run(_captureWork);
+            return;
+        }
+
+        for (var i = 0; i < _onWorkersCount; i++)
+        {
+            CaptureOne(in context, _entities[_onWorkers[i]], tick, ref _captured);
+        }
+    }
+
+    /// <summary>One worker's part of a capture: the next entities not yet taken, <see cref="CaptureBatch"/> at a time.</summary>
+    private void CaptureWork(int worker)
+    {
+        var lane = _lanes![worker];
+        var context = Context;
+        for (
+            var start = Interlocked.Add(ref _nextCapture, CaptureBatch) - CaptureBatch;
+            start < _onWorkersCount;
+            start = Interlocked.Add(ref _nextCapture, CaptureBatch) - CaptureBatch
+        )
+        {
+            var end = Math.Min(start + CaptureBatch, _onWorkersCount);
+            for (var i = start; i < end; i++)
+            {
+                CaptureOne(in context, _entities[_onWorkers[i]], _captureTick, ref lane.Captured);
+            }
+        }
+    }
+
+    /// <summary>An entity's state now, through <paramref name="state"/>, kept in its own history.</summary>
+    private static void CaptureOne(
+        in ReplicationContext context,
+        HostEntity entity,
+        int tick,
+        ref ReplicatedState state
+    )
+    {
+        state = default;
+        entity.Kind.Handler.Capture(in context, entity.Entity, ref state);
+        entity.Keep(tick, in state);
     }
 
     /// <summary>
@@ -1128,9 +1204,11 @@ public sealed partial class ReplicationService
 
     private readonly record struct Candidate(float Priority, int Index);
 
-    /// <summary>One thread's scratch for a client's send: its candidates and the packet being written.</summary>
+    /// <summary>One thread's scratch for a send: a state it captures into, and a client's candidates and packet.</summary>
     private sealed class SendLane
     {
+        public ReplicatedState Captured;
+
         public List<Candidate> Candidates { get; } = [];
 
         public MessageWriter Packet { get; } = new();
