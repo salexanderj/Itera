@@ -4,12 +4,12 @@ using Microsoft.Extensions.Options;
 namespace Itera.Engine.Physics;
 
 /// <summary>
-/// The threads a fixed step's parallel passes run on (<c>PlayerMovementSystem</c>'s moves): <see cref="Run"/> runs a
-/// piece of work on each of <see cref="Count"/> threads at once, the calling thread as worker 0 and helper threads as the
-/// rest, and returns once every one is done. Each worker keeps scratch of its own by its index, and takes the next item
-/// of the pass from a counter it shares (<see cref="Interlocked.Increment(ref int)"/>), so each item's result is the same
-/// whichever thread takes it. The helpers wait between passes. Run-wide (<c>Engine:Physics:StepThreads</c>); one calling
-/// thread at a time, the main thread; allocates nothing once made.
+/// The threads a fixed step's parallel passes run on (<c>PlayerMovementSystem</c>'s moves, and a game's own systems'
+/// passes): <see cref="Run"/> runs a piece of work on each of <see cref="Count"/> threads at once, the calling thread as
+/// worker 0 and helper threads as the rest, and returns once every one is done. Each worker keeps scratch of its own by
+/// its index, and takes the next item of the pass from a counter it shares (<see cref="Interlocked.Increment(ref int)"/>),
+/// so each item's result is the same whichever thread takes it. The helpers wait between passes. Run-wide
+/// (<c>Engine:Physics:StepThreads</c>); one calling thread at a time, the main thread; allocates nothing once made.
 /// </summary>
 public sealed class StepWorkers : IDisposable
 {

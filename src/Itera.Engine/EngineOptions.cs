@@ -696,7 +696,7 @@ public sealed class PhysicsSettings
 
     /// <summary>
     /// The threads a fixed step's parallel passes run on, the main thread among them, 1 to 16: the characters' moves
-    /// (<c>PlayerMovementSystem</c>). 0 (the default) for a quarter of the logical processors, 2 to 6, or 1 on a machine
+    /// (<c>PlayerMovementSystem</c>), and a game's own systems' passes. 0 (the default) for a quarter of the logical processors, 2 to 6, or 1 on a machine
     /// of one (<c>StepWorkers.ThreadCount</c>); 1 runs every pass on the main thread. The passes' results are the same on any
     /// number.
     /// </summary>
