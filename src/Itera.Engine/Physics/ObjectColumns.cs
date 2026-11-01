@@ -26,7 +26,10 @@ namespace Itera.Engine.Physics;
 /// </summary>
 internal sealed class ObjectColumns
 {
-    /// <summary>The most chunks kept.</summary>
+    /// <summary>
+    /// The most chunks kept, but where a pass on other threads read more at once (<see cref="BeginPass"/>): those stay,
+    /// and the chunk read longest ago is made again for each new one.
+    /// </summary>
     public const int MostChunks = 256;
 
     /// <summary>How many chunks a worker keeps of its own, made where the store keeps none.</summary>

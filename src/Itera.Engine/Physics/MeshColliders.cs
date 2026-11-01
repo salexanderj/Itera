@@ -364,13 +364,62 @@ public sealed partial class MeshColliders(
         }
 
         Rebuild();
+        return _triangles != 0 && RaycastMarked(origin, direction / length, maxMetres, out hit, _stamps, NextStamp());
+    }
+
+    /// <summary>
+    /// <see cref="Raycast"/> for a reader on another thread: the same hit, each
+    /// triangle marked in the caller's own <paramref name="stamps"/> (grown to the triangles' count) with its own
+    /// <paramref name="stamp"/>, so it writes nothing of the colliders'. Throws where they changed since they were last
+    /// built: build them first on the thread that changes them (<see cref="TriangleCount"/>).
+    /// </summary>
+    internal bool RaycastForWorker(
+        Vector3 origin,
+        Vector3 direction,
+        float maxMetres,
+        out SurfaceHit hit,
+        ref int[] stamps,
+        ref int stamp
+    )
+    {
+        hit = default;
+        var length = direction.Length();
+        if (!(length > 0) || !float.IsFinite(length) || !(maxMetres > 0))
+        {
+            return false;
+        }
+
+        if (_dirty)
+        {
+            throw new InvalidOperationException(
+                "The colliders changed since they were last built: build them first (TriangleCount)."
+            );
+        }
+
         if (_triangles == 0)
         {
             return false;
         }
 
-        var d = direction / length;
-        var stamp = NextStamp();
+        if (stamps.Length < _triangles)
+        {
+            stamps = new int[Math.Max(_triangles, 2 * stamps.Length)];
+            stamp = 0;
+        }
+
+        if (++stamp == int.MaxValue)
+        {
+            Array.Clear(stamps);
+            stamp = 1;
+        }
+
+        return RaycastMarked(origin, direction / length, maxMetres, out hit, stamps, stamp);
+    }
+
+    /// <summary>The ray along the unit <paramref name="d"/>, each triangle marked in <paramref name="stamps"/>.</summary>
+    private bool RaycastMarked(Vector3 origin, Vector3 d, float maxMetres, out SurfaceHit hit, int[] stamps, int stamp)
+    {
+        hit = default;
         var best = maxMetres;
         var bestTriangle = -1;
 
@@ -415,12 +464,12 @@ public sealed partial class MeshColliders(
                     for (var i = _groupStart[group]; i < end; i++)
                     {
                         var triangle = _groupTriangles[i];
-                        if (_stamps[triangle] == stamp)
+                        if (stamps[triangle] == stamp)
                         {
                             continue;
                         }
 
-                        _stamps[triangle] = stamp;
+                        stamps[triangle] = stamp;
                         if (Intersect(start, d, _a[triangle], _b[triangle], _c[triangle], out var t) && t < best)
                         {
                             best = t;

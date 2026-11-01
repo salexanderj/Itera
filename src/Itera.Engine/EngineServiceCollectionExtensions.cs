@@ -173,6 +173,8 @@ public static class EngineServiceCollectionExtensions
         // What moves the origin and everything kept in local positions with it (the game's IOriginShiftHandlers last).
         services.TryAddScoped<OriginShifts>();
         services.TryAddScoped<PhysicsWorld>();
+        // The threads a step's parallel passes run on (the characters' moves), for the run: they wait between passes.
+        services.TryAddSingleton(sp => new StepWorkers(sp.GetRequiredService<IOptions<EngineOptions>>()));
         // The match's colliders a game registers, and the sources rays and the character mover meet: those and the terrain.
         services.TryAddScoped<MeshColliders>();
         services.TryAddScoped<CollisionSources>();

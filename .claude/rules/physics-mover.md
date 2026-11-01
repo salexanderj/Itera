@@ -1,7 +1,7 @@
 ---
 paths:
-  - "src/Itera.Engine/Physics/{VoxelCharacterMover,FineGround,MeshColumns,MovementProbes}.cs"
-  - "tests/Itera.Engine.Tests/Physics/{CoarseCeilingMoverTests,CoarseVoxelTests,DensityMoverTests,FarFromTheMiddleTests,FineGroundTests,FineMoverTests,GroundMaterialTests,MapEdgeMoverTests,MeshColumnsTests,MeshMoverTests,MixedGroundMoverTests,MovementProbesTests,MoverRestTests,MoverWithBodiesTests,MoverWorkersTests,VoxelCharacterMoverShapeTests,VoxelCharacterMoverTests,WideBodyMoverTests}.cs"
+  - "src/Itera.Engine/Physics/{VoxelCharacterMover,FineGround,MeshColumns,MovementProbes,StepWorkers}.cs"
+  - "tests/Itera.Engine.Tests/Physics/{CoarseCeilingMoverTests,CoarseVoxelTests,DensityMoverTests,FarFromTheMiddleTests,FineGroundTests,FineMoverTests,GroundMaterialTests,MapEdgeMoverTests,MeshColumnsTests,MeshMoverTests,MixedGroundMoverTests,MovementProbesTests,MoverRestTests,MoverWithBodiesTests,MoverWorkersTests,StepWorkersTests,VoxelCharacterMoverShapeTests,VoxelCharacterMoverTests,WideBodyMoverTests,WorkersWorld}.cs"
 ---
 
 ## The character mover
@@ -114,7 +114,16 @@ move of a character at rest (`.claude/rules/systems.md`).
 
 ### Movers on other threads
 
-`VoxelCharacterMover.CreateWorker` makes a mover for another thread. No system uses one yet.
+`VoxelCharacterMover.CreateWorker` makes a mover for another thread. `PlayerMovementSystem` moves its characters on the
+step's workers with them:
+
+- The system gathers the characters, begins the pass, and makes each one's chunks from its feet, size, and velocity.
+  Each worker then takes the next character with a mover of its own and the movement mode's copy for it.
+- A mode's copies are `IMovementMode.ForWorker`, one for each worker, made at the system's `Initialize`. A copy asks
+  the world only through the worker's probes it is given (`MovementProbes.Mover` and `Sources`). It reads and writes
+  only its character's components, and shares no state it writes. `ClimbingMode` has copies.
+- The characters move on the main thread with one thread, with fewer than `PlayerMovementSystem.LeastForWorkers`, with
+  a mode that has no copies, or where the system has no `MovementProbes` for them.
 
 - A worker moves bodies through its owner's world, colliders, objects, and loose bodies, with its own windows, surface
   caches, and `FineGround`. Its answers are its owner's, bit for bit.
@@ -128,12 +137,26 @@ move of a character at rest (`.claude/rules/systems.md`).
     `PrepareMarginCells` more.
   - The workers move the bodies, each one body at a time.
   - The owner ends the pass (`EndPass`).
-- Within a pass the columns keep every chunk read, past `MeshColumns.MostChunks` where they must. After it, the chunk read
-  longest ago goes again.
+- Within a pass the columns keep every chunk read, past `MeshColumns.MostChunks` where they must. They stay past it after
+  the pass, and the chunk read longest ago goes again at the next chunk made.
+- `Prepare` makes no chunk of colliders or objects where there are none, as the mover reads none.
 - While workers move bodies, nothing else moves one, reads the columns, refreshes the loose bodies, or changes the world.
 - In Debug a mover throws on a second move or query while one runs.
-- The probes still write shared marks (`MovementProbes`, `CollisionSources`, `ObjectRays`), so a movement mode that
-  calls them cannot run on a worker yet.
+- A worker's probes are `MovementProbes.CreateWorker`: the worker and a copy of the shared ray of its own
+  (`CollisionSources.CreateWorker`), which marks the colliders' triangles and gathers objects in its own memory.
+  `MovementProbes.Mover` and `Sources` give a movement mode's copy the mover and the ray to ask.
+
+### The step's workers
+
+`StepWorkers` (run-wide) are the threads a fixed step's parallel passes run on, the calling thread among them.
+
+- `Run` runs a piece of work on every worker at once, each given its index, and returns once all are done. It rethrows
+  the first exception a worker met.
+- Each worker takes the next item of the pass from a counter it shares, so each item's result is the same on any thread.
+- `Engine:Physics:StepThreads` sets their number. At 0 they are `StepWorkers.ThreadCount`: a quarter of the processors,
+  1 to 6. At 1 every pass runs on the main thread.
+- The helpers wait between passes. A pass allocates nothing. `AllocatedBytes` counts what the work allocated on every
+  thread, for tests.
 
 ### Building blocks for movement modes
 

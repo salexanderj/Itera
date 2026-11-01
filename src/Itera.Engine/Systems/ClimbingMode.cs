@@ -15,7 +15,8 @@ namespace Itera.Engine.Systems;
 /// lets go, either for <see cref="RegrabSeconds"/> before the next grab. Climbing up past the wall's top pulls the player
 /// up onto it where it has room to stand: up past the top, then over the edge. A wall that ends beside or below lets go.
 /// The probes are <see cref="MovementProbes"/>; the state per player is its <see cref="Climber"/>, which a game gives the
-/// players that climb (one without moves as ever). Main thread; allocates nothing.
+/// players that climb (one without moves as ever). Main thread, or a worker's copy on its thread
+/// (<see cref="ForWorker"/>); allocates nothing.
 /// </summary>
 /// <param name="probes">The match's probes.</param>
 /// <param name="climbable">The surface tags a wall needs any of to be climbed.</param>
@@ -59,6 +60,9 @@ public sealed class ClimbingMode(MovementProbes probes, uint climbable) : IMovem
 
     // A pull that has not finished by then lets go.
     private const float MostPullSeconds = 1.5f;
+
+    /// <summary>The same climbing for a worker's thread, through its probes: the mode keeps no state.</summary>
+    public IMovementMode ForWorker(MovementProbes probes) => new ClimbingMode(probes, climbable);
 
     public bool Steer(in MovementModeInput input, ref MovementModeMove move)
     {

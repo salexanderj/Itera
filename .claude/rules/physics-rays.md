@@ -27,6 +27,7 @@ Each collider keeps:
   only when it meets the bounds before its nearest hit so far, so a tall stack of colliders in one bucket stays cheap.
   The character mover's box query (`Triangles`) reads the buckets' plain lists. `TrianglesForWorker` gives the same
   triangles for a reader on another thread, marked in its own stamps, once the colliders are built.
+  `RaycastForWorker` gives such a reader the ray's hit the same way.
 - A box round its triangles in absolute centimetres. Each add, remove, and change of settings (`SetSettings`) raises
   `MeshColliders.Version` and keeps the collider's box in a ring of `MeshColliders.KeptChanges`. `ChangesMeet` says whether a change after a version may reach
   a box. Past the ring, every box counts as changed.
@@ -54,6 +55,10 @@ what the source gives:
 - A collider hit gives the collider and the triangle.
 - An object hit gives the object's voxel's material and `ObjectId`.
 - A solid model hit gives its id in `Collider` and `SurfaceSource.SolidModel`, with no material or tags.
+
+`CollisionSources.CreateWorker` makes a copy for another thread, with the same hits. It marks the colliders' triangles
+in its own stamps and gathers objects in its own lists (`ObjectRays.CreateWorker`). The terrain's and the solid models'
+rays write nothing. A copy is used only while nothing changes what the rays meet, within the mover's pass.
 
 The voxel tools' ray over the terrain alone is `ToolAim.Raycast(VoxelWorld, ...)`. `ToolAim.Raycast(CollisionSources,
 ...)` meets all the sources, past the terrain's and the objects' passable voxels round the eye.

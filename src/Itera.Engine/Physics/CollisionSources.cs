@@ -11,7 +11,8 @@ namespace Itera.Engine.Physics;
 /// (<see cref="MeshColliders"/>), and the solid models a game places (<see cref="SolidModelVoxels"/>, a gate's leaf; with
 /// the loose bodies' voxels and the match's origin, which the solids' poses are absolute in). <see cref="Raycast"/> answers from all of them, the nearest winning, each hit with its
 /// surface's tags (<see cref="IVoxelSurfaceTags"/> for voxels, the objects' too, the collider's material's for meshes).
-/// The voxel tools' own ray, past passable voxels, is <c>ToolAim.Raycast</c>. Scoped to the match; main thread.
+/// The voxel tools' own ray, past passable voxels, is <c>ToolAim.Raycast</c>. Scoped to the match; main thread (a copy
+/// for another thread is <see cref="CreateWorker"/>'s).
 /// </summary>
 public sealed class CollisionSources(
     MeshColliders meshes,
@@ -22,6 +23,20 @@ public sealed class CollisionSources(
     WorldOrigin? worldOrigin = null
 )
 {
+    // A worker's: its own marks of the mesh colliders' triangles (MeshColliders.RaycastForWorker).
+    private bool _worker;
+    private int[] _meshStamps = [];
+    private int _meshStamp;
+
+    /// <summary>
+    /// Rays for a reader on another thread while nothing changes what they meet (the voxels, the objects, the colliders,
+    /// and the solid models): the same hits, with marks and lists of its own, so it writes nothing these rays share. The
+    /// colliders must be built first, on the thread that changes them (<see cref="MeshColliders.TriangleCount"/>). One
+    /// thread at a time.
+    /// </summary>
+    internal CollisionSources CreateWorker() =>
+        new(meshes, voxelTags, voxels, objects?.CreateWorker(), bodies, worldOrigin) { _worker = true };
+
     /// <summary>The match's mesh colliders.</summary>
     public MeshColliders Meshes => meshes;
 
@@ -42,7 +57,9 @@ public sealed class CollisionSources(
     /// </summary>
     public bool Raycast(Vector3 origin, Vector3 direction, float maxMetres, out SurfaceHit hit, bool coarse = false)
     {
-        var found = meshes.Raycast(origin, direction, maxMetres, out hit);
+        var found = !_worker
+            ? meshes.Raycast(origin, direction, maxMetres, out hit)
+            : meshes.RaycastForWorker(origin, direction, maxMetres, out hit, ref _meshStamps, ref _meshStamp);
         var d = Vector3.Normalize(direction);
         if (
             voxels is not null

@@ -79,7 +79,9 @@ says "probe" was confirmed by `probe/Program.cs` against the pinned packages.
 - State that changes every few ticks is a field in an existing component, not a component that is
   added and removed. Every `Add` and `Remove` copies the entity to another archetype.
 - Arch registers a component type on first use in a static dictionary without a lock. First use of a
-  type happens on the main thread, never inside a parallel job.
+  type happens on the main thread, never inside a parallel job. `EcsWorld.Initialize` registers every struct
+  of the systems' assemblies first (`ComponentTypes`). A type from another assembly is used once on the main
+  thread before a pass reads it.
 
 ### Queries
 
@@ -144,15 +146,27 @@ says "probe" was confirmed by `probe/Program.cs` against the pinned packages.
   `Group<T>.Dispose` dispose a system.
 - Systems keep no per-entity state in fields; that belongs in components. Fields hold services, query
   descriptions, a `CommandBuffer`, and caches.
-- All ECS work runs on the main thread. Do not add `ParallelQuery`, `World.SharedJobScheduler`, or a
-  `JobScheduler` without the user's decision. The scheduler is static and shared by every world, and Bepu
-  already runs its own worker threads.
+- ECS work runs on the main thread. A system may spread one pass over the step's workers
+  (`StepWorkers`, `Engine:Physics:StepThreads`), and the main thread waits for it. `PlayerMovementSystem` is
+  the pattern:
+  - Gather the entities on the main thread, and make what the pass reads there first (the mover's
+    `Prepare`).
+  - In the pass, each worker takes the next entity from a shared counter. It writes only that entity's
+    components and its own scratch: a mover of its own (`VoxelCharacterMover.CreateWorker`), probes and rays of
+    its own, and lists. It reads services only through their forms for other threads.
+  - After the pass, on the main thread: structural changes, writes to other entities, and `CommandBuffer`
+    playback. No result depends on which thread takes an entity, so a test compares the pass with the main
+    thread's, bit for bit.
+- Do not add Arch's `ParallelQuery`, `World.SharedJobScheduler`, or a `JobScheduler` without the user's
+  decision. The scheduler is static and shared by every world, and Bepu already runs its own worker threads.
 - Do not rely on `Group<T>.Get<G>()`: in Arch.System 1.1.0 it stops searching at the first nested
   group (probe).
 
 ### Performance
 
-- `Update` allocates no managed memory. The zero-allocation test enforces this for every system.
+- `Update` allocates no managed memory. The zero-allocation test enforces this for every system. A test
+  counts its own thread's bytes alone, so a system with a pass on the step's workers also checks theirs
+  (`StepWorkers.AllocatedBytes`).
 - No LINQ, no `foreach` over an interface-typed collection, and no non-generic Arch overloads (the
   `object` and `Type` versions box) in `Update`. Use the generic batch overloads (`Get<T0, T1>`) when
   reading several components of one entity.

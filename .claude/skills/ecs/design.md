@@ -154,6 +154,9 @@ entity is destroyed.
 
 All ECS work runs on the main thread, like every other engine service except drawing, which runs on the
 render thread and gets its data only through `FrameExchange`, and voxel generation, which runs on
-`VoxelWorkers` threads that hand finished columns to the main thread. Arch's parallel queries need a
-static, process-wide `JobScheduler`, split work only across chunks of the same archetype, and would
-compete with Bepu's worker threads. Adding them is a decision for the user, taken with measurements.
+`VoxelWorkers` threads that hand finished columns to the main thread. A system may spread one pass over the
+step's workers (`StepWorkers`) while the main thread waits, as `PlayerMovementSystem` moves its characters:
+the gather and every change past the visited entity stay on the main thread (the skill's rules). Arch's
+parallel queries need a static, process-wide `JobScheduler`, split work only across chunks of the same
+archetype, and would compete with Bepu's worker threads. Adding them is a decision for the user, taken with
+measurements.

@@ -37,7 +37,12 @@ namespace Itera.Engine.Systems;
 /// (<see cref="CharacterVelocity.Push"/>) is added after steering. While a player flies the debug camera, its feet
 /// follow the camera its command carries (<see cref="PlayerButtons.Fly"/>, <see cref="PlayerCommand.Viewpoint"/>, kept to
 /// the play area), so walking resumes under it, and a host moves a flying client's player where that client's camera
-/// is. It creates no entity: a game makes its player with these components. Reads <see cref="PlayerCommand"/>,
+/// is. With the step's workers (<see cref="StepWorkers"/>, more than one thread), at least <see cref="LeastForWorkers"/>
+/// characters to move, and a movement mode with copies for workers (<see cref="IMovementMode.ForWorker"/>) or none, the
+/// characters move on those threads at once: the system gathers them, makes the chunks of columns each move reads
+/// (<see cref="VoxelCharacterMover.Prepare"/>), and each worker moves the next character not taken with a mover and mode
+/// of its own, as the main thread would, bit for bit. It creates no entity: a game makes its player with these
+/// components. Reads <see cref="PlayerCommand"/>,
 /// <see cref="PlayerMode"/>, <see cref="CharacterSize"/>, <see cref="MovementStats"/>, and the camera for <c>pos</c>; writes
 /// <see cref="CharacterPosition"/>, <see cref="CharacterVelocity"/>, <see cref="CharacterContact"/>,
 /// <see cref="EyeSmoothing"/>, and for the crouch and limits each character's <see cref="CharacterSize"/>, command, and
@@ -72,6 +77,9 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
 
     /// <summary>The least speed over the ground, in metres per second, at which a sprint counts (<see cref="Sprinted"/>).</summary>
     public const float MinSprintSpeed = 1;
+
+    /// <summary>The fewest characters a step moves on the step's workers; fewer move on the main thread alone.</summary>
+    public const int LeastForWorkers = 8;
 
     // A Bodiless entity is not moved: it stays where it is.
     private static readonly QueryDescription s_players = new QueryDescription()
@@ -150,8 +158,20 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     /// <summary>The match's physics, whose gravity's share of the Earth's characters fall by; none for all of their own.</summary>
     private readonly PhysicsWorld? _physics;
     private readonly OriginShifts? _shifts;
+    private readonly MovementProbes? _probes;
+    private readonly StepWorkers? _workers;
+    private readonly Action<int> _work;
     private bool _localWaiting;
     private Request _request;
+
+    // The workers' movers and modes, by worker (Initialize); null where the characters move on the main thread alone.
+    private Lane[]? _lanes;
+
+    // A pass on the workers: the characters gathered, the next one not taken, and the step's job each worker copies.
+    private Entity[] _gathered = new Entity[64];
+    private int _gatheredCount;
+    private int _next;
+    private Move _pass;
 
     /// <param name="world">The ECS world.</param>
     /// <param name="mover">Moves bodies through the voxels.</param>
@@ -172,6 +192,11 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
     /// The match's physics: characters fall by their own gravity times its gravity's share of the Earth's
     /// (<see cref="PhysicsWorld.GravityShare"/>); none for their own gravity alone.
     /// </param>
+    /// <param name="probes">
+    /// The match's probes, whose copies for workers a movement mode's copies are given; none moves a mode's characters on
+    /// the main thread.
+    /// </param>
+    /// <param name="workers">The step's workers, to move the characters at once; none, on the main thread.</param>
     public PlayerMovementSystem(
         World world,
         VoxelCharacterMover mover,
@@ -181,10 +206,15 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         Func<string, (WorldPoint Eye, float Yaw, float Pitch)?>? places = null,
         IMovementMode? mode = null,
         OriginShifts? shifts = null,
-        PhysicsWorld? physics = null
+        PhysicsWorld? physics = null,
+        MovementProbes? probes = null,
+        StepWorkers? workers = null
     )
         : base(world)
     {
+        _probes = probes;
+        _workers = workers;
+        _work = Work;
         _mode = mode;
         _shifts = shifts;
         _physics = physics;
@@ -209,6 +239,34 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
         EcsChecks.RequireAll<CharacterVelocity, CharacterContact, EyeSmoothing>(in s_local);
         EcsChecks.RequireAll<CameraPose>(in s_jumpCameras);
         RegisterCommands();
+        _lanes = Lanes();
+    }
+
+    /// <summary>
+    /// The workers' movers and modes: a worker of the mover each, and the mode's copy for it with probes of its own;
+    /// none with one thread, or with a mode that has no copies (or no probes to give them).
+    /// </summary>
+    private Lane[]? Lanes()
+    {
+        if (_workers is not { Count: > 1 } || (_mode is not null && _probes is null))
+        {
+            return null;
+        }
+
+        var lanes = new Lane[_workers.Count];
+        for (var i = 0; i < lanes.Length; i++)
+        {
+            var mover = _mover.CreateWorker();
+            IMovementMode? mode = null;
+            if (_mode is not null && (mode = _mode.ForWorker(_probes!.CreateWorker(mover))) is null)
+            {
+                return null;
+            }
+
+            lanes[i] = new Lane(mover, mode);
+        }
+
+        return lanes;
     }
 
     public override void Update(in FixedStepTime step)
@@ -235,6 +293,31 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
             Area = _area,
             Rests = true,
         };
+        if (_lanes is not null && Gather() >= LeastForWorkers)
+        {
+            MoveOnWorkers(in job);
+        }
+        else
+        {
+            MoveHere(in job);
+        }
+
+        GiveRests();
+
+        // Only the local player's waiting is logged: other bodies move through the same job.
+        var local = new FindLocalWaiting();
+        World.InlineQuery<FindLocalWaiting, CharacterContact, CharacterPosition>(in s_localPlayer, ref local);
+        if (local.Found && local.Waiting != _localWaiting)
+        {
+            _localWaiting = local.Waiting;
+            var feet = local.Feet;
+            LogWaiting(local.Waiting, feet.X, feet.Y, feet.Z, step.Tick);
+        }
+    }
+
+    /// <summary>Moves every character on the main thread, through the match's mover and mode.</summary>
+    private void MoveHere(in Move job)
+    {
         // A chunk loop, so a movement mode knows each player's entity.
         foreach (ref var chunk in World.Query(in s_players))
         {
@@ -264,19 +347,94 @@ public sealed partial class PlayerMovementSystem : BaseSystem<World, FixedStepTi
                 );
             }
         }
+    }
 
-        GiveRests();
-
-        // Only the local player's waiting is logged: other bodies move through the same job.
-        var local = new FindLocalWaiting();
-        World.InlineQuery<FindLocalWaiting, CharacterContact, CharacterPosition>(in s_localPlayer, ref local);
-        if (local.Found && local.Waiting != _localWaiting)
+    /// <summary>Gathers the characters to move, in the query's order; returns how many.</summary>
+    private int Gather()
+    {
+        _gatheredCount = 0;
+        foreach (ref var chunk in World.Query(in s_players))
         {
-            _localWaiting = local.Waiting;
-            var feet = local.Feet;
-            LogWaiting(local.Waiting, feet.X, feet.Y, feet.Z, step.Tick);
+            foreach (var index in chunk)
+            {
+                if (_gatheredCount == _gathered.Length)
+                {
+                    Array.Resize(ref _gathered, 2 * _gathered.Length);
+                }
+
+                _gathered[_gatheredCount++] = chunk.Entity(index);
+            }
+        }
+
+        return _gatheredCount;
+    }
+
+    /// <summary>
+    /// Moves the gathered characters on the step's workers: the mover's pass begins, the chunks each walking character's
+    /// move reads are made (from its feet, its size, and its velocity before steering, with the push), the workers move
+    /// them, and the pass ends.
+    /// </summary>
+    private void MoveOnWorkers(in Move job)
+    {
+        _mover.BeginPass();
+        try
+        {
+            for (var i = 0; i < _gatheredCount; i++)
+            {
+                var entity = _gathered[i];
+                if (World.Get<PlayerMode>(entity).Flying)
+                {
+                    continue;
+                }
+
+                ref readonly var size = ref World.Get<CharacterSize>(entity);
+                ref readonly var velocity = ref World.Get<CharacterVelocity>(entity);
+                _mover.Prepare(
+                    World.Get<CharacterPosition>(entity).Feet,
+                    new CharacterShape(size.HeightMetres, size.RadiusMetres, size.StepMetres),
+                    velocity.MetresPerSecond + velocity.Push,
+                    job.Seconds
+                );
+            }
+
+            _pass = job;
+            _next = -1;
+            _workers!.Run(_work);
+        }
+        finally
+        {
+            _mover.EndPass();
         }
     }
+
+    /// <summary>A worker's part of a pass: each next character not taken, by its own mover and mode.</summary>
+    private void Work(int worker)
+    {
+        var lane = _lanes![worker];
+        var job = _pass;
+        job.Mover = lane.Mover;
+        job.Mode = lane.Mode;
+        for (var i = Interlocked.Increment(ref _next); i < _gatheredCount; i = Interlocked.Increment(ref _next))
+        {
+            var entity = _gathered[i];
+            var none = default(CharacterRest);
+            job.Update(
+                entity,
+                ref World.Get<PlayerCommand>(entity),
+                ref World.Get<PlayerMode>(entity),
+                ref World.Get<CharacterSize>(entity),
+                ref World.Get<CharacterPosition>(entity),
+                ref World.Get<CharacterVelocity>(entity),
+                ref World.Get<CharacterContact>(entity),
+                ref World.Get<EyeSmoothing>(entity),
+                ref World.Get<MovementStats>(entity),
+                ref World.Has<CharacterRest>(entity) ? ref World.Get<CharacterRest>(entity) : ref none
+            );
+        }
+    }
+
+    /// <summary>A worker's mover, and its copy of the movement mode (none without one).</summary>
+    private sealed record Lane(VoxelCharacterMover Mover, IMovementMode? Mode);
 
     /// <summary>Gives each character moved without a rest one (<see cref="CharacterRest"/>): a structural change, after the moves.</summary>
     private void GiveRests()

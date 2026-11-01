@@ -46,7 +46,8 @@ A game composes the engine in its `Program.cs`: `AddIteraEngine`, then its own c
 
 ### Folders
 
-- `Ecs/`: `EcsWorld` (times each system, and makes each update a zone), `IFixedUpdateSystem` and
+- `Ecs/`: `EcsWorld` (times each system, makes each update a zone, and first registers every struct of the systems'
+  assemblies with Arch, `ComponentTypes`), `IFixedUpdateSystem` and
   `IFrameUpdateSystem` (`SystemInterfaces.cs`), `EcsChecks`, `CheckedWorldExtensions`, and `EcsInspector`. The
   inspector reads archetypes, entities, and components by reflection for the console's `ecs` and the control port's
   `query`; it allocates, so commands only.

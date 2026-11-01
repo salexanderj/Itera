@@ -216,7 +216,9 @@ public static class GameServiceCollectionExtensions
                 name => BenchmarkViews.Place(views, name),
                 sp.GetService<IMovementMode>(),
                 sp.GetRequiredService<OriginShifts>(),
-                sp.GetRequiredService<PhysicsWorld>()
+                sp.GetRequiredService<PhysicsWorld>(),
+                sp.GetRequiredService<MovementProbes>(),
+                sp.GetRequiredService<StepWorkers>()
             );
         });
         services.AddScoped<IFixedUpdateSystem>(sp => new StandInSystem(

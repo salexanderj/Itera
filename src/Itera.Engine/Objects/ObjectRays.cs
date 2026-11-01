@@ -26,7 +26,8 @@ public readonly record struct ObjectHit(
 /// reach meets it (<see cref="ObjectWorld.Near"/>; objects of areas not filled are not met), and turned into each
 /// object's own voxels (a damaged object's as edits left them, <see cref="ObjectDamage"/>), which it steps through one by
 /// one inside the object's box. A ray looks at most
-/// <see cref="MostMetres"/>. Scoped to the match, with voxel terrain; main thread; allocates nothing.
+/// <see cref="MostMetres"/>. Scoped to the match, with voxel terrain; main thread (a copy for another thread is
+/// <see cref="CreateWorker"/>'s); allocates nothing.
 /// </summary>
 public sealed class ObjectRays(
     ObjectWorld objects,
@@ -44,6 +45,16 @@ public sealed class ObjectRays(
     private const double Scale = 1 << ObjectTurns.Shift;
 
     private readonly List<ObjectPlacement> _near = [];
+
+    // A worker's own list of the objects' candidates (ObjectWorld.NearForWorker); null for the match's own rays.
+    private List<int>? _candidates;
+
+    /// <summary>
+    /// Rays for a reader on another thread while nothing changes the objects or the world: the same hits, each ray's
+    /// objects gathered in lists of its own (<see cref="ObjectWorld.NearForWorker"/>), so it writes nothing these rays or
+    /// the objects share. One thread at a time.
+    /// </summary>
+    internal ObjectRays CreateWorker() => new(objects, kinds, world, damage) { _candidates = [] };
 
     /// <summary>
     /// The first solid voxel of a placed object along the ray from <paramref name="originMetres"/> (local to the world's
@@ -83,13 +94,18 @@ public sealed class ObjectRays(
                 az = sz + dz * from * perMetre,
                 bz = sz + dz * to * perMetre;
             _near.Clear();
-            objects.Near(
-                (int)Math.Floor(Math.Min(ax, bx)),
-                (int)Math.Ceiling(Math.Max(ax, bx)),
-                (int)Math.Floor(Math.Min(az, bz)),
-                (int)Math.Ceiling(Math.Max(az, bz)),
-                _near
-            );
+            int x0 = (int)Math.Floor(Math.Min(ax, bx)),
+                x1 = (int)Math.Ceiling(Math.Max(ax, bx)),
+                z0 = (int)Math.Floor(Math.Min(az, bz)),
+                z1 = (int)Math.Ceiling(Math.Max(az, bz));
+            if (_candidates is null)
+            {
+                objects.Near(x0, x1, z0, z1, _near);
+            }
+            else
+            {
+                objects.NearForWorker(x0, x1, z0, z1, _near, _candidates);
+            }
             foreach (var placement in _near)
             {
                 if (Through(in placement, sx, sy, sz, dx, dy, dz, best, out var met))

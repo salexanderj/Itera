@@ -34,7 +34,8 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
 
     /// <summary>
     /// The most chunks kept: about 1 to 30 KB each, and room for the widest body's window at 1 cm (13 by 13 chunks) and
-    /// a few bodies apart.
+    /// a few bodies apart. A pass on other threads that read more at once (<see cref="BeginPass"/>) leaves them kept,
+    /// and the chunk read longest ago is made again for each new one.
     /// </summary>
     internal const int MostChunks = 256;
 
@@ -136,6 +137,11 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     internal void Prepare(int x0, int z0, int x1, int z1)
     {
         RequireOwner();
+        if (Empty)
+        {
+            return;
+        }
+
         if (colliders.Version != _store.Version)
         {
             FollowChanges();

@@ -405,6 +405,10 @@ main thread's poll. The other threads are:
   frame N+1 is simulated. Recording is cheap and the GPU works asynchronously anyway, and this keeps latency low.
 - **Physics** uses Bepu's own worker threads inside the step, a quarter of the processors (1 to 6), so Bepu does not crowd out
   the voxel workers and the render thread.
+- **The step's workers** (`StepWorkers`, also a quarter of the processors, 1 to 6, the main thread among them) run a
+  system's pass over its entities while the main thread waits: the characters' moves. Each worker has its own mover and
+  probes, and writes only the entity it moves, so the results are the main thread's, bit for bit. Every other change
+  of the step stays on the main thread.
 - **Sound** has a thread of its own (`AudioService`), which alone makes OpenAL calls once it runs. The main thread hands
   it each iteration's sounds, music commands, and the listener through `AudioExchange` and `MusicExchange`. A music
   thread decodes the music ahead of it (`MusicStreamer`). A sound render thread renders the one-shot recipes.

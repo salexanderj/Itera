@@ -158,6 +158,7 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
         Range(failures, "Physics:SettleSeconds", physics.SettleSeconds, 0.5, 60);
         Range(failures, "Physics:MaxLooseBodies", physics.MaxLooseBodies, 1, 1024);
         Range(failures, "Physics:Threads", physics.Threads, 0, 16);
+        Range(failures, "Physics:StepThreads", physics.StepThreads, 0, 16);
         Range(
             failures,
             "Physics:CollisionCentimetres",

@@ -8,10 +8,25 @@ namespace Itera.Engine.Physics;
 /// (<see cref="HasRoom"/>). They read the shared ray (<see cref="CollisionSources"/>: the voxel terrain and the voxel
 /// objects, with their materials' surface tags, and the mesh colliders, with theirs; not loose bodies) and the character
 /// mover. A voxel's normal is the face the ray entered (an object's turned with it), so a wall of voxels gives the mean
-/// of its rays' faces. Main thread; allocates nothing.
+/// of its rays' faces. Main thread, or the thread of a worker's probes (<see cref="CreateWorker"/>, the probes a movement
+/// mode's copy for a worker is given); allocates nothing.
 /// </summary>
 public sealed class MovementProbes(CollisionSources sources, VoxelCharacterMover mover)
 {
+    /// <summary>The rays these probes cast: the match's, or a worker's own copy of them.</summary>
+    public CollisionSources Sources => sources;
+
+    /// <summary>The character mover these probes ask: the match's, or a worker of it.</summary>
+    public VoxelCharacterMover Mover => mover;
+
+    /// <summary>
+    /// Probes for another thread: <paramref name="worker"/> (a worker of these probes' mover,
+    /// <see cref="VoxelCharacterMover.CreateWorker"/>) and a copy of the rays of its own
+    /// (<see cref="CollisionSources.CreateWorker"/>), the same answers with nothing written that these probes share. One
+    /// thread at a time, within the mover's pass.
+    /// </summary>
+    internal MovementProbes CreateWorker(VoxelCharacterMover worker) => new(sources.CreateWorker(), worker);
+
     /// <summary>A hit is a wall when its normal's y lies within this of level: steeper than 60 degrees.</summary>
     public const float WallMostNormalY = 0.5f;
 

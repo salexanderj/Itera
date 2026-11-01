@@ -695,6 +695,14 @@ public sealed class PhysicsSettings
     public int Threads { get; set; }
 
     /// <summary>
+    /// The threads a fixed step's parallel passes run on, the main thread among them, 1 to 16: the characters' moves
+    /// (<c>PlayerMovementSystem</c>). 0 (the default) for a quarter of the logical processors, 1 to 6
+    /// (<c>StepWorkers.ThreadCount</c>); 1 runs every pass on the main thread. The passes' results are the same on any
+    /// number.
+    /// </summary>
+    public int StepThreads { get; set; }
+
+    /// <summary>
     /// The edge of the character mover's cells in a match without voxel terrain, in centimetres, 1 to
     /// <see cref="MostCollisionCentimetres"/>: it reads the mesh colliders as columns of these cells, and on cells
     /// coarser than 1 cm walks their slopes as ramps. With terrain the cells are the world's level-0 voxels.

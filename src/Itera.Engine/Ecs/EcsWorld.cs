@@ -40,7 +40,10 @@ public sealed partial class EcsWorld : IDisposable
     /// </summary>
     internal bool OriginMayMove => _originMayMove;
 
-    /// <summary>Adds systems and initialises them.</summary>
+    /// <summary>
+    /// Adds systems and initialises them, once every component type of their assemblies is registered
+    /// (<see cref="ComponentTypes"/>), so a system's pass on other threads registers none.
+    /// </summary>
     public void Initialize(IEnumerable<IFixedUpdateSystem> fixedSystems, IEnumerable<IFrameUpdateSystem> frameSystems)
     {
         var fixedCount = 0;
@@ -60,6 +63,18 @@ public sealed partial class EcsWorld : IDisposable
             frameCount++;
         }
 
+        var assemblies = new HashSet<System.Reflection.Assembly>();
+        foreach (var (system, _, _) in _fixed)
+        {
+            assemblies.Add(system.GetType().Assembly);
+        }
+
+        foreach (var (system, _) in _frame)
+        {
+            assemblies.Add(system.GetType().Assembly);
+        }
+
+        ComponentTypes.Register(assemblies);
         _fixedSystems.Initialize();
         _frameSystems.Initialize();
         LogInitialized(fixedCount, frameCount);

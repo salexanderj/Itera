@@ -1,6 +1,7 @@
 using System.Numerics;
 using Arch.Core;
 using Itera.Engine.Components;
+using Itera.Engine.Physics;
 
 namespace Itera.Engine.Systems;
 
@@ -11,8 +12,8 @@ namespace Itera.Engine.Systems;
 /// moves the body through the character mover and keeps its contact, velocity, and eye as for any step. Its state per
 /// player goes in a component of the game's, read and set through <see cref="MovementModeInput.World"/> on
 /// <see cref="MovementModeInput.Entity"/>; it runs inside the system's query, so it changes no entity's components'
-/// set (no add, remove, or destroy). A game registers one in the match's scope. Main thread; allocates nothing per
-/// step.
+/// set (no add, remove, or destroy). A game registers one in the match's scope. Main thread, or a worker's copy on its
+/// thread (<see cref="ForWorker"/>); allocates nothing per step.
 /// </summary>
 public interface IMovementMode
 {
@@ -21,6 +22,16 @@ public interface IMovementMode
     /// start as the body's velocity and step); false to leave it to the engine's walking.
     /// </summary>
     bool Steer(in MovementModeInput input, ref MovementModeMove move);
+
+    /// <summary>
+    /// A copy of this mode for one of the step's worker threads (<c>StepWorkers</c>), which moves characters there at
+    /// the same time as other copies: null (the default) keeps every step on the main thread. A copy asks the world only
+    /// through <paramref name="probes"/>, that thread's (<see cref="MovementProbes.Mover"/> and
+    /// <see cref="MovementProbes.Sources"/> among them), reads and writes only <see cref="MovementModeInput.Entity"/>'s
+    /// components, and writes nothing it shares with another copy or the mode. Its answers are the mode's, bit for bit.
+    /// Made on the main thread, once for each worker.
+    /// </summary>
+    IMovementMode? ForWorker(MovementProbes probes) => null;
 }
 
 /// <summary>What a movement mode knows of a player's step (<see cref="IMovementMode"/>).</summary>

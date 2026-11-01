@@ -10,7 +10,7 @@ paths:
 `docs/reference/game-systems.md` lists the match's systems in run order with what each does. This file holds the rules
 for changing them and where their parts are. Test classes: one `<System>Tests` class for each system, in
 `tests/Itera.Engine.Tests/Systems/`, plus `PlayAreaTests`, `ThirdPersonCameraTests`, `ToolAimTests`,
-`CharacterStepperTests`, `ClimbingModeTests`, and `LooseBodyRestTests`.
+`CharacterStepperTests`, `ClimbingModeTests`, `PlayerMovementWorkersTests`, and `LooseBodyRestTests`.
 
 ### Components
 
@@ -76,6 +76,8 @@ registers what they share: `PlayArea` (round the match's grid, or `PlayArea.With
   one the mover would give. `CharacterStepper` always moves.
 - A flying player's feet follow the camera its command carries, kept to the play area, so a host flies a client's
   player where that client's camera is (`.claude/rules/replication.md`).
+- With the step's workers (`StepWorkers`), the characters move on those threads at once, bit for bit as on the main
+  thread, a mode through its copies (`IMovementMode.ForWorker`; `.claude/rules/physics-mover.md`).
 - `CharacterStepper.Step` (scoped, with the game's movement mode) runs one character's step with the same code, for a
   client that replays its commands after the host's correction.
 - A game's `IMovementMode` (registered in the match's scope, given to the system) is offered each walking player's step

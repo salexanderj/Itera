@@ -43,6 +43,8 @@ into the world's frame, the material, and where the ray enters and leaves that v
 - A ray that only touches an object's box, or starts on its side going away, meets nothing.
 - The ray is walked in stretches. Each stretch asks `ObjectWorld.Near` for the objects whose reach meets it, turns the ray
   into each object's voxels, and steps through them in the object's box. Objects in unfilled areas are not met. A longest ray limits the walk.
+- `ObjectRays.CreateWorker` makes rays for another thread: each stretch asks `ObjectWorld.NearForWorker`, in lists of
+  its own, and the hits are the same.
 - `CollisionSources` answers from it too (`SurfaceSource.VoxelObject`, `SurfaceHit.ObjectId`). So the movement probes and
   climbing (`ClimbingMode`) meet objects by their voxels' tags.
 - `ToolAim.Raycast(CollisionSources, ...)` goes past objects' passable voxels round the eye, as past the terrain's.
