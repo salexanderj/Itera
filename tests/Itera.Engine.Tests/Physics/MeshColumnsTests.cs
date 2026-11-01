@@ -9,8 +9,9 @@ namespace Itera.Engine.Tests.Physics;
 /// <see cref="MeshColumns"/> in 10 cm cells: a triangle blocks the cells it passes through; one on a cell's boundary
 /// blocks the cell behind its front, so a closed box blocks the same cells as a voxel box; a slope's surface is its plane
 /// at the column's centre; a triangle that only touches a column's corner leaves it alone; a thin wall in the middle of a
-/// cell blocks it; the tags are the highest triangle's; a change to the colliders is read at the next query; no more than
-/// <see cref="MeshColumns.MostChunks"/> chunks are kept; and with none, every answer is the voxel world's none.
+/// cell blocks it; the tags are the highest triangle's; a change to the colliders is read at the next query, and drops
+/// only the chunks it reaches, so kept columns answer as new ones; no more than <see cref="MeshColumns.MostChunks"/>
+/// chunks are kept; and with none, every answer is the voxel world's none.
 /// </summary>
 public sealed class MeshColumnsTests : IDisposable
 {
@@ -214,6 +215,89 @@ public sealed class MeshColumnsTests : IDisposable
 
         _colliders.Remove(first);
         Assert.Equal(20, Bottom(5, 5, 0, 40) + 1);
+    }
+
+    /// <summary>
+    /// A collider added or removed drops only the chunks it reaches; the rest are kept. Past the changes the colliders
+    /// keep, every chunk goes.
+    /// </summary>
+    [Fact]
+    public void A_change_to_the_colliders_drops_only_the_chunks_it_reaches()
+    {
+        // Ground in chunk (0, 0) and in chunk (10, 0), 32 m off, both read.
+        new TestTriangles()
+            .Ground(0, 0, 1, 1, 1)
+            .AddTo(_colliders);
+        new TestTriangles().Ground(32, 0, 33, 1, 1).AddTo(_colliders);
+        Assert.Equal(10, Top(5, 5, 0, 40));
+        Assert.Equal(10, Top(325, 5, 0, 40));
+
+        var higher = new TestTriangles().Ground(32, 0, 33, 1, 2).AddTo(_colliders);
+        Assert.Equal(20, Top(325, 5, 0, 40));
+        Assert.True(_columns.Keeps(5, 5));
+        _colliders.Remove(higher);
+        Assert.Equal(10, Top(325, 5, 0, 40));
+        Assert.True(_columns.Keeps(5, 5));
+
+        for (var i = 0; i <= MeshColliders.KeptChanges / 2; i++)
+        {
+            _colliders.Remove(new TestTriangles().Ground(32, 0, 33, 1, 3).AddTo(_colliders));
+        }
+
+        Assert.Equal(10, Top(325, 5, 0, 40));
+        Assert.False(_columns.Keeps(5, 5));
+    }
+
+    /// <summary>
+    /// Through grounds, slopes, and boxes added and removed at random over 12 m, the columns kept across the changes
+    /// answer as columns made new over the same colliders do.
+    /// </summary>
+    [Fact]
+    public void Columns_kept_through_random_changes_answer_as_new_ones_do()
+    {
+        var random = new Random(5);
+        var added = new List<int>();
+        for (var change = 0; change < 120; change++)
+        {
+            if (added.Count > 0 && random.Next(3) == 0)
+            {
+                var removed = random.Next(added.Count);
+                _colliders.Remove(added[removed]);
+                added.RemoveAt(removed);
+            }
+            else
+            {
+                float x = random.NextSingle() * 12,
+                    z = random.NextSingle() * 12,
+                    size = 0.2f + random.NextSingle() * 3,
+                    y = random.NextSingle() * 3;
+                var shape = random.Next(3) switch
+                {
+                    0 => new TestTriangles().Ground(x, z, x + size, z + size, y),
+                    1 => new TestTriangles().Box(new(x, y, z), new(x + size, y + size, z + size * 0.5f)),
+                    _ => new TestTriangles().Quad(
+                        Vector3.UnitY,
+                        new(x, y, z),
+                        new(x, y + size, z + size),
+                        new(x + size, y + size, z + size),
+                        new(x + size, y, z)
+                    ),
+                };
+                added.Add(shape.AddTo(_colliders));
+            }
+
+            var fresh = new MeshColumns(_colliders, cellsPerMetre: 10);
+            for (var read = 0; read < 60; read++)
+            {
+                var footprint = new CircleFootprint(random.Next(-5, 125) + 0.5, random.Next(-5, 125) + 0.5, 0.1);
+                int kept = _columns.HighestTop(in footprint, -10, 70),
+                    made = fresh.HighestTop(in footprint, -10, 70);
+                if (kept != made)
+                {
+                    Assert.Fail($"Change {change}: the kept columns gave {kept} at {footprint}, new ones {made}.");
+                }
+            }
+        }
     }
 
     [Fact]

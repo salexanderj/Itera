@@ -16,7 +16,7 @@ namespace Itera.Engine.Physics;
 /// two. A column's surface is the plane at its centre, so it
 /// lies anywhere in the column's top cell or under it, where the voxels' lies within half a cell of their top (the
 /// mover reads surfaces, not tops, for both). The spans are made a chunk of 32 by 32 columns at a time, the first time a
-/// query reads it, and kept until the colliders change, at most <see cref="MostChunks"/>: past that, the chunk read
+/// query reads it, and kept until a collider added or removed reaches it, at most <see cref="MostChunks"/>: past that, the chunk read
 /// longest ago is made again for the new one (bodies far apart whose windows need more than that at once make chunks
 /// again at every read). Making a chunk allocates until the cache holds that many and their arrays have grown to the
 /// largest; every other read allocates nothing. Main thread.
@@ -52,6 +52,7 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     private readonly Stack<Chunk> _free = new();
     private readonly List<int> _triangles = [];
     private readonly List<(int Column, ColumnSpan Span)> _built = [];
+    private readonly List<long> _stale = [];
     private int _version = -1;
     private Chunk? _last;
     private long _lastKey;
@@ -254,14 +255,7 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     {
         if (colliders.Version != _version)
         {
-            _version = colliders.Version;
-            foreach (var chunk in _chunks.Values)
-            {
-                _free.Push(chunk);
-            }
-
-            _chunks.Clear();
-            _last = null;
+            FollowChanges();
         }
 
         var cx = x >> ChunkBits;
@@ -287,6 +281,62 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
         var start = built.Offsets[column];
         return built.Spans.AsSpan(start, built.Offsets[column + 1] - start);
     }
+
+    /// <summary>
+    /// Drops the chunks that a collider added or removed since the last read may reach, a cell more each way (a triangle
+    /// moves a little behind its front before it is cut): they are made again at their next read. When the changes ran
+    /// past those the colliders keep, it drops every chunk.
+    /// </summary>
+    private void FollowChanges()
+    {
+        var after = _version;
+        _version = colliders.Version;
+        _last = null;
+        if (!colliders.KeepsChangesAfter(after))
+        {
+            foreach (var chunk in _chunks.Values)
+            {
+                _free.Push(chunk);
+            }
+
+            _chunks.Clear();
+            return;
+        }
+
+        for (var version = after; version < _version && _chunks.Count > 0; version++)
+        {
+            colliders.ChangeBox(version, out var low, out var high);
+            if (low.X > high.X)
+            {
+                continue;
+            }
+
+            int x0 = (CellOf(low.X) - 1) >> ChunkBits,
+                x1 = (CellOf(high.X) + 1) >> ChunkBits,
+                z0 = (CellOf(low.Z) - 1) >> ChunkBits,
+                z1 = (CellOf(high.Z) + 1) >> ChunkBits;
+            _stale.Clear();
+            foreach (var key in _chunks.Keys)
+            {
+                int cx = (int)(key >> 32),
+                    cz = (int)key;
+                if (cx >= x0 && cx <= x1 && cz >= z0 && cz <= z1)
+                {
+                    _stale.Add(key);
+                }
+            }
+
+            foreach (var key in _stale)
+            {
+                _chunks.Remove(key, out var chunk);
+                _free.Push(chunk!);
+            }
+        }
+    }
+
+    /// <summary>The cell of an absolute coordinate in centimetres, kept within a billion cells either way.</summary>
+    private int CellOf(int centimetres) =>
+        (int)Math.Clamp(Math.Floor(centimetres * cellsPerMetre / VoxelConstants.CentimetresPerMetre), -1e9, 1e9);
 
     /// <summary>
     /// A chunk to make: a freed one, a new one while fewer than <see cref="MostChunks"/> are kept, else the one read

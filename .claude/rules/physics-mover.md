@@ -140,6 +140,7 @@ square.
 - A triangle that only touches a column's corner leaves it alone.
 - A column's surface is the plane at its centre, anywhere in its top cell or under it on a slope. The voxels' surface lies
   within half a cell of their top, and the mover reads surfaces for both.
-- Chunks of 32 by 32 columns are made at their first read and kept until the colliders change (`MeshColliders.Version`).
-  `MostChunks` limits them. Past it, the chunk read longest ago is dropped and its memory used for the new one. Making a
+- Chunks of 32 by 32 columns are made at their first read. A collider added or removed drops the chunks its box reaches,
+  a cell more each way (`MeshColliders.ChangeBox`). Past the changes the colliders keep, every chunk goes. `MostChunks`
+  limits them. Past it, the chunk read longest ago is dropped and its memory used for the new one. Making a
   chunk allocates until the cache is full.

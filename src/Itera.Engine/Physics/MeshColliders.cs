@@ -99,7 +99,7 @@ public sealed partial class MeshColliders(
     /// </summary>
     internal bool ChangesMeet(int after, VoxelCoord low, VoxelCoord high)
     {
-        if (after > Version || Version - after > KeptChanges)
+        if (!KeepsChangesAfter(after))
         {
             return true;
         }
@@ -121,6 +121,21 @@ public sealed partial class MeshColliders(
         }
 
         return false;
+    }
+
+    /// <summary>True when the boxes of every change after version <paramref name="after"/> are kept (<see cref="ChangeBox"/>).</summary>
+    internal bool KeepsChangesAfter(int after) => after >= 0 && after <= Version && Version - after <= KeptChanges;
+
+    /// <summary>
+    /// The box of the change that raised the version from <paramref name="version"/>, in absolute centimetres (both
+    /// corners included; the low above the high for a collider with no triangles). Only for a version
+    /// <see cref="KeepsChangesAfter"/> keeps.
+    /// </summary>
+    internal void ChangeBox(int version, out VoxelCoord low, out VoxelCoord high)
+    {
+        ref readonly var change = ref _changes[version % KeptChanges];
+        low = change.Low;
+        high = change.High;
     }
 
     /// <summary>Notes a change of <paramref name="collider"/>: the version rises, and its box is kept at the old one's place.</summary>
