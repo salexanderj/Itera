@@ -511,6 +511,68 @@ public sealed partial class MeshColliders(
     }
 
     /// <summary>
+    /// <see cref="Triangles"/> for a reader on another thread: the same triangles in the same order, each marked once
+    /// in the caller's own <paramref name="stamps"/> (grown to the triangles' count) with its own
+    /// <paramref name="stamp"/>, so it writes nothing of the colliders'. Throws where they changed since they were last
+    /// built: build them first on the thread that changes them (<see cref="TriangleCount"/>).
+    /// </summary>
+    internal void TrianglesForWorker(
+        double minX,
+        double minZ,
+        double maxX,
+        double maxZ,
+        List<int> into,
+        ref int[] stamps,
+        ref int stamp
+    )
+    {
+        if (_dirty)
+        {
+            throw new InvalidOperationException(
+                "The colliders changed since they were last built: build them first (TriangleCount)."
+            );
+        }
+
+        into.Clear();
+        if (_triangles == 0)
+        {
+            return;
+        }
+
+        if (stamps.Length < _triangles)
+        {
+            stamps = new int[Math.Max(_triangles, 2 * stamps.Length)];
+            stamp = 0;
+        }
+
+        if (++stamp == int.MaxValue)
+        {
+            Array.Clear(stamps);
+            stamp = 1;
+        }
+
+        for (var x = Bucket(minX); x <= Bucket(maxX); x++)
+        {
+            for (var z = Bucket(minZ); z <= Bucket(maxZ); z++)
+            {
+                if (!_buckets.TryGetValue(Key(x, z), out var bucket))
+                {
+                    continue;
+                }
+
+                foreach (var triangle in bucket)
+                {
+                    if (stamps[triangle] != stamp)
+                    {
+                        stamps[triangle] = stamp;
+                        into.Add(triangle);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Triangle <paramref name="triangle"/> (from <see cref="Triangles"/>) in metres from its collider's anchor, the
     /// anchor (absolute centimetres, whole metres), and its tags.
     /// </summary>
@@ -783,6 +845,11 @@ public sealed partial class MeshColliders(
             _groupMax[i] += pad;
         }
     }
+
+    /// <summary>
+    /// For tests: the mark of the last search of the triangles, which a worker's search leaves alone.
+    /// </summary>
+    internal int LastMark => _stamp;
 
     private int NextStamp()
     {

@@ -90,6 +90,8 @@ interface's. A placer is thread safe and pure like `Fill`. A change to its place
   area under the box is not filled. The objects come in the areas' order, by z then x, and each area's own.
 - `Near` reads only the area's cells of `IndexCellCentimetres` that the box meets. Each object is listed in every cell its
   reach meets. The list is made again at the first query after the area's objects change.
+- `NearForWorker` gives the same objects for a reader on another thread, gathered in the caller's own list, and writes
+  nothing of the world's. It reads an area whole whose list is not made again yet.
 - `ObjectWorld.IsKnown` tells whether the areas under a box are filled. `ObjectWorld.Version` rises when an area is filled
   or gone.
 - The match's identity (`GeneratorMatchIdentity`) carries the kinds' fingerprint after the generator's id, so games whose

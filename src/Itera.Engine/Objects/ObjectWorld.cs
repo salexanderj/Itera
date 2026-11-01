@@ -213,6 +213,34 @@ public sealed partial class ObjectWorld(
     public bool Near(int minX, int maxX, int minZ, int maxZ, List<ObjectPlacement> found)
     {
         ArgumentNullException.ThrowIfNull(found);
+        return Collect(minX, maxX, minZ, maxZ, found, null);
+    }
+
+    /// <summary>
+    /// <see cref="Near(int, int, int, int, List{ObjectPlacement})"/> for a reader on another thread while nothing
+    /// changes the objects: the same objects in the same order, gathered in the caller's own
+    /// <paramref name="candidates"/>, so it writes nothing of the world's. An area not indexed since its objects
+    /// changed is read whole.
+    /// </summary>
+    internal bool NearForWorker(
+        int minX,
+        int maxX,
+        int minZ,
+        int maxZ,
+        List<ObjectPlacement> found,
+        List<int> candidates
+    ) => Collect(minX, maxX, minZ, maxZ, found, candidates);
+
+    /// <summary>
+    /// For tests: how many areas' objects were gathered with the world's own marks, which a worker leaves alone.
+    /// </summary>
+    internal int Gathered => _query;
+
+    /// <summary>
+    /// The objects near a box, gathered with the world's own marks, or with the caller's list of candidates.
+    /// </summary>
+    private bool Collect(int minX, int maxX, int minZ, int maxZ, List<ObjectPlacement> found, List<int>? candidates)
+    {
         if (!_enabled)
         {
             return true;
@@ -230,7 +258,14 @@ public sealed partial class ObjectWorld(
                     continue;
                 }
 
-                Gather(area, minX, maxX, minZ, maxZ, found);
+                if (candidates is null)
+                {
+                    Gather(area, minX, maxX, minZ, maxZ, found);
+                }
+                else
+                {
+                    GatherApart(area, minX, maxX, minZ, maxZ, found, candidates);
+                }
             }
         }
 
@@ -285,6 +320,81 @@ public sealed partial class ObjectWorld(
 
         var candidates = CollectionsMarshal.AsSpan(_candidates);
         candidates.Sort();
+        AddReaching(objects, candidates, minX, maxX, minZ, maxZ, found);
+    }
+
+    /// <summary>
+    /// <see cref="Gather"/> with the caller's own list of candidates, marking nothing: those its index lists in the
+    /// cells the box meets, sorted and each kept once, or every object of an area not indexed since its objects
+    /// changed.
+    /// </summary>
+    private void GatherApart(
+        Area area,
+        int minX,
+        int maxX,
+        int minZ,
+        int maxZ,
+        List<ObjectPlacement> found,
+        List<int> candidates
+    )
+    {
+        var objects = CollectionsMarshal.AsSpan(area.Objects);
+        if (objects.IsEmpty)
+        {
+            return;
+        }
+
+        candidates.Clear();
+        if (!area.Indexed)
+        {
+            for (var index = 0; index < objects.Length; index++)
+            {
+                candidates.Add(index);
+            }
+        }
+        else
+        {
+            var (x0, x1, z0, z1) = CellsOf(area, minX, maxX, minZ, maxZ);
+            for (var z = z0; z <= z1; z++)
+            {
+                for (var x = x0; x <= x1; x++)
+                {
+                    var cell = z * area.CellsAcross + x;
+                    for (var entry = area.CellStarts[cell]; entry < area.CellStarts[cell + 1]; entry++)
+                    {
+                        candidates.Add(area.CellEntries[entry]);
+                    }
+                }
+            }
+        }
+
+        var listed = CollectionsMarshal.AsSpan(candidates);
+        listed.Sort();
+        var kept = 0;
+        for (var i = 0; i < listed.Length; i++)
+        {
+            if (kept == 0 || listed[i] != listed[kept - 1])
+            {
+                listed[kept++] = listed[i];
+            }
+        }
+
+        AddReaching(objects, listed[..kept], minX, maxX, minZ, maxZ, found);
+    }
+
+    /// <summary>
+    /// Adds each of <paramref name="candidates"/>' objects whose kind's reach meets the box, in their order.
+    /// </summary>
+    private void AddReaching(
+        ReadOnlySpan<ObjectPlacement> objects,
+        ReadOnlySpan<int> candidates,
+        int minX,
+        int maxX,
+        int minZ,
+        int maxZ,
+        List<ObjectPlacement> found
+    )
+    {
         foreach (var index in candidates)
         {
             ref readonly var placement = ref objects[index];

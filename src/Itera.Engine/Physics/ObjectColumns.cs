@@ -10,23 +10,27 @@ namespace Itera.Engine.Physics;
 /// turned into an object, land on its solid voxels that are not passable (<see cref="IVoxelPassability"/>: a tree's
 /// leaves, where the game says so). A span keeps the height of its object's surface over the column's centre (where the
 /// density crosses one half over the highest solid voxel of the object's column there under the span's top, as the
-/// world's ground is read) and that voxel's material, so the mover
-/// stands on a rock as on the ground and reads its material and tags. It answers what the voxel world and the mesh
-/// colliders answer (<see cref="HighestTop"/>, <see cref="LowestBottom"/>, <see cref="BlockedCells"/>,
-/// <see cref="ColumnTops"/>, <see cref="SurfaceOver"/>, <see cref="TopAt"/>), with the same values for none, so the mover
-/// takes them as the ground's. The spans are made a chunk of 32 by 32 columns at a time, the first time a query reads
-/// it, and kept until the objects change (<see cref="ObjectWorld.Version"/>) or one under it is damaged
-/// (<see cref="ObjectDamage.ReadChanges"/>), at most <see cref="MostChunks"/>; a chunk
-/// takes each object's columns from its kind's columns' runs, a damaged one's read through its damage over its kind's
-/// solid voxels (<see cref="ObjectColumnReader"/>, which navigation's reading of the objects as generated shares). Making a
-/// chunk allocates until the cache holds that many and
-/// their arrays have grown to the largest; every other read allocates nothing. Main thread: the mover and navigation
-/// share it (<c>VoxelCharacterMover.Objects</c>).
+/// world's ground is read) and that voxel's material, so the mover stands on a rock as on the ground and reads its
+/// material and tags. It answers what the voxel world and the mesh colliders answer (<see cref="HighestTop"/>,
+/// <see cref="LowestBottom"/>, <see cref="BlockedCells"/>, <see cref="ColumnTops"/>, <see cref="SurfaceOver"/>,
+/// <see cref="TopAt"/>), with the same values for none, so the mover takes them as the ground's. The spans are made a
+/// chunk of 32 by 32 columns at a time, the first time a query reads it, and kept until the objects change
+/// (<see cref="ObjectWorld.Version"/>) or one under it is damaged (<see cref="ObjectDamage.ReadChanges"/>), at most
+/// <see cref="MostChunks"/>; a chunk takes each object's columns from its kind's columns' runs, a damaged one's read
+/// through its damage over its kind's solid voxels (<see cref="ObjectColumnReader"/>, which navigation's reading of the
+/// objects as generated shares). Making a chunk allocates until the cache holds that many and their arrays have grown
+/// to the largest; every other read allocates nothing. Main thread: the mover and navigation share it
+/// (<c>VoxelCharacterMover.Objects</c>); but for its workers (<see cref="Worker"/>), readers for other threads that
+/// share its chunks and write nothing of them, while it starts a pass (<see cref="BeginPass"/>) and makes the chunks
+/// they will read (<see cref="Prepare"/>).
 /// </summary>
 internal sealed class ObjectColumns
 {
     /// <summary>The most chunks kept.</summary>
     public const int MostChunks = 256;
+
+    /// <summary>How many chunks a worker keeps of its own, made where the store keeps none.</summary>
+    internal const int OwnChunks = 4;
 
     private const int ChunkBits = 5;
     private const int ChunkSide = 1 << ChunkBits;
@@ -44,6 +48,18 @@ internal sealed class ObjectColumns
     private readonly List<ObjectSpan>[] _columns = NewColumns();
     private Chunk? _last;
     private long _lastKey;
+    private int _lastPass;
+
+    // A worker's: it keeps a chunk the store keeps none of, or keeps of older objects or damage, in a few of its own,
+    // each with the objects' and the damage's versions it was made from, and gathers the objects near one in its own
+    // list.
+    private readonly bool _owner = true;
+    private readonly Chunk[] _own = [];
+    private readonly long[] _ownKeys = [];
+    private readonly int[] _ownVersions = [];
+    private readonly long[] _ownDamage = [];
+    private readonly List<int> _candidates = [];
+    private int _ownNext;
 
     /// <param name="objects">The match's placed objects.</param>
     /// <param name="kinds">The run's object kinds.</param>
@@ -67,6 +83,97 @@ internal sealed class ObjectColumns
         _kinds = kinds;
         _reader = new ObjectColumnReader(MaterialSet.Passable(passability), cellCentimetres);
         _cell = cellCentimetres;
+    }
+
+    private ObjectColumns(ObjectColumns owner)
+    {
+        (_objects, _kinds, _reader, _cell, _damage, _store) = (
+            owner._objects,
+            owner._kinds,
+            owner._reader,
+            owner._cell,
+            owner._damage,
+            owner._store
+        );
+        _owner = false;
+        _own = new Chunk[OwnChunks];
+        _ownKeys = new long[OwnChunks];
+        _ownVersions = new int[OwnChunks];
+        _ownDamage = new long[OwnChunks];
+        for (var i = 0; i < OwnChunks; i++)
+        {
+            _own[i] = new Chunk();
+            _ownVersions[i] = int.MinValue;
+        }
+    }
+
+    /// <summary>
+    /// A reader of the same columns for another thread: it reads the chunks this one keeps and writes nothing of them,
+    /// and makes a chunk they do not hold (or hold of older objects or damage) in its own few. While workers read,
+    /// nothing reads this one or changes the objects.
+    /// </summary>
+    internal ObjectColumns Worker() => new(this);
+
+    /// <summary>A worker's: the chunks it made itself, as the store kept none of them.</summary>
+    internal long OwnBuilds { get; private set; }
+
+    /// <summary>For tests: the store's count of chunk changes read, which a worker's reads leave alone.</summary>
+    internal long StoreReads => _store.Reads;
+
+    /// <summary>
+    /// Starts a pass of reads on other threads, on the thread that changes the objects: follows the objects' changes
+    /// and damage, and keeps every chunk read from here to <see cref="EndPass"/>, growing past <see cref="MostChunks"/>
+    /// where it must. Not on a worker.
+    /// </summary>
+    internal void BeginPass()
+    {
+        RequireOwner();
+        Follow();
+        _store.Pass++;
+        _store.PassStart = _store.Reads + 1;
+        _last = null;
+    }
+
+    /// <summary>
+    /// Ends the pass <see cref="BeginPass"/> started: chunks may go again, the one read longest ago first.
+    /// </summary>
+    internal void EndPass()
+    {
+        RequireOwner();
+        _store.PassStart = long.MaxValue;
+    }
+
+    /// <summary>
+    /// Makes and keeps each chunk of the columns from (<paramref name="x0"/>, <paramref name="z0"/>) to
+    /// (<paramref name="x1"/>, <paramref name="z1"/>), in cells, that is not kept yet, so a worker reads it. Not on a
+    /// worker.
+    /// </summary>
+    internal void Prepare(int x0, int z0, int x1, int z1)
+    {
+        RequireOwner();
+        if (Empty)
+        {
+            return;
+        }
+
+        Follow();
+        for (var cz = z0 >> ChunkBits; cz <= z1 >> ChunkBits; cz++)
+        {
+            for (var cx = x0 >> ChunkBits; cx <= x1 >> ChunkBits; cx++)
+            {
+                Kept(cx, cz, ((long)cx << 32) | (uint)cz);
+            }
+        }
+    }
+
+    private void RequireOwner()
+    {
+        if (!_owner)
+        {
+            throw new InvalidOperationException(
+                "A worker reads the columns; the mover's own begins and prepares a pass."
+            );
+        }
     }
 
     /// <summary>True when there is no object near anything loaded: every query answers none.</summary>
@@ -271,6 +378,32 @@ internal sealed class ObjectColumns
     /// <summary>The spans of column (x, z), its chunk made first when it is not yet.</summary>
     private ReadOnlySpan<ObjectSpan> Spans(int x, int z)
     {
+        if (_owner)
+        {
+            Follow();
+        }
+
+        var cx = x >> ChunkBits;
+        var cz = z >> ChunkBits;
+        var key = ((long)cx << 32) | (uint)cz;
+        if (_last is null || _lastKey != key || _lastPass != _store.Pass)
+        {
+            _last = _owner ? Kept(cx, cz, key) : Read(cx, cz, key);
+            _lastKey = key;
+            _lastPass = _store.Pass;
+        }
+
+        var built = _last;
+        var column = (x & (ChunkSide - 1)) | ((z & (ChunkSide - 1)) << ChunkBits);
+        var start = built.Offsets[column];
+        return built.Spans.AsSpan(start, built.Offsets[column + 1] - start);
+    }
+
+    /// <summary>
+    /// Drops every chunk where the objects changed since the last read, and those under damage since.
+    /// </summary>
+    private void Follow()
+    {
         if (_objects.Version != _store.Version)
         {
             _store.Version = _objects.Version;
@@ -287,27 +420,52 @@ internal sealed class ObjectColumns
         {
             FollowDamage();
         }
+    }
 
-        var cx = x >> ChunkBits;
-        var cz = z >> ChunkBits;
-        var key = ((long)cx << 32) | (uint)cz;
-        if (_last is null || _lastKey != key)
+    /// <summary>The store's chunk (cx, cz), made and kept first when it is not, marked as read now.</summary>
+    private Chunk Kept(int cx, int cz, long key)
+    {
+        if (!_store.Chunks.TryGetValue(key, out var found))
         {
-            if (!_store.Chunks.TryGetValue(key, out var found))
-            {
-                found = Build(cx, cz, Unused());
-                _store.Chunks[key] = found;
-            }
-
-            found.LastRead = ++_store.Reads;
-            _last = found;
-            _lastKey = key;
+            found = Build(cx, cz, Unused());
+            _store.Chunks[key] = found;
         }
 
-        var built = _last;
-        var column = (x & (ChunkSide - 1)) | ((z & (ChunkSide - 1)) << ChunkBits);
-        var start = built.Offsets[column];
-        return built.Spans.AsSpan(start, built.Offsets[column + 1] - start);
+        found.LastRead = ++_store.Reads;
+        return found;
+    }
+
+    /// <summary>
+    /// A worker's chunk (cx, cz): the store's where it keeps it of the objects and damage now, else its own, made first
+    /// where it has none, in place of the one it made longest ago.
+    /// </summary>
+    private Chunk Read(int cx, int cz, long key)
+    {
+        var version = _objects.Version;
+        var damage = _damage?.Version ?? 0;
+        if (
+            _store.Version == version
+            && (_damage is null || _store.DamageSeen == damage)
+            && _store.Chunks.TryGetValue(key, out var kept)
+        )
+        {
+            return kept;
+        }
+
+        for (var i = 0; i < _own.Length; i++)
+        {
+            if (_ownKeys[i] == key && _ownVersions[i] == version && _ownDamage[i] == damage)
+            {
+                return _own[i];
+            }
+        }
+
+        var slot = _ownNext;
+        _ownNext = (slot + 1) % _own.Length;
+        Build(cx, cz, _own[slot]);
+        (_ownKeys[slot], _ownVersions[slot], _ownDamage[slot]) = (key, version, damage);
+        OwnBuilds++;
+        return _own[slot];
     }
 
     /// <summary>
@@ -364,7 +522,10 @@ internal sealed class ObjectColumns
         }
     }
 
-    /// <summary>A chunk to make: a freed one, a new one while fewer than <see cref="MostChunks"/> are kept, else the one read longest ago.</summary>
+    /// <summary>
+    /// A chunk to make: a freed one, a new one while fewer than <see cref="MostChunks"/> are kept or all were read in
+    /// this pass, else the one read longest ago.
+    /// </summary>
     private Chunk Unused()
     {
         if (_store.Free.Count > 0)
@@ -388,8 +549,14 @@ internal sealed class ObjectColumns
             }
         }
 
+        // Every chunk kept was read in this pass, where a worker may read it: the store grows.
+        if (oldest!.LastRead >= _store.PassStart)
+        {
+            return new Chunk();
+        }
+
         _store.Chunks.Remove(oldestKey);
-        return oldest!;
+        return oldest;
     }
 
     /// <summary>The spans of every column of chunk (cx, cz), from the objects that reach into it.</summary>
@@ -403,13 +570,19 @@ internal sealed class ObjectColumns
         }
 
         _near.Clear();
-        _objects.Near(
-            (int)((long)x0 * _cell),
-            (int)((long)(x0 + ChunkSide) * _cell - 1),
-            (int)((long)z0 * _cell),
-            (int)((long)(z0 + ChunkSide) * _cell - 1),
-            _near
-        );
+        int minX = (int)((long)x0 * _cell),
+            maxX = (int)((long)(x0 + ChunkSide) * _cell - 1),
+            minZ = (int)((long)z0 * _cell),
+            maxZ = (int)((long)(z0 + ChunkSide) * _cell - 1);
+        if (_owner)
+        {
+            _objects.Near(minX, maxX, minZ, maxZ, _near);
+        }
+        else
+        {
+            _objects.NearForWorker(minX, maxX, minZ, maxZ, _near, _candidates);
+        }
+
         foreach (var placement in _near)
         {
             AddObject(in placement, x0, z0);
@@ -495,6 +668,12 @@ internal sealed class ObjectColumns
         public long DamageSeen;
         public int Version = -1;
         public long Reads;
+
+        /// <summary>
+        /// The pass the readers are in (<see cref="BeginPass"/>), and the first read of it; none past the end.
+        /// </summary>
+        public int Pass;
+        public long PassStart = long.MaxValue;
     }
 
     private sealed class Chunk

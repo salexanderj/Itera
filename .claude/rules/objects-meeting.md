@@ -24,6 +24,9 @@ Kinds, placement, and play are in `.claude/rules/objects.md`. Damage is in `.cla
   cell's bottom and half a cell over its top.
 - It answers the voxel world's and the mesh colliders' queries, made 32 by 32 columns at a time. It keeps a chunk until
   `ObjectWorld.Version` changes, or `ObjectDamage.ReadChanges` names an object under it. It keeps at most `ObjectColumns.MostChunks` chunks.
+- Its chunks are kept in a store its workers share (`ObjectColumns.Worker`, a worker mover's): a worker writes nothing of
+  the store and makes a chunk it lacks in a few of its own (`.claude/rules/physics-mover.md`, "Movers on other
+  threads").
 - A move waits where the areas round it within the map are not filled (`Known`, `ObjectWorld.IsKnown`).
 - An object's column (`ObjectColumnReader`) takes its cells from its kind's columns' runs (`ObjectColumnRuns`). An object
   as its kind is turns each run of blocking voxels into the cells whose centres land in it. Runs whose cells meet are

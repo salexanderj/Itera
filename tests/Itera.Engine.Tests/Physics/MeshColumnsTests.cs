@@ -7,11 +7,12 @@ namespace Itera.Engine.Tests.Physics;
 
 /// <summary>
 /// <see cref="MeshColumns"/> in 10 cm cells: a triangle blocks the cells it passes through; one on a cell's boundary
-/// blocks the cell behind its front, so a closed box blocks the same cells as a voxel box; a slope's surface is its plane
-/// at the column's centre; a triangle that only touches a column's corner leaves it alone; a thin wall in the middle of a
-/// cell blocks it; the tags are the highest triangle's; a change to the colliders is read at the next query, and drops
-/// only the chunks it reaches, so kept columns answer as new ones; no more than <see cref="MeshColumns.MostChunks"/>
-/// chunks are kept; and with none, every answer is the voxel world's none.
+/// blocks the cell behind its front, so a closed box blocks the same cells as a voxel box; a slope's surface is its
+/// plane at the column's centre; a triangle that only touches a column's corner leaves it alone; a thin wall in the
+/// middle of a cell blocks it; the tags are the highest triangle's; a change to the colliders is read at the next
+/// query, and drops only the chunks it reaches, so kept columns answer as new ones; no more than
+/// <see cref="MeshColumns.MostChunks"/> chunks are kept but within a pass, where every chunk read is kept for its
+/// workers; and with none, every answer is the voxel world's none.
 /// </summary>
 public sealed class MeshColumnsTests : IDisposable
 {
@@ -318,6 +319,30 @@ public sealed class MeshColumnsTests : IDisposable
         Assert.Equal(10, Top(5, 5, 0, 40));
         Assert.Equal(10, Bottom(37, 5, 0, 40) + 1);
         Assert.Equal(MeshColumns.MostChunks, _columns.ChunkCount);
+    }
+
+    [Fact]
+    public void Within_a_pass_every_chunk_read_is_kept_past_the_most_and_after_it_old_ones_go_again()
+    {
+        new TestTriangles().Ground(0, 0, 64, 64, 1).AddTo(_colliders);
+        _columns.BeginPass();
+        _columns.Prepare(0, 0, 20 * 32 - 1, 20 * 32 - 1);
+
+        // All 400 chunks of the pass are kept, so a worker reads every one of them and makes none.
+        Assert.Equal(400, _columns.ChunkCount);
+        var worker = _columns.Worker();
+        for (var i = 0; i < 400; i++)
+        {
+            Assert.Equal(10, worker.HighestTop(new CircleFootprint(i % 20 * 32 + 5.5, i / 20 * 32 + 5.5, 0.1), 0, 40));
+        }
+
+        Assert.Equal(0, worker.OwnBuilds);
+        _columns.EndPass();
+
+        // After the pass a chunk not kept, past the ground, takes the place of the one read longest ago.
+        Assert.Equal(int.MinValue, Top(25 * 32 + 5, 5, 0, 40));
+        Assert.Equal(400, _columns.ChunkCount);
+        Assert.False(_columns.Keeps(5, 5));
     }
 
     [Fact]

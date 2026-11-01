@@ -1,7 +1,7 @@
 ---
 paths:
   - "src/Itera.Engine/Physics/{VoxelCharacterMover,FineGround,MeshColumns,MovementProbes}.cs"
-  - "tests/Itera.Engine.Tests/Physics/{CoarseCeilingMoverTests,CoarseVoxelTests,DensityMoverTests,FarFromTheMiddleTests,FineGroundTests,FineMoverTests,GroundMaterialTests,MapEdgeMoverTests,MeshColumnsTests,MeshMoverTests,MixedGroundMoverTests,MovementProbesTests,MoverRestTests,MoverWithBodiesTests,VoxelCharacterMoverShapeTests,VoxelCharacterMoverTests,WideBodyMoverTests}.cs"
+  - "tests/Itera.Engine.Tests/Physics/{CoarseCeilingMoverTests,CoarseVoxelTests,DensityMoverTests,FarFromTheMiddleTests,FineGroundTests,FineMoverTests,GroundMaterialTests,MapEdgeMoverTests,MeshColumnsTests,MeshMoverTests,MixedGroundMoverTests,MovementProbesTests,MoverRestTests,MoverWithBodiesTests,MoverWorkersTests,VoxelCharacterMoverShapeTests,VoxelCharacterMoverTests,WideBodyMoverTests}.cs"
 ---
 
 ## The character mover
@@ -111,6 +111,29 @@ has no damage takes any change of the objects, wherever it is.
 
 When true, it advances the stamp, so the next ask reads only later changes. `PlayerMovementSystem` uses it to skip the
 move of a character at rest (`.claude/rules/systems.md`).
+
+### Movers on other threads
+
+`VoxelCharacterMover.CreateWorker` makes a mover for another thread. No system uses one yet.
+
+- A worker moves bodies through its owner's world, colliders, objects, and loose bodies, with its own windows, surface
+  caches, and `FineGround`. Its answers are its owner's, bit for bit.
+- It reads the chunks of columns its owner keeps (`MeshColumns`, `ObjectColumns`) and writes nothing of them. A chunk
+  they do not hold, or hold of older colliders or objects, it makes in a few of its own (`OwnBuilds` counts them).
+- It keeps no brick of a loose body it reads (`LooseBodyVoxels`).
+- A pass runs in this order:
+  - The owner begins it (`BeginPass`): the columns follow the colliders' and objects' changes, and the colliders are
+    built.
+  - The owner makes the chunks each body's move will read (`Prepare`): within its radius and its move across, and
+    `PrepareMarginCells` more.
+  - The workers move the bodies, each one body at a time.
+  - The owner ends the pass (`EndPass`).
+- Within a pass the columns keep every chunk read, past `MeshColumns.MostChunks` where they must. After it, the chunk read
+  longest ago goes again.
+- While workers move bodies, nothing else moves one, reads the columns, refreshes the loose bodies, or changes the world.
+- In Debug a mover throws on a second move or query while one runs.
+- The probes still write shared marks (`MovementProbes`, `CollisionSources`, `ObjectRays`), so a movement mode that
+  calls them cannot run on a worker yet.
 
 ### Building blocks for movement modes
 

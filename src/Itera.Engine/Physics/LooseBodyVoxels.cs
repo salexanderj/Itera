@@ -32,6 +32,10 @@ public sealed class LooseBodyVoxels
     private readonly ulong[] _masks = new ulong[CacheSize * VoxelConstants.BrickMaskWords];
     private int _count;
     private int _stamp = 1;
+    private long _kept;
+
+    /// <summary>For tests: how many bricks were kept, which a read that keeps none leaves alone.</summary>
+    internal long KeptBricks => _kept;
 
     /// <summary>The bodies in the cells of a match's voxel world (its level-0 voxels).</summary>
     public LooseBodyVoxels(LooseBodies bodies, VoxelWorld voxels, IVoxelPassability passability)
@@ -76,37 +80,48 @@ public sealed class LooseBodyVoxels
 
     /// <summary>
     /// The top (one above the highest voxel) of the highest body voxel from y0 to y1 (inclusive) under
-    /// <paramref name="footprint"/>, or <see cref="int.MinValue"/> when there is none.
+    /// <paramref name="footprint"/>, or <see cref="int.MinValue"/> when there is none. With <paramref name="keep"/>
+    /// false, a brick read for the first time since the last refresh is not kept: so a reader on another thread writes
+    /// nothing, while nothing else reads or refreshes the bodies.
     /// </summary>
-    internal int HighestTop(in CircleFootprint footprint, int y0, int y1)
+    internal int HighestTop(in CircleFootprint footprint, int y0, int y1, bool keep = true)
     {
         Span<int> table = stackalloc int[FootprintRows.TableLength(in footprint)];
         var visitor = new VoxelWorld.HighestVisitor(new FootprintRows(in footprint, table), y1);
-        Walk(footprint.MinX, y0, footprint.MinZ, footprint.MaxX, y1, footprint.MaxZ, ref visitor);
+        Walk(footprint.MinX, y0, footprint.MinZ, footprint.MaxX, y1, footprint.MaxZ, ref visitor, keep);
         return Solids.Count == 0 ? visitor.Top : Math.Max(visitor.Top, Solids.HighestTop(in footprint, y0, y1));
     }
 
     /// <summary>
     /// The bottom of the lowest body voxel from y0 to y1 (inclusive) under <paramref name="footprint"/>, or
-    /// <see cref="int.MaxValue"/> when there is none.
+    /// <see cref="int.MaxValue"/> when there is none; <paramref name="keep"/> as <see cref="HighestTop"/> takes it.
     /// </summary>
-    internal int LowestBottom(in CircleFootprint footprint, int y0, int y1)
+    internal int LowestBottom(in CircleFootprint footprint, int y0, int y1, bool keep = true)
     {
         Span<int> table = stackalloc int[FootprintRows.TableLength(in footprint)];
         var visitor = new VoxelWorld.LowestVisitor(new FootprintRows(in footprint, table), y0);
-        Walk(footprint.MinX, y0, footprint.MinZ, footprint.MaxX, y1, footprint.MaxZ, ref visitor);
+        Walk(footprint.MinX, y0, footprint.MinZ, footprint.MaxX, y1, footprint.MaxZ, ref visitor, keep);
         return Solids.Count == 0 ? visitor.Bottom : Math.Min(visitor.Bottom, Solids.LowestBottom(in footprint, y0, y1));
     }
 
     /// <summary>
     /// The cells of a window that hold a body voxel anywhere from y0 to y1, as <see cref="VoxelWorld.BlockedCells"/>
-    /// gives them for the world. <paramref name="rows"/> is cleared first.
+    /// gives them for the world. <paramref name="rows"/> is cleared first; <paramref name="keep"/> as
+    /// <see cref="HighestTop"/> takes it.
     /// </summary>
-    internal void BlockedCells(int windowX, int windowZ, int width, int y0, int y1, Span<UInt128> rows)
+    internal void BlockedCells(
+        int windowX,
+        int windowZ,
+        int width,
+        int y0,
+        int y1,
+        Span<UInt128> rows,
+        bool keep = true
+    )
     {
         rows.Clear();
         var visitor = new VoxelWorld.CellsVisitor(rows, windowX, windowZ);
-        Walk(windowX, y0, windowZ, windowX + width - 1, y1, windowZ + rows.Length - 1, ref visitor);
+        Walk(windowX, y0, windowZ, windowX + width - 1, y1, windowZ + rows.Length - 1, ref visitor, keep);
         if (Solids.Count > 0)
         {
             Solids.BlockedCells(windowX, windowZ, width, y0, y1, rows);
@@ -132,7 +147,7 @@ public sealed class LooseBodyVoxels
         return false;
     }
 
-    private void Walk<TVisitor>(int x0, int y0, int z0, int x1, int y1, int z1, ref TVisitor visitor)
+    private void Walk<TVisitor>(int x0, int y0, int z0, int x1, int y1, int z1, ref TVisitor visitor, bool keep)
         where TVisitor : struct, IBlockingVisitor, allows ref struct
     {
         if (_count == 0)
@@ -160,7 +175,7 @@ public sealed class LooseBodyVoxels
                 {
                     for (var bx = fromX; bx <= toX; bx++)
                     {
-                        if (!Mask(i, bx, by, bz, mask))
+                        if (!Mask(i, bx, by, bz, mask, keep))
                         {
                             continue;
                         }
@@ -216,8 +231,11 @@ public sealed class LooseBodyVoxels
     private static bool Overlap(VoxelCoord min, VoxelCoord max, int x0, int y0, int z0, int x1, int y1, int z1) =>
         min.X <= x1 && max.X >= x0 && min.Y <= y1 && max.Y >= y0 && min.Z <= z1 && max.Z >= z0;
 
-    /// <summary>Writes body <paramref name="index"/>'s voxels in world brick (bx, by, bz) to <paramref name="mask"/>; false when none.</summary>
-    private bool Mask(int index, int bx, int by, int bz, Span<ulong> mask)
+    /// <summary>
+    /// Writes body <paramref name="index"/>'s voxels in world brick (bx, by, bz) to <paramref name="mask"/>; false when
+    /// none. A brick not kept since the last refresh is read from the body and kept, with <paramref name="keep"/>.
+    /// </summary>
+    private bool Mask(int index, int bx, int by, int bz, Span<ulong> mask, bool keep)
     {
         // The whole brick, whatever the map's size (a key packed into 64 bits held ±8,192 bricks, ±655 m at 1 cm).
         var key = new BrickKey(index, bx, by, bz);
@@ -246,10 +264,11 @@ public sealed class LooseBodyVoxels
         }
 
         Fill(index, bx, by, bz, mask);
-        if (free >= 0)
+        if (free >= 0 && keep)
         {
             _keys[free] = key;
             _stamps[free] = _stamp;
+            _kept++;
             mask.CopyTo(_masks.AsSpan(free * VoxelConstants.BrickMaskWords, VoxelConstants.BrickMaskWords));
         }
 

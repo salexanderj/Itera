@@ -212,7 +212,16 @@ public sealed class VoxelCharacterMover
     // The world's level-0 voxels (the mover's cells) per metre: 100 on a grid of 1 cm.
     private readonly double _cellsPerMetre;
     private readonly MaterialSet _passable;
+    private readonly IVoxelPassability _passability;
     private readonly LooseBodyVoxels? _bodies;
+    private readonly MeshColliders? _colliders;
+
+    // False for a worker (CreateWorker): it reads the chunks of columns its owner keeps and keeps none itself, and
+    // keeps no brick of a loose body it reads.
+    private readonly bool _owner;
+
+    // In Debug, 1 while a move or query runs: one mover moves one body at a time.
+    private int _busy;
 
     // The windows of cells a slide and the steepness rule read, and the loose bodies' cells added to them. A window is
     // strips of 128 cells side by side, strip after strip: row r of strip s is element s * depth + r.
@@ -367,7 +376,9 @@ public sealed class VoxelCharacterMover
         int edgeEnd,
         IVoxelPassability passability,
         LooseBodyVoxels? bodies,
-        MeshColliders? meshes
+        MeshColliders? meshes,
+        MeshColumns? columns = null,
+        bool owner = true
     )
     {
         if (cellCentimetres < 1)
@@ -385,7 +396,10 @@ public sealed class VoxelCharacterMover
         _edgeFirst = edgeFirst;
         _edgeEnd = edgeEnd;
         _cellsPerMetre = VoxelConstants.CentimetresPerMetre / (double)cellCentimetres;
-        _meshes = meshes is null ? null : new MeshColumns(meshes, _cellsPerMetre);
+        _meshes = columns ?? (meshes is null ? null : new MeshColumns(meshes, _cellsPerMetre));
+        _colliders = meshes;
+        _passability = passability;
+        _owner = owner;
         _passable = MaterialSet.Passable(passability);
         _bodies = bodies;
         double cell = cellCentimetres;
@@ -424,6 +438,134 @@ public sealed class VoxelCharacterMover
     internal ObjectColumns? Objects { get; init; }
 
     /// <summary>
+    /// A mover for another thread: it moves bodies through the same world, colliders, objects, and loose bodies as this
+    /// one, with windows and caches of its own. It reads the chunks of columns this mover keeps and changes none of
+    /// them, making a chunk they do not hold in its own few (<see cref="OwnBuilds"/>), and keeps no brick of a loose
+    /// body it reads. Its answers are this mover's, bit for bit. While workers move bodies, nothing else moves one,
+    /// reads the voxels' or objects' chunks, or changes the world: a pass begins on this mover
+    /// (<see cref="BeginPass"/>), it makes the chunks each body's move will read (<see cref="Prepare"/>), the workers
+    /// move the bodies, one each at a time, and the pass ends (<see cref="EndPass"/>). Not on a worker.
+    /// </summary>
+    internal VoxelCharacterMover CreateWorker()
+    {
+        RequireOwner();
+        return new VoxelCharacterMover(
+            _world,
+            CellCentimetres,
+            _edgeFirst,
+            _edgeEnd,
+            _passability,
+            _bodies,
+            _colliders,
+            _meshes?.Worker(),
+            owner: false
+        )
+        {
+            Objects = Objects?.Worker(),
+            Materials = Materials,
+            SurfaceTags = SurfaceTags,
+        };
+    }
+
+    /// <summary>
+    /// Starts a pass of moves on other threads (<see cref="CreateWorker"/>), on the thread that changes the world: the
+    /// columns of the mesh colliders and the objects follow their changes, and keep every chunk read until
+    /// <see cref="EndPass"/>, past their most where they must. Not on a worker.
+    /// </summary>
+    internal void BeginPass()
+    {
+        RequireOwner();
+        _meshes?.BeginPass();
+        Objects?.BeginPass();
+    }
+
+    /// <summary>
+    /// Within a pass, makes the chunks of columns a move of a body of <paramref name="shape"/> from
+    /// <paramref name="feetMetres"/> by <paramref name="velocity"/> for <paramref name="seconds"/> may read: within its
+    /// radius and its move across, and <see cref="PrepareMarginCells"/> more, so a worker's move reads them all. Not on
+    /// a worker.
+    /// </summary>
+    internal void Prepare(Vector3 feetMetres, in CharacterShape shape, Vector3 velocity, float seconds)
+    {
+        RequireOwner();
+        if (_meshes is null && Objects is null)
+        {
+            return;
+        }
+
+        var horizontal = Math.Min(
+            Math.Sqrt((double)velocity.X * velocity.X + (double)velocity.Z * velocity.Z) * Math.Max(seconds, 0),
+            MaxMoveMetres
+        );
+        var reach =
+            Math.Min(shape.RadiusMetres, MaxRadiusMetres) * _cellsPerMetre
+            + (double.IsFinite(horizontal) ? horizontal : MaxMoveMetres) * _cellsPerMetre
+            + PrepareMarginCells;
+        double x = CellX(feetMetres.X),
+            z = CellZ(feetMetres.Z);
+        if (!double.IsFinite(x) || !double.IsFinite(z))
+        {
+            return;
+        }
+
+        int x0 = (int)Math.Clamp(Math.Floor(x - reach), -1e9, 1e9),
+            z0 = (int)Math.Clamp(Math.Floor(z - reach), -1e9, 1e9),
+            x1 = (int)Math.Clamp(Math.Floor(x + reach), -1e9, 1e9),
+            z1 = (int)Math.Clamp(Math.Floor(z + reach), -1e9, 1e9);
+        _meshes?.Prepare(x0, z0, x1, z1);
+        Objects?.Prepare(x0, z0, x1, z1);
+    }
+
+    /// <summary>Ends the pass <see cref="BeginPass"/> started. Not on a worker.</summary>
+    internal void EndPass()
+    {
+        RequireOwner();
+        _meshes?.EndPass();
+        Objects?.EndPass();
+    }
+
+    /// <summary>
+    /// How far past a body's radius and its move across <see cref="Prepare"/> makes chunks, in cells: what
+    /// <see cref="Move"/> reads past them, its look-ahead either side and its windows' margins, with room to spare.
+    /// </summary>
+    internal double PrepareMarginCells => 6 + 2 * _lookAhead;
+
+    /// <summary>A worker's: the chunks of columns it made itself, as its owner kept none of them.</summary>
+    internal long OwnBuilds => (_meshes?.OwnBuilds ?? 0) + (Objects?.OwnBuilds ?? 0);
+
+    /// <summary>
+    /// For tests: the chunks of columns kept and the chunk changes read, which a worker's moves leave alone.
+    /// </summary>
+    internal (int Chunks, long Reads) Kept =>
+        (
+            (_meshes?.ChunkCount ?? 0) + (Objects?.ChunkCount ?? 0),
+            (_meshes?.StoreReads ?? 0) + (Objects?.StoreReads ?? 0)
+        );
+
+    private void RequireOwner()
+    {
+        if (!_owner)
+        {
+            throw new InvalidOperationException("A worker moves bodies; its owner makes workers and begins a pass.");
+        }
+    }
+
+    /// <summary>In Debug, refuses a move or query while one runs on this mover: give each thread its own.</summary>
+    [System.Diagnostics.Conditional("DEBUG")]
+    private void Enter()
+    {
+        if (Interlocked.Exchange(ref _busy, 1) != 0)
+        {
+            throw new InvalidOperationException(
+                "A mover moves one body at a time: give each thread its own (CreateWorker)."
+            );
+        }
+    }
+
+    [System.Diagnostics.Conditional("DEBUG")]
+    private void Exit() => Volatile.Write(ref _busy, 0);
+
+    /// <summary>
     /// The widest body the mover takes, in metres: the window of cells a slide reads (512 cells) limits it. A 10 m giant's
     /// radius is 1.5 m.
     /// </summary>
@@ -460,6 +602,24 @@ public sealed class VoxelCharacterMover
     /// finite number: callers check what comes from outside (a peer's command, a physics push) before it gets here.
     /// </summary>
     public CharacterMoveResult Move(
+        ref Vector3 feetMetres,
+        ref Vector3 velocity,
+        in CharacterShape shape,
+        float seconds
+    )
+    {
+        Enter();
+        try
+        {
+            return MoveOnce(ref feetMetres, ref velocity, in shape, seconds);
+        }
+        finally
+        {
+            Exit();
+        }
+    }
+
+    private CharacterMoveResult MoveOnce(
         ref Vector3 feetMetres,
         ref Vector3 velocity,
         in CharacterShape shape,
@@ -870,13 +1030,16 @@ public sealed class VoxelCharacterMover
         var carried = _bodies.HighestTop(
             in _start,
             (int)Math.Floor(py + _edge),
-            (int)Math.Floor(py + step + _edge) - 1
+            (int)Math.Floor(py + step + _edge) - 1,
+            _owner
         );
         if (carried == int.MinValue || carried <= py)
         {
             carried = int.MinValue;
         }
-        else if (_bodies.HighestTop(in _start, carried, (int)Math.Ceiling(carried + h - _edge) - 1) != int.MinValue)
+        else if (
+            _bodies.HighestTop(in _start, carried, (int)Math.Ceiling(carried + h - _edge) - 1, _owner) != int.MinValue
+        )
         {
             // No room over that top: the body stays where it is, and what overlaps it there does not hold it.
             _ignoreStart = true;
@@ -890,8 +1053,12 @@ public sealed class VoxelCharacterMover
         }
 
         _ignoreStart =
-            _bodies.HighestTop(in _start, (int)Math.Floor(py + step + _edge), (int)Math.Ceiling(py + h - _edge) - 1)
-            != int.MinValue;
+            _bodies.HighestTop(
+                in _start,
+                (int)Math.Floor(py + step + _edge),
+                (int)Math.Ceiling(py + h - _edge) - 1,
+                _owner
+            ) != int.MinValue;
         return lifted;
     }
 
@@ -1033,6 +1200,25 @@ public sealed class VoxelCharacterMover
     /// </summary>
     public bool GroundTop(Vector3 atMetres, float radiusMetres, float upMetres, float downMetres, out float topMetres)
     {
+        Enter();
+        try
+        {
+            return GroundTopOnce(atMetres, radiusMetres, upMetres, downMetres, out topMetres);
+        }
+        finally
+        {
+            Exit();
+        }
+    }
+
+    private bool GroundTopOnce(
+        Vector3 atMetres,
+        float radiusMetres,
+        float upMetres,
+        float downMetres,
+        out float topMetres
+    )
+    {
         CheckRadius(radiusMetres);
         var perMetre = _cellsPerMetre;
         var footprint = new CircleFootprint(CellX(atMetres.X), CellZ(atMetres.Z), radiusMetres * perMetre);
@@ -1074,31 +1260,34 @@ public sealed class VoxelCharacterMover
     }
 
     /// <summary>True when a body at <paramref name="feetMetres"/> overlaps a blocking voxel.</summary>
-    public bool Overlaps(Vector3 feetMetres, in CharacterShape shape)
-    {
-        BeginQuery(in shape);
-        double px = CellX(feetMetres.X),
-            py = CellY(feetMetres.Y),
-            pz = CellZ(feetMetres.Z);
-        var footprint = new CircleFootprint(px, pz, shape.RadiusMetres * _cellsPerMetre);
-        var h = shape.HeightMetres * _cellsPerMetre;
-        return !double.IsNegativeInfinity(OverlapTop(in footprint, py, h, bodies: false));
-    }
+    public bool Overlaps(Vector3 feetMetres, in CharacterShape shape) =>
+        OverlapsAt(feetMetres, in shape, bodies: false);
 
     /// <summary>
     /// True when a body at <paramref name="feetMetres"/> overlaps a blocking voxel or a loose body (with the solid models
     /// <see cref="LooseBodyVoxels"/> holds), as a move tests them: whether there is room for it there, as a crouched
     /// player asks before it stands up.
     /// </summary>
-    public bool OverlapsAnything(Vector3 feetMetres, in CharacterShape shape)
+    public bool OverlapsAnything(Vector3 feetMetres, in CharacterShape shape) =>
+        OverlapsAt(feetMetres, in shape, bodies: true);
+
+    private bool OverlapsAt(Vector3 feetMetres, in CharacterShape shape, bool bodies)
     {
-        BeginQuery(in shape);
-        double px = CellX(feetMetres.X),
-            py = CellY(feetMetres.Y),
-            pz = CellZ(feetMetres.Z);
-        var footprint = new CircleFootprint(px, pz, shape.RadiusMetres * _cellsPerMetre);
-        var h = shape.HeightMetres * _cellsPerMetre;
-        return !double.IsNegativeInfinity(OverlapTop(in footprint, py, h, bodies: true));
+        Enter();
+        try
+        {
+            BeginQuery(in shape);
+            double px = CellX(feetMetres.X),
+                py = CellY(feetMetres.Y),
+                pz = CellZ(feetMetres.Z);
+            var footprint = new CircleFootprint(px, pz, shape.RadiusMetres * _cellsPerMetre);
+            var h = shape.HeightMetres * _cellsPerMetre;
+            return !double.IsNegativeInfinity(OverlapTop(in footprint, py, h, bodies));
+        }
+        finally
+        {
+            Exit();
+        }
     }
 
     /// <summary>What a move reads that can change while a body stands still, as it is now (<see cref="StandsUnchanged"/>).</summary>
@@ -1367,7 +1556,7 @@ public sealed class VoxelCharacterMover
         var overlap = surface > feet + _edge ? surface : double.NegativeInfinity;
         if (bodies && _bodies is not null && _bodies.Count > 0)
         {
-            var body = _bodies.HighestTop(in footprint, y0, y1);
+            var body = _bodies.HighestTop(in footprint, y0, y1, _owner);
             if (body != int.MinValue)
             {
                 overlap = Math.Max(overlap, body);
@@ -1403,7 +1592,7 @@ public sealed class VoxelCharacterMover
         var ground = Surface(in footprint, low, y1, (int)Math.Floor(limit));
         if (bodies && _bodies is not null && _bodies.Count > 0)
         {
-            var body = _bodies.HighestTop(in footprint, y0, (int)Math.Ceiling(limit) - 1);
+            var body = _bodies.HighestTop(in footprint, y0, (int)Math.Ceiling(limit) - 1, _owner);
             if (body != int.MinValue)
             {
                 ground = Math.Max(ground, body);
@@ -1778,7 +1967,9 @@ public sealed class VoxelCharacterMover
     private int Top(in CircleFootprint footprint, int y0, int y1)
     {
         var top = TerrainTop(in footprint, y0, y1);
-        return _bodies is null || _bodies.Count == 0 ? top : Math.Max(top, _bodies.HighestTop(in footprint, y0, y1));
+        return _bodies is null || _bodies.Count == 0
+            ? top
+            : Math.Max(top, _bodies.HighestTop(in footprint, y0, y1, _owner));
     }
 
     /// <summary>The lowest bottom from y0 to y1 over a footprint, of the voxels, the mesh colliders, and the loose bodies.</summary>
@@ -1800,7 +1991,7 @@ public sealed class VoxelCharacterMover
 
         return _bodies is null || _bodies.Count == 0
             ? bottom
-            : Math.Min(bottom, _bodies.LowestBottom(in footprint, y0, y1));
+            : Math.Min(bottom, _bodies.LowestBottom(in footprint, y0, y1, _owner));
     }
 
     /// <summary>The highest top from y0 to y1 under a footprint, of the voxels, the mesh colliders, and the objects.</summary>
@@ -1909,7 +2100,7 @@ public sealed class VoxelCharacterMover
         {
             var stripX = windowX + strip * StripCells;
             var stripWidth = Math.Min(StripCells, width - strip * StripCells);
-            _bodies.BlockedCells(stripX, windowZ, stripWidth, bodyY0, y1, bodies);
+            _bodies.BlockedCells(stripX, windowZ, stripWidth, bodyY0, y1, bodies, _owner);
             for (var row = 0; row < depth; row++)
             {
                 var cells = bodies[row];

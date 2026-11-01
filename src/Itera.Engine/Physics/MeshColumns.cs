@@ -19,10 +19,15 @@ namespace Itera.Engine.Physics;
 /// query reads it, and kept until a collider added or removed reaches it, at most <see cref="MostChunks"/>: past that, the chunk read
 /// longest ago is made again for the new one (bodies far apart whose windows need more than that at once make chunks
 /// again at every read). Making a chunk allocates until the cache holds that many and their arrays have grown to the
-/// largest; every other read allocates nothing. Main thread.
+/// largest; every other read allocates nothing. Main thread, but for its workers (<see cref="Worker"/>): readers for
+/// other threads that share its chunks and write nothing of them, while it starts a pass (<see cref="BeginPass"/>) and
+/// makes the chunks they will read (<see cref="Prepare"/>).
 /// </summary>
 internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
 {
+    /// <summary>How many chunks a worker keeps of its own, made where the store keeps none.</summary>
+    internal const int OwnChunks = 4;
+
     private const int ChunkBits = 5;
     private const int ChunkSide = 1 << ChunkBits;
     private const int ChunkColumns = ChunkSide * ChunkSide;
@@ -55,6 +60,105 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     private readonly List<(int Column, ColumnSpan Span)> _built = [];
     private Chunk? _last;
     private long _lastKey;
+    private int _lastPass;
+
+    // A worker's: it keeps a chunk the store keeps none of, or keeps of older colliders, in a few of its own, each with
+    // the colliders' version it was made from, and marks the triangles it makes one with in its own stamps.
+    private readonly bool _owner = true;
+    private readonly Chunk[] _own = [];
+    private readonly long[] _ownKeys = [];
+    private readonly int[] _ownVersions = [];
+    private int _ownNext;
+    private int[] _stamps = [];
+    private int _stamp;
+
+    private MeshColumns(MeshColliders colliders, double cellsPerMetre, Store store)
+        : this(colliders, cellsPerMetre)
+    {
+        _store = store;
+        _owner = false;
+        _own = new Chunk[OwnChunks];
+        _ownKeys = new long[OwnChunks];
+        _ownVersions = new int[OwnChunks];
+        for (var i = 0; i < OwnChunks; i++)
+        {
+            _own[i] = new Chunk();
+            _ownVersions[i] = int.MinValue;
+        }
+    }
+
+    /// <summary>
+    /// A reader of the same columns for another thread: it reads the chunks this one keeps and writes nothing of them,
+    /// and makes a chunk they do not hold (or hold of older colliders) in its own few. While workers read, nothing
+    /// reads this one or changes the colliders.
+    /// </summary>
+    internal MeshColumns Worker() => new(colliders, cellsPerMetre, _store);
+
+    /// <summary>A worker's: the chunks it made itself, as the store kept none of them.</summary>
+    internal long OwnBuilds { get; private set; }
+
+    /// <summary>For tests: the store's count of chunk changes read, which a worker's reads leave alone.</summary>
+    internal long StoreReads => _store.Reads;
+
+    /// <summary>
+    /// Starts a pass of reads on other threads, on the thread that changes the colliders: follows the colliders'
+    /// changes and builds them, and keeps every chunk read from here to <see cref="EndPass"/>, growing past
+    /// <see cref="MostChunks"/> where it must. Not on a worker.
+    /// </summary>
+    internal void BeginPass()
+    {
+        RequireOwner();
+        if (colliders.Version != _store.Version)
+        {
+            FollowChanges();
+        }
+
+        _ = colliders.TriangleCount;
+        _store.Pass++;
+        _store.PassStart = _store.Reads + 1;
+        _last = null;
+    }
+
+    /// <summary>
+    /// Ends the pass <see cref="BeginPass"/> started: chunks may go again, the one read longest ago first.
+    /// </summary>
+    internal void EndPass()
+    {
+        RequireOwner();
+        _store.PassStart = long.MaxValue;
+    }
+
+    /// <summary>
+    /// Makes and keeps each chunk of the columns from (<paramref name="x0"/>, <paramref name="z0"/>) to
+    /// (<paramref name="x1"/>, <paramref name="z1"/>), in cells, that is not kept yet, so a worker reads it. Not on a
+    /// worker.
+    /// </summary>
+    internal void Prepare(int x0, int z0, int x1, int z1)
+    {
+        RequireOwner();
+        if (colliders.Version != _store.Version)
+        {
+            FollowChanges();
+        }
+
+        for (var cz = z0 >> ChunkBits; cz <= z1 >> ChunkBits; cz++)
+        {
+            for (var cx = x0 >> ChunkBits; cx <= x1 >> ChunkBits; cx++)
+            {
+                Kept(cx, cz, ((long)cx << 32) | (uint)cz);
+            }
+        }
+    }
+
+    private void RequireOwner()
+    {
+        if (!_owner)
+        {
+            throw new InvalidOperationException(
+                "A worker reads the columns; the mover's own begins and prepares a pass."
+            );
+        }
+    }
 
     /// <summary>True when there is no collider: every query answers none.</summary>
     public bool Empty => colliders.Count == 0;
@@ -76,7 +180,8 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
 
     /// <summary>True when the chunk that holds column (x, z) is kept now.</summary>
     internal bool Keeps(int x, int z) =>
-        _store.Version == colliders.Version && _store.Chunks.ContainsKey(((long)(x >> ChunkBits) << 32) | (uint)(z >> ChunkBits));
+        _store.Version == colliders.Version
+        && _store.Chunks.ContainsKey(((long)(x >> ChunkBits) << 32) | (uint)(z >> ChunkBits));
 
     /// <summary>
     /// The top (one above the highest cell) of the highest cell a triangle blocks from y0 to y1 (inclusive) under
@@ -251,7 +356,7 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
     /// <summary>The spans of column (x, z), its chunk made first when it is not yet.</summary>
     private ReadOnlySpan<ColumnSpan> Spans(int x, int z)
     {
-        if (colliders.Version != _store.Version)
+        if (_owner && colliders.Version != _store.Version)
         {
             FollowChanges();
         }
@@ -260,17 +365,11 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
         var cz = z >> ChunkBits;
         var key = ((long)cx << 32) | (uint)cz;
         // A query reads its columns in order: most reads are of the chunk read last.
-        if (_last is null || _lastKey != key)
+        if (_last is null || _lastKey != key || _lastPass != _store.Pass)
         {
-            if (!_store.Chunks.TryGetValue(key, out var found))
-            {
-                found = Build(cx, cz, Unused());
-                _store.Chunks[key] = found;
-            }
-
-            found.LastRead = ++_store.Reads;
-            _last = found;
+            _last = _owner ? Kept(cx, cz, key) : Read(cx, cz, key);
             _lastKey = key;
+            _lastPass = _store.Pass;
         }
 
         var built = _last;
@@ -278,6 +377,47 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
         var column = (x & (ChunkSide - 1)) | ((z & (ChunkSide - 1)) << ChunkBits);
         var start = built.Offsets[column];
         return built.Spans.AsSpan(start, built.Offsets[column + 1] - start);
+    }
+
+    /// <summary>The store's chunk (cx, cz), made and kept first when it is not, marked as read now.</summary>
+    private Chunk Kept(int cx, int cz, long key)
+    {
+        if (!_store.Chunks.TryGetValue(key, out var found))
+        {
+            found = Build(cx, cz, Unused());
+            _store.Chunks[key] = found;
+        }
+
+        found.LastRead = ++_store.Reads;
+        return found;
+    }
+
+    /// <summary>
+    /// A worker's chunk (cx, cz): the store's where it keeps it of the colliders now, else its own, made first where it
+    /// has none, in place of the one it made longest ago.
+    /// </summary>
+    private Chunk Read(int cx, int cz, long key)
+    {
+        var version = colliders.Version;
+        if (_store.Version == version && _store.Chunks.TryGetValue(key, out var kept))
+        {
+            return kept;
+        }
+
+        for (var i = 0; i < _own.Length; i++)
+        {
+            if (_ownKeys[i] == key && _ownVersions[i] == version)
+            {
+                return _own[i];
+            }
+        }
+
+        var slot = _ownNext;
+        _ownNext = (slot + 1) % _own.Length;
+        Build(cx, cz, _own[slot]);
+        (_ownKeys[slot], _ownVersions[slot]) = (key, version);
+        OwnBuilds++;
+        return _own[slot];
     }
 
     /// <summary>
@@ -337,8 +477,8 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
         (int)Math.Clamp(Math.Floor(centimetres * cellsPerMetre / VoxelConstants.CentimetresPerMetre), -1e9, 1e9);
 
     /// <summary>
-    /// A chunk to make: a freed one, a new one while fewer than <see cref="MostChunks"/> are kept, else the one read
-    /// longest ago, taken out of the cache.
+    /// A chunk to make: a freed one, a new one while fewer than <see cref="MostChunks"/> are kept or all were read in
+    /// this pass, else the one read longest ago, taken out of the cache.
     /// </summary>
     private Chunk Unused()
     {
@@ -363,8 +503,14 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
             }
         }
 
+        // Every chunk kept was read in this pass, where a worker may read it: the store grows.
+        if (oldest!.LastRead >= _store.PassStart)
+        {
+            return new Chunk();
+        }
+
         _store.Chunks.Remove(oldestKey);
-        return oldest!;
+        return oldest;
     }
 
     /// <summary>The spans of every column of chunk (cx, cz), from the triangles over it, written into <paramref name="chunk"/>.</summary>
@@ -373,7 +519,29 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
         int x0 = cx << ChunkBits,
             z0 = cz << ChunkBits;
         var metres = 1 / cellsPerMetre;
-        colliders.Triangles(x0 * metres, z0 * metres, (x0 + ChunkSide) * metres, (z0 + ChunkSide) * metres, _triangles);
+        if (_owner)
+        {
+            colliders.Triangles(
+                x0 * metres,
+                z0 * metres,
+                (x0 + ChunkSide) * metres,
+                (z0 + ChunkSide) * metres,
+                _triangles
+            );
+        }
+        else
+        {
+            colliders.TrianglesForWorker(
+                x0 * metres,
+                z0 * metres,
+                (x0 + ChunkSide) * metres,
+                (z0 + ChunkSide) * metres,
+                _triangles,
+                ref _stamps,
+                ref _stamp
+            );
+        }
+
         _built.Clear();
         // A triangle cut by four sides has at most 7 corners; room for more where rounding makes a corner cross twice.
         Span<Vector3> polygon = stackalloc Vector3[16];
@@ -589,6 +757,12 @@ internal sealed class MeshColumns(MeshColliders colliders, double cellsPerMetre)
         public readonly List<long> Stale = [];
         public int Version = -1;
         public long Reads;
+
+        /// <summary>
+        /// The pass the readers are in (<see cref="BeginPass"/>), and the first read of it; none past the end.
+        /// </summary>
+        public int Pass;
+        public long PassStart = long.MaxValue;
     }
 
     /// <summary>The spans of a chunk's columns: column i's from <c>Offsets[i]</c> to <c>Offsets[i + 1]</c>.</summary>
