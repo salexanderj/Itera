@@ -1215,6 +1215,8 @@ public sealed partial class NavigationService : IDisposable
 
     private void Run()
     {
+        // Below normal on Linux too, where .NET's priority changes nothing.
+        ThreadPriorities.Lower();
         try
         {
             var grid = _grid!;

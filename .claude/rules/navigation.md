@@ -39,6 +39,8 @@ Each fixed step reads new edits into the grid, up to a limit of cells a step. Th
 - The thread builds the fields again, while their users keep the old ones. It builds them at once, each by its own
   builder on the next free thread, up to a quarter of the processors (`FlowFieldWorkers`), so a build takes about as
   long as its longest field.
+- The navigation thread and its helpers run below normal priority, on Linux too (`ThreadPriorities`), so a build never
+  takes the step's processors.
 - After `reset` the thread fills the grid again first (`NavigationService.Refilling`).
 
 ### Voxel objects

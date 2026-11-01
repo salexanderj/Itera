@@ -6,8 +6,9 @@ namespace Itera.Engine.Voxels;
 /// <summary>
 /// Background threads that run <see cref="ColumnJob"/>s. The main thread queues jobs with <see cref="Enqueue"/> and
 /// collects finished ones with <see cref="TryTakeFinished"/>; the queues' locks are the hand-off, so a job's contents are
-/// visible to whichever side takes it. The threads run below normal priority so Bepu's workers keep the processors
-/// during the physics step. Each thread has its own 4 MB of scratch for one dense chunk's materials and densities.
+/// visible to whichever side takes it. The threads run below normal priority (<see cref="ThreadPriorities"/>, on Linux
+/// too) so the main thread, the step's workers, and Bepu's keep the processors during the step. Each thread has its own
+/// 4 MB of scratch for one dense chunk's materials and densities.
 /// </summary>
 internal sealed class VoxelWorkers : IDisposable
 {
@@ -156,6 +157,8 @@ internal sealed class VoxelWorkers : IDisposable
 
     private void Run()
     {
+        // Below normal on Linux too, where .NET's priority changes nothing.
+        ThreadPriorities.Lower();
         Interlocked.Increment(ref _running);
         ColumnJob? job = null;
         try

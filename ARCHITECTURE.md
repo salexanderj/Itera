@@ -413,12 +413,16 @@ main thread's poll. The other threads are:
 - **Sound** has a thread of its own (`AudioService`), which alone makes OpenAL calls once it runs. The main thread hands
   it each iteration's sounds, music commands, and the listener through `AudioExchange` and `MusicExchange`. A music
   thread decodes the music ahead of it (`MusicStreamer`). A sound render thread renders the one-shot recipes.
-- **Voxel workers** (`VoxelWorkers`, half of the processors by default, below normal priority, which on Linux changes nothing: every
-  thread runs at the process's nice value) generate columns. They
+- **Voxel workers** (`VoxelWorkers`, half of the processors by default, below normal priority) generate columns. They
   hand finished columns to the main thread, which alone changes the live voxel world. The same threads free the memory
   of unloaded columns, ahead of any generation, so unloading costs the main thread a few microseconds for each column.
-- **Others** are the navigation thread (it fills its grid and builds the fields alone), the edit warm-up's thread, builds a game starts on the thread pool, the
-  screenshot writer, and the control port's accept and connection threads.
+- **Others** are the navigation thread (it fills its grid and builds the fields alone, with helpers below normal
+  priority as it is), the edit warm-up's thread, builds a game starts on the thread pool, the screenshot writer, and
+  the control port's accept and connection threads.
+- **Below normal priority** (`ThreadPriorities`): a background thread is made with .NET's below-normal priority, which
+  Windows and macOS take, and on Linux, where .NET's priorities change nothing, sets its own nice value as it starts.
+  While every processor is busy, the main thread, the step's workers, and the physics then run first, so navigation's
+  builds beside a host's step do not stretch it (at normal priority they made steps of up to 54 ms).
 
 **Shutdown.** A match that is on ends first. Its session says goodbye, so the peers are told this game has left, and
 its steps run in reverse. Then every run step whose initialisation started shuts down in reverse order. Each thread is

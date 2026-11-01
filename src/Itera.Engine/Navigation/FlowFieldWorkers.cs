@@ -8,8 +8,8 @@ namespace Itera.Engine.Navigation;
 /// Builds a set of flow fields at once (<see cref="Build"/>): the calling thread and its helper threads each take the next
 /// field not yet started, each with a <see cref="FlowFieldBuilder"/> of its own, so a set takes about as long as its
 /// longest field. Each field comes out as one builder alone would build it, whichever thread takes it. The helpers wait
-/// between sets, below normal priority so Bepu's workers keep the processors during the physics step. One calling thread
-/// at a time; allocates nothing once made.
+/// between sets, below normal priority (<see cref="ThreadPriorities"/>, on Linux too) so the step's threads keep the
+/// processors. One calling thread at a time; allocates nothing once made.
 /// </summary>
 internal sealed class FlowFieldWorkers : IDisposable
 {
@@ -123,6 +123,8 @@ internal sealed class FlowFieldWorkers : IDisposable
     /// <summary>A helper: waits for each set, works on it, and says when it is done.</summary>
     private void Help(int builder)
     {
+        // Below normal on Linux too, where .NET's priority changes nothing.
+        ThreadPriorities.Lower();
         var seen = 0;
         while (true)
         {

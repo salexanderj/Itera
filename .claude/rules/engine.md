@@ -119,5 +119,5 @@ Rules for a move:
 - `Ecs/` (`EcsWorldTests`, `CheckedWorldExtensionsTests`, `EcsInspectorTests`), `Time/`, `Diagnostics/`, `Modding/`
   (`ModLoaderIntegrationTests`, `ModDispatcherTests`), `Control/` (`ControlServiceTests`), and `Configuration/`
   (`EngineOptionsValidatorTests`, `UnknownOptionKeysTests`).
-- `EngineStepsTests`, `ExitSignalPolicyTests`, `GameLoopSaveTests`, `NativeLibrariesTests`, and `ChecklistTests` are in
-  the project's root.
+- `EngineStepsTests`, `ExitSignalPolicyTests`, `GameLoopSaveTests`, `NativeLibrariesTests`, `ThreadPrioritiesTests`,
+  and `ChecklistTests` are in the project's root.
