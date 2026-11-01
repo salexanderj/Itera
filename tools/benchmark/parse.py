@@ -9,8 +9,11 @@ own render passes and the image views per frame (0 for a game with none or a log
 the meshes' stats lines, the megabytes uploaded, the triangles drawn in the camera's view and the shadow maps, and the
 mesh heap in use. From the frame summary lines, the whole frame's GPU time, weighted by frames, and its slowest 1 %: the
 highest of the seconds' 99th percentiles; and the frames shown a second, with the slowest 1 % of the times between them. From the fixed steps' lines, the step's time, the sum of its parts' averages
-weighted by steps, the systems' part, and the longest step. The same for the flight. Logs from before the raymarcher left
-main (2026-10-06) give the voxel pass and the GPU passes as before, and no mesh figures.
+weighted by steps, the systems' part, and the longest step. From the frame CPU lines, the main thread's frame build,
+weighted by frames, and its longest. From a host's session lines, its fewest clients and the kilobytes a second it sent
+each.
+The same for the flight. Logs from before the raymarcher left main (2026-10-06) give the voxel pass and the GPU passes as
+before, and no mesh figures.
 """
 import json
 import re
@@ -30,6 +33,8 @@ meshes = []  # (time, uploaded megabytes, heap megabytes used, triangles, shadow
 post = {}  # time: (anti-aliasing, upscale, game passes, image views: frames and avg each)
 frame = []  # (time, frames, GPU avg, GPU p99, frame p99)
 steps = []  # (time, steps, step avg as the sum of its parts', systems avg, longest step)
+builds = []  # (time, frames built, build avg, build max)
+sessions = []  # (time, peers, kilobytes out, seconds)
 windows = {}
 order = []
 exit_code = None
@@ -86,6 +91,14 @@ for line in lines:
         parts = re.findall(r"avg ([\d.]+) ms", line.split(";", 1)[1])
         steps.append((t, int(m[1]), sum(float(p) for p in parts), float(m[3]), float(m[2])))
         continue
+    m = re.search(r"Frame CPU over [\d.]+ s \((\d+) frames built\): .*build avg ([\d.]+) ms max ([\d.]+) ms", line)
+    if m:
+        builds.append((t, int(m[1]), float(m[2]), float(m[3])))
+        continue
+    m = re.search(r"Session: host, (\d+) peer\(s\); in .* out \d+ \(([\d.]+) KB\) over ([\d.]+) s", line)
+    if m:
+        sessions.append((t, int(m[1]), float(m[2]), float(m[3])))
+        continue
     m = re.search(r"Benchmark view (\d+) ([a-z-]+) measuring at (\d+)x(\d+)", line)
     if m:
         windows[m[2]] = [t, None, f"{m[3]}x{m[4]}"]
@@ -119,6 +132,11 @@ def summarise(start, end):
     wholes = sum(f[1] for f in whole)
     stepped = [s for s in steps if start + 1.05 < s[0] <= end + 0.05]
     counted = sum(s[1] for s in stepped)
+    built = [b for b in builds if start + 1.05 < b[0] <= end + 0.05]
+    frames_built = sum(b[1] for b in built)
+    # Each line's kilobytes shared among its own clients, as clients may join during a measurement.
+    sent = [s for s in sessions if start + 1.05 < s[0] <= end + 0.05 and s[1] > 0]
+    sent_seconds = sum(s[3] for s in sent)
     return {
         "voxels_ms": sum(s[1] * s[2] for s in samples) / frames,
         "voxels_min_s": min(s[2] for s in samples),
@@ -149,6 +167,11 @@ def summarise(start, end):
         "step_ms": sum(s[1] * s[2] for s in stepped) / counted if counted else 0.0,
         "systems_ms": sum(s[1] * s[3] for s in stepped) / counted if counted else 0.0,
         "step_max_ms": max((s[4] for s in stepped), default=0.0),
+        # The main thread's frame build, and a host's clients and what it sent each: 0 for a log without their lines.
+        "build_ms": sum(b[1] * b[2] for b in built) / frames_built if frames_built else 0.0,
+        "build_max_ms": max((b[3] for b in built), default=0.0),
+        "clients": min((s[1] for s in sent), default=0),
+        "client_kb_s": sum(s[2] / s[1] for s in sent) / sent_seconds if sent_seconds else 0.0,
     }
 
 

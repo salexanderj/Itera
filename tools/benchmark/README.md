@@ -27,8 +27,9 @@ game's benchmark hides its views unless it asks for them (the starter's minimap 
 A game that holds a scene to a whole frame's budget reads `frame_gpu_ms`, the whole frame's GPU time, and
 `frame_gpu_p99_ms`, the highest of the measured seconds' 99th percentiles. The frames shown are `fps`, a second, and
 `frame_p99_ms`, the highest of the seconds' 99th percentiles of the time between two, with the main thread's work in it. A host's step is `step_ms`, the sum of its
-parts' averages, with `systems_ms` its systems' part and `step_max_ms` its longest. `compare.py` prints them when both
-groups have them. `parse.py` reads any older `game.log` again: `parse.py game.log > summary.json`.
+parts' averages, with `systems_ms` its systems' part and `step_max_ms` its longest. The main thread's frame build is
+`build_ms`, with `build_max_ms` its longest. A host's fewest clients in a view are `clients`, and what it sent each a second
+`client_kb_s`. `compare.py` prints them when both groups have them. `parse.py` reads any older `game.log` again: `parse.py game.log > summary.json`.
 
 ## Measuring
 
@@ -42,6 +43,7 @@ tools/benchmark/imgdiff.py before-1 after-1                  # the same picture?
 tools/benchmark/run.sh before-3 --offscreen                  # no window (BENCH_SIZE, 2560x1440): the monitor stays free; no screenshots
 tools/benchmark/run.sh long --Engine:Benchmark:MeasureSeconds=1 --Engine:Benchmark:SettleSeconds=0 --Engine:Benchmark:FlightSeconds=600
 tools/benchmark/flight.py long                               # uploads, the mesh heap, and pending blocks, minute by minute
+tools/benchmark/zones.py TRACE.json                          # a zones trace: each zone's time a fixed step, each thread's busy share
 ```
 
 - `run.sh` makes the window full screen on `BENCH_OUTPUT` (default `DP-1`) and runs with VSync off, so the GPU never
@@ -64,6 +66,17 @@ tools/benchmark/flight.py long                               # uploads, the mesh
   took 83 % longer; uncapped it is 99 % busy at every view). Its times are 1 to 3 %
   below a window's on every view (the starter's views, 2026-10-09), so compare offscreen runs only with offscreen runs.
 - A run takes about 2.5 minutes and takes over the monitor (with `--offscreen`, not).
+- A run's zones trace: give it `"--Engine:Console:Run=wait seconds 75; zones start; wait seconds 10; zones stop"`
+  after the label, and read the data folder's newest `Traces/` file with `zones.py`. A zone's time a step is its total
+  over the trace's fixed steps, so the frame build's zones count there too, by their share.
+- `BENCH_CPUS=0-5,8-13` runs the game on those processors alone (`taskset -c`), to measure a machine with fewer cores:
+  .NET's processor count follows them, and so do the engine's thread pools. Each core keeps its own speed and cache, so
+  a faster processor's numbers stay a best case for a slower one with as many cores.
+- `BENCH_CLIENTS=7` hosts the match (`BENCH_PORT`, 47650 by default) and, once it has loaded, joins seven clients with
+  no graphics to it from 127.0.0.1, on the processors `BENCH_CLIENT_CPUS` lists (any by default). They run in the data
+  folder `<DataFolder>-clients` (`<DataFolder>-agent-clients` with `BENCH_AGENT=1`), and their logs go to `clients/` in
+  the results folder. They join during the first view: give `--Engine:Benchmark:SettleSeconds` time enough for their
+  downloads, or that view measures the joins.
 
 ## Pitfalls
 

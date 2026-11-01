@@ -64,6 +64,8 @@ for title, key in (
     ("frame p99", "frame_p99_ms"),
     ("step", "step_ms"),
     ("longest step", "step_max_ms"),
+    ("frame build", "build_ms"),
+    ("KB/s a client", "client_kb_s"),
 ):
     if all(min(times(group, v, key)) > 0 for group in (a, b) for v in views):
         print()

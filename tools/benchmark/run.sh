@@ -15,6 +15,12 @@
 #   BENCH_OUTPUT  sway output to go full screen on (default DP-1, the 2560x1440 monitor).
 #   BENCH_AGENT   1: the data folder of the runs Claude starts (<DataFolder>-agent, data_folder.py --agent), so its runs
 #                 leave the player's logs and benchmarks alone.
+#   BENCH_CPUS    the processors the game runs on (a taskset -c list, such as 0-5,8-13), to measure a machine with fewer
+#                 cores; its thread pools follow the count.
+#   BENCH_CLIENTS N: the game hosts the match (BENCH_PORT, default 47650; N + 1 players), and once it has loaded, N clients
+#                 with no graphics join it from 127.0.0.1, on BENCH_CLIENT_CPUS (default: any) with one voxel worker
+#                 each. They run in the data folder <folder>-clients, at 1 % volume, and stop with the run; their logs
+#                 go to clients/ in the results folder.
 # Linux with sway only (swaymsg, jq, grim); python3 for parse.py. Development tool, not game code.
 set -uo pipefail
 
@@ -60,6 +66,24 @@ if [[ -n "$detail" ]]; then
     detail_args=("--Engine:Renderer:ObjectVoxelPixels=$detail")
 fi
 out="${BENCH_OUT:-$data/Benchmarks}/$label"
+clients="${BENCH_CLIENTS:-0}"
+port="${BENCH_PORT:-47650}"
+if [[ ! "$clients" =~ ^[0-9]+$ ]] || ((clients > 15)); then
+    echo "run.sh: BENCH_CLIENTS must be 0 to 15; it is '$clients'" >&2
+    exit 2
+fi
+host_args=()
+if ((clients > 0)); then
+    host_args=(--Engine:Session:Mode=Host "--Engine:Session:Port=$port" "--Engine:Session:MaxPlayers=$((clients + 1))")
+fi
+pin=()
+if [[ -n "${BENCH_CPUS:-}" ]]; then
+    pin=(taskset -c "$BENCH_CPUS")
+fi
+client_pin=()
+if [[ -n "${BENCH_CLIENT_CPUS:-}" ]]; then
+    client_pin=(taskset -c "$BENCH_CLIENT_CPUS")
+fi
 bin="${BENCH_BIN:-$repo/src/Game/bin/Release/net10.0}/Game"
 output="${BENCH_OUTPUT:-DP-1}"
 logs="$data/Logs"
@@ -80,16 +104,17 @@ mkdir -p "$out"
 # (the menu's Settings) changes no measurement (the game's "Settings: ..." line shows what applied); arguments after
 # them still win, so --Engine:Renderer:RenderScale=0.67 measures that scale and --Engine:Renderer:AntiAliasing=false the
 # picture without anti-aliasing.
-"$bin" --Engine:Steam:Enabled=false --Engine:Session:Mode=Offline --Engine:Benchmark:Enabled=true --Engine:Window:VSync=false \
+"${pin[@]}" "$bin" --Engine:Steam:Enabled=false --Engine:Session:Mode=Offline --Engine:Benchmark:Enabled=true --Engine:Window:VSync=false \
     --Engine:Renderer:DynamicRenderScaling=false --Engine:Renderer:RenderScale=1 \
     --Engine:Camera:FieldOfViewDegrees=90 --Engine:Window:Fullscreen=false \
     --Engine:Renderer:Shadows=true --Engine:Renderer:AntiAliasing=true \
     --Engine:Logging:StatsIntervalSeconds=1 "--Engine:Application:DataFolder=$folder" "${window_args[@]}" \
-    "${detail_args[@]}" "${quiet[@]}" "$@" \
+    "${detail_args[@]}" "${quiet[@]}" "${host_args[@]}" "$@" \
     > "$out/console.txt" 2>&1 &
 pid=$!
-# A script stopped early (Ctrl+C, an error) stops the game too, rather than leaving it full screen.
-trap 'kill -TERM "$pid" 2> /dev/null' EXIT
+client_pids=()
+# A script stopped early (Ctrl+C, an error) stops the game and its clients too, rather than leaving it full screen.
+trap 'kill -TERM "$pid" "${client_pids[@]}" 2> /dev/null' EXIT
 trap 'exit 130' INT TERM
 
 if ((!offscreen)); then
@@ -137,6 +162,18 @@ while kill -0 "$pid" 2> /dev/null; do
         break
     fi
 
+    # The clients join once the host has loaded, so the world they download holds what its first steps made.
+    if ((clients > ${#client_pids[@]})) && grep -q 'Loading: done' "$log" 2> /dev/null; then
+        for i in $(seq "$clients"); do
+            "${client_pin[@]}" "$bin" --Engine:Steam:Enabled=false --Engine:Session:Mode=Join \
+                "--Engine:Session:Address=127.0.0.1:$port" "--Engine:Session:PlayerName=client-$i" \
+                --Engine:Window:Mode=None --Engine:Voxels:WorkerThreads=1 \
+                "--Engine:Application:DataFolder=$folder-clients" --Engine:Audio:Volume=0.01 \
+                > "$out/client-$i.txt" 2>&1 &
+            client_pids+=($!)
+        done
+    fi
+
     count=$(grep -c 'Benchmark view .* measuring at' "$log" 2> /dev/null || true)
     if ((!offscreen && count > shots)); then
         sleep 2
@@ -150,6 +187,14 @@ done
 
 wait "$pid"
 echo "exit $?" >> "$out/console.txt"
+if ((${#client_pids[@]} > 0)); then
+    kill -TERM "${client_pids[@]}" 2> /dev/null
+    wait "${client_pids[@]}" 2> /dev/null
+    mkdir -p "$out/clients"
+    for client in "${client_pids[@]}"; do
+        cp "$(ls -t "$data-clients/Logs"/*-"$client".log 2> /dev/null | head -1)" "$out/clients/" 2> /dev/null
+    done
+fi
 if ((stalled)); then
     cp "$log" "$out/game.log"
     echo "$label STALLED: the game's log stopped growing; see $out/game.log"
