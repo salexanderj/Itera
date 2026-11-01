@@ -5,15 +5,15 @@ using Microsoft.Extensions.Options;
 namespace Itera.Engine.Physics;
 
 /// <summary>
-/// The threads a fixed step's parallel passes run on (<c>PlayerMovementSystem</c>'s moves, and a game's own systems'
-/// passes): <see cref="Run"/> runs a piece of work on the calling thread, as worker 0, and on each helper thread that
-/// comes to the pass while the caller's own part runs. A helper the busy processors have not run by then skips the pass,
-/// so a pass never waits for one that has not started. Each worker keeps scratch of its own by its index, and takes the
-/// next item of the pass from a counter it shares (<see cref="Interlocked.Increment(ref int)"/>), so each item's result is
-/// the same whichever thread takes it, and no item waits on a worker that may not come. The helpers wait between passes.
-/// Each worker's part is the zone <c>step workers.part</c>, and the caller's wait for the helpers in the pass
-/// <c>step workers.wait</c>. Run-wide (<c>Engine:Physics:StepThreads</c>); one calling thread at a time, the main thread;
-/// allocates nothing once made.
+/// The threads a fixed step's parallel passes run on (<c>PlayerMovementSystem</c>'s moves, a host's packets for its
+/// clients, and a game's own systems' passes): <see cref="Run"/> runs a piece of work on the calling thread, as worker
+/// 0, and on each helper thread that comes to the pass while the caller's own part runs. A helper the busy processors
+/// have not run by then skips the pass, so a pass never waits for one that has not started. Each worker keeps scratch
+/// of its own by its index, and takes the next item of the pass from a counter it shares
+/// (<see cref="Interlocked.Increment(ref int)"/>), so each item's result is the same whichever thread takes it, and no
+/// item waits on a worker that may not come. The helpers wait between passes. Each worker's part is the zone
+/// <c>step workers.part</c>, and the caller's wait for the helpers in the pass <c>step workers.wait</c>. Run-wide
+/// (<c>Engine:Physics:StepThreads</c>); one calling thread at a time, the main thread; allocates nothing once made.
 /// </summary>
 public sealed class StepWorkers : IDisposable
 {

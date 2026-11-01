@@ -4,6 +4,7 @@ using Itera.Engine.Ecs;
 using Itera.Engine.Matches;
 using Itera.Engine.Maths;
 using Itera.Engine.Networking;
+using Itera.Engine.Physics;
 using Itera.Engine.Systems;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -45,10 +46,12 @@ public sealed partial class ReplicationService : IReplicationEndpoint
     private readonly CharacterStepper _stepper;
     private readonly ILogger<ReplicationService> _logger;
     private readonly MatchControl? _matches;
+    private readonly StepWorkers? _workers;
 
     /// <summary>
     /// The match's replication. <paramref name="matches"/> is the run's, whose phase a client's replies tell the host of:
-    /// loading until it plays (<see cref="IsLoading"/>); with none, a client plays.
+    /// loading until it plays (<see cref="IsLoading"/>); with none, a client plays. A host writes its clients' packets
+    /// on <paramref name="workers"/>, the step's, when it sends two clients or more.
     /// </summary>
     public ReplicationService(
         SessionService session,
@@ -58,7 +61,8 @@ public sealed partial class ReplicationService : IReplicationEndpoint
         IOptions<EngineOptions> options,
         CharacterStepper stepper,
         ILogger<ReplicationService> logger,
-        MatchControl? matches = null
+        MatchControl? matches = null,
+        StepWorkers? workers = null
     )
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -73,6 +77,7 @@ public sealed partial class ReplicationService : IReplicationEndpoint
         _stepper = stepper;
         _logger = logger;
         _matches = matches;
+        _workers = workers;
         SendIntervalTicks = Math.Max(1, (int)Math.Round((double)_fixedStepHz / _settings.SendHz));
         InterpolationMilliseconds = _settings.InterpolationMilliseconds;
         // The first match seals the kinds: a hello carries their fingerprint from now on.

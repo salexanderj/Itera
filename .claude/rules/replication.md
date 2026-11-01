@@ -52,6 +52,10 @@ The console's `replication` prints what is sent or shown. `replication delay MS`
 - Records go into packets that fit `MaxUnreliableBytes`, up to a limit per send, until the client's bytes are spent (`BytesPerSecond`; what a send leaves is kept, up to a send's share of `PeakBytesPerSecond`).
 - A record too large for what is left is passed over for smaller ones. Its size is measured before it is written
   (`ReplicatedStateCodec.Measure`), from the entity's kept states in place, so one passed over costs no writing.
+- With two clients or more, each client's entities are chosen and its packets written on the step's workers
+  (`StepWorkers`), each client by one worker with scratch of its own. The main thread captures the states and writes
+  each client's owner's block first, since both read the world. It sends the packets after, client by client in slot
+  order. A client's packets are the same on any thread.
 - A send's parts are the zones `replication.capture`, `replication.choose` (each client's entities by priority), and
   `replication.write` (its packets).
 - Every game message the host sends a client counts against the same bytes (`SpendGame`), so its state has the rest.
@@ -128,6 +132,8 @@ The host sends each client that replies at least a packet each send, so a long g
 ### Tests
 
 - `ReplicatedStateCodecTests`: fields, changes from a baseline, damaged records, the blend, schemas and kinds, and the predicted parts' registration.
+- `ReplicationWorkersTests`: a host's sends to three clients on too few bytes, byte for byte, on the step's workers and on
+  the main thread alone, and a send on the workers allocates nothing on any thread.
 - `ReplicationServiceTests` over `ReplicationHarness`: a host and a client in one process without terrain, with `SimulatedNetwork` for delay, jitter, and loss.
 - `PredictionTests`: prediction and correction over the harness's test floor.
 - The systems' behaviour and allocation tests in `Systems/`.

@@ -487,10 +487,11 @@ public sealed partial class ReplicationService
     }
 
     /// <summary>
-    /// The owner's block of a send's first packet to a client: whether there is one, then the tick of the last command
-    /// the host applied for its player and the player's state after it.
+    /// The owner's block of a send's first packet to a client, into <paramref name="into"/>: whether there is one, then
+    /// the tick of the last command the host applied for its player and the player's state after it. On the main thread,
+    /// before the clients' packets are written: it reads the world.
     /// </summary>
-    private void WriteOwner(HostClient client)
+    private void WriteOwner(HostClient client, MessageWriter into)
     {
         var world = _ecs.World;
         var present =
@@ -505,14 +506,14 @@ public sealed partial class ReplicationService
             present = _ownerScratch.CanWrite(_kinds);
         }
 
-        _packet.WriteByte(present ? (byte)1 : (byte)0);
+        into.WriteByte(present ? (byte)1 : (byte)0);
         if (!present)
         {
             return;
         }
 
-        _packet.WriteVarInt(client.NewestApplied);
-        _ownerScratch.Write(_packet, _kinds);
+        into.WriteVarInt(client.NewestApplied);
+        _ownerScratch.Write(into, _kinds);
     }
 
     /// <summary>On a client: a snapshot's owner's block, the newest kept for the next step's check.</summary>

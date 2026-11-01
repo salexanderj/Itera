@@ -41,9 +41,18 @@ public sealed partial class ReplicationService
     private readonly HostClient?[] _clients = new HostClient?[SessionService.MaxSlots];
     private readonly SlotJoins _joins = new();
     private readonly List<Reply> _replies = [];
-    private readonly List<Candidate> _candidates = [];
-    private readonly MessageWriter _packet = new();
     private ReplicatedState _captured;
+
+    // The clients sent to this send, in slot order, and the next for a worker to take.
+    private readonly HostClient[] _sending = new HostClient[SessionService.MaxSlots];
+    private int _sendingCount;
+    private int _nextSending;
+    private int _sendTick;
+
+    // The main thread's lane, and each of the step's workers' (null to send every client here), made at the first send.
+    private SendLane? _here;
+    private SendLane[]? _lanes;
+    private Action<int>? _work;
     private uint _lastId;
     private uint _lastGeneration;
 
@@ -229,12 +238,90 @@ public sealed partial class ReplicationService
 
         var hostTick = (int)tick;
         Capture(hostTick);
+        SendAll(hostTick);
+    }
+
+    /// <summary>
+    /// Each client's send. Its owner's block is written here first, on the main thread, since it reads the world; then
+    /// each client's entities are chosen and its packets written, on the step's workers when two clients or more are
+    /// sent to, each client by one worker with scratch of its own; then its packets are sent here, client by client in
+    /// slot order. A client's packets so do not depend on which thread wrote them.
+    /// </summary>
+    private void SendAll(int tick)
+    {
+        _sendingCount = 0;
+        _sendTick = tick;
         foreach (var client in _clients)
         {
-            if (client is not null)
+            // A client sent nothing yet that has not replied is loading its world: it is sent nothing until it replies.
+            if (client is not { Replied: true })
             {
-                Send(client, hostTick);
+                continue;
             }
+
+            client.Owner.Reset();
+            WriteOwner(client, client.Owner);
+            client.Outgoing.Reset();
+            client.Ends.Clear();
+            _sending[_sendingCount++] = client;
+        }
+
+        _here ??= new SendLane();
+        _lanes ??= Lanes();
+        if (_lanes is not null && _sendingCount >= 2)
+        {
+            _nextSending = -1;
+            _work ??= Work;
+            _workers!.Run(_work);
+        }
+        else
+        {
+            for (var i = 0; i < _sendingCount; i++)
+            {
+                Send(_sending[i], tick, _here);
+            }
+        }
+
+        for (var i = 0; i < _sendingCount; i++)
+        {
+            var client = _sending[i];
+            var start = 0;
+            foreach (var end in client.Ends)
+            {
+                _session.SendEngineTo(client.Slot, client.Outgoing.Written[start..end]);
+                start = end;
+            }
+        }
+    }
+
+    /// <summary>A lane for each of the step's workers; null with one thread.</summary>
+    private SendLane[]? Lanes()
+    {
+        if (_workers is not { Count: > 1 })
+        {
+            return null;
+        }
+
+        var lanes = new SendLane[_workers.Count];
+        for (var i = 0; i < lanes.Length; i++)
+        {
+            lanes[i] = new SendLane();
+        }
+
+        return lanes;
+    }
+
+    /// <summary>One worker's part of a send: the next client not yet taken, until none is left.</summary>
+    private void Work(int worker)
+    {
+        var lane = _lanes![worker];
+        for (
+            var i = Interlocked.Increment(ref _nextSending);
+            i < _sendingCount;
+            i = Interlocked.Increment(ref _nextSending)
+        )
+        {
+            Send(_sending[i], _sendTick, lane);
         }
     }
 
@@ -415,32 +502,29 @@ public sealed partial class ReplicationService
     }
 
     /// <summary>
-    /// One client's send: the entities in its reach with something new for it, by priority, in packets until its bytes
-    /// are spent (a record too large for what is left is passed over for smaller ones), at most
-    /// <see cref="MostPacketsPerSend"/> packets; removals in the first. At least a packet, for its clock and removals. A
-    /// client sent nothing yet that has not replied is loading its world: it is sent nothing until it replies.
+    /// One client's send, written into its <see cref="HostClient.Outgoing"/> through <paramref name="lane"/>'s scratch:
+    /// the entities in its reach with something new for it, by priority, in packets until its bytes are spent (a record
+    /// too large for what is left is passed over for smaller ones), at most <see cref="MostPacketsPerSend"/> packets;
+    /// removals and the owner's block in the first. At least a packet, for its clock and removals. Writes only the
+    /// client's own state and the lane's; reads the entities' kept states.
     /// </summary>
-    private void Send(HostClient client, int tick)
+    private void Send(HostClient client, int tick, SendLane lane)
     {
-        if (!client.Replied)
-        {
-            return;
-        }
-
         var perSend = (double)_settings.BytesPerSecond * SendIntervalTicks / _fixedStepHz;
         var most = (double)_settings.PeakBytesPerSecond * SendIntervalTicks / _fixedStepHz;
         client.Tokens = Math.Min(client.Tokens + perSend, most);
         client.GameTokens = Math.Min(client.GameTokens + perSend * _settings.GameShare, most * _settings.GameShare);
         client.Grow(_entities.Count);
-        Choose(client);
+        Choose(client, lane.Candidates);
 
         using var zone = Zones.Time(s_writeZone);
+        var packet = lane.Packet;
         var limit = _session.MaxUnreliableBytes;
         var budget = (int)client.Tokens;
         var spent = 0;
         var packets = 1;
-        StartPacket(client, tick, removals: true);
-        foreach (var candidate in _candidates)
+        StartPacket(client, packet, tick, removals: true);
+        foreach (var candidate in lane.Candidates)
         {
             var index = candidate.Index;
             var entity = _entities[index];
@@ -450,31 +534,31 @@ public sealed partial class ReplicationService
                 continue;
             }
 
-            if (_packet.Length + size > limit)
+            if (packet.Length + size > limit)
             {
                 // A packet of its own, if the send has room for one more.
-                if (packets == MostPacketsPerSend || spent + _packet.Length + HeaderBytes + size > budget)
+                if (packets == MostPacketsPerSend || spent + packet.Length + HeaderBytes + size > budget)
                 {
                     continue;
                 }
 
-                spent += FinishPacket(client);
+                spent += FinishPacket(client, packet);
                 packets++;
-                StartPacket(client, tick, removals: false);
+                StartPacket(client, packet, tick, removals: false);
             }
 
-            if (spent + _packet.Length + size > budget)
+            if (spent + packet.Length + size > budget)
             {
                 continue;
             }
 
-            WriteRecord(entity, in record, size);
+            WriteRecord(packet, entity, in record, size);
             client.Current!.Add(index, client.Epochs[index]);
             client.Sent[index] = true;
             client.Priorities[index] = 0;
         }
 
-        spent += FinishPacket(client);
+        spent += FinishPacket(client, packet);
         client.Tokens -= spent;
     }
 
@@ -484,10 +568,10 @@ public sealed partial class ReplicationService
     /// nearer it is within its reach, and past its kind's falloff by that distance over its own. Its own player is left
     /// out: it predicts it, and the owner's block carries the host's state of it.
     /// </summary>
-    private void Choose(HostClient client)
+    private void Choose(HostClient client, List<Candidate> candidates)
     {
         using var zone = Zones.Time(s_chooseZone);
-        _candidates.Clear();
+        candidates.Clear();
         var own = PlayerIds.Of(client.Slot);
         var focused = _hostIndex.TryGetValue(own, out var ownIndex) && _entities[ownIndex].Focused;
         var focus = focused ? _entities[ownIndex].Focus : default;
@@ -553,11 +637,11 @@ public sealed partial class ReplicationService
                 client.DropRemovals(entity.Id);
             }
 
-            _candidates.Add(new Candidate(client.Priorities[index], index));
+            candidates.Add(new Candidate(client.Priorities[index], index));
         }
 
         CollectionsMarshal
-            .AsSpan(_candidates)
+            .AsSpan(candidates)
             .Sort(
                 static (a, b) =>
                     b.Priority != a.Priority ? b.Priority.CompareTo(a.Priority) : a.Index.CompareTo(b.Index)
@@ -607,25 +691,25 @@ public sealed partial class ReplicationService
     /// (<see cref="MeasureRecord"/>): its id, kind, how many ticks back its baseline is (0: whole, then the id's
     /// generation, so a client knows an entity added again under it), and its changes from it.
     /// </summary>
-    private void WriteRecord(HostEntity entity, in RecordPlan record, int size)
+    private static void WriteRecord(MessageWriter packet, HostEntity entity, in RecordPlan record, int size)
     {
-        var start = _packet.Length;
-        _packet.WriteVarInt((int)entity.Id);
-        _packet.WriteByte(entity.Kind.Id.Value);
-        _packet.WriteVarInt(record.Age);
+        var start = packet.Length;
+        packet.WriteVarInt((int)entity.Id);
+        packet.WriteByte(entity.Kind.Id.Value);
+        packet.WriteVarInt(record.Age);
         if (record.Age == 0)
         {
-            _packet.WriteVarInt((int)(entity.Generation & int.MaxValue));
+            packet.WriteVarInt((int)(entity.Generation & int.MaxValue));
         }
 
         ReplicatedStateCodec.Write(
-            _packet,
+            packet,
             entity.Kind.Schema,
             entity.NewestLanes,
             BaselineOf(entity, in record),
             record.Mask
         );
-        Debug.Assert(_packet.Length - start == size, "A record's bytes differ from its measure.");
+        Debug.Assert(packet.Length - start == size, "A record's bytes differ from its measure.");
     }
 
     /// <summary>The lanes a record's changes are from: its baseline's, or the zero state's for a whole one.</summary>
@@ -633,43 +717,45 @@ public sealed partial class ReplicationService
         record.Slot >= 0 ? entity.LanesAt(record.Slot) : ReplicatedStateCodec.ZeroLanes;
 
     /// <summary>
-    /// Starts a client's next packet: its number, the tick, and, in a send's first, the owner's block (its player's state
-    /// after the last command applied) and the ids it removes (up to a packet's share).
+    /// Starts a client's next packet in <paramref name="writer"/>: its number, the tick, and, in a send's first, the
+    /// owner's block (its player's state after the last command applied, written before: <see cref="SendAll"/>) and the
+    /// ids it removes (up to a packet's share).
     /// </summary>
-    private void StartPacket(HostClient client, int tick, bool removals)
+    private static void StartPacket(HostClient client, MessageWriter writer, int tick, bool removals)
     {
         var sequence = client.NextPacket++;
         var packet = client.Packets[sequence % PacketRing];
         packet.Begin(sequence, tick);
         client.Current = packet;
-        _packet.Reset();
-        _packet.WriteByte((byte)MessageKind.Snapshot);
-        _packet.WriteVarInt((int)sequence);
-        _packet.WriteVarInt(tick);
+        writer.Reset();
+        writer.WriteByte((byte)MessageKind.Snapshot);
+        writer.WriteVarInt((int)sequence);
+        writer.WriteVarInt(tick);
         if (removals)
         {
-            WriteOwner(client);
+            writer.WriteBytes(client.Owner.Written);
         }
         else
         {
-            _packet.WriteByte(0);
+            writer.WriteByte(0);
         }
 
         var count = removals ? Math.Min(client.Removals.Count, MostRemovalsPerPacket) : 0;
-        _packet.WriteVarInt(count);
+        writer.WriteVarInt(count);
         for (var i = 0; i < count; i++)
         {
             var removal = client.Removals[i];
-            _packet.WriteVarInt((int)removal.Id);
+            writer.WriteVarInt((int)removal.Id);
             packet.Remove(removal.Number);
         }
     }
 
-    /// <summary>Sends the client's packet and returns its bytes.</summary>
-    private int FinishPacket(HostClient client)
+    /// <summary>Keeps the client's packet to send (<see cref="SendAll"/>) and returns its bytes.</summary>
+    private static int FinishPacket(HostClient client, MessageWriter writer)
     {
-        var bytes = _packet.Length;
-        _session.SendEngineTo(client.Slot, _packet.Written);
+        var bytes = writer.Length;
+        client.Outgoing.WriteBytes(writer.Written);
+        client.Ends.Add(client.Outgoing.Length);
         client.Current = null;
         client.BytesSent += bytes;
         client.PacketsSent++;
@@ -875,6 +961,11 @@ public sealed partial class ReplicationService
         public SentPacket? Current;
         public readonly SentPacket[] Packets = CreatePackets();
 
+        /// <summary>This send's owner's block (written on the main thread first), and its packets kept to send, each one's end.</summary>
+        public readonly MessageWriter Owner = new();
+        public readonly MessageWriter Outgoing = new();
+        public readonly List<int> Ends = new(MostPacketsPerSend);
+
         /// <summary>Ids it is to remove, each numbered, until a packet that carried that removal is acknowledged.</summary>
         public readonly List<Removal> Removals = [];
 
@@ -1036,6 +1127,14 @@ public sealed partial class ReplicationService
     private readonly record struct Removal(uint Id, int Number);
 
     private readonly record struct Candidate(float Priority, int Index);
+
+    /// <summary>One thread's scratch for a client's send: its candidates and the packet being written.</summary>
+    private sealed class SendLane
+    {
+        public List<Candidate> Candidates { get; } = [];
+
+        public MessageWriter Packet { get; } = new();
+    }
 
     /// <summary>
     /// What writing a record needs, found as it is measured: how many ticks back its baseline is (0: whole), where the
