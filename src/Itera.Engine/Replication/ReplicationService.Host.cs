@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using Arch.Core;
 using Itera.Engine.Commands;
 using Itera.Engine.Components;
+using Itera.Engine.Diagnostics;
 using Itera.Engine.Maths;
 using Itera.Engine.Networking;
 
@@ -29,6 +31,10 @@ public sealed partial class ReplicationService
     /// <summary>Room for a packet's header (its kind, number, tick, and an empty removal count), in bytes.</summary>
     private const int HeaderBytes = 16;
 
+    private static readonly ZoneId s_captureZone = Zones.Name("replication.capture");
+    private static readonly ZoneId s_chooseZone = Zones.Name("replication.choose");
+    private static readonly ZoneId s_writeZone = Zones.Name("replication.write");
+
     private readonly List<HostEntity> _entities = [];
     private readonly Stack<int> _freeEntities = new();
     private readonly Dictionary<uint, int> _hostIndex = [];
@@ -37,9 +43,7 @@ public sealed partial class ReplicationService
     private readonly List<Reply> _replies = [];
     private readonly List<Candidate> _candidates = [];
     private readonly MessageWriter _packet = new();
-    private readonly MessageWriter _record = new();
     private ReplicatedState _captured;
-    private ReplicatedState _baseline;
     private uint _lastId;
     private uint _lastGeneration;
 
@@ -388,6 +392,7 @@ public sealed partial class ReplicationService
     /// <summary>Each live entity's state now, kept in its history; one destroyed since is removed from the clients.</summary>
     private void Capture(int tick)
     {
+        using var zone = Zones.Time(s_captureZone);
         var context = Context;
         for (var index = 0; index < _entities.Count; index++)
         {
@@ -429,6 +434,7 @@ public sealed partial class ReplicationService
         client.Grow(_entities.Count);
         Choose(client);
 
+        using var zone = Zones.Time(s_writeZone);
         var limit = _session.MaxUnreliableBytes;
         var budget = (int)client.Tokens;
         var spent = 0;
@@ -437,12 +443,13 @@ public sealed partial class ReplicationService
         foreach (var candidate in _candidates)
         {
             var index = candidate.Index;
-            if (!WriteRecord(client, _entities[index], index, tick))
+            var entity = _entities[index];
+            var size = MeasureRecord(client, entity, index, tick, out var record);
+            if (size == 0)
             {
                 continue;
             }
 
-            var size = _record.Length;
             if (_packet.Length + size > limit)
             {
                 // A packet of its own, if the send has room for one more.
@@ -461,7 +468,7 @@ public sealed partial class ReplicationService
                 continue;
             }
 
-            _packet.WriteBytes(_record.Written);
+            WriteRecord(entity, in record, size);
             client.Current!.Add(index, client.Epochs[index]);
             client.Sent[index] = true;
             client.Priorities[index] = 0;
@@ -479,6 +486,7 @@ public sealed partial class ReplicationService
     /// </summary>
     private void Choose(HostClient client)
     {
+        using var zone = Zones.Time(s_chooseZone);
         _candidates.Clear();
         var own = PlayerIds.Of(client.Slot);
         var focused = _hostIndex.TryGetValue(own, out var ownIndex) && _entities[ownIndex].Focused;
@@ -524,15 +532,15 @@ public sealed partial class ReplicationService
             }
 
             var baselineTick = client.Baselines[index];
-            if (baselineTick >= 0 && entity.TryGet(baselineTick, ref _baseline))
+            if (
+                baselineTick >= 0
+                && entity.TryGetLanes(baselineTick, out var baseline)
+                && ReplicatedStateCodec.Same(entity.Kind.Schema, entity.NewestLanes, baseline)
+            )
             {
-                entity.Newest(ref _captured);
-                if (ReplicatedStateCodec.Same(entity.Kind.Schema, in _captured, in _baseline))
-                {
-                    // The client has this state already.
-                    client.Priorities[index] = 0;
-                    continue;
-                }
+                // The client has this state already.
+                client.Priorities[index] = 0;
+                continue;
             }
 
             // A new entity, or one the client has not seen move, gains faster than one it has a recent state of.
@@ -540,7 +548,10 @@ public sealed partial class ReplicationService
             client.Priorities[index] += (float)gain;
             // Back in reach (or added again) before its removal was acknowledged: it is sent whole, with its generation,
             // so the removal is not needed.
-            client.DropRemovals(entity.Id);
+            if (client.Removals.Count > 0)
+            {
+                client.DropRemovals(entity.Id);
+            }
 
             _candidates.Add(new Candidate(client.Priorities[index], index));
         }
@@ -554,42 +565,72 @@ public sealed partial class ReplicationService
     }
 
     /// <summary>
-    /// Writes an entity's newest state as a record: its id, kind, how many ticks back its baseline is (0: whole, then the
-    /// id's generation, so a client knows an entity added again under it), and its changes from it. False when the entity
-    /// has no state yet.
+    /// The bytes an entity's newest state takes as a record (<see cref="WriteRecord"/>), and what writing it needs; 0 when
+    /// the entity has no state yet. Measured before it is written, so a record that does not fit what is left is passed
+    /// over without being written.
     /// </summary>
-    private bool WriteRecord(HostClient client, HostEntity entity, int index, int tick)
+    private static int MeasureRecord(HostClient client, HostEntity entity, int index, int tick, out RecordPlan record)
     {
+        record = default;
         if (entity.Count == 0)
         {
-            return false;
+            return 0;
         }
 
-        entity.Newest(ref _captured);
         var baselineTick = client.Baselines[index];
-        var age = 0;
-        if (baselineTick >= 0 && entity.TryGet(baselineTick, ref _baseline))
+        if (baselineTick >= 0 && entity.TryGetSlot(baselineTick, out var slot))
         {
-            age = tick - baselineTick;
+            record = new RecordPlan(tick - baselineTick, slot, 0);
         }
         else
         {
             // Whole: its changes from the zero state.
-            _baseline = default;
+            record = new RecordPlan(0, -1, 0);
         }
 
-        _record.Reset();
-        _record.WriteVarInt((int)entity.Id);
-        _record.WriteByte(entity.Kind.Id.Value);
-        _record.WriteVarInt(age);
-        if (age == 0)
-        {
-            _record.WriteVarInt((int)(entity.Generation & int.MaxValue));
-        }
-
-        ReplicatedStateCodec.Write(_record, entity.Kind.Schema, in _captured, in _baseline);
-        return true;
+        var lanes = ReplicatedStateCodec.Measure(
+            entity.Kind.Schema,
+            entity.NewestLanes,
+            BaselineOf(entity, in record),
+            out var mask
+        );
+        record = record with { Mask = mask };
+        return MessageWriter.VarIntBytes((int)entity.Id)
+            + 1
+            + MessageWriter.VarIntBytes(record.Age)
+            + (record.Age == 0 ? MessageWriter.VarIntBytes((int)(entity.Generation & int.MaxValue)) : 0)
+            + lanes;
     }
+
+    /// <summary>
+    /// Writes an entity's newest state into the packet as a record of <paramref name="size"/> bytes
+    /// (<see cref="MeasureRecord"/>): its id, kind, how many ticks back its baseline is (0: whole, then the id's
+    /// generation, so a client knows an entity added again under it), and its changes from it.
+    /// </summary>
+    private void WriteRecord(HostEntity entity, in RecordPlan record, int size)
+    {
+        var start = _packet.Length;
+        _packet.WriteVarInt((int)entity.Id);
+        _packet.WriteByte(entity.Kind.Id.Value);
+        _packet.WriteVarInt(record.Age);
+        if (record.Age == 0)
+        {
+            _packet.WriteVarInt((int)(entity.Generation & int.MaxValue));
+        }
+
+        ReplicatedStateCodec.Write(
+            _packet,
+            entity.Kind.Schema,
+            entity.NewestLanes,
+            BaselineOf(entity, in record),
+            record.Mask
+        );
+        Debug.Assert(_packet.Length - start == size, "A record's bytes differ from its measure.");
+    }
+
+    /// <summary>The lanes a record's changes are from: its baseline's, or the zero state's for a whole one.</summary>
+    private static ReadOnlySpan<long> BaselineOf(HostEntity entity, in RecordPlan record) =>
+        record.Slot >= 0 ? entity.LanesAt(record.Slot) : ReplicatedStateCodec.ZeroLanes;
 
     /// <summary>
     /// Starts a client's next packet: its number, the tick, and, in a send's first, the owner's block (its player's state
@@ -759,21 +800,33 @@ public sealed partial class ReplicationService
             }
         }
 
-        public void Newest(ref ReplicatedState state) => Copy(_head, ref state);
+        /// <summary>The newest state's lanes, as many as its kind's schema has.</summary>
+        public ReadOnlySpan<long> NewestLanes => LanesAt(_head);
 
-        /// <summary>The state at <paramref name="tick"/>: the newest kept from it or before; false when that is gone.</summary>
-        public bool TryGet(int tick, ref ReplicatedState state)
+        /// <summary>The lanes of the state kept in <paramref name="slot"/> (<see cref="TryGetSlot"/>).</summary>
+        public ReadOnlySpan<long> LanesAt(int slot) => _lanes.AsSpan(slot * _lanesEach, _lanesEach);
+
+        /// <summary>The lanes of the state at <paramref name="tick"/>: the newest kept from it or before; false when that is gone.</summary>
+        public bool TryGetLanes(int tick, out ReadOnlySpan<long> lanes)
+        {
+            var found = TryGetSlot(tick, out var slot);
+            lanes = found ? LanesAt(slot) : default;
+            return found;
+        }
+
+        /// <summary>Where the state at <paramref name="tick"/> is kept: the newest from it or before; false when that is gone.</summary>
+        public bool TryGetSlot(int tick, out int slot)
         {
             for (var back = 0; back < Count; back++)
             {
-                var slot = (_head - back + HostHistory) % HostHistory;
+                slot = (_head - back + HostHistory) % HostHistory;
                 if (_ticks[slot] <= tick)
                 {
-                    Copy(slot, ref state);
                     return true;
                 }
             }
 
+            slot = -1;
             return false;
         }
 
@@ -788,15 +841,6 @@ public sealed partial class ReplicationService
             }
 
             return true;
-        }
-
-        private void Copy(int slot, ref ReplicatedState state)
-        {
-            state = default;
-            for (var lane = 0; lane < _lanesEach; lane++)
-            {
-                state.Lanes[lane] = _lanes[slot * _lanesEach + lane];
-            }
         }
     }
 
@@ -992,4 +1036,10 @@ public sealed partial class ReplicationService
     private readonly record struct Removal(uint Id, int Number);
 
     private readonly record struct Candidate(float Priority, int Index);
+
+    /// <summary>
+    /// What writing a record needs, found as it is measured: how many ticks back its baseline is (0: whole), where the
+    /// baseline is kept (-1: the zero state), and the lanes that changed.
+    /// </summary>
+    private readonly record struct RecordPlan(int Age, int Slot, int Mask);
 }

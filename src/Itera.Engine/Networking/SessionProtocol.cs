@@ -402,6 +402,12 @@ public sealed class MessageWriter
 
     public void WriteBytes(ReadOnlySpan<byte> bytes) => bytes.CopyTo(Take(bytes.Length));
 
+    /// <summary>The bytes <see cref="WriteVarInt"/> takes for <paramref name="value"/>: 1 to 5.</summary>
+    public static int VarIntBytes(int value) => BitOperations.Log2((uint)value | 1) / 7 + 1;
+
+    /// <summary>The bytes <see cref="WriteVarLong"/> takes for <paramref name="value"/>: 1 to 10.</summary>
+    public static int VarLongBytes(long value) => BitOperations.Log2((ulong)((value << 1) ^ (value >> 63)) | 1) / 7 + 1;
+
     /// <summary>UTF-8 behind a 16-bit byte count; throws when longer than <see cref="SessionProtocol.MaxStringBytes"/>.</summary>
     public void WriteString(string value)
     {

@@ -15,6 +15,11 @@ internal static class ReplicatedStateCodec
     /// <summary>The zero state: the baseline of a whole state.</summary>
     public static readonly ReplicatedState Zero;
 
+    /// <summary>The zero state's lanes, as many as a state holds: a whole state's baseline.</summary>
+    public static ReadOnlySpan<long> ZeroLanes => s_zeroLanes;
+
+    private static readonly long[] s_zeroLanes = new long[ReplicatedState.MostLanes];
+
     public static void Write(
         MessageWriter writer,
         ReplicatedSchema schema,
@@ -22,21 +27,53 @@ internal static class ReplicatedStateCodec
         in ReplicatedState baseline
     )
     {
-        var mask = 0;
+        ReadOnlySpan<long> lanes = state.Lanes;
+        ReadOnlySpan<long> from = baseline.Lanes;
+        Measure(schema, lanes, from, out var mask);
+        Write(writer, schema, lanes, from, mask);
+    }
+
+    /// <summary>
+    /// The lanes of <paramref name="state"/> that differ from <paramref name="baseline"/> (its mask, as
+    /// <see cref="Write(MessageWriter, ReplicatedSchema, ReadOnlySpan{long}, ReadOnlySpan{long}, int)"/> takes it), and
+    /// the bytes that write takes: so a host knows a record's size before it writes it.
+    /// </summary>
+    public static int Measure(
+        ReplicatedSchema schema,
+        ReadOnlySpan<long> state,
+        ReadOnlySpan<long> baseline,
+        out int mask
+    )
+    {
+        mask = 0;
+        var bytes = 0;
         for (var lane = 0; lane < schema.Lanes; lane++)
         {
-            if (state.Lanes[lane] != baseline.Lanes[lane])
+            if (state[lane] != baseline[lane])
             {
                 mask |= 1 << lane;
+                bytes += MessageWriter.VarLongBytes(state[lane] - baseline[lane]);
             }
         }
 
+        return bytes + MessageWriter.VarIntBytes(mask);
+    }
+
+    /// <summary>The changes of <paramref name="state"/> from <paramref name="baseline"/> in the lanes of <paramref name="mask"/> (<see cref="Measure"/>).</summary>
+    public static void Write(
+        MessageWriter writer,
+        ReplicatedSchema schema,
+        ReadOnlySpan<long> state,
+        ReadOnlySpan<long> baseline,
+        int mask
+    )
+    {
         writer.WriteVarInt(mask);
         for (var lane = 0; lane < schema.Lanes; lane++)
         {
             if ((mask & (1 << lane)) != 0)
             {
-                writer.WriteVarLong(state.Lanes[lane] - baseline.Lanes[lane]);
+                writer.WriteVarLong(state[lane] - baseline[lane]);
             }
         }
     }
@@ -100,18 +137,12 @@ internal static class ReplicatedStateCodec
     }
 
     /// <summary>True when the two states hold the same value in every lane of the schema.</summary>
-    public static bool Same(ReplicatedSchema schema, in ReplicatedState a, in ReplicatedState b)
-    {
-        for (var lane = 0; lane < schema.Lanes; lane++)
-        {
-            if (a.Lanes[lane] != b.Lanes[lane])
-            {
-                return false;
-            }
-        }
+    public static bool Same(ReplicatedSchema schema, in ReplicatedState a, in ReplicatedState b) =>
+        Same(schema, a.Lanes, b.Lanes);
 
-        return true;
-    }
+    /// <summary>True when the two states' lanes hold the same value in every lane of the schema.</summary>
+    public static bool Same(ReplicatedSchema schema, ReadOnlySpan<long> a, ReadOnlySpan<long> b) =>
+        a[..schema.Lanes].SequenceEqual(b[..schema.Lanes]);
 
     /// <summary>
     /// The state <paramref name="share"/> of the way from <paramref name="from"/> to <paramref name="to"/> (0 to 1):

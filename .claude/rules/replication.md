@@ -50,7 +50,10 @@ The console's `replication` prints what is sent or shown. `replication delay MS`
 - It orders them by priority. Each send adds the kind's priority times one plus the entity's nearness, twice for an entity the client has none of. Past the kind's falloff, it adds that much times the falloff over the entity's distance from the client's player. A sent entity goes back to 0.
 - It writes each as a record: the id, the kind, how many ticks back its baseline is, and its changes from the baseline (`ReplicatedStateCodec`). A baseline of 0 means the record is whole, and it is followed by the id's generation.
 - Records go into packets that fit `MaxUnreliableBytes`, up to a limit per send, until the client's bytes are spent (`BytesPerSecond`; what a send leaves is kept, up to a send's share of `PeakBytesPerSecond`).
-- A record too large for what is left is passed over for smaller ones.
+- A record too large for what is left is passed over for smaller ones. Its size is measured before it is written
+  (`ReplicatedStateCodec.Measure`), from the entity's kept states in place, so one passed over costs no writing.
+- A send's parts are the zones `replication.capture`, `replication.choose` (each client's entities by priority), and
+  `replication.write` (its packets).
 - Every game message the host sends a client counts against the same bytes (`SpendGame`), so its state has the rest.
   The game's messages take at most `GameShare` of them, saved up as the rest are. Past it, one that may be lost is not
   sent; a reliable one always goes, and its bytes are counted.

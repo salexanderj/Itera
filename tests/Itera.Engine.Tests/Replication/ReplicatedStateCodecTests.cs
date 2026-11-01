@@ -202,6 +202,52 @@ public sealed class ReplicatedStateCodecTests
     }
 
     [Fact]
+    public void A_numbers_and_a_states_measured_bytes_are_the_bytes_written()
+    {
+        var writer = new MessageWriter();
+        foreach (
+            var value in (int[])[0, 1, 127, 128, 16_383, 16_384, 2_097_151, 2_097_152, int.MaxValue, -1, int.MinValue]
+        )
+        {
+            writer.Reset();
+            writer.WriteVarInt(value);
+            Assert.Equal(writer.Length, MessageWriter.VarIntBytes(value));
+        }
+
+        foreach (var value in (long[])[0, 1, -1, 63, -64, 64, -65, 8191, -8192, 8192, long.MaxValue, long.MinValue])
+        {
+            writer.Reset();
+            writer.WriteVarLong(value);
+            Assert.Equal(writer.Length, MessageWriter.VarLongBytes(value));
+        }
+
+        // States drawn at random against a baseline, a lane or several changed by a little or a lot.
+        var (schema, at, heading, turn, speed, clip, flags) = s_fields;
+        var random = new Random(41);
+        for (var i = 0; i < 2000; i++)
+        {
+            var (state, baseline) = (default(ReplicatedState), default(ReplicatedState));
+            foreach (var into in (bool[])[true, false])
+            {
+                ref var made = ref into ? ref state : ref baseline;
+                var near = random.Next(3) == 0;
+                at.Set(ref made, new WorldPoint(random.NextDouble() * (near ? 1 : 9000), 2, -random.NextDouble() * 50));
+                heading.Set(ref made, random.NextSingle() * 6);
+                turn.Set(ref made, Quaternion.CreateFromYawPitchRoll(random.NextSingle(), random.NextSingle(), 0));
+                speed.Set(ref made, random.NextSingle() * 10);
+                clip.Set(ref made, random.Next(near ? 2 : 100));
+                flags.Set(ref made, (uint)random.Next(16));
+            }
+
+            writer.Reset();
+            ReplicatedStateCodec.Write(writer, schema, in state, in baseline);
+            ReadOnlySpan<long> lanes = state.Lanes;
+            ReadOnlySpan<long> from = baseline.Lanes;
+            Assert.Equal(writer.Length, ReplicatedStateCodec.Measure(schema, lanes, from, out _));
+        }
+    }
+
+    [Fact]
     public void The_blend_goes_the_short_way_and_steps_whole_numbers()
     {
         var (schema, at, heading, turn, speed, clip, _) = s_fields;
