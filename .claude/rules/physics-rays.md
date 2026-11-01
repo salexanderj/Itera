@@ -26,8 +26,8 @@ Each collider keeps:
 - For rays, each bucket's triangles grouped by collider, each group with its bounds. A ray tests a group's triangles
   only when it meets the bounds before its nearest hit so far, so a tall stack of colliders in one bucket stays cheap.
   The character mover's box query (`Triangles`) reads the buckets' plain lists.
-- A box round its triangles in absolute centimetres. Each add and remove raises `MeshColliders.Version` and keeps the
-  collider's box in a ring of `MeshColliders.KeptChanges`. `ChangesMeet` says whether a change after a version may reach
+- A box round its triangles in absolute centimetres. Each add, remove, and change of settings (`SetSettings`) raises
+  `MeshColliders.Version` and keeps the collider's box in a ring of `MeshColliders.KeptChanges`. `ChangesMeet` says whether a change after a version may reach
   a box. Past the ring, every box counts as changed.
 - A Bepu `Mesh` static posed at its anchor's local place, of its settings' physics material. Its triangles are wound
   clockwise seen from the front as Bepu asks, while glTF's are counter-clockwise. The static is one-sided in Bepu and

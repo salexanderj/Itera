@@ -21,15 +21,16 @@ public sealed class HitHistoryGridTests : IDisposable
 
     /// <summary>
     /// 240 entities in clusters and spread over 160 m, walking, running, flung fast enough to span more cells than the
-    /// grid holds them in, and a few giants; some skip steps, some are forgotten and others made; the origin moves now and
-    /// then. After each step, 60 rays and swept spheres of every kind (along an axis, straight down, from inside a crowd,
-    /// long enough to test every entity, at fractional and old ticks, past a filter) answer as testing every entity does.
+    /// grid holds them in, and a few giants, in a history of room for 230; some skip steps or record an older one, some are
+    /// forgotten and others made; the origin moves now and then, and the history is cleared once. After each step, 60
+    /// rays and swept spheres of every kind (along an axis, straight down, from inside a crowd, long enough to test every
+    /// entity, at fractional and old ticks, past a filter) answer as testing every entity does.
     /// </summary>
     [Fact]
     public void Its_answers_are_those_of_testing_every_entity()
     {
         var random = new Random(41);
-        var history = new HitHistory(_origin, mostEntities: 300);
+        var history = new HitHistory(_origin, mostEntities: 230);
         var bodies = new List<Body>();
         for (var i = 0; i < 240; i++)
         {
@@ -44,6 +45,11 @@ public sealed class HitHistoryGridTests : IDisposable
             if (tick % 30 == 29)
             {
                 _origin.MoveTo(new VoxelCoord(random.Next(-3, 4) * 1000, 0, random.Next(-3, 4) * 1000));
+            }
+
+            if (tick == 60)
+            {
+                history.Clear();
             }
 
             for (var i = 0; i < bodies.Count; i++)
@@ -74,7 +80,8 @@ public sealed class HitHistoryGridTests : IDisposable
                     );
                 }
 
-                history.Record(body.Entity, tick, capsules[..body.Capsules]);
+                var at = random.Next(10) == 0 ? Math.Max(tick - random.Next(1, 4), 0) : tick;
+                history.Record(body.Entity, at, capsules[..body.Capsules]);
             }
 
             for (var cast = 0; cast < 60; cast++)

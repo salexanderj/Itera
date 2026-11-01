@@ -104,7 +104,8 @@ objects' version and damage. `StandsUnchanged` says whether the same move would 
 - a loose body or solid model reaches round it.
 
 Round the body means within its radius and a margin across, its step under it, and its height over it, with two of the
-world's voxels more each way. An edit of the objects counts only through the damage's change. An area of objects
+world's voxels more each way. An object placed or removed counts by its edit's box, its reach and height, since the
+damage names none where its area is not filled. A part cut off counts through the damage's change. An area of objects
 filled or dropped elsewhere changes nothing: a filled area holds what the log gives it. A mover whose `ObjectColumns`
 has no damage takes any change of the objects, wherever it is.
 

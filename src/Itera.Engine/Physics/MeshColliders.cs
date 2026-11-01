@@ -86,8 +86,8 @@ public sealed partial class MeshColliders(
     public WorldOrigin Origin { get; } = origin ?? new WorldOrigin();
 
     /// <summary>
-    /// Counts the changes to the colliders, so what is built from their triangles knows when to build again. Each add or
-    /// remove raises it by one, and its box is kept for <see cref="ChangesMeet"/>.
+    /// Counts the changes to the colliders, so what is built from their triangles knows when to build again. Each add,
+    /// remove, or change of settings raises it by one, and its box is kept for <see cref="ChangesMeet"/>.
     /// </summary>
     internal int Version { get; private set; }
 
@@ -273,8 +273,8 @@ public sealed partial class MeshColliders(
     }
 
     /// <summary>
-    /// Changes collider <paramref name="collider"/>'s settings (its physics material), from the next step on. Main thread,
-    /// between steps.
+    /// Changes collider <paramref name="collider"/>'s settings (its physics material), from the next step on, as a change
+    /// of the collider (<see cref="ChangesMeet"/>). Main thread, between steps.
     /// </summary>
     public void SetSettings(int collider, in PhysicsBodySettings settings)
     {
@@ -286,6 +286,8 @@ public sealed partial class MeshColliders(
         physics.CheckMaterial(settings.Material);
         physics.CheckLayer(settings.Layer);
         found.Settings = settings;
+        // What stands on it reads its material.
+        RecordChange(found);
         if (found.HasStatic)
         {
             physics.SetMaterial(found.Static, settings.Material);

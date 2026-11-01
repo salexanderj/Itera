@@ -1215,7 +1215,8 @@ public sealed class VoxelCharacterMover
     /// <summary>
     /// True when an edit from <paramref name="first"/> to <paramref name="last"/> may change what a body reads within
     /// <paramref name="reach"/>: a reset, one whose box meets it, or an edit of the objects. An edit of the objects counts
-    /// wherever it is unless <paramref name="objectsNamed"/>: the objects' damage then names its change with its box.
+    /// wherever it is unless <paramref name="objectsNamed"/>: an object placed or removed then counts by its box, and a
+    /// part cut off through the damage's change.
     /// </summary>
     private bool EditsReach(long first, long last, in RestReach reach, bool objectsNamed)
     {
@@ -1227,13 +1228,15 @@ public sealed class VoxelCharacterMover
         for (var sequence = first; sequence <= last; sequence++)
         {
             ref readonly var edit = ref _world.GetEdit(sequence);
-            if (!edit.ChangesWorld)
+            if (edit.Operation == VoxelEditOperation.Reset || (!edit.ChangesWorld && !objectsNamed))
             {
-                if (edit.Operation == VoxelEditOperation.Reset || !objectsNamed)
-                {
-                    return true;
-                }
+                return true;
+            }
 
+            // A part cut off is named by the damage, live or replayed when its area fills. An object placed or removed
+            // whole is not where its area was not filled, so its box (its reach across, its height) counts here.
+            if (edit.Operation == VoxelEditOperation.RemovePart)
+            {
                 continue;
             }
 

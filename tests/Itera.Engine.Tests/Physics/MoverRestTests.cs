@@ -150,6 +150,55 @@ public sealed class MoverRestTests : IDisposable
         Assert.True(_mover.StandsUnchanged(ref stamp, feet, in s_shape));
     }
 
+    /// <summary>
+    /// An object placed beside a resting body while its area was dropped, read once the area fills again, ends the rest:
+    /// the damage names no change for an area that is not filled.
+    /// </summary>
+    [Fact]
+    public void An_object_placed_round_a_body_while_its_area_was_dropped_ends_the_rest()
+    {
+        var home = new Vector3(-256, 0, -256);
+        _world.SetCenters([home]);
+        TestWorlds.WaitUntilLoaded(_world);
+        FillAreas();
+        var feet = Rested(home, out var stamp);
+
+        _world.SetCenters([-home]);
+        TestWorlds.WaitUntilLoaded(_world);
+        FillAreas();
+        Assert.False(_objects.IsKnown(-25_700, -25_500, -25_700, -25_500));
+        var anchor = new VoxelCoord(-25_600 + 120, 0, -25_600);
+        Assert.True(_objects.TryPlace(_block, anchor, 0, VoxelEdit.NoMaker, out _));
+        _world.SetCenters([home]);
+        TestWorlds.WaitUntilLoaded(_world);
+        FillAreas();
+
+        Assert.False(_mover.StandsUnchanged(ref stamp, feet, in s_shape));
+    }
+
+    /// <summary>A physics material given to a collider under a resting body ends its rest, which kept the old one.</summary>
+    [Fact]
+    public void A_collider_given_another_material_round_a_body_ends_its_rest()
+    {
+        var materials = new PhysicsMaterials();
+        var ice = materials.Register("ice", new PhysicsMaterial(0.05f, 0));
+        using var physics = new PhysicsWorld(NullLogger<PhysicsWorld>.Instance, materials: materials);
+        physics.Initialize();
+        using var colliders = new MeshColliders(physics, NullLogger<MeshColliders>.Instance);
+        var mover = new VoxelCharacterMover(_world, 10, _passability, meshes: colliders)
+        {
+            Objects = new ObjectColumns(_objects, _kinds, _passability, 10, _damage),
+        };
+        var floor = new TestTriangles().Ground(-1, -1, 1, 1, 0.05f).AddTo(colliders);
+        var far = new TestTriangles().Ground(9, 9, 10, 10, 0.05f).AddTo(colliders);
+        var feet = Rested(mover, new Vector3(0, 0.2f, 0), out var stamp);
+
+        colliders.SetSettings(far, new PhysicsBodySettings { Material = ice });
+        Assert.True(mover.StandsUnchanged(ref stamp, feet, in s_shape));
+        colliders.SetSettings(floor, new PhysicsBodySettings { Material = ice });
+        Assert.False(mover.StandsUnchanged(ref stamp, feet, in s_shape));
+    }
+
     [Fact]
     public void Without_the_objects_damage_an_object_placed_anywhere_ends_the_rest()
     {
