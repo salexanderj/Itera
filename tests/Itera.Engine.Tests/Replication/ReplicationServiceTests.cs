@@ -11,7 +11,7 @@ namespace Itera.Engine.Tests.Replication;
 /// moves appears on the client and follows it the interpolation delay behind (measured: 6.0 steps), as far as that
 /// delay is set, and through 100 ms each way with jitter and loss the delay and the way behind (12.2 steps at the
 /// median); a send larger than a packet goes in several; a destroyed entity goes, also through loss, and so does one the
-/// host stops replicating; one out of a client's reach goes and comes back whole; a client gets no more snapshot bytes a
+/// host stops replicating; a late record of an id added again under another kind is passed over; one out of a client's reach goes and comes back whole; a client gets no more snapshot bytes a
 /// second than its budget, and every entity within two seconds; a client that replaces one that left is sent everything;
 /// the game's messages to a client count against its bytes, its state taking the rest, and those that may be lost are not
 /// sent past the game's share of them, while a reliable one is; a client of other kinds is refused; a damaged snapshot or reply is refused or read, never thrown past; a reply for a
@@ -217,6 +217,45 @@ public sealed class ReplicationServiceTests(ITestOutputHelper output)
 
         Assert.Equal(1, harness.Host.Match.Session.JoinedPeers);
         Assert.Equal(spawns + 1, harness.ClientPlan.Spawns);
+        var origin = harness.Host.Services.GetOrigin();
+        Assert.Equal(origin.X - 4, harness.Shown()[id].At.X, 2);
+    }
+
+    [Fact]
+    public void A_late_record_of_an_id_added_again_under_another_kind_is_passed_over_and_the_client_stays()
+    {
+        using var harness = ReplicationHarness.Start(new MoverPlan { Count = 1 });
+        harness.Step(30);
+        var id = PlayerIds.Of(5);
+        var first = harness.Host.World.Create(new TestMover { Position = new System.Numerics.Vector3(3, 0, 0) });
+        harness.HostReplication.Add(first, harness.HostPlan.Mover, id);
+        harness.Step(30);
+        Assert.True(harness.Shown().ContainsKey(id));
+
+        // A send the client does not get yet: the mover moved, so it holds a change of it from an acknowledged state.
+        var held = new List<byte[]>();
+        harness.HostTransport.CountSendsOnly = true;
+        harness.HostTransport.Recorded = held;
+        harness.StepHost(harness.HostReplication.SendIntervalTicks);
+        var late = held.Where(sent => sent[0] == (byte)MessageKind.Snapshot).ToList();
+        harness.HostTransport.CountSendsOnly = false;
+        harness.HostTransport.Recorded = null;
+
+        // Removed and added again as another kind, and shown so; then the held send arrives.
+        harness.HostReplication.Remove(id);
+        harness.Host.World.Remove<Components.Replicated>(first);
+        var second = harness.Host.World.Create(new TestPlayer { Feet = new System.Numerics.Vector3(-4, 0, 0) });
+        harness.HostReplication.Add(second, harness.HostPlan.Player, id);
+        harness.Step(30);
+        Assert.NotEmpty(late);
+        foreach (var sent in late)
+        {
+            ((IReplicationEndpoint)harness.ClientReplication).ReceiveSnapshot(sent.AsSpan(1));
+        }
+
+        harness.Step(30);
+
+        Assert.Equal(1, harness.Host.Match.Session.JoinedPeers);
         var origin = harness.Host.Services.GetOrigin();
         Assert.Equal(origin.X - 4, harness.Shown()[id].At.X, 2);
     }

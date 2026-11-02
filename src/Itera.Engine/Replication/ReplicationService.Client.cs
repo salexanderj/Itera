@@ -127,7 +127,14 @@ public sealed partial class ReplicationService
 
             if (known && _shown[index].Kind != kind)
             {
-                throw new InvalidDataException("A snapshot gives an entity another kind.");
+                if (!stale && sequence >= _shown[index].LastPacket)
+                {
+                    throw new InvalidDataException("A snapshot gives an entity another kind.");
+                }
+
+                // A late record of the id from before it was added again under another kind.
+                ReplicatedStateCodec.Skip(ref reader, kind.Schema);
+                continue;
             }
 
             if (age == 0)

@@ -77,6 +77,7 @@ The console's `replication` prints what is sent or shown. `replication delay MS`
 - A client reads a packet whole in the session's poll (`IReplicationEndpoint`). A damaged one ends the session, as any bad message does.
 - A record whose baseline the client lacks leaves the packet unacknowledged, and the host sends again.
 - The client keeps a number of states of each entity by tick. It ignores a record older than the id's removal, and a removal older than the id's newest record.
+- A record that gives a shown id another kind is refused, unless it is older than the id's removal or its newest record. Such a late record comes from before the id was added again, and is ignored.
 - It limits the entities it shows and the removed ids it remembers. A host that sends more is refused.
 - The client's reply (`MessageKind.Reply`, unreliable, every step) holds its newest packet read and which of the packets before it arrived, and whether its match still loads: its `MatchControl.Phase` is not yet `Playing`, its loading screen covering it. An acknowledged packet's states become that client's baselines. A late acknowledgement of a state from before a removal counts for nothing, because each entity has an epoch.
 - The client estimates the host's tick. It takes each packet's tick less the client's tick when the packet is read, and keeps the largest such value, which comes from the packet that arrived soonest. The value falls a little each step so a longer delay is followed.
