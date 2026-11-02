@@ -108,17 +108,41 @@ public sealed class StepWorkersTests
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         var helpers = workers.AllocatedBytes - counted;
         var arrays = new byte[workers.Count][];
-        var met = 0;
-        counted = workers.AllocatedBytes;
-        workers.Run(worker =>
-        {
-            Meet(ref met, workers.Count);
-            arrays[worker] = worker == 2 ? new byte[4096] : [];
-        });
 
         Assert.Equal(0, allocated);
         Assert.Equal(0, helpers);
-        Assert.InRange(workers.AllocatedBytes - counted, 4096, 8192);
+        Assert.InRange(AllocatedInAPass(workers, arrays), 4096, 8192);
+    }
+
+    /// <summary>
+    /// The bytes <paramref name="workers"/> count for a pass on all three threads in which worker 2 allocates 4,096
+    /// bytes. A collection another test sets off during the pass counts the rest of worker 2's allocation block too (up
+    /// to 8 KB; 8,464 bytes in all in one CI run), so a pass that a collection or a pause fell in is run again, at most
+    /// five times, and the least is returned, as <c>SystemAllocation.BytesAllocatedWithoutCollection</c> does.
+    /// </summary>
+    private static long AllocatedInAPass(StepWorkers workers, byte[][] arrays)
+    {
+        var least = long.MaxValue;
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var met = 0;
+            GC.Collect(0);
+            var collections = GC.CollectionCount(0);
+            var paused = GC.GetTotalPauseDuration();
+            var counted = workers.AllocatedBytes;
+            workers.Run(worker =>
+            {
+                Meet(ref met, workers.Count);
+                arrays[worker] = worker == 2 ? new byte[4096] : [];
+            });
+            least = Math.Min(least, workers.AllocatedBytes - counted);
+            if (GC.CollectionCount(0) == collections && GC.GetTotalPauseDuration() == paused)
+            {
+                break;
+            }
+        }
+
+        return least;
     }
 
     [Fact]
