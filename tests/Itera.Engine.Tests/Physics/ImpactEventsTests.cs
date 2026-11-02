@@ -12,8 +12,8 @@ namespace Itera.Engine.Tests.Physics;
 /// 4 m report about 4.4 and 8.9 m/s, where they met, the normal, and both materials; a ball that rolls and comes to rest
 /// (and sleeps) gives no new event; two marked balls meeting give one event for their pair as they meet and one as they
 /// part; a marked static reports a plain ball; unmarked pairs give none; a removed ball ends its pair, removed; a move of
-/// the origin moves the events' points; contacts past the buffers are dropped and counted; and stepping with impacts
-/// allocates nothing.
+/// the origin moves the events' points; contacts past the buffers are dropped and counted; asleep pairs that do not fit
+/// beside the pairs met are dropped and counted; and stepping with impacts allocates nothing.
 /// </summary>
 public sealed class ImpactEventsTests
 {
@@ -163,6 +163,23 @@ public sealed class ImpactEventsTests
     }
 
     [Fact]
+    public void Asleep_pairs_past_the_buffers_are_dropped_and_counted_and_the_pairs_met_are_kept()
+    {
+        using var physics = World(new PhysicsMaterials());
+        var contacts = new PhysicsContacts(1);
+        const int Pairs = PhysicsContacts.MostPairs;
+
+        // Statics on the voxel ground: unmet, they count as asleep and are kept.
+        Meet(physics, contacts, 0);
+        Meet(physics, contacts, Pairs);
+        var began = contacts.Events.Length;
+        var dropped = contacts.Dropped;
+        Meet(physics, contacts, Pairs);
+
+        Assert.Equal((Pairs, (long)Pairs, 0), (began, dropped, contacts.Events.Length));
+    }
+
+    [Fact]
     public void Stepping_with_impacts_allocates_nothing()
     {
         var materials = new PhysicsMaterials();
@@ -200,6 +217,30 @@ public sealed class ImpactEventsTests
         }
 
         return events;
+    }
+
+    /// <summary>
+    /// A step of <paramref name="contacts"/> alone: <see cref="PhysicsContacts.MostPairs"/> statics from
+    /// <paramref name="first"/> on meet the voxel ground, one marked pair each.
+    /// </summary>
+    private static void Meet(PhysicsWorld physics, PhysicsContacts contacts, int first)
+    {
+        contacts.BeginStep(Step, Vector3.Zero);
+        for (var i = first; i < first + PhysicsContacts.MostPairs; i++)
+        {
+            var side = PhysicsContacts.StaticSide(new StaticHandle(i));
+            var contact = new ContactRecord
+            {
+                A = new CollidableReference(new StaticHandle(i)),
+                SideA = side,
+                SideB = PhysicsContacts.VoxelGround,
+                Key = PhysicsContacts.KeyOf(side, PhysicsContacts.VoxelGround),
+                Reports = true,
+            };
+            contacts.Record(0, in contact);
+        }
+
+        contacts.EndStep(physics.Simulation, physics.Kinds);
     }
 
     private static StaticHandle Floor(PhysicsWorld physics, PhysicsMaterialId material) =>
