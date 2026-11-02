@@ -38,8 +38,10 @@ internal sealed class NavPortals
     private int _nodeCount;
 
     // Each tile's costs from node to node inside it, [from * count + to]; int.MaxValue for none.
-    private readonly int[][] _intra;
-    private readonly int[] _intraCount;
+    private int[][] _intra;
+    private int[] _intraCount;
+    private int[][] _spareIntra;
+    private int[] _spareCount;
     private readonly bool[] _layoutChanged;
     private readonly List<int> _intraWanted = [];
     private readonly byte[] _oldStart = new byte[NavTiles.Cells];
@@ -56,6 +58,8 @@ internal sealed class NavPortals
         _sideFirst = new int[tiles.Count * 4 + 1];
         _intra = new int[tiles.Count][];
         _intraCount = new int[tiles.Count];
+        _spareIntra = new int[tiles.Count][];
+        _spareCount = new int[tiles.Count];
         _layoutChanged = new bool[tiles.Count];
     }
 
@@ -118,6 +122,97 @@ internal sealed class NavPortals
         for (var tile = 0; tile < _tiles.Count; tile++)
         {
             _intraWanted.Add(tile);
+        }
+    }
+
+    /// <summary>
+    /// After the window moved by <paramref name="shiftX"/>, <paramref name="shiftZ"/> tiles (its new corner that many
+    /// tiles from the old one, so a tile's cells were the old tile's that many further on), with the cells both windows
+    /// hold kept: cuts every edge again and lays out the nodes. A tile keeps its costs inside where it and each tile beside
+    /// it held cells in the old window too, and its cells did not change (<paramref name="touched"/>, in the new window):
+    /// its cells and its edges' runs are the old tile's. The rest want theirs worked out again (<see cref="IntraWanted"/>).
+    /// </summary>
+    public void LayMoved(int shiftX, int shiftZ, ReadOnlySpan<int> touched)
+    {
+        var tilesX = _tiles.TilesX;
+        var tilesZ = _tiles.TilesZ;
+        Array.Fill(_layoutChanged, false);
+        foreach (var tile in touched)
+        {
+            _layoutChanged[tile] = true;
+        }
+
+        // Each tile's old self, its costs inside moved with it; the old tiles no tile keeps lend their arrays.
+        var lent = 0;
+        for (var tile = 0; tile < _tiles.Count; tile++)
+        {
+            var old = Old(tile);
+            _spareIntra[tile] = old >= 0 ? _intra[old] : null!;
+            _spareCount[tile] = old >= 0 ? _intraCount[old] : 0;
+        }
+
+        for (var old = 0; old < _tiles.Count; old++)
+        {
+            var x = old % tilesX - shiftX;
+            var z = old / tilesX - shiftZ;
+            if (x < 0 || x >= tilesX || z < 0 || z >= tilesZ)
+            {
+                // Kept by no tile: its array goes to the next tile that has none.
+                while (lent < _tiles.Count && _spareIntra[lent] is not null)
+                {
+                    lent++;
+                }
+
+                if (lent < _tiles.Count)
+                {
+                    _spareIntra[lent++] = _intra[old];
+                }
+            }
+        }
+
+        (_intra, _spareIntra) = (_spareIntra, _intra);
+        (_intraCount, _spareCount) = (_spareCount, _intraCount);
+        for (var tile = 0; tile < _tiles.Count; tile++)
+        {
+            if (Old(tile) < 0)
+            {
+                _layoutChanged[tile] = true;
+                continue;
+            }
+
+            for (var side = 0; side < 4; side++)
+            {
+                // A tile on the window's border keeps nothing either: cells past a grid's edge count for no size, so
+                // its walkable cells by the border may differ from the old window's.
+                var neighbour = _tiles.Neighbour(tile, side);
+                if (neighbour < 0 || Old(neighbour) < 0)
+                {
+                    _layoutChanged[tile] = true;
+                }
+            }
+        }
+
+        for (var edge = 0; edge < _tiles.Edges; edge++)
+        {
+            CutEdge(edge);
+        }
+
+        Flatten();
+        _intraWanted.Clear();
+        for (var tile = 0; tile < _tiles.Count; tile++)
+        {
+            if (_layoutChanged[tile])
+            {
+                _intraWanted.Add(tile);
+            }
+        }
+
+        // The old tile whose cells tile t holds now, or -1 for one in a strip coming in.
+        int Old(int t)
+        {
+            var x = t % tilesX + shiftX;
+            var z = t / tilesX + shiftZ;
+            return x < 0 || x >= tilesX || z < 0 || z >= tilesZ ? -1 : z * tilesX + x;
         }
     }
 

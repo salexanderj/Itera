@@ -61,6 +61,8 @@ refill, or a move of the window.
 - Routes are near-exact, not exact: `FlowFieldBuilder` builds the exact field, which tests compare against.
 - The fields are double-buffered. Before a build into the back field, `TiledField.Catch` copies what the last build
   wrote into the front one.
+- A move of the window keeps each tile's costs inside where its cells and all four neighbours' were in the old window
+  and did not change (`NavPortals.LayMoved`). The cells changed since the last job go with the move, in the new window.
 - The portals' costs inside tiles and the fields run on `NavWorkers`: a quarter of the processors, below normal
   priority, so a build never takes the step's processors.
 

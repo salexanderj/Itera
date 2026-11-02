@@ -128,6 +128,10 @@ public sealed partial class NavigationService : IDisposable
     private int[] _jobBoxes = [];
     private int _jobTileCount;
 
+    // A move's shift in tiles: the new window's corner that many tiles from the old one, set before the thread is woken.
+    private int _moveShiftX;
+    private int _moveShiftZ;
+
     // On the thread: each shape of size's walkable cells, each size and cost table's portals and the tiles of its
     // walkable cells a job changed, each field tile by tile, and each worker's search.
     private NavSize[] _shapes = [];
@@ -896,6 +900,28 @@ public sealed partial class NavigationService : IDisposable
         _jobRows = size;
         _dirtyFirstRow = int.MaxValue;
         _dirtyLastRow = -1;
+        // The window moves by whole tiles. The cells changed since the last job came over with the overlap: their boxes
+        // go to the thread in the new window, so their tiles' portals are worked out again.
+        var dxCells = (x - grid.OriginX) / NavGrid.CellCentimetres;
+        var dzCells = (z - grid.OriginZ) / NavGrid.CellCentimetres;
+        _moveShiftX = dxCells / NavTiles.Cells;
+        _moveShiftZ = dzCells / NavTiles.Cells;
+        _jobTileCount = 0;
+        foreach (var tile in System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_dirtyTiles))
+        {
+            var box = tile * 4;
+            var c0 = Math.Max(0, _dirtyBoxes[box] - dxCells);
+            var r0 = Math.Max(0, _dirtyBoxes[box + 1] - dzCells);
+            var c1 = Math.Min(size - 1, _dirtyBoxes[box + 2] - dxCells);
+            var r1 = Math.Min(size - 1, _dirtyBoxes[box + 3] - dzCells);
+            if (c0 <= c1 && r0 <= r1)
+            {
+                (_jobBoxes[_jobTileCount * 4], _jobBoxes[_jobTileCount * 4 + 1]) = (c0, r0);
+                (_jobBoxes[_jobTileCount * 4 + 2], _jobBoxes[_jobTileCount * 4 + 3]) = (c1, r1);
+                _jobTileCount++;
+            }
+        }
+
         ForgetDirtyTiles();
         _lastJobStart = Stopwatch.GetTimestamp();
         _wake.Set();
@@ -1492,9 +1518,27 @@ public sealed partial class NavigationService : IDisposable
                 _shapes[i].Derive(grid, _shapeWalkable[i], 0, grid.Depth - 1);
             }
 
-            foreach (var portals in _portals)
+            if (_moving && tiles is not null)
             {
-                portals.LayAll();
+                // A move keeps the cells both windows hold: their tiles keep their costs inside.
+                var boxes = _jobBoxes.AsSpan(0, _jobTileCount * 4);
+                for (var i = 0; i < _portals.Length; i++)
+                {
+                    Touch(tiles, boxes, _shapes[_portalsShape[i]].ReachCells + 1, i);
+                    _portals[i]
+                        .LayMoved(
+                            _moveShiftX,
+                            _moveShiftZ,
+                            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_touched[i])
+                        );
+                }
+            }
+            else
+            {
+                foreach (var portals in _portals)
+                {
+                    portals.LayAll();
+                }
             }
         }
         else if (tiles is not null)

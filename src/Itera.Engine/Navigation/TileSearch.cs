@@ -82,29 +82,7 @@ internal sealed class TileSearch
             _mask = ring - 1;
         }
 
-        var stepX = FlowField.StepX;
-        var stepZ = FlowField.StepZ;
-        for (var lz = 0; lz < _depth; lz++)
-        {
-            for (var lx = 0; lx < _width; lx++)
-            {
-                var local = lz * Stride + lx;
-                var cell = (_z0 + lz) * _windowWidth + _x0 + lx;
-                for (var direction = 0; direction < 8; direction++)
-                {
-                    var fx = lx + stepX[direction];
-                    var fz = lz + stepZ[direction];
-                    _into[local * 8 + direction] =
-                        fx < 0 || fx >= _width || fz < 0 || fz >= _depth
-                            ? -1
-                            : steps.Step(
-                                cell + stepZ[direction] * _windowWidth + stepX[direction],
-                                cell,
-                                (direction + 4) & 7
-                            );
-                }
-            }
-        }
+        steps.FillInto(_x0, _z0, _width, _depth, Stride, _into);
     }
 
     /// <summary>

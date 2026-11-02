@@ -64,6 +64,47 @@ public sealed class TiledFieldTests
         Assert.Equal(first, setup.Field.Directions);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_tiles_steps_worked_out_a_cell_at_a_time_cost_what_each_step_does(bool dear)
+    {
+        var grid = Grid();
+        var walkable = new byte[grid.Count];
+        s_size.Derive(grid, walkable, 0, grid.Depth - 1);
+        var steps = new NavStepCosts(grid, walkable, s_size, dear ? s_dear : s_costs);
+        const int x0 = 15,
+            z0 = 35,
+            width = 40,
+            depth = 30;
+        var into = new int[width * depth * 8];
+
+        steps.FillInto(x0, z0, width, depth, width, into);
+
+        for (var lz = 0; lz < depth; lz++)
+        {
+            for (var lx = 0; lx < width; lx++)
+            {
+                var to = grid.Index(x0 + lx, z0 + lz);
+                for (var direction = 0; direction < 8; direction++)
+                {
+                    var fx = lx + FlowField.StepX[direction];
+                    var fz = lz + FlowField.StepZ[direction];
+                    var expected =
+                        fx < 0 || fx >= width || fz < 0 || fz >= depth
+                            ? -1
+                            : steps.Step(grid.Index(x0 + fx, z0 + fz), to, (direction + 4) & 7);
+                    if (into[(lz * width + lx) * 8 + direction] != expected)
+                    {
+                        Assert.Fail(
+                            $"Into ({x0 + lx}, {z0 + lz}) from direction {direction}: {into[(lz * width + lx) * 8 + direction]}, one step costs {expected}."
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     [Fact]
     public void A_goal_past_the_window_stands_at_the_edge_cell_nearest_it()
     {
