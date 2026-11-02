@@ -360,6 +360,21 @@ public sealed class ControlServiceTests : IDisposable
     }
 
     [Fact]
+    public void A_pressed_button_stays_down_until_it_is_released()
+    {
+        var service = Start();
+        using var client = Connect(service);
+
+        Ask(client, """{"op":"input","actions":["capture on","press right"]}""");
+        _input.BeginTick();
+        Assert.True(_input.Tick.IsDown(MouseButton.Right));
+
+        Ask(client, """{"op":"input","actions":["release right"]}""");
+        _input.BeginTick();
+        Assert.False(_input.Tick.IsDown(MouseButton.Right));
+    }
+
+    [Fact]
     public void A_look_right_after_capture_on_turns_the_view()
     {
         var service = Start();

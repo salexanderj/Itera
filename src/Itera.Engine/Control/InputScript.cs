@@ -13,6 +13,7 @@ namespace Itera.Engine.Control;
 /// <item><c>tap KEY</c>: down and up at once; the next frame and fixed step see it pressed.</item>
 /// <item><c>hold KEY SECONDS</c>: down, then up after that long.</item>
 /// <item><c>click left|right|middle [SECONDS]</c>: a button down, then up after that long (0 by default: at once).</item>
+/// <item><c>press left|right|middle</c>, <c>release left|right|middle</c>: a button goes down or up and stays so.</item>
 /// <item><c>look DX DY</c>: the pointer moves that many screen pixels (look, while captured).</item>
 /// <item><c>scroll STEPS</c>: the wheel turns that many steps, away from the user positive (as a wheel's own).</item>
 /// <item><c>point X Y</c>: the pointer is at that pixel of the frame (framebuffer pixels from the top left), for the
@@ -59,7 +60,8 @@ internal sealed class InputScript
             {
                 error =
                     $"input: '{line}' is not an action; actions: down KEY, up KEY, tap KEY, hold KEY S, "
-                    + "click left|right|middle [S], look DX DY, scroll STEPS, point X Y, type TEXT, capture on|off, wait S";
+                    + "click left|right|middle [S], press BUTTON, release BUTTON, look DX DY, scroll STEPS, point X Y, "
+                    + "type TEXT, capture on|off, wait S";
                 return null;
             }
         }
@@ -183,6 +185,12 @@ internal sealed class InputScript
                     actions.Add(new Action(ActionKind.Wait, Seconds: held));
                 }
 
+                actions.Add(new Action(ActionKind.ButtonUp, Button: button));
+                return true;
+            case "PRESS" when words.Length == 2 && TryButton(words[1], out var button):
+                actions.Add(new Action(ActionKind.ButtonDown, Button: button));
+                return true;
+            case "RELEASE" when words.Length == 2 && TryButton(words[1], out var button):
                 actions.Add(new Action(ActionKind.ButtonUp, Button: button));
                 return true;
             case "LOOK"

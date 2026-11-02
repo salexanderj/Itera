@@ -122,7 +122,8 @@ command is `shaders reload`.
 `input` runs its actions in order, on the game's clock:
 
 - `down KEY`, `up KEY`, `tap KEY`, `hold KEY SECONDS`
-- `click left|right|middle [SECONDS]`
+- `click left|right|middle [SECONDS]`, `press left|right|middle`, `release left|right|middle` (a button held until
+  released)
 - `look DX DY` (pointer pixels)
 - `scroll STEPS`: the wheel, away from the user positive (build mode's sizes, the shoulder camera)
 - `point X Y`: the pointer at that pixel of the frame, for the menu (a click after it clicks there)
