@@ -24,12 +24,12 @@ namespace Itera.Engine.Navigation;
 /// one whose voxels are not are stamped from its shape and read again once a disc covers them (the stamped edits are
 /// checked in turn, <see cref="StampChecksPerStep"/> a step, and a queued cell whose voxels unloaded before its read
 /// waits among them). An edit that covers no cell's centre column, or lies outside the window, is passed over
-/// (<see cref="NavGridScanner.CoversAnyCentre"/>). Changed rows are copied
-/// to the thread's own grid, and the thread builds every field again from it, the fields at once on up to a quarter of
-/// the processors (<see cref="FlowFieldWorkers"/>; all of each: the
-/// whole build is measured before a partial one; the cells each size can stand in are worked out again only in the changed rows and
-/// as far round them as its circle reaches), at most every <see cref="JobIntervalSeconds"/>, while walkers keep the
-/// fields they have until the new ones are swapped in whole. The main thread's grid follows edits at once.
+/// (<see cref="NavGridScanner.CoversAnyCentre"/>). Changed rows are copied to the thread's own grid with the tiles
+/// (<see cref="NavTiles"/>) whose cells changed, and the thread builds the fields again from those tiles out, at most
+/// every <see cref="JobIntervalSeconds"/>: the cells each size can stand in as far round them as its circle reaches, the
+/// portals of the tiles those reach (<see cref="NavPortals"/>), and each field (<see cref="TiledField"/>), the fields at
+/// once on up to a quarter of the processors (<see cref="NavWorkers"/>). Walkers keep the fields they have until the new
+/// ones are swapped in whole. The main thread's grid follows edits at once.
 /// </para>
 /// <para>
 /// A window smaller than the map follows a focus: what a game gives <see cref="Follow"/>, else the first streaming
@@ -80,8 +80,11 @@ public sealed partial class NavigationService : IDisposable
 
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(5);
 
-    // The thread's build of every field, a zone of a trace (Diagnostics.Zones).
+    // The thread's build of every field, one field's build, and the portals' costs inside tiles: zones of a trace
+    // (Diagnostics.Zones).
     private static readonly Diagnostics.ZoneId s_fieldsZone = Diagnostics.Zones.Name("navigation.fields");
+    private static readonly Diagnostics.ZoneId s_fieldZone = Diagnostics.Zones.Name("navigation.field");
+    private static readonly Diagnostics.ZoneId s_portalsZone = Diagnostics.Zones.Name("navigation.portals");
 
     private readonly INavGridSource? _source;
     private readonly Func<bool> _isAuthority;
@@ -112,9 +115,32 @@ public sealed partial class NavigationService : IDisposable
     private FlowField[] _front = [];
     private FlowField[] _back = [];
 
-    // On the thread: each field's walkable cells (its size's) and how long its last build took.
-    private byte[][] _fieldsWalkable = [];
-    private double[] _fieldMilliseconds = [];
+    // The tiles the fields are built in, on the main thread (which marks those whose cells changed) and the thread.
+    private NavTiles? _tiles;
+    private readonly List<int> _dirtyTiles = [];
+    private bool[] _dirtyTile = [];
+
+    // Each changed tile's box of changed cells in the window: its first column and row, and its last.
+    private int[] _dirtyBoxes = [];
+
+    // The tiles whose cells the thread's next job changes, with their boxes, set before it is woken.
+    private int[] _jobTiles = [];
+    private int[] _jobBoxes = [];
+    private int _jobTileCount;
+
+    // On the thread: each shape of size's walkable cells, each size and cost table's portals and the tiles of its
+    // walkable cells a job changed, each field tile by tile, and each worker's search.
+    private NavSize[] _shapes = [];
+    private byte[][] _shapeWalkable = [];
+    private NavPortals[] _portals = [];
+    private int[] _portalsShape = [];
+    private List<int>[] _touched = [];
+    private bool[][] _touchedTile = [];
+    private TiledField[] _tiled = [];
+    private int[] _tiledPortals = [];
+    private TileSearch[] _searches = [];
+    private PortalsWork? _portalsWork;
+    private FieldsWork? _fieldsWork;
     private VoxelEdit[] _startEdits = [];
     private byte[] _queued = [];
     private int[] _queue = new int[1024];
@@ -127,6 +153,7 @@ public sealed partial class NavigationService : IDisposable
     private long _lastJobStart;
     private int _jobEdits;
     private int _jobRows;
+    private int _jobBuilt;
     private WorldPoint _focus;
     private bool _followed;
 
@@ -379,6 +406,13 @@ public sealed partial class NavigationService : IDisposable
                 );
         var (x, z) = CornerFor(in start);
         _grid = new NavGrid(x, z, _windowCells, _windowCells);
+        _tiles = new NavTiles(_windowCells, _windowCells);
+        // Room for every tile, so marking them and handing them to a job allocates nothing.
+        _dirtyTile = new bool[_tiles.Count];
+        _dirtyTiles.Capacity = _tiles.Count;
+        _dirtyBoxes = new int[_tiles.Count * 4];
+        _jobTiles = new int[_tiles.Count];
+        _jobBoxes = new int[_tiles.Count * 4];
         _specs = [.. _source.CreateFields()];
         if (_voxels is not null && _passability is not null)
         {
@@ -599,7 +633,13 @@ public sealed partial class NavigationService : IDisposable
         }
         else
         {
-            LogRecomputed(timings.FieldsMilliseconds, timings.LongestFieldMilliseconds, _jobEdits, _jobRows);
+            LogRecomputed(
+                timings.FieldsMilliseconds,
+                timings.LongestFieldMilliseconds,
+                _jobEdits,
+                _jobTileCount,
+                _jobBuilt
+            );
         }
     }
 
@@ -719,6 +759,7 @@ public sealed partial class NavigationService : IDisposable
         Array.Clear(_queued);
         _dirtyFirstRow = int.MaxValue;
         _dirtyLastRow = -1;
+        ForgetDirtyTiles();
         _editsSinceJob = 0;
         _refillWanted = true;
     }
@@ -855,6 +896,7 @@ public sealed partial class NavigationService : IDisposable
         _jobRows = size;
         _dirtyFirstRow = int.MaxValue;
         _dirtyLastRow = -1;
+        ForgetDirtyTiles();
         _lastJobStart = Stopwatch.GetTimestamp();
         _wake.Set();
     }
@@ -1193,6 +1235,37 @@ public sealed partial class NavigationService : IDisposable
         var row = _grid!.Row(cell);
         _dirtyFirstRow = Math.Min(_dirtyFirstRow, row);
         _dirtyLastRow = Math.Max(_dirtyLastRow, row);
+        var column = _grid.Column(cell);
+        var tile = _tiles!.TileOf(column, row);
+        var box = tile * 4;
+        if (!_dirtyTile[tile])
+        {
+            _dirtyTile[tile] = true;
+            _dirtyTiles.Add(tile);
+            (_dirtyBoxes[box], _dirtyBoxes[box + 1], _dirtyBoxes[box + 2], _dirtyBoxes[box + 3]) = (
+                column,
+                row,
+                column,
+                row
+            );
+            return;
+        }
+
+        _dirtyBoxes[box] = Math.Min(_dirtyBoxes[box], column);
+        _dirtyBoxes[box + 1] = Math.Min(_dirtyBoxes[box + 1], row);
+        _dirtyBoxes[box + 2] = Math.Max(_dirtyBoxes[box + 2], column);
+        _dirtyBoxes[box + 3] = Math.Max(_dirtyBoxes[box + 3], row);
+    }
+
+    /// <summary>Forgets the tiles marked changed: a job that builds every field takes them all.</summary>
+    private void ForgetDirtyTiles()
+    {
+        foreach (var tile in System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_dirtyTiles))
+        {
+            _dirtyTile[tile] = false;
+        }
+
+        _dirtyTiles.Clear();
     }
 
     private void StartJob()
@@ -1204,6 +1277,14 @@ public sealed partial class NavigationService : IDisposable
         _jobFirstRow = _dirtyFirstRow;
         _jobLastRow = _dirtyLastRow;
         _jobRows = last - first + 1;
+        _dirtyTiles.CopyTo(_jobTiles);
+        _jobTileCount = _dirtyTiles.Count;
+        for (var i = 0; i < _jobTileCount; i++)
+        {
+            _dirtyBoxes.AsSpan(_jobTiles[i] * 4, 4).CopyTo(_jobBoxes.AsSpan(i * 4, 4));
+        }
+
+        ForgetDirtyTiles();
         _jobEdits = _editsSinceJob;
         _editsSinceJob = 0;
         _dirtyFirstRow = int.MaxValue;
@@ -1221,24 +1302,16 @@ public sealed partial class NavigationService : IDisposable
         {
             var grid = _grid!;
             _work = new NavGrid(grid.OriginX, grid.OriginZ, grid.Width, grid.Depth);
-            var walkable = new Dictionary<NavSize, byte[]>(ReferenceEqualityComparer.Instance);
-            foreach (var spec in _specs)
+            Arrange(_work);
+            using var workers = new NavWorkers(NavWorkers.HelpersFor(Environment.ProcessorCount), () => _stopping);
+            _searches = new TileSearch[workers.Count];
+            for (var i = 0; i < _searches.Length; i++)
             {
-                walkable.TryAdd(spec.Size, new byte[grid.Count]);
+                _searches[i] = new TileSearch();
             }
 
-            // The fields are built at once, each by its own builder (FlowFieldWorkers), reading each spec's size's cells.
-            _fieldsWalkable = new byte[_specs.Length][];
-            _fieldMilliseconds = new double[_specs.Length];
-            for (var i = 0; i < _specs.Length; i++)
-            {
-                _fieldsWalkable[i] = walkable[_specs[i].Size];
-            }
-
-            using var workers = new FlowFieldWorkers(
-                FlowFieldWorkers.HelpersFor(_specs.Length, Environment.ProcessorCount),
-                () => _stopping
-            );
+            _portalsWork = new PortalsWork(this);
+            _fieldsWork = new FieldsWork(this);
             _front = new FlowField[_specs.Length];
             _back = new FlowField[_specs.Length];
             for (var i = 0; i < _specs.Length; i++)
@@ -1260,7 +1333,7 @@ public sealed partial class NavigationService : IDisposable
             _fillMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
             while (!_stopping)
             {
-                BuildFields(_work, workers, walkable);
+                BuildFields(_work, workers);
                 _wake.WaitOne();
                 if (_stopping)
                 {
@@ -1325,39 +1398,254 @@ public sealed partial class NavigationService : IDisposable
         _fillMs = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
     }
 
-    private void BuildFields(NavGrid grid, FlowFieldWorkers workers, Dictionary<NavSize, byte[]> walkable)
+    /// <summary>
+    /// On the thread, before the first build: one walkable array for each shape of size the fields have, one set of
+    /// portals for each size and cost table (fields that differ only by their goals share one), and each field tile by
+    /// tile over its size's portals.
+    /// </summary>
+    private void Arrange(NavGrid grid)
+    {
+        var tiles = new NavTiles(grid.Width, grid.Depth);
+        var shapes = new List<NavSize>();
+        var portalsShape = new List<int>();
+        var portalsCosts = new List<NavCostTable>();
+        _tiledPortals = new int[_specs.Length];
+        for (var i = 0; i < _specs.Length; i++)
+        {
+            var spec = _specs[i];
+            var shape = shapes.FindIndex(size => size.SameShape(spec.Size));
+            if (shape < 0)
+            {
+                shape = shapes.Count;
+                shapes.Add(spec.Size);
+            }
+
+            var portals = 0;
+            while (
+                portals < portalsShape.Count
+                && !(portalsShape[portals] == shape && portalsCosts[portals].SameCosts(spec.Costs))
+            )
+            {
+                portals++;
+            }
+
+            if (portals == portalsShape.Count)
+            {
+                portalsShape.Add(shape);
+                portalsCosts.Add(spec.Costs);
+            }
+
+            _tiledPortals[i] = portals;
+        }
+
+        _shapes = [.. shapes];
+        _shapeWalkable = new byte[_shapes.Length][];
+        for (var i = 0; i < _shapes.Length; i++)
+        {
+            _shapeWalkable[i] = new byte[grid.Count];
+        }
+
+        _portalsShape = [.. portalsShape];
+        _portals = new NavPortals[_portalsShape.Length];
+        _touched = new List<int>[_portals.Length];
+        _touchedTile = new bool[_portals.Length][];
+        for (var i = 0; i < _portals.Length; i++)
+        {
+            var shape = _portalsShape[i];
+            _portals[i] = new NavPortals(
+                tiles,
+                new NavStepCosts(grid, _shapeWalkable[shape], _shapes[shape], portalsCosts[i])
+            );
+            _touched[i] = [];
+            _touchedTile[i] = new bool[tiles.Count];
+        }
+
+        _tiled = new TiledField[_specs.Length];
+        for (var i = 0; i < _specs.Length; i++)
+        {
+            _tiled[i] = new TiledField(_specs[i], _portals[_tiledPortals[i]]);
+        }
+    }
+
+    /// <summary>
+    /// On the thread: builds the fields into the back ones. After a fill (the first build, a refill, a move of the window)
+    /// every cell's walkable state, every portal, and every field are worked out whole. After cells changed, only round
+    /// the tiles the main thread marked: the walkable cells as far round them as each size's circle reaches, the portals
+    /// and the costs inside of the tiles those reach, and each field from those tiles out (<see cref="TiledField.Update"/>).
+    /// Each back field first takes what the last job wrote into the other one (<see cref="TiledField.Catch"/>).
+    /// </summary>
+    private void BuildFields(NavGrid grid, NavWorkers workers)
     {
         using var zone = Diagnostics.Zones.Time(s_fieldsZone);
         var start = Stopwatch.GetTimestamp();
-        // Only the changed rows and as far round them as each size's circle reaches (working the whole grid out
-        // again for every size took about 175 ms of a 1.3 s build in Release); every row after a
-        // fill.
-        var (changedFirst, changedLast) = (_jobFirstRow, _jobLastRow);
-        foreach (var (size, cells) in walkable)
+        var whole = _jobFirstRow < 0;
+        for (var i = 0; i < _tiled.Length; i++)
         {
-            var whole = changedFirst < 0;
-            size.Derive(
-                grid,
-                cells,
-                whole ? 0 : Math.Max(0, changedFirst - size.ReachCells),
-                whole ? grid.Depth - 1 : Math.Min(grid.Depth - 1, changedLast + size.ReachCells)
-            );
+            _tiled[i].Catch(_front[i], _back[i]);
         }
 
-        workers.Build(grid, _specs, _fieldsWalkable, _back, _fieldMilliseconds);
+        var tiles = _portals.Length > 0 ? _portals[0].Tiles : null;
+        if (whole)
+        {
+            for (var i = 0; i < _shapes.Length; i++)
+            {
+                _shapes[i].Derive(grid, _shapeWalkable[i], 0, grid.Depth - 1);
+            }
+
+            foreach (var portals in _portals)
+            {
+                portals.LayAll();
+            }
+        }
+        else if (tiles is not null)
+        {
+            var boxes = _jobBoxes.AsSpan(0, _jobTileCount * 4);
+            for (var i = 0; i < _shapes.Length; i++)
+            {
+                var reach = _shapes[i].ReachCells;
+                for (var box = 0; box < boxes.Length; box += 4)
+                {
+                    _shapes[i]
+                        .DeriveArea(
+                            grid,
+                            _shapeWalkable[i],
+                            boxes[box] - reach,
+                            boxes[box + 1] - reach,
+                            boxes[box + 2] + reach,
+                            boxes[box + 3] + reach
+                        );
+                }
+            }
+
+            for (var i = 0; i < _portals.Length; i++)
+            {
+                Touch(tiles, boxes, _shapes[_portalsShape[i]].ReachCells + 1, i);
+                _portals[i].Lay(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_touched[i]));
+            }
+        }
+
+        using (Diagnostics.Zones.Time(s_portalsZone))
+        {
+            _portalsWork!.Prepare();
+            workers.Run(_portalsWork.Count, _portalsWork);
+        }
+
+        if (_stopping)
+        {
+            return;
+        }
+
+        _fieldsWork!.Whole = whole;
+        workers.Run(_tiled.Length, _fieldsWork);
         if (_stopping)
         {
             return;
         }
 
         var longest = 0d;
-        foreach (var milliseconds in _fieldMilliseconds)
+        var built = 0;
+        foreach (var field in _tiled)
         {
-            longest = Math.Max(longest, milliseconds);
+            longest = Math.Max(longest, field.Milliseconds);
+            built += field.Built;
+            if (!field.Agreed)
+            {
+                LogDisagreed(field.Spec.Name, field.Looks);
+            }
         }
 
+        _jobBuilt = built;
         _timings = new NavigationTimings(_fillMs, Stopwatch.GetElapsedTime(start).TotalMilliseconds, longest);
         _published = true;
+    }
+
+    /// <summary>
+    /// The tiles of portals <paramref name="portals"/> whose cells or steps the changed cells reach: those that meet a
+    /// changed tile's box of cells (<paramref name="boxes"/>, four numbers each) grown by <paramref name="reach"/> cells,
+    /// in <see cref="_touched"/>.
+    /// </summary>
+    private void Touch(NavTiles tiles, ReadOnlySpan<int> boxes, int reach, int portals)
+    {
+        var list = _touched[portals];
+        var marked = _touchedTile[portals];
+        foreach (var tile in System.Runtime.InteropServices.CollectionsMarshal.AsSpan(list))
+        {
+            marked[tile] = false;
+        }
+
+        list.Clear();
+        for (var box = 0; box < boxes.Length; box += 4)
+        {
+            var x0 = Math.Max(0, boxes[box] - reach);
+            var z0 = Math.Max(0, boxes[box + 1] - reach);
+            var x1 = Math.Min(tiles.Width - 1, boxes[box + 2] + reach);
+            var z1 = Math.Min(tiles.Depth - 1, boxes[box + 3] + reach);
+            for (var tz = z0 / NavTiles.Cells; tz <= z1 / NavTiles.Cells; tz++)
+            {
+                for (var tx = x0 / NavTiles.Cells; tx <= x1 / NavTiles.Cells; tx++)
+                {
+                    var touched = tz * tiles.TilesX + tx;
+                    if (!marked[touched])
+                    {
+                        marked[touched] = true;
+                        list.Add(touched);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>On the thread's workers: the costs inside the tiles each set of portals wants worked out.</summary>
+    private sealed class PortalsWork(NavigationService service) : INavWork
+    {
+        private readonly List<(int Portals, int Tile)> _items = [];
+
+        public int Count => _items.Count;
+
+        public void Prepare()
+        {
+            _items.Clear();
+            for (var i = 0; i < service._portals.Length; i++)
+            {
+                foreach (var tile in service._portals[i].IntraWanted)
+                {
+                    _items.Add((i, tile));
+                }
+            }
+        }
+
+        public void Run(int item, int worker)
+        {
+            var (portals, tile) = _items[item];
+            service._portals[portals].ComputeIntra(tile, service._searches[worker]);
+        }
+    }
+
+    /// <summary>On the thread's workers: each field built whole, or from the tiles a job changed.</summary>
+    private sealed class FieldsWork(NavigationService service) : INavWork
+    {
+        public bool Whole { get; set; }
+
+        public void Run(int item, int worker)
+        {
+            using var zone = Diagnostics.Zones.Time(s_fieldZone);
+            var field = service._tiled[item];
+            var search = service._searches[worker];
+            if (Whole)
+            {
+                field.BuildWhole(service._work!, service._back[item], search);
+            }
+            else
+            {
+                field.Update(
+                    System.Runtime.InteropServices.CollectionsMarshal.AsSpan(
+                        service._touched[service._tiledPortals[item]]
+                    ),
+                    service._back[item],
+                    search
+                );
+            }
+        }
     }
 
     /// <summary>A rectangle of cells in the window, inclusive: one strip a move of the window brings in.</summary>
@@ -1450,9 +1738,15 @@ public sealed partial class NavigationService : IDisposable
 
     [LoggerMessage(
         Level = LogLevel.Debug,
-        Message = "Navigation: fields built again in {FieldsMs:F0} ms (longest {LongestMs:F0} ms) after {Edits} edit(s), {Rows} row(s) copied"
+        Message = "Navigation: fields built again in {FieldsMs:F0} ms (longest {LongestMs:F0} ms) after {Edits} edit(s) in {Tiles} tile(s); {Built} tile field(s) searched again"
     )]
-    private partial void LogRecomputed(double fieldsMs, double longestMs, int edits, int rows);
+    private partial void LogRecomputed(double fieldsMs, double longestMs, int edits, int tiles, int built);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Navigation: field {Name} stopped after {Looks} looks at its tiles without them all agreeing; some routes may loop until its next build"
+    )]
+    private partial void LogDisagreed(string name, int looks);
 
     [LoggerMessage(
         Level = LogLevel.Debug,

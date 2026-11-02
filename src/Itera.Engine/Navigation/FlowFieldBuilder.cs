@@ -25,7 +25,7 @@ public sealed class FlowFieldBuilder
     /// <summary>
     /// Writes into <paramref name="field"/> the route from every cell of <paramref name="grid"/> to the goals of
     /// <paramref name="spec"/> (each the cell under it, or the window's edge cell nearest it), with
-    /// <paramref name="walkable"/> (from <see cref="NavSize.Derive"/> for the spec's size) saying where the walker can
+    /// <paramref name="walkable"/> (from <see cref="NavSize.Derive(NavGrid, byte[], int, int)"/> for the spec's size) saying where the walker can
     /// stand; the field takes the grid's window.
     /// </summary>
     public void Build(NavGrid grid, NavFieldSpec spec, byte[] walkable, FlowField field)

@@ -84,6 +84,16 @@ public sealed class NavCostTable
         return (int)Math.Max(cellCost, Math.Min(cellCost + drop, steepCost));
     }
 
+    /// <summary>
+    /// True when <paramref name="other"/> prices every step as this table does. Fields with such tables and sizes of one
+    /// shape share their portals.
+    /// </summary>
+    internal bool SameCosts(NavCostTable other) =>
+        Break == other.Break
+        && Steep == other.Steep
+        && DropPerMetre == other.DropPerMetre
+        && _straight.AsSpan().SequenceEqual(other._straight);
+
     /// <summary>The cheapest class's straight cost.</summary>
     public int Cheapest { get; }
 

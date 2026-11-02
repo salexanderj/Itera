@@ -36,12 +36,33 @@ Each fixed step reads new edits into the grid, up to a limit of cells a step. Th
 - A read takes the floor from the surface the voxels' density gives (`VoxelWorld.SurfaceOver`), which stays near the source's ground.
 - A read or a stamp judges solid from the source's ground there (`INavGridSource.GroundAt`).
 - A far removal of some materials stamps a pit only when it removes ground (`INavGridSource.IsGround`).
-- The thread builds the fields again, while their users keep the old ones. It builds them at once, each by its own
-  builder on the next free thread, up to a quarter of the processors (`FlowFieldWorkers`), so a build takes about as
-  long as its longest field.
+- The main thread marks the tiles whose cells changed, with each one's box of changed cells. The thread builds the
+  fields again from those tiles out (below), while their users keep the old ones.
 - The navigation thread and its helpers run below normal priority, on Linux too (`ThreadPriorities`), so a build never
   takes the step's processors.
 - After `reset` the thread fills the grid again first (`NavigationService.Refilling`).
+
+### The fields, tile by tile
+
+The thread builds each field in tiles of `NavTiles.Cells` cells (`TiledField`), never whole after the first build, a
+refill, or a move of the window.
+
+- Portals (`NavPortals`): each edge between two tiles is cut into runs of one crossing kind, at most `NavPortals.MostRun`
+  cells long, with a node each side. Each tile keeps the cost from each of its nodes to the others inside it.
+- Fields of one size shape and cost table share their portals and walkable cells (`NavSize.SameShape`,
+  `NavCostTable.SameCosts`).
+- A field searches the portals' graph from its goals for each node's cost. A portal leads one way, from the dearer side
+  to the cheaper. A tile's field is a search inside it (`TileSearch`) from its goals and the far cells of its ways out.
+- Tiles are looked at again, nearest the goals first, until no tile's seeds change. Every step then leads to a cheaper
+  cell, so routes never loop. Keep that: a tile must never take seeds that a later look could change without looking
+  at it again.
+- After cells change, each tile's costs first move by the change in its nodes' least cost, and the tiles whose cells
+  changed are built again. A tile whose seeds all moved by one amount moves its costs and keeps its directions.
+- Routes are near-exact, not exact: `FlowFieldBuilder` builds the exact field, which tests compare against.
+- The fields are double-buffered. Before a build into the back field, `TiledField.Catch` copies what the last build
+  wrote into the front one.
+- The portals' costs inside tiles and the fields run on `NavWorkers`: a quarter of the processors, below normal
+  priority, so a build never takes the step's processors.
 
 ### Voxel objects
 
@@ -117,8 +138,8 @@ A walker whose goal changes (a character moving to cover) asks for a path instea
 
 ### Tests
 
-`FlowFieldTests`, `FlowFieldWorkersTests`, `NavGridScannerTests`, `NavPathFinderTests`, `NavigationServiceTests`, `NavigationObjectsTests`, `NavigationPlacedObjectsTests`, `NavigationWindowTests`.
+`FlowFieldTests`, `NavWorkersTests`, `TiledFieldTests`, `NavGridScannerTests`, `NavPathFinderTests`, `NavigationServiceTests`, `NavigationObjectsTests`, `NavigationPlacedObjectsTests`, `NavigationWindowTests`.
 
 ### Files in `src/Itera.Engine`
 
-- `Navigation/`: `NavigationService` (with `NavArea`), `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`, `INavGridSource` (the game's part), `FlowFieldBuilder`, `FlowFieldWorkers`, `FlowField`, `NavPathFinder` (with `NavPathResult`), `NavGridScanner`, `NavObjects`, `NavigationDebugLines`.
+- `Navigation/`: `NavigationService` (with `NavArea`), `NavGrid`, `NavSize`, `NavCostTable`, `NavFieldSpec`, `INavGridSource` (the game's part), `FlowField`, `FlowFieldBuilder` (the exact field), `NavTiles`, `NavPortals`, `NavStepCosts`, `TileSearch`, `TiledField`, `NavWorkers`, `NavPathFinder` (with `NavPathResult`), `NavGridScanner`, `NavObjects`, `NavigationDebugLines`.

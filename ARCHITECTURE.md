@@ -1224,16 +1224,21 @@ has no navigation. The rules are in `.claude/rules/navigation.md`.
   (`NavCostTable`), or the break cost where the size cannot stand, or the steep cost for a rise over the climb. A block
   can be a price to break through or a wall to walk round. Blocked cells are dear, not closed, so every cell has a
   route.
-- **The fields** (`NavFieldSpec`: size, costs, goal; `FlowFieldBuilder`) run Dijkstra backwards from each field's goal
-  over the eight neighbours, with a ring of buckets as the queue, since every cost is a small whole number. Each cell
-  records its step towards the goal. The builder allocates nothing once its arrays have grown. The engine knows
-  nothing of teams; a game's fields are its own.
+- **The fields** (`NavFieldSpec`: size, costs, goals) are built in tiles of 32 cells (`TiledField`). Each edge between
+  tiles is cut into portals, and each tile keeps the costs between its portals (`NavPortals`). A search of the portals'
+  graph gives each portal its cost to the goals. Each tile's field is Dijkstra's search inside it, backwards from the
+  goals and from the cells across its ways out, over the eight neighbours. Each cell records its step towards the
+  goals. The tiles are searched again until they agree, so every step leads to a cheaper cell and no route loops. Routes
+  are near-exact: within about 1 % of the exact field's cost for 99 % of cells. `FlowFieldBuilder` builds the exact field,
+  which the tests compare against. The engine knows nothing of teams; a game's fields are its own.
 - **Edits** (`NavigationService.AfterFixedStep`). Each new edit's cells are read again from the voxels when its
   columns are loaded, at a limited count a step, and otherwise stamped from its shape (a dig lowers the floor, stone
-  raises it or blocks the cell) and read once the voxels load. Changed rows are copied to the thread's own grid, and at
-  most every 0.5 s the thread builds every field again while walkers keep the old ones until the new are swapped in
-  whole. A partial recompute was measured first and not built, because a whole rebuild runs off the main thread in about
-  a second. After a reset the thread fills the grid again first.
+  raises it or blocks the cell) and read once the voxels load. Changed rows are copied to the thread's own grid with the
+  tiles whose cells changed. At most every 0.5 s the thread builds the fields again from those tiles out, while walkers
+  keep the old ones until the new are swapped in whole. Whole rebuilds of every field came first. In a hosted fight they
+  ran most of the time, and slowed the step's threads that share the processors, though they ran below normal. Tiles
+  cut a crater's rebuild to a few per cent of a whole one, and keep routes as fresh. After a reset the thread fills the
+  grid again first.
 - Moving walkers along a field, spreading them in lanes, steering round each other, and breaking through blocks are a
   game's. `NavigationDebugLines` draws a field's arrows round the camera.
 

@@ -120,6 +120,39 @@ public sealed class NavSize
     }
 
     /// <summary>
+    /// True when <paramref name="other"/> stands, climbs, and drops as this size does: the same height, radius, climbs,
+    /// and drops, whatever its name. Fields of such sizes share their walkable cells and portals.
+    /// </summary>
+    internal bool SameShape(NavSize other) =>
+        HeightCentimetres == other.HeightCentimetres
+        && RadiusCentimetres == other.RadiusCentimetres
+        && ClimbCentimetres == other.ClimbCentimetres
+        && DiagonalClimbCentimetres == other.DiagonalClimbCentimetres
+        && DropCentimetres == other.DropCentimetres
+        && DiagonalDropCentimetres == other.DiagonalDropCentimetres;
+
+    /// <summary>
+    /// Writes into <paramref name="walkable"/> which cells of the rectangle from <paramref name="firstColumn"/>,
+    /// <paramref name="firstRow"/> to <paramref name="lastColumn"/>, <paramref name="lastRow"/> (clipped to the grid) this
+    /// size can stand in.
+    /// </summary>
+    internal void DeriveArea(NavGrid grid, byte[] walkable, int firstColumn, int firstRow, int lastColumn, int lastRow)
+    {
+        firstColumn = Math.Max(0, firstColumn);
+        firstRow = Math.Max(0, firstRow);
+        lastColumn = Math.Min(grid.Width - 1, lastColumn);
+        lastRow = Math.Min(grid.Depth - 1, lastRow);
+        for (var row = firstRow; row <= lastRow; row++)
+        {
+            var start = row * grid.Width;
+            for (var column = firstColumn; column <= lastColumn; column++)
+            {
+                walkable[start + column] = IsWalkable(grid, start + column) ? (byte)1 : (byte)0;
+            }
+        }
+    }
+
+    /// <summary>
     /// Writes into <paramref name="walkable"/> (one byte per cell, 1 for walkable) which cells of rows
     /// <paramref name="firstRow"/> to <paramref name="lastRow"/> this size can stand in.
     /// </summary>

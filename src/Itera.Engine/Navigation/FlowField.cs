@@ -126,6 +126,19 @@ public sealed class FlowField
         return cell;
     }
 
+    /// <summary>Takes <paramref name="other"/>'s window and directions (a field of the same size).</summary>
+    internal void CopyFrom(FlowField other)
+    {
+        if (other.Width != Width || other.Depth != Depth)
+        {
+            throw new ArgumentException("The fields differ in size.", nameof(other));
+        }
+
+        OriginX = other.OriginX;
+        OriginZ = other.OriginZ;
+        other.Directions.AsSpan().CopyTo(Directions);
+    }
+
     /// <summary>Takes <paramref name="grid"/>'s window (the same size) as the one the field is built over.</summary>
     internal void BuildOver(NavGrid grid)
     {
