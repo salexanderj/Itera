@@ -108,6 +108,11 @@ back, or above it, and takes a picture.
 - `--pass "LABEL=COMMANDS"` runs a pass after those console commands, such as a tunable to compare. Repeat it: the
   sheet stacks the passes in rows, and the GIF plays them side by side.
 - `--press KEY@SECONDS` presses another key that far into the run-up and holds it, as Ctrl into a slide at speed.
+  `--release KEY@SECONDS` lets one go, and `--button BUTTON@SECONDS` presses a mouse button and holds it.
+- `--turn DEGREES@SECONDS/OVER` turns the look by the mouse, left positive, spread over OVER seconds a tick at a time.
+  It reads the mouse's sensitivity from the console's `settings` and captures the pointer for the pass.
+- `--setup COMMANDS` runs console commands after each pass's start, before its run-up, such as laying something to
+  cross.
 - It needs Pillow. The game must be offline, since it pauses and steps it.
 
 ## Shaders

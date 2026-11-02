@@ -6,17 +6,22 @@ Drives a running offline game (tools/control/game.py start) through its control 
 pauses, holds the keys given, steps a run-up, then steps a few ticks at a time; at each stop it puts the camera
 (`viewpoint`, `lens ortho`) on the figure's right, left, front, or back, or above it, and takes a picture (`shot`).
 Each pass may first run console commands (`--pass "LABEL=COMMANDS"`, such as tunables to compare), and the sheet stacks
-the passes in rows, labelled. A key may be pressed later and held (`--press KEY@SECONDS`, from the start of the run-up),
-as Ctrl into a slide at speed. Needs Pillow for the sheet and the GIF. See README.md next to this file.
+the passes in rows, labelled. `--setup` runs console commands after each pass's start, before its run-up. Times count
+from the start of the run-up: a key may be pressed later and held (`--press KEY@SECONDS`), as Ctrl into a slide at
+speed, or let go (`--release KEY@SECONDS`); a mouse button pressed and held (`--button BUTTON@SECONDS`); and the look
+turned by the mouse (`--turn DEGREES@SECONDS/OVER`, left positive, spread over OVER seconds). Needs Pillow for the sheet
+and the GIF. See README.md next to this file.
 
     moving.py W --view right --out DIR
     moving.py ShiftLeft+W+A --view front --pass "before=tune x 1" --pass "after=tune x 0.4" --out DIR
     moving.py ShiftLeft+W --press ControlLeft@1.2 --run-up 1.3 --view right --out DIR
+    moving.py W --button right@0 --turn 90@1.5/1 --view top --out DIR
 """
 
 import argparse
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -85,28 +90,56 @@ def camera(place, front, height, view, distance):
     return f"{cx:.3f},{y + height * 0.55:.3f},{cz:.3f},{yaw:.2f},0"
 
 
+def degrees_a_pixel(driver):
+    """The mouse's turn for each pixel it moves, in degrees: the settings' sensitivity."""
+    answers = " ".join(driver.run("settings").get("answers", []))
+    found = re.search(r"sensitivity ([0-9.]+)", answers)
+    if not found or float(found.group(1)) <= 0:
+        raise RuntimeError(f"no sensitivity in the settings: {answers}")
+    return float(found.group(1))
+
+
+def timed_inputs(args, degrees_per_pixel):
+    """The input actions after the run-up starts, as (tick, action) in order of their ticks."""
+    timed = [(round(seconds * TICKS_A_SECOND), f"down {key}") for key, seconds in args.presses]
+    timed += [(round(seconds * TICKS_A_SECOND), f"up {key}") for key, seconds in args.releases]
+    timed += [(round(seconds * TICKS_A_SECOND), f"press {button}") for button, seconds in args.buttons]
+    for degrees, seconds, over in args.turns:
+        # Spread over the ticks, a share each; the mouse moving right turns right.
+        ticks = max(1, round(over * TICKS_A_SECOND))
+        pixels = -degrees / ticks / degrees_per_pixel
+        timed += [(round(seconds * TICKS_A_SECOND) + i, f"look {pixels:.4f} 0") for i in range(ticks)]
+    return sorted(timed, key=lambda pair: pair[0])
+
+
 def one_pass(driver, args, label, commands, out):
     """Runs one pass and returns its frames, cropped round the figure."""
     driver.run("resume; viewpoint off; lens off", script=True)
     if commands:
         driver.run(commands, script=True)
     driver.run(f"tp {args.start}; wait ticks 60; pause", script=True)
+    if args.setup:
+        driver.run(args.setup, script=True)
+    capture = bool(args.turns or args.buttons)
+    if capture:
+        driver.ask({"op": "input", "actions": ["capture on"], "timeout": 30})
     driver.ask({"op": "input", "actions": [f"down {key}" for key in args.keys], "timeout": 30})
-    pending = sorted((round(seconds * TICKS_A_SECOND), key) for key, seconds in args.presses)
-    pressed = []
+    pending = timed_inputs(args, degrees_a_pixel(driver) if args.turns else 1)
     stepped = 0
 
     def step(ticks):
-        # Steps the game, pressing each later key at its tick on the way.
+        # Steps the game, sending each later input at its tick on the way.
         nonlocal stepped
         end = stepped + ticks
         while pending and pending[0][0] <= end:
-            at, key = pending.pop(0)
+            at = pending[0][0]
             if at > stepped:
                 driver.run(f"step {at - stepped}; wait ticks {at - stepped}", script=True)
                 stepped = at
-            driver.ask({"op": "input", "actions": [f"down {key}"], "timeout": 30})
-            pressed.append(key)
+            actions = []
+            while pending and pending[0][0] == at:
+                actions.append(pending.pop(0)[1])
+            driver.ask({"op": "input", "actions": actions, "timeout": 30})
         if end > stepped:
             driver.run(f"step {end - stepped}; wait ticks {end - stepped}", script=True)
             stepped = end
@@ -118,7 +151,9 @@ def one_pass(driver, args, label, commands, out):
             step(args.every)
             place, front, height = driver.figure()
             if index == 0:
-                driver.run(f"lens ortho {height * args.zoom:.3f}")
+                # A range of its own: the lens's default, the view distance each way, draws only the haze
+                # (salexanderj/Itera#55).
+                driver.run(f"lens ortho {height * args.zoom:.3f} -1 {args.distance + 400:.0f}")
             view = camera(place, front, height, args.view, args.distance)
             driver.run(f"viewpoint {view}; wait frames 3", script=True)
             path = out / f"{label}-{index:03d}.png"
@@ -128,7 +163,9 @@ def one_pass(driver, args, label, commands, out):
             keep = round(tall * args.width)
             frames.append(picture.crop(((width - keep) // 2, 0, (width + keep) // 2, tall)))
     finally:
-        driver.ask({"op": "input", "actions": [f"up {key}" for key in args.keys + pressed], "timeout": 30})
+        ups = [f"up {key}" for key in args.keys + [key for key, _ in args.presses]]
+        ups += [f"release {button}" for button, _ in args.buttons] + (["capture off"] if capture else [])
+        driver.ask({"op": "input", "actions": ups, "timeout": 30})
         driver.run("viewpoint off; lens off; resume", script=True)
     return frames
 
@@ -153,6 +190,16 @@ def main():
                              "without it)")
     parser.add_argument("--press", dest="presses", action="append", default=[],
                         help="KEY@SECONDS: a key pressed and held from that many seconds into the run-up (repeatable)")
+    parser.add_argument("--release", dest="releases", action="append", default=[],
+                        help="KEY@SECONDS: a key let go that many seconds into the run-up (repeatable)")
+    parser.add_argument("--button", dest="buttons", action="append", default=[],
+                        help="BUTTON@SECONDS: a mouse button (left, right, middle) pressed and held from that many "
+                             "seconds into the run-up (repeatable)")
+    parser.add_argument("--turn", dest="turns", action="append", default=[],
+                        help="DEGREES@SECONDS/OVER: the look turned DEGREES to the left (negative: right) by the mouse, "
+                             "from that many seconds into the run-up, spread over OVER seconds (repeatable)")
+    parser.add_argument("--setup", default="",
+                        help="console commands run after each pass's start, before its run-up")
     parser.add_argument("--port", type=int, default=None)
     args = parser.parse_args()
     if Image is None:
@@ -161,8 +208,18 @@ def main():
     args.keys = [key for key in args.keys.split("+") if key]
     try:
         args.presses = [(key, float(seconds)) for key, seconds in (text.split("@", 1) for text in args.presses)]
+        args.releases = [(key, float(seconds)) for key, seconds in (text.split("@", 1) for text in args.releases)]
+        args.buttons = [(button, float(seconds)) for button, seconds in (text.split("@", 1) for text in args.buttons)]
     except ValueError:
-        print("--press takes KEY@SECONDS", file=sys.stderr)
+        print("--press, --release, and --button take NAME@SECONDS", file=sys.stderr)
+        return 2
+    try:
+        args.turns = [
+            (float(degrees), float(at), float(over))
+            for degrees, at, over in (re.fullmatch(r"(.+)@(.+)/(.+)", text).groups() for text in args.turns)
+        ]
+    except (AttributeError, ValueError):
+        print("--turn takes DEGREES@SECONDS/OVER", file=sys.stderr)
         return 2
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
