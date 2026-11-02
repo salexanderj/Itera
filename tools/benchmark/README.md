@@ -38,6 +38,8 @@ dotnet build -c Release
 cp -r src/Game/bin/Release/net10.0 /tmp/game-before         # keep a build to compare against
 tools/benchmark/run.sh before-1                              # BENCH_BIN picks the build; default: the Release output
 BENCH_BIN=/tmp/game-before tools/benchmark/run.sh before-2
+tools/benchmark/publish.sh /tmp/game-shipped                 # the build players get: composite ReadyToRun, one file
+BENCH_BIN=/tmp/game-shipped tools/benchmark/run.sh shipped-1
 tools/benchmark/compare.py before before-1,before-2 after after-1,after-2
 tools/benchmark/imgdiff.py before-1 after-1                  # the same picture? (also two folders or two PNG files)
 tools/benchmark/run.sh before-3 --offscreen                  # no window (BENCH_SIZE, 2560x1440): the monitor stays free; no screenshots
@@ -59,6 +61,12 @@ tools/benchmark/zones.py TRACE.json                          # a zones trace: ea
   to `BENCH_OUT` (default the data folder's `Benchmarks/<label>`): `game.log`, a screenshot per view, and
   `summary.json`. `BENCH_AGENT=1` runs in the data folder of the runs Claude starts (`<DataFolder>-agent`), so they
   leave the player's logs and benchmarks alone.
+- A `dotnet build` compiles each method the first time it runs, and tiered PGO compiles a hot one again. A path that
+  first runs during a measurement (a host's first sends to a client, the first blast) then runs several times slower
+  for a second or two. `publish.sh` publishes the build players get, as `tools/steam/upload.sh` does for Linux, which
+  compiles most of it ahead. Measure the main thread's work (`step_ms`, `step_max_ms`, `build_ms`) from it. Bepu's code
+  made at run time, and mods, are still compiled at first use. Its first seconds after loading still have some slow
+  steps, so give `SettleSeconds` time for them.
 - Take the runs of two builds in turn (before, after, before, after, ...): runs of one build agree within about 1 %
   per view, so differences of about 1 % are at the edge of the noise.
 - `--offscreen` runs with no window, its frames capped at 1000 a second (`Engine:Window:OffscreenFps`; at the offscreen

@@ -10,7 +10,7 @@
 #                 (at 240 the views took up to 83 % longer). Its times are 1 to 3 % below a window's: compare offscreen
 #                 runs only with offscreen runs.
 #   BENCH_BIN     folder of the build to run (default: the repo's Release output). Copy the output folder elsewhere to
-#                 keep building while a run goes on, and to compare two builds.
+#                 keep building while a run goes on, and to compare two builds; publish.sh makes the build players get.
 #   BENCH_OUT     results folder (default the game's data folder's Benchmarks/, data_folder.py).
 #   BENCH_OUTPUT  sway output to go full screen on (default DP-1, the 2560x1440 monitor).
 #   BENCH_AGENT   1: the data folder of the runs Claude starts (<DataFolder>-agent, data_folder.py --agent), so its runs
