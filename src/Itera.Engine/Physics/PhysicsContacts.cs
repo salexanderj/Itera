@@ -101,8 +101,8 @@ internal struct ContactRecord : IComparable<ContactRecord>
 /// more is given a separating speed of its bounciness times the speed it came together at (Bepu has no coefficient of
 /// restitution; its contacts stop the pair, and the engine pushes it apart), at the contact, by the pair's masses and
 /// inertias. A marked pair gives an <see cref="ImpactEvent"/> as it begins and as it ends (<see cref="Events"/>; one for
-/// a side removed since the step before, first). Fixed capacities; a contact or event past them is dropped and counted.
-/// Allocates nothing after it is made.
+/// a side removed since the step before, first). Fixed capacities; a contact, event, or pair past them is dropped and
+/// counted, and the pairs met in the step are kept before those only asleep. Allocates nothing after it is made.
 /// </summary>
 internal sealed class PhysicsContacts
 {
@@ -257,7 +257,16 @@ internal sealed class PhysicsContacts
                 var key = _previous[a];
                 if (Asleep(key, simulation.Bodies))
                 {
-                    Keep(ref next, key, _previousReports[a]);
+                    // This step's pairs come first: an asleep pair is kept only while room is left for every one of
+                    // them still to come. One dropped here gives no Ended, and a Began if it is met again.
+                    if (next + kept - b < _next.Length)
+                    {
+                        Keep(ref next, key, _previousReports[a]);
+                    }
+                    else
+                    {
+                        Interlocked.Increment(ref _dropped);
+                    }
                 }
                 else if (_previousReports[a])
                 {

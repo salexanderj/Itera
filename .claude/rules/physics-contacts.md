@@ -64,6 +64,8 @@ or marked side do this work.
 - The sides are in a fixed order: bodies by handle, then statics, then the voxels. The point is local and moves with the
   origin. The speed includes gravity's part over the gap.
 - `PhysicsWorld.ImpactEvents` holds the last step's events for the next step's systems.
+- At most `PhysicsContacts.MostPairs` pairs are kept for the next step. The pairs met in the step come first. Asleep
+  pairs that do not fit are dropped and counted.
 - A pair Bepu no longer meets only because its bodies sleep still touches. A ball falling asleep gives no `Ended`, and
   waking gives no `Began`.
 - A body rolling over voxel cells' borders begins nothing, since the voxels count as one. A pair that strikes again while
