@@ -105,6 +105,92 @@ public sealed class BenchmarkSystemTests
         Assert.DoesNotContain(lines, line => line.Contains("loaded after", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// With clients to wait for, the first view settles only once they have joined, and the second view does not wait
+    /// again though one has left.
+    /// </summary>
+    [Fact]
+    public void The_first_view_settles_once_the_clients_have_joined_and_the_next_waits_for_none()
+    {
+        using var world = CreateWorld();
+        var lines = new List<string>();
+        using var system = CreateSystem(world, waitForClients: 2, logger: new ListLogger(lines));
+        system.Initialize();
+        _host.IsLoaded = true;
+
+        var i = 0;
+        // 1.5 s loads the first view; it then waits for the clients.
+        for (; i < 100; i++)
+        {
+            system.Update(new FrameTime((float)Frame, i * Frame, (ulong)i, 0));
+            _host.JoinedClients = i < 50 ? 0 : 1;
+        }
+
+        Assert.DoesNotContain(lines, line => line.Contains("measuring", StringComparison.Ordinal));
+        _host.JoinedClients = 2;
+        var joinedAt = i * Frame;
+        var measuredAt = double.NaN;
+        for (; i < 400 && _host.Exits.Count == 0; i++)
+        {
+            system.Update(new FrameTime((float)Frame, i * Frame, (ulong)i, 0));
+            if (
+                double.IsNaN(measuredAt) && lines.Exists(line => line.Contains("a measuring", StringComparison.Ordinal))
+            )
+            {
+                measuredAt = i * Frame;
+                _host.JoinedClients = 1;
+            }
+        }
+
+        // The first view settles 1 s from the join; the second loads and settles as it would with no clients.
+        Assert.InRange(measuredAt, joinedAt + 1 - 1e-9, joinedAt + 1 + 2 * Frame);
+        Assert.Single(lines, line => line.Contains("2 client(s) joined after", StringComparison.Ordinal));
+        Assert.Contains(lines, line => line.Contains("b measuring", StringComparison.Ordinal));
+        Assert.Equal(["benchmark finished"], _host.Exits);
+    }
+
+    /// <summary>Clients that never join hold the first view only for the join timeout, which a Warning says.</summary>
+    [Fact]
+    public void Clients_that_never_join_are_waited_for_only_until_the_timeout()
+    {
+        using var world = CreateWorld();
+        var lines = new List<string>();
+        using var system = CreateSystem(world, waitForClients: 3, logger: new ListLogger(lines));
+        system.Initialize();
+        _host.IsLoaded = true;
+        _host.JoinedClients = 1;
+
+        var measuredAt = double.NaN;
+        for (var i = 0; i < 2000 && double.IsNaN(measuredAt); i++)
+        {
+            system.Update(new FrameTime((float)Frame, i * Frame, (ulong)i, 0));
+            if (lines.Exists(line => line.Contains("a measuring", StringComparison.Ordinal)))
+            {
+                measuredAt = i * Frame;
+            }
+        }
+
+        // 1.5 s to load, the timeout, then 1 s settling.
+        var expected = 1.5 + BenchmarkSystem.JoinTimeoutSeconds + 1;
+        Assert.InRange(measuredAt, expected - 1e-9, expected + 3 * Frame);
+        Assert.Single(lines, line => line.Contains("1 of 3 client(s) joined after", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Update_allocates_nothing_while_waiting_for_the_clients()
+    {
+        using var world = CreateWorld();
+        using var system = CreateSystem(world, waitForClients: 4);
+        system.Initialize();
+        _host.IsLoaded = true;
+        for (var i = 0; i < 40; i++)
+        {
+            system.Update(new FrameTime((float)Frame, i * Frame, (ulong)i, 0));
+        }
+
+        Assert.Equal(0, SystemAllocation.BytesAllocated(system, new FrameTime((float)Frame, 5, 50, 0)));
+    }
+
     [Fact]
     public void Update_allocates_nothing_while_measuring()
     {
@@ -131,7 +217,8 @@ public sealed class BenchmarkSystemTests
         World world,
         double measureSeconds = 2,
         double flightSeconds = 3,
-        ILogger<BenchmarkSystem>? logger = null
+        ILogger<BenchmarkSystem>? logger = null,
+        int waitForClients = 0
     ) =>
         new(
             world,
@@ -140,6 +227,7 @@ public sealed class BenchmarkSystemTests
             {
                 Enabled = true,
                 SettleSeconds = 1,
+                WaitForClients = waitForClients,
                 MeasureSeconds = measureSeconds,
                 FlightSeconds = flightSeconds,
             },
@@ -173,6 +261,8 @@ public sealed class BenchmarkSystemTests
     private sealed class FakeHost : IBenchmarkHost
     {
         public bool IsLoaded { get; set; }
+
+        public int JoinedClients { get; set; }
 
         public (int Width, int Height) FramebufferSize => (640, 360);
 

@@ -12,7 +12,9 @@ highest of the seconds' 99th percentiles; and the frames shown a second, with th
 weighted by steps, the systems' part, and the longest step. From the frame CPU lines, the main thread's frame build,
 weighted by frames, and its longest. From a host's session lines, its fewest clients and the kilobytes a second it sent
 each.
-The same for the flight. Logs from before the raymarcher left main (2026-10-06) give the voxel pass and the GPU passes as
+The same for the flight. For a host whose clients joined before the first view's measurement, "joins": the clients that
+joined, and the step's time, its systems' part, and the longest step, over the seconds from the first join to that
+measurement. Logs from before the raymarcher left main (2026-10-06) give the voxel pass and the GPU passes as
 before, and no mesh figures.
 """
 import json
@@ -35,6 +37,7 @@ frame = []  # (time, frames, GPU avg, GPU p99, frame p99)
 steps = []  # (time, steps, step avg as the sum of its parts', systems avg, longest step)
 builds = []  # (time, frames built, build avg, build max)
 sessions = []  # (time, peers, kilobytes out, seconds)
+joined = []  # times a client joined a host
 windows = {}
 order = []
 exit_code = None
@@ -98,6 +101,9 @@ for line in lines:
     m = re.search(r"Session: host, (\d+) peer\(s\); in .* out \d+ \(([\d.]+) KB\) over ([\d.]+) s", line)
     if m:
         sessions.append((t, int(m[1]), float(m[2]), float(m[3])))
+        continue
+    if re.search(r"Session: .+ joined in slot \d+", line):
+        joined.append(t)
         continue
     m = re.search(r"Benchmark view (\d+) ([a-z-]+) measuring at (\d+)x(\d+)", line)
     if m:
@@ -185,6 +191,20 @@ for name in order:
 result = {"views": views, "exit": exit_code}
 if "flight" in windows and windows["flight"][1]:
     result["flight"] = summarise(*windows["flight"][:2])
+# The joins before the first measurement: a stats line at time T covers the second before it, so the second that holds
+# the first join counts.
+first = windows[order[0]][0] if order else None
+early = [t for t in joined if first is not None and t < first]
+if early:
+    stepped = [s for s in steps if early[0] < s[0] <= first + 0.05]
+    counted = sum(s[1] for s in stepped)
+    result["joins"] = {
+        "joined": len(early),
+        "seconds": len(stepped),
+        "step_ms": sum(s[1] * s[2] for s in stepped) / counted if counted else 0.0,
+        "systems_ms": sum(s[1] * s[3] for s in stepped) / counted if counted else 0.0,
+        "step_max_ms": max((s[4] for s in stepped), default=0.0),
+    }
 json.dump(result, sys.stdout, indent=1)
 
 # A view that was measured but has no stats lines, or a run with no views at all, is a failed measurement: say so and

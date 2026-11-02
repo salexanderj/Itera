@@ -11,7 +11,8 @@ With `--Engine:Benchmark:Enabled=true` the camera visits the game's fixed views 
 in `src/Game`; the starter's nine: `start`, `start-low`, `down`, and `up` at the start pose, `high` 40 m over the
 world's middle, `far` 200 m out along +x looking back, `distant` 3,500 m out along +x looking back, and `forest` and
 `forest-high` inside a forest at eye height and 40 m over it). At each it waits until every column is loaded and on the
-GPU, waits `SettleSeconds` (2), and measures for `MeasureSeconds` (8). Then it flies the automatic circle at 5 m/s for
+GPU, waits `SettleSeconds` (2), and measures for `MeasureSeconds` (8). A host given `WaitForClients` waits at the first
+view, before it settles, until that many clients have joined, or for 120 s at most. Then it flies the automatic circle at 5 m/s for
 `FlightSeconds` (60) and exits. The log marks the start and end of each measurement. A game that changes its world or
 its views starts a new series: runs of other views do not compare.
 
@@ -29,7 +30,9 @@ A game that holds a scene to a whole frame's budget reads `frame_gpu_ms`, the wh
 `frame_p99_ms`, the highest of the seconds' 99th percentiles of the time between two, with the main thread's work in it. A host's step is `step_ms`, the sum of its
 parts' averages, with `systems_ms` its systems' part and `step_max_ms` its longest. The main thread's frame build is
 `build_ms`, with `build_max_ms` its longest. A host's fewest clients in a view are `clients`, and what it sent each a second
-`client_kb_s`. `compare.py` prints them when both groups have them. `parse.py` reads any older `game.log` again: `parse.py game.log > summary.json`.
+`client_kb_s`. A host whose clients joined before the first measurement has `joins`: the clients that joined
+(`joined`), and `step_ms`, `systems_ms`, and `step_max_ms` over the seconds from the first join to that measurement.
+`compare.py` prints them when both groups have them. `parse.py` reads any older `game.log` again: `parse.py game.log > summary.json`.
 
 ## Measuring
 
@@ -83,8 +86,10 @@ tools/benchmark/zones.py TRACE.json                          # a zones trace: ea
 - `BENCH_CLIENTS=7` hosts the match (`BENCH_PORT`, 47650 by default) and, once it has loaded, joins seven clients with
   no graphics to it from 127.0.0.1, on the processors `BENCH_CLIENT_CPUS` lists (any by default). They run in the data
   folder `<DataFolder>-clients` (`<DataFolder>-agent-clients` with `BENCH_AGENT=1`), and their logs go to `clients/` in
-  the results folder. They join during the first view: give `--Engine:Benchmark:SettleSeconds` time enough for their
-  downloads, or that view measures the joins.
+  the results folder. The host's first view waits for all of them to join before it settles
+  (`--Engine:Benchmark:WaitForClients`, which `run.sh` sets), so no view measures the joins. `summary.json`'s `joins`
+  holds the steps from the first join to the first measurement, and `run.sh` prints their longest
+  (`joins_step_max`).
 
 ## Pitfalls
 

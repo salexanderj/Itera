@@ -4,6 +4,7 @@ using Itera.Engine.Components;
 using Itera.Engine.Ecs;
 using Itera.Engine.Loading;
 using Itera.Engine.Maths;
+using Itera.Engine.Networking;
 using Itera.Engine.Rendering;
 using Itera.Engine.Voxels;
 using Itera.Engine.Windowing;
@@ -17,7 +18,9 @@ namespace Itera.Engine.Systems;
 /// it only when <c>Engine:Benchmark:Enabled</c> is set, with its own list of views). It puts the
 /// <see cref="ActiveCamera"/> at each view of the seed's world in turn, waits until every column is loaded and on the
 /// GPU, waits <see cref="BenchmarkSettings.SettleSeconds"/>, and logs the start and end of a measurement of
-/// <see cref="BenchmarkSettings.MeasureSeconds"/>. Then it flies the automatic circle for
+/// <see cref="BenchmarkSettings.MeasureSeconds"/>. Before the first view settles, a host waits until
+/// <see cref="BenchmarkSettings.WaitForClients"/> clients have joined, so no measurement holds their joins; one that
+/// waits past <see cref="JoinTimeoutSeconds"/> measures anyway, with a Warning. Then it flies the automatic circle for
 /// <see cref="BenchmarkSettings.FlightSeconds"/> and asks the game to exit. The GPU times come from the frame stats lines
 /// between each start and end (<c>tools/benchmark</c> reads them). Writes <see cref="CameraPose"/>; no structural
 /// changes. The engine is reached through <see cref="IBenchmarkHost"/>, so tests can drive it.
@@ -26,6 +29,12 @@ public sealed partial class BenchmarkSystem : BaseSystem<World, FrameTime>, IFra
 {
     /// <summary>Speed of the flight at the end, in metres per second, as in earlier measurements.</summary>
     public const double FlightSpeed = 5;
+
+    /// <summary>
+    /// Longest wait for <see cref="BenchmarkSettings.WaitForClients"/> clients to join before measuring anyway (with a
+    /// Warning), in seconds.
+    /// </summary>
+    public const double JoinTimeoutSeconds = 120;
 
     /// <summary>Longest wait for a view to load before measuring anyway (with a Warning), in seconds.</summary>
     private const double LoadTimeoutSeconds = 60;
@@ -76,6 +85,7 @@ public sealed partial class BenchmarkSystem : BaseSystem<World, FrameTime>, IFra
     private enum Phase
     {
         Loading,
+        Joining,
         Settling,
         Measuring,
         Flying,
@@ -104,6 +114,9 @@ public sealed partial class BenchmarkSystem : BaseSystem<World, FrameTime>, IFra
         {
             case Phase.Loading:
                 WaitForLoad(now);
+                break;
+            case Phase.Joining:
+                WaitForClients(now);
                 break;
             case Phase.Settling when now - _phaseStart >= _options.SettleSeconds:
                 var (width, height) = _host.FramebufferSize;
@@ -170,9 +183,19 @@ public sealed partial class BenchmarkSystem : BaseSystem<World, FrameTime>, IFra
         Proceed(now);
     }
 
-    /// <summary>After a view or the flight's start has loaded (or timed out): settle on the view, or fly.</summary>
+    /// <summary>
+    /// After a view or the flight's start has loaded (or timed out): wait for the clients at the first view, settle on a
+    /// view, or fly.
+    /// </summary>
     private void Proceed(double now)
     {
+        if (_view == 0 && _options.WaitForClients > 0 && _views.Length > 0)
+        {
+            Enter(Phase.Joining, now);
+            WaitForClients(now);
+            return;
+        }
+
         if (_view < _views.Length)
         {
             Enter(Phase.Settling, now);
@@ -181,6 +204,23 @@ public sealed partial class BenchmarkSystem : BaseSystem<World, FrameTime>, IFra
 
         LogFlightMeasuring();
         Enter(Phase.Flying, now);
+    }
+
+    /// <summary>The first view settles once the clients have joined, or after <see cref="JoinTimeoutSeconds"/>.</summary>
+    private void WaitForClients(double now)
+    {
+        var joined = _host.JoinedClients;
+        var waited = now - _phaseStart;
+        if (joined >= _options.WaitForClients)
+        {
+            LogClientsJoined(joined, waited);
+            Enter(Phase.Settling, now);
+        }
+        else if (waited >= JoinTimeoutSeconds)
+        {
+            LogJoinTimeout(joined, _options.WaitForClients, waited);
+            Enter(Phase.Settling, now);
+        }
     }
 
     private void NextView(double now)
@@ -240,6 +280,18 @@ public sealed partial class BenchmarkSystem : BaseSystem<World, FrameTime>, IFra
 
     [LoggerMessage(
         Level = LogLevel.Information,
+        Message = "Benchmark: {Clients} client(s) joined after {Seconds:F1} s at the first view"
+    )]
+    private partial void LogClientsJoined(int clients, double seconds);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Benchmark: {Joined} of {Clients} client(s) joined after {Seconds:F1} s; measuring anyway"
+    )]
+    private partial void LogJoinTimeout(int joined, int clients, double seconds);
+
+    [LoggerMessage(
+        Level = LogLevel.Information,
         Message = "Benchmark view {Index} {Name} measuring at {Width}x{Height}"
     )]
     private partial void LogMeasuring(int index, string name, int width, int height);
@@ -264,11 +316,17 @@ public sealed partial class BenchmarkSystem : BaseSystem<World, FrameTime>, IFra
     }
 }
 
-/// <summary>What the benchmark needs from the engine: whether the view has loaded, the image size, and a way to exit.</summary>
+/// <summary>
+/// What the benchmark needs from the engine: whether the view has loaded, the clients that have joined, the image size,
+/// and a way to exit.
+/// </summary>
 public interface IBenchmarkHost
 {
     /// <summary>True when every column around the camera is loaded and on the GPU.</summary>
     bool IsLoaded { get; }
+
+    /// <summary>The clients that have joined the match this game hosts; 0 offline or on a client.</summary>
+    int JoinedClients { get; }
 
     /// <summary>The size of the image drawn, in pixels.</summary>
     (int Width, int Height) FramebufferSize { get; }
@@ -305,10 +363,13 @@ public sealed class EngineBenchmarkHost(
     VoxelWorld voxels,
     IWorldOnGpu uploader,
     WindowService window,
-    LoadingScreen loading
+    LoadingScreen loading,
+    SessionService session
 ) : IBenchmarkHost
 {
     public bool IsLoaded => voxels.PendingColumns == 0 && uploader.IsUpToDate && loading.Phase is LoadingPhase.Done;
+
+    public int JoinedClients => session.Role == SessionRole.Host ? session.JoinedPeers : 0;
 
     public (int Width, int Height) FramebufferSize => (window.FramebufferSize.X, window.FramebufferSize.Y);
 

@@ -129,6 +129,7 @@ Every option under `Engine`: its default, the least and most its validator takes
 | `Engine:Control:Port` | `47650` | `1024` to `65535` | TCP port on 127.0.0.1, 1024 to 65,535. |
 | `Engine:Benchmark:Enabled` | `false` |  | When true, the game runs the benchmark instead of being played. |
 | `Engine:Benchmark:SettleSeconds` | `2` | `0` to `600` | Seconds to wait at each view after it has loaded, before measuring. |
+| `Engine:Benchmark:WaitForClients` | `0` | `0` to `15` | Clients that must have joined the match this game hosts before the first view settles, so their joins come before any measurement: 0 to 15, 0 (the default) for none. `tools/benchmark/run.sh` sets it to the clients it starts. |
 | `Engine:Benchmark:MeasureSeconds` | `8` | `0.1` to `600` | Seconds to measure at each view. |
 | `Engine:Benchmark:FlightSeconds` | `60` | `0` to `3600` | Seconds to fly the automatic circle at 5 m/s after the views; 0 leaves the flight out. |
 | `Engine:Assets:Extra` | `` |  | glTF models read at the run's mesh assets step after the game's and the mods' own, so a tool shows a model without a rebuild. Each has a Name no other model has, a Path (from the folder the run starts in), and MetresPerUnit (1, or 0.01 for centimetres), as in `--Engine:Assets:Extra:0:Name=crate --Engine:Assets:Extra:0:Path=crate.glb`. The console's `meshes place` shows one. None by default. |

@@ -19,8 +19,10 @@
 #                 cores; its thread pools follow the count.
 #   BENCH_CLIENTS N: the game hosts the match (BENCH_PORT, default 47650; N + 1 players), and once it has loaded, N clients
 #                 with no graphics join it from 127.0.0.1, on BENCH_CLIENT_CPUS (default: any) with one voxel worker
-#                 each. They run in the data folder <folder>-clients, at 1 % volume, and stop with the run; their logs
-#                 go to clients/ in the results folder.
+#                 each. The first view settles once all N have joined (Engine:Benchmark:WaitForClients), so no view
+#                 measures the joins; summary.json's "joins" holds the steps from the first join to the first
+#                 measurement. They run in the data folder <folder>-clients, at 1 % volume, and stop with the run;
+#                 their logs go to clients/ in the results folder.
 # Linux with sway only (swaymsg, jq, grim); python3 for parse.py. Development tool, not game code.
 set -uo pipefail
 
@@ -74,7 +76,8 @@ if [[ ! "$clients" =~ ^[0-9]+$ ]] || ((clients > 15)); then
 fi
 host_args=()
 if ((clients > 0)); then
-    host_args=(--Engine:Session:Mode=Host "--Engine:Session:Port=$port" "--Engine:Session:MaxPlayers=$((clients + 1))")
+    host_args=(--Engine:Session:Mode=Host "--Engine:Session:Port=$port" "--Engine:Session:MaxPlayers=$((clients + 1))"
+        "--Engine:Benchmark:WaitForClients=$clients")
 fi
 pin=()
 if [[ -n "${BENCH_CPUS:-}" ]]; then
@@ -215,8 +218,10 @@ summary, label, output = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
 views = " ".join(f"{name}={v['voxels_ms']:.3f}" for name, v in summary["views"].items())
 flight = summary.get("flight")
 flight_text = f"{flight['voxels_ms']:.3f}" if flight else "-"
+joins = summary.get("joins")
+joins_text = f" joins_step_max={joins['step_max_ms']:.2f}" if joins else ""
 sizes = sorted({v["size"] for v in summary["views"].values()})
-print(f"{label} {views} flight={flight_text} exit={summary['exit']} size={','.join(sizes)}")
+print(f"{label} {views} flight={flight_text}{joins_text} exit={summary['exit']} size={','.join(sizes)}")
 try:
     outputs = json.loads(subprocess.run(["swaymsg", "-t", "get_outputs"], capture_output=True, text=True).stdout)
     mode = next(o["current_mode"] for o in outputs if o["name"] == output)

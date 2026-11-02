@@ -3,7 +3,8 @@
 the runs, and the change; then the same for the models' draws in the views that drew models, and for the shadow maps
 (both part of the world's time), the anti-aliasing (SMAA) and upscale passes, and the game's own render passes when
 either group ran them; and the whole frame's GPU time and its slowest 1 %, the frames a second and the slowest 1 % of the
-times between them, and the host's fixed step and its longest, when both groups' summaries have them.
+times between them, and the host's fixed step and its longest, when both groups' summaries have them; and the host's step
+and its longest over its clients' joins, when every run's summary has them.
 Usage: compare.py <name-a> <run,run,...> <name-b> <run,run,...>   (runs are labels under $BENCH_OUT)
 
 Take the runs of the two builds in turn (a, b, a, b, ...) so that drift in GPU clocks or temperature affects both.
@@ -26,7 +27,7 @@ name_a, a, name_b, b = sys.argv[1], load(sys.argv[2]), sys.argv[3], load(sys.arg
 
 
 def times(group, view, key):
-    return [(r["flight"] if view == "flight" else r["views"][view]).get(key, 0.0) for r in group]
+    return [(r[view] if view in ("flight", "joins") else r["views"][view]).get(key, 0.0) for r in group]
 
 
 def table(title, key, views):
@@ -70,5 +71,9 @@ for title, key in (
     if all(min(times(group, v, key)) > 0 for group in (a, b) for v in views):
         print()
         table(title, key, views)
+if all(r.get("joins") for r in a + b):
+    for title, key in (("joins' step", "step_ms"), ("joins' max", "step_max_ms")):
+        print()
+        table(title, key, ["joins"])
 for name, group in ((name_a, a), (name_b, b)):
     print(f"{name}: exit codes {[r['exit'] for r in group]}")

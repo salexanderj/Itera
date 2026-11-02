@@ -1040,6 +1040,13 @@ public sealed class BenchmarkSettings
     /// <summary>Seconds to wait at each view after it has loaded, before measuring.</summary>
     public double SettleSeconds { get; set; } = 2;
 
+    /// <summary>
+    /// Clients that must have joined the match this game hosts before the first view settles, so their joins come before
+    /// any measurement: 0 to 15, 0 (the default) for none. <c>tools/benchmark/run.sh</c> sets it to the clients it
+    /// starts.
+    /// </summary>
+    public int WaitForClients { get; set; }
+
     /// <summary>Seconds to measure at each view.</summary>
     public double MeasureSeconds { get; set; } = 8;
 
