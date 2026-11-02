@@ -116,9 +116,9 @@ public sealed class StepWorkersTests
 
     /// <summary>
     /// The bytes <paramref name="workers"/> count for a pass on all three threads in which worker 2 allocates 4,096
-    /// bytes. A collection another test sets off during the pass counts the rest of worker 2's allocation block too (up
-    /// to 8 KB; 8,464 bytes in all in one CI run), so a pass that a collection or a pause fell in is run again, at most
-    /// five times, and the least is returned, as <c>SystemAllocation.BytesAllocatedWithoutCollection</c> does.
+    /// bytes. A collection another test sets off during the pass can count the rest of worker 2's allocation block too,
+    /// so a pass that a collection or a pause fell in is run again, at most five times, and the least is returned, as
+    /// <c>SystemAllocation.BytesAllocatedWithoutCollection</c> does.
     /// </summary>
     private static long AllocatedInAPass(StepWorkers workers, byte[][] arrays)
     {
@@ -232,7 +232,13 @@ public sealed class StepWorkersTests
         var spin = default(SpinWait);
         while (Volatile.Read(ref met) < count)
         {
-            Assert.True(Stopwatch.GetTimestamp() < limit, $"{Volatile.Read(ref met)} of {count} workers came.");
+            // The message is made only on a failure: made at each spin, the waiting workers allocated it inside the
+            // pass, which counted 8,464 and 8,680 bytes on slow CI runners for a pass that allocates 4,096.
+            if (Stopwatch.GetTimestamp() >= limit)
+            {
+                Assert.Fail($"{Volatile.Read(ref met)} of {count} workers came.");
+            }
+
             spin.SpinOnce();
         }
     }

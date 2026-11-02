@@ -186,7 +186,10 @@ public sealed class NavigationWindowTests(ITestOutputHelper output)
         var watch = Stopwatch.StartNew();
         var steps = 0;
         var waits = 0;
-        while (at.X != goal.X && watch.Elapsed < Timeout)
+        // Eleven moves, each building the field over the whole window on the navigation thread, below normal: on a
+        // runner whose test classes take every processor it gets little time, so the walk has longer than a settle.
+        var limit = TestTime.Limit(180);
+        while (at.X != goal.X && watch.Elapsed < limit)
         {
             var field = service.Field(0);
             Assert.True(field.TryCell(at.X, at.Z, out var cell), $"The walker at {at} is outside its field's window.");
