@@ -159,6 +159,46 @@ public sealed class MeshDrawSystemTests
     }
 
     [Fact]
+    public void Clips_blended_over_the_first_blend_move_each_joint_towards_them_in_turn()
+    {
+        using var world = World.Create();
+        using var system = Create(world);
+        // The rest pose, none of the first layer, the bend at 0.4 s whole over it, then the rest pose halfway over that:
+        // halfway between the bend and the rest.
+        var animator = MeshAnimator.Playing(-1, seconds: 0.4f, speed: 0);
+        animator.SetLayer(1, 0, 0);
+        animator.SetLayer(2, 0, 1);
+        animator.SetLayer(2, 0, 1);
+        animator.SetLayer(3, -1, 0.5f);
+        animator.SetLayer(3, -1, 0.5f);
+        world.Create(MeshPlacement.At(Vector3.Zero, Quaternion.Identity), DrawnMesh.Of(2), animator);
+
+        Frame(system, 1);
+
+        var rig = _assets[2].Rig!;
+        var bent = new JointTransform[2];
+        var rest = new JointTransform[2];
+        rig.Pose(0, 0.4f, bent);
+        rig.Pose(-1, 0, rest);
+        var halfway = new JointTransform[2];
+        for (var j = 0; j < 2; j++)
+        {
+            halfway[j] = new JointTransform(
+                Vector3.Lerp(bent[j].Translation, rest[j].Translation, 0.5f),
+                Quaternion.Slerp(bent[j].Rotation, rest[j].Rotation, 0.5f),
+                Vector3.Lerp(bent[j].Scale, rest[j].Scale, 0.5f)
+            );
+        }
+
+        var expected = new Matrix4x4[2];
+        rig.WritePalette(halfway, expected);
+        var want = Vector3.Transform(new Vector3(2, 0, 0), expected[1]);
+        var drawn = DrawnTip(0);
+        Assert.True(Vector3.Distance(want, drawn) < 1e-4f, $"{drawn} against {want}");
+        Assert.True(Vector3.Distance(drawn, Tip(0, 0.4f)) > 1e-3f, "The third layer moved nothing.");
+    }
+
+    [Fact]
     public void A_shifted_blend_poses_its_clip_that_share_further_through_its_length()
     {
         using var world = World.Create();

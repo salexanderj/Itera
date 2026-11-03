@@ -125,11 +125,14 @@ public struct MeshAttachment
 /// <c>Alpha</c>, advanced by <c>MeshAnimatorSystem</c> at <see cref="Speed"/> times the step (0 holds it). A looping clip
 /// wraps both times together at its end; one played <see cref="Once"/> holds its last pose. A change of clip may fade
 /// (<see cref="FadeTo"/>): the clip it played goes on at its own speed, and each joint blends from it to the new one over
-/// <see cref="FadeSeconds"/> of the match's time. A second clip may be blended in (<see cref="SetBlend"/>): posed at the
-/// same share of its length as the clip is of its own (two walks in step), each joint moved towards it by
-/// <see cref="BlendWeight"/> (directional movement: a forward clip and a sideways one). Each change of clip and of the
-/// clip blended in counts in <see cref="Changes"/>, which a <see cref="SmoothedPose"/> smooths. Drawing only: the pose is
-/// never the same on every machine, so nothing peers agree on reads it.
+/// <see cref="FadeSeconds"/> of the match's time. A second clip may be blended in
+/// (<see cref="SetBlend(int, float, float)"/>): posed at the same share of its length as the clip is of its own (two
+/// walks in step), each joint moved towards it by <see cref="BlendWeight"/> (directional movement: a forward clip and a
+/// sideways one). Two more may be blended over those in turn, posed alike (<see cref="Blend2"/>, <see cref="Blend3"/>;
+/// <see cref="SetLayer(int, int, float, float)"/>), so a game blends two ways of two gaits. Each change of clip and of
+/// a clip blended in counts in <see cref="Changes"/>, which a <see cref="SmoothedPose"/> smooths; a clip blended in
+/// that changes while it weighs nothing, before and after, does not. Drawing only: the pose is never the same on every
+/// machine, so nothing peers agree on reads it.
 /// </summary>
 public struct MeshAnimator
 {
@@ -170,9 +173,18 @@ public struct MeshAnimator
     public float BlendShift;
 
     /// <summary>
+    /// The clip blended over the pose with the first blended in (layer 2 of
+    /// <see cref="SetLayer(int, int, float, float)"/>).
+    /// </summary>
+    public BlendLayer Blend2;
+
+    /// <summary>The clip blended over the pose with the second blended in (layer 3).</summary>
+    public BlendLayer Blend3;
+
+    /// <summary>
     /// How many times the pose has changed other than by playing on: each <see cref="FadeTo"/>, each
-    /// <see cref="SetBlend"/> that blends in another clip, and each <see cref="MarkChange"/>; it wraps round. A
-    /// <see cref="SmoothedPose"/> smooths each.
+    /// <see cref="SetLayer(int, int, float, float)"/> that blends in another clip, and each <see cref="MarkChange"/>;
+    /// it wraps round. A <see cref="SmoothedPose"/> smooths each.
     /// </summary>
     public uint Changes;
 
@@ -198,6 +210,28 @@ public struct MeshAnimator
     /// <summary>How far a frame moves each joint towards the blended clip.</summary>
     public readonly float BlendShare(float alpha) =>
         Math.Clamp(PreviousBlendWeight + (BlendWeight - PreviousBlendWeight) * alpha, 0, 1);
+
+    /// <summary>
+    /// Blends <paramref name="clip"/> in as <paramref name="layer"/> (1: <see cref="SetBlend(int, float, float)"/>;
+    /// 2 and 3: <see cref="Blend2"/> and <see cref="Blend3"/>, each over the pose the layers below made), by
+    /// <paramref name="weight"/> of the way from that pose to its own, posed <paramref name="shift"/> of its length
+    /// further through it than the clip is through its own. Another layer, or one past 3, changes nothing.
+    /// </summary>
+    public void SetLayer(int layer, int clip, float weight, float shift = 0)
+    {
+        switch (layer)
+        {
+            case 1:
+                SetBlend(clip, weight, shift);
+                break;
+            case 2:
+                Changes = unchecked(Changes + (Blend2.Set(clip, weight, shift) ? 1u : 0u));
+                break;
+            case 3:
+                Changes = unchecked(Changes + (Blend3.Set(clip, weight, shift) ? 1u : 0u));
+                break;
+        }
+    }
 
     /// <summary>
     /// Plays <paramref name="clip"/> from <paramref name="seconds"/> at <paramref name="speed"/>, faded in over
@@ -245,4 +279,37 @@ public struct MeshAnimator
             PreviousSeconds = seconds,
             Speed = speed,
         };
+}
+
+/// <summary>
+/// A clip blended over a <see cref="MeshAnimator"/>'s pose (<see cref="MeshAnimator.Blend2"/>,
+/// <see cref="MeshAnimator.Blend3"/>): posed at the same share of its length as the animator's clip is of its own, and
+/// <see cref="Shift"/> further, each joint moved towards it by <see cref="Weight"/> of the way; the weight at the step
+/// before kept for the frames between.
+/// </summary>
+public struct BlendLayer
+{
+    public int Clip;
+    public float Weight;
+    public float PreviousWeight;
+    public float Shift;
+
+    /// <summary>
+    /// Sets the layer to <paramref name="clip"/> by <paramref name="weight"/>, <paramref name="shift"/> further through
+    /// it, the weight before kept for the frames between (none to blend from when the clip changes); true when the pose
+    /// changed by more than playing on: another clip that weighs something now or weighed something before.
+    /// </summary>
+    public bool Set(int clip, float weight, float shift = 0)
+    {
+        Shift = float.IsFinite(shift) ? shift - MathF.Floor(shift) : 0;
+        var clamped = float.IsFinite(weight) ? Math.Clamp(weight, 0, 1) : 0;
+        var changed = clip != Clip && (clamped > 0 || Weight > 0);
+        PreviousWeight = clip == Clip ? Weight : clamped;
+        Clip = clip;
+        Weight = clamped;
+        return changed;
+    }
+
+    /// <summary>How far a frame moves each joint towards the layer's clip.</summary>
+    public readonly float Share(float alpha) => Math.Clamp(PreviousWeight + (Weight - PreviousWeight) * alpha, 0, 1);
 }

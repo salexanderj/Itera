@@ -86,9 +86,10 @@ public static class MeshPoses
     /// <paramref name="animator"/>'s pose of asset <paramref name="asset"/> at <paramref name="alpha"/> of the way between
     /// its last two steps, into <paramref name="locals"/>: its clip at the blend of its two times (wrapped by a looping
     /// clip's length), and while it fades, the last clip's pose (sampled into <paramref name="from"/>) blended into it by
-    /// the fade; then its blended clip, posed at the same share of its length and its shift further (sampled into <paramref name="from"/>),
-    /// blended into that by its weight. False, and nothing written, for an asset without a rig, or a rig with more joints
-    /// than the spans hold.
+    /// the fade; then each clip blended in (<see cref="MeshAnimator.BlendClip"/>, <see cref="MeshAnimator.Blend2"/>,
+    /// <see cref="MeshAnimator.Blend3"/>, in turn), posed at the same share of its length and its shift further
+    /// (sampled into <paramref name="from"/>), blended into the pose so far by its weight. False, and nothing written,
+    /// for an asset without a rig, or a rig with more joints than the spans hold.
     /// </summary>
     public static bool Sample(
         MeshAssets assets,
@@ -148,34 +149,90 @@ public static class MeshPoses
             }
         }
 
-        var blend = animator.BlendShare(alpha);
-        if (blend > 0)
+        // The clips blended in, each over the pose so far, posed at the clip's share of its length.
+        Layer(
+            assets,
+            asset,
+            rig,
+            in animator,
+            seconds,
+            animator.BlendClip,
+            animator.BlendShift,
+            animator.BlendShare(alpha),
+            joints,
+            from
+        );
+        Layer(
+            assets,
+            asset,
+            rig,
+            in animator,
+            seconds,
+            animator.Blend2.Clip,
+            animator.Blend2.Shift,
+            animator.Blend2.Share(alpha),
+            joints,
+            from
+        );
+        Layer(
+            assets,
+            asset,
+            rig,
+            in animator,
+            seconds,
+            animator.Blend3.Clip,
+            animator.Blend3.Shift,
+            animator.Blend3.Share(alpha),
+            joints,
+            from
+        );
+        return true;
+    }
+
+    /// <summary>
+    /// <paramref name="clip"/> blended over <paramref name="joints"/> by <paramref name="weight"/> (none at 0): posed
+    /// at the same share of its length as the animator's clip is of its own at <paramref name="seconds"/>, and
+    /// <paramref name="shift"/> further, so two walks keep step; <paramref name="scratch"/> holds its pose.
+    /// </summary>
+    private static void Layer(
+        MeshAssets assets,
+        int asset,
+        Rig rig,
+        in MeshAnimator animator,
+        float seconds,
+        int clip,
+        float shift,
+        float weight,
+        Span<JointTransform> joints,
+        Span<JointTransform> scratch
+    )
+    {
+        if (!(weight > 0))
         {
-            // The blended clip at the same share of its length as the clip is of its own, and its shift further, so two
-            // walks keep step.
-            var duration = MeshAnimatorSystem.DurationOf(assets, asset, animator.Clip);
-            var blendDuration = MeshAnimatorSystem.DurationOf(assets, asset, animator.BlendClip);
-            var blendSeconds = seconds;
-            if (duration > 0 && blendDuration > 0)
-            {
-                // Wrapped only when shifted: a clip played once and held at its end keeps its blend at the end too.
-                var share = seconds / duration + animator.BlendShift;
-                share = animator.BlendShift != 0 ? share - MathF.Floor(share) : share;
-                blendSeconds = share * blendDuration;
-            }
-            var other = from[..rig.JointCount];
-            rig.Pose(animator.BlendClip, blendSeconds, other);
-            for (var j = 0; j < joints.Length; j++)
-            {
-                joints[j] = new JointTransform(
-                    Vector3.Lerp(joints[j].Translation, other[j].Translation, blend),
-                    Quaternion.Slerp(joints[j].Rotation, other[j].Rotation, blend),
-                    Vector3.Lerp(joints[j].Scale, other[j].Scale, blend)
-                );
-            }
+            return;
         }
 
-        return true;
+        var duration = MeshAnimatorSystem.DurationOf(assets, asset, animator.Clip);
+        var blendDuration = MeshAnimatorSystem.DurationOf(assets, asset, clip);
+        var blendSeconds = seconds;
+        if (duration > 0 && blendDuration > 0)
+        {
+            // Wrapped only when shifted: a clip played once and held at its end keeps its blend at the end too.
+            var share = seconds / duration + shift;
+            share = shift != 0 ? share - MathF.Floor(share) : share;
+            blendSeconds = share * blendDuration;
+        }
+
+        var other = scratch[..rig.JointCount];
+        rig.Pose(clip, blendSeconds, other);
+        for (var j = 0; j < joints.Length; j++)
+        {
+            joints[j] = new JointTransform(
+                Vector3.Lerp(joints[j].Translation, other[j].Translation, weight),
+                Quaternion.Slerp(joints[j].Rotation, other[j].Rotation, weight),
+                Vector3.Lerp(joints[j].Scale, other[j].Scale, weight)
+            );
+        }
     }
 
     /// <summary>

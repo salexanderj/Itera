@@ -113,6 +113,29 @@ public sealed class MeshAnimatorSystemTests
     }
 
     [Fact]
+    public void A_layers_clip_counts_as_a_change_unless_it_weighs_nothing_before_and_after()
+    {
+        var animator = MeshAnimator.Playing(0);
+        var start = animator.Changes;
+        // Another clip at no weight, as a game swaps a pair's clip where it weighs nothing: no change.
+        animator.SetLayer(2, 1, 0);
+        animator.SetLayer(2, 2, 0);
+        var swapped = animator.Changes;
+        // Weighing in by steps: no change.
+        animator.SetLayer(2, 2, 0.5f);
+        var weighed = animator.Changes;
+        // Another clip while it weighs something: a change, each layer its own.
+        animator.SetLayer(2, 1, 0.5f);
+        var changed = animator.Changes;
+        animator.SetLayer(3, 2, 0.3f);
+        animator.SetLayer(4, 2, 1);
+
+        Assert.Equal((start, start, start + 1, start + 2), (swapped, weighed, changed, animator.Changes));
+        Assert.Equal((1, 0.5f, 0.5f), (animator.Blend2.Clip, animator.Blend2.PreviousWeight, animator.Blend2.Weight));
+        Assert.Equal((2, 0.3f), (animator.Blend3.Clip, animator.Blend3.Weight));
+    }
+
+    [Fact]
     public void A_fade_another_clip_blended_in_and_a_mark_count_as_changes_and_playing_on_does_not()
     {
         var animator = MeshAnimator.Playing(0);

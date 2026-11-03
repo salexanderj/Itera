@@ -20,6 +20,9 @@ engine system follows are in `systems.md`. Test classes: `MeshDrawSystemTests` a
   the old clip running while each joint blends to the new one by `FadeWeight`. `MeshAnimator.SetBlend` blends in a
   second clip, shifted by `BlendShift`, set by a fixed system each step. It leaves the main clip's own times unchanged
   (`BlendShare` is the weight), and a game's footfalls read them.
+- `MeshAnimator.SetLayer` blends two more clips over those in turn (`Blend2`, `Blend3`, each a `BlendLayer`), posed
+  alike, so a game blends two ways of two gaits. A layer's clip swapped while it weighs nothing, before and after,
+  counts no change.
 - An entity with a `ShapedPose` is then shaped by the game's `IMeshPoseShaper` (scoped, given to the system). The
   shaper makes no structural change and no allocation, and is told why it poses (`MeshPosePurpose`: `Drawing`, or
   `HitShapes` where a game poses a body for its hit shapes). What a game keeps of its own recent frames is for drawing
@@ -29,8 +32,8 @@ engine system follows are in `systems.md`. Test classes: `MeshDrawSystemTests` a
   own fields and the spans it is given. Its poses are the shaper's, bit for bit. `MeshPoses.Sample` and the rig's tools
   write only the caller's spans.
 - An entity with a `SmoothedPose` has its changes smoothed as it is drawn, after the shaping (`PoseSmoothing`). A change
-  is each `FadeTo`, each `SetBlend` of another clip, and each `MeshAnimator.MarkChange` of a game. The smoothing is for
-  drawing only.
+  is each `FadeTo`, each `SetBlend` or `SetLayer` of another clip, and each `MeshAnimator.MarkChange` of a game. The
+  smoothing is for drawing only.
 - An entity with a `MeshAttachment` and a `DrawnMesh`, with no placement, is drawn at its holder's joint as the holder
   is posed, shaped, and smoothed this frame, and is not drawn once the holder is gone. A model's named point under a
   joint (`MeshPoint`) gives the attachment's joint, offset, and turn as it is.
