@@ -22,7 +22,7 @@ engine system follows are in `systems.md`. Test classes: `MeshDrawSystemTests` a
   (`BlendShare` is the weight), and a game's footfalls read them.
 - `MeshAnimator.SetLayer` blends two more clips over those in turn (`Blend2`, `Blend3`, each a `BlendLayer`), posed
   alike, so a game blends two ways of two gaits. A layer's clip swapped while it weighs nothing, before and after,
-  counts no change.
+  counts no change. A clip blended in whole hides the poses under it, which `MeshPoses.Sample` does not sample.
 - An entity with a `ShapedPose` is then shaped by the game's `IMeshPoseShaper` (scoped, given to the system). The
   shaper makes no structural change and no allocation, and is told why it poses (`MeshPosePurpose`: `Drawing`, or
   `HitShapes` where a game poses a body for its hit shapes). What a game keeps of its own recent frames is for drawing
