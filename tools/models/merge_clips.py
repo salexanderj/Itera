@@ -13,8 +13,17 @@ The clip list is a JSON file:
       "clips": ["Idle_Loop", ...],
       "add": [ { "file": "PATH.glb", "clips": ["Sword_Block", ...] } ],
       "out": "PATH.glb",
-      "motion": { "file": "PATH_RM.glb", "clips": ["Sword_Dash", ...], "out": "PATH.motion.json" }
+      "motion": { "file": "PATH_RM.glb", "clips": ["Sword_Dash", ...], "out": "PATH.motion.json" },
+      "joints": [ { "name": "lowerarm_twist_01_l", "parent": "lowerarm_l", "toward": "hand_l", "share": 0.5,
+                    "weights": [0.2, 0.9] } ]
     }
+
+The optional "joints" adds joints the base lacks to its one skin, each after its nodes, so every clip keeps its node
+indices and holds each new joint at its rest: a twist joint "share" of the way from its "parent" to the parent's child
+"toward", turned as the parent is. Each vertex the parent weighs gives the new joint a share of that weight, rising
+smoothly from none to all as the vertex lies from the first to the second of "weights" along the way from the parent's
+bound place to the child's; each vertex keeps its four largest weights, summing to one. An added file may have the base's
+nodes, or the base's with the joints added (a clip made on the model this builds).
 
 The optional "motion" takes root motion from a file of the same clips with it baked in (on the same rig): for each clip
 it names, which the model must hold, the root joint's translation keys, less the first, in the model's metres (+z its
@@ -61,22 +70,58 @@ def rig_of(document):
     ]
 
 
+def matrix(values):
+    """A glTF matrix (16 values, column by column) as rows."""
+    return [[values[column * 4 + row] for column in range(4)] for row in range(4)]
+
+
+def values_of(rows):
+    """Rows as a glTF matrix's 16 values, column by column."""
+    return [rows[row][column] for column in range(4) for row in range(4)]
+
+
+def product(a, b):
+    return [[sum(a[row][k] * b[k][column] for k in range(4)) for column in range(4)] for row in range(4)]
+
+
+def inverse(rows):
+    """A 4x4 matrix's inverse, by Gauss-Jordan elimination with partial pivoting."""
+    work = [list(row) + [1.0 if row_index == column else 0.0 for column in range(4)] for row_index, row in enumerate(rows)]
+    for column in range(4):
+        pivot = max(range(column, 4), key=lambda row: abs(work[row][column]))
+        if abs(work[pivot][column]) < 1e-12:
+            raise SystemExit("an inverse bind matrix cannot be inverted")
+        work[column], work[pivot] = work[pivot], work[column]
+        scale = work[column][column]
+        work[column] = [value / scale for value in work[column]]
+        for row in range(4):
+            if row != column and work[row][column] != 0.0:
+                factor = work[row][column]
+                work[row] = [value - factor * pivoted for value, pivoted in zip(work[row], work[column])]
+    return [row[4:] for row in work]
+
+
+def smooth(x):
+    x = min(1.0, max(0.0, x))
+    return x * x * (3 - 2 * x)
+
+
 def floats(document, binary, index):
     """An accessor's float values, as tuples of its components."""
     accessor = document["accessors"][index]
     if "sparse" in accessor or accessor.get("componentType") != 5126:
         raise SystemExit("only dense float accessors are read for root motion")
     view = document["bufferViews"][accessor["bufferView"]]
-    width = {"SCALAR": 1, "VEC3": 3, "VEC4": 4}[accessor["type"]]
+    width = {"SCALAR": 1, "VEC3": 3, "VEC4": 4, "MAT4": 16}[accessor["type"]]
     stride = view.get("byteStride", 4 * width)
     start = view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
     return [struct.unpack_from(f"<{width}f", binary, start + i * stride) for i in range(accessor["count"])]
 
 
-def root_motion(folder, spec, base, chosen):
+def root_motion(folder, spec, rigs, chosen):
     """The "motion" part: each named clip's root translation keys, less the first, written to its "out"."""
     document, binary = read_glb(folder / spec["file"])
-    if rig_of(document) != rig_of(base):
+    if rig_of(document) not in rigs:
         raise SystemExit(f"{spec['file']}: its nodes are not the base's")
     roots = [index for index, node in enumerate(document["nodes"]) if node.get("name") == "root"]
     if len(roots) != 1:
@@ -125,6 +170,17 @@ def root_motion(folder, spec, base, chosen):
 class Builder:
     """The output's accessors, views, and bytes, each source view copied once."""
 
+    def data(self, raw, accessor):
+        """New bytes in a view of their own, read by a new accessor like `accessor` (its view and offset set here)."""
+        while len(self.binary) % 4:
+            self.binary.append(0)
+        self.views.append({"buffer": 0, "byteOffset": len(self.binary), "byteLength": len(raw)})
+        self.binary.extend(raw)
+        accessor = {key: value for key, value in accessor.items() if key not in ("bufferView", "byteOffset", "min", "max")}
+        accessor["bufferView"] = len(self.views) - 1
+        self.accessors.append(accessor)
+        return len(self.accessors) - 1
+
     def __init__(self):
         self.accessors = []
         self.views = []
@@ -160,6 +216,110 @@ class Builder:
         return self._accessors[key]
 
 
+def add_joints(base, binary, joints, builder):
+    """The base's nodes, skin, and weights with `joints` added (the list's "joints"): the new nodes and skin, and a map
+    from each skinned primitive's weight accessors to the new ones."""
+    if len(base.get("skins", [])) != 1:
+        raise SystemExit("joints are added to a base with one skin")
+    nodes = [dict(node) for node in base["nodes"]]
+    names = {node.get("name"): index for index, node in enumerate(nodes)}
+    skin = dict(base["skins"][0])
+    slots = list(skin["joints"])
+    binds = [matrix(values) for values in floats(base, binary, skin["inverseBindMatrices"])]
+    added = []
+    for joint in joints:
+        if joint["name"] in names:
+            raise SystemExit(f"the base already has a node {joint['name']}")
+        parent, toward = names.get(joint["parent"]), names.get(joint["toward"])
+        if parent not in slots or toward not in slots or toward not in nodes[parent].get("children", []):
+            raise SystemExit(f"{joint['name']}: {joint['toward']} is no joint under the joint {joint['parent']}")
+        share = float(joint["share"])
+        place = [share * value for value in nodes[toward].get("translation", [0.0, 0.0, 0.0])]
+        nodes.append({"name": joint["name"], "translation": place})
+        nodes[parent]["children"] = list(nodes[parent]["children"]) + [len(nodes) - 1]
+        names[joint["name"]] = len(nodes) - 1
+        # Its inverse bind: its own place taken off, then the parent's.
+        moved = [[1.0 if row == column else 0.0 for column in range(4)] for row in range(4)]
+        for axis in range(3):
+            moved[axis][3] = -place[axis]
+        parent_bind = binds[slots.index(parent)]
+        binds.append(product(moved, parent_bind))
+        slots.append(len(nodes) - 1)
+        start = [row[3] for row in inverse(parent_bind)][:3]
+        end = [row[3] for row in inverse(binds[slots.index(toward)])][:3]
+        low, high = joint["weights"]
+        added.append((slots.index(parent), len(slots) - 1, start, end, float(low), float(high)))
+    skin["joints"] = slots
+    bind_bytes = b"".join(struct.pack("<16f", *values_of(rows)) for rows in binds)
+    skin["inverseBindMatrices"] = builder.data(
+        bind_bytes, dict(base["accessors"][base["skins"][0]["inverseBindMatrices"]], count=len(binds))
+    )
+
+    # Each skinned vertex's weights, a share of the parent's moved to each new joint.
+    moved_weights = {}
+    for node in base["nodes"]:
+        if "mesh" not in node or node.get("skin") != 0:
+            continue
+        for primitive in base["meshes"][node["mesh"]]["primitives"]:
+            attributes = primitive["attributes"]
+            if "JOINTS_1" in attributes or "WEIGHTS_1" in attributes:
+                raise SystemExit("joints are added to a skin of four weights a vertex")
+            key = (attributes["JOINTS_0"], attributes["WEIGHTS_0"])
+            if key in moved_weights:
+                continue
+            joint_accessor = base["accessors"][attributes["JOINTS_0"]]
+            weight_accessor = base["accessors"][attributes["WEIGHTS_0"]]
+            if weight_accessor.get("componentType") != 5126:
+                raise SystemExit("joints are added to a skin whose weights are floats")
+            places = floats(base, binary, attributes["POSITION"])
+            weights = floats(base, binary, attributes["WEIGHTS_0"])
+            joint_slots = whole(base, binary, attributes["JOINTS_0"])
+            new_slots, new_weights = [], []
+            for place, vertex_slots, vertex_weights in zip(places, joint_slots, weights):
+                held = {}
+                for slot, weight in zip(vertex_slots, vertex_weights):
+                    if weight > 0:
+                        held[slot] = held.get(slot, 0.0) + weight
+                for parent_slot, new_slot, start, end, low, high in added:
+                    weight = held.get(parent_slot, 0.0)
+                    if weight <= 0:
+                        continue
+                    way = [b - a for a, b in zip(start, end)]
+                    length = sum(value * value for value in way)
+                    along = sum((p - a) * w for p, a, w in zip(place, start, way)) / length if length > 0 else 0.0
+                    given = weight * smooth((along - low) / (high - low) if high > low else float(along >= high))
+                    if given > 0:
+                        held[parent_slot] = weight - given
+                        held[new_slot] = given
+                kept = sorted(held.items(), key=lambda item: (-item[1], item[0]))[:4]
+                total = sum(weight for _, weight in kept)
+                kept = [(slot, weight / total) for slot, weight in kept if weight > 0] if total > 0 else []
+                kept += [(0, 0.0)] * (4 - len(kept))
+                new_slots.append([slot for slot, _ in kept])
+                new_weights.append([weight for _, weight in kept])
+            wide = len(slots) > 256 or joint_accessor.get("componentType") == 5123
+            joint_bytes = b"".join(struct.pack("<4H" if wide else "<4B", *vertex) for vertex in new_slots)
+            weight_bytes = b"".join(struct.pack("<4f", *vertex) for vertex in new_weights)
+            moved_weights[key] = (
+                builder.data(joint_bytes, dict(joint_accessor, componentType=5123 if wide else 5121)),
+                builder.data(weight_bytes, weight_accessor),
+            )
+    return nodes, skin, moved_weights
+
+
+def whole(document, binary, index):
+    """An accessor's unsigned whole values (bytes or shorts), as tuples of its components."""
+    accessor = document["accessors"][index]
+    kind = {5121: ("B", 1), 5123: ("H", 2)}.get(accessor.get("componentType"))
+    if "sparse" in accessor or kind is None:
+        raise SystemExit("only dense unsigned byte and short joint accessors are read")
+    view = document["bufferViews"][accessor["bufferView"]]
+    width = {"SCALAR": 1, "VEC4": 4}[accessor["type"]]
+    stride = view.get("byteStride", kind[1] * width)
+    start = view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
+    return [struct.unpack_from(f"<{width}{kind[0]}", binary, start + i * stride) for i in range(accessor["count"])]
+
+
 def animation(builder, source, document, binary, clip):
     copied = dict(clip)
     copied["samplers"] = [
@@ -182,16 +342,24 @@ def main():
     base, base_binary = read_glb(folder / spec["base"])
     builder = Builder()
     out = dict(base)
+    rigs = [rig_of(base)]
+    moved_weights = {}
+    if spec.get("joints"):
+        out["nodes"], joined_skin, moved_weights = add_joints(base, base_binary, spec["joints"], builder)
+        rigs.append(rig_of(out))
 
     meshes = []
     for mesh in base.get("meshes", []):
         primitives = []
         for primitive in mesh["primitives"]:
             primitive = dict(primitive)
+            weights = moved_weights.get((primitive["attributes"].get("JOINTS_0"), primitive["attributes"].get("WEIGHTS_0")))
             primitive["attributes"] = {
                 name: builder.accessor("base", base, base_binary, index)
                 for name, index in primitive["attributes"].items()
             }
+            if weights is not None:
+                primitive["attributes"]["JOINTS_0"], primitive["attributes"]["WEIGHTS_0"] = weights
             if "indices" in primitive:
                 primitive["indices"] = builder.accessor("base", base, base_binary, primitive["indices"])
             if "targets" in primitive:
@@ -202,12 +370,16 @@ def main():
             primitives.append(primitive)
         meshes.append(dict(mesh, primitives=primitives))
     out["meshes"] = meshes
-    out["skins"] = [
-        dict(skin, inverseBindMatrices=builder.accessor("base", base, base_binary, skin["inverseBindMatrices"]))
-        if "inverseBindMatrices" in skin
-        else skin
-        for skin in base.get("skins", [])
-    ]
+    out["skins"] = (
+        [joined_skin]
+        if moved_weights or spec.get("joints")
+        else [
+            dict(skin, inverseBindMatrices=builder.accessor("base", base, base_binary, skin["inverseBindMatrices"]))
+            if "inverseBindMatrices" in skin
+            else skin
+            for skin in base.get("skins", [])
+        ]
+    )
     if base.get("images"):
         raise SystemExit("images are not supported")
 
@@ -219,7 +391,7 @@ def main():
         clips.append(animation(builder, "base", base, base_binary, by_name[name]))
     for number, added in enumerate(spec.get("add", [])):
         document, binary = read_glb(folder / added["file"])
-        if rig_of(document) != rig_of(base):
+        if rig_of(document) not in rigs:
             raise SystemExit(f"{added['file']}: its nodes are not the base's")
         source = f"add{number}"
         named = {clip.get("name"): clip for clip in document.get("animations", [])}
@@ -248,7 +420,7 @@ def main():
         file.write(builder.binary)
     print(f"{target}: {len(clips)} clips, {total / 1e6:.1f} MB")
     if "motion" in spec:
-        root_motion(folder, spec["motion"], base, {clip.get("name") for clip in clips})
+        root_motion(folder, spec["motion"], rigs, {clip.get("name") for clip in clips})
 
 
 if __name__ == "__main__":

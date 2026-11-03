@@ -1,5 +1,5 @@
-"""Skinning helpers for recipes: weights from a reference body, automatic weights, rigid skinning, and moving a rig's
-joints to a body of other proportions.
+"""Skinning helpers for recipes: weights from a reference body, automatic weights, rigid skinning, a twist joint's share
+of its parent's weights, and moving a rig's joints to a body of other proportions.
 
 The engine reads at most four influences per vertex, one skin, and joints by name. Every function here leaves
 the scene in Object mode and ends with weights that follow those rules.
@@ -163,6 +163,49 @@ def bind_weighted(obj: bpy.types.Object, armature: bpy.types.Object, max_influen
     limit_and_normalise(obj, max_influences)
     _bind(obj, armature)
     return weight_stats(obj)
+
+
+def split_weights(
+    obj: bpy.types.Object,
+    armature: bpy.types.Object,
+    parent: str,
+    joint: str,
+    toward: str,
+    along: tuple[float, float],
+    max_influences: int = 4,
+) -> int:
+    """Gives `joint` a share of the weight bone `parent` has on each vertex of `obj`: none to all, rising smoothly as the
+    vertex lies from `along[0]` to `along[1]` of the way from `parent`'s head to `toward`'s, as the armature rests. A
+    twist joint takes the forearm's skin towards the wrist so, as `merge_clips.py`'s "joints" do. The weights are
+    limited and normalised after. Returns how many vertices gave weight."""
+    bones = armature.data.bones
+    for name in (parent, joint, toward):
+        if name not in bones:
+            raise ValueError(f"{armature.name} has no bone '{name}'")
+    _ensure_object_mode()
+    source = obj.vertex_groups.get(parent)
+    if source is None:
+        return 0
+    target = obj.vertex_groups.get(joint) or obj.vertex_groups.new(name=joint)
+    start = armature.matrix_world @ bones[parent].head_local
+    way = armature.matrix_world @ bones[toward].head_local - start
+    low, high = along
+    moved = 0
+    for vertex in obj.data.vertices:
+        weight = next((group.weight for group in vertex.groups if group.group == source.index), 0.0)
+        if weight <= 0 or way.length_squared <= 0:
+            continue
+        lies = (obj.matrix_world @ vertex.co - start).dot(way) / way.length_squared
+        x = min(1.0, max(0.0, (lies - low) / (high - low) if high > low else float(lies >= high)))
+        share = x * x * (3 - 2 * x)
+        if share <= 0:
+            continue
+        source.add([vertex.index], weight * (1 - share), "REPLACE")
+        target.add([vertex.index], weight * share, "ADD")
+        moved += 1
+    _activate(obj)
+    limit_and_normalise(obj, max_influences)
+    return moved
 
 
 def move_joints(armature: bpy.types.Object, places: dict) -> list[str]:

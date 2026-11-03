@@ -73,6 +73,10 @@ ctx.export(objects=[armature, plate])          # no clips: the game's clips come
   (`Declare(..., rigOf: NAME)`, `mesh-assets.md`), which takes that model's joint order and clips. Export no clips.
 - A body of other proportions moves the joints to its own places with `rig.move_joints`, which keeps each bone's turn
   and roll. The clips still turn each joint as they do on the rig's model, so hands and feet land a little elsewhere.
+- A joint the rig's source file lacks, such as a forearm's twist joint, is added where the rig's model is merged
+  (`merge_clips.py`'s `joints`): after the file's nodes, so every clip keeps its nodes and holds the new joint at rest.
+  A body weighted from elsewhere gives it its share of the parent's weights with `rig.split_weights`, and places it with
+  the other joints.
 
 ## A human body from MakeHuman
 

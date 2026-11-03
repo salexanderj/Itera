@@ -194,6 +194,37 @@ class RigidSkinTests(unittest.TestCase):
         self.assertEqual({g.name for g in meshes[0].vertex_groups}, {"b0", "b1", "b2"})
 
 
+class SplitWeightsTests(unittest.TestCase):
+    def setUp(self):
+        utils.reset_scene()
+        # A forearm bone with a hand above it, and a twist joint half way up it.
+        self.armature = utils.make_armature(
+            "Rig",
+            [
+                ("arm", (0, 0, 0), (0, 0, 1), 0.0, None),
+                ("hand", (0, 0, 1), (0, 0, 1.2), 0.0, "arm"),
+                ("twist", (0, 0, 0.5), (0, 0, 0.6), 0.0, "arm"),
+            ],
+        )
+        self.body = _box("Body", 1.0, (0, 0, 0.5), cuts=9)
+        self.body.vertex_groups.new(name="arm").add(list(range(len(self.body.data.vertices))), 1.0, "REPLACE")
+
+    def test_the_twist_joint_takes_the_arms_weight_along_the_way_to_the_hand(self):
+        moved = rig.split_weights(self.body, self.armature, "arm", "twist", "hand", (0.2, 0.9))
+
+        self.assertGreater(moved, 0)
+        for vertex in self.body.data.vertices:
+            weights = _weights_of(self.body, vertex.index)
+            x = min(1.0, max(0.0, (vertex.co.z + 0.5 - 0.2) / 0.7))
+            share = x * x * (3 - 2 * x)
+            self.assertAlmostEqual(share, weights.get("twist", 0.0), places=4)
+            self.assertAlmostEqual(1.0, sum(weights.values()), places=4)
+
+    def test_rejects_an_unknown_bone(self):
+        with self.assertRaises(ValueError):
+            rig.split_weights(self.body, self.armature, "arm", "nope", "hand", (0.2, 0.9))
+
+
 def _band(z: float) -> str:
     return "b0" if z < 1.0 else "b1" if z < 2.0 else "b2"
 
