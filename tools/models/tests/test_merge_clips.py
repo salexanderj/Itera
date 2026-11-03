@@ -1,6 +1,7 @@
 """Plain-Python test of merge_clips.py: tiny .glb files made here, their clips chosen, and a twist joint added."""
 
 import json
+import math
 import struct
 import subprocess
 import sys
@@ -17,25 +18,30 @@ MERGE_CLIPS = MODELS_DIR / "merge_clips.py"
 def write_glb(path: Path, clips: dict) -> None:
     """A .glb with one node named root, no meshes, and one translation clip for each name in clips.
 
-    clips maps a clip name to the x position it ends at.
+    clips maps a clip name to the x position it ends at, or to that, the height it ends at, and the degrees it ends
+    turned about the up axis, for a clip that also turns the root (keyed at the same times).
     """
     binary = bytearray()
     views, accessors, animations = [], [], []
-    for name, end_x in clips.items():
+    for name, end in clips.items():
+        end_x, end_y, degrees = end if isinstance(end, tuple) else (end, 0.0, None)
         times = struct.pack("<2f", 0.0, 1.0)
-        values = struct.pack("<6f", 0.0, 0.0, 0.0, end_x, 0.0, 0.0)
+        values = struct.pack("<6f", 0.0, 0.0, 0.0, end_x, end_y, 0.0)
         first = len(accessors)
-        for data, kind in ((times, "SCALAR"), (values, "VEC3")):
+        keyed = [(times, "SCALAR"), (values, "VEC3")]
+        if degrees is not None:
+            half = math.radians(degrees) / 2
+            keyed.append((struct.pack("<8f", 0, 0, 0, 1, 0, math.sin(half), 0, math.cos(half)), "VEC4"))
+        for data, kind in keyed:
             views.append({"buffer": 0, "byteOffset": len(binary), "byteLength": len(data)})
             binary.extend(data)
             accessors.append({"bufferView": len(views) - 1, "componentType": 5126, "count": 2, "type": kind})
-        animations.append(
-            {
-                "name": name,
-                "samplers": [{"input": first, "output": first + 1, "interpolation": "LINEAR"}],
-                "channels": [{"sampler": 0, "target": {"node": 0, "path": "translation"}}],
-            }
-        )
+        samplers = [{"input": first, "output": first + 1, "interpolation": "LINEAR"}]
+        channels = [{"sampler": 0, "target": {"node": 0, "path": "translation"}}]
+        if degrees is not None:
+            samplers.append({"input": first, "output": first + 2, "interpolation": "LINEAR"})
+            channels.append({"sampler": 1, "target": {"node": 0, "path": "rotation"}})
+        animations.append({"name": name, "samplers": samplers, "channels": channels})
     document = {
         "asset": {"version": "2.0"},
         "scene": 0,
@@ -242,6 +248,53 @@ class MergeClipsTests(unittest.TestCase):
         )
         result = run(second)
         self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_root_motion_comes_from_several_files_with_a_turning_roots_turn(self):
+        write_glb(self.root / "moving.glb", {"Walk": 1.0, "Run": 2.0})
+        write_glb(self.root / "turning.glb", {"Wave": (0.5, 0.0, 90.0)})
+        listing = self.root / "list.json"
+        motion = {
+            "from": [{"file": "moving.glb", "clips": ["Run"]}, {"file": "turning.glb", "clips": ["Wave"]}],
+            "out": "out.motion.json",
+        }
+        listing.write_text(
+            json.dumps(
+                {
+                    "base": "base.glb",
+                    "clips": ["Run"],
+                    "add": [{"file": "other.glb", "clips": ["Wave"]}],
+                    "out": "out.glb",
+                    "motion": motion,
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = run(listing)
+        self.assertEqual(0, result.returncode, result.stderr)
+        written = json.loads((self.root / "out.motion.json").read_text(encoding="utf-8"))
+        self.assertEqual(["moving.glb", "turning.glb"], written["sources"])
+        self.assertEqual([0.0, 2.0], written["clips"]["Run"]["side"])
+        self.assertNotIn("turn", written["clips"]["Run"])
+        self.assertEqual([0.0, 0.5], written["clips"]["Wave"]["side"])
+        self.assertEqual([0.0, round(math.pi / 2, 4)], written["clips"]["Wave"]["turn"])
+
+    def test_root_motion_that_rises_is_refused(self):
+        write_glb(self.root / "rising.glb", {"Run": (1.0, 0.5, None)})
+        listing = self.root / "list.json"
+        listing.write_text(
+            json.dumps(
+                {
+                    "base": "base.glb",
+                    "clips": ["Run"],
+                    "out": "out.glb",
+                    "motion": {"from": [{"file": "rising.glb", "clips": ["Run"]}], "out": "out.motion.json"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = run(listing)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("rises", result.stderr)
 
     def test_a_missing_clip_is_refused(self):
         listing = self.root / "list.json"

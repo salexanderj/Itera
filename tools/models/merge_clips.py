@@ -13,7 +13,7 @@ The clip list is a JSON file:
       "clips": ["Idle_Loop", ...],
       "add": [ { "file": "PATH.glb", "clips": ["Sword_Block", ...] } ],
       "out": "PATH.glb",
-      "motion": { "file": "PATH_RM.glb", "clips": ["Sword_Dash", ...], "out": "PATH.motion.json" },
+      "motion": { "from": [ { "file": "PATH_RM.glb", "clips": ["Sword_Dash", ...] } ], "out": "PATH.motion.json" },
       "joints": [ { "name": "lowerarm_twist_01_l", "parent": "lowerarm_l", "toward": "hand_l", "share": 0.5,
                     "weights": [0.2, 0.9] } ]
     }
@@ -25,15 +25,17 @@ smoothly from none to all as the vertex lies from the first to the second of "we
 bound place to the child's; each vertex keeps its four largest weights, summing to one. An added file may have the base's
 nodes, or the base's with the joints added (a clip made on the model this builds).
 
-The optional "motion" takes root motion from a file of the same clips with it baked in (on the same rig): for each clip
-it names, which the model must hold, the root joint's translation keys, less the first, in the model's metres (+z its
-front, +x its left), written as JSON beside the model. The model keeps its clips in place; the game moves the body by
-these keys. A clip whose root turns or rises is refused.
+The optional "motion" takes root motion from files of the same clips with it baked in (on the same rig): for each clip
+each file names, which the model must hold, the root joint's translation keys, less the first, in the model's metres (+z
+its front, +x its left), and where the root turns about the up axis, its turn from its first key in radians (to the left
+above 0), written as JSON beside the model. The model keeps its clips in place; the game moves and turns the body by
+these keys. A clip whose root rises or tilts is refused.
 
 Paths are from the list's folder. Usage: tools/models/merge_clips.py LIST.json
 """
 
 import json
+import math
 import struct
 import sys
 from pathlib import Path
@@ -119,23 +121,41 @@ def floats(document, binary, index):
 
 
 def root_motion(folder, spec, rigs, chosen):
-    """The "motion" part: each named clip's root translation keys, less the first, written to its "out"."""
-    document, binary = read_glb(folder / spec["file"])
+    """The "motion" part: each named clip's root translation keys, less the first, and its turn, written to its "out"."""
+    if not isinstance(spec.get("from"), list) or "out" not in spec:
+        raise SystemExit('"motion" takes "from", a list of files and their clips, and "out"')
+    clips = {}
+    for source in spec["from"]:
+        for name, keys in clip_motions(folder, source, rigs, chosen).items():
+            if name in clips:
+                raise SystemExit(f"the root motion of {name} is taken twice")
+            clips[name] = keys
+    sources = json.dumps([source["file"] for source in spec["from"]])
+    lines = [f"  {json.dumps(name)}: {json.dumps(keys)}" for name, keys in clips.items()]
+    text = "{\n" + f' "sources": {sources},\n "clips": {{\n' + ",\n".join(lines) + "\n }\n}\n"
+    target = folder / spec["out"]
+    target.write_text(text)
+    print(f"{target}: root motion of {len(clips)} clips")
+
+
+def clip_motions(folder, source, rigs, chosen):
+    """One file's named clips' root motion: each one's seconds, side and forward metres, and turn where its root turns."""
+    document, binary = read_glb(folder / source["file"])
     if rig_of(document) not in rigs:
-        raise SystemExit(f"{spec['file']}: its nodes are not the base's")
+        raise SystemExit(f"{source['file']}: its nodes are not the base's")
     roots = [index for index, node in enumerate(document["nodes"]) if node.get("name") == "root"]
     if len(roots) != 1:
-        raise SystemExit(f"{spec['file']}: no one joint named root")
+        raise SystemExit(f"{source['file']}: no one joint named root")
     root = roots[0]
     named = {clip.get("name"): clip for clip in document.get("animations", [])}
     clips = {}
-    for name in spec["clips"]:
+    for name in source["clips"]:
         if name not in named:
-            raise SystemExit(f"{spec['file']} has no clip {name}")
+            raise SystemExit(f"{source['file']} has no clip {name}")
         if name not in chosen:
             raise SystemExit(f"the model has no clip {name} for its root motion")
         clip = named[name]
-        keys = None
+        keys, turns = None, None
         for channel in clip["channels"]:
             if channel["target"]["node"] != root:
                 continue
@@ -143,11 +163,10 @@ def root_motion(folder, spec, rigs, chosen):
             if sampler.get("interpolation", "LINEAR") != "LINEAR":
                 raise SystemExit(f"{name}: its root is not keyed linearly")
             values = floats(document, binary, sampler["output"])
+            times = [time for (time,) in floats(document, binary, sampler["input"])]
             if channel["target"]["path"] == "rotation":
-                if any(max(abs(a - b) for a, b in zip(value, values[0])) > 1e-4 for value in values):
-                    raise SystemExit(f"{name}: its root turns")
+                turns = (times, [turn_about_up(name, value, values[0]) for value in values])
             elif channel["target"]["path"] == "translation":
-                times = [time for (time,) in floats(document, binary, sampler["input"])]
                 keys = (times, values)
         if keys is None:
             raise SystemExit(f"{name}: its root has no translation")
@@ -160,11 +179,38 @@ def root_motion(folder, spec, rigs, chosen):
             "side": [round(value[0] - first[0], 4) for value in values],
             "forward": [round(value[2] - first[2], 4) for value in values],
         }
-    lines = [f"  {json.dumps(name)}: {json.dumps(keys)}" for name, keys in clips.items()]
-    text = "{\n" + f' "source": {json.dumps(spec["file"])},\n "clips": {{\n' + ",\n".join(lines) + "\n }\n}\n"
-    target = folder / spec["out"]
-    target.write_text(text)
-    print(f"{target}: root motion of {len(clips)} clips")
+        if turns is not None and any(abs(turn) > 1e-4 for turn in turns[1]):
+            if turns[0] != times:
+                raise SystemExit(f"{name}: its root's turn and its translation are keyed at other times")
+            clips[name]["turn"] = [round(turn, 4) for turn in unwrapped(turns[1])]
+    return clips
+
+
+def turn_about_up(name, rotation, first):
+    """How far the root's rotation (x, y, z, w) is turned from its first about the up axis (+y), in radians, to the left
+    above 0; a turn about any other axis is refused."""
+    x, y, z, w = rotation
+    fx, fy, fz, fw = (-first[0], -first[1], -first[2], first[3])
+    # The turn from the first: rotation times the first's inverse, as the root's parent sees it.
+    turn = (
+        w * fx + x * fw + y * fz - z * fy,
+        w * fy - x * fz + y * fw + z * fx,
+        w * fz + x * fy - y * fx + z * fw,
+        w * fw - x * fx - y * fy - z * fz,
+    )
+    if max(abs(turn[0]), abs(turn[2])) > 1e-3:
+        raise SystemExit(f"{name}: its root tilts")
+    return 2 * math.atan2(turn[1], turn[3])
+
+
+def unwrapped(turns):
+    """Turns made continuous: each within half a round of the one before."""
+    out = []
+    for turn in turns:
+        if out:
+            turn += round((out[-1] - turn) / math.tau) * math.tau
+        out.append(turn)
+    return out
 
 
 class Builder:
