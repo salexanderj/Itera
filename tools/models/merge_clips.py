@@ -353,13 +353,16 @@ def main():
         primitives = []
         for primitive in mesh["primitives"]:
             primitive = dict(primitive)
+            # Weights a joint was added to are the new ones; the base's are not copied.
             weights = moved_weights.get((primitive["attributes"].get("JOINTS_0"), primitive["attributes"].get("WEIGHTS_0")))
             primitive["attributes"] = {
-                name: builder.accessor("base", base, base_binary, index)
+                name: weights[0]
+                if weights is not None and name == "JOINTS_0"
+                else weights[1]
+                if weights is not None and name == "WEIGHTS_0"
+                else builder.accessor("base", base, base_binary, index)
                 for name, index in primitive["attributes"].items()
             }
-            if weights is not None:
-                primitive["attributes"]["JOINTS_0"], primitive["attributes"]["WEIGHTS_0"] = weights
             if "indices" in primitive:
                 primitive["indices"] = builder.accessor("base", base, base_binary, primitive["indices"])
             if "targets" in primitive:

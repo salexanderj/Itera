@@ -214,6 +214,9 @@ class MergeClipsTests(unittest.TestCase):
         self.assertAlmostEqual(between, held[1][2], places=5)
         self.assertAlmostEqual(1 - between, held[1][0], places=5)
         self.assertEqual({2: 1.0}, held[2])
+        # The base's own weights are not copied as well: every view is read.
+        read = {accessor["bufferView"] for accessor in document["accessors"]}
+        self.assertEqual(set(range(len(document["bufferViews"]))), read)
 
     def test_a_file_with_the_joints_added_is_taken_as_on_the_same_rig(self):
         write_skinned_glb(self.root / "skinned.glb")
