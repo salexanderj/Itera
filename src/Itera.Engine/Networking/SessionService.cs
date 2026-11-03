@@ -665,6 +665,30 @@ public sealed partial class SessionService : ISessionTransportListener, IDisposa
     }
 
     /// <summary>
+    /// On a host, ends the joined client in <paramref name="slot"/>, which the host cannot go on serving: it is told
+    /// <paramref name="reason"/> as an error, and leaves the roster; nothing when no client holds it.
+    /// </summary>
+    internal void DropClient(int slot, string reason)
+    {
+        if (Role != SessionRole.Host)
+        {
+            return;
+        }
+
+        foreach (var (id, peer) in _peers)
+        {
+            if (peer.Joined && peer.Slot == slot)
+            {
+                SessionProtocol.WriteDisconnect(_disconnectWriter, DisconnectKind.ProtocolError, 0, reason);
+                _transport.Disconnect(id, _disconnectWriter.Written);
+                _peers.Remove(id);
+                UpdateRoster();
+                return;
+            }
+        }
+    }
+
+    /// <summary>
     /// On a client that has joined, sends an engine message the replication built to the host, unreliable; false when it
     /// sent nothing (not joined yet, or the host is gone).
     /// </summary>

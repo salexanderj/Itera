@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Arch.Core;
 using Itera.Engine.Commands;
@@ -24,6 +25,12 @@ public sealed partial class ReplicationService
 
     /// <summary>The most ids one packet removes; more wait for the next.</summary>
     private const int MostRemovalsPerPacket = 64;
+
+    /// <summary>
+    /// The most removals a client may have waiting, as many as a client remembers removed ids. Past it the client is
+    /// dropped: it acknowledges nothing (broken or hostile), or has heard nothing for minutes while entities went.
+    /// </summary>
+    internal const int MostWaitingRemovals = 16384;
 
     /// <summary>The most packets one send to a client holds, so a reply's 64 acknowledgements cover two sends.</summary>
     private const int MostPacketsPerSend = 32;
@@ -70,6 +77,12 @@ public sealed partial class ReplicationService
     private Action<int>? _captureWork;
     private uint _lastId;
     private uint _lastGeneration;
+
+    /// <summary>The most removals a client may have waiting before it is dropped; tests set it lower.</summary>
+    internal int WaitingRemovalsLimit { get; set; } = MostWaitingRemovals;
+
+    /// <summary>On a host, the removals the client in <paramref name="slot"/> has waiting; 0 for none there.</summary>
+    internal int RemovalsWaiting(int slot) => _clients[slot]?.Removals.Count ?? 0;
 
     /// <summary>
     /// On a host or offline, replicates <paramref name="entity"/> as <paramref name="kind"/> from the next send, adding its
@@ -274,6 +287,12 @@ public sealed partial class ReplicationService
                 continue;
             }
 
+            if (client.Removals.Count > WaitingRemovalsLimit)
+            {
+                DropBehind(client);
+                continue;
+            }
+
             client.Owner.Reset();
             WriteOwner(client, client.Owner);
             client.Outgoing.Reset();
@@ -306,6 +325,23 @@ public sealed partial class ReplicationService
                 start = end;
             }
         }
+    }
+
+    /// <summary>
+    /// Ends a client with more removals waiting than <see cref="WaitingRemovalsLimit"/>, telling it why. It leaves the
+    /// roster, and the next step lets it go here.
+    /// </summary>
+    private void DropBehind(HostClient client)
+    {
+        var waiting = client.Removals.Count;
+        LogDroppedBehind(client.Slot, waiting, WaitingRemovalsLimit);
+        _session.DropClient(
+            client.Slot,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"this game has not acknowledged {waiting} entities the host removed"
+            )
+        );
     }
 
     /// <summary>A lane for each of the step's workers; null with one thread.</summary>
@@ -469,10 +505,7 @@ public sealed partial class ReplicationService
         }
 
         // Only the removals this packet carried: the same id removed again since is a newer removal.
-        for (var i = 0; i < packet.RemovedCount; i++)
-        {
-            client.Acknowledged(packet.Removed[i]);
-        }
+        client.Acknowledged(packet.Removed.AsSpan(0, packet.RemovedCount));
 
         client.AcknowledgedPackets++;
     }
@@ -1042,8 +1075,14 @@ public sealed partial class ReplicationService
         public readonly MessageWriter Outgoing = new();
         public readonly List<int> Ends = new(MostPacketsPerSend);
 
-        /// <summary>Ids it is to remove, each numbered, until a packet that carried that removal is acknowledged.</summary>
+        /// <summary>
+        /// Ids it is to remove, each numbered, until a packet that carried that removal is acknowledged; in the order of
+        /// their numbers.
+        /// </summary>
         public readonly List<Removal> Removals = [];
+
+        /// <summary>How many of <see cref="Removals"/> each id has, so an id with none is found at once.</summary>
+        private readonly Dictionary<uint, int> _waiting = [];
 
         /// <summary>Its player's commands by its tick (the tick plus one in <see cref="CommandTicks"/>; 0 for none).</summary>
         public readonly PlayerCommand[] Commands = new PlayerCommand[CommandRing];
@@ -1107,30 +1146,81 @@ public sealed partial class ReplicationService
         }
 
         /// <summary>The client is to remove <paramref name="id"/>.</summary>
-        public void Remove(uint id) => Removals.Add(new Removal(id, ++_nextRemoval));
-
-        /// <summary>A packet that carried removal <paramref name="number"/> arrived: that removal is done.</summary>
-        public void Acknowledged(int number)
+        public void Remove(uint id)
         {
-            for (var i = 0; i < Removals.Count; i++)
+            Removals.Add(new Removal(id, ++_nextRemoval));
+            CollectionsMarshal.GetValueRefOrAddDefault(_waiting, id, out _)++;
+        }
+
+        /// <summary>
+        /// A packet that carried removals <paramref name="numbers"/> (in their order) arrived: those still waiting are
+        /// done. One pass over <see cref="Removals"/>, which is in the same order.
+        /// </summary>
+        public void Acknowledged(ReadOnlySpan<int> numbers)
+        {
+            if (numbers.IsEmpty)
             {
-                if (Removals[i].Number == number)
-                {
-                    Removals.RemoveAt(i);
-                    return;
-                }
+                return;
             }
+
+            var removals = CollectionsMarshal.AsSpan(Removals);
+            int kept = 0,
+                next = 0;
+            for (var i = 0; i < removals.Length; i++)
+            {
+                if (next == numbers.Length)
+                {
+                    // The rest stay, moved down over those done.
+                    removals[i..].CopyTo(removals[kept..]);
+                    kept += removals.Length - i;
+                    break;
+                }
+
+                var removal = removals[i];
+                // A number below this removal's waits no more: another packet's acknowledgement took it, or its id came
+                // back.
+                while (next < numbers.Length && numbers[next] < removal.Number)
+                {
+                    next++;
+                }
+
+                if (next < numbers.Length && numbers[next] == removal.Number)
+                {
+                    next++;
+                    Done(removal.Id);
+                    continue;
+                }
+
+                removals[kept++] = removal;
+            }
+
+            Removals.RemoveRange(kept, removals.Length - kept);
         }
 
         /// <summary>Every removal of <paramref name="id"/> waiting: it is sent whole instead.</summary>
         public void DropRemovals(uint id)
         {
+            if (!_waiting.Remove(id))
+            {
+                return;
+            }
+
             for (var i = Removals.Count - 1; i >= 0; i--)
             {
                 if (Removals[i].Id == id)
                 {
                     Removals.RemoveAt(i);
                 }
+            }
+        }
+
+        /// <summary>One removal of <paramref name="id"/> is no longer waiting.</summary>
+        private void Done(uint id)
+        {
+            ref var count = ref CollectionsMarshal.GetValueRefOrNullRef(_waiting, id);
+            if (!Unsafe.IsNullRef(ref count) && --count == 0)
+            {
+                _waiting.Remove(id);
             }
         }
 

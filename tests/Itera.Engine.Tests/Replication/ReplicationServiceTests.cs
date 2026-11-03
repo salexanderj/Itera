@@ -16,7 +16,8 @@ namespace Itera.Engine.Tests.Replication;
 /// second than its budget, and every entity within two seconds; a client that replaces one that left is sent everything;
 /// the game's messages to a client count against its bytes, its state taking the rest, and those that may be lost are not
 /// sent past the game's share of them, while a reliable one is; a client of other kinds is refused; a damaged snapshot or reply is refused or read, never thrown past; a reply for a
-/// packet never sent drops the client.
+/// packet never sent drops the client; a removal waits until a packet that carried it is acknowledged or its id comes
+/// back; and a client with more removals waiting than its limit is dropped and told why.
 /// </summary>
 [RunsLong]
 public sealed class ReplicationServiceTests(ITestOutputHelper output)
@@ -259,6 +260,71 @@ public sealed class ReplicationServiceTests(ITestOutputHelper output)
         Assert.Equal(1, harness.Host.Match.Session.JoinedPeers);
         var origin = harness.Host.Services.GetOrigin();
         Assert.Equal(origin.X - 4, harness.Shown()[id].At.X, 2);
+    }
+
+    [Fact]
+    public void A_removal_waits_until_a_packet_that_carried_it_is_acknowledged_or_its_id_comes_back()
+    {
+        using var harness = ReplicationHarness.Start(new MoverPlan { Count = 1 });
+        harness.Step(30);
+        var id = PlayerIds.Of(5);
+        var mover = harness.Host.World.Create(new TestMover());
+        harness.HostReplication.Add(mover, harness.HostPlan.Mover, id);
+        harness.Step(30);
+        var send = harness.HostReplication.SendIntervalTicks;
+
+        // No packet reaches the client: the removal waits until the id is added again, which goes whole instead.
+        harness.HostTransport.CountSendsOnly = true;
+        harness.HostReplication.Remove(id);
+        harness.Host.World.Remove<Components.Replicated>(mover);
+        harness.StepHost(send);
+        var removed = harness.HostReplication.RemovalsWaiting(1);
+        harness.HostReplication.Add(mover, harness.HostPlan.Mover, id);
+        harness.StepHost(send);
+        var back = harness.HostReplication.RemovalsWaiting(1);
+
+        // Removed again, it waits until the client acknowledges a packet that carried it.
+        harness.HostReplication.Remove(id);
+        harness.Host.World.Remove<Components.Replicated>(mover);
+        harness.StepHost(send);
+        var again = harness.HostReplication.RemovalsWaiting(1);
+        harness.HostTransport.CountSendsOnly = false;
+        harness.Step(30);
+
+        Assert.Equal(
+            (1, 0, 1, 0, false),
+            (removed, back, again, harness.HostReplication.RemovalsWaiting(1), harness.Shown().ContainsKey(id))
+        );
+    }
+
+    [Fact]
+    public void A_client_with_more_removals_waiting_than_its_limit_is_dropped_and_told_why()
+    {
+        using var harness = ReplicationHarness.Start(new MoverPlan { Count = 0 });
+        harness.Step(30);
+        harness.HostReplication.WaitingRemovalsLimit = 4;
+        var send = harness.HostReplication.SendIntervalTicks;
+
+        // The client still replies, but no packet reaches it: it acknowledges none of the five removals.
+        harness.HostTransport.CountSendsOnly = true;
+        var movers = Enumerable.Range(0, 5).Select(_ => harness.Host.World.Create(new TestMover())).ToList();
+        foreach (var mover in movers)
+        {
+            harness.HostReplication.Add(mover, harness.HostPlan.Mover);
+        }
+
+        harness.StepHost(send);
+        foreach (var mover in movers)
+        {
+            harness.Host.World.Destroy(mover);
+        }
+
+        harness.StepHost(send);
+        harness.Client.PollSession();
+
+        var session = harness.Client.Match.Session;
+        Assert.Equal((0, SessionEnd.Error), (harness.Host.Match.Session.JoinedPeers, session.End));
+        Assert.Contains("not acknowledged 5 entities", session.EndReason, StringComparison.Ordinal);
     }
 
     [Fact]

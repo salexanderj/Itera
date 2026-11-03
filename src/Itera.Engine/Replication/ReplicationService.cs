@@ -185,6 +185,12 @@ public sealed partial class ReplicationService : IReplicationEndpoint
     )]
     private partial void LogAcknowledgedAgain(int slot, double seconds);
 
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Replication: client {Slot} has {Waiting} removals not acknowledged, past the {Limit} a client may have; it is dropped"
+    )]
+    private partial void LogDroppedBehind(int slot, int waiting, int limit);
+
     /// <summary>The transport's account of a connection for a warning, or a word that it gave none.</summary>
     private static string Described(string connection) =>
         connection.Length > 0 ? connection : "the transport reports nothing more";

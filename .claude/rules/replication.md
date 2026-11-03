@@ -69,6 +69,7 @@ The console's `replication` prints what is sent or shown. `replication delay MS`
 - Each send has at least one packet, for the client's clock.
 - A client is sent nothing until its first reply, which it makes once its world is loaded.
 - Ids removed (destroyed, or out of the client's reach) go at the front of a send's first packet, each numbered, up to a limit. They go until a packet that carried that removal is acknowledged. An id back in reach, or added again, goes whole, and its removal is dropped.
+- A client with more than `MostWaitingRemovals` removals waiting is dropped with the reason (`SessionService.DropClient`).
 - The host remembers a limited number of a client's last packets.
 
 ### How a client shows entities
