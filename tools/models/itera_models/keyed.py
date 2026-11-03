@@ -266,9 +266,9 @@ class Keyer:
         bpy.context.view_layer.update()
 
     def _end_limbs(self) -> None:
-        """Ends each limb's lower bone at its end joint, so its IK, which reaches with the bone's tail, reaches with the
-        joint. The import gives a bone with a second child, such as a forearm's twist joint, another length. Only a
-        bone whose end joint lies on its own line is changed, which keeps its turn."""
+        """Ends each limb's lower bone where its end joint lies along it, so its IK, which reaches with the bone's tail,
+        reaches with the joint. The import gives a bone with a second child, such as a forearm's twist joint, another
+        length, and a body of other proportions (`gltf_clips.on_body`) keeps the model's. The bone keeps its turn."""
         armature = self.armature
         layer = bpy.context.view_layer
         active = layer.objects.active
@@ -283,12 +283,11 @@ class Keyer:
                 bone, ending = bones.get(lower), bones.get(end)
                 if bone is None or ending is None:
                     continue
-                along, to_end = bone.tail - bone.head, ending.head - bone.head
-                if along.length < 1e-6 or to_end.length < 1e-6:
-                    continue
-                if along.normalized().dot(to_end.normalized()) > 1 - 1e-6:
+                along = bone.tail - bone.head
+                reach = (ending.head - bone.head).dot(along.normalized()) if along.length > 1e-6 else 0.0
+                if reach > 1e-6:
                     roll = bone.roll
-                    bone.tail = ending.head
+                    bone.tail = bone.head + along.normalized() * reach
                     bone.roll = roll
         bpy.ops.object.mode_set(mode="OBJECT")
         layer.objects.active = active
