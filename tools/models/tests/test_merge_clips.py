@@ -278,6 +278,32 @@ class MergeClipsTests(unittest.TestCase):
         self.assertEqual([0.0, 0.5], written["clips"]["Wave"]["side"])
         self.assertEqual([0.0, round(math.pi / 2, 4)], written["clips"]["Wave"]["turn"])
 
+    def test_clips_whose_root_motion_is_on_play_in_place_in_the_model(self):
+        write_glb(self.root / "turning.glb", {"Wave": (0.5, 0.0, 90.0), "Walk": 1.0})
+        listing = self.root / "list.json"
+        motion = {"from": [{"file": "turning.glb", "clips": ["Wave"], "place": True}], "out": "out.motion.json"}
+        listing.write_text(
+            json.dumps(
+                {
+                    "base": "base.glb",
+                    "clips": [],
+                    "add": [{"file": "turning.glb", "clips": ["Wave", "Walk"]}],
+                    "out": "out.glb",
+                    "motion": motion,
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = run(listing)
+        self.assertEqual(0, result.returncode, result.stderr)
+        document, _ = read_glb(self.root / "out.glb")
+        wave, walk = document["animations"]
+        # The root's keys are gone from the clip whose root motion is written; the other keeps its own.
+        self.assertEqual([], wave["channels"])
+        self.assertEqual(1, len(walk["channels"]))
+        written = json.loads((self.root / "out.motion.json").read_text(encoding="utf-8"))
+        self.assertEqual([0.0, 0.5], written["clips"]["Wave"]["side"])
+
     def test_root_motion_that_rises_is_refused(self):
         write_glb(self.root / "rising.glb", {"Run": (1.0, 0.5, None)})
         listing = self.root / "list.json"

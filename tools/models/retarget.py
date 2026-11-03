@@ -8,6 +8,7 @@ The spec is a JSON file. Its paths are from its own folder:
       "model": "PATH.glb",         # the model whose rig the clips are for (its nodes, its rest)
       "out": "PATH.glb",           # the clips on the model's nodes, which merge_clips.py adds to the model
       "hips": "pelvis",            # the model's hips, which the clip's hips move
+      "root": "root",              # optional: the model's root joint, for clips with "rootMotion"
       "left": "thigh_l", "right": "thigh_r",   # the model's hip joints, which set the way it faces
       "feet": ["ball_l", "ball_r"],            # the model's joints that stand on the ground, for the checks
       "fps": 30,                   # keys a second written
@@ -37,6 +38,9 @@ The spec is a JSON file. Its paths are from its own folder:
 
 A clip with `"loop": false` is played once: its frames are kept as the source has them, not turned, moved, or closed.
 With `"place": true` as well, its travel along the ground is taken out of its hips, so the game moves the body.
+With `"rootMotion": true` instead, its travel and its turn about the up axis are moved from its hips onto the spec's
+`root` joint (gltf_clips.onto_root), a clip that travels turned to travel ahead, so merge_clips.py writes them as its root
+motion and the game plays it in place: a start, a stop, or a turn on the spot.
 A loop with `"face": false` (or its source's `"face": false`) keeps the way it faces, not turned to face the front.
 A clip with `"mirror": true` is its action played on the other side (gltf_clips.mirror): a strafe to the left becomes
 one to the right, for a source whose own other side is worse or missing.
@@ -138,6 +142,7 @@ def retarget_clip(spec: dict, entry: dict, target, nodes, turns) -> tuple[dict, 
         face=entry.get("face", source_spec.get("face", True)),
         loop=entry.get("loop", True),
         place=entry.get("place", False),
+        root=nodes.index(spec["root"]) if entry.get("rootMotion", False) else None,
     )
     target.animation_data.action = None
     bpy.data.actions.remove(action)
@@ -149,11 +154,12 @@ def retarget_clip(spec: dict, entry: dict, target, nodes, turns) -> tuple[dict, 
         settled["way"] = -settled["way"]
 
     hips = nodes.index(spec["hips"])
+    moved = [hips, nodes.index(spec["root"])] if entry.get("rootMotion", False) else [hips]
     keys = {
         "name": entry["name"],
         "times": [seconds * k / count for k in range(count + 1)],
-        "rotations": {joint: [locals_[joint].to_quaternion() for locals_ in sampled] for joint in joints},
-        "translations": {hips: [locals_[hips].translation.copy() for locals_ in sampled]},
+        "rotations": {joint: [locals_[joint].to_quaternion() for locals_ in sampled] for joint in sorted({*joints, *moved})},
+        "translations": {joint: [locals_[joint].translation.copy() for locals_ in sampled] for joint in moved},
     }
     report = {"name": entry["name"], "member": entry.get("member") or entry["action"], "sha256": digest,
               "frames": count + 1,

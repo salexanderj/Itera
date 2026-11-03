@@ -196,6 +196,79 @@ class SettleTests(unittest.TestCase):
             self.assertLess((locals_[1].translation - Vector((0.3, 1.0, 0.2))).length, 1e-6)
             self.assertGreater(abs(locals_[1].to_quaternion().dot(turn)), 1 - 1e-6)
 
+    def test_a_clip_played_once_onto_its_root_travels_ahead_on_the_root_its_hips_over_it(self):
+        nodes, sampled = self._cycle()
+        before = [nodes.worlds(locals_)[1].translation.copy() for locals_ in sampled]
+
+        settled = gltf_clips.settle(sampled, nodes, 1, 2, 3, 1.0, loop=False, root=0)
+
+        # It went 0.5 m along +x, so it is turned a quarter round to go ahead; it turns nowhere about the up axis.
+        self.assertAlmostEqual(settled["turned"], -90.0, places=3)
+        self.assertAlmostEqual(settled["way"], 0.0, places=3)
+        self.assertAlmostEqual(settled["root_turn"], 0.0, places=3)
+        # The hips move as they did, turned to travel ahead, from over the rest's hips.
+        turn = Matrix.Rotation(-math.pi / 2, 4, "Y")
+        first = nodes.worlds(sampled[0])[1].translation
+        self.assertLess(Vector((first.x, first.z)).length, 1e-5)
+        for locals_, was in zip(sampled, before):
+            worlds = nodes.worlds(locals_)
+            moved = worlds[1].translation - first
+            self.assertLess((moved - turn @ (was - before[0])).length, 1e-5)
+        # The root carries the travel, smoothed, from where it stood: none at the first sample, ahead at the last.
+        self.assertLess(sampled[0][0].translation.length, 1e-6)
+        last = sampled[-1][0].translation
+        self.assertGreater(last.z, 0.4)
+        self.assertLess(abs(last.x), 1e-5)
+
+    def test_a_turn_played_once_onto_its_root_turns_the_root_and_keeps_its_way(self):
+        nodes, sampled = self._cycle()
+        for k, locals_ in enumerate(sampled):
+            locals_[1] = Matrix.Translation((0, 1, 0)) @ Matrix.Rotation(math.pi / 2 * k / self.COUNT, 4, "Y")
+
+        settled = gltf_clips.settle(sampled, nodes, 1, 2, 3, 1.0, loop=False, root=0)
+
+        self.assertEqual(settled["turned"], 0.0)
+        self.assertAlmostEqual(settled["root_turn"], 90.0, places=3)
+        # Turned with the root, the hips face where they did, a quarter round at the last sample.
+        hips = nodes.worlds(sampled[-1])[1].to_quaternion()
+        self.assertGreater(abs(hips.dot(Quaternion((0, 1, 0), math.pi / 2))), 1 - 1e-6)
+        self.assertLess(sampled[-1][1].to_quaternion().angle, 1e-5)
+
+    def test_a_clip_played_once_onto_its_root_goes_as_far_as_its_planted_foot_shows(self):
+        document = {
+            "nodes": [
+                {"name": "root", "children": [1, 4, 5]},
+                {"name": "hips", "translation": [0, 1, 0], "children": [2, 3]},
+                {"name": "left", "translation": [0.1, 0, 0]},
+                {"name": "right", "translation": [-0.1, 0, 0]},
+                {"name": "planted", "translation": [0.1, 0, 0]},
+                {"name": "sliding", "translation": [-0.1, 0, 0]},
+            ]
+        }
+        nodes = gltf_clips.Nodes(document)
+
+        def clip(slide):
+            # The hips go 1 m ahead over a second; one foot stays put, slid ahead by slide of the hips' way.
+            sampled = []
+            for k in range(self.COUNT + 1):
+                ahead = 1.0 * k / self.COUNT
+                sampled.append(
+                    {
+                        1: Matrix.Translation((0, 1, ahead)),
+                        2: nodes.rest[2].copy(),
+                        3: nodes.rest[3].copy(),
+                        4: Matrix.Translation((0.1, 0, ahead * slide)),
+                        5: Matrix.Translation((-0.1, 0, ahead * slide)),
+                    }
+                )
+            return sampled
+
+        # Its feet still, the root goes as far as the hips; its feet slid half the hips' way, half as far.
+        for slide, gone in ((0.0, 1.0), (0.5, 0.5)):
+            sampled = clip(slide)
+            gltf_clips.settle(sampled, nodes, 1, 2, 3, 1.0, [4, 5], loop=False, root=0)
+            self.assertAlmostEqual(sampled[-1][0].translation.z, gone, places=4)
+
     def test_a_clip_played_once_is_left_as_it_is(self):
         nodes, sampled = self._cycle()
         before = [{node: matrix.copy() for node, matrix in locals_.items()} for locals_ in sampled]

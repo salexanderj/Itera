@@ -217,6 +217,9 @@ recipe: it writes the clips on the model's own nodes, and the model's `merge_cli
 - Find one cycle (`from` to `to`) in a straight, steady stretch: the frame a stride's pose comes round again. A clip
   played once (`"loop": false`) keeps its frames as they are; a pack's loop turned to face its way keeps its turn with
   `"face": false`. Where one side of a pack's pair is worse, make it from the other with `"mirror": true`.
+- A start, a stop, or a turn on the spot the game plays by its root motion takes `"rootMotion": true`: its travel and
+  turn go onto the model's root, and the `merge_clips.py` list names the clips in a `motion` source with
+  `"place": true`. A pack's turn kept whole is its root-motion action (an `[RM]` action), not its in-place one.
 - Read the report's slide and the seam, then look at the poses with `views MODEL.glb --clip NAME@SECONDS`.
 - Inside a recipe, `clips.retarget` does the same for an armature the recipe exports itself.
 

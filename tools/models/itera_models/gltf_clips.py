@@ -244,6 +244,7 @@ def settle(
     face: bool = True,
     loop: bool = True,
     place: bool = False,
+    root: int | None = None,
 ) -> dict:
     """Makes a sampled cycle (its last sample the pose its first came back to) a loop played in place.
 
@@ -251,9 +252,11 @@ def settle(
     on average, lies along the rest's; with `face` false it keeps the way it faces (a pack's run turned to face the
     way it goes). With `loop` false the samples are a clip played once and are left as they are: only the travel is
     measured, and with `place` true taken out of the hips at an even pace, so the game moves the body (a slide's
-    start). A loop's travel along the ground is taken out of the hips, which keep their place
-    over the rest's on average, so the game moves the body. With `feet`, the hips go down or up until the feet's lowest
-    point over the cycle is as low as at rest: a capture's floor read from its own feet errs where they do. What is
+    start). With `root`, the node of the model's root joint, a clip played once has its travel and its turn moved onto
+    that joint instead (`onto_root`), so merge_clips.py writes them as its root motion. A loop's travel along the ground
+    is taken out of the hips, which keep their place over the rest's on average, so the game moves the body. With
+    `feet`, the hips go down or up until the feet's lowest point over the cycle is as low as at rest: a capture's floor
+    read from its own feet errs where they do. What is
     left at the seam, in every node's turn and the hips' place, is spread back over the cycle, so the last sample is the
     first. Returns the travel taken out, in the model's metres and axes, its speed, its way (degrees round from the
     front to the left), and how far the hips went down.
@@ -262,6 +265,8 @@ def settle(
     if count < 1:
         raise ValueError("a loop needs two samples or more")
     worlds = [nodes.worlds(locals_) for locals_ in sampled]
+    if not loop and root is not None:
+        return onto_root(sampled, nodes, worlds, hips, left, right, root, seconds, feet)
     if not loop:
         start, end = worlds[0][hips].translation, worlds[count][hips].translation
         travel = Vector((end.x - start.x, 0.0, end.z - start.z))
@@ -330,6 +335,138 @@ def settle(
         "turned": round(math.degrees(turn), 1),
         "lowered": round(lowered, 4),
     }
+
+
+#: How far a clip played once must travel to be turned to travel ahead (`onto_root`), in metres at least.
+ROOT_FACE_METRES = 0.5
+
+#: The span the hips' path and turn are smoothed over before they go onto the root (`onto_root`), in seconds: about a
+#: step, so each step's sway stays in the hips.
+ROOT_SMOOTH_SECONDS = 0.3
+
+#: How fast the slower foot may move over the ground and still be taken as planted (`onto_root`), in metres a second.
+ROOT_PLANTED_SPEED = 1.0
+
+
+def onto_root(
+    sampled: list,
+    nodes: Nodes,
+    worlds: list,
+    hips: int,
+    left: int,
+    right: int,
+    root: int,
+    seconds: float,
+    feet: list | None = None,
+) -> dict:
+    """Moves a clip played once's travel along the ground and its turn about the up axis from its hips onto the model's
+    root joint `root`, so the root carries the body and the hips keep their place over it: a start, a stop, or a turn on
+    the spot, which the game plays in place and moves the body by.
+
+    A clip that travels `ROOT_FACE_METRES` or more is first turned about the up axis to travel ahead (+z), and its root
+    takes its travel alone, its hips keeping their turn from side to side as it steps. One that travels less keeps the
+    way it faces, and its root takes its turn too: a turn on the spot. The root's path is how far the hips go on over
+    the planted foot (with `feet`, the slower one, while it moves slower than `ROOT_PLANTED_SPEED`; the hips' own way
+    while neither is planted), so a planted foot that slides on the model, its legs of other lengths than the capture's,
+    does not carry the body; its turn is the way the line from the right hip joint to the left faces. Each is smoothed
+    over `ROOT_SMOOTH_SECONDS` (its ends kept) and less its first. The whole clip is moved along the ground so its path starts over the rest's
+    hips, wherever the capture began, and with `feet`, down or up until the lower of them stands as low as the lower at
+    rest at the end of the clip where it stands still (a start's first sample, a stop's last; the end its hips move
+    least over `ROOT_SMOOTH_SECONDS`): a capture's feet stand higher at some moments than at others. The root's rest must
+    stand at the scene's middle. Returns the travel, its speed and
+    way, the turn, and how far the hips went down, as `settle` does, with the root's whole turn in degrees
+    (`root_turn`)."""
+    count = len(sampled) - 1
+    start, end = worlds[0][hips].translation, worlds[count][hips].translation
+    travel = Vector((end.x - start.x, 0.0, end.z - start.z))
+    # A turn about +y by a takes the direction atan2(x, z) to atan2(x, z) + a.
+    travels = travel.length >= ROOT_FACE_METRES
+    turn = -math.atan2(travel.x, travel.z) if travels else 0.0
+    facing = Matrix.Rotation(turn, 4, "Y")
+    placed = [facing @ world[hips] for world in worlds]
+    paths = [Vector((matrix.translation.x, 0.0, matrix.translation.z)) for matrix in placed]
+    if feet and count > 0:
+        step = seconds / count if seconds > 0 else 1.0
+        balls = [[facing @ world[foot].translation for foot in feet] for world in worlds]
+        gone = [paths[0]]
+        for k in range(1, count + 1):
+            moves = [Vector((now.x - was.x, 0.0, now.z - was.z)) for now, was in zip(balls[k], balls[k - 1])]
+            planted = min(moves, key=lambda move: move.length)
+            went = paths[k] - paths[k - 1]
+            gone.append(gone[-1] + (went - planted if planted.length / step < ROOT_PLANTED_SPEED else went))
+        paths = gone
+    lines = [facing @ (world[left].translation - world[right].translation) for world in worlds]
+    yaws = [0.0] * len(lines) if travels else _unwrapped([math.atan2(line.x, line.z) for line in lines])
+    reach = max(0, round(ROOT_SMOOTH_SECONDS / 2 * count / seconds)) if seconds > 0 else 0
+    paths, yaws = _smoothed(paths, reach), _smoothed(yaws, reach)
+    rest_hips = nodes.rest_world[hips].translation
+    lowered = 0.0
+    if feet:
+        span = max(1, min(count, round(ROOT_SMOOTH_SECONDS * count / seconds))) if seconds > 0 else count
+
+        def moved(first: int, last: int) -> float:
+            a, b = worlds[first][hips].translation, worlds[last][hips].translation
+            return Vector((b.x - a.x, b.z - a.z)).length
+
+        still = worlds[0] if moved(0, span) <= moved(count - span, count) else worlds[count]
+        lowest = min(still[foot].translation.y for foot in feet)
+        lowered = lowest - min(nodes.rest_world[foot].translation.y for foot in feet)
+    shift = Matrix.Translation(Vector((rest_hips.x, -lowered, rest_hips.z)) - paths[0])
+    placed = [shift @ matrix for matrix in placed]
+    rest_root = nodes.rest_world[root]
+    for k, (locals_, world, matrix) in enumerate(zip(sampled, worlds, placed)):
+        root_world = (
+            Matrix.Translation(paths[k] - paths[0]) @ Matrix.Rotation(yaws[k] - yaws[0], 4, "Y") @ rest_root
+        )
+        parent = nodes.parent.get(root)
+        locals_[root] = (world[parent].inverted() if parent is not None else Matrix()) @ root_world
+        # The hips under the moved root keep their place over it, turned to travel ahead.
+        locals_.pop(hips, None)
+        moved = nodes.worlds(locals_)
+        locals_[hips] = moved[nodes.parent[hips]].inverted() @ matrix
+    travel = facing @ travel
+    way = math.degrees(math.atan2(travel.x, travel.z)) if travel.length > 1e-6 else 0.0
+    return {
+        "travel": [round(value, 4) for value in travel],
+        "speed": round(travel.length / seconds, 4) if seconds > 0 else 0.0,
+        "way": round(way, 1),
+        "turned": round(math.degrees(turn), 1),
+        "lowered": round(lowered, 4),
+        "root_turn": round(math.degrees(yaws[-1] - yaws[0]), 1),
+    }
+
+
+def _smoothed(values: list, reach: int) -> list:
+    """Each value the mean of those within `reach` either side, the values past each end mirrored through it, so the
+    ends keep their values and a steady change stays as it is."""
+    last = len(values) - 1
+    if reach <= 0 or last < 1:
+        return list(values)
+
+    def at(k: int):
+        if k < 0:
+            return 2 * values[0] - values[min(last, -k)]
+        if k > last:
+            return 2 * values[last] - values[max(0, 2 * last - k)]
+        return values[k]
+
+    out = []
+    for k in range(len(values)):
+        total = at(k - reach)
+        for step in range(-reach + 1, reach + 1):
+            total = total + at(k + step)
+        out.append(total / (2 * reach + 1))
+    return out
+
+
+def _unwrapped(angles: list) -> list:
+    """Angles made continuous: each within half a round of the one before."""
+    out = []
+    for angle in angles:
+        if out:
+            angle += round((out[-1] - angle) / math.tau) * math.tau
+        out.append(angle)
+    return out
 
 
 def write(path, document: dict, clips: list) -> None:

@@ -29,7 +29,9 @@ The optional "motion" takes root motion from files of the same clips with it bak
 each file names, which the model must hold, the root joint's translation keys, less the first, in the model's metres (+z
 its front, +x its left), and where the root turns about the up axis, its turn from its first key in radians (to the left
 above 0), written as JSON beside the model. The model keeps its clips in place; the game moves and turns the body by
-these keys. A clip whose root rises or tilts is refused.
+these keys. A clip whose root rises or tilts is refused. A file of "from" with "place": true is one the model's
+clips came from with their root motion on (a clip retargeted with "rootMotion"): the model's copies of the clips it
+names lose their root's keys, so they play in place.
 
 Paths are from the list's folder. Usage: tools/models/merge_clips.py LIST.json
 """
@@ -366,6 +368,19 @@ def whole(document, binary, index):
     return [struct.unpack_from(f"<{width}{kind[0]}", binary, start + i * stride) for i in range(accessor["count"])]
 
 
+def in_place(document, clip):
+    """The clip without its root joint's keys, its other samplers renumbered: played in place, its root at rest."""
+    roots = {index for index, node in enumerate(document["nodes"]) if node.get("name") == "root"}
+    channels = [channel for channel in clip["channels"] if channel["target"]["node"] not in roots]
+    used = sorted({channel["sampler"] for channel in channels})
+    number = {sampler: index for index, sampler in enumerate(used)}
+    return dict(
+        clip,
+        channels=[dict(channel, sampler=number[channel["sampler"]]) for channel in channels],
+        samplers=[clip["samplers"][sampler] for sampler in used],
+    )
+
+
 def animation(builder, source, document, binary, clip):
     copied = dict(clip)
     copied["samplers"] = [
@@ -438,6 +453,9 @@ def main():
         if name not in by_name:
             raise SystemExit(f"{spec['base']} has no clip {name}")
         clips.append(animation(builder, "base", base, base_binary, by_name[name]))
+    placed = {
+        name for source in spec.get("motion", {}).get("from", []) if source.get("place") for name in source["clips"]
+    }
     for number, added in enumerate(spec.get("add", [])):
         document, binary = read_glb(folder / added["file"])
         if rig_of(document) not in rigs:
@@ -449,7 +467,8 @@ def main():
                 raise SystemExit(f"{added['file']} has no clip {name}")
             if any(clip.get("name") == name for clip in clips):
                 raise SystemExit(f"the clip {name} is taken twice")
-            clips.append(animation(builder, source, document, binary, named[name]))
+            clip = in_place(document, named[name]) if name in placed else named[name]
+            clips.append(animation(builder, source, document, binary, clip))
     out["animations"] = clips
     out["accessors"] = builder.accessors
     out["bufferViews"] = builder.views
