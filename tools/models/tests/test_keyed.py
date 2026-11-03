@@ -99,6 +99,27 @@ class TurnsAndMirrorsTests(unittest.TestCase):
         self.assertEqual(((-0.05, 0.1, 0.2), Turn(bend=30, twist=-10)), (mirrored.foot_r.by, mirrored.foot_r.turn))
 
 
+class TwistJointTests(unittest.TestCase):
+    def test_a_forearm_with_a_twist_joint_still_reaches_with_its_hand(self):
+        # The import gives a forearm with a second child another length: half way, where its twist joint is.
+        bones = [
+            (name, head, (-0.57, 0.01, 1.42) if name == "lowerarm_r" else tail, roll, parent)
+            for name, head, tail, roll, parent in _BONES
+        ]
+        bones.append(("lowerarm_twist_01_r", (-0.57, 0.01, 1.42), (-0.6, 0.01, 1.42), 0.0, "lowerarm_r"))
+        utils.reset_scene()
+        armature = utils.make_armature("Rig", bones)
+        clips.new_clip(armature, "Stand", 0, frame_end=1)
+        clips.key_pose(armature, 0, {"pelvis": {"rotation": (1.0, 0.0, 0.0, 0.0)}})
+        keyer = keyed.Keyer(armature, "Stand", fps=30)
+
+        made = keyer.clip("Reach", [STAND, Key(0.5, hand_r=Hand((-0.45, 1.1, 0.3))), Key(1.0, hand_r=Hand())])
+        _, problems = keyed.check(armature, keyer, made)
+
+        self.assertEqual([], problems)
+        self.assertTrue(_near(keyed.place_at(armature, "hand_r", 0.5, 30), (-0.45, 1.1, 0.3), 0.01))
+
+
 class KeyerTests(unittest.TestCase):
     def setUp(self):
         self.armature, self.meshes = _rig()

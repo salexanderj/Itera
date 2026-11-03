@@ -245,6 +245,7 @@ class Keyer:
         self.armature = armature
         self.rig = rig
         self.fps = fps
+        self._end_limbs()
         bpy.context.scene.render.fps = fps
         bpy.context.scene.render.fps_base = 1.0
         action = bpy.data.actions.get(stand)
@@ -263,6 +264,34 @@ class Keyer:
         for bone in bones:
             bone.matrix_basis = self.stand_basis[bone.name]
         bpy.context.view_layer.update()
+
+    def _end_limbs(self) -> None:
+        """Ends each limb's lower bone at its end joint, so its IK, which reaches with the bone's tail, reaches with the
+        joint. The import gives a bone with a second child, such as a forearm's twist joint, another length. Only a
+        bone whose end joint lies on its own line is changed, which keeps its turn."""
+        armature = self.armature
+        layer = bpy.context.view_layer
+        active = layer.objects.active
+        if active is not None and active.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+        layer.objects.active = armature
+        bpy.ops.object.mode_set(mode="EDIT")
+        bones = armature.data.edit_bones
+        for chains in (self.rig.arms, self.rig.legs):
+            for side in "lr":
+                _, lower, end = chains[side]
+                bone, ending = bones.get(lower), bones.get(end)
+                if bone is None or ending is None:
+                    continue
+                along, to_end = bone.tail - bone.head, ending.head - bone.head
+                if along.length < 1e-6 or to_end.length < 1e-6:
+                    continue
+                if along.normalized().dot(to_end.normalized()) > 1 - 1e-6:
+                    roll = bone.roll
+                    bone.tail = ending.head
+                    bone.roll = roll
+        bpy.ops.object.mode_set(mode="OBJECT")
+        layer.objects.active = active
 
     # The stand.
 
