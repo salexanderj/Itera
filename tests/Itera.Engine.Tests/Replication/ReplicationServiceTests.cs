@@ -11,7 +11,8 @@ namespace Itera.Engine.Tests.Replication;
 /// moves appears on the client and follows it the interpolation delay behind (measured: 6.0 steps), as far as that
 /// delay is set, and through 100 ms each way with jitter and loss the delay and the way behind (12.2 steps at the
 /// median); a send larger than a packet goes in several; a destroyed entity goes, also through loss, and so does one the
-/// host stops replicating; a late record of an id added again under another kind is passed over; one out of a client's reach goes and comes back whole; a client gets no more snapshot bytes a
+/// host stops replicating; a late record of an id added again under another kind is passed over; one out of a client's
+/// reach goes and comes back whole; a client gets no more snapshot bytes a
 /// second than its budget, and every entity within two seconds; a client that replaces one that left is sent everything;
 /// the game's messages to a client count against its bytes, its state taking the rest, and those that may be lost are not
 /// sent past the game's share of them, while a reliable one is; a client of other kinds is refused; a damaged snapshot or reply is refused or read, never thrown past; a reply for a
