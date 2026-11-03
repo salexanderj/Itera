@@ -52,7 +52,6 @@ A game sends its own messages. Each kind is a byte with the way it may travel: h
 
 - A game registers `ISessionGameHandler`s in a match's scope. `GameMessageHandler` hands one kind to a method. A game sends with `SessionService.BeginMessage`.
 - The engine drops a message that travels the wrong way, and the peer with it.
-- A host's replication ends a client it cannot go on serving with `SessionService.DropClient`, which tells the client why.
 - A host's match tunables go to its clients by name, reliably, after the step they changed, and every one as each joins (`MessageKind.Tune`, `Tunables`, `.claude/rules/ui-input.md`). A client sets those it has within its own ranges and passes over the rest.
 
 The three channels (`SessionChannel`):
