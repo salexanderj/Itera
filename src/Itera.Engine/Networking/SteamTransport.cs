@@ -234,6 +234,23 @@ public sealed partial class SteamTransport : ISessionTransport, ISteamPlatformLi
     /// </summary>
     public int MaxUnreliableBytes => 1024;
 
+    /// <summary>
+    /// Sends what each open connection holds for Nagle's timer now: the session calls it after each fixed step, so a
+    /// step's reliable messages (edits, the roster, tuning, the game's) go together and do not wait for the timer.
+    /// </summary>
+    public void Flush()
+    {
+        if (_platform is null)
+        {
+            return;
+        }
+
+        foreach (var connection in _handles.Values)
+        {
+            _platform.FlushMessages(connection);
+        }
+    }
+
     public int RoundTripMilliseconds(int peer) =>
         _platform is not null && _handles.TryGetValue(peer, out var connection)
             ? _platform.RoundTripMilliseconds(connection)

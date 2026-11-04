@@ -153,6 +153,9 @@ internal interface ISteamPlatform
     /// <summary>Queues a message; <paramref name="code"/> is Steam's own result, for the log.</summary>
     SteamSendResult Send(uint connection, ReadOnlySpan<byte> data, bool reliable, out int code);
 
+    /// <summary>Sends what waits on a connection for Nagle's timer at the next chance, which is often at once.</summary>
+    void FlushMessages(uint connection);
+
     /// <summary>The bytes queued on a connection and not sent yet (reliable and unreliable), or -1.</summary>
     int QueuedBytes(uint connection);
 

@@ -381,6 +381,20 @@ public sealed class SteamTransportTests : IDisposable
     }
 
     [Fact]
+    public void A_flush_sends_each_open_connections_messages_past_nagles_timer()
+    {
+        var (host, platform, _, _) = ConnectTransports();
+        host.Send(1, [1, 2, 3], SessionChannel.Reliable);
+
+        host.Flush();
+        host.Flush();
+
+        var (connection, flushes) = Assert.Single(platform.Flushes);
+        Assert.True(connection != 0);
+        Assert.Equal(2, flushes);
+    }
+
+    [Fact]
     public void A_peer_whose_held_messages_pass_the_limit_is_ended_with_the_reason()
     {
         var (host, platform, client, received) = ConnectTransports();

@@ -251,6 +251,9 @@ internal sealed unsafe partial class SteamPlatform : ISteamPlatform, IDisposable
         }
     }
 
+    public void FlushMessages(uint connection) =>
+        SteamNetworkingSockets.FlushMessagesOnConnection(new HSteamNetConnection(connection));
+
     public void ReceiveMessages(SteamMessageHandler handler)
     {
         int count;

@@ -216,6 +216,9 @@ internal sealed class FakeSteamPlatform(FakeSteamNetwork network, ulong steamId)
     /// <summary>Messages refused so far, reliable ones counted apart.</summary>
     public int RefusedReliable { get; private set; }
 
+    /// <summary>How often each connection was flushed past Nagle's timer (<see cref="FlushMessages"/>).</summary>
+    public Dictionary<uint, int> Flushes { get; } = [];
+
     /// <summary>Empties every connection's queue, as the network carrying it away would.</summary>
     public void Drain() => _queued.Clear();
 
@@ -357,6 +360,14 @@ internal sealed class FakeSteamPlatform(FakeSteamNetwork network, ulong steamId)
         link.Remote._inbox.Enqueue((link.There, data.ToArray()));
         code = 1;
         return SteamSendResult.Sent;
+    }
+
+    public void FlushMessages(uint connection)
+    {
+        if (_links.ContainsKey(connection))
+        {
+            Flushes[connection] = Flushes.GetValueOrDefault(connection) + 1;
+        }
     }
 
     public int QueuedBytes(uint connection) =>
