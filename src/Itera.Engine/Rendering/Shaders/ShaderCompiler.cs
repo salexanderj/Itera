@@ -219,14 +219,20 @@ public sealed unsafe partial class ShaderCompiler : IDisposable
     }
 
     /// <summary>
-    /// Starts <see cref="PruneCache"/> on a thread-pool task, the first time it is called in the run; later calls do
-    /// nothing. Call it once start-up is done, so the pruning never delays the window.
+    /// Starts <see cref="PruneCache"/> on a task with a thread of its own, the first time it is called in the run; later
+    /// calls do nothing. Call it once start-up is done, so the pruning never delays the window. Its own thread, so a
+    /// thread pool busy with other work never holds it back.
     /// </summary>
     public void StartPruning()
     {
         if (Interlocked.Exchange(ref _pruneStarted, 1) == 0)
         {
-            _ = Task.Run(PruneCache);
+            _ = Task.Factory.StartNew(
+                PruneCache,
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default
+            );
         }
     }
 
