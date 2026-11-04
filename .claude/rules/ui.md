@@ -16,7 +16,7 @@ The menu and the settings are in `.claude/rules/ui-menu.md`. Input, text entry, 
 
 ### The surface and the layers
 
-Skia draws the UI's layers (`UISurface`, `UiPass`) into a CPU surface the size of the frame. Only the areas of the layers that changed are drawn again, and each layer is clipped to its bounds. Changed areas within 16 pixels of each other merge, and there are at most four; a layer that meets two areas is drawn into each. `IUiLayer.Bounds` must hold all a layer draws; `LayerInk` checks that. Each area's rows form a band (`UiBands`, merged where they overlap or touch). Each band is copied to a storage buffer, and a full-screen pass blends the pixels over the picture.
+Skia draws the UI's layers (`UISurface`, `UiPass`) into a CPU surface the size of the frame. Each frame every layer updates before any is read, so a layer may show by what a later one's update set. Only the areas of the layers that changed are drawn again, and each layer is clipped to its bounds. Changed areas within 16 pixels of each other merge, and there are at most four; a layer that meets two areas is drawn into each. `IUiLayer.Bounds` must hold all a layer draws; `LayerInk` checks that. Each area's rows form a band (`UiBands`, merged where they overlap or touch). Each band is copied to a storage buffer, and a full-screen pass blends the pixels over the picture.
 
 Under those pixels the pass draws the image views a HUD layer shows (`.claude/rules/rendering-views.md`). The layer draws its frame and marks over them and leaves the inside clear, as the starter's `MinimapLayer` does.
 
@@ -24,7 +24,7 @@ The pass blends in linear light, because its target is sRGB. Skia and `LayerPict
 
 Layers the engine provides:
 
-- `AimDotLayer`: the first of a match's layers, added before the game's. It draws at the screen's own pixels at any render scale and hides while the loading screen is drawn.
+- `AimDotLayer`: the first of a match's layers, added before the game's. It draws at the screen's own pixels at any render scale and hides while the loading screen is drawn. A game's layer that draws its own aim mark there sets `AimDotLayer.Hidden` in its `Update`.
 - `CentredMessageLayer`: shows one of a fixed list of texts, made into `TextBlobs` once, chosen each frame by a callback. It allocates nothing.
 - `HostSilenceLayer`: a match's layer after the aim dot. On a client it shows "No data from the host for N s" while `ReplicationService.SecondsWithoutSnapshots` is at least `ReplicationService.SilenceSeconds`. It hides while the loading screen is drawn.
 - `Amounts`: formats counts for the HUD (500, 12.5K, 30M).

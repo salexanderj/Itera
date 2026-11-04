@@ -116,7 +116,7 @@ public sealed unsafe partial class UISurface : IDisposable
     }
 
     /// <summary>
-    /// Updates the layers, then repaints the areas of those that changed on the surface at <paramref name="width"/> x
+    /// Updates every layer, then repaints the areas of those that changed on the surface at <paramref name="width"/> x
     /// <paramref name="height"/> (the frame's image), and returns their rows. Once per frame.
     /// </summary>
     public UiDraw Draw(in FrameTime time, int width, int height)
@@ -134,11 +134,17 @@ public sealed unsafe partial class UISurface : IDisposable
             areas[count++] = full;
         }
 
+        // Every layer updates before any is read, so a layer may show by what a later one's update set (a game's
+        // crosshair hiding the aim dot under it: AimDotLayer.Hidden) in the same frame.
+        for (var i = 0; i < _layers.Length; i++)
+        {
+            _layers[i].Update(in time, Width, Height);
+        }
+
         var visible = false;
         for (var i = 0; i < _layers.Length; i++)
         {
             var layer = _layers[i];
-            layer.Update(in time, Width, Height);
             var shown = layer.Visible;
             visible |= shown;
             var bounds = shown ? Within(layer.Bounds(Width, Height), full) : SKRectI.Empty;

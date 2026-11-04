@@ -9,7 +9,8 @@ namespace Itera.Engine.UI;
 /// across on a side of an even number of pixels, three and five on an odd one (the pixels whose centres lie less than
 /// <see cref="WhiteReach"/> and <see cref="BlackReach"/> from the screen's centre along each axis). A match's layer the
 /// engine adds before the game's, so it is the HUD's lowest; drawn at the screen's own pixels at any render scale, and
-/// hidden while the loading screen is drawn. Main thread.
+/// hidden while the loading screen is drawn, and while a game's layer that draws its own mark in its place sets
+/// <see cref="Hidden"/>. Main thread.
 /// </summary>
 public sealed class AimDotLayer : IMatchUiLayer, IDisposable
 {
@@ -30,7 +31,13 @@ public sealed class AimDotLayer : IMatchUiLayer, IDisposable
         _loading = loading;
     }
 
-    public bool Visible => !_loading.Drawn;
+    /// <summary>
+    /// True while a game's layer draws its own aim mark in the dot's place, so the dot hides. The layer sets it in its
+    /// <c>Update</c>, which runs before any layer is read (<see cref="UISurface.Draw"/>), so it holds in the same frame.
+    /// </summary>
+    public bool Hidden { get; set; }
+
+    public bool Visible => !_loading.Drawn && !Hidden;
 
     public bool Dirty => !_drawn || Visible != _shown;
 

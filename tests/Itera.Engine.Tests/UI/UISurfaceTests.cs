@@ -70,6 +70,24 @@ public sealed class UISurfaceTests : IDisposable
         Assert.Equal(0u, Pixel(5, 15));
     }
 
+    /// <summary>
+    /// A layer whose showing a later layer's update sets (a game's crosshair hiding the aim dot under it) is read after
+    /// that update, in the same frame.
+    /// </summary>
+    [Fact]
+    public void Every_layer_updates_before_any_is_read()
+    {
+        using var hider = new HidingLayer(_layer);
+        using var surface = new UISurface([_layer, hider], NullLogger<UISurface>.Instance);
+        surface.Initialize(64, 48);
+        Draw(surface);
+
+        hider.Hides = true;
+        var draw = Draw(surface);
+
+        Assert.Equal(new UiDraw(10, 10, false), draw);
+    }
+
     [Fact]
     public void The_pixels_are_premultiplied_bgra_rows_from_the_top()
     {
@@ -439,6 +457,30 @@ public sealed class UISurfaceTests : IDisposable
         }
 
         public void Dispose() => _paint.Dispose();
+    }
+
+    /// <summary>A layer that shows nothing and, in its update, hides <c>band</c> while it <c>Hides</c>.</summary>
+    private sealed class HidingLayer(BandLayer band) : IUiLayer, IDisposable
+    {
+        public bool Hides { get; set; }
+
+        public bool Visible => false;
+
+        public bool Dirty => false;
+
+        public void Update(in FrameTime time)
+        {
+            if (band.Shown == Hides)
+            {
+                band.Shown = !Hides;
+            }
+        }
+
+        public SKRectI Bounds(int width, int height) => SKRectI.Empty;
+
+        public void Draw(SKCanvas canvas, int width, int height) { }
+
+        public void Dispose() { }
     }
 
     /// <summary>A band of half-transparent red across the surface, from row <c>top</c> to <c>bottom</c>.</summary>

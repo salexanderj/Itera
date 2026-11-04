@@ -92,6 +92,32 @@ public sealed class AimDotLayerTests
         Assert.Equal(0, hidden.GetPixel(32, 32).Alpha);
     }
 
+    [Fact]
+    public void It_hides_while_a_games_layer_sets_hidden_and_is_dirty_when_that_changes()
+    {
+        var loading = new LoadingScreen(_options, NullLogger<LoadingScreen>.Instance);
+        using var layer = new AimDotLayer(loading);
+        using (Draw(layer, 64, 64))
+        {
+            Assert.False(layer.Dirty);
+        }
+
+        layer.Hidden = true;
+
+        Assert.False(layer.Visible);
+        Assert.True(layer.Dirty);
+        using (var hidden = Draw(layer, 64, 64))
+        {
+            Assert.False(layer.Dirty);
+            Assert.Equal(0, hidden.GetPixel(32, 32).Alpha);
+        }
+
+        layer.Hidden = false;
+
+        Assert.True(layer.Visible);
+        Assert.True(layer.Dirty);
+    }
+
     private static SKBitmap Draw(AimDotLayer layer, int width, int height)
     {
         var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
