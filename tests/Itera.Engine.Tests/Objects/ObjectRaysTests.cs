@@ -30,6 +30,7 @@ public sealed class ObjectRaysTests : IDisposable
     private readonly VoxelWorld _world;
     private readonly ObjectWorld _objects;
     private readonly ObjectRays _rays;
+    private readonly VoxelObjectKindId _cube;
     private readonly PhysicsWorld _physics = new(NullLogger<PhysicsWorld>.Instance);
     private readonly MeshColliders _colliders;
 
@@ -82,6 +83,14 @@ public sealed class ObjectRaysTests : IDisposable
             s => s.FillBox(0, 0, 0, 100, 50, 100, Rock)
         );
         _placements.Add(new ObjectPlacement(new ObjectId(6), slab, new VoxelCoord(-300, 0, -300), 0));
+        // A solid cube 20 cm across, its anchor the middle of its floor, placed nowhere: what Covers asks about.
+        _cube = Register(
+            "cube",
+            5,
+            new VoxelCoord(4, 4, 4),
+            new VoxelCoord(10, 0, 10),
+            s => s.FillBox(0, 0, 0, 20, 20, 20, Rock)
+        );
         var generator = new PlacingGenerator(_placements);
         _world = TestWorlds.Load(generator, Vector3.Zero, radiusMetres: 0);
         _objects = new ObjectWorld(
@@ -182,6 +191,19 @@ public sealed class ObjectRaysTests : IDisposable
         Assert.False(_rays.Raycast(new Vector3(-3, 0.5f, -3), Vector3.UnitY, 2, out _));
         // Along its top, touching it only.
         Assert.False(_rays.Raycast(new Vector3(-4, 0.5f, -3), Vector3.UnitX, 2, out _));
+    }
+
+    /// <summary>
+    /// A 20 cm cube is covered where all of it lies in the slab (from (-350, 0, -350) to (-250, 50, -250) cm) or in the
+    /// trunk 40 m out, turned; not with its top half over the slab's top, nor in open air.
+    /// </summary>
+    [Fact]
+    public void A_kind_wholly_in_placed_objects_solid_voxels_is_covered_and_one_partly_out_is_not()
+    {
+        Assert.True(_rays.Covers(_cube, new VoxelCoord(-300, 10, -300), 0));
+        Assert.True(_rays.Covers(_cube, new VoxelCoord(4000, 100, 0), 700));
+        Assert.False(_rays.Covers(_cube, new VoxelCoord(-300, 40, -300), 0));
+        Assert.False(_rays.Covers(_cube, new VoxelCoord(0, 100, 0), 0));
     }
 
     /// <summary>A ray along +x meets the trunk 40 m out, through two stretches and more, where its side is.</summary>
@@ -306,6 +328,7 @@ public sealed class ObjectRaysTests : IDisposable
                 _rays.Raycast(new Vector3(0, 1, 0), direction, 30, out _);
                 sources.Raycast(new Vector3(0, 1, 0), direction, 30, out _);
                 ToolAim.Raycast(sources, passability, new Vector3(0, 0.5f, -3), direction, 5, out _);
+                _rays.Covers(_cube, new VoxelCoord(-300, 10 + i, -300), i * 64);
             }
         }
 

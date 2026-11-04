@@ -50,6 +50,9 @@ into the world's frame, the material, and where the ray enters and leaves that v
 - `ToolAim.Raycast(CollisionSources, ...)` goes past objects' passable voxels round the eye, as past the terrain's.
 - The third-person camera is pulled in by objects where given them: `ThirdPersonCamera`'s `objects`, `PlayerCameraSystem`'s,
   and `ToolAim.Look`'s.
+- `ObjectRays.Covers` says whether an object about to be placed would add any solid voxel: true when the middle of each
+  of its solid voxels lies in a solid voxel of a placed object, a damaged one's as edits left it. A game may refuse such a
+  placing. Where an area under it is not filled, it says false.
 
 ### Bodies meet objects
 

@@ -26,7 +26,8 @@ public readonly record struct ObjectHit(
 /// reach meets it (<see cref="ObjectWorld.Near"/>; objects of areas not filled are not met), and turned into each
 /// object's own voxels (a damaged object's as edits left them, <see cref="ObjectDamage"/>), which it steps through one by
 /// one inside the object's box. A ray looks at most
-/// <see cref="MostMetres"/>. Scoped to the match, with voxel terrain; main thread (a copy for another thread is
+/// <see cref="MostMetres"/>. It also answers whether an object about to be placed would add any solid voxel to those
+/// placed (<see cref="Covers"/>). Scoped to the match, with voxel terrain; main thread (a copy for another thread is
 /// <see cref="CreateWorker"/>'s); allocates nothing.
 /// </summary>
 public sealed class ObjectRays(
@@ -124,6 +125,114 @@ public sealed class ObjectRays(
         }
 
         return found;
+    }
+
+    /// <summary>
+    /// True when every solid voxel of an object of <paramref name="kind"/> placed at <paramref name="anchor"/> (absolute
+    /// centimetres) and turned by <paramref name="heading"/> has its middle in a solid voxel of a placed object (a damaged
+    /// one's as edits left them): placed, it would add nothing, so a game may refuse it. False for a kind with no solid
+    /// voxel, and where an area under it is not filled yet, since its objects may be missing.
+    /// </summary>
+    public bool Covers(VoxelObjectKindId kind, VoxelCoord anchor, int heading)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(heading);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(heading, ObjectPlacement.HeadingSteps);
+        var placed = kinds[kind];
+        var unit = (double)placed.UnitCentimetres;
+        var offset = placed.AnchorCentimetres;
+        var size = placed.Size;
+        double cos = ObjectTurns.Cos(heading) / Scale,
+            sin = ObjectTurns.Sin(heading) / Scale;
+
+        // The objects that may reach into the box the turned kind covers.
+        double minX = double.MaxValue,
+            maxX = double.MinValue,
+            minZ = double.MaxValue,
+            maxZ = double.MinValue;
+        for (var corner = 0; corner < 4; corner++)
+        {
+            var lx = ((corner & 1) == 0 ? 0 : size.X * unit) - offset.X;
+            var lz = ((corner & 2) == 0 ? 0 : size.Z * unit) - offset.Z;
+            var x = anchor.X + lx * cos - lz * sin;
+            var z = anchor.Z + lx * sin + lz * cos;
+            (minX, maxX, minZ, maxZ) = (Math.Min(minX, x), Math.Max(maxX, x), Math.Min(minZ, z), Math.Max(maxZ, z));
+        }
+
+        _near.Clear();
+        if (
+            objects.Count == 0
+            || !objects.Near(
+                (int)Math.Floor(minX),
+                (int)Math.Ceiling(maxX),
+                (int)Math.Floor(minZ),
+                (int)Math.Ceiling(maxZ),
+                _near
+            )
+        )
+        {
+            return false;
+        }
+
+        var solid = 0;
+        for (var z = 0; z < size.Z; z++)
+        {
+            for (var y = 0; y < size.Y; y++)
+            {
+                for (var x = 0; x < size.X; x++)
+                {
+                    placed.Voxel(x, y, z, out var material, out _);
+                    if (material == VoxelConstants.Air)
+                    {
+                        continue;
+                    }
+
+                    // The voxel's middle, along the kind's axes from its anchor, then turned into the world.
+                    var lx = (x + 0.5) * unit - offset.X;
+                    var ly = (y + 0.5) * unit - offset.Y;
+                    var lz = (z + 0.5) * unit - offset.Z;
+                    if (!InAny(anchor.X + lx * cos - lz * sin, anchor.Y + ly, anchor.Z + lx * sin + lz * cos))
+                    {
+                        return false;
+                    }
+
+                    solid++;
+                }
+            }
+        }
+
+        return solid > 0;
+    }
+
+    /// <summary>True when the point (absolute centimetres) lies in a solid voxel of one of <see cref="_near"/>.</summary>
+    private bool InAny(double px, double py, double pz)
+    {
+        foreach (var placement in _near)
+        {
+            var kind = kinds[placement.Kind];
+            IObjectVoxelSource voxels = (IObjectVoxelSource?)damage?.Find(placement.Id) ?? kind;
+            double cos = ObjectTurns.Cos(placement.Heading) / Scale,
+                sin = ObjectTurns.Sin(placement.Heading) / Scale;
+            double rx = px - placement.Anchor.X,
+                ry = py - placement.Anchor.Y,
+                rz = pz - placement.Anchor.Z;
+            var unit = (double)kind.UnitCentimetres;
+            var offset = kind.AnchorCentimetres;
+            var x = (int)Math.Floor((rx * cos + rz * sin + offset.X) / unit);
+            var y = (int)Math.Floor((ry + offset.Y) / unit);
+            var z = (int)Math.Floor((rz * cos - rx * sin + offset.Z) / unit);
+            if ((uint)x >= (uint)kind.Size.X || (uint)y >= (uint)kind.Size.Y || (uint)z >= (uint)kind.Size.Z)
+            {
+                continue;
+            }
+
+            voxels.Voxel(x, y, z, out var material, out _);
+            if (material != VoxelConstants.Air)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
