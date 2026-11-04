@@ -2,6 +2,7 @@ using System.Numerics;
 using BepuPhysics;
 using BepuPhysics.Collidables;
 using Itera.Engine.Physics;
+using Itera.Engine.Tests.Systems;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -10,7 +11,7 @@ namespace Itera.Engine.Tests.Physics;
 /// <summary>
 /// Impact events (<see cref="PhysicsMarks.ContactEvents"/>, <see cref="PhysicsWorld.ImpactEvents"/>): drops from 1 and
 /// 4 m report about 4.4 and 8.9 m/s, where they met, the normal, and both materials; a ball that rolls and comes to rest
-/// (and sleeps) gives no new event; two marked balls meeting give one event for their pair as they meet and one as they
+/// (and sleeps) gives no new event, nor does one resting on the voxels that freezes and thaws; two marked balls meeting give one event for their pair as they meet and one as they
 /// part; a marked static reports a plain ball; unmarked pairs give none; a removed ball ends its pair, removed; a move of
 /// the origin moves the events' points; contacts past the buffers are dropped and counted; asleep pairs that do not fit
 /// beside the pairs met are dropped and counted; and stepping with impacts allocates nothing.
@@ -59,6 +60,29 @@ public sealed class ImpactEventsTests
 
         Assert.False(physics.Simulation.Bodies[ball].Awake);
         Assert.Equal([ImpactChange.Began], events.Select(change => change.Change));
+    }
+
+    [Fact]
+    public void A_ball_resting_on_the_voxels_that_freezes_and_thaws_gives_no_new_event()
+    {
+        using var harness = new PhysicsTestHarness();
+        var physics = harness.Physics;
+        var ball = physics.AddBody(Ball(physics, new Vector3(0, 0.3f, 0)), Marked);
+        var landed = Run(harness, 120);
+
+        // The player walks away: the columns under the ball unload, and the colliders freeze it.
+        Load(harness, new Vector3(40, 0, 0));
+        var frozenEvents = Run(harness, 60);
+        var frozen = harness.Colliders.IsFrozen(ball);
+        // The player comes back: the columns load again, and it thaws where it lay.
+        Load(harness, Vector3.Zero);
+        var thawedEvents = Run(harness, 120);
+
+        Assert.Equal(ImpactChange.Began, landed[0].Change);
+        Assert.True(frozen);
+        Assert.False(harness.Colliders.IsFrozen(ball));
+        Assert.Empty(frozenEvents);
+        Assert.Empty(thawedEvents);
     }
 
     [Fact]
@@ -217,6 +241,30 @@ public sealed class ImpactEventsTests
         }
 
         return events;
+    }
+
+    /// <summary>The harness's voxel colliders and physics step, <paramref name="steps"/> times, and their events.</summary>
+    private static List<ImpactEvent> Run(PhysicsTestHarness harness, int steps)
+    {
+        var events = new List<ImpactEvent>();
+        for (var i = 0; i < steps; i++)
+        {
+            harness.RunPhysics();
+            events.AddRange(harness.Physics.ImpactEvents.ToArray());
+        }
+
+        return events;
+    }
+
+    /// <summary>Loads the voxels round <paramref name="centre"/> alone, the columns elsewhere unloaded.</summary>
+    private static void Load(PhysicsTestHarness harness, Vector3 centre)
+    {
+        harness.Voxels.SetCenters([centre]);
+        VoxelLoading.WaitUntilLoaded(harness.Voxels);
+        for (var i = 0; i < 10; i++)
+        {
+            harness.Voxels.Update(0);
+        }
     }
 
     /// <summary>

@@ -96,7 +96,8 @@ internal struct ContactRecord : IComparable<ContactRecord>
 /// pairs that began and stopped touching. A pair is two bodies, or a body and a static; every voxel static counts as one,
 /// the voxel ground (<see cref="VoxelGround"/>), so a body that rolls from one voxel cell's static into the next has not
 /// begun touching anything; a pair that is no longer met only because its bodies sleep (Bepu does not test sleeping
-/// bodies against statics or each other) still touches. It follows the pairs with a bouncy side or a side marked
+/// bodies against statics or each other), or are frozen until the voxels round them load (kinematic, which Bepu does not
+/// test against statics), still touches. It follows the pairs with a bouncy side or a side marked
 /// <see cref="PhysicsMarks.ContactEvents"/>. A bouncy pair that begins touching at <see cref="MinimumBounceSpeed"/> or
 /// more is given a separating speed of its bounciness times the speed it came together at (Bepu has no coefficient of
 /// restitution; its contacts stop the pair, and the engine pushes it apart), at the contact, by the pair's masses and
@@ -202,9 +203,10 @@ internal sealed class PhysicsContacts
     /// <summary>
     /// After the step: gathers the workers' contacts by pair; bounces each bouncy pair that began touching; gives the
     /// events of marked pairs that began and ended (after those of sides removed since the step before); and keeps the
-    /// pairs, those only asleep among them, for the next step. Main thread.
+    /// pairs, those only asleep among them, for the next step. A body <paramref name="frozen"/> counts as asleep. Main
+    /// thread.
     /// </summary>
-    public void EndStep(Simulation simulation, BodyKinds kinds)
+    public void EndStep(Simulation simulation, BodyKinds kinds, Func<BodyHandle, bool>? frozen = null)
     {
         var count = 0;
         for (var w = 0; w < _workers.Length; w++)
@@ -255,7 +257,7 @@ internal sealed class PhysicsContacts
             if (b == kept || (a < _previousCount && _previous[a] < pairs[b].Key))
             {
                 var key = _previous[a];
-                if (Asleep(key, simulation.Bodies))
+                if (Asleep(key, simulation.Bodies, frozen))
                 {
                     // This step's pairs come first: an asleep pair is kept only while room is left for every one of
                     // them still to come. One dropped here gives no Ended, and a Began if it is met again.
@@ -355,11 +357,14 @@ internal sealed class PhysicsContacts
     /// <summary>The pair of <paramref name="a"/> and <paramref name="b"/>, either way round.</summary>
     public static ulong KeyOf(uint a, uint b) => a < b ? ((ulong)a << 32) | b : ((ulong)b << 32) | a;
 
-    /// <summary>True when every body of the pair <paramref name="key"/> sleeps (Bepu no longer meets it).</summary>
-    private static bool Asleep(ulong key, Bodies bodies) =>
-        SideAsleep((uint)(key >> 32), bodies) && SideAsleep((uint)key, bodies);
+    /// <summary>
+    /// True when every body of the pair <paramref name="key"/> sleeps or is <paramref name="frozen"/> (Bepu no longer
+    /// meets it).
+    /// </summary>
+    private static bool Asleep(ulong key, Bodies bodies, Func<BodyHandle, bool>? frozen) =>
+        SideAsleep((uint)(key >> 32), bodies, frozen) && SideAsleep((uint)key, bodies, frozen);
 
-    private static bool SideAsleep(uint side, Bodies bodies)
+    private static bool SideAsleep(uint side, Bodies bodies, Func<BodyHandle, bool>? frozen)
     {
         if ((side & StaticBit) != 0)
         {
@@ -367,7 +372,7 @@ internal sealed class PhysicsContacts
         }
 
         var body = new BodyHandle((int)side);
-        return bodies.BodyExists(body) && !bodies[body].Awake;
+        return bodies.BodyExists(body) && (!bodies[body].Awake || frozen?.Invoke(body) == true);
     }
 
     private void Keep(ref int next, ulong key, bool reports)

@@ -53,6 +53,12 @@ public sealed partial class PhysicsWorld
     internal Action<BodyHandle>? BodyRemoving { get; set; }
 
     /// <summary>
+    /// True for a body frozen until the voxels round it load (<see cref="VoxelColliders.IsFrozen"/>): its pairs keep
+    /// touching, as a sleeping body's do (<see cref="PhysicsContacts"/>). Set once, by the match's voxel colliders.
+    /// </summary>
+    internal Func<BodyHandle, bool>? BodyFrozen { get; set; }
+
+    /// <summary>
     /// Adds a game's own body, recorded as the engine's loose bodies are (<see cref="BodyKind.Loose"/>, voxel level 0):
     /// it touches the voxels, the game's statics, other bodies, and characters' stand-ins; where the voxel world round
     /// it is not loaded it is frozen until it is, unless <see cref="PhysicsMarks.KeepsMovingUnloaded"/>; it moves with

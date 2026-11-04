@@ -237,7 +237,7 @@ public sealed partial class PhysicsWorld : IDisposable
         _contacts!.BeginStep(stepSeconds, _stepGravity);
         _triggers!.BeginStep();
         Simulation.Timestep(stepSeconds, _dispatcher);
-        _contacts.EndStep(Simulation, _kinds);
+        _contacts.EndStep(Simulation, _kinds, BodyFrozen);
         EndTriggerStep();
         CheckRecords();
     }

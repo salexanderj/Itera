@@ -68,6 +68,8 @@ or marked side do this work.
   pairs that do not fit are dropped and counted.
 - A pair Bepu no longer meets only because its bodies sleep still touches. A ball falling asleep gives no `Ended`, and
   waking gives no `Began`.
+- A body frozen until the voxels round it load counts as asleep (`PhysicsWorld.BodyFrozen`, set by `VoxelColliders`). Its
+  freeze and thaw give no events.
 - A body rolling over voxel cells' borders begins nothing, since the voxels count as one. A pair that strikes again while
   still touching gives no new `Began`.
 - Events past the buffers are dropped and counted with the contacts.

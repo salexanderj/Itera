@@ -159,6 +159,8 @@ public sealed partial class VoxelColliders : IDisposable
         _logger = logger;
         // A body removed through the physics world is forgotten here first.
         physics.BodyRemoving = Forget;
+        // A body frozen here keeps its pairs touching, so it neither ends nor begins one as it freezes and thaws.
+        physics.BodyFrozen = IsFrozen;
     }
 
     /// <summary>The physics materials a cell's statics may have: one static for each its voxels have.</summary>
