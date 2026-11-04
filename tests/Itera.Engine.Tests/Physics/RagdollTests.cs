@@ -401,7 +401,7 @@ public sealed class RagdollTests : IDisposable
     }
 
     [Fact]
-    public void Bad_body_and_joint_indices_make_nothing()
+    public void Bad_body_and_joint_indices_or_joint_numbers_make_nothing()
     {
         var made = new List<BodyHandle>();
         LoosePart[] parts =
@@ -417,6 +417,30 @@ public sealed class RagdollTests : IDisposable
         Assert.False(_bodies.TryCreateRagdoll(parts, [0, 1], [joint with { BodyB = 2 }], 1000, Vector3.Zero, 0, made));
         Assert.False(_bodies.TryCreateRagdoll(parts, [0, 1], [joint with { BodyB = 0 }], 1000, Vector3.Zero, 0, made));
         Assert.False(_bodies.TryCreateRagdoll(parts, [0], [joint], 1000, Vector3.Zero, 0, made));
+        // A joint about no axis, or with a point, an axis, or a swing not finite.
+        RagdollJoint[] bad =
+        [
+            joint with
+            {
+                Axis = Vector3.Zero,
+            },
+            joint with
+            {
+                Point = new Vector3(float.NaN, 3, 0),
+            },
+            joint with
+            {
+                Axis = new Vector3(0, float.PositiveInfinity, 0),
+            },
+            joint with
+            {
+                MaxSwingRadians = float.NaN,
+            },
+        ];
+        foreach (var wrong in bad)
+        {
+            Assert.False(_bodies.TryCreateRagdoll(parts, [0, 1], [wrong], 1000, Vector3.Zero, 0, made));
+        }
 
         Assert.Empty(made);
         Assert.Equal(0, _bodies.Count);

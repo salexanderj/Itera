@@ -356,6 +356,18 @@ public abstract class MoverFeatureTests
         Assert.False(none);
     }
 
+    /// <summary>A ground's circle of no radius covers no cell, so it would find no ground: it is refused.</summary>
+    [Fact]
+    public void The_ground_under_a_circle_of_no_radius_is_refused()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            _mover.GroundTop(Metres(290, 210, -240), 0, 0.4f, 0.4f, out _)
+        );
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            _mover.GroundTop(Metres(290, 210, -240), float.NaN, 0.4f, 0.4f, out _)
+        );
+    }
+
     /// <summary>
     /// Far outside the world every query answers at once, with nothing there to stand on or overlap (past about -21,475
     /// km a circle's bounds wrapped round an int, and the column walks looped over about 10^15 keys; one far axis alone

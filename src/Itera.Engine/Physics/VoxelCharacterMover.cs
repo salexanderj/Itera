@@ -1196,10 +1196,20 @@ public sealed class VoxelCharacterMover
     /// above, in metres: where a foot there would stand. Materials bodies walk through (foliage) and loose bodies are not
     /// ground. False when nothing blocks in that range (<paramref name="topMetres"/> 0), or when the level-0 voxels there
     /// are not loaded (<paramref name="topMetres"/> NaN: the ground is not known, as far from the camera, where only
-    /// coarser levels are kept). Main thread; allocates nothing.
+    /// coarser levels are kept). The radius is above 0: a circle of none covers no cell, so it would find no ground.
+    /// Main thread; allocates nothing.
     /// </summary>
     public bool GroundTop(Vector3 atMetres, float radiusMetres, float upMetres, float downMetres, out float topMetres)
     {
+        if (!(radiusMetres > 0))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(radiusMetres),
+                radiusMetres,
+                "A ground's circle needs a radius above 0."
+            );
+        }
+
         Enter();
         try
         {

@@ -44,6 +44,32 @@ public sealed partial class LooseBodies
         Build(parts, DensityKilogramsPerCubicMetre, Vector3.Zero, tint, 0, true, out body);
 
     /// <summary>
+    /// True when each of <paramref name="joints"/> joins two bodies of the <paramref name="count"/>, not one to itself, at a
+    /// finite point, about a finite axis of some length (a shorter one has no way to swing about), with a finite swing.
+    /// </summary>
+    private static bool JointsFit(ReadOnlySpan<RagdollJoint> joints, int count)
+    {
+        foreach (ref readonly var joint in joints)
+        {
+            if (
+                joint.BodyA < 0
+                || joint.BodyA >= count
+                || joint.BodyB < 0
+                || joint.BodyB >= count
+                || joint.BodyA == joint.BodyB
+                || !float.IsFinite(joint.Point.X + joint.Point.Y + joint.Point.Z + joint.MaxSwingRadians)
+                || !(joint.Axis.LengthSquared() >= LeastAxisSquared)
+                || !float.IsFinite(joint.Axis.LengthSquared())
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Makes a ragdoll of several models lying where <paramref name="parts"/> say, such as a limb cut off a character or
     /// a whole character that collapses: the parts with the same entry in <paramref name="bodyOf"/> (0, 1, ...) make one
     /// body (as <see cref="TryCreate(ReadOnlySpan{LoosePart}, float, Vector3, float, out BodyHandle)"/> makes it), and
@@ -55,7 +81,8 @@ public sealed partial class LooseBodies
     /// not made: the models it would own are removed, and its joints left out. False, with nothing made and the caller's
     /// models kept, when the bodies would pass <see cref="MaxBodies"/>, when <paramref name="bodyOf"/> and
     /// <paramref name="parts"/> differ in length or an entry is negative, or when a joint names a body outside
-    /// <paramref name="bodyOf"/>'s entries or joins a body to itself.
+    /// <paramref name="bodyOf"/>'s entries, joins a body to itself, or has a point, axis, or swing not finite or an axis
+    /// of no length.
     /// </summary>
     public bool TryCreateRagdoll(
         ReadOnlySpan<LoosePart> parts,
@@ -83,18 +110,9 @@ public sealed partial class LooseBodies
             return false;
         }
 
-        foreach (ref readonly var joint in joints)
+        if (!JointsFit(joints, count))
         {
-            if (
-                joint.BodyA < 0
-                || joint.BodyA >= count
-                || joint.BodyB < 0
-                || joint.BodyB >= count
-                || joint.BodyA == joint.BodyB
-            )
-            {
-                return false;
-            }
+            return false;
         }
 
         var ragdoll = ++_lastRagdoll;
@@ -150,7 +168,7 @@ public sealed partial class LooseBodies
     /// nor what the world's rays meet; they rest, freeze, thaw, and go together. The bodies made are added to
     /// <paramref name="made"/> in the order of <paramref name="shapes"/>. False, with nothing made, when the bodies would
     /// pass <see cref="MaxBodies"/>, a shape is not finite, its radius or mass not above 0, or a joint names a body outside
-    /// <paramref name="shapes"/> or joins a body to itself.
+    /// <paramref name="shapes"/>, joins a body to itself, or has a point, axis, or swing not finite or an axis of no length.
     /// </summary>
     public bool TryCreateRagdoll(
         ReadOnlySpan<RagdollShape> shapes,
@@ -199,18 +217,9 @@ public sealed partial class LooseBodies
             }
         }
 
-        foreach (ref readonly var joint in joints)
+        if (!JointsFit(joints, shapes.Length))
         {
-            if (
-                joint.BodyA < 0
-                || joint.BodyA >= shapes.Length
-                || joint.BodyB < 0
-                || joint.BodyB >= shapes.Length
-                || joint.BodyA == joint.BodyB
-            )
-            {
-                return false;
-            }
+            return false;
         }
 
         var ragdoll = ++_lastRagdoll;

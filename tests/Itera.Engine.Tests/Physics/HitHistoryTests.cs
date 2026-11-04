@@ -318,6 +318,50 @@ public sealed class HitHistoryTests : IDisposable
     }
 
     /// <summary>
+    /// A tick <see cref="HitHistory.Steps"/> or more older than the newest kept is dropped, though its place in the ring
+    /// holds an older tick still: records at 0 and 100 leave 64 out.
+    /// </summary>
+    [Fact]
+    public void A_tick_steps_or_more_older_than_the_newest_kept_is_dropped()
+    {
+        var entity = _world.Create();
+        Record(entity, 0, 0);
+        Record(entity, 100, 0);
+
+        Record(entity, 64, 0);
+
+        Assert.Equal(0, _history.CapsulesAt(entity, 64, new HitCapsule[HitHistory.MostCapsulesAt]));
+    }
+
+    /// <summary>
+    /// Where the two steps round a tick hold capsules of other parts at one place (a limb lost moves the rest down a
+    /// place), both are read, each where its step has it, as the ray tests both.
+    /// </summary>
+    [Fact]
+    public void Capsules_of_other_parts_at_one_place_in_the_two_steps_are_both_read()
+    {
+        var entity = _world.Create();
+        _history.Record(
+            entity,
+            1,
+            [new(new(0, 0, 0), new(0, 1, 0), 0.3f, 1), new(new(5, 0, 0), new(5, 1, 0), 0.2f, 2)]
+        );
+        _history.Record(entity, 2, [new(new(5, 0, 0), new(5, 1, 0), 0.2f, 2)]);
+        var into = new HitCapsule[HitHistory.MostCapsulesAt];
+
+        var count = _history.CapsulesAt(entity, 1.5, into);
+
+        Assert.Equal(
+            [
+                new HitCapsule(new(0, 0, 0), new(0, 1, 0), 0.3f, 1),
+                new HitCapsule(new(5, 0, 0), new(5, 1, 0), 0.2f, 2),
+                new HitCapsule(new(5, 0, 0), new(5, 1, 0), 0.2f, 2),
+            ],
+            into[..count]
+        );
+    }
+
+    /// <summary>
     /// An entity's capsules read at a tick are those <see cref="HitHistory.Raycast"/> tests: moved between the two steps
     /// round the tick, an unmatched one where its step has it, none for an entity not there or not kept, and no more than
     /// the room given; reading allocates nothing.
@@ -419,12 +463,14 @@ public sealed class HitHistoryTests : IDisposable
         Assert.Equal(gone, at55.Entity);
         Assert.True(Raycast(0, 6, Entity.Null, out var at6));
         Assert.Equal(gone, at6.Entity);
+        Assert.False(Raycast(0, 6.5, Entity.Null, out var at65) && at65.Entity == gone);
         Assert.False(Raycast(0, 7, Entity.Null, out var at7) && at7.Entity == gone);
         Assert.False(Raycast(0, 15, Entity.Null, out var at15) && at15.Entity == gone);
 
         // The one that began at step 10: not there before, there from a step before.
         Assert.False(Raycast(0, 5, Entity.Null, out var early) && early.Entity == later);
         Assert.False(Raycast(0, 8, Entity.Null, out var at8) && at8.Entity == later);
+        Assert.False(Raycast(0, 8.5, Entity.Null, out var at85) && at85.Entity == later);
         Assert.True(Raycast(0, 9, Entity.Null, out var at9));
         Assert.Equal(later, at9.Entity);
         Assert.True(Raycast(0, 12, Entity.Null, out var at12));

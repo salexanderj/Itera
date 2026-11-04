@@ -490,6 +490,24 @@ public sealed class LooseBodiesTests : IDisposable
         Assert.Equal(0, _bodies.Count);
     }
 
+    /// <summary>
+    /// A body whose height is not a number (a bad pose or velocity spoiled it) has fallen out, so its system removes it
+    /// rather than keep it, neither fallen nor at rest, until the room evicts it.
+    /// </summary>
+    [Fact]
+    public void A_body_whose_height_is_not_a_number_has_fallen_out()
+    {
+        var piece = LiftBall(new VoxelCoord(-100, 188, 0));
+        Assert.True(_bodies.TryCreate(piece, new Vector3(0, 2.5f, 0), Vector3.Zero, out var body));
+        var whole = _bodies.HasFallenOut(body);
+
+        _physics.Simulation.Bodies[body].Pose.Position = new Vector3(0, float.NaN, 0);
+
+        Assert.False(whole);
+        Assert.True(_bodies.HasFallenOut(body));
+        _bodies.Remove(body);
+    }
+
     [Fact]
     public void A_body_frozen_until_its_columns_load_is_not_at_rest()
     {

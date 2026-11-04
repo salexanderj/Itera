@@ -76,8 +76,9 @@ against a capsule, is public for a game's own shapes.
   takes every capsule and bounding sphere `radius` fatter. Its hit's point is where the sphere touches the capsule.
 - Between two steps each capsule's ends move straight by the fraction. A capsule at the same place in both lists with the
   same part is matched. Otherwise each is used where it was recorded.
-- `CapsulesAt(entity, tick, into)` gives one entity's capsules as that ray takes them at the tick. A game uses it to test
-  its own shapes past the first the ray meets, such as organs inside a part it hit.
+- `CapsulesAt(entity, tick, into)` gives one entity's capsules as that ray takes them at the tick: at a place whose
+  parts differ in the two steps, both, up to `MostCapsulesAt`. A game uses it to test its own shapes past the first the
+  ray meets, such as organs inside a part it hit.
 - `ThirdPersonCamera.Aim` takes a tick and the aimer to leave out, so an over-the-shoulder crosshair stops at a
   character's shape. `AimPoint` gives the point itself, for a shot that leaves from a muzzle towards it. `LookPoint`
   gives the point straight along the look from the eye, for an aimer with no camera over its shoulder.
@@ -88,8 +89,9 @@ against a capsule, is public for a game's own shapes.
   recorded longest ago, with a warning once. Rays then miss that one at the steps it lost.
 - A step is one absolute anchor (a `WorldPoint`) and float offsets from it. A move of the origin changes nothing, and
   the history is not a component `OriginShifts` moves.
-- An entity is met from a step before its oldest record to a step after its newest. A character the game stopped
-  recording is met only at ticks it was there. `Forget` drops one.
+- An entity is met from a step before its oldest record to a step after its newest, measured from the tick itself, a
+  fraction too. A character the game stopped recording is met only at ticks it was there. `Forget` drops one. A record
+  `Steps` or more steps older than the newest kept is dropped.
 - Storage is made at an entity's first record and reused after `Forget`. Recording a known entity, asking, and forgetting
   allocate nothing.
 - A grid of `HitHistory.CellMetres` cells over absolute x and z holds each entity in the cells its kept steps' bounding

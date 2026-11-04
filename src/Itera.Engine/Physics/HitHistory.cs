@@ -65,6 +65,12 @@ public sealed partial class HitHistory(
     /// <summary>The most capsules one entity records in a step.</summary>
     public const int MostCapsules = 32;
 
+    /// <summary>
+    /// The most capsules <see cref="CapsulesAt"/> writes: both steps' where a place holds a capsule of another part in
+    /// each.
+    /// </summary>
+    public const int MostCapsulesAt = 2 * MostCapsules;
+
     /// <summary>The most entities a history keeps when its game gives no other number.</summary>
     public const int DefaultMostEntities = 1024;
 
@@ -167,7 +173,8 @@ public sealed partial class HitHistory(
 
         var track = _tracks[slot];
         var step = (int)(tick % Steps);
-        if (track.Ticks[step] > tick)
+        // A newer tick holds its place, and one Steps or more older than the newest kept is dropped, as said above.
+        if (track.Ticks[step] > tick || tick <= track.Newest - Steps)
         {
             return;
         }
@@ -371,8 +378,10 @@ public sealed partial class HitHistory(
     /// <summary>
     /// Writes into <paramref name="into"/> <paramref name="entity"/>'s capsules where they were at
     /// <paramref name="tick"/>, in local metres as the origin is now, chosen and moved between steps as
-    /// <see cref="Raycast"/> takes them (a capsule with no match in the other step is the one of the step it has); returns
-    /// how many it wrote, 0 for an entity that was not there (or is not kept) and at most <paramref name="into"/>'s length.
+    /// <see cref="Raycast"/> takes them (a capsule with no match in the other step is the one of the step it has; where a
+    /// place holds capsules of other parts in the two steps, both, as the ray tests both); returns how many it wrote, 0 for
+    /// an entity that was not there (or is not kept) and at most <paramref name="into"/>'s length, which
+    /// <see cref="MostCapsulesAt"/> fills.
     /// For a game testing its own shapes along a ray past the first a <see cref="Raycast"/> meets (a body's organs inside
     /// a part it hit). Allocates nothing.
     /// </summary>
@@ -401,16 +410,28 @@ public sealed partial class HitHistory(
         {
             var c0 = i < count0 ? track.Capsules[before * MostCapsules + i] : default;
             var c1 = i < count1 ? track.Capsules[after * MostCapsules + i] : default;
-            into[written++] =
-                i < count0 && i < count1 && c0.Part == c1.Part
-                    ? new HitCapsule(
-                        Vector3.Lerp(origin0 + c0.A, origin1 + c1.A, fraction),
-                        Vector3.Lerp(origin0 + c0.B, origin1 + c1.B, fraction),
-                        float.Lerp(c0.Radius, c1.Radius, fraction),
-                        c0.Part
-                    )
-                : i < count0 ? new HitCapsule(origin0 + c0.A, origin0 + c0.B, c0.Radius, c0.Part)
-                : new HitCapsule(origin1 + c1.A, origin1 + c1.B, c1.Radius, c1.Part);
+            if (i < count0 && i < count1 && c0.Part == c1.Part)
+            {
+                into[written++] = new HitCapsule(
+                    Vector3.Lerp(origin0 + c0.A, origin1 + c1.A, fraction),
+                    Vector3.Lerp(origin0 + c0.B, origin1 + c1.B, fraction),
+                    float.Lerp(c0.Radius, c1.Radius, fraction),
+                    c0.Part
+                );
+                continue;
+            }
+
+            // Of other parts in the two steps (a limb lost moves the rest down a place), each as its step has it, as a
+            // ray tests both.
+            if (i < count0)
+            {
+                into[written++] = new HitCapsule(origin0 + c0.A, origin0 + c0.B, c0.Radius, c0.Part);
+            }
+
+            if (i < count1 && written < into.Length)
+            {
+                into[written++] = new HitCapsule(origin1 + c1.A, origin1 + c1.B, c1.Radius, c1.Part);
+            }
         }
 
         return written;
@@ -847,8 +868,9 @@ public sealed partial class HitHistory(
     {
         before = -1;
         after = -1;
-        var ceiling = fraction > 0 ? floor + 1 : floor;
-        if (track.Newest < floor - 1 || track.Oldest > ceiling + 1)
+        // Within a step of its records, by the tick itself, so the answer does not jump at whole ticks.
+        var tick = floor + (double)fraction;
+        if (track.Newest < tick - 1 || track.Oldest > tick + 1)
         {
             return false;
         }

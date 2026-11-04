@@ -41,7 +41,10 @@ A ball, a lifted piece, or a part cut off a model is a loose body. Bepu moves it
 
 ### Ragdolls
 
-- `LooseBodies.TryCreateRagdoll` makes a ragdoll from a model's parts with joints from its skeleton.
+- `LooseBodies.TryCreateRagdoll` makes a ragdoll from a model's parts with joints from its skeleton. It refuses a joint
+  whose point, axis, or swing is not finite, or whose axis has no length.
+- A loose body whose height is not a number has fallen out (`LooseBodies.HasFallenOut`), and `LooseBodySystem` removes
+  it.
 - For a figure drawn from a mesh, a ragdoll is made from shapes (`RagdollShape`: a capsule between two points, or a
   sphere, each with a radius and a mass). Those bodies have no models, so nothing draws them.
 - A ragdoll of shapes may start turning round a point, as a body toppling about its feet: each body turns at the spin

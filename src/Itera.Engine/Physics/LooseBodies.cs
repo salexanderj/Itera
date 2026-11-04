@@ -66,6 +66,9 @@ public sealed partial class LooseBodies
     /// </summary>
     public const float RagdollTwistRadians = 0.6f;
 
+    /// <summary>The least square of a ragdoll joint's axis's length: one shorter gives no way to swing about.</summary>
+    private const float LeastAxisSquared = 1e-12f;
+
     /// <summary>A body moving slower than this, in metres per second, and turning slower than <see cref="RestSpin"/> is at rest.</summary>
     public const float RestSpeed = 0.05f;
 
@@ -467,10 +470,14 @@ public sealed partial class LooseBodies
 
     /// <summary>
     /// True when the body is below the world: <see cref="FallLimitMetres"/> of the world's grid, or the play area's fall
-    /// limit without terrain.
+    /// limit without terrain; and when its height is not a number, so a body a bad pose or velocity spoiled goes as one
+    /// that fell out.
     /// </summary>
     public bool HasFallenOut(BodyHandle body) =>
-        _origin.WorldY(_physics.Simulation.Bodies[body].Pose.Position.Y) < (_fallLimitMetres ??= _fallLimitSource!());
+        !(
+            _origin.WorldY(_physics.Simulation.Bodies[body].Pose.Position.Y)
+            >= (_fallLimitMetres ??= _fallLimitSource!())
+        );
 
     /// <summary>Removes a loose body without putting it back (a lifted piece stays in the log, unused).</summary>
     public void Remove(BodyHandle body) => RemoveBody(body, removeModel: true);
