@@ -11,7 +11,14 @@ public sealed partial class SessionService
 {
     private const double ProgressIntervalSeconds = 1;
 
+    /// <summary>The bytes the download's buffer starts with; it grows as the chunks arrive, never to more than announced.</summary>
+    private const int FirstPayloadBytes = 1 << 20;
+
+    /// <summary>What each message kept while the world is made costs past its bytes, counted against the most kept.</summary>
+    private const int EarlyMessageBytes = 32;
+
     private readonly List<byte[]> _early = [];
+    private long _earlyBytes;
     private MemoryStream? _payload;
     private string _joinAddress = "";
     private double _joinStart;
@@ -23,6 +30,12 @@ public sealed partial class SessionService
     private long _payloadBytes;
     private long _snapshotEdits;
     private string? _refusal;
+
+    /// <summary>
+    /// The most bytes of the host's messages a client keeps between its download's end and its world's making, each
+    /// message counted with <see cref="EarlyMessageBytes"/> more; past it the session ends. Tests set it lower.
+    /// </summary>
+    internal long MostEarlyBytes { get; set; } = 32L << 20;
 
     private enum JoinState
     {
@@ -174,7 +187,16 @@ public sealed partial class SessionService
     {
         if (_join == JoinState.Downloaded)
         {
-            // The world does not exist yet: keep what arrived after the payload until it does (LoadDownload).
+            // The world does not exist yet: keep what arrived after the payload until it does (LoadDownload), up to a
+            // bound no host's step comes near, so a broken or hostile one cannot fill the client's memory.
+            _earlyBytes += data.Length + EarlyMessageBytes;
+            if (_earlyBytes > MostEarlyBytes)
+            {
+                throw new InvalidDataException(
+                    $"The host sent {_earlyBytes} bytes before this game's world was made, past the {MostEarlyBytes} it keeps."
+                );
+            }
+
             _early.Add(data.ToArray());
             return;
         }
@@ -286,7 +308,9 @@ public sealed partial class SessionService
         Slot = slot;
         _payloadBytes = payloadBytes;
         _snapshotEdits = snapshotEdits;
-        _payload = new MemoryStream((int)payloadBytes);
+        // Room for what arrives, not for what the host claims: a buffer of the claimed size before a byte came was the
+        // host's to make the client allocate.
+        _payload = new MemoryStream((int)Math.Min(payloadBytes, FirstPayloadBytes));
         _join = JoinState.Downloading;
     }
 
@@ -404,6 +428,7 @@ public sealed partial class SessionService
         }
 
         _early.Clear();
+        _earlyBytes = 0;
         LogLoaded(edits, loaded);
     }
 

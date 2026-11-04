@@ -263,6 +263,43 @@ public sealed class ReplicationServiceTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void A_reply_of_a_client_that_left_counts_nothing_for_the_next_in_its_slot()
+    {
+        using var harness = ReplicationHarness.Start(new MoverPlan { Count = 1 });
+        harness.Step(30);
+        var slot = harness.Client.Match.Session.Slot;
+        // The client's reply reaches the host's session, but no host step takes it yet.
+        harness.Client.Step(1);
+        harness.Host.PollSession();
+
+        // It leaves and another joins in its slot before the host steps; the new one has not loaded, so has not replied.
+        harness.ReplaceClient(hostSteps: 0, load: false);
+        harness.Host.Step(1);
+
+        Assert.Equal(slot, harness.Client.Match.Session.Slot);
+        Assert.True(harness.HostReplication.IsLoading(slot));
+    }
+
+    [Fact]
+    public void A_shown_entitys_history_grows_as_its_states_arrive_up_to_the_most_kept()
+    {
+        using var harness = ReplicationHarness.Start(new MoverPlan { Count = 1 });
+        var id = harness.HostPlan.Movers[0].Id;
+        for (var step = 0; step < 120 && harness.ClientReplication.HistoryRoomOf(id) == 0; step++)
+        {
+            harness.Step(1);
+        }
+
+        var first = harness.ClientReplication.HistoryRoomOf(id);
+        const int Most = Itera.Engine.Replication.ReplicationService.ClientHistory;
+        const int Least = Itera.Engine.Replication.ReplicationService.FirstHistory;
+        harness.Step(Most * harness.HostReplication.SendIntervalTicks * 2);
+
+        Assert.InRange(first, Least, 2 * Least);
+        Assert.Equal(Most, harness.ClientReplication.HistoryRoomOf(id));
+    }
+
+    [Fact]
     public void A_removal_waits_until_a_packet_that_carried_it_is_acknowledged_or_its_id_comes_back()
     {
         using var harness = ReplicationHarness.Start(new MoverPlan { Count = 1 });

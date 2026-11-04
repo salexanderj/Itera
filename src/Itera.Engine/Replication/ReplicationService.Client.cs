@@ -13,6 +13,9 @@ public sealed partial class ReplicationService
     /// <summary>The states a client keeps of each entity (about two seconds at 30 sends a second), oldest first.</summary>
     internal const int ClientHistory = 64;
 
+    /// <summary>The states a newly shown entity has room for; the room doubles as more arrive, up to <see cref="ClientHistory"/>.</summary>
+    internal const int FirstHistory = 4;
+
     /// <summary>
     /// How fast the client's estimate of the host's tick falls back, in ticks a step, so a delay that grew is followed: a
     /// packet that arrives sooner than the estimate says sets it at once.
@@ -57,6 +60,9 @@ public sealed partial class ReplicationService
 
     /// <summary>The entities a client shows (or has states of and will show).</summary>
     public int Shown => _shownIndex.Count;
+
+    /// <summary>On a client, the states the entity of <paramref name="id"/> has room for; 0 for one it has none of.</summary>
+    internal int HistoryRoomOf(uint id) => _shownIndex.TryGetValue(id, out var index) ? _shown[index].Room : 0;
 
     /// <summary>
     /// On a client, the seconds of its steps since it last read a snapshot, counted from its first reply; 0 on a host,
@@ -452,13 +458,20 @@ public sealed partial class ReplicationService
         );
     }
 
-    /// <summary>An entity a client shows: its id, kind, entity, and its last <see cref="ClientHistory"/> states by tick, oldest first.</summary>
+    /// <summary>
+    /// An entity a client shows: its id, kind, entity, and its last <see cref="ClientHistory"/> states by tick, oldest
+    /// first. Its room starts at <see cref="FirstHistory"/> states and doubles as they arrive, so ids a host names once
+    /// cost little; one used again keeps the room it grew.
+    /// </summary>
     private sealed class ShownEntity
     {
-        private readonly int[] _ticks = new int[ClientHistory];
+        private int[] _ticks = new int[FirstHistory];
         private long[] _lanes = [];
         private int _lanesEach;
         private int _count;
+
+        /// <summary>The states it has room for now.</summary>
+        public int Room => _ticks.Length;
 
         public uint Id;
         public ReplicatedKind Kind = null!;
@@ -485,9 +498,9 @@ public sealed partial class ReplicationService
             LastPacket = 0;
             _count = 0;
             _lanesEach = kind.Schema.Lanes;
-            if (_lanes.Length != ClientHistory * _lanesEach)
+            if (_lanes.Length != _ticks.Length * _lanesEach)
             {
-                _lanes = new long[ClientHistory * _lanesEach];
+                _lanes = new long[_ticks.Length * _lanesEach];
             }
         }
 
@@ -507,7 +520,14 @@ public sealed partial class ReplicationService
                 return;
             }
 
-            if (_count == ClientHistory)
+            if (_count == _ticks.Length && _ticks.Length < ClientHistory)
+            {
+                var room = Math.Min(_ticks.Length * 2, ClientHistory);
+                Array.Resize(ref _ticks, room);
+                Array.Resize(ref _lanes, room * _lanesEach);
+            }
+
+            if (_count == _ticks.Length)
             {
                 if (at == 0)
                 {

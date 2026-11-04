@@ -567,11 +567,15 @@ public sealed partial class SaveService
 
             if (File.Exists(path))
             {
-                // A save the game passed over for its backup is kept aside; otherwise the save is the new backup.
-                File.Copy(path, path + (_fromBackup ? ".damaged" : ".bak"), overwrite: true);
+                // A save the game passed over for its backup is kept aside; otherwise the save is the new backup. The old
+                // file becomes it without a copy (a hard link, then a rename over it, where the system has them), and
+                // the save's name never stands empty.
+                File.Replace(temporary, path, path + (_fromBackup ? ".damaged" : ".bak"));
             }
-
-            File.Move(temporary, path, overwrite: true);
+            else
+            {
+                File.Move(temporary, path);
+            }
             // The save reads again: from now on it is the one kept as the backup.
             _fromBackup = false;
             Failure = null;

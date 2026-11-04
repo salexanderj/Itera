@@ -263,6 +263,34 @@ public sealed class SessionServiceTests : IDisposable
     }
 
     /// <summary>
+    /// After the download, before the client's world is made, the host's messages are kept up to the most; past it the
+    /// client's session ends and says why.
+    /// </summary>
+    [Fact]
+    public void Messages_past_the_most_kept_before_the_clients_world_is_made_end_its_session()
+    {
+        var (_, host) = StartHost();
+        var (_, client) = CreateClient(new FakeTransport(_network), host.Poll);
+        client.MostEarlyBytes = 1000;
+
+        for (var message = 0; message < 3; message++)
+        {
+            var writer = host.BeginMessage(SessionService.FirstGameKind);
+            for (var i = 0; i < 100; i++)
+            {
+                writer.WriteInt(i);
+            }
+
+            host.SendToAll(SessionChannel.Reliable);
+        }
+
+        client.Poll();
+
+        Assert.Equal(SessionEnd.Error, client.End);
+        Assert.Contains("before this game's world was made", client.EndReason, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A host whose transport takes only so much at a time sends a join's payload a share at each poll, and the client
     /// gets the whole world (the payload went in one loop, past what Steam holds).
     /// </summary>

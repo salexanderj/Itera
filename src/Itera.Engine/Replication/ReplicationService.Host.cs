@@ -235,7 +235,9 @@ public sealed partial class ReplicationService
             replying.Loading = loading == 1;
         }
 
-        _replies.Add(new Reply(slot, newest, bits));
+        // With the join it came in, so a reply queued before its client left counts for nothing to the next in the slot.
+        var players = _session.Players;
+        _replies.Add(new Reply(slot, newest, bits, slot < players.Length ? players[slot].Join : 0));
     }
 
     /// <summary>
@@ -393,7 +395,7 @@ public sealed partial class ReplicationService
 
             if (slot < players.Length && players[slot].Present)
             {
-                var client = new HostClient(slot);
+                var client = new HostClient(slot) { Join = players[slot].Join };
                 client.Grow(_entities.Count);
                 _clients[slot] = client;
                 LogClientJoined(slot, _fixedStepHz / SendIntervalTicks, _settings.BytesPerSecond);
@@ -405,7 +407,7 @@ public sealed partial class ReplicationService
     {
         foreach (var reply in _replies)
         {
-            if (_clients[reply.Slot] is not { } client)
+            if (_clients[reply.Slot] is not { } client || client.Join != reply.Join)
             {
                 continue;
             }
@@ -1044,6 +1046,9 @@ public sealed partial class ReplicationService
     {
         public int Slot { get; } = slot;
 
+        /// <summary>The roster's join of the player it serves (<see cref="SessionPlayer.Join"/>): a reply of another is not its.</summary>
+        public int Join;
+
         public uint NextPacket = 1;
         public double Tokens;
 
@@ -1288,7 +1293,7 @@ public sealed partial class ReplicationService
         public void Remove(int number) => Removed[RemovedCount++] = number;
     }
 
-    private readonly record struct Reply(int Slot, uint Newest, ulong Bits);
+    private readonly record struct Reply(int Slot, uint Newest, ulong Bits, int Join);
 
     private readonly record struct Removal(uint Id, int Number);
 

@@ -107,18 +107,19 @@ internal sealed class ReplicationHarness : IDisposable
     }
 
     /// <summary>
-    /// The client leaves (its match ends, its services go), the host notices at its next steps, and a new client (with no
-    /// added delay) joins in its place, its slot the one freed.
+    /// The client leaves (its match ends, its services go), the host notices at its next <paramref name="hostSteps"/>
+    /// steps (with none, only as the new client's join polls it), and a new client (with no added delay) joins in its
+    /// place, its slot the one freed, and loads its world unless <paramref name="load"/> is false.
     /// </summary>
-    public void ReplaceClient()
+    public void ReplaceClient(int hostSteps = 10, bool load = true)
     {
         Client.Dispose();
         ClientProvider.Dispose();
-        Step(10, clientToo: false);
+        Step(hostSteps, clientToo: false);
         ClientTransport = new FakeTransport(_network);
         ClientProvider = Build(_options, ClientPlan, ClientTransport);
         Client = new HeadlessRun(ClientProvider).Join(Host);
-        Assert.True(Client.WaitUntilLoaded());
+        Assert.True(!load || Client.WaitUntilLoaded());
     }
 
     /// <summary>Runs <paramref name="ticks"/> steps of the host, then the client, the clock a 60th of a second each.</summary>
