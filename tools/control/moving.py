@@ -9,13 +9,15 @@ Each pass may first run console commands (`--pass "LABEL=COMMANDS"`, such as tun
 the passes in rows, labelled. `--setup` runs console commands after each pass's start, before its run-up. Times count
 from the start of the run-up: a key may be pressed later and held (`--press KEY@SECONDS`), as Ctrl into a slide at
 speed, or let go (`--release KEY@SECONDS`); a mouse button pressed and held (`--button BUTTON@SECONDS`); and the look
-turned by the mouse (`--turn DEGREES@SECONDS/OVER`, left positive, spread over OVER seconds). Needs Pillow for the sheet
-and the GIF. See README.md next to this file.
+turned by the mouse (`--turn DEGREES@SECONDS/OVER`, left positive, spread over OVER seconds); and console commands run
+(`--command "COMMANDS@SECONDS"`), as a hit on the figure. Needs Pillow for the sheet and the GIF. See README.md next to
+this file.
 
     moving.py W --view right --out DIR
     moving.py ShiftLeft+W+A --view front --pass "before=tune x 1" --pass "after=tune x 0.4" --out DIR
     moving.py ShiftLeft+W --press ControlLeft@1.2 --run-up 1.3 --view right --out DIR
     moving.py W --button right@0 --turn 90@1.5/1 --view top --out DIR
+    moving.py W --command "hurt chest 15@1.6" --view right --out DIR
 """
 
 import argparse
@@ -104,6 +106,8 @@ def timed_inputs(args, degrees_per_pixel):
     timed = [(round(seconds * TICKS_A_SECOND), f"down {key}") for key, seconds in args.presses]
     timed += [(round(seconds * TICKS_A_SECOND), f"up {key}") for key, seconds in args.releases]
     timed += [(round(seconds * TICKS_A_SECOND), f"press {button}") for button, seconds in args.buttons]
+    # Console commands are kept apart from the input actions as (commands,), run as a script at their tick.
+    timed += [(round(seconds * TICKS_A_SECOND), (commands,)) for commands, seconds in args.commands]
     for degrees, seconds, over in args.turns:
         # Spread over the ticks, a share each; the mouse moving right turns right.
         ticks = max(1, round(over * TICKS_A_SECOND))
@@ -136,10 +140,14 @@ def one_pass(driver, args, label, commands, out):
             if at > stepped:
                 driver.run(f"step {at - stepped}; wait ticks {at - stepped}", script=True)
                 stepped = at
-            actions = []
+            actions, runs = [], []
             while pending and pending[0][0] == at:
-                actions.append(pending.pop(0)[1])
-            driver.ask({"op": "input", "actions": actions, "timeout": 30})
+                action = pending.pop(0)[1]
+                (runs if isinstance(action, tuple) else actions).append(action)
+            if actions:
+                driver.ask({"op": "input", "actions": actions, "timeout": 30})
+            for (commands,) in runs:
+                driver.run(commands, script=True)
         if end > stepped:
             driver.run(f"step {end - stepped}; wait ticks {end - stepped}", script=True)
             stepped = end
@@ -198,6 +206,9 @@ def main():
     parser.add_argument("--turn", dest="turns", action="append", default=[],
                         help="DEGREES@SECONDS/OVER: the look turned DEGREES to the left (negative: right) by the mouse, "
                              "from that many seconds into the run-up, spread over OVER seconds (repeatable)")
+    parser.add_argument("--command", dest="commands", action="append", default=[],
+                        help="COMMANDS@SECONDS: console commands run that many seconds into the run-up, the game "
+                             "paused (repeatable)")
     parser.add_argument("--setup", default="",
                         help="console commands run after each pass's start, before its run-up")
     parser.add_argument("--port", type=int, default=None)
@@ -210,8 +221,9 @@ def main():
         args.presses = [(key, float(seconds)) for key, seconds in (text.split("@", 1) for text in args.presses)]
         args.releases = [(key, float(seconds)) for key, seconds in (text.split("@", 1) for text in args.releases)]
         args.buttons = [(button, float(seconds)) for button, seconds in (text.split("@", 1) for text in args.buttons)]
+        args.commands = [(commands, float(seconds)) for commands, seconds in (text.rsplit("@", 1) for text in args.commands)]
     except ValueError:
-        print("--press, --release, and --button take NAME@SECONDS", file=sys.stderr)
+        print("--press, --release, --button, and --command take NAME@SECONDS", file=sys.stderr)
         return 2
     try:
         args.turns = [

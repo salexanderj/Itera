@@ -110,6 +110,8 @@ back, or above it, and takes a picture.
 - `--press KEY@SECONDS` presses another key that far into the run-up and holds it, as Ctrl into a slide at speed.
   `--release KEY@SECONDS` lets one go, and `--button BUTTON@SECONDS` presses a mouse button and holds it.
 - `--turn DEGREES@SECONDS/OVER` turns the look by the mouse, left positive, spread over OVER seconds a tick at a time.
+- `--command "COMMANDS@SECONDS"` runs console commands that far into the run-up, the game paused there, as a hit on
+  the figure (`hurt chest 15`).
   It reads the mouse's sensitivity from the console's `settings` and captures the pointer for the pass.
 - `--setup COMMANDS` runs console commands after each pass's start, before its run-up, such as laying something to
   cross.
