@@ -12,8 +12,9 @@ namespace Itera.Engine.Assets;
 /// two blended joint by joint (<see cref="Blend"/>, with weights a <see cref="Mask"/> sets: legs from one clip, the upper
 /// body from another), a joint turned in the asset's space (<see cref="Turn"/>: a spine bent to an aim), and an arm or a
 /// leg reaching a point (<see cref="ReachTwoBone"/>: a hand on a rifle). In floats, so not the same on every machine
-/// (the engine's deterministic skeletons are <c>Animation.Skeleton</c>'s): for drawing, and for what one peer alone
-/// judges (a host's hits on posed bodies).
+/// (the engine's deterministic skeletons are <c>Animation.Skeleton</c>, <c>Animation.BodyPose</c>, and
+/// <c>Maths.Rotation</c>; foot IK, aim, limb reach, stance, and segment placement use the platform's maths, for drawing
+/// only): for drawing, and for what one peer alone judges (a host's hits on posed bodies).
 /// </summary>
 public sealed class Rig
 {

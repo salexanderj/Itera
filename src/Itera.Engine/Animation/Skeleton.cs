@@ -12,7 +12,8 @@ public enum JointAxis : byte
 
 /// <summary>
 /// One leg of a skeleton, for foot placement (<see cref="FootPlacement"/>): its upper bone (a thigh), its lower bone (a
-/// shin), and its foot, the bone the body stands on, each the child of the one before; lengths in level-0 voxels.
+/// shin), and its foot, the bone the body stands on, each the child of the one before; lengths in centimetres (model
+/// voxels).
 /// </summary>
 /// <param name="Upper">The upper bone.</param>
 /// <param name="Lower">The lower bone.</param>
@@ -49,7 +50,8 @@ public readonly record struct DrapeBone(int Bone, double Length, double TipRadiu
 public readonly record struct LookShare(int Bone, double Yaw, double Pitch);
 
 /// <summary>
-/// The skeleton of any body plan, in level-0 voxels in the body's frame (origin on the ground between the feet, facing
+/// The skeleton of any body plan, in centimetres (model voxels) in the body's frame (origin on the ground between the
+/// feet, facing
 /// -z, +x to its right, +y up): its bones, each with its parent, where its joint lies in its parent's space
 /// (<see cref="Offset"/>), and its rest turn there (<see cref="Rest"/>), and what the code shared by every plan needs to
 /// know of them: the joints of a ragdoll, the legs the body stands on, and the bones a look turns. Bone 0 is the root (a
@@ -108,7 +110,9 @@ public abstract class Skeleton
 
     public int BoneCount { get; }
 
-    /// <summary>How far the body steps up or down at most, in level-0 voxels (foot placement's reach).</summary>
+    /// <summary>
+    /// How far the body steps up or down at most, in centimetres (model voxels): foot placement's reach.
+    /// </summary>
     public double StepVoxels { get; protected set; }
 
     /// <summary>
@@ -122,7 +126,7 @@ public abstract class Skeleton
     public bool TiltsTrunk => _legs.Length >= 4;
 
     /// <summary>
-    /// The longest stroke every leg's ankle can make along the body within its reach, in level-0 voxels
+    /// The longest stroke every leg's ankle can make along the body within its reach, in centimetres (model voxels)
     /// (<see cref="StrokeLimit"/>); 0 for a body that does not stride.
     /// </summary>
     public double MaxStroke { get; protected set; }
@@ -131,7 +135,7 @@ public abstract class Skeleton
     public double EyeMetres { get; protected set; }
 
     /// <summary>
-    /// The length of a leg from its upper joint to its ankle, in level-0 voxels: how far a clip's hip press
+    /// The length of a leg from its upper joint to its ankle, in centimetres (model voxels): how far a clip's hip press
     /// (<see cref="AnimationClip"/>) reaches.
     /// </summary>
     public double LegVoxels { get; protected set; }
@@ -173,7 +177,8 @@ public abstract class Skeleton
     public string Name(int bone) => _names[bone];
 
     /// <summary>
-    /// How far a part volume's corner is moved back on every axis, in level-0 voxels: a different fraction of a voxel for
+    /// How far a part volume's corner is moved back on every axis, in centimetres (model voxels): a different fraction
+    /// of a voxel for
     /// each bone, (bone + 1) / (bones + 1), so no two parts' grids line up.
     /// </summary>
     public double GridShift(int bone) => (bone + 1) / (double)(BoneCount + 1);
@@ -257,7 +262,8 @@ public abstract class Skeleton
 
     /// <summary>
     /// Where leg <paramref name="leg"/>'s stride is centred while it walks, along the body from where its ankle stands at
-    /// rest, in level-0 voxels: part of the way back under its hip, so it has room to reach forward and back
+    /// rest, in centimetres (model voxels): part of the way back under its hip, so it has room to reach forward and
+    /// back
     /// (<see cref="StrokeLimit"/>).
     /// </summary>
     public double StrideCentre(int leg) => _strideCentres.Length > leg ? _strideCentres[leg] : 0;

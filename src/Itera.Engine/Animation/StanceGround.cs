@@ -16,7 +16,9 @@ public struct StanceRest
     /// <summary>The slope it tilts to along its back (+z): the ground's rise a voxel back.</summary>
     public float SlopeZ;
 
-    /// <summary>What it is raised by beyond standing its lowest support at its feet' height, in level-0 voxels.</summary>
+    /// <summary>
+    /// What it is raised by beyond standing its lowest support at its feet' height, in centimetres (model voxels).
+    /// </summary>
     public float Rise;
 }
 

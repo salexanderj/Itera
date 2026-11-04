@@ -12,7 +12,8 @@ namespace Itera.Engine.Animation;
 /// the slope under the feet, moves each ankle up or down by the ground under it, lowers the root by what a planted foot
 /// must reach down (at most the step height), bends each leg to reach its ankle (two bones, the knee bent the leg's
 /// way), and tilts each foot to the slope between heel and toe (a leg's third bone, its foot, keeps its turn in the body
-/// otherwise). On flat ground it leaves the pose as it is. Lengths in level-0 voxels in the body's frame (origin on the
+/// otherwise). On flat ground it leaves the pose as it is. Lengths in centimetres (model voxels) in the body's frame
+/// (origin on the
 /// ground between the feet, facing -z); turns in turns. Allocates nothing.
 /// </summary>
 public static class FootPlacement
@@ -22,7 +23,8 @@ public static class FootPlacement
 
     /// <summary>
     /// A foot whose sole is on the ground in the gait is planted, and one coming down is planted by degrees over the
-    /// last of its fall: over this height at least, in level-0 voxels, or <see cref="PlantedLegShare"/> of the leg.
+    /// last of its fall: over this height at least, in centimetres (model voxels), or <see cref="PlantedLegShare"/> of
+    /// the leg.
     /// </summary>
     public const double PlantedVoxels = 6;
 
@@ -40,7 +42,8 @@ public static class FootPlacement
     public const float ProbeRadiusMetres = 0.02f;
 
     /// <summary>
-    /// The ground under one foot: how far above the feet (up positive) it stands, in level-0 voxels, and the slope under
+    /// The ground under one foot: how far above the feet (up positive) it stands, in centimetres (model voxels), and
+    /// the slope under
     /// it along the body, in turns (toes up positive).
     /// </summary>
     public readonly record struct LegGround(double Height, double Pitch)
@@ -80,7 +83,8 @@ public static class FootPlacement
     /// Places the feet of the pose in <paramref name="turns"/> (changed in place: the root when it tilts, and each leg's
     /// bones) on <paramref name="ground"/> (one per leg), for a skeleton raised by <paramref name="lift"/> (its standing
     /// lift); returns the new lift, lower by as much as the root drops. <paramref name="press"/> presses the root down
-    /// further, in level-0 voxels (a landing), with the feet kept where they stand. <paramref name="bones"/> (one per
+    /// further, in centimetres (model voxels), as in a landing, with the feet kept where they stand. <paramref
+    /// name="bones"/> (one per
     /// bone) is scratch.
     /// </summary>
     public static double Apply(
@@ -412,7 +416,8 @@ public static class FootPlacement
     }
 
     /// <summary>
-    /// The ground under the point (<paramref name="bx"/>, <paramref name="bz"/>) of the body's frame (level-0 voxels) of
+    /// The ground under the point (<paramref name="bx"/>, <paramref name="bz"/>) of the body's frame (centimetres
+    /// (model voxels)) of
     /// a body standing at <paramref name="feet"/> (metres) turned by <paramref name="yaw"/> radians, relative to the
     /// feet, in voxels: within a step of <paramref name="skeleton"/> above or below them, else a whole step down; NaN
     /// where the voxels are not loaded. Main thread (it reads the voxels).
@@ -443,7 +448,8 @@ public static class FootPlacement
 
     /// <summary>
     /// The highest ground under the point (<paramref name="bx"/>, <paramref name="bz"/>) of the body's frame within
-    /// <paramref name="reach"/> above or below the height <paramref name="around"/> (level-0 voxels, relative to the
+    /// <paramref name="reach"/> above or below the height <paramref name="around"/> (centimetres (model voxels),
+    /// relative to the
     /// feet), relative to the feet, in voxels: for a long body whose far parts lie well above or below its feet. The
     /// lowest height searched where there is none, and NaN where the voxels are not loaded. Main thread (it reads the
     /// voxels).

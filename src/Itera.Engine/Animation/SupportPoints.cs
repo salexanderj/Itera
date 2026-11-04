@@ -20,8 +20,9 @@ public static class SupportPoints
 
     /// <summary>
     /// The support points of a part volume filled at <paramref name="level"/> into <paramref name="voxels"/> (one chunk of
-    /// voxels, one byte each, 0 for air), whose box is <paramref name="size"/> level-0 voxels with its
-    /// corner at <paramref name="origin"/> in the bone's space: in the bone's space, level-0 voxels, each point once. An
+    /// voxels, one byte each, 0 for air), whose box is <paramref name="size"/> centimetres (model voxels) with its
+    /// corner at <paramref name="origin"/> in the bone's space: in the bone's space, centimetres (model voxels), each
+    /// point once. An
     /// empty volume has none.
     /// </summary>
     public static (double X, double Y, double Z)[] Of(

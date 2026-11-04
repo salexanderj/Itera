@@ -85,8 +85,10 @@ every joint (`Globals(locals, globals)`). A shaper that reads a hand or the head
 matrices where the pass takes the whole rig's. `MeshPoses.JointInWorld` reads a held item's joint so.
 
 The rig works in floats. Never use it for what peers must agree on. Use it for drawing, and for what one peer alone
-judges (a host's hits on posed bodies). The deterministic skeletons for bodies, aim, and foot IK are
-`Animation.Skeleton`'s (`animation.md`). A model bound on another's rig plays its clips (below).
+judges (a host's hits on posed bodies). The deterministic skeletons are `Skeleton`, `BodyPose`, and `Rotation`
+(`animation.md`). Foot IK, aim, limb reach, stance, and segment placement (`FootPlacement`, `Aim`, `LimbPose`,
+`StanceGround`, `SegmentPlacement`) use the platform's maths, for drawing only. A model bound on another's rig plays its
+clips (below).
 
 ### Declaring and reading
 

@@ -103,12 +103,14 @@ public sealed class CharacterPoses
     /// <summary>The pose of <paramref name="slot"/> after the step before the last.</summary>
     public ReadOnlySpan<Rotation> Previous(int slot) => Span(_previous, slot);
 
-    /// <summary>The lift of <paramref name="slot"/> after the last fixed step, in level-0 voxels; NaN for none.</summary>
+    /// <summary>
+    /// The lift of <paramref name="slot"/> after the last fixed step, in centimetres (model voxels); NaN for none.
+    /// </summary>
     public double Lift(int slot) => _lift[slot];
 
     /// <summary>
     /// The sway of <paramref name="slot"/> after the last fixed step: how far the body stands to the right of its feet,
-    /// in level-0 voxels.
+    /// in centimetres (model voxels).
     /// </summary>
     public double Sway(int slot) => _sway[slot];
 

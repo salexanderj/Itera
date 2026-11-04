@@ -19,7 +19,8 @@ public static class SegmentPlacement
     /// <summary>
     /// Lays the draped bones of the pose in <paramref name="turns"/> (changed in place) on the ground under a body at
     /// <paramref name="feet"/> turned by <paramref name="yaw"/>, less so by <paramref name="weight"/> below 1, and returns
-    /// the skeleton's lift, for a body moved <paramref name="sway"/> level-0 voxels to its right of its feet.
+    /// the skeleton's lift, for a body moved <paramref name="sway"/> centimetres (model voxels) to its right of its
+    /// feet.
     /// <paramref name="bones"/> (one per bone) is scratch, left holding every bone's transform, raised by nothing and
     /// swayed by nothing. Draped bones in <paramref name="skipBones"/> (a rearing neck and head) are left as the
     /// pose has them.

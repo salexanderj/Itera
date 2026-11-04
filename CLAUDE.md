@@ -149,8 +149,8 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
   are local, from the match's origin (`WorldOrigin`, whole metres). A point that crosses the origin (a start pose, `tp`,
   a message) is an absolute `WorldPoint` (doubles). They meet only through `WorldOrigin`: a local float becomes
   centimetres or cells only as floor((local + origin) * scale), in doubles.
-- What every peer must compute alike from a seed (world generation, posed bodies) uses `DeterministicMath` and
-  `Rotation`, never `Math.Sin` or `System.Numerics` helpers.
+- What every peer must compute alike from a seed (world generation, `Skeleton` and `BodyPose`) uses `DeterministicMath`
+  and `Rotation`, never `Math.Sin` or `System.Numerics` helpers.
 - Code that must not allocate (per frame, per tick, per edit) follows these rules, each learned from a measured
   allocation:
   - No reflection-backed helpers such as `Enum.IsDefined`, `Enum.GetName`, or an enum's `ToString()`. Their caches
