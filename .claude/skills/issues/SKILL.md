@@ -60,8 +60,8 @@ gh label list    # the labels there are
 
 ## Projects
 
-A game may keep a GitHub Project that holds its open issues and the engine's, with fields of its own, such as the
-milestone an issue is planned for. Its `GAME.md` names the project and its fields. `gh` needs the `project` scope for
+A game may keep a GitHub Project that holds its open issues and the engine's, with fields of its own, or with its
+issues under a tracking issue for each area of the game. Its `GAME.md` names the project and how it is organised. `gh` needs the `project` scope for
 it: the user runs `gh auth refresh -h github.com -s project` in a terminal.
 
 ```bash

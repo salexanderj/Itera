@@ -26,11 +26,11 @@ beside it.
 | Why the engine is built as it is | `ARCHITECTURE.md` (the overview and the reasons) or a write-up in `docs/` | Looked up |
 | What the game should be, and what is decided | The game's design pages, as its `GAME.md` names them | Before building it |
 | When and why something was decided | One line in the game's decision log | Searched |
-| What was built, changed, and measured | The game's milestone record, and the commit message | Searched |
+| What was built, changed, and measured | The game's records (by milestone or by area, as its `GAME.md` says), and the commit message | Searched |
 | A bug, suggestion, or change not done yet | A GitHub issue in the repository it belongs to (the `issues` skill) | Searched |
-| How far a milestone or a list of work has come, and when work is planned | A tracking issue's sub-issues, and the game's GitHub Project if its `GAME.md` names one | Searched |
+| How far a piece or a list of work has come, and when work is planned | A tracking issue's sub-issues, and the game's GitHub Project if its `GAME.md` names one | Searched |
 
-The records (the decision log, the milestone records, and the write-ups in `docs/`) are written once and only added to.
+The records (the decision log, the game's records of what was built, and the write-ups in `docs/`) are written once and only added to.
 No session loads them whole.
 
 ## What each home holds
@@ -84,7 +84,7 @@ file. The limits apply in the repository's own sizes, so a growing area gets mor
 2. A new file goes in its area's paths (a game may require every file to be in one). A new area gets a rules file. The
    engine's are listed in the generated `docs/reference/engine-rules.md`, and the game's in a row of `GAME.md`'s table.
 3. A decision goes on its design page and gets one line in the decision log.
-4. What was built, and what it measured, goes in the milestone record and the commit message. The commit closes the
+4. What was built, and what it measured, goes in the game's record and the commit message. The commit closes the
    issue it fixes; what is left for later gets an issue (the `issues` skill).
 5. When a reference test fails, write the generated files again
    (`ITERA_WRITE_REFERENCE=1 dotnet test --filter ReferenceTests`), look over the diff, and commit them.
@@ -103,8 +103,8 @@ file. The limits apply in the repository's own sizes, so a growing area gets mor
 
 ## A docs audit
 
-At a milestone's end, and before a design review, check what the tests cannot: whether each doc's sentences are still
+After a large piece of work, and before a design review, check what the tests cannot: whether each doc's sentences are still
 true. Give `reader` agents one part each (the framework's rules, the game's rules, the skills, the design pages, and
 `ARCHITECTURE.md`). Each checks claims against the code (names, numbers, and behaviour), and lists copies of one fact in
-two places and decisions that a later one replaced. Fix what they find in place, and record the audit in the milestone
+two places and decisions that a later one replaced. Fix what they find in place, and record the audit in the game's
 record.
