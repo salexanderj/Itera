@@ -133,7 +133,8 @@ says "probe" was confirmed by `probe/Program.cs` against the pinned packages.
 
 - A system implements exactly one of `IFixedUpdateSystem` (simulation, once per 60 Hz step; derive from
   `BaseSystem<World, FixedStepTime>`) or `IFrameUpdateSystem` (presentation, once per rendered frame;
-  derive from `BaseSystem<World, FrameTime>`). Both time types come from `Itera.Modding`. Frame systems
+  derive from `BaseSystem<World, FrameTime>`). Both time types come from `Itera.Modding`,
+  and are `readonly record struct`s passed by `in`. Frame systems
   never change simulation state. See `design.md`.
 - Register systems in the game's composition (`AddGame`; engine systems too, which the engine does not register
   itself) by type: `services.AddFixed<T>()` or `AddFrame<T>()` (`Ecs/SystemRegistration.cs`). The match's services fill

@@ -21,6 +21,8 @@ Itera with a pull from its remote, so:
 - Anything specific to one game belongs in the game. The engine names no game: a game names itself through
   `Engine:Application` (`Name`, `DataFolder`) and `Engine:Window:Title`.
 
+To start a game from Itera, or to set up a clone, follow the `scaffold` skill's steps for a new game.
+
 Voxel terrain is optional: a game that registers no generator and does not call `AddIteraVoxels` plays matches without
 it. `ARCHITECTURE.md` holds the full description, dependencies, and design decisions. Read it before changing
 anything structural. `docs/` holds the write-ups behind decisions.
@@ -30,7 +32,9 @@ anything structural. `docs/` holds the write-ups behind decisions.
 - Area details are in `.claude/rules/`, one file per area (listed below). Claude Code loads one when a file it covers
   is opened with Read, Write, or Edit, not with `cat`, `grep`, `sed`, Grep, or the LSP tool. Open the files you will
   change with Read. Before you plan, discuss, or review work in an area, read its rules file.
-- Find C# definitions, references, and callers with the LSP tool (the csharp-lsp plugin), and text with grep.
+- Find C# definitions, references, and callers with the LSP tool, and text with grep. The tool comes from the
+  csharp-lsp plugin, which `.claude/settings.json` enables, and needs csharp-ls
+  (`dotnet tool install --global csharp-ls`).
 - Before you write or change a doc (this file, `GAME.md`, a rules file, a skill, `ARCHITECTURE.md`, or `docs/`), load
   the `docs` skill: it says where each fact goes, and what the documentation tests check.
 - Bugs, suggestions, and changes left for later are GitHub issues, never lists in the docs (the `issues` skill).
@@ -97,15 +101,6 @@ python3 tools/tests/timings.py   # dotnet test, then its slowest classes and tes
 - Keep design decisions, Vulkan passes, look-setting shaders, anything sent between games, game runs, benchmarks,
   validation runs, and commits in the main session.
 
-# Starting a game from Itera
-
-1. Clone Itera and keep it as a remote (`git remote rename origin itera`), to pull engine changes later.
-2. In `src/Game/appsettings.json` set `Engine:Application:Name`, `DataFolder` (two games on one machine need two), and
-   `Engine:Window:Title`. For Steam set `Engine:Steam:AppId`, and a `steam.env` in `src/Game` for `tools/steam/upload.sh`.
-3. Rewrite `GAME.md`, and grow `src/Game`: its world (`WorldGeneration/`), its systems (registered in
-   `GameServiceCollectionExtensions` in run order), its options under `Game:`, and its tests in `tests/Game.Tests`.
-   The folder, project, and namespace stay `Game`, so the tools and skills find it.
-
 # Solution map
 
 Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference only `Itera.Modding`, with
@@ -137,10 +132,7 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
   Every `Dispose` is idempotent.
 - Windowing, input, ECS, physics, the session, and mod callbacks run on the main thread. The threads of LiteNetLib and
   the control port only move data to it (`SessionService.Poll`, `ControlService.RunPending`).
-- All Vulkan queue work (fence waits, acquire, recording, submit, present, swapchain recreation) runs on the render
-  thread (`RenderThread`). From `RenderThread.Start` until it has stopped, the main thread makes no Vulkan call except
-  `vkFlushMappedMemoryRanges` on the memory of the frame slot it builds (`StagingBuffer.Flush`). It hands data to the
-  render thread only through `FrameExchange`.
+- All Vulkan queue work runs on the render thread (`RenderThread`). The `vulkan` skill has the rules.
 - Units are metres and seconds. Voxel coordinates (`VoxelCoord`: voxels, edits, rays, saves) are absolute integers in
   centimetres (`VoxelConstants.CentimetresPerMetre`) from the map's middle. A world voxel at level k is
   `VoxelWorld.Grid.Edge(k)` cm across (`VoxelGrid`), a model's voxel its own unit (`VoxelModels`). Code where the two
@@ -165,16 +157,13 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
     redraw are made once as text blobs (`TextBlobs`). Texts that change still draw as strings.
   - An Arch `CommandBuffer` allocates about 1.8 KB for each `Add` and `Remove` of a tag. A system that does that
     often collects the entities during its query and changes them after it.
-- Time values are `readonly record struct`s passed by `in`: fixed systems receive `FixedStepTime`, frame systems
-  `FrameTime`.
-- ECS components are plain structs with public fields (CA1051 is off for that reason).
 - Linux, Windows, and macOS are all targets, only Linux is tested. Use `Path.Combine`, ordinal string comparisons, and
   `OperatingSystem.Is*()` guards for anything platform specific. No `XDG_*` variables, shell commands, or `/` string
   concatenation.
 - Do not dispose Silk.NET API containers (`Vk`, `Shaderc`, `ALContext`, `AL`). Unloading those native libraries at exit
   crashes the process. Destroy the Vulkan and OpenAL objects only.
 - Format with csharpier, a local dotnet tool (`dotnet tool restore` after a clone): `dotnet csharpier check .` before
-  a commit, `dotnet csharpier format .` to fix. LazyVim formats with Mason's copy; keep the two versions in step.
+  a commit, `dotnet csharpier format .` to fix.
 - Commit messages in imperative mood. Git identity is repo-local.
 - Work and commit on `main`; no feature branches (one developer). A temporary local branch a tool needs (a writer's
   worktree) is fine: delete it once its changes are on main.

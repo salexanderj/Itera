@@ -1487,5 +1487,6 @@ builds run with validation on, including synchronization and best-practices chec
 when the layer offers it). They are optional elsewhere. Debug builds warn when the layer is missing and continue.
 
 Tooling: LazyVim with the `lang.dotnet` extra (OmniSharp, csharpier, netcoredbg). csharpier is also a local dotnet tool
-pinned in `dotnet-tools.json`, so `dotnet csharpier check .` works after `dotnet tool restore` on any machine. The
+pinned in `dotnet-tools.json`, so `dotnet csharpier check .` works after `dotnet tool restore` on any machine. LazyVim formats with Mason's copy of
+csharpier; keep the two versions in step. The
 solution is in the classic `.sln` format because OmniSharp does not open `.slnx`.
