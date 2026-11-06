@@ -16,8 +16,8 @@ describes the project; read the parts your task needs.
 
 1. Check that you are in a worktree: `git rev-parse --git-dir` must contain `/worktrees/`. If it does not (you are in
    the main checkout), stop and report without changing anything. Then run `git merge --ff-only --quiet main` and
-   `git log --oneline -1`: a new worktree starts from a remote's main, which can be many commits behind the local `main`
-   the main session works on. If the merge fails, stop and report.
+   `git log --oneline -1`: the main session may have committed to `main` since the worktree was made. If the merge
+   fails, stop and report.
 2. Read the spec twice. List anything it leaves open. If an open point is a design choice (a behaviour, a look, a
    format, a number the game depends on), stop and report it instead of choosing. Make only choices the spec or the
    surrounding code clearly implies, and list them in your report.

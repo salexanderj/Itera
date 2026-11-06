@@ -25,5 +25,8 @@
   },
   "enabledPlugins": {
     "csharp-lsp@claude-plugins-official": true
+  },
+  "worktree": {
+    "baseRef": "head"
   }
 }

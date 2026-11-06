@@ -168,8 +168,9 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
 - Format with csharpier, a local dotnet tool (`dotnet tool restore` after a clone): `dotnet csharpier check .` before
   a commit, `dotnet csharpier format .` to fix.
 - Commit messages in imperative mood. Git identity is repo-local.
-- Work and commit on `main`; no feature branches (one developer). A temporary local branch a tool needs (a writer's
-  worktree) is fine: delete it once its changes are on main.
+- Sessions that work at once each take a worktree of their own (`claude -w NAME`), on its own branch, and land their
+  commits on `main` by fast-forward (the `worktrees` skill). Only `main` is pushed. A writer's worktree and branch go
+  once their changes are on `main`.
 - Vulkan work uses the `vulkan` skill, ECS work the `ecs` skill, code that moves ECS data to the GPU or defines a struct
   a shader reads the `ecs-vulkan` skill, and model recipes the `models` skill. A PreToolUse hook
   (`.claude/hooks/skill_guard.py`) blocks file writes, and Bash commands that name the guarded folders and do more
