@@ -49,4 +49,7 @@ python3 -m unittest discover -s tools/machine     # its tests
   is granted at once. Under a shared one, a hold alone is refused, since it would wait for itself.
 - When other holds share the machine, a shared hold's command gets `ITERA_TEST_TIME_SCALE=2` unless it is set, so the
   tests' wait limits stretch (`tests/Shared/TestTime.cs`).
+- `hold` prints the scale its command gets, the caller's own when set, and the hook's first line exports it as a plain
+  value. In a session isolated in a worktree, Claude Code refuses an export inside a condition or with a
+  `${NAME:-...}` value.
 - `run` exits with its command's code, and 75 when the machine stays held past `--wait`.

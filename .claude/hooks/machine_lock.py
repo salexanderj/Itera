@@ -5,7 +5,8 @@ A command that runs dotnet build, test, run, watch, publish, pack, or msbuild, o
 holds the machine until the command's shell ends (machine.py hold --watch $$), and the command runs as it was. The
 hold is shared; a dotnet test with no --filter holds it as a suite; a command that also runs the benchmark
 (tools/benchmark/run.sh) or timings.py --alone holds it alone. The changed command goes through the usual permission
-checks: the hook never approves a call.
+checks: the hook never approves a call. The first line's exports have plain values, so a session isolated in a worktree
+can run the changed command.
 
 When the machine is held alone, or a request to hold it alone waits, a call in the foreground is refused with who
 holds it, and the session runs it again in the background, where it waits for the machine. Commands that run only the
@@ -55,10 +56,13 @@ def wrapped(command, kind, label, wait):
     hold = (
         f"python3 {shlex.quote(str(MACHINE))} hold --{kind} --watch $$ --wait {wait} --label {shlex.quote(label)}"
     )
+    # Each export is a statement of its own with a plain value, so Claude Code's check of a session isolated in a
+    # worktree can read it. It refuses an export inside a condition or with a ${NAME:-...} value. The hold prints the
+    # scale already chosen: the shell's own when set.
     return (
         f"__itera_machine=$({hold}) || exit $?\n"
-        f'export ITERA_MACHINE={kind}; [ -z "$__itera_machine" ] || '
-        f'export ITERA_TEST_TIME_SCALE="${{ITERA_TEST_TIME_SCALE:-$__itera_machine}}"\n'
+        f"export ITERA_MACHINE={kind}\n"
+        f'export ITERA_TEST_TIME_SCALE="$__itera_machine"\n'
         f"{command}"
     )
 

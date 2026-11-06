@@ -145,6 +145,23 @@ class MachineTests(unittest.TestCase):
         first.release()
         second.release()
 
+    def wrapped_scale(self, scale):
+        """The ITERA_TEST_TIME_SCALE a command the hook wraps sees, run in bash with SCALE (or none) in its environment."""
+        command = machine_lock.wrapped('echo "scale=$ITERA_TEST_TIME_SCALE"', "shared", "test", 5)
+        environment = {k: v for k, v in os.environ.items() if k != machine.SCALE_VARIABLE}
+        if scale is not None:
+            environment[machine.SCALE_VARIABLE] = scale
+        answer = subprocess.run(["bash", "-c", command], env=environment, capture_output=True, text=True, timeout=10)
+        self.assertEqual(0, answer.returncode, answer.stderr)
+        return answer.stdout.strip().removeprefix("scale=")
+
+    def test_a_wrapped_command_gets_the_shared_scale_or_the_callers_own(self):
+        self.assertEqual("", self.wrapped_scale(None))
+        other = machine.acquire("shared", "other", 1)
+        self.assertEqual(machine.SHARED_SCALE, self.wrapped_scale(None))
+        self.assertEqual("5", self.wrapped_scale("5"))
+        other.release()
+
     def test_a_hold_given_to_a_started_process_lasts_as_long_as_it(self):
         held = machine.acquire("shared", "game", 1)
         game = subprocess.Popen(["sleep", "0.6"], pass_fds=held.fds)
@@ -209,6 +226,13 @@ class HookTests(unittest.TestCase):
         self.assertNotIn("permissionDecision", decision["hookSpecificOutput"])
         self.assertTrue(changed["command"].endswith("\n# a comment first\ndotnet build"))
         self.assertEqual(("Build", 5000), (changed["description"], changed["timeout"]))
+
+    def test_the_wrapper_exports_only_plain_values(self):
+        # Claude Code refuses, in a session isolated in a worktree, an export inside a condition or with ${...}.
+        exports = [line for line in machine_lock.wrapped("dotnet build", "shared", "x", 5).splitlines() if "export" in line]
+        self.assertEqual(2, len(exports))
+        for line in exports:
+            self.assertRegex(line, r'^export [A-Z_]+=(?:[a-z]+|"\$__itera_machine")$')
 
     def test_the_switch_turns_the_hook_off(self):
         os.environ[machine_lock.SWITCH] = "off"
