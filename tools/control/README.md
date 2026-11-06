@@ -48,8 +48,10 @@ goes to HDMI-A-1 with swaymsg; with `--fullscreen`, full screen on DP-1 with VSy
 sway, the window stays where the system puts it.
 
 `start` then waits for the port and for the loading screen to finish. `--no-wait` skips the wait for loading. The
-state file `Run/state.json` holds the pid, the port, and the log's path. `start` refuses to start a second game while
-the first still runs. The game holds the machine shared while it runs (`tools/machine`), so a benchmark waits for
+state file `Run/state.json` holds the pid, the port, and the log's path. Each checkout keeps its own: a git worktree's
+are under `Run/worktrees/NAME`, so games of two checkouts run at once. `start` takes the first free control port from
+47650, and the commands after it find the port in the state. `start` refuses to start a second game while the
+checkout's first still runs. The game holds the machine shared while it runs (`tools/machine`), so a benchmark waits for
 `stop`; when the machine is held alone, `start` waits 60 s for it, then refuses.
 
 ## No window, and screenshot sets
@@ -173,7 +175,8 @@ grim; the in-game `shot` could replace that later.
 
 ## Protocol
 
-The port is TCP on 127.0.0.1 (default 47650). Each request and each reply is one JSON object on one line, for example
+The port is TCP on 127.0.0.1 (47650 by default; `game.py start` takes the first free one from it). Each request and
+each reply is one JSON object on one line, for example
 `{"id":1,"op":"run","line":"shadows off"}`. A line that does not start with `{` is answered with an error and ends the
 connection, and a last line without its end is never run, so a web page's request to the port runs nothing. The ops are `run` (with `"script": true`, a script: waits and screenshots
 hold the commands after them, and the reply comes when all have run), `log`, `wait`, `gpu`, `status`, `query`, `shot`,

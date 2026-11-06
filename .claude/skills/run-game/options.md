@@ -61,8 +61,8 @@ reference: `docs/reference/engine-options.md`, and the game's `game-options.md`.
 
 - `--Engine:Particles:Enabled=false`, `--Engine:Audio:Enabled=false`, `--Engine:Audio:Cache=false`, and
   `--Engine:Loading:Enabled=false` turn those parts off.
-- `--Engine:Control:Enabled=true` opens the control port (127.0.0.1:47650; `Port`). `--Engine:Benchmark:Enabled=true`
-  runs the benchmark (`tools/benchmark`).
+- `--Engine:Control:Enabled=true` opens the control port (127.0.0.1:47650; `Port`; `game.py start` takes the first
+  free one from 47650). `--Engine:Benchmark:Enabled=true` runs the benchmark (`tools/benchmark`).
 - `"--Engine:Console:Run=balls 8; pos"` runs commands once the first match's world and systems exist; with `wait`, as
   a script. `--Engine:Console:RunFile=PATH` runs a file of command lines (`#` starts a comment) after `Run`'s.
   `--Engine:Console:ExitOnFailure=true` ends the run with exit code 1 when a startup command fails.

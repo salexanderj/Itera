@@ -56,7 +56,10 @@ def data_folder():
 
 DATA = data_folder()
 EXECUTABLE = "Game.exe" if os.name == "nt" else "Game"
-RUN_ROOT = DATA / "Run"
+# Each checkout keeps its own game: the main checkout in Run/, a linked worktree (its .git is a file) in
+# Run/worktrees/<its folder's name>/, so sessions in two worktrees never stop or replace each other's game.
+WORKTREE = REPO.name if (REPO / ".git").is_file() else ""
+RUN_ROOT = DATA / "Run" / "worktrees" / WORKTREE if WORKTREE else DATA / "Run"
 STATE_FILE = RUN_ROOT / "state.json"
 LOGS = DATA / "Logs"
 SHADERS = REPO / "src" / "Itera.Engine" / "Rendering" / "Shaders"
@@ -78,6 +81,18 @@ def save_state(state):
 
 def port_of(args):
     return args.port or load_state().get("port") or DEFAULT_PORT
+
+
+def free_port():
+    """The first control port from DEFAULT_PORT on that no game holds, so games of two checkouts can run at once."""
+    for port in range(DEFAULT_PORT, DEFAULT_PORT + 50):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    return DEFAULT_PORT
 
 
 def game_executable(state):
@@ -357,7 +372,7 @@ def cmd_start(args):
         return 2
     configuration = "release" if args.release else "debug"
     folder, built = copy_build(configuration)
-    port = args.port or DEFAULT_PORT
+    port = args.port or free_port()
     command = [
         str(folder / EXECUTABLE),
         "--Engine:Control:Enabled=true",
@@ -515,7 +530,8 @@ def cmd_restart(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--port", type=int, help=f"control port (default: the started game's, else {DEFAULT_PORT})")
+    parser.add_argument("--port", type=int,
+                        help=f"control port (default: the started game's; start takes the first free one from {DEFAULT_PORT})")
     commands = parser.add_subparsers(dest="command", required=True)
 
     def add(name, function, help_text):
