@@ -69,7 +69,7 @@ public sealed class WideBodyMoverTests : IClassFixture<WideBodyWorldFixture>
     {
         var feet = new Vector3(0, 2, 0);
         var velocity = Vector3.Zero;
-        var shape = new CharacterShape(6, VoxelCharacterMover.MaxRadiusMetres + 0.01f, 1);
+        var shape = new CharacterShape(6, _mover.MaxRadiusMetres + 0.01f, 1);
         Assert.Throws<ArgumentOutOfRangeException>(() => _mover.Move(ref feet, ref velocity, in shape, Step));
     }
 

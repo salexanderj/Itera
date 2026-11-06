@@ -503,7 +503,7 @@ public sealed partial class ReplicationService
         {
             _ownerScratch.Capture(world, _entities[_hostIndex[PlayerIds.Of(client.Slot)]].Entity, _origin, _kinds);
             // A state a message cannot carry (a number not finite, a place past its reach) is not sent.
-            present = _ownerScratch.CanWrite(_kinds);
+            present = _ownerScratch.CanWrite(_kinds, _stepper.MaxRadiusMetres);
         }
 
         into.WriteByte(present ? (byte)1 : (byte)0);
@@ -531,7 +531,7 @@ public sealed partial class ReplicationService
         }
 
         var tick = reader.ReadVarInt();
-        var state = PredictedState.Read(ref reader, _kinds);
+        var state = PredictedState.Read(ref reader, _kinds, _stepper.MaxRadiusMetres);
         if (tick > _ownerTick)
         {
             _ownerTick = tick;
@@ -749,28 +749,32 @@ internal struct PredictedState
         }
     }
 
-    /// <summary>True when every number is finite and every place within a message's reach (<see cref="Write"/> takes it).</summary>
-    public readonly bool CanWrite(ReplicatedKinds kinds) =>
+    /// <summary>
+    /// True when every number is finite, every place within a message's reach (<see cref="Write"/> takes it), and the body
+    /// one the match's mover takes, its radius within <paramref name="mostRadiusMetres"/>
+    /// (<see cref="VoxelCharacterMover.MaxRadiusMetres"/>).
+    /// </summary>
+    public readonly bool CanWrite(ReplicatedKinds kinds, float mostRadiusMetres) =>
         Within(Feet)
         && Finite(Velocity)
         && float.IsFinite(Contact.Downhill.X)
         && float.IsFinite(Contact.Downhill.Y)
         && float.IsFinite(Contact.WallNormal.X)
         && float.IsFinite(Contact.WallNormal.Y)
-        && SizeFits(in Size)
+        && SizeFits(in Size, mostRadiusMetres)
         && PartsValid(kinds);
 
     /// <summary>The tallest body an owner's block may carry, in metres: past any game's, short of what the mover reads slowly.</summary>
     internal const float MostHeightMetres = 100;
 
     /// <summary>
-    /// True when the character mover takes a body of <paramref name="size"/> (it throws for a radius past
-    /// <see cref="VoxelCharacterMover.MaxRadiusMetres"/>, a height or radius of 0, or a negative step), its height and eye
-    /// within <see cref="MostHeightMetres"/>, and its mass above 0: what a host may send and a client takes.
+    /// True when the character mover takes a body of <paramref name="size"/> (it throws for a radius past its widest,
+    /// <paramref name="mostRadiusMetres"/>, a height or radius of 0, or a negative step), its height and eye within
+    /// <see cref="MostHeightMetres"/>, and its mass above 0: what a host may send and a client takes.
     /// </summary>
-    private static bool SizeFits(in CharacterSize size) =>
+    private static bool SizeFits(in CharacterSize size, float mostRadiusMetres) =>
         size.RadiusMetres > 0
-        && size.RadiusMetres <= VoxelCharacterMover.MaxRadiusMetres
+        && size.RadiusMetres <= mostRadiusMetres
         && size.HeightMetres > 0
         && size.HeightMetres <= MostHeightMetres
         && size.EyeMetres >= 0
@@ -876,9 +880,10 @@ internal struct PredictedState
     /// <summary>
     /// A state <see cref="Write"/> wrote; a number that is not finite, or past any a game moves by (a speed of 100 km/s, a
     /// body of 10 km or 10^9 kg), parts of another size than this run's, or a part that is not one a player can have
-    /// (<see cref="IPredictedState.IsValid"/>), is refused.
+    /// (<see cref="IPredictedState.IsValid"/>), or a body whose radius is past <paramref name="mostRadiusMetres"/> (the
+    /// match's mover's widest), is refused.
     /// </summary>
-    public static PredictedState Read(ref MessageReader reader, ReplicatedKinds kinds)
+    public static PredictedState Read(ref MessageReader reader, ReplicatedKinds kinds, float mostRadiusMetres)
     {
         var state = default(PredictedState);
         state.Feet = reader.ReadPosition();
@@ -904,7 +909,7 @@ internal struct PredictedState
         state.Size.EyeMetres = Positive(ref reader);
         state.Size.StepMetres = Finite(ref reader, 1e4f);
         state.Size.MassKilograms = Positive(ref reader);
-        if (!SizeFits(in state.Size))
+        if (!SizeFits(in state.Size, mostRadiusMetres))
         {
             // A size the mover would throw on at the correction's step would end the client's match.
             throw new InvalidDataException("A player's size is out of range.");

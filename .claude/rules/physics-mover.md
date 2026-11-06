@@ -1,7 +1,7 @@
 ---
 paths:
   - "src/Itera.Engine/Physics/{VoxelCharacterMover,FineGround,MeshColumns,MovementProbes,StepWorkers}.cs"
-  - "tests/Itera.Engine.Tests/Physics/{CoarseCeilingMoverTests,CoarseVoxelTests,DensityMoverTests,FarFromTheMiddleTests,FineGroundTests,FineMoverTests,GroundMaterialTests,MapEdgeMoverTests,MeshColumnsTests,MeshMoverTests,MixedGroundMoverTests,MovementProbesTests,MoverRestTests,MoverWithBodiesTests,MoverWorkersTests,StepWorkersTests,VoxelCharacterMoverShapeTests,VoxelCharacterMoverTests,WideBodyMoverTests,WorkersWorld}.cs"
+  - "tests/Itera.Engine.Tests/Physics/{CoarseCeilingMoverTests,CoarseVoxelTests,DensityMoverTests,FarFromTheMiddleTests,FineGroundTests,FineMoverTests,GiantMoverTests,GroundMaterialTests,MapEdgeMoverTests,MeshColumnsTests,MeshMoverTests,MixedGroundMoverTests,MovementProbesTests,MoverRestTests,MoverWithBodiesTests,MoverWorkersTests,StepWorkersTests,VoxelCharacterMoverShapeTests,VoxelCharacterMoverTests,WideBodyMoverTests,WorkersWorld}.cs"
 ---
 
 ## The character mover
@@ -14,7 +14,10 @@ it down and it cannot jump there. The mover is made by the core (`AddIteraEngine
 - It steps up from the ground, and in the air where its shape asks (`CharacterShape.StepsInAir`, a movement mode's
   `MovementModeMove.StepsInAir`).
 - A step height of 0 turns off stepping up and keeping to the ground.
-- Its widest body is `MaxRadiusMetres` in radius.
+- Its widest body is `MaxRadiusCells` of its cells in radius (`MaxRadiusMetres`): 2 m in cells of 1 cm, 20 m in cells
+  of 10 cm. A move's cost grows with the cells under the body.
+- Over coarse voxels, its windows of surfaces are made for a body 2 m in radius. The first move of a wider body makes
+  them again, larger, once for each mover and worker; that move allocates.
 - It waits while the voxels round it are not loaded.
 - The map's edge is a wall at every height (`AddMapEdge`).
 - Constructors: `VoxelCharacterMover(world, cell, passability, bodies, colliders)` with terrain, and

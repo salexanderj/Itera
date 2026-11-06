@@ -41,6 +41,9 @@ public sealed class CharacterStepper
         _physics = physics;
     }
 
+    /// <summary>The widest body the mover takes, in metres (<see cref="VoxelCharacterMover.MaxRadiusMetres"/>).</summary>
+    public float MaxRadiusMetres => _mover.MaxRadiusMetres;
+
     /// <summary>
     /// Runs one step of <paramref name="seconds"/> for <paramref name="entity"/> from its <see cref="PlayerCommand"/>:
     /// false, with nothing changed, when it is not alive, is <see cref="Bodiless"/>, or lacks a component

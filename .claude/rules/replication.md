@@ -121,7 +121,7 @@ The host sends each client that replies at least a packet each send, so a long g
   - When none has waited for several steps while the client's still arrive, it starts again from the newest less two, taking those steps' commands again. The client stalled and dropped steps, or the delay grew. This corrects the client once.
 - The client keeps a number of steps of its own.
 - Each send's first packet to a client carries the owner's block: the tick of the last command applied, and the player's state after it. The state is the feet (absolute), velocity, contact, mode, size, and the run's predicted parts' bytes, the engine's climber first, then a game's own.
-- The host does not send a state with a number that is not finite, a place past a message's reach, a size the mover refuses, or a part that is not valid. A size the mover refuses is a radius past `VoxelCharacterMover.MaxRadiusMetres` or none, a height past its limit or none, or a step past the height.
+- The host does not send a state with a number that is not finite, a place past a message's reach, a size the mover refuses, or a part that is not valid. A size the mover refuses is a radius past the match's mover's widest (`CharacterStepper.MaxRadiusMetres`) or none, a height past its limit or none, or a step past the height.
 - The client checks every number and part when it reads them, against bounds past any game's.
 - A reply is refused as damaged when its newest command lies past `int.MaxValue / 2` or its shown tick lies past any tick.
 - At the step's start the client keeps the state the last step left with its command. When the host's state at a command differs from the predicted one, it takes the host's state and runs the later commands again through `CharacterStepper` (`Replaying`).

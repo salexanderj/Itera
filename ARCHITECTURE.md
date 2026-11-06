@@ -1057,8 +1057,10 @@ would be lost. The rules are in `.claude/rules/physics.md`.
   play area's world edge (`PlayArea.WorldEdgeMetres`). Its tests run the same bodies on voxels and on triangles built
   from the same features (`MoverFeatureTests`, `DensityGroundTests`).
 - Moves split into parts of at most 24 voxels, each slid through a 2D grid of the cells that block anywhere in the
-  body's height. The grid is up to four strips of 128 cells side by side, so a body is at most 2 m in radius
-  (`MaxRadiusMetres`). The queries stop early where they can, and a move remembers each column's surface.
+  body's height. The grid is up to four strips of 128 cells side by side, so a body is at most 200 cells in radius
+  (`MaxRadiusCells`): 2 m in cells of 1 cm, 20 m in cells of 10 cm (`MaxRadiusMetres`). A move's cost grows with the
+  cells under the body, so a body 30 m tall costs about 80 times a person's in 10 cm cells. The queries stop early where
+  they can, and a move remembers each column's surface.
 - A slope limit (`MovementStats` max slope) tells slopes from ledges by two rules. A step up is kept only when the
   ground stays level just beyond it. Ground is steep when the body rests on a thin rim and the ground also rises more
   steeply than the limit within a few centimetres in one of eight directions. Seen from any side the rim and the rise

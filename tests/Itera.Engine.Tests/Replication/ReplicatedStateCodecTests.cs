@@ -14,6 +14,9 @@ namespace Itera.Engine.Tests.Replication;
 /// </summary>
 public sealed class ReplicatedStateCodecTests
 {
+    /// <summary>The widest body of a mover in cells of 1 cm, as the tests' worlds have.</summary>
+    private const float MostRadius = 2;
+
     private static readonly (
         ReplicatedSchema Schema,
         PositionField At,
@@ -389,7 +392,7 @@ public sealed class ReplicatedStateCodecTests
         var bytes = writer.Written.ToArray();
 
         var reader = new MessageReader(bytes);
-        var read = PredictedState.Read(ref reader, kinds);
+        var read = PredictedState.Read(ref reader, kinds, MostRadius);
 
         Assert.False(read.Differs(in state, kinds));
         world.Get<Components.Climber>(player) = default;
@@ -410,7 +413,7 @@ public sealed class ReplicatedStateCodecTests
         Assert.Throws<InvalidDataException>(() => ReadState(bytes, new ReplicatedKinds()));
         var nan = state;
         ((Span<byte>)nan.Parts)[43 + 7] = 0xFF;
-        Assert.False(nan.CanWrite(kinds));
+        Assert.False(nan.CanWrite(kinds, MostRadius));
     }
 
     /// <summary>
@@ -445,14 +448,14 @@ public sealed class ReplicatedStateCodecTests
         state.Write(writer, kinds);
         var bytes = writer.Written.ToArray();
 
-        Assert.False(state.CanWrite(kinds));
+        Assert.False(state.CanWrite(kinds, MostRadius));
         Assert.Throws<InvalidDataException>(() => ReadState(bytes, kinds));
     }
 
     private static PredictedState ReadState(byte[] bytes, ReplicatedKinds kinds)
     {
         var reader = new MessageReader(bytes);
-        return PredictedState.Read(ref reader, kinds);
+        return PredictedState.Read(ref reader, kinds, MostRadius);
     }
 
     /// <summary>A test part of <paramref name="bytes"/> bytes: valid unless its last byte is 0xFF.</summary>

@@ -139,8 +139,24 @@ public sealed class VoxelCharacterMover
     /// <summary>The most strips side by side in a window.</summary>
     private const int MaxStrips = 4;
 
-    /// <summary>The widest and deepest window of cells a slide reads: 512 cells, room for a body 2 m in radius.</summary>
+    /// <summary>
+    /// The widest and deepest window of cells a slide reads: 512 cells, room for a body <see cref="MaxRadiusCells"/> in
+    /// radius.
+    /// </summary>
     private const int WindowCells = StripCells * MaxStrips;
+
+    /// <summary>
+    /// The widest body the mover takes, in its cells: 200, the radius whose slide window (twice it, two parts, and a
+    /// margin) fits <see cref="WindowCells"/>. It is 2 m in cells of 1 cm and 20 m in cells of 10 cm
+    /// (<see cref="MaxRadiusMetres"/>).
+    /// </summary>
+    public const int MaxRadiusCells = 200;
+
+    /// <summary>
+    /// The radius in metres the surfaces' windows are first made for (density only). A wider body's first move makes them
+    /// again for it, once: <see cref="EnsureSurfaceWindow"/>.
+    /// </summary>
+    private const double UsualRadiusMetres = 2;
 
     /// <summary>
     /// Ground whose top lies this far below the feet, or less, holds the body up for the steepness rule, in centimetres.
@@ -237,15 +253,16 @@ public sealed class VoxelCharacterMover
     private readonly bool _density;
 
     // The columns' tops and surfaces of a window the ground and the walls read (density only), and the ramp of the move.
-    private readonly int[] _columnTops;
-    private readonly int[] _meshTops;
-    private readonly int[] _objectTops;
-    private readonly double[] _surfaces;
+    // Made for a body of UsualRadiusMetres, and again, larger, at the first move that reads a wider window.
+    private int[] _columnTops;
+    private int[] _meshTops;
+    private int[] _objectTops;
+    private double[] _surfaces;
 
     // The voxels' and the objects' tops up to the ground's reference cell, where a ceiling over open space lies over it
     // (ReadSurfaces).
-    private readonly int[] _columnTopsUnder;
-    private readonly int[] _objectTopsUnder;
+    private int[] _columnTopsUnder;
+    private int[] _objectTopsUnder;
 
     // The columns' surfaces read within one move or query (VoxelWorld.SurfaceOver), by column and top: a move reads
     // the same columns several times (a large body's about 6,700 reads of 1,100 columns). Slotted by the column's place in a
@@ -415,14 +432,36 @@ public sealed class VoxelCharacterMover
         _overlap = OverlapCentimetres / cell;
         _centreCells = CentreCentimetres / cell;
         _density = cellCentimetres > 1;
-        // A slide's window: the widest body and the longest part on each side, and a margin.
-        var side = _density ? (int)Math.Ceiling(2 * (MaxRadiusMetres * _cellsPerMetre + MaxPart + 2)) + 4 : 0;
+        // A slide's window: a usual body and the longest part on each side, and a margin. A wider body's first move
+        // makes the windows again (EnsureSurfaceWindow).
+        var side = _density
+            ? (int)Math.Ceiling(2 * (Math.Min(UsualRadiusMetres * _cellsPerMetre, MaxRadiusCells) + MaxPart + 2)) + 4
+            : 0;
         _columnTops = new int[side * side];
         _meshTops = new int[side * side];
         _objectTops = new int[side * side];
         _surfaces = new double[side * side];
         _columnTopsUnder = new int[side * side];
         _objectTopsUnder = new int[side * side];
+    }
+
+    /// <summary>
+    /// Makes the surfaces' windows hold <paramref name="columns"/>, when they hold fewer: once, at the first move or query
+    /// of a body wider than <see cref="UsualRadiusMetres"/>, which allocates. They keep that size after.
+    /// </summary>
+    private void EnsureSurfaceWindow(int columns)
+    {
+        if (columns <= _columnTops.Length)
+        {
+            return;
+        }
+
+        _columnTops = new int[columns];
+        _meshTops = new int[columns];
+        _objectTops = new int[columns];
+        _surfaces = new double[columns];
+        _columnTopsUnder = new int[columns];
+        _objectTopsUnder = new int[columns];
     }
 
     /// <summary>The run's physics materials, for the ground's (<see cref="CharacterMoveResult.GroundMaterial"/>); none gives the default.</summary>
@@ -498,7 +537,7 @@ public sealed class VoxelCharacterMover
             MaxMoveMetres
         );
         var reach =
-            Math.Min(shape.RadiusMetres, MaxRadiusMetres) * _cellsPerMetre
+            Math.Min(shape.RadiusMetres * _cellsPerMetre, MaxRadiusCells)
             + (double.IsFinite(horizontal) ? horizontal : MaxMoveMetres) * _cellsPerMetre
             + PrepareMarginCells;
         double x = CellX(feetMetres.X),
@@ -566,10 +605,10 @@ public sealed class VoxelCharacterMover
     private void Exit() => Volatile.Write(ref _busy, 0);
 
     /// <summary>
-    /// The widest body the mover takes, in metres: the window of cells a slide reads (512 cells) limits it. A 10 m giant's
-    /// radius is 1.5 m.
+    /// The widest body this mover takes, in metres: <see cref="MaxRadiusCells"/> of its cells, as the window of cells a
+    /// slide reads (512 cells) limits it. In cells of 10 cm it is 20 m, the radius of a body over 100 m tall.
     /// </summary>
-    public static float MaxRadiusMetres => 2f;
+    public float MaxRadiusMetres => (float)(MaxRadiusCells / _cellsPerMetre);
 
     /// <summary>The cells from the middle to an edge <paramref name="edgeMetres"/> away, at most <see cref="CircleFootprint.Far"/>.</summary>
     private static int EdgeCells(float edgeMetres, int cellCentimetres)
@@ -652,7 +691,7 @@ public sealed class VoxelCharacterMover
         var step = shape.StepMetres * _cellsPerMetre;
         if (
             !(r > 0)
-            || r > MaxRadiusMetres * _cellsPerMetre
+            || r > MaxRadiusCells
             || !(h > 0)
             || !(step >= 0)
             || !(shape.MaxSlopeDegrees > 0 && shape.MaxSlopeDegrees < 90)
@@ -1505,10 +1544,10 @@ public sealed class VoxelCharacterMover
         ForgetSurfaces();
     }
 
-    /// <summary>Refuses a radius past <see cref="MaxRadiusMetres"/>, which the windows and their surfaces are sized for.</summary>
-    private static void CheckRadius(float radiusMetres)
+    /// <summary>Refuses a radius past <see cref="MaxRadiusMetres"/>, which the windows are sized for.</summary>
+    private void CheckRadius(float radiusMetres)
     {
-        if (!(radiusMetres >= 0 && radiusMetres <= MaxRadiusMetres))
+        if (!(radiusMetres >= 0 && radiusMetres * _cellsPerMetre <= MaxRadiusCells))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(radiusMetres),
@@ -1747,6 +1786,7 @@ public sealed class VoxelCharacterMover
         _surfaceZ = windowZ;
         _surfaceWidth = width;
         _surfaceDepth = depth;
+        EnsureSurfaceWindow(width * depth);
         var tops = _columnTops.AsSpan(0, width * depth);
         if (_world is null)
         {
