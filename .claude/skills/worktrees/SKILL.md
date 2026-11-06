@@ -1,13 +1,13 @@
 ---
 name: worktrees
-description: How sessions work side by side, each in a git worktree of its own on its own branch, and land their commits on main. Use in a session started with `claude -w NAME` (its folder is under .claude/worktrees), before starting one, before committing or landing work from a worktree's branch, and when merging main into a branch or fast-forwarding main to it.
+description: How sessions work side by side, each in a git worktree of its own on its own branch, and land their commits on main, and how a session in the main checkout works beside them. Use in a session started with `claude -w NAME` (its folder is under .claude/worktrees), in the main checkout while worktree sessions run, before starting one, before committing or landing work from a worktree's branch, and when merging main into a branch or fast-forwarding main to it.
 ---
 
 # Sessions in worktrees
 
 Sessions that work at once each take a worktree of their own: a checkout of the repository in
-`.claude/worktrees/NAME`, on the branch `worktree-NAME`. A session in the main checkout works on `main`. Every session
-commits on its own branch and lands the commits on `main`; only `main` is pushed.
+`.claude/worktrees/NAME`, on the branch `worktree-NAME`. Each worktree session commits on its own branch and lands the
+commits on `main`. A session in the main checkout commits on `main` itself (below). Only `main` is pushed.
 
 ## Starting
 
@@ -51,6 +51,21 @@ git -C "$MAIN" push origin main                  # when it is time to push; its 
 - Do not land while `tools/machine/machine.py status` shows a hold from the main checkout's folder: its build or test
   run would read files that the fast-forward changes under it.
 - Integrate by merging `main`, never by rebasing: branches carry the merges of Itera's `main`.
+
+## The main checkout's session
+
+One session can work in the main checkout while others work in worktrees. It works on `main` and has no branch to land.
+
+- Its commits are on `main` at once. Each one moves `main`, so a worktree's next fast-forward is refused until that
+  worktree merges `main` again.
+- Every session started without `-w` shares the main checkout's files and index. Commit by path
+  (`git commit -- PATHS`), or check the index first, so nothing another session staged goes into the commit.
+- A worktree's landing changes the files in the main checkout. Git refuses it while this session has uncommitted
+  changes to the same files, so this session commits them first.
+- After a landing, build again before testing or committing: the last build no longer matches the files.
+- While it holds the machine lock, worktrees do not land (above).
+- It can push `main` for every session, so a round of work starts one CI run. When it also writes code, give it an area
+  that the worktree sessions do not change.
 
 ## Ending
 
