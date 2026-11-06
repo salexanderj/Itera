@@ -27,7 +27,8 @@
     <Optimize Condition="'$(Configuration)' == 'Debug'">true</Optimize>
     <!-- The SDK puts the commit in the informational version, so every commit made each project's first Debug build
          after it compile again. Debug logs give 1.0.0; Release and published builds keep the commit. -->
-    <IncludeSourceRevisionInInformationalVersion Condition="'$(Configuration)' == 'Debug'">false</IncludeSourceRevisionInInformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion Condition="'$(Configuration)' == 'Debug'"
+      >false</IncludeSourceRevisionInInformationalVersion>
 
     <!-- Mods are loaded dynamically through AssemblyLoadContext, which needs the JIT and reflection. -->
     <PublishAot>false</PublishAot>
