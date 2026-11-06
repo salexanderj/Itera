@@ -24,7 +24,7 @@ Choose the mode from the arguments:
 ## Rules
 
 1. Read-only. Change no source, test, shader, doc, config, or skill file, and do not commit. The only file you write is the report.
-2. Search first, read second. Use Grep and Glob with narrow patterns, then read only the line ranges that matter. Read a whole file only when it is central to the area. Never read the same file in full twice; keep notes in the report instead.
+2. Search first, read second. Use Grep and Glob with narrow patterns, and the LSP tool for a C# symbol's references, implementations, and callers, then read only the line ranges that matter. Read a whole file only when it is central to the area. Never read the same file in full twice; keep notes in the report instead.
 3. Keep command output short: pipe build, test, and log output through grep or tail.
 4. CLAUDE.md is already in your context; read an area's `.claude/rules/` file with the Read tool before auditing that area. Do not read ARCHITECTURE.md in full. List the open issues (`gh issue list --limit 300 --json number,title,labels`; in a game's clone, Itera's too with `-R salexanderj/Itera`) and read the headings of section 8's decisions (`grep -n '^### ' ARCHITECTURE.md`). Read a section 8 decision in full only when a finding touches it. Skip the research write-ups in docs/.
 5. Do not report anything the docs or an open issue list as known or left for later, unless you have new evidence that it is worse or more urgent. Do not propose reversing a recorded decision (ARCHITECTURE.md section 8, the user's choices) without concrete evidence; put such proposals in their own section.

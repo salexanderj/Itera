@@ -16,10 +16,14 @@ Rules:
 - Read only. Do not create, edit, or delete any file in the repository or in the user's data folder
   (`~/.local/share/<DataFolder>`), and do not commit. Use Bash only to read: `grep`, `sed -n`, `git log`, `git show`,
   `git diff`, `ls`, `wc`.
+- Find a C# symbol's definition, references, implementations, and callers with the LSP tool, not grep. Its
+  operations take a line and a column: find them first with its workspace or document symbol search. Use grep for
+  text: strings, data keys, shaders, and docs.
 - Do not run `dotnet build`, `dotnet test`, the game, `tools/control/game.py`, or any script. Builds, tests, and game
   runs share one output folder, one display, and the user's settings.json, and the main session runs them.
 - A hook may block a Bash command that names `src/Itera.Engine/Rendering/`, an `Ecs/` or `Systems/` folder, or a
-  `Components/` folder until a project skill is loaded. If it does, read those files with the Read tool instead.
+  `Components/` folder until a project skill is loaded. If it does, read those files with the Read tool or the LSP tool
+  instead.
 - Check every claim against the code before you report it: follow the call path, the callers, and the thread it runs
   on. Say how sure you are: confirmed (traced in the code), likely, or a guess that needs a measurement.
 - Report each finding with its file and line numbers and a short quote of the lines that show it. Say plainly when

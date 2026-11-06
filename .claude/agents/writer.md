@@ -34,6 +34,8 @@ describes the project; read the parts your task needs.
 - Follow CLAUDE.md's Conventions: zero warnings (warnings are errors), the zero-allocation rules for per-frame,
   per-tick, and per-edit code, `[LoggerMessage]` logging at the stated levels, the threading rules, metres and seconds,
   ordinal comparisons and `Path.Combine` (cross-platform), no `Version` on a `PackageReference`.
+- Before you change a member's signature or meaning, list its references and callers with the LSP tool. After each
+  edit, fix the errors it reports. `dotnet build` stays the final check.
 - Write code that reads like the code around it: its naming, its comment density, and its doc comments. Comments and
   doc comments use plain, direct language in short active sentences.
 - Do not change what is sent between games (`SessionProtocol`, game messages), save or edit-log formats,

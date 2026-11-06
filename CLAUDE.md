@@ -22,15 +22,15 @@ Itera with a pull from its remote, so:
   `Engine:Application` (`Name`, `DataFolder`) and `Engine:Window:Title`.
 
 Voxel terrain is optional: a game that registers no generator and does not call `AddIteraVoxels` plays matches without
-it. `ARCHITECTURE.md` holds the full description, the dependencies, and the design decisions. Read it before changing
+it. `ARCHITECTURE.md` holds the full description, dependencies, and design decisions. Read it before changing
 anything structural. `docs/` holds the write-ups behind decisions.
 
 # How to work
 
 - Area details are in `.claude/rules/`, one file per area (listed below). Claude Code loads one when a file it covers
-  is opened with Read, Write, or Edit, not with `cat`, `grep`, `sed`, or Grep. Open the files you will change with
-  Read. Before you plan, discuss, or review work in an area, read its rules file.
-- Find a C# symbol's definition, references, and callers with the LSP tool (the csharp-lsp plugin), not grep.
+  is opened with Read, Write, or Edit, not with `cat`, `grep`, `sed`, Grep, or the LSP tool. Open the files you will
+  change with Read. Before you plan, discuss, or review work in an area, read its rules file.
+- Find C# definitions, references, and callers with the LSP tool (the csharp-lsp plugin), and text with grep.
 - Before you write or change a doc (this file, `GAME.md`, a rules file, a skill, `ARCHITECTURE.md`, or `docs/`), load
   the `docs` skill: it says where each fact goes, and what the documentation tests check.
 - Bugs, suggestions, and changes left for later are GitHub issues, never lists in the docs (the `issues` skill).
