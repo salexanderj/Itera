@@ -236,20 +236,21 @@ ending a match makes no Vulkan call, and the render thread runs from its start t
 1. session (offline and hosting settle the match at once; a client connects, and `SessionService.PollJoin` carries the
    join on once a loop iteration, while the menu shows its progress, until the host's edit log is downloaded)
 2. origin (the match's first origin, from the game's start pose)
-3. physics
-4. voxels (memory and worker threads, for the match's seed)
-5. joined world (a client loads the host's edits, a named save its own)
-6. navigation
-7. voxel physics
-8. objects
-9. save (the last save written at the match's end)
-10. tint (the match's tint map for the particles' colours)
-11. world on the GPU
-12. match UI (the match's console commands and the HUD layers)
-13. ECS world and systems
-14. save sections (a named save's game state handed to the game's `ISaveSection`s before the first step)
-15. mods (`IGameMod.OnMatchStarted`)
-16. loading (the loading screen takes the match's tasks)
+3. game (`IMatchStartup.Start`: what the game makes from the match's settings, such as from its seed)
+4. physics
+5. voxels (memory and worker threads, for the match's seed)
+6. joined world (a client loads the host's edits, a named save its own)
+7. navigation
+8. voxel physics
+9. objects
+10. save (the last save written at the match's end)
+11. tint (the match's tint map for the particles' colours)
+12. world on the GPU
+13. match UI (the match's console commands and the HUD layers)
+14. ECS world and systems
+15. save sections (a named save's game state handed to the game's `ISaveSection`s before the first step)
+16. mods (`IGameMod.OnMatchStarted`)
+17. loading (the loading screen takes the match's tasks)
 
 The steps after the session begin once a frame saying "Starting..." has been shown. The session settles the match before anything
 reads the seed, and `SessionService.Match` throws until then. A game's generator and start pose take the seed from it.

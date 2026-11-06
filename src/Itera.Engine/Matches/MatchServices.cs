@@ -50,6 +50,7 @@ public sealed partial class MatchServices
     private static readonly ZoneId s_savesZone = Zones.Name("step.saves");
 
     private readonly IServiceProvider _scope;
+    private IMatchStartup[] _startups = [];
     private readonly MatchContext _context;
     private readonly UISurface _ui;
     private readonly ConsoleCommands _commands;
@@ -241,7 +242,8 @@ public sealed partial class MatchServices
 
     /// <summary>
     /// The match's other steps, once the session has settled the match (at once offline or hosting; after the download
-    /// when joining). The voxel world starts from the match's seed; the joined world step loads the host's edits (or the
+    /// when joining). The game's match startups (<see cref="IMatchStartup"/>) come first after the origin, so what they
+    /// make from the match's settings exists before anything else reads it. The voxel world starts from the match's seed; the joined world step loads the host's edits (or the
     /// named save's) into it, and without terrain only reads what the host sent; navigation starts with the seed and
     /// every edit so far; the object kinds' models, and their compounds for bodies, are made once the world's memory
     /// exists; the save step writes the
@@ -259,6 +261,7 @@ public sealed partial class MatchServices
         var steps = new List<EngineStep>
         {
             new("origin", StartOrigin, () => { }),
+            new("game", StartGame, EndGame),
             new("physics", InitializePhysics, Physics.Dispose),
         };
         if (Terrain is { } terrain)
@@ -297,6 +300,27 @@ public sealed partial class MatchServices
         steps.Add(new("mods", () => _mods.MatchStarted(_scope), _mods.MatchEnded));
         steps.Add(new("loading", () => BeginLoading(now()), _loading.End));
         return steps;
+    }
+
+    /// <summary>The game's match startups (<see cref="IMatchStartup"/>), started in their registration order.</summary>
+    private void StartGame()
+    {
+        _startups = [.. _scope.GetServices<IMatchStartup>()];
+        foreach (var startup in _startups)
+        {
+            startup.Start(Session.Match);
+        }
+    }
+
+    /// <summary>The game's match startups finished, in reverse.</summary>
+    private void EndGame()
+    {
+        for (var i = _startups.Length - 1; i >= 0; i--)
+        {
+            _startups[i].Finish();
+        }
+
+        _startups = [];
     }
 
     private void InitializePhysics()

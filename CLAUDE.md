@@ -131,7 +131,8 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
   match's state is Scoped (each match is a DI scope, `MatchServices`), and is resolved only from the match's steps on.
   A singleton never takes a scoped service in its constructor: it is given the match's when one starts (`BeginMatch`,
   an argument, or `MatchControl.Current`) and drops it at the end. Registries that refuse a name twice are run-wide,
-  made at the run's `game` step (`IRunStartup`). The run's order is in `GameLoop`, the match's in `MatchServices`.
+  made at the run's `game` step (`IRunStartup`). What a match makes from its seed is made at its own `game` step
+  (`IMatchStartup`). The run's order is in `GameLoop`, the match's in `MatchServices`.
   Every `Dispose` is idempotent.
 - Windowing, input, ECS, physics, the session, and mod callbacks run on the main thread. The threads of LiteNetLib and
   the control port only move data to it (`SessionService.Poll`, `ControlService.RunPending`).

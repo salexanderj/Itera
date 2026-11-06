@@ -15,7 +15,8 @@ namespace Itera.Engine.Tests.Matches;
 /// service collection. Nothing of an ended match stays: its services are collected, the console holds only the run's
 /// commands, its voxel memory is freed, its Arch world is gone, and the third match starts as the first did. Each step is
 /// the engine's own (<see cref="MatchServices.RunFixedStep"/>), with the world streaming round a centre. The game is
-/// <see cref="EngineComposition"/>'s.
+/// <see cref="EngineComposition"/>'s. A match's game startups (<see cref="IMatchStartup"/>) start with its seed and end
+/// with it.
 /// </summary>
 [Collection(SerialCollectionDefinition.Name)]
 public sealed class MatchLifetimeTests
@@ -54,6 +55,31 @@ public sealed class MatchLifetimeTests
         Assert.Equal(first.Entities, third.Entities);
         Assert.Equal(first.Edits, third.Edits);
         Assert.Equal(first.Commands, third.Commands);
+    }
+
+    [Fact]
+    public void A_matchs_game_startups_start_with_its_seed_and_end_with_it()
+    {
+        var log = new List<string>();
+        using var provider = EngineComposition.Build(configure: services =>
+            services.AddScoped<IMatchStartup>(_ => new Startup(log))
+        );
+        foreach (var startup in provider.GetServices<IRunStartup>())
+        {
+            startup.Start();
+        }
+
+        PlayOnce(provider, seed: 9);
+
+        Assert.Equal(["start 9", "end"], log);
+    }
+
+    /// <summary>A match startup that writes what it hears.</summary>
+    private sealed class Startup(List<string> log) : IMatchStartup
+    {
+        public void Start(Itera.Engine.Networking.MatchSettings match) => log.Add($"start {match.Seed}");
+
+        public void Finish() => log.Add("end");
     }
 
     /// <summary>

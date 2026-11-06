@@ -2,7 +2,7 @@
 paths:
   - "src/Itera.Engine/*.cs"
   - "src/Itera.Engine/{Ecs,Time,Diagnostics,Modding,Control}/**"
-  - "src/Itera.Engine/Matches/{HeadlessMatch,IRunStartup,MatchContext,MatchControl,MatchControlStates,MatchFlow,MatchIdentity,MatchServices,MatchStart,OriginShifts}.cs"
+  - "src/Itera.Engine/Matches/{HeadlessMatch,IMatchStartup,IRunStartup,MatchContext,MatchControl,MatchControlStates,MatchFlow,MatchIdentity,MatchServices,MatchStart,OriginShifts}.cs"
   - "tests/Itera.Engine.Tests/*.cs"
   - "tests/Itera.Engine.Tests/{Ecs,Time,Diagnostics,Modding,Control,Configuration}/**"
   - "tests/Itera.Engine.Tests/Matches/{EngineComposition,CompositionTests,MatchFlowTests,MatchLifetimeTests,HeadlessMatchTests,OriginShiftsTests}.cs"
@@ -23,7 +23,8 @@ paths:
 - `Matches/MatchFlow.cs` holds a match's start, join, and end. It needs no window.
 - `Matches/MatchServices.cs` holds a match's services, step list, and fixed step (`RunFixedStep`), with `MatchStart`,
   `MatchContext`, and `MatchControl` (with `MatchControlStates` for a game's tests of its menu).
-- `IRunStartup` is where a game registers its run-wide registries.
+- `IRunStartup` is where a game registers its run-wide registries. An `IMatchStartup` makes what a match needs
+  from its seed.
 - `Matches/MatchIdentity.cs` holds what a joining game must share (`IMatchIdentity`): the generator's and the object
   kinds' with terrain, else the application's name.
 - A session takes its transports through `ISessionTransports`.
