@@ -4,9 +4,9 @@ session.
 
 Each guard names a skill, the folders it covers, and sets of patterns for code in its area. Guarded work is
 a file write under one of the folders, a write to a .cs file whose existing and new text together match
-every pattern of one set, or a Bash command that names one of the folders, unless that command only reads (every
-part of it a reading program such as ls, cat, grep, or git diff, with no redirection into a file and no command
-substitution: is_read_only). A skill counts as loaded when
+every pattern of one set, or a Bash command whose words name one of the folders (a heredoc's text is not its
+words), unless that command only reads (every part of it a reading program such as ls, cat, grep, sed -n, or git
+diff, with no redirection into a file and no command substitution: is_read_only). A skill counts as loaded when
 the session transcript holds a Skill tool call for it or a typed /<skill> command after the last
 /clear. A call from a subagent (the event carries its agent_id) is checked against the subagent's own
 transcript, so a subagent must load the skill itself: the main session's loads do not count for it, and
@@ -17,6 +17,7 @@ a hook fault never blocks work.
 import json
 import os
 import re
+import shlex
 import sys
 from typing import NamedTuple
 
@@ -81,43 +82,129 @@ def uses_library(guard, tool_input, path):
     return any(all(pattern.search(text) for pattern in patterns) for patterns in guard.code)
 
 
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+OPERATORS = {"|", "||", "&&", ";", "&", "\n", "(", ")", ";;", "|&"}
+
+
+def without_heredocs(command):
+    """The command with each heredoc's text left out: its lines are data for a program, not words of the command."""
+    lines = command.split("\n")
+    kept = []
+    end = None
+    for line in lines:
+        if end is not None:
+            if line.strip() == end:
+                end = None
+            continue
+        kept.append(line)
+        found = HEREDOC.search(line)
+        if found:
+            end = found.group(2)
+    return "\n".join(kept)
+
+
+def words_of(command):
+    """The command's words and operators, split as the shell splits them around quotes, or None when a quote does not
+    close."""
+    lexer = shlex.shlex(without_heredocs(command), posix=True, punctuation_chars="();<>|&\n")
+    lexer.whitespace = " \t\r"
+    lexer.whitespace_split = True
+    try:
+        return list(lexer)
+    except ValueError:
+        return None
+
+
 def names_folder(guard, command):
-    # Match without the "src/" prefix so relative paths such as "Itera.Engine/Ecs" also count.
-    command = normalise(command)
-    return any(folder.removeprefix("src/").rstrip("/") in command for folder in guard.folders)
+    # Match without the "src/" prefix so relative paths such as "Itera.Engine/Ecs" also count. Only the command's words
+    # count, so a heredoc that mentions a folder does not; when the words cannot be split, the whole text counts.
+    words = words_of(command)
+    texts = [normalise(word) for word in words] if words is not None else [normalise(command)]
+    return any(folder.removeprefix("src/").rstrip("/") in text for folder in guard.folders for text in texts)
 
 
 # Programs that only read files and print (and git's reading subcommands); a command made only of these may name a
-# guarded folder without the skill. Not awk or sed (both can write), nor xargs (it runs any program).
+# guarded folder without the skill. Not awk (it can write), nor xargs (it runs any program); sed only as sed_reads
+# allows.
 READ_PROGRAMS = {
     "ls", "cat", "head", "tail", "wc", "grep", "egrep", "fgrep", "rg", "stat", "file", "tree", "du", "diff", "cut",
-    "sort", "uniq", "tr", "nl", "basename", "dirname", "realpath", "echo", "true", "test", "[",
+    "sort", "uniq", "tr", "nl", "basename", "dirname", "realpath", "echo", "true", "test", "[", "cd", "pwd", "printf",
+    "pgrep", "ps", "jq", "which",
 }
 GIT_READS = {"diff", "log", "show", "status", "blame", "grep", "ls-files", "rev-parse"}
 FIND_WRITES = {"-exec", "-execdir", "-delete", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf", "-fls"}
-HARMLESS_REDIRECTS = re.compile(r"\d?>&\d|&?\d?>\s*/dev/null")
+# A sed script that only prints: addresses (a line, $, /regex/, a range, first~step) with p, P, l, =, or q.
+SED_ADDRESS = r"(?:\d+|\$|/(?:[^/\\]|\\.)*/)"
+SED_COMMAND = rf"(?:{SED_ADDRESS}(?:\s*,\s*{SED_ADDRESS}|~\d+)?)?\s*!?\s*[pPl=q]"
+SED_PRINTS = re.compile(rf"\s*{SED_COMMAND}(?:\s*[;\n]\s*{SED_COMMAND})*\s*;?\s*")
+SED_FLAGS = re.compile(r"-[nErsuz]+")
+
+
+def sed_reads(words):
+    """True for sed -n whose scripts only print, with no -i: it writes nothing but its output."""
+    scripts, files, quiet = [], [], False
+    arguments = iter(words[1:])
+    for word in arguments:
+        if word in ("-e", "--expression"):
+            scripts.append(next(arguments, ""))
+        elif word in ("-n", "--quiet", "--silent"):
+            quiet = True
+        elif SED_FLAGS.fullmatch(word):
+            quiet = quiet or "n" in word
+        elif word.startswith("-"):
+            return False
+        else:
+            files.append(word)
+    if not scripts and files:
+        scripts.append(files.pop(0))
+    return quiet and bool(scripts) and all(SED_PRINTS.fullmatch(script) for script in scripts)
 
 
 def is_read_only(command):
-    """True when every part of the command (split at pipes, ';', '&&', and '||') runs a program that only reads, with
-    no redirection into a file and no command substitution, which could hide anything."""
+    """True when every part of the command (split at pipes, ';', '&', '&&', '||', and new lines, outside quotes) runs
+    a program that only reads, with no redirection into a file and no command substitution, which could hide
+    anything."""
     if "$(" in command or "`" in command or "<(" in command or ">(" in command:
         return False
-    if ">" in HARMLESS_REDIRECTS.sub("", command):
+    words = words_of(command)
+    if words is None:
         return False
-    for part in re.split(r"\|\||&&|[|;\n]", command):
-        words = part.split()
+    parts, part, following = [], [], None
+    for word in words:
+        if following:
+            # The word after a redirection: only /dev/null or another descriptor (2>&1) writes nothing.
+            to_descriptor = following.endswith("&") and word.isdigit()
+            if following.startswith((">", "&>")) and word != "/dev/null" and not to_descriptor:
+                return False
+            following = None
+        elif word in OPERATORS:
+            parts.append(part)
+            part = []
+        elif word and word[0] in "<>&" and set(word) <= set("<>&"):
+            following = word
+            if part and part[-1].isdigit():
+                part.pop()  # the descriptor of 2>, not an argument
+        else:
+            part.append(word)
+    parts.append(part)
+    for words in parts:
         if not words:
             continue
         program = os.path.basename(words[0])
         if program == "git":
-            if len(words) < 2 or words[1] not in GIT_READS:
+            rest = words[1:]
+            while rest[:1] in (["-C"], ["--no-pager"]):
+                rest = rest[2:] if rest[0] == "-C" else rest[1:]
+            if not rest or rest[0] not in GIT_READS:
                 return False
         elif program == "find":
             if any(word in FIND_WRITES for word in words):
                 return False
         elif program == "dotnet":
             if words[1:3] != ["csharpier", "check"]:
+                return False
+        elif program == "sed":
+            if not sed_reads(words):
                 return False
         elif program not in READ_PROGRAMS:
             return False
