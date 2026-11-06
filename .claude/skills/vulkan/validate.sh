@@ -24,6 +24,12 @@ set -euo pipefail
 
 VERIFIED_LAYER_VERSION="1.4.341"
 
+# The run builds and plays the game, so it holds the machine shared (tools/machine), unless a hold covers it already.
+if [[ -z "${ITERA_MACHINE:-}" ]]; then
+    exec python3 "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)/tools/machine/machine.py" run --shared \
+        --label "validate.sh" -- "$0" "$@"
+fi
+
 offscreen=0
 binary=""
 while [[ "${1:-}" == --offscreen || "${1:-}" == --binary ]]; do

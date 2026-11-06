@@ -36,6 +36,9 @@ parts' averages, with `systems_ms` its systems' part and `step_max_ms` its longe
 
 ## Measuring
 
+A run holds the machine alone (`tools/machine`): it waits for the builds, tests, and games running now, and none starts
+until it ends. Under a command that already holds the machine shared, it refuses: run it in a command of its own.
+
 ```bash
 dotnet build -c Release
 cp -r src/Game/bin/Release/net10.0 /tmp/game-before         # keep a build to compare against

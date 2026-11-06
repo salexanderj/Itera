@@ -10,6 +10,9 @@ count, and when each started and ended in the run), and the slowest tests.
     python3 tools/tests/timings.py --read DIR           # the report of an earlier run's .trx files
     python3 tools/tests/timings.py --max-wall 600       # fails when the run takes longer than 600 s (CI)
     python3 tools/tests/timings.py --threads 0          # one test class a processor at once, one project at a time
+    python3 tools/tests/timings.py --alone              # holds the machine alone, so the times are the tests' own
+
+A run holds the machine (tools/machine): as a suite, shared with a --filter, or alone with --alone.
 
 After the report it prints each failed test's message and the top of its stack trace.
 """
@@ -25,6 +28,9 @@ import tempfile
 import time
 import xml.etree.ElementTree as ElementTree
 from datetime import datetime
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "machine"))
+import machine  # noqa: E402
 
 NAMESPACE = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
 
@@ -127,6 +133,9 @@ def main():
         metavar="N",
         help="test classes run at once (0: one a processor): one project at a time, each with xunit's MaxParallelThreads",
     )
+    parser.add_argument(
+        "--alone", action="store_true", help="hold the machine alone: nothing else builds or tests during the run"
+    )
     parser.add_argument("test_args", nargs="*", help="after --: arguments for dotnet test (a project, a --filter, -c)")
     arguments = parser.parse_args()
 
@@ -145,11 +154,19 @@ def main():
         # -m:1 tests the projects one after another, so N is the classes at once in the whole run.
         command += ["-m:1", "--", f"xUnit.MaxParallelThreads={arguments.threads}"]
     print("Running: " + " ".join(command), flush=True)
-    began = time.monotonic()
     log = os.path.join(folder, "dotnet-test.log")
     os.makedirs(folder, exist_ok=True)
-    with open(log, "w", encoding="utf-8") as output:
-        code = subprocess.call(command, stdout=output, stderr=subprocess.STDOUT)
+    filtered = any(argument.startswith("--filter") for argument in arguments.test_args)
+    kind = "alone" if arguments.alone else "shared" if filtered else "suite"
+    held = machine.holds_lock_in_script(kind, "timings.py " + " ".join(arguments.test_args)[:60])
+    if held is None:
+        return machine.HELD
+    try:
+        began = time.monotonic()
+        with open(log, "w", encoding="utf-8") as output:
+            code = subprocess.call(command, stdout=output, stderr=subprocess.STDOUT, env=machine.environment(held))
+    finally:
+        held.release()
     wall = time.monotonic() - began
     with open(log, encoding="utf-8", errors="replace") as output:
         lines = output.readlines()

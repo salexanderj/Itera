@@ -37,7 +37,7 @@ load faster. `game.py start` runs offscreen unless given `--window` or `--fullsc
 | Something to try by hand | `game.py start`, then `run -s`, `query`, `status`, `shot`, and `input`. Offline, `pause`, `step N`, and `timescale`. For edits without a restart, `shaders reload` or `dotnet watch`. |
 | Vulkan code | `validate.sh --offscreen` while iterating, and both standard profiles with a window before it is done (the `vulkan` skill). |
 | Sessions | The in-process session tests. Or a host and a client with no graphics on 127.0.0.1, with `--Engine:Session:Port` apart from a running game's. |
-| GPU time | `tools/benchmark/run.sh` with `BENCH_AGENT=1` on a quiet machine (ask the user first: another game moves timings by 20 % or more). Compare offscreen runs with offscreen runs and windowed with windowed: offscreen measures 1 to 3 % lower. |
+| GPU time | `tools/benchmark/run.sh` with `BENCH_AGENT=1` (ask the user first). It holds the machine alone (`tools/machine`), so it waits for running builds, tests, and games (another game moves timings by 20 % or more). Compare offscreen runs with offscreen runs and windowed with windowed: offscreen measures 1 to 3 % lower. |
 
 Pitfalls:
 

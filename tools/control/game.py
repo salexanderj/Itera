@@ -26,6 +26,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_PORT = 47650
 
+sys.path.insert(0, str(REPO / "tools" / "machine"))
+import machine  # noqa: E402
+
 GAME = REPO / "src" / "Game"
 AGENT_SUFFIX = "-agent"
 
@@ -380,9 +383,19 @@ def cmd_start(args):
         # No graphics at all: the steps and the frame group run, nothing is drawn.
         command.append("--Engine:Window:Mode=None")
     command += args.game
+    # The game holds the machine shared while it runs (tools/machine): it keeps the lock open, so a benchmark waits for
+    # it to stop.
+    held = machine.holds_lock_in_script("shared", f"game.py start, {configuration}, port {port}", wait=60)
+    if held is None:
+        return 2
     console = open(RUN_ROOT / f"{configuration}-console.txt", "w")
-    process = subprocess.Popen(command, cwd=folder, stdout=console, stderr=subprocess.STDOUT,
-                               start_new_session=True)
+    try:
+        process = subprocess.Popen(command, cwd=folder, stdout=console, stderr=subprocess.STDOUT,
+                                   start_new_session=True, pass_fds=held.fds)
+    except BaseException:
+        held.release()
+        raise
+    held.give(process.pid)
     log = next(iter(sorted(LOGS.glob(f"*-{process.pid}.log"))), None)
     save_state({"pid": process.pid, "port": port, "configuration": configuration, "folder": str(folder),
                 "built": built, "started": time.time(), "log_next": 0})

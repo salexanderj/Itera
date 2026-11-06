@@ -21,7 +21,8 @@ python3 tools/tests/timings.py --threads 0              # one test class a proce
   long as its longest class. Each class line gives its summed seconds, its tests, and when it started and ended in the
   run, so the class that ends the run shows at the top.
 - The results and the `dotnet test` output stay in the folder named at the end (`--out DIR` to choose it).
-- Times from a busy machine run long: build nothing else while a run measures.
+- A run holds the machine (`tools/machine`): as a suite, shared with a `--filter`. Times from a shared machine run
+  long, so a run that measures takes `--alone`, and nothing else builds or tests until it ends.
 - `.claude/rules/tests.md` holds the rules that keep tests light.
 
 `published.py` starts a published build with no graphics, plays a short offline match, and checks that it ended with

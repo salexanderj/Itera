@@ -33,6 +33,11 @@ fi
 
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(git -C "$here" rev-parse --show-toplevel)"
+# A benchmark holds the machine alone (tools/machine): it waits for the builds and tests running now, and none starts
+# until it ends.
+if [[ "${ITERA_MACHINE:-}" != alone ]]; then
+    exec python3 "$repo/tools/machine/machine.py" run --alone --label "benchmark $1" -- "$0" "$@"
+fi
 label="$1"
 shift
 offscreen=0

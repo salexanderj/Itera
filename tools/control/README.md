@@ -49,7 +49,8 @@ sway, the window stays where the system puts it.
 
 `start` then waits for the port and for the loading screen to finish. `--no-wait` skips the wait for loading. The
 state file `Run/state.json` holds the pid, the port, and the log's path. `start` refuses to start a second game while
-the first still runs.
+the first still runs. The game holds the machine shared while it runs (`tools/machine`), so a benchmark waits for
+`stop`; when the machine is held alone, `start` waits 60 s for it, then refuses.
 
 ## No window, and screenshot sets
 

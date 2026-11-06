@@ -61,6 +61,9 @@ anything structural. `docs/` holds the write-ups behind decisions.
     missed one).
   - A model: built by a recipe with the `models` skill, and checked by the game's `GameModelsTests`.
 - Builds, tests, and game runs:
+  - They share the machine through one lock (`tools/machine`). A hook holds it for each command that runs `dotnet` or
+    the game. The benchmark and `timings.py --alone` hold it alone. When the hook refuses a call because the machine
+    is busy, run the call again in the background. The user's `machine.py busy` holds the machine for them.
   - Load the `run-game` skill before you start, drive, or check the game (options, logs, console, control port). Check
     a change the cheapest way that can see it.
   - `dotnet build` must end with zero warnings. Before a commit, run the test classes of the changed areas
@@ -110,8 +113,8 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
 - `src/Itera.Engine`: the engine. `.claude/rules/engine.md` lists its folders.
 - `src/Game`: the starter game (`GAME.md`). `tests/`: xUnit, one project per `src/` project.
 - `samples/Itera.SampleMod` is the reference mod, and `samples/Itera.MeshSample` a game without voxel terrain.
-- `tools/`: `control`, `benchmark`, `steam`, `tests`, `Textures`, `sounds`, `models`, `ModelCheck`, and `ModelView`,
-  each with a README.
+- `tools/`: `control`, `benchmark`, `machine`, `steam`, `tests`, `Textures`, `sounds`, `models`, `ModelCheck`, and
+  `ModelView`, each with a README.
 
 # Conventions
 
