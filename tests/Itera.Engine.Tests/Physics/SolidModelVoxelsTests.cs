@@ -531,4 +531,51 @@ public sealed class SolidModelVoxelsTests : IDisposable
 
         return (highest, lowest);
     }
+
+    /// <summary>
+    /// Solids mirrored into coarser cells (<see cref="SolidModelVoxels.Mirror"/>) are added, placed, and removed there
+    /// too, by the same id: the mirror blocks the cells a solid placed there itself blocks.
+    /// </summary>
+    [Fact]
+    public void A_mirror_holds_the_same_solids_in_its_own_cells()
+    {
+        var chunk = new byte[VoxelConstants.ChunkVoxels];
+        for (var z = 0; z < 4; z++)
+        {
+            for (var y = 0; y < 10; y++)
+            {
+                for (var x = 0; x < 6; x++)
+                {
+                    chunk[x + Edge * y + Edge * Edge * z] = 5;
+                }
+            }
+        }
+
+        var columns = SolidColumns.Build(chunk, new VoxelCoord(6, 10, 4));
+        var fine = new SolidModelVoxels(10);
+        var mirror = new SolidModelVoxels(50);
+        var alone = new SolidModelVoxels(50);
+        fine.Mirror = mirror;
+        var pivot = new Vector3(3, 0, 2);
+        var at = new WorldPoint(3.3, 1.2, -2.6);
+        var id = fine.Add(columns, 2, pivot, 10);
+        fine.SetPose(id, in at, 0.7f);
+        var aloneId = alone.Add(columns, 2, pivot, 10);
+        alone.SetPose(aloneId, in at, 0.7f);
+
+        Assert.Equal((1, id), (mirror.Count, aloneId));
+        Span<UInt128> rows = stackalloc UInt128[64],
+            aloneRows = stackalloc UInt128[64];
+        for (var y0 = -10; y0 < 20; y0 += 3)
+        {
+            rows.Clear();
+            aloneRows.Clear();
+            mirror.BlockedCells(-20, -40, 64, y0, y0 + 2, rows);
+            alone.BlockedCells(-20, -40, 64, y0, y0 + 2, aloneRows);
+            Assert.True(rows.SequenceEqual(aloneRows), $"The mirror differs at y {y0}.");
+        }
+
+        fine.Remove(id);
+        Assert.Equal(0, mirror.Count);
+    }
 }

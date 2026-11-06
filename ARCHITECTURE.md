@@ -1059,8 +1059,10 @@ would be lost. The rules are in `.claude/rules/physics.md`.
 - Moves split into parts of at most 24 voxels, each slid through a 2D grid of the cells that block anywhere in the
   body's height. The grid is up to four strips of 128 cells side by side, so a body is at most 200 cells in radius
   (`MaxRadiusCells`): 2 m in cells of 1 cm, 20 m in cells of 10 cm (`MaxRadiusMetres`). A move's cost grows with the
-  cells under the body, so a body 30 m tall costs about 80 times a person's in 10 cm cells. The queries stop early where
-  they can, and a move remembers each column's surface.
+  cells under the body, so a body 30 m tall costs about 80 times a person's in 10 cm cells. A game may move bodies past
+  a radius in coarser cells (`Engine:Physics:LargeBodyCellCentimetres`), through a second mover the first hands them to:
+  a body 40 m tall then costs about a tenth. The queries stop early where they can, and a move remembers each
+  column's surface.
 - A slope limit (`MovementStats` max slope) tells slopes from ledges by two rules. A step up is kept only when the
   ground stays level just beyond it. Ground is steep when the body rests on a thin rim and the ground also rises more
   steeply than the limit within a few centimetres in one of eight directions. Seen from any side the rim and the rise

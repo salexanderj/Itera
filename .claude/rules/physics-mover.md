@@ -1,7 +1,7 @@
 ---
 paths:
   - "src/Itera.Engine/Physics/{VoxelCharacterMover,FineGround,MeshColumns,MovementProbes,StepWorkers}.cs"
-  - "tests/Itera.Engine.Tests/Physics/{CoarseCeilingMoverTests,CoarseVoxelTests,DensityMoverTests,FarFromTheMiddleTests,FineGroundTests,FineMoverTests,GiantMoverTests,GroundMaterialTests,MapEdgeMoverTests,MeshColumnsTests,MeshMoverTests,MixedGroundMoverTests,MovementProbesTests,MoverRestTests,MoverWithBodiesTests,MoverWorkersTests,StepWorkersTests,VoxelCharacterMoverShapeTests,VoxelCharacterMoverTests,WideBodyMoverTests,WorkersWorld}.cs"
+  - "tests/Itera.Engine.Tests/Physics/{CoarseCeilingMoverTests,CoarseVoxelTests,DensityMoverTests,FarFromTheMiddleTests,FineGroundTests,FineMoverTests,GiantMoverTests,GroundMaterialTests,LargeBodyMoverTests,MapEdgeMoverTests,MeshColumnsTests,MeshMoverTests,MixedGroundMoverTests,MovementProbesTests,MoverRestTests,MoverWithBodiesTests,MoverWorkersTests,StepWorkersTests,VoxelCharacterMoverShapeTests,VoxelCharacterMoverTests,WideBodyMoverTests,WorkersWorld}.cs"
 ---
 
 ## The character mover
@@ -18,6 +18,22 @@ it down and it cannot jump there. The mover is made by the core (`AddIteraEngine
   of 10 cm. A move's cost grows with the cells under the body.
 - Over coarse voxels, its windows of surfaces are made for a body 2 m in radius. The first move of a wider body makes
   them again, larger, once for each mover and worker; that move allocates.
+
+### Large bodies
+
+With `Engine:Physics:LargeBodyCellCentimetres` set over terrain, the core gives the mover a second one in those coarser
+cells (`VoxelCharacterMover.Large`). Every body wider than `Engine:Physics:LargeBodyRadiusMetres` moves there, so a
+giant reads fewer cells.
+
+- The mover hands such a body's `Move`, `Overlaps`, `OverlapsAnything`, `StandsUnchanged`, `GroundTop`, and `Prepare`
+  to it. Callers use the one mover. Its stamp is the same, as both read the same world, colliders, and objects.
+- The large mover has object columns of its own in its cells, and the same loose bodies in its cells
+  (`LooseBodyVoxels.Coarser`). They refresh with the mover's. Each solid model added, placed, or removed in the mover's
+  cells is in the large mover's too, by the same id (`SolidModelVoxels.Mirror`).
+- A worker has a large mover of its own, and a pass begins and ends on both.
+- `MaxRadiusMetres` is then the large mover's.
+- The cells must be coarser than the mover's and a whole divisor of the voxels, or the voxels themselves; else the
+  match does not start.
 - It waits while the voxels round it are not loaded.
 - The map's edge is a wall at every height (`AddMapEdge`).
 - Constructors: `VoxelCharacterMover(world, cell, passability, bodies, colliders)` with terrain, and

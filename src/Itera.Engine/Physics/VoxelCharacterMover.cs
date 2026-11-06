@@ -471,6 +471,33 @@ public sealed class VoxelCharacterMover
     public IVoxelSurfaceTags? SurfaceTags { get; init; }
 
     /// <summary>
+    /// The mover in coarser cells that moves and asks for every body wider than <see cref="LargeFromMetres"/> in radius
+    /// (<c>Engine:Physics:LargeBodyCellCentimetres</c>), so a large body's move reads fewer cells; none moves every body
+    /// here. It reads the same world, colliders, and objects, and the same loose bodies and solid models in its own cells
+    /// (<see cref="LooseBodyVoxels.Coarser"/>). It has none of its own.
+    /// </summary>
+    internal VoxelCharacterMover? Large
+    {
+        get;
+        init
+        {
+            if (value is { Large: not null })
+            {
+                throw new ArgumentException("A large body's mover has no large mover of its own.", nameof(value));
+            }
+
+            field = value;
+        }
+    }
+
+    /// <summary>The radius in metres past which a body moves in <see cref="Large"/> (<c>Engine:Physics:LargeBodyRadiusMetres</c>).</summary>
+    internal float LargeFromMetres { get; init; }
+
+    /// <summary>The mover for a body of <paramref name="radiusMetres"/>: <see cref="Large"/> past its radius, else this one.</summary>
+    private VoxelCharacterMover For(float radiusMetres) =>
+        Large is { } large && radiusMetres > LargeFromMetres ? large : this;
+
+    /// <summary>
     /// The voxel objects the world places, read as the ground is (<see cref="ObjectColumns"/>: walls, ledges, and ground
     /// to stand on, with their material and tags); none without. A move waits where their areas are not filled yet.
     /// </summary>
@@ -503,6 +530,8 @@ public sealed class VoxelCharacterMover
             Objects = Objects?.Worker(),
             Materials = Materials,
             SurfaceTags = SurfaceTags,
+            Large = Large?.CreateWorker(),
+            LargeFromMetres = LargeFromMetres,
         };
     }
 
@@ -516,6 +545,7 @@ public sealed class VoxelCharacterMover
         RequireOwner();
         _meshes?.BeginPass();
         Objects?.BeginPass();
+        Large?.BeginPass();
     }
 
     /// <summary>
@@ -527,6 +557,12 @@ public sealed class VoxelCharacterMover
     internal void Prepare(Vector3 feetMetres, in CharacterShape shape, Vector3 velocity, float seconds)
     {
         RequireOwner();
+        if (For(shape.RadiusMetres) is var mover && mover != this)
+        {
+            mover.Prepare(feetMetres, in shape, velocity, seconds);
+            return;
+        }
+
         if (_meshes is null && Objects is null)
         {
             return;
@@ -561,6 +597,7 @@ public sealed class VoxelCharacterMover
         RequireOwner();
         _meshes?.EndPass();
         Objects?.EndPass();
+        Large?.EndPass();
     }
 
     /// <summary>
@@ -570,7 +607,7 @@ public sealed class VoxelCharacterMover
     internal double PrepareMarginCells => 6 + 2 * _lookAhead;
 
     /// <summary>A worker's: the chunks of columns it made itself, as its owner kept none of them.</summary>
-    internal long OwnBuilds => (_meshes?.OwnBuilds ?? 0) + (Objects?.OwnBuilds ?? 0);
+    internal long OwnBuilds => (_meshes?.OwnBuilds ?? 0) + (Objects?.OwnBuilds ?? 0) + (Large?.OwnBuilds ?? 0);
 
     /// <summary>
     /// For tests: the chunks of columns kept and the chunk changes read, which a worker's moves leave alone.
@@ -605,10 +642,11 @@ public sealed class VoxelCharacterMover
     private void Exit() => Volatile.Write(ref _busy, 0);
 
     /// <summary>
-    /// The widest body this mover takes, in metres: <see cref="MaxRadiusCells"/> of its cells, as the window of cells a
-    /// slide reads (512 cells) limits it. In cells of 10 cm it is 20 m, the radius of a body over 100 m tall.
+    /// The widest body this mover takes, in metres: <see cref="MaxRadiusCells"/> of its cells, or of its large bodies'
+    /// mover's (<see cref="Large"/>), as the window of cells a slide reads (512 cells) limits it. In cells of 10 cm it is
+    /// 20 m, the radius of a body over 100 m tall.
     /// </summary>
-    public float MaxRadiusMetres => (float)(MaxRadiusCells / _cellsPerMetre);
+    public float MaxRadiusMetres => Large?.MaxRadiusMetres ?? (float)(MaxRadiusCells / _cellsPerMetre);
 
     /// <summary>The cells from the middle to an edge <paramref name="edgeMetres"/> away, at most <see cref="CircleFootprint.Far"/>.</summary>
     private static int EdgeCells(float edgeMetres, int cellCentimetres)
@@ -647,6 +685,11 @@ public sealed class VoxelCharacterMover
         float seconds
     )
     {
+        if (For(shape.RadiusMetres) is var mover && mover != this)
+        {
+            return mover.Move(ref feetMetres, ref velocity, in shape, seconds);
+        }
+
         Enter();
         try
         {
@@ -1249,6 +1292,11 @@ public sealed class VoxelCharacterMover
             );
         }
 
+        if (For(radiusMetres) is var mover && mover != this)
+        {
+            return mover.GroundTop(atMetres, radiusMetres, upMetres, downMetres, out topMetres);
+        }
+
         Enter();
         try
         {
@@ -1322,6 +1370,11 @@ public sealed class VoxelCharacterMover
 
     private bool OverlapsAt(Vector3 feetMetres, in CharacterShape shape, bool bodies)
     {
+        if (For(shape.RadiusMetres) is var mover && mover != this)
+        {
+            return mover.OverlapsAt(feetMetres, in shape, bodies);
+        }
+
         Enter();
         try
         {
@@ -1360,6 +1413,12 @@ public sealed class VoxelCharacterMover
     /// </summary>
     public bool StandsUnchanged(ref GroundStamp since, Vector3 feetMetres, in CharacterShape shape)
     {
+        // The large bodies' mover reads the same world, colliders, and objects, so its stamp is this one's.
+        if (For(shape.RadiusMetres) is var mover && mover != this)
+        {
+            return mover.StandsUnchanged(ref since, feetMetres, in shape);
+        }
+
         var now = Stamp();
         // With the objects' damage followed, every change of an object in play is named there with its box, and an area
         // that fills again holds what it held, so only the residency below (objects known round the feet) counts.

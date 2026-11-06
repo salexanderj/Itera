@@ -173,6 +173,14 @@ public sealed class EngineOptionsValidator(IEnumerable<IChunkGenerator> generato
             0,
             PhysicsSettings.MostTerrainCellCentimetres
         );
+        Range(
+            failures,
+            "Physics:LargeBodyCellCentimetres",
+            physics.LargeBodyCellCentimetres,
+            0,
+            PhysicsSettings.MostTerrainCellCentimetres
+        );
+        Range(failures, "Physics:LargeBodyRadiusMetres", physics.LargeBodyRadiusMetres, 0.1, 20);
         Range(failures, "Physics:Substeps", physics.Substeps, 1, PhysicsSettings.MostSubsteps);
         Range(
             failures,

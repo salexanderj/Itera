@@ -31,6 +31,24 @@ public sealed class SolidModelVoxels
     public int Count { get; private set; }
 
     /// <summary>
+    /// The same solids in other cells (<see cref="LooseBodyVoxels.Coarser"/>): each solid added, placed, or removed here
+    /// is there too, by the same id. Set while both hold none.
+    /// </summary>
+    internal SolidModelVoxels? Mirror
+    {
+        get;
+        set
+        {
+            if (Count > 0 || value is { Count: > 0 })
+            {
+                throw new InvalidOperationException("A mirror is set while both hold no solid.");
+            }
+
+            field = value;
+        }
+    }
+
+    /// <summary>
     /// Adds a solid of <paramref name="columns"/> whose voxels are <paramref name="level"/>'s of a model whose level-0
     /// voxels are <paramref name="unitCentimetres"/> across (<see cref="VoxelModels.UnitCentimetres"/>), turning about
     /// <paramref name="pivot"/> (in its own voxels, from its box's corner), and returns its id. It blocks nothing until
@@ -45,20 +63,25 @@ public sealed class SolidModelVoxels
         ArgumentOutOfRangeException.ThrowIfGreaterThan(unitCentimetres, VoxelModels.MostUnitCentimetres);
         // How many world voxels across one of the model's voxels is: 0.4 for 4 cm voxels in a world of 10 cm.
         var solid = new Solid(columns, (unitCentimetres << level) / (float)_worldVoxelCentimetres, pivot);
+        var id = Mirror?.Add(columns, level, pivot, unitCentimetres);
         for (var i = 0; i < _solids.Count; i++)
         {
             if (_solids[i] is null)
             {
                 _solids[i] = solid;
                 Count++;
-                return i;
+                return Same(i, id);
             }
         }
 
         _solids.Add(solid);
         Count++;
-        return _solids.Count - 1;
+        return Same(_solids.Count - 1, id);
     }
+
+    // The mirror fills its slots as this does, so a solid has one id in both.
+    private static int Same(int id, int? mirrored) =>
+        mirrored is null || mirrored == id ? id : throw new InvalidOperationException("A mirrored solid's id differs.");
 
     /// <summary>Removes solid <paramref name="id"/>; the id may be given to a later one.</summary>
     public void Remove(int id)
@@ -70,6 +93,7 @@ public sealed class SolidModelVoxels
 
         _solids[id] = null;
         Count--;
+        Mirror?.Remove(id);
     }
 
     /// <summary>
@@ -92,6 +116,11 @@ public sealed class SolidModelVoxels
     {
         var solid = _solids[id] ?? throw new ArgumentException("No such solid.", nameof(id));
         solid.Place(x, y, z, yaw);
+        if (Mirror is { } mirror)
+        {
+            var scale = _worldVoxelCentimetres / (double)mirror._worldVoxelCentimetres;
+            mirror.SetPoseInCells(id, x * scale, y * scale, z * scale, yaw);
+        }
     }
 
     /// <summary>

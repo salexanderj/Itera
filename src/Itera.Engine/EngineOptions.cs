@@ -729,6 +729,21 @@ public sealed class PhysicsSettings
     public const int MostTerrainCellCentimetres = 100;
 
     /// <summary>
+    /// The edge of the cells a body wider than <see cref="LargeBodyRadiusMetres"/> moves in over voxel terrain, in
+    /// centimetres: 0 (the default) for none, so every body moves in the mover's cells; else coarser than those cells and
+    /// a whole divisor of the world's level-0 voxels, or the voxels themselves, up to
+    /// <see cref="MostTerrainCellCentimetres"/> (a match it does not fit does not start). A move's cost grows with the
+    /// cells under the body, so a giant moves in fewer: a body 40 m tall costs about 3 ms a move in 10 cm cells. Without
+    /// terrain it does nothing.
+    /// </summary>
+    public int LargeBodyCellCentimetres { get; set; }
+
+    /// <summary>
+    /// The radius in metres past which a body moves in cells of <see cref="LargeBodyCellCentimetres"/>, 0.1 to 20.
+    /// </summary>
+    public float LargeBodyRadiusMetres { get; set; } = 2;
+
+    /// <summary>
     /// The solver's substeps in each fixed step, 1 to <see cref="MostSubsteps"/>: more keep fast, stacked, or jointed
     /// bodies steadier, at more cost (Bepu solves the constraints, and moves the bodies that have any, once a substep).
     /// A game may change it during a match (<c>PhysicsWorld.SetSolver</c>).

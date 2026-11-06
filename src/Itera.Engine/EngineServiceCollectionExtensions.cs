@@ -290,26 +290,38 @@ public static class EngineServiceCollectionExtensions
         if (services.GetService<VoxelWorld>() is { } world)
         {
             var terrainCell = TerrainCell(services, world);
-            return new VoxelCharacterMover(
-                world,
-                terrainCell,
-                passability,
-                services.GetRequiredService<LooseBodyVoxels>(),
-                colliders
-            )
+            var bodies = services.GetRequiredService<LooseBodyVoxels>();
+            var physics = services.GetRequiredService<IOptions<EngineOptions>>().Value.Physics;
+            // Bodies wider than LargeBodyRadiusMetres move in coarser cells, which they read fewer of, through the same
+            // world, colliders, objects, loose bodies, and solid models.
+            var large = physics.LargeBodyCellCentimetres;
+            if (large > 0)
+            {
+                var voxel = world.Grid.BaseCentimetres;
+                if (large <= terrainCell || large > voxel || voxel % large != 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Engine:Physics:LargeBodyCellCentimetres ({large}) must be coarser than the mover's cells "
+                            + $"({terrainCell} cm) and a whole divisor of the world's {voxel} cm voxels."
+                    );
+                }
+            }
+
+            return new VoxelCharacterMover(world, terrainCell, passability, bodies, colliders)
             {
                 Materials = materials,
                 SurfaceTags = tags,
-                // The objects the world places, as its ground, in the mover's cells.
-                Objects = services.GetService<ObjectWorld>() is { } placed
-                    ? new ObjectColumns(
-                        placed,
-                        services.GetRequiredService<VoxelObjectKinds>(),
-                        passability,
-                        terrainCell,
-                        services.GetService<ObjectDamage>()
-                    )
-                    : null,
+                Objects = PlacedColumns(services, passability, terrainCell),
+                Large =
+                    large > 0
+                        ? new VoxelCharacterMover(world, large, passability, bodies.Coarser(large), colliders)
+                        {
+                            Materials = materials,
+                            SurfaceTags = tags,
+                            Objects = PlacedColumns(services, passability, large),
+                        }
+                        : null,
+                LargeFromMetres = physics.LargeBodyRadiusMetres,
             };
         }
 
@@ -326,6 +338,18 @@ public static class EngineServiceCollectionExtensions
             Materials = materials,
         };
     }
+
+    /// <summary>The objects the world places, as its ground, in cells of <paramref name="cell"/> centimetres; none without.</summary>
+    private static ObjectColumns? PlacedColumns(IServiceProvider services, IVoxelPassability passability, int cell) =>
+        services.GetService<ObjectWorld>() is { } placed
+            ? new ObjectColumns(
+                placed,
+                services.GetRequiredService<VoxelObjectKinds>(),
+                passability,
+                cell,
+                services.GetService<ObjectDamage>()
+            )
+            : null;
 
     /// <summary>The character mover's cells over <paramref name="world"/>: <c>Engine:Physics:TerrainCellCentimetres</c>, or its voxels.</summary>
     internal static int TerrainCell(IServiceProvider services, VoxelWorld world)

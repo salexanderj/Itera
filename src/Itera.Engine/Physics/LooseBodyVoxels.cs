@@ -33,6 +33,7 @@ public sealed class LooseBodyVoxels
     private int _count;
     private int _stamp = 1;
     private long _kept;
+    private LooseBodyVoxels? _coarser;
 
     /// <summary>For tests: how many bricks were kept, which a read that keeps none leaves alone.</summary>
     internal long KeptBricks => _kept;
@@ -47,6 +48,34 @@ public sealed class LooseBodyVoxels
         ArgumentOutOfRangeException.ThrowIfLessThan(cellCentimetres, 1);
         _bodies = bodies;
         _passable = MaterialSet.Passable(passability);
+        _poses = new LoosePose[bodies.MaxBodies];
+        _axes = new Vector3[3 * bodies.MaxBodies];
+        Solids = new SolidModelVoxels(cellCentimetres);
+        _cell = cellCentimetres;
+    }
+
+    /// <summary>
+    /// The same bodies in cells of <paramref name="cellCentimetres"/>, for the large bodies' mover
+    /// (<c>VoxelCharacterMover.Large</c>): each <see cref="Refresh"/> refreshes it, and each solid model added, placed, or
+    /// removed here is there too (<see cref="SolidModelVoxels.Mirror"/>). Made once, before any solid is added.
+    /// </summary>
+    internal LooseBodyVoxels Coarser(int cellCentimetres)
+    {
+        if (_coarser is not null || Solids.Count > 0)
+        {
+            throw new InvalidOperationException("The coarser cells are made once, before any solid model is added.");
+        }
+
+        _coarser = new LooseBodyVoxels(_bodies, _passable, cellCentimetres);
+        Solids.Mirror = _coarser.Solids;
+        return _coarser;
+    }
+
+    private LooseBodyVoxels(LooseBodies bodies, MaterialSet passable, int cellCentimetres)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(cellCentimetres, 1);
+        _bodies = bodies;
+        _passable = passable;
         _poses = new LoosePose[bodies.MaxBodies];
         _axes = new Vector3[3 * bodies.MaxBodies];
         Solids = new SolidModelVoxels(cellCentimetres);
@@ -76,6 +105,7 @@ public sealed class LooseBodyVoxels
         }
 
         _stamp++;
+        _coarser?.Refresh();
     }
 
     /// <summary>

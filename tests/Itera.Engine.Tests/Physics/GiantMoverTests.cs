@@ -25,12 +25,20 @@ public sealed class GiantWorldFixture : IDisposable
     {
         World = TestWorlds.Load(new GiantGroundGenerator(), new Vector3(0, 2, 0), radiusMetres: 45);
         Mover = new VoxelCharacterMover(World, 10, new NothingPassable());
+        Large = new VoxelCharacterMover(World, 50, new NothingPassable());
+        WithLarge = new VoxelCharacterMover(World, 10, new NothingPassable()) { Large = Large, LargeFromMetres = 1.5f };
     }
 
     public VoxelWorld World { get; }
 
     /// <summary>The mover in 10 cm cells over the 1 m voxels.</summary>
     public VoxelCharacterMover Mover { get; }
+
+    /// <summary>A mover in 50 cm cells, which <see cref="WithLarge"/> moves bodies wider than 1.5 m in.</summary>
+    public VoxelCharacterMover Large { get; }
+
+    /// <summary>A mover in 10 cm cells that moves bodies wider than 1.5 m in radius in <see cref="Large"/>.</summary>
+    public VoxelCharacterMover WithLarge { get; }
 
     public void Dispose() => World.Dispose();
 }
