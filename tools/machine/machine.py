@@ -22,8 +22,7 @@ The process that holds the lock keeps its file open where no child inherits it, 
 build never holds the machine. Commands under a hold get ITERA_MACHINE (the kind) in their environment: a script that
 locks for itself does nothing under an alone hold, and refuses to hold alone under a shared one. When other holds
 share the machine, a shared hold gives its command ITERA_TEST_TIME_SCALE=2 (unless set), so the tests' wait limits
-stretch (tests/Shared/TestTime.cs). hold prints the ITERA_TEST_TIME_SCALE its command gets (the caller's own when set),
-for the shell to export.
+stretch (tests/Shared/TestTime.cs).
 
 Exit codes: a command's own; 75 when the machine stayed held past the wait; 2 for a usage error. Without fcntl
 (Windows) every hold is granted at once. Standard library only; a development tool, not game code.
@@ -226,14 +225,9 @@ def environment(held):
     if held.kind:
         result.setdefault(MARKER, held.kind)
     scale = shared_scale(held) if held.kind != "alone" else ""
-    if scale and not result.get(SCALE_VARIABLE):
-        result[SCALE_VARIABLE] = scale
+    if scale:
+        result.setdefault(SCALE_VARIABLE, scale)
     return result
-
-
-def command_scale(scale):
-    """The ITERA_TEST_TIME_SCALE a hold's command gets: the caller's own when it has one, else SCALE (maybe none)."""
-    return os.environ.get(SCALE_VARIABLE) or scale
 
 
 def shared_scale(held):
@@ -352,7 +346,6 @@ def detached_hold(kind, label, wait, watch, until):
 
 def cmd_hold(args):
     if fcntl is None or os.environ.get(MARKER) == "alone":
-        print(command_scale(""))
         return 0
     if not alive(args.watch):
         say(f"process {args.watch} is not running")
@@ -361,7 +354,7 @@ def cmd_hold(args):
     if not granted:
         say(text)
         return HELD
-    print(command_scale(text))
+    print(text)
     return 0
 
 

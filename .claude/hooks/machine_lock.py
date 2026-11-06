@@ -5,8 +5,8 @@ A command that runs dotnet build, test, run, watch, publish, pack, or msbuild, o
 holds the machine until the command's shell ends (machine.py hold --watch $$), and the command runs as it was. The
 hold is shared; a dotnet test with no --filter holds it as a suite; a command that also runs the benchmark
 (tools/benchmark/run.sh) or timings.py --alone holds it alone. The changed command goes through the usual permission
-checks: the hook never approves a call. The first line's exports have plain values, so a session isolated in a worktree
-can run the changed command.
+checks: the hook never approves a call. The hook chooses the command's ITERA_TEST_TIME_SCALE and writes it as a
+literal, so a session isolated in a worktree can run the changed command.
 
 When the machine is held alone, or a request to hold it alone waits, a call in the foreground is refused with who
 holds it, and the session runs it again in the background, where it waits for the machine. Commands that run only the
@@ -24,6 +24,8 @@ from pathlib import Path
 
 MACHINE = Path(__file__).resolve().parents[2] / "tools" / "machine" / "machine.py"
 SWITCH = "ITERA_MACHINE_LOCK"
+MARKER = "ITERA_MACHINE"
+SCALE = "ITERA_TEST_TIME_SCALE"
 FOREGROUND_WAIT = 90
 BACKGROUND_WAIT = 3600
 
@@ -52,26 +54,42 @@ def label_of(event, command):
     return f"{folder} {session}: {first[:70]}".strip()
 
 
-def wrapped(command, kind, label, wait):
+def wrapped(command, kind, label, wait, scale=""):
+    """COMMAND after a line that holds the machine, and the exports of its kind and, when given, its time scale."""
     hold = (
         f"python3 {shlex.quote(str(MACHINE))} hold --{kind} --watch $$ --wait {wait} --label {shlex.quote(label)}"
     )
-    # Each export is a statement of its own with a plain value, so Claude Code's check of a session isolated in a
-    # worktree can read it. It refuses an export inside a condition or with a ${NAME:-...} value. The hold prints the
-    # scale already chosen: the shell's own when set.
-    return (
-        f"__itera_machine=$({hold}) || exit $?\n"
-        f"export ITERA_MACHINE={kind}\n"
-        f'export ITERA_TEST_TIME_SCALE="$__itera_machine"\n'
-        f"{command}"
-    )
+    # Every export is a statement of its own with a literal value. In a session isolated in a worktree, Claude Code
+    # refuses an export whose value it cannot read: one inside a condition, a ${NAME:-...}, or a program's output.
+    lines = [f"{hold} >/dev/null || exit $?", f"export {MARKER}={kind}"]
+    if scale:
+        lines.append(f"export {SCALE}={scale}")
+    return "\n".join([*lines, command])
+
+
+def machine_module():
+    sys.path.insert(0, str(MACHINE.parent))
+    import machine  # noqa: PLC0415
+
+    return machine
+
+
+def scale_of(kind):
+    """The time scale a command of KIND gets: 2 while other shared holds use the machine, else none.
+
+    It is chosen here, as the command is changed, so the export is a literal. The command's own hold comes after, so
+    every shared hold counts. A scale already in Claude Code's environment is kept: no export replaces it.
+    """
+    machine = machine_module()
+    if kind == "alone" or machine.fcntl is None or os.environ.get(SCALE):
+        return ""
+    others = [e for e in machine.entries("holders", machine.folder()) if e["kind"] != "alone"]
+    return machine.SHARED_SCALE if others else ""
 
 
 def taken(kind):
     """Why a call in the foreground would wait for the machine, or None when it would not."""
-    sys.path.insert(0, str(MACHINE.parent))
-    import machine  # noqa: PLC0415
-
+    machine = machine_module()
     if machine.fcntl is None:
         return None
     base = machine.folder()
@@ -111,7 +129,7 @@ def decide(event):
             }
     wait = BACKGROUND_WAIT if background else FOREGROUND_WAIT
     changed = dict(tool_input)
-    changed["command"] = wrapped(command, kind, label_of(event, command), wait)
+    changed["command"] = wrapped(command, kind, label_of(event, command), wait, scale_of(kind))
     return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": changed}}
 
 

@@ -145,22 +145,25 @@ class MachineTests(unittest.TestCase):
         first.release()
         second.release()
 
-    def wrapped_scale(self, scale):
-        """The ITERA_TEST_TIME_SCALE a command the hook wraps sees, run in bash with SCALE (or none) in its environment."""
-        command = machine_lock.wrapped('echo "scale=$ITERA_TEST_TIME_SCALE"', "shared", "test", 5)
-        environment = {k: v for k, v in os.environ.items() if k != machine.SCALE_VARIABLE}
-        if scale is not None:
-            environment[machine.SCALE_VARIABLE] = scale
-        answer = subprocess.run(["bash", "-c", command], env=environment, capture_output=True, text=True, timeout=10)
-        self.assertEqual(0, answer.returncode, answer.stderr)
-        return answer.stdout.strip().removeprefix("scale=")
+    def test_the_hook_stretches_the_test_limits_while_others_share_the_machine(self):
+        saved = os.environ.pop(machine.SCALE_VARIABLE, None)
+        try:
+            self.assertEqual("", machine_lock.scale_of("shared"))
+            other = machine.acquire("shared", "other", 1)
+            self.assertEqual(machine.SHARED_SCALE, machine_lock.scale_of("suite"))
+            self.assertEqual("", machine_lock.scale_of("alone"))
+            os.environ[machine.SCALE_VARIABLE] = "5"
+            self.assertEqual("", machine_lock.scale_of("shared"))
+            other.release()
+        finally:
+            os.environ.pop(machine.SCALE_VARIABLE, None)
+            if saved is not None:
+                os.environ[machine.SCALE_VARIABLE] = saved
 
-    def test_a_wrapped_command_gets_the_shared_scale_or_the_callers_own(self):
-        self.assertEqual("", self.wrapped_scale(None))
-        other = machine.acquire("shared", "other", 1)
-        self.assertEqual(machine.SHARED_SCALE, self.wrapped_scale(None))
-        self.assertEqual("5", self.wrapped_scale("5"))
-        other.release()
+    def test_a_wrapped_command_holds_the_machine_with_its_kind_and_scale(self):
+        command = machine_lock.wrapped('echo "$ITERA_MACHINE $ITERA_TEST_TIME_SCALE"', "shared", "test", 5, "2")
+        answer = subprocess.run(["bash", "-c", command], capture_output=True, text=True, timeout=10)
+        self.assertEqual((0, "shared 2"), (answer.returncode, answer.stdout.strip()), answer.stderr)
 
     def test_a_hold_given_to_a_started_process_lasts_as_long_as_it(self):
         held = machine.acquire("shared", "game", 1)
@@ -228,11 +231,13 @@ class HookTests(unittest.TestCase):
         self.assertEqual(("Build", 5000), (changed["description"], changed["timeout"]))
 
     def test_the_wrapper_exports_only_plain_values(self):
-        # Claude Code refuses, in a session isolated in a worktree, an export inside a condition or with ${...}.
-        exports = [line for line in machine_lock.wrapped("dotnet build", "shared", "x", 5).splitlines() if "export" in line]
+        # In a session isolated in a worktree, Claude Code refuses an export whose value it cannot read.
+        lines = machine_lock.wrapped("dotnet build", "shared", "x", 5, "2").splitlines()
+        exports = [line for line in lines if "export" in line]
         self.assertEqual(2, len(exports))
         for line in exports:
-            self.assertRegex(line, r'^export [A-Z_]+=(?:[a-z]+|"\$__itera_machine")$')
+            self.assertRegex(line, r"^export [A-Z_]+=[a-z0-9]+$")
+        self.assertNotIn("$(", "\n".join(lines))
 
     def test_the_switch_turns_the_hook_off(self):
         os.environ[machine_lock.SWITCH] = "off"
