@@ -271,6 +271,21 @@ public sealed partial class SaveService
             {
                 throw new InvalidOperationException($"Two save sections are named {section.Name}.");
             }
+
+            foreach (var former in section.FormerNames)
+            {
+                if (EditLogSerializer.SectionProblem(former, section.Version) is { } formerProblem)
+                {
+                    throw new InvalidOperationException(formerProblem);
+                }
+
+                if (!names.Add(former))
+                {
+                    throw new InvalidOperationException(
+                        $"The save section {section.Name}'s former name {former} is another section's name."
+                    );
+                }
+            }
         }
 
         _match = match;
@@ -293,7 +308,12 @@ public sealed partial class SaveService
         var restored = 0;
         foreach (var section in saved)
         {
-            var own = Array.Find(_sections, s => string.Equals(s.Name, section.Name, StringComparison.Ordinal));
+            var own = Array.Find(
+                _sections,
+                s =>
+                    string.Equals(s.Name, section.Name, StringComparison.Ordinal)
+                    || s.FormerNames.Contains(section.Name, StringComparer.Ordinal)
+            );
             if (own is null)
             {
                 LogUnknownSection(_name!, section.Name, section.Bytes.Length);

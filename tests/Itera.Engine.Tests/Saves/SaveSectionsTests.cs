@@ -11,8 +11,8 @@ namespace Itera.Engine.Tests.Saves;
 /// A game's own state in its save (<see cref="ISaveSection"/>, save format 8), the backup used when a save will not read,
 /// and saves while the match plays (<see cref="SaveService.AfterFixedStep"/>, <see cref="SaveService.SaveNow"/>), over a
 /// <see cref="SessionService"/> on <see cref="FakeTransport"/> in a temporary folder: sections captured at the end and
-/// restored by name and version at the next start, a section the game lacks passed over, a newer or damaged one (or one
-/// whose reader throws) stopping the start, two of one name refused, the backup taken when the save is damaged (the
+/// restored by name and version at the next start, or by a former name, a section the game lacks passed over, a newer or damaged one (or one
+/// whose reader throws) stopping the start, two of one name (a former name too) refused, the backup taken when the save is damaged (the
 /// damaged file kept aside) and kept by the next save, a save of a newer build refused whatever its backup, a deleted
 /// save starting a new world, an autosave after its steps on a background thread, a section that throws when captured
 /// leaving the last save and the match going on, a capture holding the edits and state of its moment and none made after,
@@ -90,6 +90,26 @@ public sealed class SaveSectionsTests : IDisposable
     }
 
     [Fact]
+    public void A_section_saved_under_a_former_name_is_restored_by_the_section_that_took_a_new_one()
+    {
+        var first = Start(SavedSeed);
+        Begin(first, new Section("game.old", 1) { Value = 9 });
+        End(first);
+
+        var second = Start(configuredSeed: 5);
+        var renamed = new Section("game.new", 2) { Former = ["game.old"] };
+        Begin(second, renamed);
+        End(second);
+
+        Assert.Equal((9, 1), (renamed.Value, renamed.RestoredVersion));
+        // Written again under its new name alone.
+        var third = Start(configuredSeed: 5);
+        var again = new Section("game.new", 2);
+        Begin(third, again);
+        Assert.Equal((9, 2), (again.Value, again.RestoredVersion));
+    }
+
+    [Fact]
     public void A_section_of_a_newer_version_or_with_damaged_bytes_stops_the_start_and_the_save_is_kept()
     {
         var first = Start(SavedSeed);
@@ -125,6 +145,12 @@ public sealed class SaveSectionsTests : IDisposable
         );
         Assert.Throws<InvalidOperationException>(() => Begin(game, new Section("game twice", 1)));
         Assert.Throws<InvalidOperationException>(() => Begin(game, new Section("game.zero", 0)));
+        Assert.Throws<InvalidOperationException>(() =>
+            Begin(game, new Section("game.one", 1), new Section("game.two", 1) { Former = ["game.one"] })
+        );
+        Assert.Throws<InvalidOperationException>(() =>
+            Begin(game, new Section("game.one", 1) { Former = ["game one"] })
+        );
     }
 
     /// <summary>
@@ -371,7 +397,11 @@ public sealed class SaveSectionsTests : IDisposable
 
         public int RestoredVersion { get; private set; }
 
+        public IReadOnlyList<string> Former { get; init; } = [];
+
         public string Name => name;
+
+        public IReadOnlyList<string> FormerNames => Former;
 
         public int Version => version;
 

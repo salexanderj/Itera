@@ -19,6 +19,14 @@ public interface ISaveSection
     string Name { get; }
 
     /// <summary>
+    /// The names it was saved under before it took <see cref="Name"/> (none unless a section says so): a save holding a
+    /// section of one of these hands it to this section, as one of its own name, so a section can be renamed without
+    /// losing older saves. Its <see cref="Version"/> counts on from the former name's, and each former name follows the
+    /// rules of <see cref="Name"/>: no other section's name or former name.
+    /// </summary>
+    IReadOnlyList<string> FormerNames => [];
+
+    /// <summary>
     /// The version of the layout <see cref="Capture"/> writes, from 1. A save holding a higher one does not start (a newer
     /// build wrote it); one holding this or a lower one is restored.
     /// </summary>

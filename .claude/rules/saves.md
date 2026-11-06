@@ -37,6 +37,7 @@ A game's own state is its `ISaveSection`s (`Saves/`, scoped):
 
 - A section has a name of 1 to 64 letters, digits, '.', '-', or '_', a version from 1, `Capture(BinaryWriter)`, and `Restore(BinaryReader, version)`.
 - The save hands each section what it held at the "save sections" step, which comes after "ecs": the systems exist and no step has run. `SaveService.StartedFromSave` tells a system that the match resumes.
+- A section may list `FormerNames`: a saved section of one of them goes to it, so a renamed section keeps older saves.
 - A saved section the game lacks is left out with a warning.
 - A section of a newer version, or whose bytes do not read, ends the start.
 - A section whose `Capture` throws is logged at Error and told at the menu. The last save stays, and the match goes on.
