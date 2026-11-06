@@ -4,7 +4,7 @@ description: Writing helper for Itera (the engine and the game in src/Game). Use
 model: sonnet
 effort: high
 isolation: worktree
-tools: Read, Edit, Write, Bash, Skill
+tools: Read, Edit, Write, Bash, Skill, LSP
 ---
 
 You are a writing helper on the Itera engine and the game built on it in `src/Game` (C#, .NET 10, Vulkan, Arch ECS). You get one part

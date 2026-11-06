@@ -3,7 +3,7 @@ name: reader
 description: Read-only helper for Itera (the engine and the game in src/Game). Use for one independent part of work that splits into parts - searching or reviewing a set of files, checking a list of findings against the code, reading logs or reports, or researching a question on the web (techniques, papers, library and API documentation, claims to verify) - and report what was found with file paths and line numbers, or source links. Never edits, builds, tests, runs the game, or commits.
 model: sonnet
 effort: high
-tools: Read, Bash, WebSearch, WebFetch
+tools: Read, Bash, WebSearch, WebFetch, LSP
 ---
 
 You are a read-only helper on the Itera engine and the game built on it in `src/Game` (C#, .NET 10, Vulkan, Arch ECS). CLAUDE.md at the

@@ -30,10 +30,10 @@ anything structural. `docs/` holds the write-ups behind decisions.
 - Area details are in `.claude/rules/`, one file per area (listed below). Claude Code loads one when a file it covers
   is opened with Read, Write, or Edit, not with `cat`, `grep`, `sed`, or Grep. Open the files you will change with
   Read. Before you plan, discuss, or review work in an area, read its rules file.
+- Find a C# symbol's definition, references, and callers with the LSP tool (the csharp-lsp plugin), not grep.
 - Before you write or change a doc (this file, `GAME.md`, a rules file, a skill, `ARCHITECTURE.md`, or `docs/`), load
   the `docs` skill: it says where each fact goes, and what the documentation tests check.
-- Bugs, suggestions, and changes left for later are GitHub issues, never lists in the docs. The `issues` skill says
-  how to file, find, and close them.
+- Bugs, suggestions, and changes left for later are GitHub issues, never lists in the docs (the `issues` skill).
 - When you add or change one of these, also do what follows. The `scaffold` skill has the steps. The checklist tests
   (`ChecklistTests`, `ShippedSettingsTests`, `SystemOrderTests`, `WorldTests`) fail when one is missed.
   - Anything the engine sends between games: raise `SessionProtocol.Version` and pin the new fingerprint in the
@@ -87,13 +87,13 @@ python3 tools/tests/timings.py   # dotnet test, then its slowest classes and tes
 ## Subagents
 
 - Read-only work that splits into independent parts (searching or reviewing files, checking findings, reading logs,
-  web research) goes to `reader` agents (`.claude/agents/reader.md`) in parallel. Give each one part and everything it
-  needs, since it starts without the conversation. Check its claims before acting on them. During a benchmark, test
-  suite, or validation run, have readers review the change made so far.
+  web research) goes to `reader` agents in parallel. Give each one part and everything it needs, since it starts without
+  the conversation. Check its claims before acting on them. During a benchmark, test suite, or validation run, have
+  readers review the change made so far.
 - Self-contained parts of a broad change with a clear spec (a class and its tests, option plumbing, mechanical
-  edits, test rebasing, tool scripts) may go to `writer` agents (`.claude/agents/writer.md`), each in its
-  own worktree. A writer fast-forwards to local `main`, so commit what it needs first. Review its staged diff, apply it,
-  build, test, and commit here, then remove the worktree and branch.
+  edits, test rebasing, tool scripts) may go to `writer` agents, each in its own worktree. A writer
+  fast-forwards to local `main`, so commit what it needs first. Review its staged diff, apply it, build, test, and
+  commit here, then remove the worktree and branch.
 - Keep design decisions, Vulkan passes, look-setting shaders, anything sent between games, game runs, benchmarks,
   validation runs, and commits in the main session.
 
