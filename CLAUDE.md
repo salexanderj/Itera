@@ -113,8 +113,8 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
 - `src/Itera.Engine`: the engine. `.claude/rules/engine.md` lists its folders.
 - `src/Game`: the starter game (`GAME.md`). `tests/`: xUnit, one project per `src/` project.
 - `samples/Itera.SampleMod` is the reference mod, and `samples/Itera.MeshSample` a game without voxel terrain.
-- `tools/`: `control`, `benchmark`, `machine`, `steam`, `tests`, `Textures`, `sounds`, `models`, `ModelCheck`, and
-  `ModelView`, each with a README.
+- `tools/`: `control`, `benchmark`, `machine`, `git`, `steam`, `tests`, `Textures`, `sounds`, `models`, `ModelCheck`,
+  and `ModelView`, each with a README.
 
 # Conventions
 

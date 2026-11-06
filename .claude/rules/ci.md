@@ -13,6 +13,11 @@ unchanged, and sets what differs through repository variables. The `issues` skil
 - `.github/workflows/ci.yml` runs on every push to `main`, on each pull request, and by hand. On Linux it checks the
   format (`dotnet csharpier check .`), builds in Debug, and runs every test project. A newer push cancels a run still
   going, so a burst of pushes runs the suite once.
+- A push that changes only docs (`.md` files, `design/`, `docs/`) starts no run: the documentation tests run before
+  each commit, and the next run or the nightly runs them again. A repository whose pushes another's run already tests
+  sets `CI_ON_PUSH` to `off`: Itera, whose engine changes a game pulls and pushes at once, runs on its nightly instead.
+- Each clone's `.git/hooks/pre-push` runs `tools/git/pre-push`, which checks the format of the files a push changes,
+  so a push that would fail CI's first step starts no run (`tools/git/README.md`).
 - `.github/workflows/nightly.yml` runs each night that `main` changed, and by hand. It builds and tests in Release on
   Linux, and in Debug on Windows and on macOS (`macos-latest`, an arm64 Mac), each on its own schedule (below).
 - `.github/actions/prepare` installs the SDK that `global.json` pins and restores the NuGet cache. It fetches the Git
@@ -31,6 +36,7 @@ Set one with `gh variable set NAME --body VALUE`. Unset, each has the effect in 
 | Variable | What it sets | Unset |
 | --- | --- | --- |
 | `CI_LINUX_RUNNER` | The runner label of the Linux jobs | `ubuntu-latest` |
+| `CI_ON_PUSH` | `off`: a push to `main` runs no CI job; pull requests, the nightly, and runs by hand still do | Runs on push |
 | `CI_WINDOWS_SCHEDULE` | When the Windows job runs: `nightly`, `weekly` (Sunday's run, if `main` changed that week), or `off` (only by hand) | `nightly` |
 | `CI_MACOS_SCHEDULE` | When the macOS job runs, as for Windows | `nightly` |
 | `CI_TEST_TIME_SCALE` | `ITERA_TEST_TIME_SCALE` for the Linux jobs: it stretches every test's wait limit (`TestTime`) | 1 |

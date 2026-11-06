@@ -33,13 +33,14 @@ commits on its own branch and lands the commits on `main`; only `main` is pushed
 
 ## Landing on main
 
-Land once a task's commits are done and its tests pass, then push, as for any task.
+Land once a task's commits are done and its tests pass. Push `main` when the game's `GAME.md` says, since each push
+of code starts a CI run: landing alone starts none.
 
 ```bash
 MAIN="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"   # the main checkout
 git merge --no-edit main                         # the work landed since; build and test after a merge that changed code
 git -C "$MAIN" merge --ff-only worktree-NAME     # main moves to the branch, in the main checkout
-git -C "$MAIN" push origin main                  # its pre-push hook uploads the LFS files
+git -C "$MAIN" push origin main                  # when it is time to push; its pre-push hook checks the format
 ```
 
 - Fast-forward `main` in the main checkout: `main` is checked out there, so git refuses to move it from a worktree.

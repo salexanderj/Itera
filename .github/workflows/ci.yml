@@ -1,10 +1,17 @@
 name: CI
 
-# Every push to main, every pull request, and by hand: the format check, a Debug build (warnings are errors), and the
-# whole suite, with the Debug-only checks, on Linux. .claude/rules/ci.md describes the workflows and their variables.
+# Every push to main that changes more than docs, every pull request, and by hand: the format check, a Debug build
+# (warnings are errors), and the whole suite, with the Debug-only checks, on Linux. A repository whose pushes another's
+# run already tests (Itera's, pulled at once into a game) sets CI_ON_PUSH to off. .claude/rules/ci.md describes the
+# workflows and their variables.
 on:
   push:
     branches: [main]
+    # Docs alone: the documentation tests run before each commit, and the next run or the nightly runs them again.
+    paths-ignore:
+      - "**.md"
+      - "design/**"
+      - "docs/**"
   pull_request:
   workflow_dispatch:
 
@@ -26,6 +33,7 @@ env:
 jobs:
   linux:
     name: Linux, Debug
+    if: github.event_name != 'push' || vars.CI_ON_PUSH != 'off'
     runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:

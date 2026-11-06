@@ -1,0 +1,28 @@
+#!/bin/sh
+# Checks the format of the files a push changes, as CI's first step checks the whole tree, so a push that CI would fail
+# on its format never starts a run. A checkout's .git/hooks/pre-push runs it (README.md here); `git push --no-verify`
+# skips it. Git gives each pushed ref on standard input: local ref, local commit, remote ref, remote commit.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+zero=0000000000000000000000000000000000000000
+files=$(mktemp)
+trap 'rm -f "$files"' EXIT
+while read -r _ local _ remote; do
+    [ "$local" = "$zero" ] && continue
+    if [ "$remote" = "$zero" ] || ! git cat-file -e "$remote^{commit}" 2>/dev/null; then
+        # A new branch, or a remote commit this clone lacks: every file of the pushed commit.
+        git ls-tree -r --name-only "$local" >> "$files"
+    else
+        git diff --name-only --diff-filter=ACMR "$remote" "$local" >> "$files"
+    fi
+done
+# Only the files still here; csharpier passes over the kinds it does not format.
+set --
+while read -r file; do
+    [ -f "$file" ] && set -- "$@" "$file"
+done < "$files"
+[ $# -eq 0 ] && exit 0
+if ! dotnet csharpier check "$@" > /dev/null 2>&1; then
+    dotnet csharpier check "$@" 2>&1 | grep "Was not formatted" | head -20 >&2
+    echo "pre-push: these files are not formatted. Run 'dotnet csharpier format .', commit, and push again." >&2
+    exit 1
+fi

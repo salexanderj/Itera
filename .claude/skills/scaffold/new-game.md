@@ -5,7 +5,8 @@ The `scaffold` skill's steps for starting a game from a clone of Itera.
 ## Setting up a clone
 
 1. Clone Itera and keep it as a remote (`git remote rename origin itera`), to pull engine changes later.
-2. Run `dotnet tool restore`, for csharpier.
+2. Run `dotnet tool restore`, for csharpier, and call `tools/git/pre-push` from `.git/hooks/pre-push`
+   (`tools/git/README.md`), so a push CI would fail on its format starts no run.
 3. Install the C# language server: `dotnet tool install --global csharp-ls`. The repository's `.claude/settings.json`
    enables the csharp-lsp plugin, which runs it and gives Claude Code the LSP tool.
 4. Install the plugin from the claude-plugins-official marketplace when Claude Code offers it. The plugin directory's
