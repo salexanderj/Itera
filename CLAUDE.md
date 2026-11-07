@@ -77,6 +77,8 @@ anything structural. `docs/` holds the write-ups behind decisions.
     The console's `settings`, `shadows`, and `sound volume` write the data folder's `settings.json`, so in any other
     folder they change the player's.
   - A run misbehaves: read the newest log in `~/.local/share/<DataFolder>/Logs/` first.
+- Show the user pictures (screenshots, view sheets, GIFs) on the review page, never as file paths:
+  `tools/review/review.py post TITLE FILES --note TEXT`, then give the link it prints.
 - Where the details are: `docs/reference/engine-rules.md` lists the engine's rules files and what each covers
   (generated), and `GAME.md`'s table the game's.
 
@@ -114,7 +116,7 @@ Dependency direction: `Itera.Modding <- Itera.Engine <- Game`. Mods reference on
 - `src/Game`: the starter game (`GAME.md`). `tests/`: xUnit, one project per `src/` project.
 - `samples/Itera.SampleMod` is the reference mod, and `samples/Itera.MeshSample` a game without voxel terrain.
 - `tools/`: `control`, `benchmark`, `machine`, `git`, `steam`, `tests`, `Textures`, `sounds`, `models`, `ModelCheck`,
-  and `ModelView`, each with a README.
+  `ModelView`, and `review`, each with a README.
 
 # Conventions
 
