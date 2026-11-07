@@ -512,7 +512,7 @@ public sealed class VoxelCharacterMover
     /// (<see cref="BeginPass"/>), it makes the chunks each body's move will read (<see cref="Prepare"/>), the workers
     /// move the bodies, one each at a time, and the pass ends (<see cref="EndPass"/>). Not on a worker.
     /// </summary>
-    internal VoxelCharacterMover CreateWorker()
+    public VoxelCharacterMover CreateWorker()
     {
         RequireOwner();
         return new VoxelCharacterMover(
@@ -540,7 +540,7 @@ public sealed class VoxelCharacterMover
     /// columns of the mesh colliders and the objects follow their changes, and keep every chunk read until
     /// <see cref="EndPass"/>, past their most where they must. Not on a worker.
     /// </summary>
-    internal void BeginPass()
+    public void BeginPass()
     {
         RequireOwner();
         _meshes?.BeginPass();
@@ -554,7 +554,7 @@ public sealed class VoxelCharacterMover
     /// radius and its move across, and <see cref="PrepareMarginCells"/> more, so a worker's move reads them all. Not on
     /// a worker.
     /// </summary>
-    internal void Prepare(Vector3 feetMetres, in CharacterShape shape, Vector3 velocity, float seconds)
+    public void Prepare(Vector3 feetMetres, in CharacterShape shape, Vector3 velocity, float seconds)
     {
         RequireOwner();
         if (For(shape.RadiusMetres) is var mover && mover != this)
@@ -592,7 +592,7 @@ public sealed class VoxelCharacterMover
     }
 
     /// <summary>Ends the pass <see cref="BeginPass"/> started. Not on a worker.</summary>
-    internal void EndPass()
+    public void EndPass()
     {
         RequireOwner();
         _meshes?.EndPass();

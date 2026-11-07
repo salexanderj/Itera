@@ -147,6 +147,8 @@ step's workers with them:
   only its character's components, and shares no state it writes. `ClimbingMode` has copies.
 - The characters move on the main thread with one thread, with fewer than `PlayerMovementSystem.LeastForWorkers`, with
   a mode that has no copies, or where the system has no `MovementProbes` for them.
+- A game's system may run a pass of its own the same way: `CreateWorker`, `BeginPass`, `Prepare`, and `EndPass` are
+  public. A game reads the ground round its figures' feet on workers so (`GroundTop`).
 
 A worker and its pass:
 
