@@ -1279,7 +1279,9 @@ public sealed class VoxelCharacterMover
     /// ground. False when nothing blocks in that range (<paramref name="topMetres"/> 0), or when the level-0 voxels there
     /// are not loaded (<paramref name="topMetres"/> NaN: the ground is not known, as far from the camera, where only
     /// coarser levels are kept). The radius is above 0: a circle of none covers no cell, so it would find no ground.
-    /// Main thread; allocates nothing.
+    /// Over coarse voxels a run of ground reads keeps the surfaces it reads, with the same answers, while no move or
+    /// query comes between them and the world is unchanged (<see cref="Stamp"/>), so reads near each other cost little
+    /// more than one. Main thread; allocates nothing.
     /// </summary>
     public bool GroundTop(Vector3 atMetres, float radiusMetres, float upMetres, float downMetres, out float topMetres)
     {
@@ -1330,9 +1332,23 @@ public sealed class VoxelCharacterMover
             y1 = (int)Math.Ceiling(y + upMetres * perMetre) - 1;
         if (_density)
         {
-            // Blended as for a body of the default slope limit, and no higher than asked.
-            _ramp = DefaultRamp;
-            ForgetSurfaces();
+            // Blended as for a body of the default slope limit, and no higher than asked. The surfaces the last ground
+            // reads read are kept while nothing else has read since and the world is as it was (KeepsGroundSurfaces).
+            var stamp = Stamp();
+            if (
+                !KeepsGroundSurfaces
+                || !_groundKept
+                || _ramp != DefaultRamp
+                || stamp != _groundStamp
+                || Math.Abs(footprint.CentreX - _groundX) > GroundRunCells
+                || Math.Abs(footprint.CentreZ - _groundZ) > GroundRunCells
+            )
+            {
+                _ramp = DefaultRamp;
+                ForgetSurfaces();
+                (_groundKept, _groundStamp, _groundX, _groundZ) = (true, stamp, footprint.CentreX, footprint.CentreZ);
+            }
+
             var surface = Math.Min(Surface(in footprint, y0, y1), y + upMetres * perMetre);
             topMetres = double.IsNegativeInfinity(surface) ? 0 : LocalY(surface);
             return !double.IsNegativeInfinity(surface);
@@ -1757,6 +1773,26 @@ public sealed class VoxelCharacterMover
     /// </summary>
     internal bool RemembersSurfaces { get; set; } = true;
 
+    /// <summary>
+    /// False makes each <see cref="GroundTop"/> over coarse voxels forget the surfaces read before it, as a move does:
+    /// for a test showing a run of ground reads that keeps them answers the same.
+    /// </summary>
+    internal bool KeepsGroundSurfaces { get; set; } = true;
+
+    // True while only ground reads have read surfaces since they were last forgotten, at the default slope's ramp; the
+    // world's stamp then, and where the run's first read was, in cells. A ground read keeps what they read while the
+    // stamp is the same and it lies within GroundRunCells of the first.
+    private bool _groundKept;
+    private GroundStamp _groundStamp;
+    private double _groundX;
+    private double _groundZ;
+
+    /// <summary>
+    /// How far across x or z from a run of ground reads' first a read may lie and keep the run's surfaces, in cells: far
+    /// under the 2^21 cells the surfaces' cache tells apart.
+    /// </summary>
+    private const double GroundRunCells = 1 << 18;
+
     /// <summary>How many moves it made (<see cref="Move"/>; for tests).</summary>
     internal long Moves { get; private set; }
 
@@ -1941,12 +1977,13 @@ public sealed class VoxelCharacterMover
     /// The surface over column (x, z)'s ground whose top is <paramref name="top"/>: <see cref="VoxelWorld.SurfaceOver"/>
     /// where the voxels' top is it (<paramref name="voxels"/>), the mesh colliders' (<c>MeshColumns.SurfaceOver</c>)
     /// where theirs is (<paramref name="meshes"/>), the higher of the two where both are; read once for each column and
-    /// top within a move or query (<see cref="ForgetSurfaces"/>).
+    /// top within a move or query, or a run of ground reads (<see cref="ForgetSurfaces"/>).
     /// </summary>
     private double SurfaceOver(int x, int top, int z, bool voxels, bool meshes, bool objects = false)
     {
-        // Column x and z 21 bits each, the top 19, and which sources have it. A move or query reads columns far fewer than
-        // 2^21 cells apart, and the cache is forgotten between them, so the bits left out never tell two apart.
+        // Column x and z 21 bits each, the top 19, and which sources have it. A move, a query, or a run of ground reads
+        // (within GroundRunCells of its first) reads columns far fewer than 2^21 cells apart, and the cache is forgotten
+        // between them, so the bits left out never tell two apart.
         var key =
             (((long)x & 0x1FFFFF) << 43)
             | (((long)z & 0x1FFFFF) << 22)
@@ -1998,10 +2035,11 @@ public sealed class VoxelCharacterMover
 
     /// <summary>
     /// Forgets the surfaces read and <see cref="Surface"/>'s answers: the voxels may have changed since (at the start of
-    /// each move and query).
+    /// each move and query, and of a run of ground reads).
     /// </summary>
     private void ForgetSurfaces()
     {
+        _groundKept = false;
         _rememberedCount = 0;
         _fine?.Begin(_ramp, in _passable);
         _cacheStamp++;

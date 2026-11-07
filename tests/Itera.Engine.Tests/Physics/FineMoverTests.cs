@@ -106,6 +106,74 @@ public sealed class FineMoverTests(SmoothHillsFixture hills, ITestOutputHelper o
         }
     }
 
+    /// <summary>
+    /// A run of ground reads keeping the surfaces it read, and one forgetting them before each read, over the hills in
+    /// 10 cm cells and in the voxels' 1 m: round points a figure's feet stand on, near each other and across the hills,
+    /// within two reaches up and down and two radii, a move now and then between them: every read the same bits, and a
+    /// read allocates nothing.
+    /// </summary>
+    [Fact]
+    public void A_run_of_ground_reads_keeping_its_surfaces_answers_the_same()
+    {
+        foreach (var fine in new[] { true, false })
+        {
+            var keeping = fine
+                ? new VoxelCharacterMover(hills.World, 10, new NothingPassable())
+                : new VoxelCharacterMover(hills.World, new NothingPassable());
+            var forgetting = fine
+                ? new VoxelCharacterMover(hills.World, 10, new NothingPassable())
+                : new VoxelCharacterMover(hills.World, new NothingPassable());
+            forgetting.KeepsGroundSurfaces = false;
+            var centre = Start(keeping);
+            var reads = 0;
+            for (var figure = 0; figure < 40; figure++)
+            {
+                var angle = figure * 2.39996f;
+                var feet = centre + new Vector3(MathF.Sin(angle), 0, MathF.Cos(angle)) * (0.7f * figure);
+                foreach (var (x, z, reach, radius) in s_feetReads)
+                {
+                    var at = feet + new Vector3(x, 0, z);
+                    var kept = keeping.GroundTop(at, radius, reach, reach, out var top);
+                    var again = forgetting.GroundTop(at, radius, reach, reach, out var againTop);
+                    Assert.Equal(
+                        (again, BitConverter.SingleToInt32Bits(againTop)),
+                        (kept, BitConverter.SingleToInt32Bits(top))
+                    );
+                    reads++;
+                }
+
+                if (figure % 7 == 3)
+                {
+                    // A move between: it reads at its own slope, and the next ground read reads afresh.
+                    var (body, velocity) = (feet with { Y = feet.Y + 0.5f }, new Vector3(2, 0, 1));
+                    var (againBody, againVelocity) = (body, velocity);
+                    keeping.Move(ref body, ref velocity, in s_shape, Step);
+                    forgetting.Move(ref againBody, ref againVelocity, in s_shape, Step);
+                }
+            }
+
+            Assert.Equal(40 * s_feetReads.Length, reads);
+            var start = Itera.TestSupport.SystemAllocation.StartMeasurement();
+            keeping.GroundTop(centre, 0.02f, 0.8f, 0.8f, out _);
+            Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - start);
+        }
+    }
+
+    // A figure's ground reads round its feet: four points round them, and under each ball, ankle, and beside the ball.
+    private static readonly (float X, float Z, float Reach, float Radius)[] s_feetReads =
+    [
+        (0.12f, 0.25f, 0.8f, 0.02f),
+        (-0.12f, 0.25f, 0.8f, 0.02f),
+        (0.12f, -0.25f, 0.8f, 0.02f),
+        (-0.12f, -0.25f, 0.8f, 0.02f),
+        (0.1f, 0.12f, 1.6f, 0.02f),
+        (0.1f, -0.05f, 1.6f, 0.04f),
+        (0.15f, 0.12f, 1.6f, 0.02f),
+        (-0.1f, 0.12f, 1.6f, 0.02f),
+        (-0.1f, -0.05f, 1.6f, 0.04f),
+        (-0.15f, 0.12f, 1.6f, 0.02f),
+    ];
+
     [Fact]
     public void A_move_allocates_nothing()
     {

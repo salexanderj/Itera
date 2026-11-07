@@ -91,6 +91,9 @@ reads the voxels through `FineGround`:
   read and their blend). Within one move or query each question is worked out once and remembered, at most 16, and
   forgotten with the surfaces' cache at the next move. The answers are the same bits as a mover that works every answer
   out again (`FineMoverTests`, `RemembersSurfaces`).
+- A run of `GroundTop` reads keeps the surfaces it reads: no move or query between them, the world's `Stamp` the same,
+  and each read within `GroundRunCells` of the run's first. So a figure's reads round its feet cost little more than
+  one. The answers are a forgetting mover's (`KeepsGroundSurfaces`).
 - Navigation keeps its own reading of the objects in the voxels' cells.
 
 ### What the body stands on
