@@ -238,6 +238,41 @@ public sealed class SoundCacheTests : IDisposable
     }
 
     /// <summary>
+    /// A recipe made from a game's data gives the numbers it was made with: two of one name and type with other numbers
+    /// get other keys, the same numbers the same key, and a recipe that gives none keeps the key it had.
+    /// </summary>
+    [Fact]
+    public void The_key_holds_a_recipes_own_numbers_when_it_gives_any()
+    {
+        var plain = SoundCache.KeyText("shot", new NumberedRecipe(""), Rate);
+
+        Assert.NotEqual(
+            SoundCache.Key("shot", new NumberedRecipe("barrel 460"), Rate),
+            SoundCache.Key("shot", new NumberedRecipe("barrel 250"), Rate)
+        );
+        Assert.Equal(
+            SoundCache.Key("shot", new NumberedRecipe("barrel 460"), Rate),
+            SoundCache.Key("shot", new NumberedRecipe("barrel 460"), Rate)
+        );
+        Assert.EndsWith(
+            "\0barrel 460",
+            SoundCache.KeyText("shot", new NumberedRecipe("barrel 460"), Rate),
+            StringComparison.Ordinal
+        );
+        Assert.False(plain.EndsWith('\0'));
+        Assert.Equal(plain, SoundCache.KeyText("shot", new NumberedRecipe(""), Rate));
+    }
+
+    private sealed class NumberedRecipe(string numbers) : OneShotRecipe
+    {
+        public override float Seconds => 0.01f;
+
+        public override string Numbers => numbers;
+
+        public override void Render(Span<float> output, int sampleRate, float level, uint seed) => output.Clear();
+    }
+
+    /// <summary>
     /// A write that fails stops writes but not reads (one failed write stopped both).
     /// </summary>
     [Fact]

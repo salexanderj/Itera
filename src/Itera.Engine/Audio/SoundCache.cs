@@ -67,12 +67,12 @@ public sealed partial class SoundCache
     public static string Key(string name, OneShotRecipe recipe, int sampleRate) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(KeyText(name, recipe, sampleRate))))[..KeyDigits];
 
-    /// <summary>What <see cref="Key"/> hashes.</summary>
+    /// <summary>What <see cref="Key"/> hashes: the recipe's <see cref="OneShotRecipe.Numbers"/> last, where it gives any.</summary>
     internal static string KeyText(string name, OneShotRecipe recipe, int sampleRate)
     {
         ArgumentNullException.ThrowIfNull(recipe);
         var type = recipe.GetType();
-        return string.Join(
+        var text = string.Join(
             '\0',
             Format.ToString(CultureInfo.InvariantCulture),
             sampleRate.ToString(CultureInfo.InvariantCulture),
@@ -84,6 +84,8 @@ public sealed partial class SoundCache
             SoundCodeOf(type.Assembly),
             SoundCodeOf(typeof(SoundCache).Assembly)
         );
+        var numbers = recipe.Numbers;
+        return numbers.Length == 0 ? text : text + '\0' + numbers;
     }
 
     /// <summary>

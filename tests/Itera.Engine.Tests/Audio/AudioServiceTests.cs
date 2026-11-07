@@ -84,6 +84,21 @@ public sealed class AudioServiceTests
     }
 
     [Fact]
+    public void The_listener_read_after_publish_is_the_one_given_and_moves_with_the_origin()
+    {
+        using var audio = Create();
+        audio.Initialize(new NullAudioDevice());
+        var pose = new ListenerPose(new Vector3(3, 4, 5), -Vector3.UnitZ, Vector3.UnitY);
+
+        audio.Publish(in pose, 0);
+        var read = audio.Listener;
+        audio.Shift(new Vector3(1, 0, 2));
+
+        Assert.Equal(pose, read);
+        Assert.Equal(new Vector3(2, 4, 3), audio.Listener.Position);
+    }
+
+    [Fact]
     public void With_no_device_nothing_starts_and_calls_do_nothing()
     {
         using var audio = Create();

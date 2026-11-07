@@ -43,6 +43,7 @@ public sealed partial class AudioService : IDisposable
     private readonly SoundLoop[] _held = new SoundLoop[AudioExchange.MaxLoops];
     private readonly double[] _heldUntil = new double[AudioExchange.MaxLoops];
     private int _heldCount;
+    private ListenerPose _listener;
     private IAudioDevice _device = new NullAudioDevice();
     private AudioMixer? _mixer;
     private Thread? _thread;
@@ -276,12 +277,20 @@ public sealed partial class AudioService : IDisposable
     }
 
     /// <summary>
+    /// Where the listener was placed at the last <see cref="Publish"/>: the last frame's camera, which a fixed step reads
+    /// before this frame places it. A game that bakes distance into a one-shot's levels picks the level from it. Main
+    /// thread.
+    /// </summary>
+    public ListenerPose Listener => _listener;
+
+    /// <summary>
     /// The match's origin moved by <paramref name="metres"/> (<c>OriginShifts</c>): the events queued this iteration, the
-    /// loops sustained and held, and what waits for the audio thread move the other way, and the audio thread moves the
-    /// one-shots playing. Main thread.
+    /// loops sustained and held, the listener last placed, and what waits for the audio thread move the other way, and the
+    /// audio thread moves the one-shots playing. Main thread.
     /// </summary>
     public void Shift(Vector3 metres)
     {
+        _listener = _listener with { Position = _listener.Position - metres };
         for (var i = 0; i < _eventCount; i++)
         {
             _events[i].Position -= metres;
@@ -306,6 +315,7 @@ public sealed partial class AudioService : IDisposable
     /// </summary>
     public void Publish(in ListenerPose listener, double now)
     {
+        _listener = listener;
         Music.Publish(running: _thread is not null);
         if (_thread is null)
         {

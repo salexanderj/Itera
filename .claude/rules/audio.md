@@ -21,12 +21,13 @@ Threads and queues:
 
 - Game code queues with `AudioService.Play` and `Sustain`.
 - After each main-loop iteration, `Publish` hands the queue to the audio thread (`AudioMixer`). It also hands over the camera as the listener and the volumes (`MixLevels`).
+- The main thread reads where `Publish` last placed the listener (`AudioService.Listener`), the last frame's camera. A game that bakes distance into a one-shot's levels picks the level from it.
 - The master volume is the listener's gain. The effects volume sits under it on every voice of the pool. The music volume applies to music. They come from the player's `Volume`, `EffectsVolume`, and `MusicVolume`.
 - The audio thread alone calls OpenAL. It plays `Engine:Audio:MaxVoices` voices, each up to a gain of `AudioMixer.MaxGain`. A sound under a minimum gain never starts, and a louder sound takes the quietest one-shot's voice.
 - A render thread (`RecipeRenderer`) renders the one-shots at start, while the audio thread plays those ready.
 - A recipe or stream that throws stays silent alone.
 
-`SoundCache/` in the data folder keeps the rendered variations (`Engine:Audio:Cache`), keyed by the sound code. The sound code is a hash of the sources under the engine's `Audio/` folder and a game's. A game with recipes of its own sets `<SoundCodeFolder>Audio</SoundCodeFolder>` in its project. The build writes the key (`Directory.Build.targets`). A later start reads the cache, and only a change to sound code renders again.
+`SoundCache/` in the data folder keeps the rendered variations (`Engine:Audio:Cache`), keyed by the sound code and by the numbers a recipe made from a game's data gives (`OneShotRecipe.Numbers`; none by default). The sound code is a hash of the sources under the engine's `Audio/` folder and a game's. A game with recipes of its own sets `<SoundCodeFolder>Audio</SoundCodeFolder>` in its project. The build writes the key (`Directory.Build.targets`). A later start reads the cache, and only a change to sound code renders again.
 
 ### Sounds from files
 

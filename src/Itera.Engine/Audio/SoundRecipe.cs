@@ -69,6 +69,13 @@ public abstract class OneShotRecipe : SoundRecipe
         return length;
     }
 
+    /// <summary>
+    /// The numbers the recipe was made with, as text, for a recipe made from a game's data (a gun's shot from its barrel's
+    /// length): the sound cache keys on it, so a change to the data renders the sound again. Empty, the default, for a
+    /// recipe whose numbers are all in its code.
+    /// </summary>
+    public virtual string Numbers => string.Empty;
+
     /// <summary>Samples below this (about two steps of 16-bit sound) count as silence at the end.</summary>
     private const float TrimThreshold = 6e-5f;
 }
