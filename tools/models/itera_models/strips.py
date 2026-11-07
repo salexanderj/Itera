@@ -30,8 +30,9 @@ BACKGROUND = (0.62, 0.66, 0.70)
 MARGIN = 1.08
 
 
-def sheet(path, armature, meshes: list, frames: list, fps: int, size: tuple = (220, 300)) -> Path:
-    """Renders `frames` (scene frames) of the armature's clip from each view into a sheet at `path`."""
+def sheet(path, armature, meshes: list, frames: list, fps: int, size: tuple = (220, 300), labels=None) -> Path:
+    """Renders `frames` (scene frames) of the armature's clip from each view into a sheet at `path`, each frame
+    labelled with its time, or with its text of `labels` (digits and points only)."""
     scene = bpy.context.scene
     temporaries = _Temporaries()
     settings = _SceneSettings(scene)
@@ -51,7 +52,7 @@ def sheet(path, armature, meshes: list, frames: list, fps: int, size: tuple = (2
                     bpy.ops.render.render(write_still=True)
                     row.append(_read_png(shot))
                 rows.append(row)
-        canvas = _compose(rows, frames, fps)
+        canvas = _compose(rows, frames, fps, labels)
         _save(canvas, Path(path))
     finally:
         settings.restore()
@@ -162,14 +163,14 @@ def _aim(camera, way: Vector, bounds: tuple, size: tuple) -> None:
     camera.matrix_world = Matrix.Translation(centre + back * radius * 2) @ rotation.to_4x4()
 
 
-def _compose(rows: list, frames: list, fps: int) -> np.ndarray:
-    """The rows side by side, each frame with its time written across its top in small block digits."""
+def _compose(rows: list, frames: list, fps: int, labels=None) -> np.ndarray:
+    """The rows side by side, each frame with its time, or its label, written across its top in small block digits."""
     height, width = rows[0][0].shape[:2]
     canvas = np.ones((height * len(rows), width * len(frames), 4), dtype=np.float32)
     for r, row in enumerate(rows):
         for c, image in enumerate(row):
             tile = image.copy()
-            _write(tile, f"{frames[c] / fps:.2f}")
+            _write(tile, labels[c] if labels is not None else f"{frames[c] / fps:.2f}")
             canvas[r * height : (r + 1) * height, c * width : (c + 1) * width] = tile
             canvas[r * height : (r + 1) * height, c * width, :3] = 0.25
     return canvas

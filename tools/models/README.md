@@ -108,7 +108,7 @@ def build(ctx):  # required: makes the model in bpy.context.scene
 
 ## The helpers
 
-All of them run inside Blender (`from itera_models import export, checks, views, points, rig, clips, motion, materials`).
+All of them run inside Blender (`from itera_models import export, checks, views, points, rig, clips, motion, materials, sockets, stress`).
 Each module's docstrings say more.
 
 - `export.glb(path, objects=None, clips=None, vertex_colors=False)` exports a binary glTF file with every option the
@@ -174,6 +174,17 @@ Each module's docstrings say more.
   `LOOPS`, `FEET`, and `PLANTED` do, with other limits when given (shares of the rig's height). Its numbers per clip
   go into `report.json`, and the build's summary prints each clip's loop gap, largest slide, and the speed its feet
   show. `motion.ground_speed(paths, seconds_per_frame, contact)` is that speed.
+- `sockets`: parts of a body that join at sockets, a closed loop of vertices both parts end on. `Station`, `frames`,
+  `ring`, and `loft(name, rings, cap_start, cap_end)` build a part as a tube through rings round its path; a part that
+  joins another starts from the other's loop, put in order by `align(loop, ring)`. `boundary_loops(obj)` finds a
+  mesh's open loops. `check(objects)` pairs every open loop with another part's and reports one that meets none, or
+  whose two sides weigh the bones differently, which would open the join as a bone turns. `share_normals(objects)`
+  gives both sides of each socket the same normals, so the join shades as one surface.
+- `stress.check(armature, meshes, limits, sheet=None, ...)` turns each bone of `limits` (`{bone: [(axis, degrees),
+  ...]}`, about the bone's own axes) alone to each limit, on a temporary action it removes after. Over the meshes
+  together it measures each pose's most stretched and most shrunk edge, the change of the closed volume, and how far
+  any socket opens, and reports a pose past its limits as a problem. With `sheet` it draws the worst poses, numbered.
+  `stress.axes(armature, bones)` gives each bone's own X axis, to check which way a limit bends it.
 
 ## The work folder
 

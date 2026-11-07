@@ -140,6 +140,35 @@ ctx.export(objects=[armature, body, helm])
 4. Key its gait in code (below), with its feet in `FEET` and its gaits in `PLANTED`, so the build checks that each
    foot stays still while it touches the ground.
 
+## A creature of parts that join
+
+A body whose parts are swapped, a part library for a kind of creature, is built of separate meshes that join at
+sockets (`tools/models/itera_models/sockets.py`). Each part is a loft through rings round its bones.
+
+```python
+from itera_models import sockets, stress
+from itera_models.sockets import Station
+
+stations = [Station((0, y, 0.6), (0, -1, 0), 0.10, 0.10, 0.15) for y in (0.4, 0.2, 0.0, -0.2)]
+rings = [sockets.ring(s, f, 20) for s, f in zip(stations, sockets.frames(stations, (0, 0, 1)))]
+torso = sockets.loft("torso", rings)                         # open at both ends: two sockets
+tail_rings = [...]                                           # rings along the tail's bones, as many points
+order = sockets.align(rings[0], tail_rings[0])
+tail_rings[0] = [rings[0][i] for i in order]                 # the tail starts on the torso's loop
+tail = sockets.loft("tail", tail_rings, cap_end=tip)
+...                                                          # weights: the tail's first ring takes the torso's
+report = sockets.check([torso, tail])                        # every loop meets its partner, weights alike
+sockets.share_normals([torso, tail])
+result = stress.check(armature, [torso, tail], {"tail_01": [("X", -40), ("X", 40)]}, sheet=ctx.work_dir / "stress.png")
+```
+
+- A limb joins the side of a body at a hole: delete a block of the body's faces, and start the limb from the hole's
+  loop. Put the hole over the joint the limb turns about, or the limb's top swings across the body.
+- Give a socket's vertices the same weights on both sides, half from the bone that turns the part beyond it. Taper that
+  bone's weight into both parts round the socket, every socket in one pass, so the bend spreads and nothing hangs on
+  the order. Keep both bones of a pair alike near the body's middle, or the two sides bend differently.
+- Read the stress test's worst poses on its sheet, and lower a limit only to what the creature's motion needs.
+
 ## Clips keyed in code
 
 ```python
