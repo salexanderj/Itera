@@ -12,8 +12,8 @@ using Microsoft.Extensions.Options;
 namespace Itera.Engine.Tests.Assets;
 
 /// <summary>
-/// <see cref="MeshAssets"/>: declaring and adding by name, reading at the run's step, variants and joined assets made
-/// there, and what it refuses.
+/// <see cref="MeshAssets"/>: declaring and adding by name, reading at the run's step, variants, joined assets, and
+/// models with clips built in code made there, and what it refuses.
 /// </summary>
 public sealed class MeshAssetsTests : IDisposable
 {
@@ -404,6 +404,85 @@ public sealed class MeshAssetsTests : IDisposable
 
         Assert.Equal([new MeshAssetLevel(soldierLow, 40)], _assets.LevelsOf(soldier));
         Assert.Empty(_assets.LevelsOf(plain));
+    }
+
+    [Fact]
+    public void A_model_with_clips_built_in_code_shares_its_sources_data_and_follows_its_clips_with_them()
+    {
+        var person = MeshAssetPassTests.SkinnedAsset("person", bend: true);
+        _assets.Add("person", person);
+        Rig? given = null;
+        var walker = _assets.DeclareClips(
+            "walker",
+            "person",
+            rig =>
+            {
+                given = rig;
+                return [Swing("Walk", rig.FindJoint("tip"))];
+            }
+        );
+
+        _assets.LoadAll(textures: false);
+
+        var made = _assets[walker];
+        Assert.Same(person.Rig, given);
+        Assert.Equal("walker", made.Name);
+        Assert.Same(person.Vertices, made.Vertices);
+        Assert.Same(person.Skin, made.Skin);
+        Assert.Same(person.Rig!.Rest, made.Rig!.Rest);
+        Assert.Equal(["bend", "Walk"], made.Rig.Clips.Select(clip => clip.Name));
+        Assert.Equal(1, made.Rig.FindClip("Walk"));
+        Assert.Equal(["bend"], person.Rig.Clips.Select(clip => clip.Name));
+    }
+
+    [Fact]
+    public void Clips_built_in_code_are_refused_on_a_model_with_no_rig_a_name_taken_or_a_joint_the_rig_lacks()
+    {
+        Assert.Throws<InvalidOperationException>(() => _assets.DeclareClips("ghost", "nothing", _ => []));
+        Assert.Contains("which has no rig", Refused("plane", _ => [Swing("Walk", 0)]), StringComparison.Ordinal);
+        Assert.Contains(
+            "a name its rig has already",
+            Refused("person", _ => [Swing("bend", 1)]),
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "a name its rig has already",
+            Refused("person", _ => [Swing("Walk", 1), Swing("Walk", 1)]),
+            StringComparison.Ordinal
+        );
+        Assert.Contains(
+            "which its rig of 2 joints lacks",
+            Refused("person", _ => [Swing("Walk", 2)]),
+            StringComparison.Ordinal
+        );
+    }
+
+    /// <summary>The step's message for clips <paramref name="build"/> makes on the asset <paramref name="of"/>, in a set of its own.</summary>
+    private static string Refused(string of, Func<Rig, IReadOnlyList<RigClip>> build)
+    {
+        var assets = new MeshAssets(NullLogger<MeshAssets>.Instance);
+        assets.Add("person", MeshAssetPassTests.SkinnedAsset("person", bend: true));
+        assets.Add("plane", new MeshAsset("plane", [new MeshAssetVertex()], [], [], [MeshMaterialData.Default], []));
+        assets.DeclareClips("made", of, build);
+        return Assert.Throws<InvalidOperationException>(() => assets.LoadAll(textures: false)).Message;
+    }
+
+    /// <summary>A clip that swings joint <paramref name="joint"/> a quarter turn about z over a second.</summary>
+    private static RigClip Swing(string name, int joint)
+    {
+        var quarter = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2);
+        return new RigClip(
+            name,
+            [
+                new RigTrack(
+                    joint,
+                    RigPath.Rotation,
+                    RigInterpolation.Linear,
+                    [0, 1],
+                    [new(0, 0, 0, 1), new(quarter.X, quarter.Y, quarter.Z, quarter.W)]
+                ),
+            ]
+        );
     }
 
     /// <summary>A skinned triangle on <paramref name="rig"/>, as a level built in code is.</summary>

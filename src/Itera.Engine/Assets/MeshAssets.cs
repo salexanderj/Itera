@@ -12,7 +12,8 @@ namespace Itera.Engine.Assets;
 /// file, a part of one by its node, or a model bound to another's rig), meshes it builds in code (<see cref="Add"/>), and
 /// variants of either with some materials' base colours replaced
 /// (<see cref="DeclareVariant"/>: a team's colours), assets joined from others' pieces seated at their points
-/// (<see cref="DeclareJoined"/>: a gun of parts), each known by its name and its index (<see cref="Find"/>), and
+/// (<see cref="DeclareJoined"/>: a gun of parts), skinned models with clips built in code (<see cref="DeclareClips"/>: a
+/// creature's gait on its file's joints), each known by its name and its index (<see cref="Find"/>), and
 /// which assets are drawn in another's place where it is small on the image (<see cref="DeclareLevel"/>). A game
 /// declares them at its run startup (<c>IRunStartup</c>, the run's "game" step), mods at theirs; the run's "mesh assets"
 /// step, after the mods', declares the extra models of <c>Engine:Assets:Extra</c> and reads every declared file on
@@ -120,6 +121,31 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
                 Colours = new Dictionary<string, Vector4>(baseColours, StringComparer.Ordinal),
             }
         );
+    }
+
+    /// <summary>
+    /// Declares the asset <paramref name="name"/> as the skinned asset <paramref name="of"/> (declared or added before
+    /// it) with clips built in code: the same vertices, indices, primitives, materials, textures, joints, and points,
+    /// and its rig's clips followed by those <paramref name="clips"/> returns when given that rig. So a game can make a
+    /// creature's gait on its model's joints as the file has them.
+    /// <para>
+    /// Made at the run's "mesh assets" step after the files are read, in the order declared with the variants and the
+    /// joined assets. A source with no rig, a clip with no name, a name the rig or another built clip has already, or a
+    /// track on a joint the rig lacks stops the step, naming it. Returns its index. Before that step only.
+    /// </para>
+    /// </summary>
+    public int DeclareClips(string name, string of, Func<Rig, IReadOnlyList<RigClip>> clips)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(of);
+        ArgumentNullException.ThrowIfNull(clips);
+        if (!_byName.ContainsKey(of))
+        {
+            throw new InvalidOperationException(
+                $"The mesh asset '{name}' adds clips to '{of}', which is not declared or added before it."
+            );
+        }
+
+        return AddEntry(name, new Entry(name, null, 1f, null) { Of = of, BuildClips = clips });
     }
 
     /// <summary>
@@ -695,6 +721,12 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             }
 
             var source = _entries[_byName[entry.Of]].Asset!;
+            if (entry.BuildClips is { } build)
+            {
+                entry.Asset = WithClips(entry.Name, source, build);
+                continue;
+            }
+
             var colours = entry.Colours!;
             var missing = colours.Keys.Where(material => !Array.Exists(source.Materials, m => m.Name == material));
             if (missing.Any())
@@ -726,6 +758,68 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
                 source.Points
             );
         }
+    }
+
+    /// <summary>
+    /// <paramref name="source"/> as the asset <paramref name="name"/> with the clips <paramref name="build"/> makes on its
+    /// rig after the rig's own (<see cref="DeclareClips"/>). Throws, naming it, for a source with no rig, a clip with no
+    /// name or a name taken, or a track on a joint the rig lacks.
+    /// </summary>
+    internal static MeshAsset WithClips(string name, MeshAsset source, Func<Rig, IReadOnlyList<RigClip>> build)
+    {
+        var rig =
+            source.Rig
+            ?? throw new InvalidOperationException(
+                $"The mesh asset '{name}' adds clips to '{source.Name}', which has no rig."
+            );
+        var built = build(rig) ?? [];
+        var names = new HashSet<string>(rig.Clips.Select(clip => clip.Name), StringComparer.Ordinal);
+        foreach (var clip in built)
+        {
+            if (string.IsNullOrEmpty(clip?.Name))
+            {
+                throw new InvalidOperationException($"The mesh asset '{name}' adds a clip with no name.");
+            }
+
+            if (!names.Add(clip.Name))
+            {
+                throw new InvalidOperationException(
+                    $"The mesh asset '{name}' adds the clip '{clip.Name}', a name its rig has already."
+                );
+            }
+
+            foreach (var track in clip.Tracks)
+            {
+                if ((uint)track.Joint >= (uint)rig.Names.Length)
+                {
+                    throw new InvalidOperationException(
+                        $"The mesh asset '{name}''s clip '{clip.Name}' moves joint {track.Joint}, which its rig of "
+                            + $"{rig.Names.Length} joints lacks."
+                    );
+                }
+            }
+        }
+
+        var withClips = new Rig(
+            rig.Names,
+            rig.Parents,
+            rig.Offsets,
+            rig.Rest,
+            rig.InverseBinds,
+            rig.Reaches,
+            [.. rig.Clips, .. built]
+        );
+        return new MeshAsset(
+            name,
+            source.Vertices,
+            source.Indices,
+            source.Primitives,
+            source.Materials,
+            source.Textures,
+            withClips,
+            source.Skin,
+            source.Points
+        );
     }
 
     /// <summary>
@@ -972,6 +1066,9 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
 
         /// <summary>A variant's base colours by material name.</summary>
         public Dictionary<string, Vector4>? Colours { get; init; }
+
+        /// <summary>What makes the clips an asset adds to its source's (<see cref="DeclareClips"/>), or null.</summary>
+        public Func<Rig, IReadOnlyList<RigClip>>? BuildClips { get; init; }
 
         /// <summary>A joined asset's pieces, or null for any other (<see cref="DeclareJoined"/>).</summary>
         public MeshJoinPiece[]? Pieces { get; init; }

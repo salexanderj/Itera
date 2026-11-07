@@ -116,6 +116,11 @@ clips (below).
   source's). It replaces the base colour of each material named, in linear RGBA: a team's colours, where a tint, which
   multiplies every colour, cannot turn one hue into another. It is made at the step after the files are read. A
   material its source lacks stops the step, naming it.
+- `DeclareClips(name, of, build)` declares a skinned asset declared or added before it, with clips a game builds in
+  code. It shares its source's vertices, indices, materials, textures, joints, and points. Its rig's clips are the
+  source's, then those `build` returns when given the source's rig.
+- It is made at the step after the files are read, in order with the variants and joined assets. A source with no
+  rig, a clip with no name or a name taken, or a track on a joint the rig lacks stops the step, naming it.
 - `DeclareJoined(name, pieces, origin)` joins rigid assets declared or added before it into one: each piece's
   vertices, indices, materials, and points (`MeshJoinPiece`). The first stands at the origin, and each other at a point
   of a piece before it, moved and turned as that point stands.
