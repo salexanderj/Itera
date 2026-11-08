@@ -46,7 +46,8 @@ internal static partial class GltfImport
     /// with no compressed textures beside it, gets a note in <paramref name="notes"/>. What it leaves out or makes up
     /// without a warning is counted in <paramref name="findings"/>. With <paramref name="node"/>, the asset is that node
     /// of the file and what lies under it, a part (<see cref="ImportPart"/>); a file with no node of that name, or more
-    /// than one, cannot be read.
+    /// than one, cannot be read. With <paramref name="meshes"/>, the whole file keeps only the skinned meshes of the nodes
+    /// named there (one mix of a creature's parts on its rig); a name no skinned mesh's node has cannot be read.
     /// </summary>
     public static MeshAsset Load(
         string name,
@@ -56,12 +57,13 @@ internal static partial class GltfImport
         List<string> warnings,
         List<string>? notes = null,
         ImportFindings? findings = null,
-        string? node = null
-    ) => Import(Open(path, textures), name, metresPerUnit, warnings, notes, findings, node);
+        string? node = null,
+        IReadOnlyCollection<string>? meshes = null
+    ) => Import(Open(path, textures), name, metresPerUnit, warnings, notes, findings, node, meshes);
 
     /// <summary>
     /// Opens the file at <paramref name="path"/> to read assets from (<see cref="Import(GltfFile, string, float,
-    /// List{string}, List{string}?, ImportFindings?, string?)"/>), its textures as <paramref name="textures"/> says. Throws
+    /// List{string}, List{string}?, ImportFindings?, string?, IReadOnlyCollection{string}?)"/>), its textures as <paramref name="textures"/> says. Throws
     /// <see cref="InvalidDataException"/> for a file it cannot read, naming it.
     /// </summary>
     internal static GltfFile Open(string path, TextureReading textures)
@@ -93,14 +95,24 @@ internal static partial class GltfImport
         List<string> warnings,
         List<string>? notes = null,
         ImportFindings? findings = null,
-        string? node = null
+        string? node = null,
+        IReadOnlyCollection<string>? meshes = null
     )
     {
         ArgumentNullException.ThrowIfNull(file);
+        if (node is not null && meshes is not null)
+        {
+            throw new ArgumentException(
+                $"{file.Path}: a part's node and a mix of skinned meshes are read apart.",
+                nameof(meshes)
+            );
+        }
+
         var context = new ImportContext(file, warnings, findings ?? new ImportFindings())
         {
             MetresPerUnit = metresPerUnit,
             Lazy = node is not null,
+            Meshes = meshes is null ? null : new HashSet<string>(meshes, StringComparer.Ordinal),
         };
         var model = file.Model;
         var asset = node is null ? Import(name, model, metresPerUnit, context) : ImportPart(name, model, node, context);
@@ -223,6 +235,17 @@ internal static partial class GltfImport
         }
 
         context.Findings.ReusedMeshes = context.MeshUses.Count(uses => uses.Value > 1);
+        if (context.Meshes is { } named)
+        {
+            foreach (var mesh in named)
+            {
+                if (!context.Parts.Exists(part => string.Equals(part.Name, mesh, StringComparison.Ordinal)))
+                {
+                    throw new InvalidDataException($"{context.Path}: has no skinned mesh on a node named '{mesh}'");
+                }
+            }
+        }
+
         return new MeshAsset(
             name,
             [.. context.Vertices],
@@ -232,7 +255,8 @@ internal static partial class GltfImport
             [.. context.Textures],
             rig,
             rig is null ? null : [.. context.Skins],
-            [.. context.Points]
+            [.. context.Points],
+            [.. context.Parts]
         );
     }
 
@@ -283,7 +307,8 @@ internal static partial class GltfImport
             [.. context.Textures],
             null,
             null,
-            [.. context.Points]
+            [.. context.Points],
+            [.. context.Parts]
         );
     }
 
@@ -346,16 +371,23 @@ internal static partial class GltfImport
             {
                 context.Warn($"part node '{node.Name}' is skinned, which a part is not: it is left out");
             }
+            else if (node.Skin is not null && context.Meshes is { } named && !named.Contains(node.Name ?? ""))
+            {
+                // Another mix's part: left out of this one.
+            }
             else
             {
                 context.MeshUses[mesh.LogicalIndex] = context.MeshUses.GetValueOrDefault(mesh.LogicalIndex) + 1;
                 // glTF: a skinned mesh's node transform does not apply; its joints place it.
                 var transform = (node.Skin is null ? node.WorldMatrix * into : Matrix4x4.Identity) * scale;
                 var posedBy = plan is not null && node.Skin?.LogicalIndex == plan.Skin.LogicalIndex ? plan : null;
+                var first = context.Vertices.Count;
                 foreach (var primitive in mesh.Primitives)
                 {
                     AddPrimitive(primitive, transform, posedBy, context);
                 }
+
+                context.Parts.Add(new MeshPart(node.Name ?? "", first, context.Vertices.Count - first));
             }
         }
 
@@ -851,6 +883,12 @@ internal static partial class GltfImport
 
         /// <summary>True for a part: its materials are read as its primitives use them (<see cref="MaterialIndices"/>).</summary>
         public bool Lazy { get; init; }
+
+        /// <summary>The skinned meshes' nodes a mix keeps, or null for every one (<see cref="Load"/>'s meshes).</summary>
+        public HashSet<string>? Meshes { get; init; }
+
+        /// <summary>Each mesh read and its vertices (<see cref="MeshAsset.Parts"/>).</summary>
+        public List<MeshPart> Parts { get; } = [];
 
         /// <summary>A part's materials, by the file's index.</summary>
         public Dictionary<int, int> MaterialIndices { get; } = [];

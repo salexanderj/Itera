@@ -45,14 +45,37 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
     /// by name, it takes that rig's joint order, so the same index is the same joint in both, and its clips. Its joints,
     /// their parents, and their rest pose must be that rig's, and it has no clips of its own, or the step stops naming
     /// the first difference.</item>
+    /// <item>With <paramref name="meshes"/>, the whole file keeps only the skinned meshes of the nodes named there: one
+    /// mix of a creature's part variants, all on its rig. A name no skinned mesh's node has stops the step. The file is
+    /// read once for every mix declared from it.</item>
     /// </list>
     /// </summary>
-    public int Declare(string name, string path, float metresPerUnit = 1f, string? node = null, string? rigOf = null)
+    public int Declare(
+        string name,
+        string path,
+        float metresPerUnit = 1f,
+        string? node = null,
+        string? rigOf = null,
+        IReadOnlyList<string>? meshes = null
+    )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         if (node is not null && rigOf is not null)
         {
             throw new ArgumentException($"The mesh asset '{name}' is a part, which has no rig to bind.", nameof(rigOf));
+        }
+
+        if (node is not null && meshes is not null)
+        {
+            throw new ArgumentException(
+                $"The mesh asset '{name}' is a part, which keeps no mix of meshes.",
+                nameof(meshes)
+            );
+        }
+
+        if (meshes is { Count: 0 })
+        {
+            throw new ArgumentException($"The mesh asset '{name}' keeps a mix of no meshes.", nameof(meshes));
         }
 
         if (rigOf is not null && !_byName.ContainsKey(rigOf))
@@ -72,7 +95,15 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
         }
 
         var full = Path.IsPathRooted(path) ? path : Path.Combine(AppContext.BaseDirectory, path);
-        return AddEntry(name, new Entry(name, full, metresPerUnit, null) { Node = node, RigOf = rigOf });
+        return AddEntry(
+            name,
+            new Entry(name, full, metresPerUnit, null)
+            {
+                Node = node,
+                RigOf = rigOf,
+                Meshes = meshes is null ? null : [.. meshes],
+            }
+        );
     }
 
     /// <summary>Adds a mesh built in code as the asset <paramref name="name"/> and returns its index. Before the "mesh assets" step only.</summary>
@@ -391,7 +422,8 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
                             entry.MetresPerUnit,
                             warnings[i],
                             notes[i],
-                            node: entry.Node
+                            node: entry.Node,
+                            meshes: entry.Meshes
                         );
                     }
                     catch (Exception ex)
@@ -614,7 +646,8 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             asset.Textures,
             bound,
             skins,
-            points
+            points,
+            asset.Parts
         );
     }
 
@@ -755,7 +788,8 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
                 source.Textures,
                 source.Rig,
                 source.Skin,
-                source.Points
+                source.Points,
+                source.Parts
             );
         }
     }
@@ -818,7 +852,8 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             source.Textures,
             withClips,
             source.Skin,
-            source.Points
+            source.Points,
+            source.Parts
         );
     }
 
@@ -902,6 +937,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
         var primitives = new List<MeshPrimitive>();
         var materials = new List<MeshMaterialData>();
         var textures = new List<MeshTextureData>();
+        var parts = new List<MeshPart>();
         int vertexBase = 0,
             indexBase = 0;
         for (var i = 0; i < pieces.Length; i++)
@@ -954,6 +990,11 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             }
 
             textures.AddRange(asset.Textures);
+            foreach (var part in asset.Parts)
+            {
+                parts.Add(part with { FirstVertex = part.FirstVertex + vertexBase });
+            }
+
             vertexBase += asset.Vertices.Length;
             indexBase += asset.Indices.Length;
         }
@@ -966,7 +1007,8 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             [.. primitives],
             [.. materials],
             [.. textures],
-            points: [.. placed]
+            points: [.. placed],
+            parts: [.. parts]
         );
     }
 
@@ -1060,6 +1102,9 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
 
         /// <summary>The node a part is read from, or null for the whole file.</summary>
         public string? Node { get; init; }
+
+        /// <summary>The skinned meshes' nodes a mix keeps of the whole file, or null for every one.</summary>
+        public string[]? Meshes { get; init; }
 
         /// <summary>The asset whose rig a file's is bound on, or null.</summary>
         public string? RigOf { get; init; }

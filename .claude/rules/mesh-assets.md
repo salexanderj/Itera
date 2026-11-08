@@ -101,6 +101,10 @@ clips (below).
   joint above it with the nodes between applied, else the asset's. Attached to that joint (`MeshAttachment`), it stands
   where the file holds it. It is rigid, with no rig, and holds only the materials it uses.
 - A whole file leaves out every mesh not skinned that hangs under a joint of its rig: those are its parts.
+- `Declare(..., meshes: [NAMES])` keeps only the skinned meshes of the nodes named: one mix of a creature's part
+  variants on its rig. A name no skinned mesh's node has stops the step.
+- Each asset lists the meshes it was read from (`MeshAsset.Parts`, `MeshPart`): each one's node and its run of
+  vertices. Variants, clips, bindings, and joins keep them.
 - `Declare(..., rigOf: NAME)` binds a file's skin on the rig of a model declared before it (`MeshAssets.Bound`), so a
   body made on a game's rig plays that rig's clips. Its joints are matched by name and taken in the source's order, so
   one index is one joint in both. Its parents and rest turns must be the source's (`MeshAssets.BoundRestTurn`), and it

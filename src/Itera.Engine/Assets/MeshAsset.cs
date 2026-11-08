@@ -22,7 +22,8 @@ public sealed class MeshAsset
         MeshTextureData[] textures,
         Rig? rig = null,
         MeshSkinVertex[]? skin = null,
-        MeshPoint[]? points = null
+        MeshPoint[]? points = null,
+        MeshPart[]? parts = null
     )
     {
         ArgumentNullException.ThrowIfNull(vertices);
@@ -47,6 +48,7 @@ public sealed class MeshAsset
         Materials = materials;
         Textures = textures;
         Points = points ?? [];
+        Parts = parts ?? [];
         BoundsMin = vertices.Length == 0 ? Vector3.Zero : new Vector3(float.MaxValue);
         BoundsMax = vertices.Length == 0 ? Vector3.Zero : new Vector3(float.MinValue);
         foreach (ref readonly var vertex in vertices.AsSpan())
@@ -78,6 +80,12 @@ public sealed class MeshAsset
 
     /// <summary>The asset's named places (<see cref="MeshPoint"/>), in the file's order; none for a mesh built in code unless given.</summary>
     public MeshPoint[] Points { get; }
+
+    /// <summary>
+    /// The meshes it was read from, each its file's node and its vertices (<see cref="MeshPart"/>), in the order read; none
+    /// for a mesh built in code unless given. A game finds one part's vertices by it, to hide that part.
+    /// </summary>
+    public MeshPart[] Parts { get; }
 
     /// <summary>The index in <see cref="Points"/> of the first point named <paramref name="name"/>, or -1. Allocates nothing.</summary>
     public int FindPoint(string name)
@@ -119,3 +127,9 @@ public sealed class MeshAsset
 
 /// <summary>A run of a mesh asset's indices drawn with one of its materials: <see cref="IndexCount"/> from <see cref="FirstIndex"/>.</summary>
 public readonly record struct MeshPrimitive(int FirstIndex, int IndexCount, int Material);
+
+/// <summary>
+/// One mesh an asset was read from (<see cref="MeshAsset.Parts"/>): the name of the file's node that holds it, and the run
+/// of the asset's vertices that are its own, from <paramref name="FirstVertex"/>, <paramref name="VertexCount"/> long.
+/// </summary>
+public readonly record struct MeshPart(string Name, int FirstVertex, int VertexCount);
