@@ -14,8 +14,8 @@ namespace Itera.Engine.Tests.Assets;
 /// rig's joint order and clips, its vertices following their joints, and the file is listed once; a body whose joints
 /// rest at other places plays those clips from its own; a body whose joints rest turned otherwise, or that has clips of
 /// its own, stops the step naming the difference; a file's whole and its parts read it once and hold the same texture
-/// where their materials use one image; a mix keeps only the skinned meshes it names, each asset listing its meshes'
-/// vertices, kept through clips added in code, and a mix naming no skinned mesh stops the step.
+/// where their materials use one image; a mix keeps only the skinned meshes it names, and a mix naming no skinned mesh
+/// stops the step.
 /// </summary>
 public sealed class MeshPartsTests : IDisposable
 {
@@ -75,28 +75,21 @@ public sealed class MeshPartsTests : IDisposable
     }
 
     [Fact]
-    public void A_mix_keeps_only_the_skinned_meshes_it_names_and_each_asset_lists_its_meshes_vertices()
+    public void A_mix_keeps_only_the_skinned_meshes_it_names()
     {
         var path = WriteBody("tails", aFirst: true, clip: false, tails: true);
         var assets = new MeshAssets(NullLogger<MeshAssets>.Instance);
         var all = assets.Declare("all", path);
         var mix = assets.Declare("mix", path, meshes: ["body", "tail-b"]);
-        var clipped = assets.DeclareClips("clipped", "mix", _ => []);
 
         assets.LoadAll(textures: false);
 
-        Assert.Equal(
-            [new MeshPart("body", 0, 3), new MeshPart("tail-a", 3, 3), new MeshPart("tail-b", 6, 3)],
-            assets[all].Parts
-        );
         Assert.Equal(9, assets[all].Vertices.Length);
-        Assert.Equal([new MeshPart("body", 0, 3), new MeshPart("tail-b", 3, 3)], assets[mix].Parts);
         Assert.Equal(6, assets[mix].Vertices.Length);
         Assert.Equal(6, assets[mix].Skin!.Length);
         // Tail b's first vertex, where its own file has it, is the mix's fourth.
         Assert.Equal(new Vector3(0, 0.5f, 0.3f), assets[mix].Vertices[3].Position);
         Assert.Equal(assets[all].Rig!.Names, assets[mix].Rig!.Names);
-        Assert.Equal(assets[mix].Parts, assets[clipped].Parts);
         Assert.Equal("all", Assert.Single(assets.Files).Name);
     }
 

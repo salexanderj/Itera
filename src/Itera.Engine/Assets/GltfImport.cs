@@ -239,7 +239,7 @@ internal static partial class GltfImport
         {
             foreach (var mesh in named)
             {
-                if (!context.Parts.Exists(part => string.Equals(part.Name, mesh, StringComparison.Ordinal)))
+                if (!context.MeshesRead.Contains(mesh))
                 {
                     throw new InvalidDataException($"{context.Path}: has no skinned mesh on a node named '{mesh}'");
                 }
@@ -255,8 +255,7 @@ internal static partial class GltfImport
             [.. context.Textures],
             rig,
             rig is null ? null : [.. context.Skins],
-            [.. context.Points],
-            [.. context.Parts]
+            [.. context.Points]
         );
     }
 
@@ -307,8 +306,7 @@ internal static partial class GltfImport
             [.. context.Textures],
             null,
             null,
-            [.. context.Points],
-            [.. context.Parts]
+            [.. context.Points]
         );
     }
 
@@ -381,13 +379,12 @@ internal static partial class GltfImport
                 // glTF: a skinned mesh's node transform does not apply; its joints place it.
                 var transform = (node.Skin is null ? node.WorldMatrix * into : Matrix4x4.Identity) * scale;
                 var posedBy = plan is not null && node.Skin?.LogicalIndex == plan.Skin.LogicalIndex ? plan : null;
-                var first = context.Vertices.Count;
                 foreach (var primitive in mesh.Primitives)
                 {
                     AddPrimitive(primitive, transform, posedBy, context);
                 }
 
-                context.Parts.Add(new MeshPart(node.Name ?? "", first, context.Vertices.Count - first));
+                context.MeshesRead.Add(node.Name ?? "");
             }
         }
 
@@ -887,8 +884,8 @@ internal static partial class GltfImport
         /// <summary>The skinned meshes' nodes a mix keeps, or null for every one (<see cref="Load"/>'s meshes).</summary>
         public HashSet<string>? Meshes { get; init; }
 
-        /// <summary>Each mesh read and its vertices (<see cref="MeshAsset.Parts"/>).</summary>
-        public List<MeshPart> Parts { get; } = [];
+        /// <summary>The nodes whose meshes were read, to find a name in <see cref="Meshes"/> no skinned mesh has.</summary>
+        public HashSet<string> MeshesRead { get; } = new(StringComparer.Ordinal);
 
         /// <summary>A part's materials, by the file's index.</summary>
         public Dictionary<int, int> MaterialIndices { get; } = [];

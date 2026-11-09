@@ -646,8 +646,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             asset.Textures,
             bound,
             skins,
-            points,
-            asset.Parts
+            points
         );
     }
 
@@ -788,8 +787,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
                 source.Textures,
                 source.Rig,
                 source.Skin,
-                source.Points,
-                source.Parts
+                source.Points
             );
         }
     }
@@ -852,8 +850,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             source.Textures,
             withClips,
             source.Skin,
-            source.Points,
-            source.Parts
+            source.Points
         );
     }
 
@@ -937,7 +934,6 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
         var primitives = new List<MeshPrimitive>();
         var materials = new List<MeshMaterialData>();
         var textures = new List<MeshTextureData>();
-        var parts = new List<MeshPart>();
         int vertexBase = 0,
             indexBase = 0;
         for (var i = 0; i < pieces.Length; i++)
@@ -990,11 +986,6 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             }
 
             textures.AddRange(asset.Textures);
-            foreach (var part in asset.Parts)
-            {
-                parts.Add(part with { FirstVertex = part.FirstVertex + vertexBase });
-            }
-
             vertexBase += asset.Vertices.Length;
             indexBase += asset.Indices.Length;
         }
@@ -1007,8 +998,7 @@ public sealed partial class MeshAssets(ILogger<MeshAssets> logger, IOptions<Engi
             [.. primitives],
             [.. materials],
             [.. textures],
-            points: [.. placed],
-            parts: [.. parts]
+            points: [.. placed]
         );
     }
 
