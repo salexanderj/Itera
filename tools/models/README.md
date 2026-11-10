@@ -49,6 +49,7 @@ BUDGETS = "budgets.json"  # optional: the budget file, from the recipe's folder
 UNIT = 1.0  # optional: metres a unit of the file, for the checker (default 1.0)
 REFERENCES = {"front": "front.png"}  # optional: reference images beside the recipe, by view
 REFERENCE_POSE = "idle"  # optional: the pose the references are drawn in (default rest)
+REFERENCE_OBJECTS = ["body", "head"]  # optional: the only meshes the comparison draws (default every mesh)
 MATCH = 0.85  # optional: the least silhouette match each reference must reach (0 to 1)
 LOOPS = ["Idle", "Walk"]  # optional: clips that loop, so their last frame must hold their first pose
 FEET = ["foot_l", "foot_r"]  # optional: the bones whose tails touch the ground
@@ -66,6 +67,9 @@ def build(ctx):  # required: makes the model in bpy.context.scene
   After the sheet, the model's outline from that view is compared with it, both cropped to their boxes and scaled to
   the same height, so proportions count. The scores (0 to 1) print and go into `report.json`; one under `MATCH` is a
   problem.
+- `REFERENCE_OBJECTS` names the meshes the comparison draws, by object name, for a model whose exported meshes
+  overlap: a part library's variants, of which a reference shows one of each. A name that is no exported mesh is a
+  problem. Armatures and empties are kept, so a reference pose still holds.
 - A reference may be drawn in another pose than the rig's rest pose (`itera_models/poses.py`): `rest`, `t-pose` (arms
   out level), `idle` (arms hanging a little out, palms in), or `anatomical` (arms hanging close, palms forward).
   `REFERENCE_POSE` names the references' pose, and a view given as `("side.png", "t-pose")` names its own. The model's

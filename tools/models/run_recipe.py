@@ -13,7 +13,9 @@ A recipe is a Python file with:
                                           # a view may give (file, pose) for a reference drawn in its own pose
     REFERENCE_POSE = "idle"        # optional: the pose the references are drawn in (rest, t-pose, idle, anatomical;
                                    # itera_models/poses.py), default rest
-    MATCH = 0.85                   # optional: the least silhouette match each reference must reach (0 to 1)
+    REFERENCE_OBJECTS = ["body", "head"]  # optional: the only meshes the comparison draws (default: every exported
+                                          # mesh), such as one variant of each part of a part library
+    MATCH = 0.85                # optional: the least silhouette match each reference must reach (0 to 1)
     LOOPS = ["Idle", "Walk"]       # optional: clips that loop, so their last frame must hold their first pose
     FEET = ["foot_l", "foot_r"]    # optional: the bones whose tails touch the ground
     PLANTED = {"Idle": 0, "Walk": None}   # optional: clips checked for feet that slide, each with its own speed over
@@ -123,6 +125,16 @@ def compare_references(recipe, recipe_dir: Path, context: Context) -> dict:
     if not references:
         return {}
     objects = selection.resolve(context.export_objects)
+    named = getattr(recipe, "REFERENCE_OBJECTS", None)
+    if named is not None:
+        # Only the named meshes are drawn: a part library's other variants would widen its outline. Armatures and
+        # empties stay, so a reference pose still holds.
+        meshes = {obj.name for obj in objects if obj.type == "MESH"}
+        unknown = [name for name in named if name not in meshes]
+        if unknown:
+            context.problem(f"REFERENCE_OBJECTS names no exported mesh: {', '.join(unknown)}")
+            return {}
+        objects = [obj for obj in objects if obj.type != "MESH" or obj.name in named]
     scores = silhouette.compare(
         objects,
         {view: str(path) for view, path in references.items()},

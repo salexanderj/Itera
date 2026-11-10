@@ -3,12 +3,16 @@
 import math
 import os
 import tempfile
+import types
 import unittest
+from pathlib import Path
 
 import blender_test_utils as utils
 import bpy
 import numpy as np
+import run_recipe
 from itera_models import rig, silhouette
+from itera_models.context import Context
 
 
 def _cube(size, location, scale=(1, 1, 1), name="Cube"):
@@ -269,6 +273,31 @@ class CompareTests(unittest.TestCase):
 
         flipped = silhouette.compare(objects, {"side": references["side"]}, flip=("side",))
         self.assertLess(flipped["side"], scores["side"])
+
+    def test_a_recipes_reference_objects_limit_what_the_comparison_draws(self):
+        # Two variants of one part, overlapping as a part library's do: the reference shows the first alone.
+        first = _cube(1.0, (0, 0, 1.0), scale=(1, 1, 2), name="Part")
+        _cube(1.0, (0, 0, 1.0), scale=(2.4, 1, 1.2), name="Part-wide")
+        found = silhouette.mask([first], "front", 160)
+        pixels = np.zeros((160, 160, 4), dtype=np.float32)
+        pixels[found] = (1, 1, 1, 1)
+        utils.save_png(os.path.join(self.dir, "front.png"), pixels)
+        recipe_dir = Path(self.dir)
+
+        def compare(**extra):
+            context = Context("Part", self.dir, "Part.glb", self.dir, self.dir)
+            recipe = types.SimpleNamespace(REFERENCES={"front": "front.png"}, **extra)
+            return run_recipe.compare_references(recipe, recipe_dir, context), context.problems
+
+        chosen, chosen_problems = compare(REFERENCE_OBJECTS=["Part"])
+        every, _ = compare()
+        missing, missing_problems = compare(REFERENCE_OBJECTS=["Part", "Tail"])
+
+        self.assertGreater(chosen["front"], 0.97)
+        self.assertEqual(chosen_problems, [])
+        self.assertLess(every["front"], 0.8)
+        self.assertEqual(missing, {})
+        self.assertEqual(missing_problems, ["REFERENCE_OBJECTS names no exported mesh: Tail"])
 
 
 if __name__ == "__main__":
