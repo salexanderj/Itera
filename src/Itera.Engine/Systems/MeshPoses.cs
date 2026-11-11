@@ -41,6 +41,19 @@ public interface IMeshPoseShaper
     bool KeepsNearClips(World world, Entity entity) => false;
 
     /// <summary>
+    /// How far the smoothing of <paramref name="entity"/>'s changes (<see cref="SmoothedPose"/>) leaves its pose as this
+    /// shaping made it from <paramref name="joint"/> down, at the frame's <paramref name="alpha"/>: 0, the default, smooths
+    /// every joint alike; 1 keeps that joint's turn in the asset's space as shaped, and the joints below it as shaped, while
+    /// the joints above it blend from the last clip. So what the shaping aims (a spine turned onto an aim, the arms on a
+    /// rifle) stays on its aim through a change of clip. <paramref name="joint"/> is -1 for none.
+    /// </summary>
+    float KeepsShaped(World world, Entity entity, float alpha, out int joint)
+    {
+        joint = -1;
+        return 0;
+    }
+
+    /// <summary>
     /// A copy of this shaper for one of the step's worker threads (<c>StepWorkers</c>), which shapes poses there at the
     /// same time as other copies, for a game's system that poses its bodies on them: null (the default) keeps the
     /// shaping on the main thread. A copy reads the entity's components and the services it was made with, writes only

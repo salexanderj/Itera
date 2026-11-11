@@ -17,7 +17,9 @@ namespace Itera.Engine.Systems;
 /// one whose entity is gone and was taken by another starts afresh; a slot neither drawn nor held in a frame is let go at
 /// its end. A mesh no list would draw this frame is held (<see cref="Hold"/>): its slot stays, a change marked meanwhile
 /// starts from the pose last drawn, and a change under way goes on, so it is drawn again as far through the change as
-/// had it been drawn throughout, starting still. Main thread; allocates a slot's storage at its first use alone.
+/// had it been drawn throughout, starting still. A part of the pose may be kept as given (<see cref="Smooth"/>'s kept
+/// joint): that joint's turn in the asset's space and the joints below it, by a share, so a part a game aims stays on its
+/// aim while the rest blends. Main thread; allocates a slot's storage at its first use alone.
 /// </summary>
 public sealed class PoseSmoothing
 {
@@ -36,8 +38,11 @@ public sealed class PoseSmoothing
     /// <summary>
     /// <paramref name="locals"/>, the pose <paramref name="entity"/>'s clip gives this frame, smoothed in place over a
     /// frame of <paramref name="seconds"/>, and kept as its last drawn pose for frame <paramref name="frame"/>: a new mark
-    /// (<paramref name="changes"/>) starts a change of <paramref name="changeSeconds"/> from the pose drawn before. Returns
-    /// the slot kept for it (<paramref name="slot"/> when it is still the entity's), or -1 when every slot is taken.
+    /// (<paramref name="changes"/>) starts a change of <paramref name="changeSeconds"/> from the pose drawn before. With
+    /// <paramref name="rig"/>, the pose's own, <paramref name="keptShare"/> of the way back to the pose given from
+    /// <paramref name="keptJoint"/> down after the blend: that joint's turn in the asset's space, and the locals of the
+    /// joints below it (none at 0, or with no such joint). Returns the slot kept for it (<paramref name="slot"/> when it is
+    /// still the entity's), or -1 when every slot is taken.
     /// </summary>
     public int Smooth(
         Entity entity,
@@ -46,7 +51,10 @@ public sealed class PoseSmoothing
         float changeSeconds,
         Span<JointTransform> locals,
         float seconds,
-        ulong frame
+        ulong frame,
+        Rig? rig = null,
+        int keptJoint = -1,
+        float keptShare = 0
     )
     {
         var step = float.IsFinite(seconds) ? MathF.Max(seconds, 0) : 0;
@@ -85,7 +93,22 @@ public sealed class PoseSmoothing
 
         if (pose.Blending)
         {
+            var keeps =
+                rig is not null
+                && rig.JointCount == pose.Joints
+                && (uint)keptJoint < (uint)pose.Joints
+                && keptShare > 0
+                && float.IsFinite(keptShare);
+            if (keeps)
+            {
+                locals.CopyTo(pose.Given);
+            }
+
             Blend(pose, changeSeconds > 0 ? changeSeconds : SmoothedPose.DefaultSeconds, step, locals);
+            if (keeps)
+            {
+                Restore(pose, rig!, keptJoint, Math.Min(keptShare, 1), locals);
+            }
         }
 
         if (returning)
@@ -250,6 +273,39 @@ public sealed class PoseSmoothing
     }
 
     /// <summary>
+    /// <paramref name="locals"/>, blended, brought <paramref name="share"/> of the way back to the pose given
+    /// (<see cref="Pose.Given"/>) from <paramref name="joint"/> down: the joint's turn in the asset's space through the
+    /// blended frame its parent gives it, and the joints below it local by local.
+    /// </summary>
+    private static void Restore(Pose pose, Rig rig, int joint, float share, Span<JointTransform> locals)
+    {
+        var given = pose.Given.AsSpan(0, pose.Joints);
+        var globals = pose.Globals.AsSpan(0, pose.Joints);
+        var parent = rig.Parents[joint];
+        // A joint's global is its local through its frame (its offset and its parent's global): the given turn in the
+        // asset's space is the given local through the given frame, and the local that keeps it is that turn back through
+        // the blended frame. Quaternions read right to left.
+        rig.Globals(given, globals, parent);
+        var givenFrame = parent < 0 ? rig.Offsets[joint] : rig.Offsets[joint] * globals[parent];
+        rig.Globals(locals, globals, parent);
+        var blendedFrame = parent < 0 ? rig.Offsets[joint] : rig.Offsets[joint] * globals[parent];
+        if (
+            Matrix4x4.Decompose(givenFrame, out _, out var givenTurn, out _)
+            && Matrix4x4.Decompose(blendedFrame, out _, out var blendedTurn, out _)
+        )
+        {
+            var turn = Quaternion.Normalize(Quaternion.Inverse(blendedTurn) * givenTurn * given[joint].Rotation);
+            locals[joint] = locals[joint] with { Rotation = Quaternion.Slerp(locals[joint].Rotation, turn, share) };
+        }
+
+        var weights = pose.Weights.AsSpan(0, pose.Joints);
+        weights.Clear();
+        rig.Mask(joint, weights, share);
+        weights[joint] = 0;
+        Rig.Blend(locals, given, weights, locals);
+    }
+
+    /// <summary>
     /// A change's clock and source moved on over <paramref name="seconds"/>, the source's speed fading with a half-life of
     /// a quarter of <paramref name="changeSeconds"/>; returns the new clip's weight, eased in and out.
     /// </summary>
@@ -346,5 +402,13 @@ public sealed class PoseSmoothing
         public readonly JointTransform[] Source = new JointTransform[joints];
         public readonly Vector3[] Spin = new Vector3[joints];
         public readonly Vector3[] Drift = new Vector3[joints];
+
+        /// <summary>The pose given this frame, before the blend, for the part kept as given.</summary>
+        public readonly JointTransform[] Given = new JointTransform[joints];
+
+        /// <summary>Scratch for the kept part: the joints' globals, and each joint's share of the pose given.</summary>
+        public readonly Matrix4x4[] Globals = new Matrix4x4[joints];
+
+        public readonly float[] Weights = new float[joints];
     }
 }

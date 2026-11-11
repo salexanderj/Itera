@@ -34,6 +34,8 @@ engine system follows are in `systems.md`. Test classes: `MeshDrawSystemTests` a
 - An entity with a `SmoothedPose` has its changes smoothed as it is drawn, after the shaping (`PoseSmoothing`). A change
   is each `FadeTo`, each `SetBlend` or `SetLayer` of another clip, and each `MeshAnimator.MarkChange` of a game. The
   smoothing is for drawing only.
+- The shaper may keep a part of the pose as it shaped it (`IMeshPoseShaper.KeepsShaped`): a joint's turn in the
+  asset's space and the joints below it, by a share. The rest blends, so an aimed spine stays on its aim through a change.
 - An entity with a `MeshAttachment` and a `DrawnMesh`, with no placement, is drawn at its holder's joint as the holder
   is posed, shaped, and smoothed this frame, and is not drawn once the holder is gone. A model's named point under a
   joint (`MeshPoint`) gives the attachment's joint, offset, and turn as it is.

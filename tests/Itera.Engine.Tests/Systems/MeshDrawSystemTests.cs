@@ -611,6 +611,39 @@ public sealed class MeshDrawSystemTests
     }
 
     [Fact]
+    public void A_part_the_shaper_keeps_as_shaped_takes_a_change_of_clip_at_once_while_the_rest_is_smoothed()
+    {
+        using var world = World.Create();
+        var shaper = new TurningShaper { Keep = false, Turning = false };
+        using var system = Create(world, shaper: shaper);
+        // Two meshes held at the bend's 0.4 s, both smoothed, one with its tip's joint kept as shaped.
+        var kept = world.Create(
+            MeshPlacement.At(Vector3.Zero, Quaternion.Identity),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f, speed: 0),
+            new ShapedPose(),
+            SmoothedPose.Of(0.2f)
+        );
+        var smoothed = world.Create(
+            MeshPlacement.At(new Vector3(10, 0, 0), Quaternion.Identity),
+            DrawnMesh.Of(2),
+            MeshAnimator.Playing(0, 0.4f, speed: 0),
+            SmoothedPose.Of(0.2f)
+        );
+        var (bent, rest) = (Tip(0, 0.4f), Tip(-1, 0));
+        shaper.Kept = 1;
+        Frame(system, 1);
+        world.Get<MeshAnimator>(kept).FadeTo(-1, 0);
+        world.Get<MeshAnimator>(smoothed).FadeTo(-1, 0);
+
+        Frame(system, 2);
+
+        // A frame after the change the kept joint is at the rest pose's turn already; the other still near the bend.
+        Assert.True(Vector3.Distance(DrawnTip(0), rest) < 1e-4f, $"Kept at {DrawnTip(0)}, the rest pose's at {rest}.");
+        Assert.True(Share(DrawnTip(10), bent, rest) > 0.9f, $"At {Share(DrawnTip(10), bent, rest)} of the way back.");
+    }
+
+    [Fact]
     public void A_new_entity_in_a_gone_ones_slot_starts_afresh_and_what_a_smoothed_mesh_holds_follows_it()
     {
         using var world = World.Create();
@@ -965,6 +998,15 @@ public sealed class MeshDrawSystemTests
         public HashSet<Entity> Near { get; } = [];
 
         public bool KeepsNearClips(World world, Entity entity) => Near.Contains(entity);
+
+        /// <summary>How far the smoothing keeps joint 1 and below as shaped (<see cref="IMeshPoseShaper.KeepsShaped"/>).</summary>
+        public float Kept { get; set; }
+
+        public float KeepsShaped(World world, Entity entity, float alpha, out int joint)
+        {
+            joint = 1;
+            return Kept;
+        }
 
         public void Shape(
             World world,

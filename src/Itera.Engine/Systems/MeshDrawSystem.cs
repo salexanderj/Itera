@@ -284,6 +284,13 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
             // The pose as drawn, shaping and all, so a switch of the game's own layer is smoothed as a clip's change.
             if (smoothed)
             {
+                // What the shaper keeps as it shaped it, such as a spine on an aim, is left out of the smoothing.
+                var (kept, keptJoint) = (0f, -1);
+                if (shaped && _shaper is { } shaper)
+                {
+                    kept = shaper.KeepsShaped(World, entity, time.Alpha, out keptJoint);
+                }
+
                 ref var smoothing = ref smoothings[index];
                 smoothing.Slot = _smoothing.Smooth(
                     entity,
@@ -292,7 +299,10 @@ public sealed class MeshDrawSystem : BaseSystem<World, FrameTime>, IFrameUpdateS
                     smoothing.Seconds,
                     locals,
                     time.DeltaSeconds,
-                    time.FrameIndex
+                    time.FrameIndex,
+                    rig,
+                    keptJoint,
+                    kept
                 );
             }
 
