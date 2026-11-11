@@ -35,14 +35,14 @@ internal static class ReplicatedStateCodec
 
     /// <summary>
     /// The lanes of <paramref name="state"/> that differ from <paramref name="baseline"/> (its mask, as
-    /// <see cref="Write(MessageWriter, ReplicatedSchema, ReadOnlySpan{long}, ReadOnlySpan{long}, int)"/> takes it), and
+    /// <see cref="Write(MessageWriter, ReplicatedSchema, ReadOnlySpan{long}, ReadOnlySpan{long}, long)"/> takes it), and
     /// the bytes that write takes: so a host knows a record's size before it writes it.
     /// </summary>
     public static int Measure(
         ReplicatedSchema schema,
         ReadOnlySpan<long> state,
         ReadOnlySpan<long> baseline,
-        out int mask
+        out long mask
     )
     {
         mask = 0;
@@ -51,12 +51,12 @@ internal static class ReplicatedStateCodec
         {
             if (state[lane] != baseline[lane])
             {
-                mask |= 1 << lane;
+                mask |= 1L << lane;
                 bytes += MessageWriter.VarLongBytes(state[lane] - baseline[lane]);
             }
         }
 
-        return bytes + MessageWriter.VarIntBytes(mask);
+        return bytes + MessageWriter.VarMaskBytes(mask);
     }
 
     /// <summary>The changes of <paramref name="state"/> from <paramref name="baseline"/> in the lanes of <paramref name="mask"/> (<see cref="Measure"/>).</summary>
@@ -65,13 +65,13 @@ internal static class ReplicatedStateCodec
         ReplicatedSchema schema,
         ReadOnlySpan<long> state,
         ReadOnlySpan<long> baseline,
-        int mask
+        long mask
     )
     {
-        writer.WriteVarInt(mask);
+        writer.WriteVarMask(mask);
         for (var lane = 0; lane < schema.Lanes; lane++)
         {
-            if ((mask & (1 << lane)) != 0)
+            if ((mask & (1L << lane)) != 0)
             {
                 writer.WriteVarLong(state[lane] - baseline[lane]);
             }
@@ -86,7 +86,7 @@ internal static class ReplicatedStateCodec
     )
     {
         state = baseline;
-        var mask = reader.ReadVarInt();
+        var mask = reader.ReadVarMask();
         if (mask >> schema.Lanes != 0)
         {
             throw new InvalidDataException("A state changes a lane its kind does not have.");
@@ -94,7 +94,7 @@ internal static class ReplicatedStateCodec
 
         for (var lane = 0; lane < schema.Lanes; lane++)
         {
-            if ((mask & (1 << lane)) == 0)
+            if ((mask & (1L << lane)) == 0)
             {
                 continue;
             }
@@ -121,7 +121,7 @@ internal static class ReplicatedStateCodec
     /// </summary>
     public static void Skip(ref MessageReader reader, ReplicatedSchema schema)
     {
-        var mask = reader.ReadVarInt();
+        var mask = reader.ReadVarMask();
         if (mask >> schema.Lanes != 0)
         {
             throw new InvalidDataException("A state changes a lane its kind does not have.");
@@ -129,7 +129,7 @@ internal static class ReplicatedStateCodec
 
         for (var lane = 0; lane < schema.Lanes; lane++)
         {
-            if ((mask & (1 << lane)) != 0)
+            if ((mask & (1L << lane)) != 0)
             {
                 reader.ReadVarLong();
             }

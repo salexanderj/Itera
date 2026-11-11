@@ -101,7 +101,7 @@ internal static class SessionProtocol
     /// in the handshake instead of failing later. A game versions its own messages in its
     /// <c>ISessionMatchData.Fingerprint</c>, which the hello carries.
     /// </summary>
-    public const int Version = 50;
+    public const int Version = 51;
 
     /// <summary>Lobby data: the players in the session now, the host's included (<c>SessionService</c> writes it).</summary>
     public const string LobbyPlayersKey = "itera_players";
@@ -385,6 +385,22 @@ public sealed class MessageWriter
     }
 
     /// <summary>
+    /// A non-negative number of up to 63 bits in 1 to 9 bytes, 7 bits each, low first (replication's mask of changed
+    /// lanes): the same bytes as <see cref="WriteVarInt"/> for a number an int holds.
+    /// </summary>
+    public void WriteVarMask(long value)
+    {
+        var rest = (ulong)value;
+        while (rest >= 0x80)
+        {
+            WriteByte((byte)(rest | 0x80));
+            rest >>= 7;
+        }
+
+        WriteByte((byte)rest);
+    }
+
+    /// <summary>
     /// A signed number in 1 to 10 bytes: zigzag (0, -1, 1, -2, ... as 0, 1, 2, 3, ...), then 7 bits a byte, low first,
     /// so a small number either side of 0 takes one byte (replication's changes of a lane).
     /// </summary>
@@ -404,6 +420,9 @@ public sealed class MessageWriter
 
     /// <summary>The bytes <see cref="WriteVarInt"/> takes for <paramref name="value"/>: 1 to 5.</summary>
     public static int VarIntBytes(int value) => BitOperations.Log2((uint)value | 1) / 7 + 1;
+
+    /// <summary>The bytes <see cref="WriteVarMask"/> takes for <paramref name="value"/>: 1 to 9.</summary>
+    public static int VarMaskBytes(long value) => BitOperations.Log2((ulong)value | 1) / 7 + 1;
 
     /// <summary>The bytes <see cref="WriteVarLong"/> takes for <paramref name="value"/>: 1 to 10.</summary>
     public static int VarLongBytes(long value) => BitOperations.Log2((ulong)((value << 1) ^ (value >> 63)) | 1) / 7 + 1;
@@ -482,6 +501,26 @@ public ref struct MessageReader(ReadOnlySpan<byte> data)
         }
 
         throw Invalid("A number does not end within five bytes.");
+    }
+
+    /// <summary>
+    /// A number <see cref="MessageWriter.WriteVarMask"/> wrote: nine bytes carry its 63 bits, so one that goes on past
+    /// them is refused.
+    /// </summary>
+    public long ReadVarMask()
+    {
+        var value = 0ul;
+        for (var shift = 0; shift < 63; shift += 7)
+        {
+            var next = ReadByte();
+            value |= (ulong)(next & 0x7F) << shift;
+            if ((next & 0x80) == 0)
+            {
+                return (long)value;
+            }
+        }
+
+        throw Invalid("A number does not end within nine bytes.");
     }
 
     /// <summary>A signed number <see cref="MessageWriter.WriteVarLong"/> wrote; one past 64 bits is refused.</summary>

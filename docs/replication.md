@@ -23,10 +23,14 @@ amounts cost 110 to 140 KB/s until changes under a millimetre went unsent.
   captures, spawns, applies, and despawns. The engine then owns quantisation, deltas, blending, and the hostile-value
   checks for every game, and a field's range is known to the reader, so no damaged message is read as a value its field
   cannot hold. The kinds' names and fields give a fingerprint the hello carries, so peers of other kinds do not play.
-- **Lanes of whole numbers.** A state is up to 31 whole numbers: a position three of 1/1,024 m, absolute (so no buffer
+- **Lanes of whole numbers.** A state is up to 63 whole numbers: a position three of 1/1,024 m, absolute (so no buffer
   moves with the origin, and peers with other origins agree), an angle 65,536 steps a turn, a rotation its smallest
   three components at 12 bits each (within about 0.1 degrees; at 10 bits the largest, rebuilt from the other three, was
-  off by up to about 0.3 degrees), scalars and whole numbers in their ranges. 31, so a mask of changed lanes is one positive variable-length int.
+  off by up to about 0.3 degrees), scalars and whole numbers in their ranges. 63, so a mask of changed lanes is one
+  positive variable-length long (`WriteVarMask`), in the same bytes as an int's for the first 31 lanes. The limit was
+  31 until 2026-11-11, when a game's humanoid kind needed more. Offered: a second kind beside it, with fields that
+  change less often. Chosen: more lanes. A lane that does not change costs nothing, so a second kind would save no
+  bytes, and it would cost a record header and a link between the two for each entity.
 - **Changes from what the client acknowledged.** Offered: whole states each time; dead reckoning (the archive's);
   changes from the last state the client acknowledged. Chosen: acknowledged baselines. A lane that did not change costs
   nothing, one that moved a little a byte (zigzag variable-length numbers), and an entity whose state the client holds is

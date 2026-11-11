@@ -39,6 +39,43 @@ public sealed class MessageReaderTests
     public void A_number_past_an_int_is_refused(byte[] bytes) =>
         Assert.Throws<InvalidDataException>(() => new MessageReader(bytes).ReadVarInt());
 
+    /// <summary>
+    /// A mask of up to 63 bits reads back, in the bytes measured for it, and a mask an int holds takes the bytes of
+    /// that int.
+    /// </summary>
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(127L)]
+    [InlineData(128L)]
+    [InlineData(int.MaxValue)]
+    [InlineData(1L << 31)]
+    [InlineData(1L << 62)]
+    [InlineData(long.MaxValue)]
+    public void A_written_mask_reads_back(long value)
+    {
+        var writer = new MessageWriter();
+        writer.WriteVarMask(value);
+
+        var reader = new MessageReader(writer.Written);
+
+        Assert.Equal(value, reader.ReadVarMask());
+        reader.EnsureEnd();
+        Assert.Equal(writer.Length, MessageWriter.VarMaskBytes(value));
+        if (value <= int.MaxValue)
+        {
+            var asInt = new MessageWriter();
+            asInt.WriteVarInt((int)value);
+            Assert.Equal(asInt.Written.ToArray(), writer.Written.ToArray());
+        }
+    }
+
+    /// <summary>A mask that goes on past nine bytes, which carry its 63 bits, and one that never ends, are refused.</summary>
+    [Theory]
+    [InlineData(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01 })]
+    [InlineData(new byte[] { 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80 })]
+    public void A_mask_past_63_bits_is_refused(byte[] bytes) =>
+        Assert.Throws<InvalidDataException>(() => new MessageReader(bytes).ReadVarMask());
+
     [Theory]
     [InlineData(0, 0, 0)]
     [InlineData(150_000.123456, -51.2, -149_999.987654)]

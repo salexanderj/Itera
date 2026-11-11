@@ -181,6 +181,72 @@ public sealed class ReplicatedStateCodecTests
         );
     }
 
+    /// <summary>
+    /// A schema of every lane a state holds: a change in its last lane alone goes as a mask of nine bytes and the
+    /// change, and reads back; a mask past a smaller schema's lanes is refused; and a damaged record of it is refused or
+    /// read within its fields' ranges.
+    /// </summary>
+    [Fact]
+    public void A_state_of_every_lane_goes_as_its_changes_and_a_damaged_one_is_refused()
+    {
+        var schema = new ReplicatedSchema();
+        var fields = new IntegerField[ReplicatedState.MostLanes];
+        for (var lane = 0; lane < fields.Length; lane++)
+        {
+            fields[lane] = schema.AddInteger("lane" + lane, -1000, 1000);
+        }
+
+        var baseline = default(ReplicatedState);
+        var state = baseline;
+        fields[^1].Set(ref state, fields[^1].Get(in baseline) + 5);
+        var writer = new MessageWriter();
+        ReplicatedStateCodec.Write(writer, schema, in state, in baseline);
+        Assert.Equal(10, writer.Length);
+        var reader = new MessageReader(writer.Written);
+        ReplicatedStateCodec.Read(ref reader, schema, in baseline, out var read);
+        reader.EnsureEnd();
+        Assert.Equal(fields[^1].Get(in baseline) + 5, fields[^1].Get(in read));
+        Assert.True(ReplicatedStateCodec.Same(schema, in read, in state));
+
+        var narrow = s_fields.Schema;
+        Assert.Throws<InvalidDataException>(() =>
+        {
+            var past = new MessageReader(writer.Written);
+            ReplicatedStateCodec.Read(ref past, narrow, in baseline, out _);
+        });
+        Assert.Throws<InvalidDataException>(() =>
+        {
+            var past = new MessageReader(writer.Written);
+            ReplicatedStateCodec.Skip(ref past, narrow);
+        });
+
+        for (var lane = 0; lane < fields.Length; lane += 4)
+        {
+            fields[lane].Set(ref state, lane * 31 - 900);
+        }
+
+        writer.Reset();
+        ReplicatedStateCodec.Write(writer, schema, in state, in baseline);
+        var rows = HostileValues.Damaged("state", writer.Written.ToArray()).ToList();
+        Watchdog.Run(
+            rows.Count,
+            i => rows[i].Label,
+            i =>
+            {
+                var damaged = new MessageReader(rows[i].Body);
+                try
+                {
+                    ReplicatedStateCodec.Read(ref damaged, schema, in baseline, out var got);
+                    for (var lane = 0; lane < schema.Lanes; lane++)
+                    {
+                        Assert.True(schema.Holds(lane, got.Lane(lane)), $"Lane {lane} read {got.Lane(lane)}.");
+                    }
+                }
+                catch (InvalidDataException) { }
+            }
+        );
+    }
+
     [Fact]
     public void A_signed_variable_length_number_reads_back_and_one_past_64_bits_is_refused()
     {
@@ -285,12 +351,14 @@ public sealed class ReplicatedStateCodecTests
     public void A_schema_keeps_to_its_lanes_and_its_kind_seals_it()
     {
         var schema = new ReplicatedSchema();
-        for (var i = 0; i < 10; i++)
+        for (var i = 0; i < 20; i++)
         {
             schema.AddPosition("at" + i);
         }
 
-        schema.AddAngle("last");
+        schema.AddAngle("next to last");
+        schema.AddScalar("speed", 0, 1, 8);
+        schema.AddFlags("last", 32);
         Assert.Equal(ReplicatedState.MostLanes, schema.Lanes);
         Assert.Throws<InvalidOperationException>(() => schema.AddAngle("one too many"));
         Assert.Throws<ArgumentException>(() => new ReplicatedSchema().AddScalar("empty", 1, 1, 8));

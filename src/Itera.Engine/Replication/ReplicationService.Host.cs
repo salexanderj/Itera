@@ -1313,5 +1313,5 @@ public sealed partial class ReplicationService
     /// What writing a record needs, found as it is measured: how many ticks back its baseline is (0: whole), where the
     /// baseline is kept (-1: the zero state), and the lanes that changed.
     /// </summary>
-    private readonly record struct RecordPlan(int Age, int Slot, int Mask);
+    private readonly record struct RecordPlan(int Age, int Slot, long Mask);
 }

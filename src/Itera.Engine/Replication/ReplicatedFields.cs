@@ -8,13 +8,13 @@ namespace Itera.Engine.Replication;
 /// <summary>
 /// One entity's replicated state: up to <see cref="MostLanes"/> whole numbers (lanes), each a field's quantised value
 /// or one axis of a position. A kind's <see cref="ReplicatedSchema"/> says what each lane holds; its fields
-/// (<see cref="PositionField"/>, <see cref="AngleField"/>, ...) set and read them. A value type of 248 bytes, passed by
+/// (<see cref="PositionField"/>, <see cref="AngleField"/>, ...) set and read them. A value type of 504 bytes, passed by
 /// reference.
 /// </summary>
 public struct ReplicatedState
 {
-    /// <summary>The most lanes a state holds: a changed-lane mask fits a positive int.</summary>
-    public const int MostLanes = 31;
+    /// <summary>The most lanes a state holds: a changed-lane mask fits a positive long.</summary>
+    public const int MostLanes = 63;
 
     internal LaneArray Lanes;
 
