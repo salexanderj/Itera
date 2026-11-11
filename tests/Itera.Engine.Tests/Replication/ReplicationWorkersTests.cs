@@ -11,7 +11,8 @@ using Xunit.Abstractions;
 namespace Itera.Engine.Tests.Replication;
 
 /// <summary>
-/// A host sending three clients 300 movers on too few bytes for them all, so each send passes most over, as movers leave
+/// A host sending three clients 300 movers of a kind of every lane (their phase and heading in the last two) on too
+/// few bytes for them all, so each send passes most over, as movers leave
 /// the clients' reach and are destroyed and added: every message it sends on the step's workers (the movers captured
 /// there, and the clients' packets written there) is the message it sends on the main thread alone, byte for byte; and
 /// a send on the workers allocates nothing on any thread.
@@ -117,6 +118,7 @@ public sealed class ReplicationWorkersTests(ITestOutputHelper output)
             Speed = 4,
             RelevanceMetres = 420,
             FalloffMetres = 100,
+            Wide = true,
         };
 
         private readonly ServiceProvider _hostProvider;
@@ -138,7 +140,11 @@ public sealed class ReplicationWorkersTests(ITestOutputHelper output)
             Assert.True(Host.WaitUntilLoaded());
             for (var i = 0; i < Clients; i++)
             {
-                var provider = ReplicationHarness.Build(options, new MoverPlan(), new FakeTransport(network));
+                var provider = ReplicationHarness.Build(
+                    options,
+                    new MoverPlan { Wide = true },
+                    new FakeTransport(network)
+                );
                 var client = new HeadlessRun(provider).Join(Host);
                 _clients.Add((provider, client));
                 Assert.True(client.WaitUntilLoaded());

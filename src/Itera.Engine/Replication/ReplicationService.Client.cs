@@ -43,6 +43,7 @@ public sealed partial class ReplicationService
     private int _packetTicksNext;
     private ReplicatedState _decoded;
     private ReplicatedState _from;
+    private ReplicatedState _later;
     private ReplicatedState _shownState;
     private uint _newestPacket;
     private ulong _receivedBits;
@@ -244,7 +245,7 @@ public sealed partial class ReplicationService
             if (
                 !shown.Live
                 || shown.Unshown
-                || !shown.Blend(shownAt, SendIntervalTicks, this, ref _from, ref _shownState)
+                || !shown.Blend(shownAt, SendIntervalTicks, this, ref _from, ref _later, ref _shownState)
             )
             {
                 continue;
@@ -573,6 +574,7 @@ public sealed partial class ReplicationService
             int sendTicks,
             ReplicationService owner,
             ref ReplicatedState scratch,
+            ref ReplicatedState later,
             ref ReplicatedState result
         )
         {
@@ -597,14 +599,13 @@ public sealed partial class ReplicationService
                 t1 = _ticks[before + 1];
             var waited = t1 - t0 > 2 * sendTicks && owner.PacketBetween(_ticks[before], _ticks[before + 1]);
             var start = waited ? t1 - sendTicks : t0;
-            Read(before, ref scratch);
             if (at <= start)
             {
-                result = scratch;
+                Read(before, ref result);
                 return true;
             }
 
-            var later = default(ReplicatedState);
+            Read(before, ref scratch);
             Read(before + 1, ref later);
             var share = (float)((at - start) / (t1 - start));
             ReplicatedStateCodec.Blend(Kind.Schema, in scratch, in later, share, out result);
@@ -630,14 +631,12 @@ public sealed partial class ReplicationService
             }
         }
 
-        private void Read(int slot, ref ReplicatedState state)
-        {
-            state = default;
-            for (var lane = 0; lane < _lanesEach; lane++)
-            {
-                state.Lanes[lane] = _lanes[slot * _lanesEach + lane];
-            }
-        }
+        /// <summary>
+        /// The kept state in <paramref name="slot"/>, into its kind's lanes of <paramref name="state"/>; the lanes past
+        /// them stay as they were, since nothing of this kind reads them.
+        /// </summary>
+        private void Read(int slot, ref ReplicatedState state) =>
+            _lanes.AsSpan(slot * _lanesEach, _lanesEach).CopyTo(state.Lanes);
     }
 
     private readonly record struct Despawn(Entity Entity, ReplicatedKind Kind);

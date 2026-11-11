@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using Itera.Engine.Networking;
 
 namespace Itera.Engine.Replication;
@@ -85,7 +86,9 @@ internal static class ReplicatedStateCodec
         out ReplicatedState state
     )
     {
-        state = baseline;
+        // The schema's lanes alone, so a narrow kind copies no more than its own.
+        Unsafe.SkipInit(out state);
+        ((ReadOnlySpan<long>)baseline.Lanes)[..schema.Lanes].CopyTo(state.Lanes);
         var mask = reader.ReadVarMask();
         if (mask >> schema.Lanes != 0)
         {
@@ -147,7 +150,8 @@ internal static class ReplicatedStateCodec
     /// <summary>
     /// The state <paramref name="share"/> of the way from <paramref name="from"/> to <paramref name="to"/> (0 to 1):
     /// positions and scalars in a straight line, angles the short way, rotations along the sphere, and whole numbers and
-    /// flags at <paramref name="from"/>'s value until <paramref name="to"/> is reached.
+    /// flags at <paramref name="from"/>'s value until <paramref name="to"/> is reached. Only the schema's lanes of
+    /// <paramref name="result"/> are set, so a narrow kind copies no more than its own.
     /// </summary>
     public static void Blend(
         ReplicatedSchema schema,
@@ -157,22 +161,20 @@ internal static class ReplicatedStateCodec
         out ReplicatedState result
     )
     {
-        result = from;
-        if (share <= 0)
+        Unsafe.SkipInit(out result);
+        ReadOnlySpan<long> earlier = from.Lanes;
+        ReadOnlySpan<long> later = to.Lanes;
+        Span<long> lanes = result.Lanes;
+        (share >= 1 ? later : earlier)[..schema.Lanes].CopyTo(lanes);
+        if (share <= 0 || share >= 1)
         {
-            return;
-        }
-
-        if (share >= 1)
-        {
-            result = to;
             return;
         }
 
         for (var lane = 0; lane < schema.Lanes; lane++)
         {
-            long a = from.Lanes[lane],
-                b = to.Lanes[lane];
+            long a = earlier[lane],
+                b = later[lane];
             if (a == b)
             {
                 continue;
@@ -181,16 +183,16 @@ internal static class ReplicatedStateCodec
             switch (schema.BlendOf(lane))
             {
                 case LaneBlend.Linear:
-                    result.Lanes[lane] = a + (long)Math.Round((b - a) * (double)share);
+                    lanes[lane] = a + (long)Math.Round((b - a) * (double)share);
                     break;
                 case LaneBlend.Angle:
                     var turn = AngleField.StepsPerTurn;
                     var difference = ((b - a) % turn + turn + turn / 2) % turn - turn / 2;
-                    result.Lanes[lane] = ((a + (long)Math.Round(difference * (double)share)) % turn + turn) % turn;
+                    lanes[lane] = ((a + (long)Math.Round(difference * (double)share)) % turn + turn) % turn;
                     break;
                 case LaneBlend.Rotation:
                     var blended = Quaternion.Slerp(RotationField.Unpack(a), RotationField.Unpack(b), share);
-                    result.Lanes[lane] = RotationField.Pack(blended);
+                    lanes[lane] = RotationField.Pack(blended);
                     break;
                 default:
                     break;

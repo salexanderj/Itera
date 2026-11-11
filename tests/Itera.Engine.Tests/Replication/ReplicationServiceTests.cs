@@ -8,7 +8,8 @@ namespace Itera.Engine.Tests.Replication;
 
 /// <summary>
 /// <see cref="Itera.Engine.Replication.ReplicationService"/> between a host and a client in one process: what the host
-/// moves appears on the client and follows it the interpolation delay behind (measured: 6.0 steps), as far as that
+/// moves appears on the client and follows it the interpolation delay behind (measured: 6.0 steps), a kind of every
+/// lane too, as far as that
 /// delay is set, and through 100 ms each way with jitter and loss the delay and the way behind (12.2 steps at the
 /// median); a send larger than a packet goes in several; a destroyed entity goes, also through loss, and so does one the
 /// host stops replicating; a late record of an id added again under another kind is passed over; one out of a client's
@@ -37,6 +38,46 @@ public sealed class ReplicationServiceTests(ITestOutputHelper output)
         Assert.Equal(3, harness.ClientPlan.Spawns);
         // Measured 5.99 to 6.02 steps: the delay alone, the host's tick known to within its rounding.
         Assert.All(lags, lag => Assert.InRange(lag, DelayTicks - 0.1, DelayTicks + 0.2));
+    }
+
+    /// <summary>
+    /// A kind of every lane a state holds: its heading and phase, in its last two lanes, change each step and reach the
+    /// client, each shown phase with its heading of the same states (a hundredth of a turn's radian a step), and the
+    /// movers follow the interpolation delay behind.
+    /// </summary>
+    [Fact]
+    public void A_kind_of_every_lane_shows_its_last_lanes_on_the_client()
+    {
+        using var harness = ReplicationHarness.Start(
+            new MoverPlan
+            {
+                Count = 3,
+                Speed = 3,
+                Wide = true,
+            },
+            clientPlan: new MoverPlan { Wide = true }
+        );
+        harness.Step(30);
+
+        var lags = Lags(harness, 40);
+
+        var shown = harness.Shown();
+        Assert.Equal(3, shown.Count);
+        Assert.All(lags, lag => Assert.InRange(lag, DelayTicks - 0.1, DelayTicks + 0.2));
+        Assert.All(
+            shown.Values,
+            mover =>
+            {
+                // Its steps by its heading, a hundredth of a radian each, which reads back within half a turn.
+                var steps = mover.Heading * 100;
+                Assert.InRange(steps, 50, 300);
+                // The heading blends between two sends a step or two apart; the phase, its steps' count wrapping at 100,
+                // steps at the earlier.
+                var off = steps - mover.Phase;
+                off -= 100 * MathF.Round(off / 100);
+                Assert.InRange(off, -0.1f, 2.5f);
+            }
+        );
     }
 
     /// <summary>

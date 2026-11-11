@@ -273,6 +273,12 @@ internal sealed class MoverPlan
     /// <summary>Registers a third kind, so this run's kinds differ from a run's without it.</summary>
     public bool ExtraKind { get; set; }
 
+    /// <summary>
+    /// The movers' kind holds every lane a state can (<see cref="TestKinds.WideSchema"/>), its phase and heading in the
+    /// last two; a host's and its clients' plans say the same.
+    /// </summary>
+    public bool Wide { get; set; }
+
     public ReplicatedKindId Mover { get; set; }
 
     public ReplicatedKindId Player { get; set; }
@@ -339,7 +345,10 @@ internal struct TestShown
     public int Applied;
 }
 
-/// <summary>The test kinds, registered at the run's start: a mover (position, heading, phase) and a player (position).</summary>
+/// <summary>
+/// The test kinds, registered at the run's start: a mover (position, heading, phase; with the plan's
+/// <see cref="MoverPlan.Wide"/>, those in a kind of every lane) and a player (position).
+/// </summary>
 internal sealed class TestKinds(ReplicatedKinds kinds, MoverPlan plan) : IRunStartup
 {
     public static readonly ReplicatedSchema MoverSchema = new();
@@ -350,12 +359,27 @@ internal sealed class TestKinds(ReplicatedKinds kinds, MoverPlan plan) : IRunSta
     public static readonly PositionField PlayerAt = PlayerSchema.AddPosition("feet");
     public static readonly ReplicatedSchema CharacterSchema = new();
     public static readonly PositionField CharacterAt = CharacterSchema.AddPosition("feet");
+    public static readonly ReplicatedSchema WideSchema = new();
+    public static readonly PositionField WideAt = WideSchema.AddPosition("at");
+    public static readonly IntegerField WidePhase = WideFields();
+    public static readonly AngleField WideHeading = WideSchema.AddAngle("heading");
+
+    /// <summary>The wide kind's lanes that never change, then its phase: its heading takes the last lane.</summary>
+    private static IntegerField WideFields()
+    {
+        while (WideSchema.Lanes < ReplicatedState.MostLanes - 2)
+        {
+            WideSchema.AddInteger("still" + WideSchema.Lanes, 0, 9);
+        }
+
+        return WideSchema.AddInteger("phase", 0, 99);
+    }
 
     public void Start()
     {
         plan.Mover = kinds.Register(
             "test.mover",
-            MoverSchema,
+            plan.Wide ? WideSchema : MoverSchema,
             new MoverKind(plan),
             plan.RelevanceMetres,
             priority: 1,
@@ -384,6 +408,14 @@ internal sealed class TestKinds(ReplicatedKinds kinds, MoverPlan plan) : IRunSta
         public void Capture(in ReplicationContext context, Entity entity, ref ReplicatedState state)
         {
             ref var mover = ref context.World.Get<TestMover>(entity);
+            if (plan.Wide)
+            {
+                WideAt.Set(ref state, context.Origin.ToWorld(mover.Position));
+                WideHeading.Set(ref state, mover.Heading);
+                WidePhase.Set(ref state, mover.Phase);
+                return;
+            }
+
             MoverAt.Set(ref state, context.Origin.ToWorld(mover.Position));
             MoverHeading.Set(ref state, mover.Heading);
             MoverPhase.Set(ref state, mover.Phase);
@@ -398,9 +430,9 @@ internal sealed class TestKinds(ReplicatedKinds kinds, MoverPlan plan) : IRunSta
         public void Apply(in ReplicationContext context, Entity entity, in ReplicatedState state)
         {
             ref var shown = ref context.World.Get<TestShown>(entity);
-            shown.At = MoverAt.Get(in state);
-            shown.Heading = MoverHeading.Get(in state);
-            shown.Phase = MoverPhase.Get(in state);
+            shown.At = plan.Wide ? WideAt.Get(in state) : MoverAt.Get(in state);
+            shown.Heading = plan.Wide ? WideHeading.Get(in state) : MoverHeading.Get(in state);
+            shown.Phase = plan.Wide ? WidePhase.Get(in state) : MoverPhase.Get(in state);
             shown.Applied++;
         }
 
