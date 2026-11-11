@@ -2,8 +2,8 @@
 
 // The particle sprites (ParticlePass): six vertices, two triangles, for the particle the frame's sprite list names at
 // gl_InstanceIndex. The quad lies across the view: round sprites face the camera, and stretched ones run along an axis
-// (their velocity on screen, trailing behind them, or the segment from their start to their end) with round ends, as
-// long as the axis plus a radius at each end and a radius wide. A flake's quad lies in its own plane and tumbles. The
+// (their velocity on screen, trailing behind them, or the segment from their start to their end, cut where it comes
+// near the camera) with round ends, as long as the axis plus a radius at each end and a radius wide. A flake's quad lies in its own plane and tumbles. The
 // colour is the recipe's blended over its life times the burst's tint, lit by the sun and sky or its own light with
 // glow, faded in and out, faded where the fog is thick and right in front of the camera, and put through the tone curve
 // and the grade here, once per vertex; particle-sprites.frag only shapes and shades it.
@@ -23,6 +23,16 @@ const vec2 QuadCorners[6] = vec2[](
     vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(1.0, 1.0),
     vec2(-1.0, -1.0), vec2(1.0, 1.0), vec2(-1.0, 1.0));
 
+// The nearest along the view a segment is drawn from, in metres past its radius: where the fade in front of the camera
+// (smoothstep(0.1, 0.5, ...) below) has ended.
+const float SegmentNearest = 0.5;
+
+// How far point lies in front of the camera along the view, or past an orthographic view's near end.
+float aheadOf(vec3 point)
+{
+    return dot(point - view.position, view.forward) - (viewOrthographic() ? view.near : 0.0);
+}
+
 void main()
 {
     Particle particle = particles[spriteList[gl_InstanceIndex]];
@@ -37,6 +47,7 @@ void main()
     // How squarely a flake faces the sun, 0 to 1 (its mean over every way it can turn is 0.5).
     float sunFacing = 0.5;
     bool flake = (recipe.flags & PARTICLE_FLAG_FLAKE) != 0u;
+    bool hidden = false;
     if (flake)
     {
         // A flake's quad lies in its own plane, which turns about an axis from its seed at its spin, so the flake
@@ -56,9 +67,30 @@ void main()
     }
     else if (recipe.stretch == PARTICLE_STRETCH_SEGMENT)
     {
-        vec3 span = particle.end - particle.position;
+        // A segment is cut where it comes nearer than SegmentNearest and its radius, so it runs in from the screen's
+        // edge: the colour is flat, the quad's first corner's (at the segment's start), so a start behind the camera or
+        // in the fade right in front of it would hide all of it. One wholly nearer than that is not drawn.
+        vec3 start = particle.position;
+        vec3 end = particle.end;
+        float nearest = SegmentNearest + 2.0 * radius;
+        float startAhead = aheadOf(start);
+        float endAhead = aheadOf(end);
+        if (startAhead < nearest && endAhead < nearest)
+        {
+            hidden = true;
+        }
+        else if (startAhead < nearest)
+        {
+            start = mix(start, end, (nearest - startAhead) / (endAhead - startAhead));
+        }
+        else if (endAhead < nearest)
+        {
+            end = mix(end, start, (nearest - endAhead) / (startAhead - endAhead));
+        }
+
+        vec3 span = end - start;
         float length2 = dot(span, span);
-        centre += 0.5 * span;
+        centre = start + 0.5 * span;
         axis = length2 > 1e-8 ? span * inversesqrt(length2) : axis;
         halfLength = 0.5 * sqrt(length2);
     }
@@ -136,7 +168,7 @@ void main()
     outFlake = flake ? particle.seed | 0x80000000u : 0u;
     // A sprite so faint (its axis, its most opaque, under a level of 255; graded colours are at most 1) changes no
     // pixel: its quad goes outside the view, so it shades none (a smoke's long faded tail, a sprite deep in the fog).
-    if (opacity < 1.0 / 255.0)
+    if (hidden || opacity < 1.0 / 255.0)
     {
         gl_Position = vec4(0.0, 0.0, -1.0, 1.0);
     }

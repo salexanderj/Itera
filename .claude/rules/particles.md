@@ -62,6 +62,9 @@ Particles meet the world through the camera's depth image (`DepthTarget`, handed
   record. The sunlight is one lookup (`sunShadowOnce`), not the near cascade's soft filter.
 - A sprite whose opacity is under a level of 255 at its axis (a smoke's faded tail, a sprite deep in fog) is moved out
   of the view in `particle-sprites.vert`, so it shades no pixel.
+- A sprite's colour is flat, taken from the quad's first corner. A segment's first corner is at its start. So
+  `particle-sprites.vert` cuts a segment where it comes nearer the camera than `SegmentNearest` and its radius. A tracer
+  that starts behind the camera then draws in from the screen's edge. A segment wholly nearer is not drawn.
 - Lit cubes and soft sprites are drawn after the world, each by one indirect draw, tested against its depth. A blended
   mesh asset writes none, so a particle behind one draws over it, untinted.
 - A sprite with `ParticleTraits.Flake` is a flake. Its quad lies in its own plane, which turns at the particle's spin
